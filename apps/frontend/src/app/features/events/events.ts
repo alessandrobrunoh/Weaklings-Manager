@@ -21,7 +21,17 @@ import type { TranslationKey } from '../../i18n/en';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon } from '../../shared/components/icon/icon';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+  type DataTableTab,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { roleSelectOptionsMany } from '../../shared/discord/discord-options';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const PAGE_SIZE = 10;
@@ -41,520 +51,223 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Dialog, Icon, RouterLink, SearchableSelect, TooltipDirective],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    SearchableSelect,
+    StatCard,
+    TooltipDirective,
+  ],
   styles: `
     :host {
       display: block;
-      width: 100%;
-    }
-    :host {
       color: var(--color-text);
     }
-    .events-page > section,
-    .events-page > article,
-    .events-page .kpi-card {
-      border-radius: var(--radius-sm, 2px);
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
       box-shadow: none;
-    }
-    .events-page input,
-    .events-page select,
-    .events-page button {
-      border-radius: var(--radius-sm, 2px);
-    }
-    .events-page {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding-inline: 0.75rem;
-    }
-    .kpi-card {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: 0.75rem;
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), background-color var(--motion-fast);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
     }
   `,
   template: `
-    <div class="events-page flex flex-col gap-6 max-w-7xl mx-auto pb-12">
-      <!-- Header -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
-        <div>
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--color-text)] m-0">Events</h1>
-          <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">Schedule and manage all guild activities.</p>
-        </div>
+    <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
+      @if (canDelete()) {
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--tonal]="showArchived()"
+          [class.btn--outline]="!showArchived()"
+          (click)="toggleShowArchived()"
+        >
+          {{ t('events.showArchived') }}
+        </button>
+      }
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="t('common.refreshNow')"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="refresh" size="0.875rem" [class.animate-spin]="loading()" />
+        {{ t('common.refreshNow') }}
+      </button>
+      @if (canCreate()) {
+        <button type="button" class="btn btn--primary btn--sm" (click)="openCreate()">
+          <app-icon name="plus" size="0.875rem" />
+          {{ t('events.new') }}
+        </button>
+      }
+    </app-page-header>
 
-        <div class="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          @if (canDelete()) {
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--tonal]="showArchived()"
-              [class.btn--outline]="!showArchived()"
-              (click)="toggleShowArchived()"
+    <app-page-stack>
+      <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5" aria-label="Events summary">
+        <app-stat-card
+          [label]="t('events.stat.total')"
+          [value]="totalEventsCount()"
+          sub="All scheduled and past events"
+          icon="calendar"
+          tone="primary"
+        />
+        <app-stat-card
+          [label]="t('events.stat.live')"
+          [value]="liveEventsCount()"
+          sub="Active war rooms"
+          icon="zap"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('events.stat.scheduled')"
+          [value]="scheduledEventsCount()"
+          sub="Upcoming deployments"
+          icon="calendar"
+          tone="primary"
+        />
+        <app-stat-card
+          [label]="t('events.stat.cta')"
+          [value]="ctaEventsCount()"
+          sub="Mandatory guild CTA"
+          icon="alert"
+          tone="warning"
+        />
+      </section>
+
+      <app-data-table
+        [columns]="columns()"
+        [rows]="events()"
+        [loading]="loading()"
+        [error]="loadFailed()"
+        [trackBy]="trackById"
+        [serverMode]="true"
+        [totalItems]="totalItems()"
+        [pageSize]="pageSize()"
+        [pageSizeOptions]="[10, 20, 50]"
+        itemLabel="events"
+        emptyIcon="calendar"
+        emptyTitle="No events found"
+        emptySubtitle="There are no events matching the selected filters."
+        searchPlaceholder="Search events..."
+        [tabs]="statusTabs()"
+        [activeTab]="statusFilter()"
+        (tabChange)="setStatusFilter($event)"
+        (pageChange)="onTablePageChange($event)"
+        (retry)="refreshNow()"
+      >
+        <ng-template dataTableCell="title" let-event>
+          <div class="flex items-center gap-1.5 min-w-[220px]">
+            @if (event.call_to_arms) {
+              <span class="text-warning font-bold text-sm select-none" [title]="t('events.call_to_arms')">★</span>
+            }
+            <a
+              [routerLink]="['/events', event.id]"
+              class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors no-underline truncate max-w-xs"
             >
-              {{ t('events.showArchived') }}
-            </button>
-          }
-          @if (canCreate()) {
-            <button
-              type="button"
-              class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
-              (click)="openCreate()"
-            >
-              <app-icon name="plus" size="0.875rem" />
-              <span>{{ t('events.new') }}</span>
-            </button>
-          }
-        </div>
-      </div>
-
-      <!-- 4 KPI Cards -->
-      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5" aria-label="Events summary">
-        <!-- Card 1: TOTAL EVENTS -->
-        <article class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
-              <app-icon name="calendar" size="1.125rem" />
-            </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">TOTAL EVENTS</span>
-          </div>
-          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
-            {{ totalEventsCount() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1.5 truncate">
-            All scheduled & past events
-          </div>
-        </article>
-
-        <!-- Card 2: LIVE EVENTS -->
-        <article class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-              <app-icon name="zap" size="1.125rem" />
-            </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">LIVE EVENTS</span>
-          </div>
-          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
-            {{ liveEventsCount() }}
-          </div>
-          <div class="text-xs text-success mt-1.5 truncate flex items-center gap-1.5 font-medium">
-            @if (liveEventsCount() > 0) {
-              <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
-              <span>Active war rooms</span>
-            } @else {
-              <span>No events live</span>
+              {{ event.title }}
+            </a>
+            @if (event.archived_at) {
+              <span class="chip chip--neutral text-[10px]">{{ t('events.archived') }}</span>
             }
           </div>
-        </article>
-
-        <!-- Card 3: SCHEDULED -->
-        <article class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-              <app-icon name="calendar" size="1.125rem" />
-            </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">SCHEDULED</span>
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+            Mass: {{ formatMassTime(event) }}
           </div>
-          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
-            {{ scheduledEventsCount() }}
+        </ng-template>
+
+        <ng-template dataTableCell="date" let-event>
+          <div class="text-xs font-medium text-[var(--color-text)]">
+            {{ formatDateDay(event.start_time_utc ?? event.event_date_utc) }}
           </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1.5 truncate">
-            Upcoming deployments
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+            {{ formatDateTime(event.start_time_utc ?? event.event_date_utc) }}
           </div>
-        </article>
+        </ng-template>
 
-        <!-- Card 4: CALL TO ARMS -->
-        <article class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-              <app-icon name="alert" size="1.125rem" />
-            </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">CALL TO ARMS</span>
+        <ng-template dataTableCell="comp_name" let-event>
+          <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)]">
+            <app-icon name="swords" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
+            <span>{{ event.comp_name || t('events.detail.fill_option') }}</span>
           </div>
-          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
-            {{ ctaEventsCount() }}
-          </div>
-          <div class="text-xs text-warning mt-1.5 truncate font-medium">
-            Mandatory guild CTA
-          </div>
-        </article>
-      </section>
+        </ng-template>
 
-      <!-- Filters Row: Search Input + Status Dropdown -->
-      <section class="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto flex-1 max-w-xl">
-          <!-- Search Input -->
-          <div class="relative flex-1 min-w-[240px]">
-            <app-icon name="search" size="0.875rem" class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-disabled)]" />
-            <input
-              type="text"
-              placeholder="Search events..."
-              class="w-full bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg pl-9 pr-3 py-2 text-xs text-[var(--color-text)] placeholder-[var(--color-text-disabled)] focus:border-[var(--color-primary)] outline-none transition-all"
-              [value]="search()"
-              (input)="onSearchInput($event)"
-            />
-          </div>
+        <ng-template dataTableCell="status" let-event>
+          @switch (event.status) {
+            @case ('live') {
+              <span class="chip chip--success text-xs">
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
+                {{ t('events.status.live') }}
+              </span>
+            }
+            @case ('scheduled') {
+              <span class="chip chip--info text-xs">
+                <app-icon name="calendar" size="0.75rem" />
+                {{ t('events.status.scheduled') }}
+              </span>
+            }
+            @case ('cancelled') {
+              <span class="chip chip--error text-xs">
+                <app-icon name="close" size="0.75rem" />
+                {{ t('events.status.cancelled') }}
+              </span>
+            }
+            @case ('auto_stopped') {
+              <span class="chip chip--neutral text-xs">{{ t('events.status.auto_stopped') }}</span>
+            }
+            @default {
+              <span class="chip chip--neutral text-xs">{{ t('events.status.stopped') }}</span>
+            }
+          }
+        </ng-template>
 
-          <!-- Status Dropdown -->
-          <div class="relative">
-            <select
-              class="bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--color-text-secondary)] cursor-pointer outline-none transition-all"
-              [value]="statusFilter()"
-              (change)="onStatusDropdownChange($event)"
-            >
-              <option value="" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: All</option>
-              <option value="live" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Live</option>
-              <option value="scheduled" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Scheduled</option>
-              <option value="stopped" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Stopped</option>
-              <option value="cancelled" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Cancelled</option>
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <!-- Status Tabs with Pill Count Badges & Underline -->
-      <nav class="flex items-center gap-6 border-b border-[var(--color-border)] overflow-x-auto scrollbar-thin" aria-label="Status filter">
-        <!-- All -->
-        <button
-          type="button"
-          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[var(--color-primary)]]="statusFilter() === ''"
-          [class.text-[var(--color-text)]]="statusFilter() === ''"
-          [class.border-transparent]="statusFilter() !== ''"
-          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== ''"
-          [class.hover:text-[var(--color-text)]]="statusFilter() !== ''"
-          (click)="setStatusFilter('')"
-        >
-          <span>All</span>
-          <span
-            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
-            [class.bg-white/10]="statusFilter() === ''"
-            [class.border-[var(--color-border-strong)]]="statusFilter() === ''"
-            [class.text-[var(--color-text)]]="statusFilter() === ''"
-            [class.bg-[var(--color-surface-2)]]="statusFilter() !== ''"
-            [class.border-[var(--color-border)]]="statusFilter() !== ''"
-            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== ''"
-          >
-            {{ totalEventsCount() }}
-          </span>
-        </button>
-
-        <!-- Live -->
-        <button
-          type="button"
-          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[var(--color-primary)]]="statusFilter() === 'live'"
-          [class.text-[var(--color-text)]]="statusFilter() === 'live'"
-          [class.border-transparent]="statusFilter() !== 'live'"
-          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'live'"
-          [class.hover:text-[var(--color-text)]]="statusFilter() !== 'live'"
-          (click)="setStatusFilter('live')"
-        >
-          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
-          <span>Live</span>
-          <span
-            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
-            [class.bg-white/10]="statusFilter() === 'live'"
-            [class.border-[var(--color-border-strong)]]="statusFilter() === 'live'"
-            [class.text-[var(--color-text)]]="statusFilter() === 'live'"
-            [class.bg-[var(--color-surface-2)]]="statusFilter() !== 'live'"
-            [class.border-[var(--color-border)]]="statusFilter() !== 'live'"
-            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'live'"
-          >
-            {{ liveEventsCount() }}
-          </span>
-        </button>
-
-        <!-- Scheduled -->
-        <button
-          type="button"
-          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[var(--color-primary)]]="statusFilter() === 'scheduled'"
-          [class.text-[var(--color-text)]]="statusFilter() === 'scheduled'"
-          [class.border-transparent]="statusFilter() !== 'scheduled'"
-          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'scheduled'"
-          [class.hover:text-[var(--color-text)]]="statusFilter() !== 'scheduled'"
-          (click)="setStatusFilter('scheduled')"
-        >
-          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-info)]"></span>
-          <span>Scheduled</span>
-          <span
-            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
-            [class.bg-white/10]="statusFilter() === 'scheduled'"
-            [class.border-[var(--color-border-strong)]]="statusFilter() === 'scheduled'"
-            [class.text-[var(--color-text)]]="statusFilter() === 'scheduled'"
-            [class.bg-[var(--color-surface-2)]]="statusFilter() !== 'scheduled'"
-            [class.border-[var(--color-border)]]="statusFilter() !== 'scheduled'"
-            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'scheduled'"
-          >
-            {{ scheduledEventsCount() }}
-          </span>
-        </button>
-
-        <!-- Finished -->
-        <button
-          type="button"
-          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[var(--color-primary)]]="statusFilter() === 'stopped'"
-          [class.text-[var(--color-text)]]="statusFilter() === 'stopped'"
-          [class.border-transparent]="statusFilter() !== 'stopped'"
-          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'stopped'"
-          [class.hover:text-[var(--color-text)]]="statusFilter() !== 'stopped'"
-          (click)="setStatusFilter('stopped')"
-        >
-          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-text-tertiary)]"></span>
-          <span>Finished</span>
-          <span
-            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
-            [class.bg-white/10]="statusFilter() === 'stopped'"
-            [class.border-[var(--color-border-strong)]]="statusFilter() === 'stopped'"
-            [class.text-[var(--color-text)]]="statusFilter() === 'stopped'"
-            [class.bg-[var(--color-surface-2)]]="statusFilter() !== 'stopped'"
-            [class.border-[var(--color-border)]]="statusFilter() !== 'stopped'"
-            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'stopped'"
-          >
-            {{ finishedEventsCount() }}
-          </span>
-        </button>
-      </nav>
-
-      <!-- TABLE -->
-      <div class="overflow-x-auto w-full">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="border-b border-[var(--color-border)] text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-              <th class="py-3 px-4 font-bold">EVENT</th>
-              <th class="py-3 px-4 font-bold cursor-pointer select-none" (click)="toggleDateSort()">
-                <div class="inline-flex items-center gap-1 hover:text-[var(--color-text)] transition-colors">
-                  <span>DATE</span>
-                  <span class="text-xs text-[var(--color-text-disabled)]">⇅</span>
-                </div>
-              </th>
-              <th class="py-3 px-4 font-bold">COMPOSITION</th>
-              <th class="py-3 px-4 font-bold">STATUS</th>
-              <th class="py-3 px-4 font-bold text-right">ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-[var(--color-border)]">
-            @if (loading() && events().length === 0) {
-              <tr>
-                <td colspan="5" class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
-                  <app-icon name="loader" size="1.5rem" class="animate-spin inline-block mb-2" />
-                  <p class="m-0">Loading events...</p>
-                </td>
-              </tr>
-            } @else if (events().length === 0) {
-              <tr>
-                <td colspan="5" class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
-                  <p class="m-0 font-medium text-sm text-[var(--color-text)]">No events found</p>
-                  <p class="m-0 text-xs text-[var(--color-text-tertiary)] mt-1">There are no events matching the selected filters.</p>
-                </td>
-              </tr>
-            } @else {
-              @for (event of events(); track event.id) {
-                <tr class="hover:bg-white/[0.02] transition-colors group">
-                  <!-- EVENT Column -->
-                  <td class="py-3.5 px-4 min-w-[220px]">
-                    <div class="flex items-center gap-1.5">
-                      @if (event.call_to_arms) {
-                        <span class="text-warning font-bold text-sm select-none" title="Call To Arms">★</span>
-                      }
-                      <a
-                        [routerLink]="['/events', event.id]"
-                        class="text-sm font-semibold text-[var(--color-text)] hover:text-error transition-colors no-underline truncate max-w-xs"
-                      >
-                        {{ event.title }}
-                      </a>
-                      @if (event.archived_at) {
-                        <span class="chip chip--neutral text-xs">{{ t('events.archived') }}</span>
-                      }
-                    </div>
-                    <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-                      Mass: {{ formatMassTime(event) }}
-                    </div>
-                  </td>
-
-                  <!-- DATE Column -->
-                  <td class="py-3.5 px-4 whitespace-nowrap">
-                    <div class="text-xs font-medium text-[var(--color-text)]">
-                      {{ formatDateDay(event.start_time_utc ?? event.event_date_utc) }}
-                    </div>
-                    <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-                      {{ formatDateTime(event.start_time_utc ?? event.event_date_utc) }}
-                    </div>
-                  </td>
-
-                  <!-- COMPOSITION Column -->
-                  <td class="py-3.5 px-4 whitespace-nowrap">
-                    <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)]">
-                      <app-icon name="swords" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
-                      <span>{{ event.comp_name || 'Fill' }}</span>
-                    </div>
-                  </td>
-
-                  <!-- STATUS Column -->
-                  <td class="py-3.5 px-4 whitespace-nowrap">
-                    @switch (event.status) {
-                      @case ('live') {
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
-                          <span>Live</span>
-                        </span>
-                      }
-                      @case ('scheduled') {
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
-                          <app-icon name="calendar" size="0.75rem" />
-                          <span>Scheduled</span>
-                        </span>
-                      }
-                      @case ('cancelled') {
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
-                          <app-icon name="close" size="0.75rem" />
-                          <span>Cancelled</span>
-                        </span>
-                      }
-                      @default {
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-surface-2)] text-[var(--color-text-tertiary)] border border-[var(--color-border)]">
-                          <span>Stopped</span>
-                        </span>
-                      }
-                    }
-                  </td>
-
-                  <!-- ACTIONS Column -->
-                  <td class="py-3.5 px-4 whitespace-nowrap text-right">
-                    <div class="inline-flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] border border-[var(--color-border)] rounded-md transition-all cursor-pointer"
-                        (click)="openEventDetail(event.id)"
-                      >
-                        Open
-                      </button>
-
-                      @if (event.status === 'scheduled' && !event.archived_at) {
-                        <button
-                          type="button"
-                          class="px-3 py-1 text-xs font-semibold text-[var(--color-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-md transition-all cursor-pointer"
-                          (click)="join(event.id)"
-                        >
-                          Join
-                        </button>
-                      }
-
-                      @if (canEdit() && event.status === 'cancelled' && !event.archived_at) {
-                        <button
-                          type="button"
-                          class="px-3 py-1 text-xs font-semibold text-[var(--color-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-md transition-all cursor-pointer"
-                          [disabled]="reopening()"
-                          (click)="requestUncancel(event)"
-                        >
-                          {{ t('events.uncancel') }}
-                        </button>
-                      }
-
-                      @if (canDelete()) {
-                        @if (event.archived_at) {
-                          <button
-                            type="button"
-                            class="px-3 py-1 text-xs font-medium text-[var(--color-text)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded-md transition-all cursor-pointer"
-                            [disabled]="archiving()"
-                            (click)="unarchiveEvent(event)"
-                          >
-                            {{ t('events.unarchive') }}
-                          </button>
-                        } @else {
-                          <button
-                            type="button"
-                            class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded-md transition-all cursor-pointer"
-                            (click)="requestArchive(event)"
-                          >
-                            {{ t('events.archive') }}
-                          </button>
-                        }
-                      }
-
-                      <button
-                        type="button"
-                        class="w-7 h-7 flex items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] hover:bg-white/[0.05] rounded-md transition-colors cursor-pointer"
-                        (click)="openEventDetail(event.id)"
-                        [appTooltip]="'Details & Roster'"
-                        tooltipPosition="left"
-                      >
-                        <app-icon name="more-vertical" size="0.875rem" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+        <ng-template dataTableCell="actions" let-event>
+          <div class="inline-flex items-center justify-end gap-1.5">
+            <button type="button" class="btn btn--ghost btn--sm" (click)="openEventDetail(event.id)">
+              {{ t('common.open') }}
+            </button>
+            @if (event.status === 'scheduled' && !event.archived_at) {
+              <button type="button" class="btn btn--primary btn--sm" (click)="join(event.id)">
+                {{ t('events.participate') }}
+              </button>
+            }
+            @if (canEdit() && event.status === 'cancelled' && !event.archived_at) {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                [disabled]="reopening()"
+                (click)="requestUncancel(event)"
+              >
+                {{ t('events.uncancel') }}
+              </button>
+            }
+            @if (canDelete()) {
+              @if (event.archived_at) {
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  [disabled]="archiving()"
+                  (click)="unarchiveEvent(event)"
+                >
+                  {{ t('events.unarchive') }}
+                </button>
+              } @else {
+                <button type="button" class="btn btn--ghost btn--sm" (click)="requestArchive(event)">
+                  {{ t('events.archive') }}
+                </button>
               }
             }
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Pagination Footer -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[var(--color-border)] text-xs text-[var(--color-text-tertiary)]">
-        <div>
-          Showing {{ paginationFrom() }} to {{ paginationTo() }} of {{ totalItems() }} events
-        </div>
-
-        <div class="flex items-center gap-1.5 self-center sm:self-auto">
-          <button
-            type="button"
-            class="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-            [disabled]="page() <= 1"
-            (click)="goToPage(page() - 1)"
-            aria-label="Previous page"
-          >
-            <app-icon name="chevron-left" size="0.75rem" />
-          </button>
-
-          @for (p of displayedPages(); track p) {
-            <button
-              type="button"
-              class="w-7 h-7 flex items-center justify-center rounded-md text-xs font-medium transition-all cursor-pointer"
-              [class.bg-[var(--color-primary)]]="p === page()"
-              [class.text-[var(--color-text)]]="p === page()"
-              [class.font-bold]="p === page()"
-              [class.text-[var(--color-text-tertiary)]]="p !== page()"
-              [class.hover:text-[var(--color-text)]]="p !== page()"
-              [class.hover:bg-[var(--color-surface-2)]]="p !== page()"
-              (click)="goToPage(p)"
-            >
-              {{ p }}
-            </button>
-          }
-
-          <button
-            type="button"
-            class="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-            [disabled]="page() >= totalPages()"
-            (click)="goToPage(page() + 1)"
-            aria-label="Next page"
-          >
-            <app-icon name="chevron-right" size="0.75rem" />
-          </button>
-        </div>
-
-        <div class="flex items-center gap-2 self-end sm:self-auto">
-          <select
-            class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-md px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-pointer outline-none transition-all"
-            [value]="pageSize()"
-            (change)="onPageSizeChange($event)"
-          >
-            <option value="10" class="bg-[var(--color-surface)] text-[var(--color-text)]">10 per page</option>
-            <option value="20" class="bg-[var(--color-surface)] text-[var(--color-text)]">20 per page</option>
-            <option value="50" class="bg-[var(--color-surface)] text-[var(--color-text)]">50 per page</option>
-          </select>
-        </div>
-      </div>
-    </div>
+          </div>
+        </ng-template>
+      </app-data-table>
+    </app-page-stack>
 
     @if (createOpen()) {
       <app-dialog [title]="t('events.new')" size="lg" (closed)="closeCreate()">
@@ -819,20 +532,56 @@ export class Events {
   protected readonly ctaEventsCount = signal(0);
   protected readonly finishedEventsCount = signal(0);
 
-  protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.totalItems() / this.pageSize())));
-  protected readonly paginationFrom = computed(() => (this.totalItems() === 0 ? 0 : (this.page() - 1) * this.pageSize() + 1));
-  protected readonly paginationTo = computed(() => Math.min(this.totalItems(), this.page() * this.pageSize()));
-  protected readonly displayedPages = computed<number[]>(() => {
-    const total = this.totalPages();
-    const current = this.page();
-    const pages: number[] = [];
-    for (let i = 1; i <= total; i++) {
-      if (i === 1 || i === total || (i >= current - 1 && i <= current + 1)) {
-        pages.push(i);
-      }
-    }
-    return pages;
-  });
+  protected readonly columns = computed<readonly DataTableColumn<EventView>[]>(() => [
+    {
+      key: 'title',
+      label: 'events.table.event',
+      sortable: true,
+      searchable: true,
+      accessor: (event) => event.title,
+    },
+    {
+      key: 'date',
+      label: 'events.table.date',
+      sortable: true,
+      accessor: (event) => event.start_time_utc ?? event.event_date_utc,
+    },
+    {
+      key: 'comp_name',
+      label: 'events.table.composition',
+      searchable: true,
+      accessor: (event) => event.comp_name,
+    },
+    {
+      key: 'status',
+      label: 'events.table.status',
+      sortable: true,
+      accessor: (event) => event.status,
+    },
+    { key: 'actions', label: 'events.table.actions', align: 'right' },
+  ]);
+
+  protected readonly statusTabs = computed<readonly DataTableTab[]>(() => [
+    { id: '', label: this.t('common.all'), count: this.totalEventsCount() },
+    {
+      id: 'live',
+      label: this.t('events.status.live'),
+      count: this.liveEventsCount(),
+      dotClass: 'bg-[var(--color-success)]',
+    },
+    {
+      id: 'scheduled',
+      label: this.t('events.status.scheduled'),
+      count: this.scheduledEventsCount(),
+      dotClass: 'bg-[var(--color-info)]',
+    },
+    {
+      id: 'stopped',
+      label: 'Finished',
+      count: this.finishedEventsCount(),
+      dotClass: 'bg-[var(--color-text-tertiary)]',
+    },
+  ]);
 
   protected async refreshNow(): Promise<void> {
     await Promise.all([this.load(), this.loadStats()]);
@@ -1018,47 +767,12 @@ export class Events {
     void this.load();
   }
 
-  private searchTimeout: ReturnType<typeof setTimeout> | null = null;
-  protected onSearchInput(event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.search.set(value);
-    if (this.searchTimeout) {
-      clearTimeout(this.searchTimeout);
-    }
-    this.searchTimeout = setTimeout(() => {
-      this.page.set(1);
-      void this.load();
-    }, 300);
-  }
-
-  protected onStatusDropdownChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.statusFilter.set(value);
-    this.page.set(1);
-    void this.load();
-  }
-
-  protected toggleDateSort(): void {
-    if (this.sortColumn() === 'date') {
-      this.sortOrder.set(this.sortOrder() === 'asc' ? 'desc' : 'asc');
-    } else {
-      this.sortColumn.set('date');
-      this.sortOrder.set('desc');
-    }
-    this.page.set(1);
-    void this.load();
-  }
-
-  protected goToPage(p: number): void {
-    if (p < 1 || p > this.totalPages() || p === this.page()) return;
-    this.page.set(p);
-    void this.load();
-  }
-
-  protected onPageSizeChange(event: Event): void {
-    const size = Number((event.target as HTMLSelectElement).value);
-    this.pageSize.set(size);
-    this.page.set(1);
+  protected onTablePageChange(change: DataTablePageChange): void {
+    this.page.set(change.page);
+    this.pageSize.set(change.pageSize);
+    this.search.set(change.search);
+    this.sortColumn.set(change.sort?.columnKey ?? null);
+    this.sortOrder.set(change.sort?.direction ?? null);
     void this.load();
   }
 

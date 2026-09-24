@@ -30,6 +30,18 @@ export type BuildRole =
   | 'battle_mount'
   | 'brawler';
 
+export interface BuildItemView {
+  loadout: 'main' | 'swap';
+  slot: string;
+  openalbion_item_type: string;
+  openalbion_item_id: number;
+  openalbion_item_name: string;
+  openalbion_item_icon?: string | null;
+  openalbion_item_tier?: string | null;
+  openalbion_item_quality: number;
+  openalbion_item_enchantment: number;
+}
+
 export interface BuildSummary {
   id: number;
   name: string;
@@ -39,6 +51,12 @@ export interface BuildSummary {
   created_by_username: string;
   updated_at: string;
   item_count: number;
+}
+
+export interface BuildDetail extends BuildSummary {
+  description?: string | null;
+  version?: number;
+  items: BuildItemView[];
 }
 
 export interface CompBuildView {

@@ -84,7 +84,8 @@ export async function createStandaloneEventThread(
     }
     const thread = await channel.threads.create({
       name: buildEventThreadName(event.title),
-      type: ChannelType.PublicThread,
+      type: ChannelType.PrivateThread,
+      invitable: false,
       autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
       reason: `Event #${event.id} ${sourceLabel} discussion`,
     });
@@ -171,10 +172,16 @@ export async function sendEventSignupMessage(
   sourceLabel: string,
 ): Promise<string | null> {
   try {
+    const roleIds = [...new Set(event.discord_role_ids ?? [])];
+    const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
     const message = await thread.send({
-      content: "Use the controls below to manage participation or operate the event.",
+      content: [
+        roleMentions,
+        "Use the controls below to manage participation or operate the event.",
+      ].filter(Boolean).join("\n"),
       embeds: [buildEventEmbed(event)],
       components: buildEventThreadActionRows(event),
+      allowedMentions: roleIds.length > 0 ? { parse: [], roles: roleIds } : { parse: [] },
     });
     console.log(
       `[${sourceLabel}] Published signup message in thread for event #${event.id}`,

@@ -25,6 +25,7 @@ import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 export interface WithdrawalQueueRow {
@@ -65,7 +66,17 @@ const GROUPING_FETCH_LIMIT = 500;
 @Component({
   selector: 'app-admin-withdrawals',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Dialog, Icon, TooltipDirective],
+  imports: [
+    Avatar,
+    PageHeader,
+    PageStack,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    StatusChip,
+    TooltipDirective,
+  ],
   styles: [COMPACT_FEATURE_STYLES, `
     .kpi-card {
       position: relative;
@@ -87,36 +98,6 @@ const GROUPING_FETCH_LIMIT = 500;
       height: 2.25rem;
       border-radius: 0.5rem;
       flex-shrink: 0;
-    }
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.25rem 0.625rem;
-      border-radius: 9999px;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .status-pill--withdrawn {
-      background: var(--color-success-container);
-      color: var(--color-success);
-      border: 1px solid var(--color-success);
-    }
-    .status-pill--requested {
-      background: var(--color-warning-container);
-      color: var(--color-warning);
-      border: 1px solid var(--color-warning);
-    }
-    .status-pill--pending {
-      background: var(--color-surface-2);
-      color: var(--color-primary);
-      border: 1px solid var(--color-primary);
-    }
-    .status-pill--rejected {
-      background: var(--color-error-container);
-      color: var(--color-error);
-      border: 1px solid var(--color-error);
     }
   `],
   template: `
@@ -242,37 +223,11 @@ const GROUPING_FETCH_LIMIT = 500;
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="status" let-row>
-          @switch (row.status) {
-            @case ('withdrawn') {
-              <span class="status-pill status-pill--withdrawn">
-                <app-icon name="check" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('requested') {
-              <span class="status-pill status-pill--requested">
-                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('pending') {
-              <span class="status-pill status-pill--pending">
-                <app-icon name="info" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('rejected') {
-              <span class="status-pill status-pill--rejected">
-                <app-icon name="close" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @default {
-              <span class="status-pill status-pill--pending">
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-          }
+          <app-status-chip
+            [value]="row.status"
+            [label]="statusLabel(row.status)"
+            [icon]="statusIcon(row.status)"
+          />
         </ng-template>
 
         <ng-template dataTableCell="amount" let-row>

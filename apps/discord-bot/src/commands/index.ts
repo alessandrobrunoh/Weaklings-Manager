@@ -37,6 +37,7 @@ import * as warn from './warn.js';
 import * as warns from './warns.js';
 import * as unwarn from './unwarn.js';
 import * as applicationsPanel from './applications-panel.js';
+import * as build from './build.js';
 
 /**
  * All registered bot commands.
@@ -67,4 +68,5 @@ export const commands = new Map<string, BotCommand>([
   ['warns', warns],
   ['unwarn', unwarn],
   ['applications-panel', applicationsPanel],
+  ['build', build],
 ]);

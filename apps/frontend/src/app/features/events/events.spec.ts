@@ -109,7 +109,7 @@ describe('Events', () => {
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('TOTAL EVENTS');
     expect(text).toContain('LIVE EVENTS');
-    expect(text).toContain('SCHEDULED');
+    expect(text).toContain('Scheduled');
     expect(text).toContain('CALL TO ARMS');
   });
 

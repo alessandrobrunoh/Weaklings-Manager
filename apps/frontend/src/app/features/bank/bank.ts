@@ -27,6 +27,7 @@ import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 function emptyPageChange(): DataTablePageChange {
@@ -54,6 +55,7 @@ function emptyPageChange(): DataTablePageChange {
     PageHeader,
     PageStack,
     RouterLink,
+    StatusChip,
     TooltipDirective,
   ],
   styles: `
@@ -90,36 +92,6 @@ function emptyPageChange(): DataTablePageChange {
       height: 2.25rem;
       border-radius: 0.5rem;
       flex-shrink: 0;
-    }
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.25rem 0.625rem;
-      border-radius: 9999px;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .status-pill--withdrawn {
-      background: var(--color-success-container);
-      color: var(--color-success);
-      border: 1px solid var(--color-success);
-    }
-    .status-pill--requested {
-      background: var(--color-warning-container);
-      color: var(--color-warning);
-      border: 1px solid var(--color-warning);
-    }
-    .status-pill--pending {
-      background: var(--color-surface-2);
-      color: var(--color-primary);
-      border: 1px solid var(--color-primary);
-    }
-    .status-pill--rejected {
-      background: var(--color-error-container);
-      color: var(--color-error);
-      border: 1px solid var(--color-error);
     }
   `,
   template: `
@@ -331,39 +303,11 @@ function emptyPageChange(): DataTablePageChange {
         </ng-template>
 
         <ng-template dataTableCell="status" let-row>
-          <div class="whitespace-nowrap">
-            @switch (row.status) {
-              @case ('withdrawn') {
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                  <app-icon name="check" size="0.75rem" />
-                  <span>Paid out</span>
-                </span>
-              }
-              @case ('requested') {
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                  <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                  <span>Requested</span>
-                </span>
-              }
-              @case ('pending') {
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
-                  <app-icon name="info" size="0.75rem" />
-                  <span>Pending</span>
-                </span>
-              }
-              @case ('rejected') {
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
-                  <app-icon name="close" size="0.75rem" />
-                  <span>Rejected</span>
-                </span>
-              }
-              @default {
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-surface-2)] text-[var(--color-text-tertiary)] border border-[var(--color-border)]">
-                  <span>{{ statusLabel(row.status) }}</span>
-                </span>
-              }
-            }
-          </div>
+          <app-status-chip
+            [value]="row.status"
+            [label]="statusLabel(row.status)"
+            [icon]="statusIcon(row.status)"
+          />
         </ng-template>
 
         <ng-template dataTableCell="amount" let-row>
