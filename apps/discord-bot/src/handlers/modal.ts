@@ -1,4 +1,4 @@
-import { ChannelType, type ModalSubmitInteraction, type TextChannel } from 'discord.js';
+import { ChannelType, type ModalSubmitInteraction } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { ApplicationView } from '../api/types.js';
 import {
@@ -16,11 +16,12 @@ import { createResponseEmbed } from '../embeds/theme.js';
 import { getSettingsService } from '../services/settings.js';
 import {
   fetchGuildChannel,
+  createPrivateTicketThread,
+  applicationThreadName,
   findReusableTicket,
   linkIngameName,
   reopenTicket,
-  ticketChannelName,
-  ticketOverwrites,
+  type TicketChannel,
 } from '../services/application-ticket.js';
 
 /**
@@ -86,22 +87,20 @@ async function submitApplication(
     await interaction.editReply({ embeds: [buildApplicationClosedEmbed(settings)] });
     return;
   }
-  const categoryId = settings.discord_applications_category_id;
-  if (!categoryId) {
+  const parentChannelId = settings.discord_applications_channel_id;
+  if (!parentChannelId) {
     throw new Error(
-      'La categoria delle application non è configurata. Aprila da Impostazioni Discord e scegli una categoria.',
+      'Il canale delle application non è configurato. Apri Impostazioni Discord e scegli il canale del pannello.',
     );
   }
-  const parent = await fetchGuildChannel(guild, categoryId);
-  if (!parent || parent.type !== ChannelType.GuildCategory) {
+  const parent = await fetchGuildChannel(guild, parentChannelId);
+  if (!parent || parent.type !== ChannelType.GuildText) {
     throw new Error(
-      'La categoria delle application non è valida. Riapri Impostazioni Discord e seleziona una categoria, non un canale.',
+      'Il canale delle application non è valido. Seleziona un canale testuale, non una categoria o un thread.',
     );
   }
   // A deleted/renamed management role can remain in settings after the guild
-  // was reconfigured. Discord rejects the whole channel-create request when a
-  // permission overwrite references such a role, so only include it when the
-  // role still exists.
+  // was reconfigured. Only invite its members when the role still exists.
   const configuredManageRoleId = settings.discord_applications_manage_role_id;
   const manageRole = configuredManageRoleId
     ? await guild.roles.fetch(configuredManageRoleId).catch(() => null)
@@ -122,7 +121,7 @@ async function submitApplication(
   const botId = interaction.client.user?.id;
 
   const reusable = await findReusableTicket(guild, api, interaction.user.id);
-  let channel: TextChannel;
+  let channel: TicketChannel;
   let application: ApplicationView;
   let reopened = false;
 
@@ -135,7 +134,7 @@ async function submitApplication(
       reusable.channel,
       reusable.application.id,
       ingameName || null,
-      parent.id,
+      settings.discord_applications_category_id ?? parent.id,
       botId,
     );
     channel = reusable.channel;
@@ -146,18 +145,14 @@ async function submitApplication(
       allowedMentions: { parse: [] },
     });
   } else {
-    channel = (await guild.channels.create({
-      name: ticketChannelName(interaction.user.username, interaction.user.id),
-      type: ChannelType.GuildText,
-      parent: parent.id,
-      permissionOverwrites: ticketOverwrites(
-        guild,
-        interaction.user.id,
-        manageRole?.id ?? null,
-        botId,
-      ),
-      reason: `Application opened by ${interaction.user.tag}`,
-    })) as TextChannel;
+    channel = await createPrivateTicketThread(
+      parent,
+      applicationThreadName(interaction.user.username, interaction.user.id),
+      guild,
+      interaction.user.id,
+      manageRole?.id ?? null,
+      `Application opened by ${interaction.user.tag}`,
+    );
     try {
       application = await api.post<ApplicationView>(
         'api/applications',

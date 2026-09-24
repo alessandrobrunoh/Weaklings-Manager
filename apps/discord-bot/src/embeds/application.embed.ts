@@ -255,6 +255,10 @@ export function buildApplicationPanelComponents(
         .setEmoji('📝')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(!settings.discord_applications_open),
+      new ButtonBuilder()
+        .setCustomId('ticket:create')
+        .setLabel('ticket')
+        .setStyle(ButtonStyle.Secondary),
     ),
   ];
 }
@@ -287,6 +291,10 @@ export function buildApplicationPanelV2Components(settings: GuildSettingsView): 
             .setEmoji('🎟️')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(!settings.discord_applications_open),
+          new ButtonBuilder()
+            .setCustomId('ticket:create')
+            .setLabel('ticket')
+            .setStyle(ButtonStyle.Secondary),
         ),
       ),
   ];

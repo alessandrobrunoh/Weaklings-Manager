@@ -80,6 +80,9 @@ test('application panel uses a Components V2 container with an in-card CTA', () 
   assert.equal(button.custom_id, 'application:create');
   assert.equal(button.label, 'Open an application');
   assert.equal(button.style, 2);
+  const ticketButton = container.components[2].components[1] as { custom_id?: string; label?: string };
+  assert.equal(ticketButton.custom_id, 'ticket:create');
+  assert.equal(ticketButton.label, 'ticket');
 });
 
 test('status announcement mentions everyone and uses the matching configured copy', () => {
@@ -116,6 +119,10 @@ test('closed application panel disables creation', () => {
   assert.match(embed.description ?? '', /CHIUSE/);
   assert.equal(
     buildApplicationPanelComponents({ ...settings, discord_applications_open: false })[0].components[0].data.disabled,
+    true,
+  );
+  assert.notEqual(
+    buildApplicationPanelComponents({ ...settings, discord_applications_open: false })[0].components[1].data.disabled,
     true,
   );
   const container = buildApplicationPanelV2Components({ ...settings, discord_applications_open: false })[0].toJSON();

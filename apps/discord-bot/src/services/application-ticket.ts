@@ -3,6 +3,7 @@ import {
   PermissionFlagsBits,
   type Guild,
   type GuildBasedChannel,
+  type ThreadChannel,
   type TextChannel,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
@@ -23,27 +24,31 @@ export interface TicketResult {
   readonly reopened: boolean;
 }
 
-/**
- * Turns a Discord username into something Discord accepts as a channel name.
- */
-export function ticketChannelName(username: string, fallback: string): string {
+/** Turns a Discord username into a safe, bounded thread name. */
+export function threadName(prefix: 'apply' | 'ticket', username: string, fallback: string): string {
   const safe = username
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 80);
-  return `ticket-${safe || fallback}`.slice(0, 100);
+    .slice(0, 80 - prefix.length - 1);
+  return `${prefix}-${safe || fallback}`.slice(0, 100);
 }
 
-/**
- * The permission overwrites an open ticket needs.
- *
- * Shared by the create and reopen paths precisely because a reopened ticket has
- * to end up in the same state a fresh one would: closing it revoked the
- * applicant's `ViewChannel`, so without re-applying this they would be handed a
- * ticket they cannot see.
- */
+export function ticketThreadName(username: string, fallback: string): string {
+  return threadName('ticket', username, fallback);
+}
+
+/** @deprecated Kept for compatibility with callers written before threads. */
+export function ticketChannelName(username: string, fallback: string): string {
+  return ticketThreadName(username, fallback);
+}
+
+export function applicationThreadName(username: string, fallback: string): string {
+  return threadName('apply', username, fallback);
+}
+
+/** Legacy channel overwrites retained for applications created before threads. */
 export function ticketOverwrites(
   guild: Guild,
   applicantId: string,
@@ -65,17 +70,59 @@ export function ticketOverwrites(
   ];
 }
 
+export type TicketChannel = TextChannel | ThreadChannel;
+
+/** Adds the applicant and every cached member of the configured manager role. */
+export async function grantThreadAccess(
+  thread: ThreadChannel,
+  applicantId: string,
+  manageRoleId: string | null,
+  guild: Guild,
+): Promise<void> {
+  await thread.members.add(applicantId);
+  if (!manageRoleId) return;
+  const role = await guild.roles.fetch(manageRoleId).catch(() => null);
+  for (const memberId of role?.members.keys() ?? []) {
+    await thread.members.add(memberId).catch(() => undefined);
+  }
+}
+
+/** Creates a private thread and limits membership to the applicant and managers. */
+export async function createPrivateTicketThread(
+  parent: TextChannel,
+  name: string,
+  guild: Guild,
+  applicantId: string,
+  manageRoleId: string | null,
+  reason: string,
+): Promise<ThreadChannel> {
+  const thread = await parent.threads.create({
+    name,
+    type: ChannelType.PrivateThread,
+    invitable: false,
+    autoArchiveDuration: 1440,
+    reason,
+  });
+  try {
+    await grantThreadAccess(thread, applicantId, manageRoleId, guild);
+  } catch (error) {
+    await thread.delete('Could not grant ticket access').catch(() => undefined);
+    throw error;
+  }
+  return thread;
+}
+
 /**
- * The applicant's archived ticket channel, when it is still there to reuse.
+ * The applicant's archived ticket thread/channel, when it is still there to reuse.
  *
- * Returns `null` for a ticket that was never resolved, or whose channel has
+ * Returns `null` for a ticket that was never resolved, or whose thread/channel has
  * since been deleted — in both cases the caller opens a fresh one.
  */
 export async function findReusableTicket(
   guild: Guild,
   api: ApiClient,
   discordId: string,
-): Promise<{ application: ApplicationView; channel: TextChannel } | null> {
+): Promise<{ application: ApplicationView; channel: TicketChannel } | null> {
   const latest = await api
     .get<ApplicationView | null>('api/applications/latest', discordId)
     .catch(() => null);
@@ -83,21 +130,21 @@ export async function findReusableTicket(
     return null;
   }
   const channel = await fetchGuildChannel(guild, latest.channel_id);
-  if (!channel || channel.type !== ChannelType.GuildText) {
+  if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.PrivateThread)) {
     return null;
   }
-  return { application: latest, channel: channel as TextChannel };
+  return { application: latest, channel: channel as TicketChannel };
 }
 
 /**
- * Brings an archived ticket back: same channel, same history, working buttons.
+ * Brings an archived ticket back: same thread/channel, same history, working buttons.
  */
 export async function reopenTicket(
   guild: Guild,
   api: ApiClient,
   settings: GuildSettingsView,
   applicantId: string,
-  channel: TextChannel,
+  channel: TicketChannel,
   applicationId: number,
   ingameName: string | null,
   categoryId: string,
@@ -109,24 +156,33 @@ export async function reopenTicket(
     applicantId,
   );
 
-  // Discord side only after the backend agreed, so a refused reopen never
-  // leaves a ticket sitting visibly in the active category.
-  await channel
-    .setParent(categoryId, { lockPermissions: false })
-    .catch(() => undefined);
-  // Replaced wholesale rather than patched: closing the ticket revoked the
-  // applicant's access, and the manage role may have changed since.
-  await channel.permissionOverwrites
-    .set(
-      ticketOverwrites(
-        guild,
-        applicantId,
-        settings.discord_applications_manage_role_id ?? null,
-        botId,
-      ),
-      'Application reopened',
-    )
-    .catch(() => undefined);
+  if ('setLocked' in channel) {
+    await channel.setLocked(false, 'Application reopened').catch(() => undefined);
+    await channel.setArchived(false, 'Application reopened').catch(() => undefined);
+    await grantThreadAccess(
+      channel,
+      applicantId,
+      settings.discord_applications_manage_role_id ?? null,
+      guild,
+    ).catch(() => undefined);
+  } else if ('setParent' in channel && 'permissionOverwrites' in channel) {
+    // Keep legacy channel applications reopenable while guilds migrate to
+    // private threads.
+    await channel
+      .setParent(categoryId, { lockPermissions: false })
+      .catch(() => undefined);
+    await channel.permissionOverwrites
+      .set(
+        ticketOverwrites(
+          guild,
+          applicantId,
+          settings.discord_applications_manage_role_id ?? null,
+          botId,
+        ),
+        'Application reopened',
+      )
+      .catch(() => undefined);
+  }
 
   return application;
 }
