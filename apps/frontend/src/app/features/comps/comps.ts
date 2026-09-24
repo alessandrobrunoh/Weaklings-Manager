@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -217,7 +217,10 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
     }
   `,
   template: `
-    <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
+    <app-page-header
+      [title]="page() === 'builds' ? t('comps.builds') : t('comps.title')"
+      [subtitle]="t('comps.subtitle')"
+    >
       <button
         type="button"
         class="btn btn--outline btn--sm"
@@ -736,7 +739,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
-              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', 'builds', row.id]">{{
+              <a class="btn btn--tonal btn--sm" [routerLink]="['/builds', row.id]">{{
                 t('common.open')
               }}</a>
               @if (canArchiveBuilds()) {
@@ -1122,6 +1125,9 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
   `,
 })
 export class Comps {
+  /** Which workspace is exposed by the route: compositions or builds. */
+  readonly page = input<'comps' | 'builds'>('comps');
+
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -1132,11 +1138,14 @@ export class Comps {
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly tab = signal<TabId>('comps');
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'comps', label: this.t('comps.comps') },
-    { id: 'builds', label: this.t('comps.builds') },
-    { id: 'categories', label: this.t('comps.categories') },
-  ]);
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
+    this.page() === 'comps'
+      ? [{ id: 'comps', label: this.t('comps.comps') }]
+      : [
+          { id: 'builds', label: this.t('comps.builds') },
+          { id: 'categories', label: this.t('comps.categories') },
+        ],
+  );
   protected readonly loading = signal(false);
   protected readonly categoriesLoading = signal(false);
   protected readonly loadFailed = signal(false);
@@ -1447,6 +1456,7 @@ export class Comps {
     this.translate.t(key, params);
 
   constructor() {
+    effect(() => this.tab.set(this.page()));
     void this.init();
     // Static application data; one fetch serves every dialog opened in the session.
     void this.albionAbilities
@@ -1457,7 +1467,11 @@ export class Comps {
 
   private async init(): Promise<void> {
     await this.loadCategories();
-    await this.loadComps();
+    if (this.page() === 'builds') {
+      await this.loadBuilds();
+    } else {
+      await this.loadComps();
+    }
   }
 
   protected async refreshNow(): Promise<void> {
@@ -1648,7 +1662,7 @@ export class Comps {
   }
 
   protected openBuild(row: BuildSummary): void {
-    void this.router.navigate(['/comps', 'builds', row.id]);
+    void this.router.navigate(['/builds', row.id]);
   }
 
   protected onCompsPageChange(event: DataTablePageChange): void {

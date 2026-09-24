@@ -613,7 +613,7 @@ interface BuildOptionGroup {
                           </button>
                           <a
                             class="text-xs text-secondary hover:text-[var(--color-text)]"
-                            [routerLink]="['/comps', 'builds', entry.build_id]"
+                            [routerLink]="['/builds', entry.build_id]"
                           >
                             Vai alla build &rarr;
                           </a>
@@ -949,7 +949,7 @@ interface BuildOptionGroup {
             <button type="button" class="btn btn--outline btn--sm" (click)="inspectedBuildId.set(null)">
               Chiudi
             </button>
-            <a class="btn btn--primary btn--sm" [routerLink]="['/comps', 'builds', inspected.id]" (click)="inspectedBuildId.set(null)">
+            <a class="btn btn--primary btn--sm" [routerLink]="['/builds', inspected.id]" (click)="inspectedBuildId.set(null)">
               Apri Scheda Build Completa &rarr;
             </a>
           </div>

@@ -166,7 +166,7 @@ const ITEM_TIERS = [
         [badge]="current.archived_at ? t('comps.archived') : undefined"
       >
         <div pageActions class="flex flex-wrap items-center gap-2">
-          <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
+          <a class="btn btn--ghost" routerLink="/builds">← {{ t('comps.builds') }}</a>
           <app-version-switcher
             [versions]="current.versions ?? []"
             [currentId]="current.id"
@@ -1427,7 +1427,7 @@ export class CompBuildDetailPage {
     if (buildId === this.build()?.id) {
       return;
     }
-    await this.router.navigate(['/comps', 'builds', buildId]);
+    await this.router.navigate(['/builds', buildId]);
   }
 
   protected async createVersion(): Promise<void> {
@@ -1441,7 +1441,7 @@ export class CompBuildDetailPage {
         this.api.post<BuildDetail>(`api/comps/builds/${build.id}/versions`, {}),
       );
       this.toasts.success(this.t('comps.versionCreated'));
-      await this.router.navigate(['/comps', 'builds', created.id]);
+      await this.router.navigate(['/builds', created.id]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {

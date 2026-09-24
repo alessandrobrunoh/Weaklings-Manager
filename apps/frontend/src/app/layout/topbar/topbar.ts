@@ -249,6 +249,7 @@ export class Topbar {
     if (path === '' || path === '/' || path === '/dashboard') return this.t('nav.dashboard');
     if (path.startsWith('/season')) return this.t('nav.season');
     if (path.startsWith('/events')) return this.t('nav.events');
+    if (path.startsWith('/builds')) return this.t('nav.builds');
     if (path.startsWith('/comps')) return this.t('nav.comps');
     if (path.startsWith('/battles')) return this.t('nav.battles');
     if (path.startsWith('/fights')) return 'Fights';
