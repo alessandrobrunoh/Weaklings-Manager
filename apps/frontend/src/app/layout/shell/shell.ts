@@ -64,19 +64,21 @@ import { Topbar } from '../topbar/topbar';
         </aside>
       }
       <!-- Desktop sidebar -->
-      <aside
-        class="workspace-sidebar hidden md:flex flex-col shrink-0"
-        [style.width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
-        [style.min-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
-        [style.max-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
-      >
-        <app-sidebar
-          [sections]="navSections()"
-          [ariaLabelKey]="navAriaLabelKey()"
-          [collapsed]="isSidebarCollapsed()"
-          (toggleCollapse)="toggleSidebarCollapse()"
-        />
-      </aside>
+      @if (inPlatform() || sidebarEnabled()) {
+        <aside
+          class="workspace-sidebar hidden md:flex flex-col shrink-0"
+          [style.width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+          [style.min-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+          [style.max-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+        >
+          <app-sidebar
+            [sections]="navSections()"
+            [ariaLabelKey]="navAriaLabelKey()"
+            [collapsed]="isSidebarCollapsed()"
+            (toggleCollapse)="toggleSidebarCollapse()"
+          />
+        </aside>
+      }
 
       <!-- Mobile drawer -->
       @if (isDrawerOpen()) {
@@ -91,13 +93,15 @@ import { Topbar } from '../topbar/topbar';
             @if (!inPlatform()) {
               <app-tenant-rail (navigate)="closeDrawer()" />
             }
-            <app-sidebar
-              class="min-w-0 flex-1"
-              [sections]="navSections()"
-              [ariaLabelKey]="navAriaLabelKey()"
-              [collapsed]="false"
-              (navigate)="closeDrawer()"
-            />
+            @if (inPlatform() || sidebarEnabled()) {
+              <app-sidebar
+                class="min-w-0 flex-1"
+                [sections]="navSections()"
+                [ariaLabelKey]="navAriaLabelKey()"
+                [collapsed]="false"
+                (navigate)="closeDrawer()"
+              />
+            }
           </div>
         </div>
       }
@@ -127,6 +131,11 @@ export class Shell {
   protected readonly isSidebarCollapsed = signal(false);
   protected readonly inAdmin = signal(this.shouldUseAdminNavigation(this.router.url));
   protected readonly inPlatform = signal(isPlatformUrl(this.router.url));
+  /** The tenant sidebar is enabled by default for tenant-less/platform pages. */
+  protected readonly sidebarEnabled = computed(() => {
+    const profile = this.auth.profile();
+    return !profile?.tenant_id || (profile.features ?? []).includes('sidebar');
+  });
   protected readonly navSections = computed(() => {
     if (this.inPlatform()) {
       return PLATFORM_NAV_SECTIONS;

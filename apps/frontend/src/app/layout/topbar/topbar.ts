@@ -82,16 +82,18 @@ import type { NavSection } from '../sidebar/sidebar';
     >
       <div class="flex min-w-0 items-center gap-2">
         <!-- Mobile menu toggle -->
-        <button
-          type="button"
-          class="btn btn--ghost btn--icon md:hidden"
-          (click)="menuToggle.emit()"
-          [appTooltip]="t('nav.openMenu')"
-          tooltipPosition="bottom"
-          [attr.aria-label]="t('nav.openMenu')"
-        >
-          <app-icon name="menu" size="1.25rem" />
-        </button>
+        @if (sidebarEnabled()) {
+          <button
+            type="button"
+            class="btn btn--ghost btn--icon md:hidden"
+            (click)="menuToggle.emit()"
+            [appTooltip]="t('nav.openMenu')"
+            tooltipPosition="bottom"
+            [attr.aria-label]="t('nav.openMenu')"
+          >
+            <app-icon name="menu" size="1.25rem" />
+          </button>
+        }
 
         <!-- Open route, in the position Discord gives the open channel -->
         <div class="topbar__route">
@@ -229,6 +231,11 @@ export class Topbar {
 
   /** Server currently in scope, shown next to the route on wide screens. */
   protected readonly serverName = computed(() => this.auth.profile()?.tenant_name?.trim() ?? '');
+  /** Keep the mobile menu affordance aligned with the platform feature flag. */
+  protected readonly sidebarEnabled = computed(() => {
+    const profile = this.auth.profile();
+    return !profile?.tenant_id || (profile.features ?? []).includes('sidebar');
+  });
 
   protected readonly currentRouteTitle = computed(() => {
     const url = this.currentUrl();

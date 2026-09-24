@@ -20,6 +20,7 @@ mod m20260917_000001_alliance_shares_comp;
 mod m20260918_000001_alliance_membership_discord_role;
 mod m20260918_000001_event_sync_links;
 mod m20260921_000001_repair_alliance_share_artifact_types;
+mod m20260922_000001_sidebar_feature;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -28,6 +29,8 @@ pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
 pub const FEATURE_REGOLAMENTO: &str = "regolamento";
 /// Catalog key for premium split functions.
 pub const FEATURE_SPLITS_PAID: &str = "splits.paid";
+/// Catalog key for the tenant navigation sidebar.
+pub const FEATURE_SIDEBAR: &str = "sidebar";
 
 /// Platform permission: provision / suspend / resume tenants.
 pub const PERM_TENANTS_MANAGE: &str = "tenants.manage";
@@ -57,6 +60,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260918_000001_alliance_membership_discord_role::Migration),
             Box::new(m20260918_000001_event_sync_links::Migration),
             Box::new(m20260921_000001_repair_alliance_share_artifact_types::Migration),
+            Box::new(m20260922_000001_sidebar_feature::Migration),
         ]
     }
 }
@@ -100,7 +104,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 13);
+        assert_eq!(control.len(), 15);
     }
 
     #[tokio::test]
@@ -212,7 +216,7 @@ mod tests {
             .expect("row")
             .try_get_by_index(0)
             .expect("count");
-        assert_eq!(feature_count, 15);
+        assert_eq!(feature_count, 16);
 
         // Independent bookkeeping: applying control migrations must not mark
         // tenant migrations as done, and vice versa.
