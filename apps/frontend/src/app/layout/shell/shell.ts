@@ -58,27 +58,25 @@ import { Topbar } from '../topbar/topbar';
   `,
   template: `
     <div class="workspace flex h-dvh overflow-hidden">
-      @if (!inPlatform()) {
+      @if (!inPlatform() && tenantRailEnabled() && !isTenantRailCollapsed()) {
         <aside class="hidden md:flex shrink-0" aria-hidden="false">
-          <app-tenant-rail />
+          <app-tenant-rail (toggleCollapse)="toggleTenantRail()" />
         </aside>
       }
       <!-- Desktop sidebar -->
-      @if (inPlatform() || sidebarEnabled()) {
-        <aside
-          class="workspace-sidebar hidden md:flex flex-col shrink-0"
-          [style.width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
-          [style.min-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
-          [style.max-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
-        >
-          <app-sidebar
-            [sections]="navSections()"
-            [ariaLabelKey]="navAriaLabelKey()"
-            [collapsed]="isSidebarCollapsed()"
-            (toggleCollapse)="toggleSidebarCollapse()"
-          />
-        </aside>
-      }
+      <aside
+        class="workspace-sidebar hidden md:flex flex-col shrink-0"
+        [style.width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+        [style.min-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+        [style.max-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+      >
+        <app-sidebar
+          [sections]="navSections()"
+          [ariaLabelKey]="navAriaLabelKey()"
+          [collapsed]="isSidebarCollapsed()"
+          (toggleCollapse)="toggleSidebarCollapse()"
+        />
+      </aside>
 
       <!-- Mobile drawer -->
       @if (isDrawerOpen()) {
@@ -90,25 +88,31 @@ import { Topbar } from '../topbar/topbar';
             aria-label="Close menu"
           ></button>
           <div class="relative flex h-full w-[19rem] max-w-[85%] bg-[var(--color-chrome)]">
-            @if (!inPlatform()) {
-              <app-tenant-rail (navigate)="closeDrawer()" />
-            }
-            @if (inPlatform() || sidebarEnabled()) {
-              <app-sidebar
-                class="min-w-0 flex-1"
-                [sections]="navSections()"
-                [ariaLabelKey]="navAriaLabelKey()"
-                [collapsed]="false"
+            @if (!inPlatform() && tenantRailEnabled()) {
+              <app-tenant-rail
                 (navigate)="closeDrawer()"
+                (toggleCollapse)="closeDrawer()"
               />
             }
+            <app-sidebar
+              class="min-w-0 flex-1"
+              [sections]="navSections()"
+              [ariaLabelKey]="navAriaLabelKey()"
+              [collapsed]="false"
+              (navigate)="closeDrawer()"
+            />
           </div>
         </div>
       }
 
       <!-- Main column -->
       <div class="workspace-content flex flex-1 flex-col min-w-0 overflow-hidden">
-        <app-topbar (menuToggle)="toggleDrawer()" />
+        <app-topbar
+          [tenantRailCollapsed]="isTenantRailCollapsed()"
+          [tenantRailCanToggle]="!inPlatform() && tenantRailEnabled()"
+          (menuToggle)="toggleDrawer()"
+          (toggleTenantRail)="toggleTenantRail()"
+        />
         <main #main class="workspace-main flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div class="workspace-main__inner w-full min-w-0">
             <router-outlet />
@@ -129,10 +133,11 @@ export class Shell {
 
   protected readonly isDrawerOpen = signal(false);
   protected readonly isSidebarCollapsed = signal(false);
+  protected readonly isTenantRailCollapsed = signal(false);
   protected readonly inAdmin = signal(this.shouldUseAdminNavigation(this.router.url));
   protected readonly inPlatform = signal(isPlatformUrl(this.router.url));
-  /** The tenant sidebar is enabled by default for tenant-less/platform pages. */
-  protected readonly sidebarEnabled = computed(() => {
+  /** The tenant rail is enabled by default for tenant-less/platform pages. */
+  protected readonly tenantRailEnabled = computed(() => {
     const profile = this.auth.profile();
     return !profile?.tenant_id || (profile.features ?? []).includes('sidebar');
   });
@@ -158,6 +163,12 @@ export class Shell {
   }
 
   constructor() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        this.isTenantRailCollapsed.set(localStorage.getItem('tenant_rail_collapsed') === 'true');
+      }
+    } catch {}
+
     try {
       if (typeof localStorage !== 'undefined') {
         this.isSidebarCollapsed.set(
@@ -201,6 +212,18 @@ export class Shell {
       try {
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem('weaklings_sidebar_collapsed', String(next));
+        }
+      } catch {}
+      return next;
+    });
+  }
+
+  protected toggleTenantRail(): void {
+    this.isTenantRailCollapsed.update((collapsed) => {
+      const next = !collapsed;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('tenant_rail_collapsed', String(next));
         }
       } catch {}
       return next;

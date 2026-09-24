@@ -22,6 +22,7 @@ mod m20260918_000001_event_sync_links;
 mod m20260921_000001_repair_alliance_share_artifact_types;
 mod m20260922_000001_sidebar_feature;
 mod m20260922_000002_default_tenant;
+mod m20260922_000003_tenant_rail_feature;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -63,6 +64,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260921_000001_repair_alliance_share_artifact_types::Migration),
             Box::new(m20260922_000001_sidebar_feature::Migration),
             Box::new(m20260922_000002_default_tenant::Migration),
+            Box::new(m20260922_000003_tenant_rail_feature::Migration),
         ]
     }
 }
@@ -106,7 +108,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 16);
+        assert_eq!(control.len(), 17);
     }
 
     #[tokio::test]

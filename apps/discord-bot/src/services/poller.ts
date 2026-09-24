@@ -565,7 +565,7 @@ export class Poller {
         this.api.get<PaginatedData<EventView>>("api/events", undefined, {
           page: 1,
           limit: 50,
-          sort: "event_date",
+          sort: "start_time_utc",
           order: "asc",
         }),
         this.settings.eventsChannelId(),

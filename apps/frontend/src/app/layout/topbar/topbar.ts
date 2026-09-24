@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   inject,
+  input,
   output,
   signal,
 } from '@angular/core';
@@ -81,19 +82,29 @@ import type { NavSection } from '../sidebar/sidebar';
       aria-label="Application toolbar"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <!-- Mobile menu toggle -->
-        @if (sidebarEnabled()) {
+        @if (tenantRailCollapsed() && tenantRailCanToggle()) {
           <button
             type="button"
-            class="btn btn--ghost btn--icon md:hidden"
-            (click)="menuToggle.emit()"
-            [appTooltip]="t('nav.openMenu')"
+            class="btn btn--ghost btn--icon hidden md:inline-flex"
+            (click)="toggleTenantRail.emit()"
+            [appTooltip]="t('nav.expand')"
             tooltipPosition="bottom"
-            [attr.aria-label]="t('nav.openMenu')"
+            [attr.aria-label]="t('nav.expand')"
           >
-            <app-icon name="menu" size="1.25rem" />
+            <app-icon name="chevron-right" size="1.25rem" />
           </button>
         }
+        <!-- Mobile menu toggle -->
+        <button
+          type="button"
+          class="btn btn--ghost btn--icon md:hidden"
+          (click)="menuToggle.emit()"
+          [appTooltip]="t('nav.openMenu')"
+          tooltipPosition="bottom"
+          [attr.aria-label]="t('nav.openMenu')"
+        >
+          <app-icon name="menu" size="1.25rem" />
+        </button>
 
         <!-- Open route, in the position Discord gives the open channel -->
         <div class="topbar__route">
@@ -225,17 +236,15 @@ export class Topbar {
   protected readonly translate = inject(TranslateService);
   protected readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
+  readonly tenantRailCollapsed = input(false);
+  readonly tenantRailCanToggle = input(true);
+  readonly toggleTenantRail = output<void>();
 
   protected readonly currentUrl = signal(this.router.url);
   protected readonly isDashboard = computed(() => this.checkIsDashboard(this.currentUrl()));
 
   /** Server currently in scope, shown next to the route on wide screens. */
   protected readonly serverName = computed(() => this.auth.profile()?.tenant_name?.trim() ?? '');
-  /** Keep the mobile menu affordance aligned with the platform feature flag. */
-  protected readonly sidebarEnabled = computed(() => {
-    const profile = this.auth.profile();
-    return !profile?.tenant_id || (profile.features ?? []).includes('sidebar');
-  });
 
   protected readonly currentRouteTitle = computed(() => {
     const url = this.currentUrl();
