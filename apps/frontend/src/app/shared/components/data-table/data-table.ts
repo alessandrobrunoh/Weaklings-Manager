@@ -436,9 +436,17 @@ export class DataTable<T> {
   private applyFilters(rows: readonly T[]): T[] {
     const search = this.search().trim().toLowerCase();
     const columnFilters = this.columnFilters();
-    const searchableColumns = this.columns().filter(
+    const columns = this.columns();
+    const explicitlySearchable = columns.filter(
       (column) => column.searchable && column.accessor,
     );
+    // A visible search box must always have a useful scope. Older table
+    // descriptors did not mark every text column with `searchable`, so fall
+    // back to all accessor-backed columns when none was explicitly opted in.
+    const searchableColumns =
+      explicitlySearchable.length > 0
+        ? explicitlySearchable
+        : columns.filter((column) => column.accessor);
     return rows.filter((row) => {
       if (search && searchableColumns.length > 0) {
         const matches = searchableColumns.some((column) => {

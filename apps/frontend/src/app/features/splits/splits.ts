@@ -1160,10 +1160,12 @@ export class Splits {
   protected readonly showParticipantSearch = signal(false);
   protected readonly participantSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly searchingRoster = signal(false);
+  private participantSearchRequest = 0;
 
   protected readonly showEventSearch = signal(false);
   protected readonly eventSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly eventSearchLoading = signal(false);
+  private eventSearchRequest = 0;
 
   protected readonly trackById = (row: SplitSummary): number => row.id;
 
@@ -1586,6 +1588,7 @@ export class Splits {
     dateFrom: string;
     dateTo: string;
   }): Promise<void> {
+    const request = ++this.eventSearchRequest;
     this.eventSearchLoading.set(true);
     try {
       const params: Record<string, string> = { page: '1', limit: '50' };
@@ -1601,18 +1604,24 @@ export class Splits {
       const res = await firstValueFrom(
         this.api.get<PaginatedData<EventView>>('/api/events', params),
       );
-      this.eventSearchOptions.set(
-        res.items.map((event) => ({
-          id: event.id,
-          title: event.title,
-          subtitle: this.formatDate(event.event_date_utc),
-          chip: event.status,
-        })),
-      );
+      if (request === this.eventSearchRequest) {
+        this.eventSearchOptions.set(
+          res.items.map((event) => ({
+            id: event.id,
+            title: event.title,
+            subtitle: this.formatDate(event.event_date_utc),
+            chip: event.status,
+          })),
+        );
+      }
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (request === this.eventSearchRequest) {
+        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      }
     } finally {
-      this.eventSearchLoading.set(false);
+      if (request === this.eventSearchRequest) {
+        this.eventSearchLoading.set(false);
+      }
     }
   }
 
@@ -1621,9 +1630,11 @@ export class Splits {
     dateFrom: string;
     dateTo: string;
   }): Promise<void> {
+    const request = ++this.participantSearchRequest;
     const query = filters.search.trim();
     if (!query) {
       this.participantSearchOptions.set([]);
+      this.searchingRoster.set(false);
       return;
     }
     this.searchingRoster.set(true);
@@ -1637,17 +1648,23 @@ export class Splits {
           username: query,
         }),
       );
-      this.participantSearchOptions.set(
-        usersPage.items.map((user) => ({
-          id: user.id,
-          title: user.username,
-          chip: user.role,
-        })),
-      );
+      if (request === this.participantSearchRequest) {
+        this.participantSearchOptions.set(
+          usersPage.items.map((user) => ({
+            id: user.id,
+            title: user.username,
+            chip: user.role,
+          })),
+        );
+      }
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (request === this.participantSearchRequest) {
+        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      }
     } finally {
-      this.searchingRoster.set(false);
+      if (request === this.participantSearchRequest) {
+        this.searchingRoster.set(false);
+      }
     }
   }
 

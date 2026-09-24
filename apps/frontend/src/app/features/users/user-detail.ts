@@ -959,7 +959,10 @@ export class UserDetailPage {
       this.rosterLoading.set(true);
       try {
         const roster = await firstValueFrom(
-          this.api.get<PaginatedData<AlbionGuildMember> | AlbionGuildMember[]>('api/albion/guild/roster'),
+          this.api.get<PaginatedData<AlbionGuildMember> | AlbionGuildMember[]>(
+            'api/albion/guild/roster',
+            { limit: 1000 },
+          ),
         );
         this.rosterMembers.set(asPaginated(roster));
       } catch {
