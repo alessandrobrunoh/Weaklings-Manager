@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -67,6 +68,7 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
 @Component({
   selector: 'app-admin-progression',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [ErrorState, Loading, PageHeader, PageStack, SearchableSelect],
   template: `
     <app-page-header

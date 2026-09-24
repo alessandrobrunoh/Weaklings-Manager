@@ -77,6 +77,19 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     ViewToggle,
   ],
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
+      box-shadow: none;
+    }
     .intel-trend-chart { min-inline-size: 0; }
     .intel-trend-chart__header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 0.5rem 1rem; }
     .intel-trend-chart__title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }

@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -30,7 +31,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
   selector: 'app-admin-permissions',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [EmptyState, ErrorState, Icon, Loading, PageHeader, PageStack, TooltipDirective],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     :host {
       display: block;
     }
@@ -128,7 +129,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
       border-radius: 0.5rem;
       flex-shrink: 0;
     }
-  `,
+  `],
   template: `
     <app-page-header
       [title]="t('admin.permissions.title')"

@@ -41,6 +41,19 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
   selector: 'app-regear-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack, Icon, TooltipDirective],
+  styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section {
+      min-width: 0;
+    }
+    .workbench-page .card {
+      border-radius: 0.5rem;
+    }
+  `,
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -71,7 +84,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
         }
       </app-page-header>
 
-      <app-page-stack>
+      <app-page-stack class="workbench-page">
         <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
           <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">

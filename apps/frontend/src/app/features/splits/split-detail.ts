@@ -96,6 +96,20 @@ function parsePercentageInput(raw: string): number | null {
     SearchDialog,
     StatusChip,
   ],
+  styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .card {
+      border-radius: 0.5rem;
+    }
+  `,
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -187,7 +201,7 @@ function parsePercentageInput(raw: string): number | null {
           }
         </app-page-header>
 
-        <app-page-stack>
+        <app-page-stack class="workbench-page">
           <section class="card p-4 sm:p-5">
             <div class="mb-1.5 flex flex-wrap items-center gap-2">
               <span class="chip" [class]="'chip chip--' + statusTone(detail.status)">

@@ -47,9 +47,24 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       display: block;
       width: 100%;
     }
+    :host {
+      color: var(--color-text);
+    }
+    .events-page > section,
+    .events-page > article,
+    .events-page .kpi-card {
+      border-radius: var(--radius-sm, 2px);
+      box-shadow: none;
+    }
+    .events-page input,
+    .events-page select,
+    .events-page button {
+      border-radius: var(--radius-sm, 2px);
+    }
     .events-page {
       max-width: 1400px;
       margin: 0 auto;
+      padding-inline: 0.75rem;
     }
     .kpi-card {
       background-color: var(--color-surface);

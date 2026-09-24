@@ -19,11 +19,8 @@ import { filterNavSections, type NavSection } from '../nav';
 export type { NavItem, NavSection } from '../nav';
 
 /**
- * Channel sidebar.
- *
- * Mirrors the Discord client: the active server's name heads the column,
- * nav groups read as collapsible channel categories, and each entry is a
- * channel row that lights up when it is the open route.
+ * Persistent navigation sidebar. The active tenant heads the column, groups
+ * remain collapsible, and permission/feature filtering stays in `nav.ts`.
  */
 @Component({
   selector: 'app-sidebar',
@@ -36,7 +33,7 @@ export type { NavItem, NavSection } from '../nav';
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: var(--color-chrome);
+      background: color-mix(in srgb, var(--color-chrome) 92%, var(--color-bg));
     }
     /* Server header: full-width button, hover tint, hairline under it —
        the one element that carries the server's identity in the chrome. */
@@ -46,14 +43,14 @@ export type { NavItem, NavSection } from '../nav';
       gap: 0.5rem;
       width: 100%;
       height: var(--chrome-height, 3rem);
-      padding-inline: 1rem;
+      padding-inline: 0.75rem;
       border: 0;
       border-bottom: 1px solid var(--color-border);
       background: transparent;
       color: var(--color-text);
-      font-family: var(--font-display);
-      font-size: 0.9375rem;
-      font-weight: 800;
+      font-family: var(--font-sans);
+      font-size: 0.8125rem;
+      font-weight: 600;
       letter-spacing: -0.01em;
       text-align: left;
       text-decoration: none;
@@ -93,13 +90,13 @@ export type { NavItem, NavSection } from '../nav';
       align-items: center;
       gap: 0.25rem;
       width: 100%;
-      padding: 1rem 0.5rem 0.25rem;
+      padding: 0.75rem 0.5rem 0.25rem;
       border: 0;
       background: transparent;
       color: var(--color-text-tertiary);
       font-family: var(--font-sans);
       font-size: 0.6875rem;
-      font-weight: 700;
+      font-weight: 500;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       cursor: pointer;

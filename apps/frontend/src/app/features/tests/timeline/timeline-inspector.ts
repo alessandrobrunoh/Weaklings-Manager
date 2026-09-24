@@ -285,6 +285,10 @@ interface TargetSection {
     </div>
   `,
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
     .group-toggle {
       display: flex;
       width: 100%;

@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -57,6 +58,7 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
 @Component({
   selector: 'app-admin-transactions',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, RouterLink, SearchDialog],
   template: `
     <app-page-header [title]="t('admin.transactions.title')" [subtitle]="t('admin.transactions.hint')">

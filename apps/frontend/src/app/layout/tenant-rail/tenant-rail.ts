@@ -12,10 +12,8 @@ import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 /**
- * Discord-style server rail: one circle per tenant the session can enter,
- * plus the "add a server" affordance pinned under a divider — the same
- * shape and behaviour as the client's own guild list (squircle-on-hover,
- * white selection pill on the left edge).
+ * Tenant rail: compact, persistent tenant switching with an add-server
+ * affordance. Tenant selection remains an explicit, labelled control.
  */
 @Component({
   selector: 'app-tenant-rail',
@@ -27,8 +25,9 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
       flex-direction: column;
       flex-shrink: 0;
       height: 100%;
-      width: var(--rail-width, 72px);
+      width: var(--rail-width, 56px);
       background: var(--color-rail);
+      border-right: 1px solid var(--color-border);
     }
     .rail__list {
       scrollbar-width: none;
@@ -41,7 +40,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
       display: flex;
       align-items: center;
       justify-content: center;
-      padding-block: 0.25rem;
+      padding-block: 0.125rem;
     }
     /* Selection pill on the left edge: 8px stub on hover, 40px when active. */
     .rail__pill {
@@ -78,21 +77,18 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
       font-size: 1rem;
       cursor: pointer;
       text-decoration: none;
-      transition:
-        border-radius 0.15s cubic-bezier(0.16, 1, 0.3, 1),
-        background-color 0.15s ease,
-        color 0.15s ease;
+      transition: background-color 0.15s ease, color 0.15s ease;
     }
     .rail__orb--round {
-      border-radius: var(--radius-pills);
+      border-radius: var(--radius-buttons);
     }
     .rail__orb--round:hover,
     .rail__orb--active {
       border-radius: var(--radius-cards);
     }
     .rail__orb:hover:not(.rail__orb--active) {
-      background: var(--color-primary);
-      color: var(--color-on-primary);
+      background: var(--color-primary-container);
+      color: var(--color-primary);
     }
     .rail__orb--active {
       background: var(--color-primary);
@@ -113,9 +109,8 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     }
     .rail__divider {
       width: 32px;
-      height: 2px;
+      height: 1px;
       margin: 0.25rem auto;
-      border-radius: 1px;
       background: var(--color-border);
     }
   `,

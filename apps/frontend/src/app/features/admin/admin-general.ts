@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -48,7 +49,7 @@ const DEFAULTS: Record<keyof BrandColors, string> = {
   selector: 'app-admin-general',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, PageHeader, PageStack],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .slot {
       display: flex;
       align-items: flex-start;
@@ -98,7 +99,7 @@ const DEFAULTS: Record<keyof BrandColors, string> = {
       font-size: 1.5rem;
       letter-spacing: -0.01em;
     }
-  `,
+  `],
   template: `
     <app-page-header
       [title]="t('admin.general.title')"

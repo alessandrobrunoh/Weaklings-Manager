@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -275,7 +276,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
   selector: 'app-admin-applications',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, Loading, PageHeader, PageStack, SearchableSelect],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .status-card {
       display: flex;
       flex-wrap: wrap;
@@ -330,7 +331,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
       font-size: 0.8125rem;
       font-weight: 600;
     }
-  `,
+  `],
   template: `
     <form (submit)="save($event)">
       <app-page-header

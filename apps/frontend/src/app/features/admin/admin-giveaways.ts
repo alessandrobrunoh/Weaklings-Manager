@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -41,6 +42,7 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
 @Component({
   selector: 'app-admin-giveaways',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [
     DataTable,
     Loading,

@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -23,6 +24,7 @@ const REGIONS = [
 @Component({
   selector: 'app-platform-tenant-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Icon, PageHeader, PageStack, RouterLink],
   template: `
     <app-page-header

@@ -149,6 +149,10 @@ export interface UnitOptionGroup {
     </div>
   `,
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
     .row--selected > td {
       background-color: var(--color-primary-container);
     }

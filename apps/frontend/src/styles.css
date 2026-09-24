@@ -1668,3 +1668,82 @@ app-shell .data-table__row--clickable:focus-visible {
     animation-iteration-count: 1;
   }
 }
+
+/* Zed workbench foundation: quiet paper canvas, hairline structure, and one
+   blue anchor. Legacy feature classes keep their names and behavior while
+   the authenticated shell uses this compact geometry. */
+:root,
+html.light {
+  color-scheme: light;
+  --color-rail: #f4f4f2;
+  --color-chrome: #ffffff;
+  --color-bg: #e5e7eb;
+  --color-surface: #ffffff;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f4f4f2;
+  --color-surface-3: #e5e7eb;
+  --color-surface-muted: #f4f4f2;
+  --color-surface-hover: #e6effe;
+  --color-surface-active: #e6effe;
+  --color-border: #dadde2;
+  --color-border-strong: #b2b5bb;
+  --color-overlay: rgb(40 44 51 / 48%);
+  --color-text: #3a3d43;
+  --color-text-heading: #1348dc;
+  --color-text-secondary: #464b57;
+  --color-text-tertiary: #5d636f;
+  --color-text-muted: #6a7282;
+  --color-text-steel: #878a98;
+  --color-text-disabled: #b2b5bb;
+  --color-primary: color-mix(in oklab, var(--brand-primary, #1348dc) 88%, #000);
+  --color-primary-hover: color-mix(in oklab, var(--color-primary) 84%, #000);
+  --color-primary-active: color-mix(in oklab, var(--color-primary) 70%, #000);
+  --color-primary-container: color-mix(in oklab, var(--color-primary) 14%, transparent);
+  --color-primary-subtle: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  --color-on-primary: #ffffff;
+  --rail-width: 56px;
+  --sidebar-width: 232px;
+  --chrome-height: 44px;
+  --page-max-width: 1200px;
+  --page-gap: 12px;
+  --element-gap: 6px;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-cards: 2px;
+  --radius-panels: 2px;
+  --radius-inputs: 2px;
+  --radius-buttons: 2px;
+  --shadow-subtle: rgba(111, 123, 144, 0.1) 0 -2px 0 0 inset;
+  --shadow-subtle-2: rgba(111, 123, 144, 0.05) 0 -2px 0 0 inset;
+  --shadow-xl: 0 1px 3px rgb(40 44 51 / 10%);
+  --font-display: 'IBM Plex Serif', 'Source Serif Pro', Georgia, serif;
+  --font-sans: 'Inter', 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Geist Mono', ui-monospace, monospace;
+}
+
+html.dark {
+  --color-rail: #282c33;
+  --color-chrome: #2f343e;
+  --color-bg: #20242b;
+  --color-surface: #2f343e;
+  --color-surface-1: #2f343e;
+  --color-surface-2: #3a3f49;
+  --color-surface-3: #464b57;
+  --color-surface-muted: #3a3f49;
+  --color-surface-hover: #464b57;
+  --color-surface-active: #3f4652;
+  --color-border: #555c67;
+  --color-border-strong: #6a7282;
+  --color-overlay: rgb(0 0 0 / 62%);
+  --color-text: #f4f4f2;
+  --color-text-heading: #8ec5ff;
+  --color-text-secondary: #dadde2;
+  --color-text-tertiary: #b2b5bb;
+  --color-text-muted: #a0a7b2;
+  --color-text-steel: #878a98;
+  --color-text-disabled: #6a7282;
+  --color-primary: color-mix(in oklab, var(--brand-primary, #2b7fff) 92%, #fff);
+  --color-primary-container: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  --color-primary-subtle: color-mix(in oklab, var(--color-primary) 12%, transparent);
+}

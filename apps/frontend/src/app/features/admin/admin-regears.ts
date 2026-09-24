@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -46,7 +47,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
   selector: 'app-admin-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ErrorState, Icon, Loading, PageHeader, PageStack],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -68,7 +69,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
       border-radius: 0.5rem;
       flex-shrink: 0;
     }
-  `,
+  `],
   template: `
     <app-page-header
       [title]="t('admin.regears.title')"

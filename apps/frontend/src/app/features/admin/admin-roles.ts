@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -41,6 +42,7 @@ interface NewRoleDraft {
 @Component({
   selector: 'app-admin-roles',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack, SearchableSelect],
   template: `
     <app-page-header [title]="t('admin.roles.title')" [subtitle]="t('admin.roles.hint')">

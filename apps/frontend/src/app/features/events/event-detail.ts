@@ -2711,6 +2711,23 @@ interface AddEventMemberRequest {
   `,
   styles: `
     @layer components {
+      :host {
+        display: block;
+        color: var(--color-text);
+      }
+      :host ::ng-deep .rounded-xl,
+      :host ::ng-deep .rounded-2xl {
+        border-radius: var(--radius-cards, 2px);
+        box-shadow: none;
+      }
+      :host ::ng-deep .rounded-lg,
+      :host ::ng-deep .rounded-md {
+        border-radius: var(--radius-cards, 2px);
+        box-shadow: none;
+      }
+      :host ::ng-deep .border {
+        border-color: var(--color-border);
+      }
       .event-detail__label {
         color: var(--color-text-secondary);
         font-family: var(--font-universalsans);

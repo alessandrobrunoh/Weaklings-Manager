@@ -6,8 +6,8 @@ import { ViewToggle, type ViewToggleOption } from './view-toggle';
 
 const OPTIONS: readonly ViewToggleOption[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'guilds', label: 'Guilds', badge: 3 },
-  { id: 'players', label: 'Players', badge: 12, dot: 'success' },
+  { id: 'guilds', label: 'Guilds' },
+  { id: 'players', label: 'Players' },
 ];
 
 describe('ViewToggle', () => {
@@ -24,21 +24,19 @@ describe('ViewToggle', () => {
     const fixture = TestBed.createComponent(ViewToggle);
     fixture.componentRef.setInput('options', OPTIONS);
     fixture.componentRef.setInput('active', active);
-    fixture.componentRef.setInput('ariaLabel', 'Views');
     fixture.componentInstance.activeChange.subscribe((id) => emitted.push(id));
     fixture.detectChanges();
     return { fixture, emitted };
   }
 
-  it('renders the events-style tabs with badges', async () => {
+  it('renders the segmented view control', async () => {
     const { fixture } = await create();
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Overview');
     expect(text).toContain('Guilds');
-    expect(text).toContain('3');
     expect(fixture.nativeElement.querySelector('[role="tablist"]')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('.toggle-container')).toBeNull();
-    expect(fixture.nativeElement.querySelectorAll('.tab').length).toBe(3);
+    expect(fixture.nativeElement.querySelector('.toggle-container')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('.toggle-btn').length).toBe(3);
   });
 
   it('activates the next tab on ArrowRight', async () => {

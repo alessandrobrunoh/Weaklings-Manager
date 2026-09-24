@@ -72,6 +72,19 @@ function isWarnsTab(value: string): value is WarnsTab {
     ViewToggle,
   ],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .kpi-card {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -159,7 +172,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       />
     </app-page-header>
 
-    <app-page-stack>
+    <app-page-stack class="workbench-page">
       @if (!canIssue()) {
         <p class="warns-permission-note" role="status">{{ t('warns.missingManagePermission') }}</p>
       }

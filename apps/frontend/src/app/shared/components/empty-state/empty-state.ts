@@ -35,11 +35,11 @@ import { Icon, type IconName } from '../icon/icon';
   `,
   styles: `
     .empty-state__icon {
-      border-radius: var(--radius-xl, 12px);
+      border-radius: var(--radius-sm, 2px);
       border-color: var(--color-border);
       background: var(--color-surface-2);
       color: var(--color-info);
-      box-shadow: var(--shadow-subtle);
+      box-shadow: none;
     }
   `,
 })

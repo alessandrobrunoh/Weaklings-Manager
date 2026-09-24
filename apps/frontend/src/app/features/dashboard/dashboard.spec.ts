@@ -245,12 +245,14 @@ describe('Dashboard', () => {
   });
 
   it('renders the selected mass time on the dashboard card', () => {
+    const massTime = new Date(Date.now() + 60 * 60 * 1000);
+    const massTimeUtc = massTime.toISOString();
     const firstToday = eventFixture({
       id: 7,
       title: 'Outposts',
-      mass_time_utc: '2026-09-04T19:30:00Z',
-      start_time_utc: '2026-09-04T20:00:00Z',
-      event_date_utc: '2026-09-04T20:00:00Z',
+      mass_time_utc: massTimeUtc,
+      start_time_utc: new Date(massTime.getTime() + 30 * 60 * 1000).toISOString(),
+      event_date_utc: new Date(massTime.getTime() + 30 * 60 * 1000).toISOString(),
       status: 'scheduled',
       comp_name: 'Kite 20',
     });
@@ -262,14 +264,14 @@ describe('Dashboard', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Outposts');
     expect(text).toContain('Kite 20');
-    const expectedTime = new Date('2026-09-04T19:30:00Z').toLocaleTimeString('en-US', {
+    const expectedTime = massTime.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     });
     expect(text).toContain(expectedTime);
     expect(text).not.toContain(
-      new Date('2026-09-04T20:00:00Z').toLocaleTimeString('en-US', {
+      new Date(massTime.getTime() + 30 * 60 * 1000).toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,

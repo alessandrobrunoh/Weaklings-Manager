@@ -83,6 +83,19 @@ function toDateInput(date: Date): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Chart, DataTable, DataTableCell, ErrorState, Icon, Loading, NgTemplateOutlet, PageHeader, PageStack, RouterLink, ViewToggle],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .kpi-card {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -154,7 +167,7 @@ function toDateInput(date: Date): string {
         <app-view-toggle pageTabs [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
       </app-page-header>
 
-      <app-page-stack>
+      <app-page-stack class="workbench-page">
         <div class="guild-filters">
           <div class="guild-filters__group">
             <span class="eyebrow">{{ t('guild.period.label') }}</span>

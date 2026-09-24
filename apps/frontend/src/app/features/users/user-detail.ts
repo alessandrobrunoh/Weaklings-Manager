@@ -93,6 +93,20 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     StatCard,
     TooltipDirective,
   ],
+  styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .card {
+      border-radius: 0.5rem;
+    }
+  `,
   template: `
     @if (loading()) {
       <div class="p-8 flex justify-center">
@@ -128,7 +142,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
         }
       </app-page-header>
 
-      <app-page-stack>
+      <app-page-stack class="workbench-page">
         <!-- User Profile Hero -->
         <section class="card p-6">
           <div class="flex flex-wrap items-center justify-between gap-4">

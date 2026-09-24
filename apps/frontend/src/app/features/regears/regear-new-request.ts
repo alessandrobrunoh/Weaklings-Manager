@@ -74,6 +74,14 @@ const SLOT_ORDER: readonly BuildSlot[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Dialog, EmptyState, EquipmentGrid, Icon, Loading, PageHeader, PageStack],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page .card {
+      border-radius: 0.5rem;
+    }
     .event-card {
       display: block;
       width: 100%;
@@ -113,7 +121,7 @@ const SLOT_ORDER: readonly BuildSlot[] = [
   template: `
     <app-page-header [title]="t('regears.newRequest')" [subtitle]="t('regears.newRequest.subtitle')" />
 
-    <app-page-stack>
+    <app-page-stack class="workbench-page">
       @if (loading()) {
         <app-loading />
       } @else if (events().length === 0) {
