@@ -55,11 +55,14 @@ import {
   buildApplicationWelcomeEmbed,
   buildApplicationFinalEmbed,
   buildApplicationErrorEmbed,
+  buildTicketClosedEmbed,
+  buildTicketComponents,
+  buildTicketWelcomeEmbed,
   buildApplicationResolutionComponents,
   buildApplicationModal,
   type ApplicationResolutionAction,
 } from "../embeds/application.embed.js";
-import type { ApplicationView, GuildSettingsView } from "../api/types.js";
+import type { ApplicationView, GuildSettingsView, TicketView } from "../api/types.js";
 
 
 /**
@@ -86,7 +89,7 @@ export async function handleButton(
     } else if (ns === "application") {
       await handleApplicationButton(interaction, api, action, rest);
     } else if (ns === "ticket") {
-      await handleTicketButton(interaction, api, action);
+      await handleTicketButton(interaction, api, action, rest);
     } else {
       const embed = createResponseEmbed(
         "warning",
@@ -125,7 +128,14 @@ async function handleTicketButton(
   interaction: ButtonInteraction,
   api: ApiClient,
   action: string,
+  rest: string[],
 ): Promise<void> {
+  if (action === 'close') {
+    const ticketId = Number(rest[0]);
+    if (!Number.isSafeInteger(ticketId) || ticketId <= 0) throw new Error('Invalid ticket ID.');
+    await closeTicket(interaction, api, ticketId);
+    return;
+  }
   if (action !== 'create') throw new Error('Unknown ticket action.');
   await interaction.deferReply({ flags: ['Ephemeral'] });
   const settings = await getSettingsService(api.guildId).applicationsSettings();
@@ -137,6 +147,13 @@ async function handleTicketButton(
   if (!parent || parent.type !== ChannelType.GuildText) {
     throw new Error('Il canale dei ticket deve essere un canale testuale, non una categoria o un thread.');
   }
+  const active = await api.get<TicketView | null>('api/tickets/active', interaction.user.id);
+  if (active) {
+    await interaction.editReply({
+      embeds: [createResponseEmbed('info', 'Ticket già aperto', `Hai già un ticket aperto: <#${active.thread_id}>.`, 'SUPPORT')],
+    });
+    return;
+  }
   const thread = await createPrivateTicketThread(
     parent,
     ticketThreadName(interaction.user.username, interaction.user.id),
@@ -145,13 +162,17 @@ async function handleTicketButton(
     settings.discord_applications_manage_role_id ?? null,
     `Support ticket opened by ${interaction.user.tag}`,
   );
+  const ticket = await api.post<TicketView>(
+    'api/tickets',
+    { thread_id: thread.id, username: interaction.user.username },
+    interaction.user.id,
+  ).catch(async (error) => {
+    await thread.delete('Ticket persistence failed').catch(() => undefined);
+    throw error;
+  });
   await thread.send({
-    embeds: [createResponseEmbed(
-      'info',
-      'Ticket aperto',
-      'Un membro dello staff ti risponderà qui appena possibile.',
-      'SUPPORT',
-    )],
+    embeds: [buildTicketWelcomeEmbed(settings)],
+    components: buildTicketComponents(ticket.id),
     allowedMentions: { parse: [] },
   });
   await interaction.editReply({
@@ -161,6 +182,45 @@ async function handleTicketButton(
       `Il tuo ticket privato è pronto: <#${thread.id}>.`,
       'SUPPORT',
     )],
+  });
+}
+
+async function closeTicket(
+  interaction: ButtonInteraction,
+  api: ApiClient,
+  ticketId: number,
+): Promise<void> {
+  const channel = interaction.channel;
+  if (!channel?.isThread()) throw new Error('Il bottone di chiusura deve essere dentro un thread.');
+  await interaction.deferReply({ flags: ['Ephemeral'] });
+  const settings = await getSettingsService(api.guildId).applicationsSettings();
+  const ticket = await api.post<TicketView>(`api/tickets/${ticketId}/close`, {}, interaction.user.id);
+  await interaction.message.edit({
+    embeds: [buildTicketClosedEmbed(settings)],
+    components: buildTicketComponents(ticket.id).map((row) => {
+      row.components.forEach((component) => component.setDisabled(true));
+      return row;
+    }),
+  }).catch(() => undefined);
+  const archiveChannelId = settings.discord_tickets_archive_channel_id;
+  if (archiveChannelId) {
+    const archiveChannel = await interaction.client.channels.fetch(archiveChannelId).catch(() => null);
+    if (archiveChannel?.isTextBased() && !archiveChannel.isDMBased() && 'send' in archiveChannel) {
+      if (interaction.guild && 'permissionOverwrites' in archiveChannel) {
+        await archiveChannel.permissionOverwrites
+          .edit(interaction.guild.id, { ViewChannel: false })
+          .catch(() => undefined);
+      }
+      await archiveChannel.send({
+        content: `Ticket archiviato: <#${channel.id}>`,
+        allowedMentions: { parse: [] },
+      }).catch(() => undefined);
+    }
+  }
+  await channel.setLocked(true, 'Ticket closed').catch(() => undefined);
+  await channel.setArchived(true, 'Ticket closed').catch(() => undefined);
+  await interaction.editReply({
+    embeds: [createResponseEmbed('success', 'Ticket chiuso', `Ticket #${ticket.id} chiuso.`, 'SUPPORT')],
   });
 }
 
@@ -312,6 +372,20 @@ async function finalizeApplicationChannel(
   }
   if ('send' in channel) {
     await channel.send(buildApplicationFinalMessage(settings, action)).catch(() => undefined);
+  }
+  if (isThread && settings.discord_tickets_archive_channel_id) {
+    const archiveChannel = await interaction.client.channels.fetch(settings.discord_tickets_archive_channel_id).catch(() => null);
+    if (archiveChannel?.isTextBased() && !archiveChannel.isDMBased() && 'send' in archiveChannel) {
+      if (interaction.guild && 'permissionOverwrites' in archiveChannel) {
+        await archiveChannel.permissionOverwrites
+          .edit(interaction.guild.id, { ViewChannel: false })
+          .catch(() => undefined);
+      }
+      await archiveChannel.send({
+        content: `Application archiviata: <#${channel.id}>`,
+        allowedMentions: { parse: [] },
+      }).catch(() => undefined);
+    }
   }
   if (isThread) {
     await channel.setLocked(true, 'Application resolved').catch(() => undefined);

@@ -49,7 +49,7 @@ describe('TenantRail', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('W');
     expect(compiled.textContent).toContain('A');
-    const buttons = compiled.querySelectorAll('button');
+    const buttons = compiled.querySelectorAll('button.rail__tenant');
     expect(buttons.length).toBe(2);
     (buttons[1] as HTMLButtonElement).click();
     await fixture.whenStable();

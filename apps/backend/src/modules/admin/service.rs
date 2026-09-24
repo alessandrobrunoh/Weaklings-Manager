@@ -291,6 +291,25 @@ impl AdminService {
         if let Some(value) = &req.discord_applications_panel_message_id {
             active.discord_applications_panel_message_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = &req.discord_tickets_archive_channel_id {
+            active.discord_tickets_archive_channel_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_tickets_welcome_title {
+            active.discord_tickets_welcome_title =
+                Set(normalize_application_text(value, 256, "ticket welcome title")?);
+        }
+        if let Some(value) = &req.discord_tickets_welcome_message {
+            active.discord_tickets_welcome_message =
+                Set(normalize_application_text(value, 4000, "ticket welcome message")?);
+        }
+        if let Some(value) = &req.discord_tickets_closed_title {
+            active.discord_tickets_closed_title =
+                Set(normalize_application_text(value, 256, "ticket closed title")?);
+        }
+        if let Some(value) = &req.discord_tickets_closed_message {
+            active.discord_tickets_closed_message =
+                Set(normalize_application_text(value, 4000, "ticket closed message")?);
+        }
         if let Some(value) = req.default_split_fee {
             if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
                 .contains(&value)
@@ -357,6 +376,11 @@ impl AdminService {
                 "discord_applications_status_open_message": req.discord_applications_status_open_message,
                 "discord_applications_status_closed_message": req.discord_applications_status_closed_message,
                 "discord_applications_panel_message_id": req.discord_applications_panel_message_id,
+                "discord_tickets_archive_channel_id": req.discord_tickets_archive_channel_id,
+                "discord_tickets_welcome_title": req.discord_tickets_welcome_title,
+                "discord_tickets_welcome_message": req.discord_tickets_welcome_message,
+                "discord_tickets_closed_title": req.discord_tickets_closed_title,
+                "discord_tickets_closed_message": req.discord_tickets_closed_message,
                 "default_split_fee": req.default_split_fee,
             })),
         )

@@ -134,7 +134,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
             ></span>
             <button
               type="button"
-              class="rail__orb rail__orb--round"
+              class="rail__orb rail__orb--round rail__tenant"
               [class.rail__orb--active]="tenant.id === activeId()"
               [attr.aria-current]="tenant.id === activeId() ? 'true' : null"
               [attr.aria-label]="tenant.name"
@@ -168,6 +168,19 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
           <app-icon name="plus" size="1.5rem" />
         </a>
       </div>
+
+      <div class="rail__slot">
+        <button
+          type="button"
+          class="rail__orb rail__orb--round"
+          [appTooltip]="t('nav.collapse')"
+          tooltipPosition="right"
+          [attr.aria-label]="t('nav.collapse')"
+          (click)="toggleCollapse.emit()"
+        >
+          <app-icon name="chevrons-left" size="1.25rem" />
+        </button>
+      </div>
     </nav>
   `,
 })
@@ -178,6 +191,8 @@ export class TenantRail {
 
   /** Emits when the rail navigates — used to auto-close the mobile drawer. */
   readonly navigate = output<void>();
+  /** Emits when the user closes the tenant rail. */
+  readonly toggleCollapse = output<void>();
 
   protected readonly tenants = signal<TenantChoice[]>([]);
   protected readonly busy = signal(false);
