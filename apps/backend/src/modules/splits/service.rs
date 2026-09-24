@@ -2918,13 +2918,11 @@ mod tests {
         }
         assert_eq!(net.get(&alice).copied().unwrap(), "100.00".parse().unwrap());
         assert_eq!(net.get(&bob).copied().unwrap(), Decimal::ZERO);
-        assert!(
-            credits.iter().any(|tx| {
-                tx.to_user_id == bob
-                    && tx.amount < Decimal::ZERO
-                    && tx.status == TransactionStatus::Withdrawn.to_string()
-            })
-        );
+        assert!(credits.iter().any(|tx| {
+            tx.to_user_id == bob
+                && tx.amount < Decimal::ZERO
+                && tx.status == TransactionStatus::Withdrawn.to_string()
+        }));
         assert_eq!(credits.len(), 4);
         let bank = crate::modules::bank::service::BankService::new();
         let bob_balance = bank.get_balance(&db, bob).await.unwrap();

@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Client, TextChannel } from "discord.js";
+import type { Client, Message, TextChannel } from "discord.js";
 import { ApiError, type ApiClient } from "../api/client.js";
 import type {
   PaginatedData,
@@ -16,6 +16,8 @@ import type {
 import {
   buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
+  buildEventCalendarActionRows,
+  buildEventCalendarEmbed,
   shouldPingAllianceDiscord,
   withAlliancePingRoles,
   type AllianceLifecycleKind,
@@ -37,7 +39,7 @@ import type { SettingsService } from "./settings.js";
 import {
   buildEventThreadName,
   closeEventAnnouncementThread,
-  createEventAnnouncementThread,
+  createStandaloneEventThread,
   deleteEventAnnouncement,
   refreshEventSignupCard,
   sendEventSignupMessage,
@@ -73,6 +75,8 @@ interface PollerState {
   eventThreadIds: Record<string, string>;
   /** Signup card message id inside each event thread. */
   eventSignupMessageIds: Record<string, string>;
+  /** Persistent calendar message id keyed by its parent channel id. */
+  eventCalendarMessageIds: Record<string, string>;
   /** Last Discord-synced `${roster_version}:${status}` per event. */
   eventSignupRevisions: Record<string, string>;
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
@@ -104,6 +108,7 @@ function createDefaultState(): PollerState {
     pinged1hEvents: [],
     eventThreadIds: {},
     eventSignupMessageIds: {},
+    eventCalendarMessageIds: {},
     eventSignupRevisions: {},
     splitUpdatedAt: null,
     splitAfterId: null,
@@ -175,6 +180,7 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
       eventThreadIds: parsedState.eventThreadIds ?? {},
       eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
+      eventCalendarMessageIds: parsedState.eventCalendarMessageIds ?? {},
       eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
       splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
       splitAfterId: parsedState.splitAfterId ?? null,
@@ -313,6 +319,7 @@ export class Poller {
       const revisions = await this.loadEventRevisions();
       await this.checkClosedEvents(revisions);
       await this.checkEventRosterSync(revisions);
+      await this.updateEventCalendars();
       await this.checkNewGiveaways();
       await this.checkGiveawayResults();
       await this.checkEventLifecycle();
@@ -527,15 +534,9 @@ export class Poller {
           return;
         }
 
-        // Parent channel: ping + thread starter only. Roster and action buttons go in the thread.
-        const announcementMessage = await channel.send(
-          buildEventAnnouncementMessage(eventDetail),
-        );
-        const thread = await createEventAnnouncementThread(
-          announcementMessage,
-          eventDetail,
-          "Poller",
-        );
+        // The channel contains one persistent calendar; each event gets a standalone
+        // discussion thread so the calendar itself never scrolls away.
+        const thread = await createStandaloneEventThread(channel, eventDetail, "Poller");
         if (thread) {
           this.state.eventThreadIds[String(event.id)] = thread.id;
           const signupMessageId = await sendEventSignupMessage(thread, eventDetail, "Poller");
@@ -554,6 +555,66 @@ export class Poller {
       }
     } catch (err) {
       console.error("[Poller] Failed to check events:", err);
+    }
+  }
+
+  /** Keeps one editable event index per configured announcement channel. */
+  private async updateEventCalendars(): Promise<void> {
+    try {
+      const [result, eventsChannelId, callToArmsChannelId] = await Promise.all([
+        this.api.get<PaginatedData<EventView>>("api/events", undefined, {
+          page: 1,
+          limit: 50,
+          sort: "event_date",
+          order: "asc",
+        }),
+        this.settings.eventsChannelId(),
+        this.settings.callToArmsChannelId(),
+      ]);
+      const channels = new Map<string, EventView[]>();
+      for (const event of result.items) {
+        if (event.archived_at || !["scheduled", "live"].includes(event.status)) continue;
+        const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
+        if (!channelId) continue;
+        channels.set(channelId, [...(channels.get(channelId) ?? []), event]);
+      }
+      for (const [channelId, events] of channels) {
+        channels.set(
+          channelId,
+          events.sort(
+            (a, b) =>
+              new Date(a.start_time_utc ?? a.event_date_utc).getTime() -
+              new Date(b.start_time_utc ?? b.event_date_utc).getTime(),
+          ),
+        );
+      }
+
+      for (const channelId of new Set([eventsChannelId, callToArmsChannelId].filter(Boolean) as string[])) {
+        const channel = await this.getTextChannel(channelId);
+        // Older adapter doubles do not expose thread collections. They still
+        // support the legacy announcement path, but cannot represent the
+        // persistent calendar/thread design safely.
+        if (!channel || !channel.threads?.create) continue;
+        const events = channels.get(channelId) ?? [];
+        const payload = {
+          embeds: [buildEventCalendarEmbed(events)],
+          components: buildEventCalendarActionRows(events, this.guildId, this.state.eventThreadIds),
+        };
+        const messageId = this.state.eventCalendarMessageIds[channelId];
+        let message: Message | undefined;
+        if (messageId) {
+          message = await channel.messages.fetch(messageId).catch(() => undefined);
+        }
+        if (!message) {
+          message = await channel.send(payload);
+          this.state.eventCalendarMessageIds[channelId] = message.id;
+        } else {
+          await message.edit(payload);
+        }
+      }
+      this.save();
+    } catch (error) {
+      console.warn(`[Poller] Could not update event calendars for guild ${this.guildId}:`, error);
     }
   }
 
