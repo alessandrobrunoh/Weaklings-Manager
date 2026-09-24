@@ -4,10 +4,13 @@ import { PermissionFlagsBits, type Guild, type TextChannel } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { ApplicationView, GuildSettingsView } from '../api/types.js';
 import {
+  applicationThreadName,
+  createPrivateTicketThread,
   findReusableTicket,
   linkIngameName,
   reopenTicket,
   ticketChannelName,
+  ticketThreadName,
   ticketOverwrites,
 } from './application-ticket.js';
 
@@ -53,7 +56,10 @@ function api(routes: Record<string, unknown>, calls: string[] = []): ApiClient {
 
 test('ticketChannelName strips what Discord will not take, and falls back', () => {
   assert.equal(ticketChannelName('Galvdon AO', '42'), 'ticket-galvdon-ao');
+  assert.equal(ticketThreadName('Galvdon AO', '42'), 'ticket-galvdon-ao');
   assert.equal(ticketChannelName('!!!', '42'), 'ticket-42');
+  assert.equal(applicationThreadName('Galvdon AO', '42'), 'apply-galvdon-ao');
+  assert.equal(applicationThreadName('!!!', '42'), 'apply-42');
 });
 
 test('ticketOverwrites gives the applicant back the access closing took away', () => {
@@ -67,6 +73,41 @@ test('ticketOverwrites gives the applicant back the access closing took away', (
       .find((entry) => entry.id === GUILD_ID)
       ?.deny?.includes(PermissionFlagsBits.ViewChannel),
   );
+});
+
+test('createPrivateTicketThread creates a private thread and grants configured members access', async () => {
+  const added: string[] = [];
+  const options: Record<string, unknown>[] = [];
+  const thread = {
+    members: { add: async (id: string) => { added.push(id); } },
+    delete: async () => thread,
+  };
+  const parent = {
+    threads: {
+      create: async (value: Record<string, unknown>) => {
+        options.push(value);
+        return thread;
+      },
+    },
+  };
+  const guild = {
+    roles: {
+      fetch: async () => ({ members: new Map([['manager-1', {}]]) }),
+    },
+  } as unknown as Guild;
+
+  await createPrivateTicketThread(
+    parent as never,
+    'ticket-galvdon-ao',
+    guild,
+    '42',
+    'managers',
+    'test',
+  );
+
+  assert.equal(options[0].type, 12);
+  assert.equal(options[0].invitable, false);
+  assert.deepEqual(added, ['42', 'manager-1']);
 });
 
 test('findReusableTicket returns the archived channel to reuse', async () => {

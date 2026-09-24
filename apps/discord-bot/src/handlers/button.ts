@@ -41,6 +41,11 @@ import {
 import { unlockAndUnarchiveThread } from "../services/discord-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import {
+  createPrivateTicketThread,
+  fetchGuildChannel,
+  ticketThreadName,
+} from "../services/application-ticket.js";
+import {
   buildApplicationAlreadyOpenEmbed,
   buildApplicationClosedEmbed,
   buildApplicationFinalMessage,
@@ -80,6 +85,8 @@ export async function handleButton(
       await handleBankButton(interaction, api, action, rest);
     } else if (ns === "application") {
       await handleApplicationButton(interaction, api, action, rest);
+    } else if (ns === "ticket") {
+      await handleTicketButton(interaction, api, action);
     } else {
       const embed = createResponseEmbed(
         "warning",
@@ -112,6 +119,49 @@ export async function handleButton(
       await interaction.reply(reply);
     }
   }
+}
+
+async function handleTicketButton(
+  interaction: ButtonInteraction,
+  api: ApiClient,
+  action: string,
+): Promise<void> {
+  if (action !== 'create') throw new Error('Unknown ticket action.');
+  await interaction.deferReply({ flags: ['Ephemeral'] });
+  const settings = await getSettingsService(api.guildId).applicationsSettings();
+  const guild = interaction.guild;
+  if (!guild) throw new Error('I ticket possono essere aperti solo dentro un server.');
+  const parentId = settings.discord_applications_channel_id;
+  if (!parentId) throw new Error('Il canale dei ticket non è configurato.');
+  const parent = await fetchGuildChannel(guild, parentId);
+  if (!parent || parent.type !== ChannelType.GuildText) {
+    throw new Error('Il canale dei ticket deve essere un canale testuale, non una categoria o un thread.');
+  }
+  const thread = await createPrivateTicketThread(
+    parent,
+    ticketThreadName(interaction.user.username, interaction.user.id),
+    guild,
+    interaction.user.id,
+    settings.discord_applications_manage_role_id ?? null,
+    `Support ticket opened by ${interaction.user.tag}`,
+  );
+  await thread.send({
+    embeds: [createResponseEmbed(
+      'info',
+      'Ticket aperto',
+      'Un membro dello staff ti risponderà qui appena possibile.',
+      'SUPPORT',
+    )],
+    allowedMentions: { parse: [] },
+  });
+  await interaction.editReply({
+    embeds: [createResponseEmbed(
+      'success',
+      'Ticket aperto',
+      `Il tuo ticket privato è pronto: <#${thread.id}>.`,
+      'SUPPORT',
+    )],
+  });
 }
 
 async function handleApplicationButton(
@@ -224,10 +274,13 @@ async function finalizeApplicationChannel(
   action: ApplicationResolutionAction,
 ): Promise<void> {
   const channel = interaction.channel;
-  if (!channel || !channel.isTextBased() || !('permissionOverwrites' in channel)) return;
-  await channel.permissionOverwrites.edit(application.user_discord_id, { ViewChannel: false }).catch(() => undefined);
-  if (settings.discord_applications_archive_category_id && 'setParent' in channel) {
-    await channel.setParent(settings.discord_applications_archive_category_id, { lockPermissions: false }).catch(() => undefined);
+  if (!channel || !channel.isTextBased()) return;
+  const isThread = channel.isThread();
+  if (!isThread && 'permissionOverwrites' in channel) {
+    await channel.permissionOverwrites.edit(application.user_discord_id, { ViewChannel: false }).catch(() => undefined);
+    if (settings.discord_applications_archive_category_id && 'setParent' in channel) {
+      await channel.setParent(settings.discord_applications_archive_category_id, { lockPermissions: false }).catch(() => undefined);
+    }
   }
   // The clicked message can be the welcome message (Close) or the ephemeral
   // manager message (Accept/Decline). In both cases preserve custom IDs while
@@ -257,7 +310,13 @@ async function finalizeApplicationChannel(
       }).catch(() => undefined);
     }
   }
-  await channel.send(buildApplicationFinalMessage(settings, action)).catch(() => undefined);
+  if ('send' in channel) {
+    await channel.send(buildApplicationFinalMessage(settings, action)).catch(() => undefined);
+  }
+  if (isThread) {
+    await channel.setLocked(true, 'Application resolved').catch(() => undefined);
+    await channel.setArchived(true, 'Application resolved').catch(() => undefined);
+  }
 }
 
 async function handleGiveawayButton(
