@@ -30,6 +30,7 @@ import {
   SearchDialog,
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 const STATUSES: readonly TransactionStatus[] = [
   'pending',
@@ -59,7 +60,17 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
   selector: 'app-admin-transactions',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, RouterLink, SearchDialog],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    SearchDialog,
+    StatusChip,
+  ],
   template: `
     <app-page-header [title]="t('admin.transactions.title')" [subtitle]="t('admin.transactions.hint')">
       @if (canCreate()) {
@@ -90,10 +101,11 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           <span class="font-medium">{{ row.to_guild_bank ? row.to_label : row.to_username }}</span>
         </ng-template>
         <ng-template dataTableCell="status" let-row>
-          <span class="chip" [class]="statusChipClass(row.status)">
-            <app-icon [name]="statusIcon(row.status)" size="0.875rem" />
-            {{ statusLabel(row.status) }}
-          </span>
+          <app-status-chip
+            [value]="row.status"
+            [label]="statusLabel(row.status)"
+            [icon]="statusIcon(row.status)"
+          />
         </ng-template>
         <ng-template dataTableCell="amount" let-row>
           <span class="font-semibold mono" style="font-variant-numeric: tabular-nums">

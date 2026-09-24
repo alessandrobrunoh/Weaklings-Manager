@@ -184,8 +184,14 @@ export class DataTable<T> {
     // sibling effect above, and tracking it here would re-fire this reset on
     // every page-size change instead of only on `columns()` changes.
     let columnsInitialized = false;
+    let previousColumnSignature = '';
     effect(() => {
-      this.columns();
+      const columns = this.columns();
+      const columnSignature = this.columnSignature(columns);
+      if (columnsInitialized && columnSignature === previousColumnSignature) {
+        return;
+      }
+      previousColumnSignature = columnSignature;
       if (this.searchTimer) {
         clearTimeout(this.searchTimer);
         this.searchTimer = null;
@@ -207,7 +213,11 @@ export class DataTable<T> {
   /** Filtered, sorted and sliced rows shown in the current page (client mode). */
   protected readonly processedRows = computed<readonly T[]>(() => {
     if (this.serverMode()) {
-      return this.rows();
+      // Keep the current page responsive while the server-side query is in flight. The host still
+      // receives the debounced `pageChange` below and replaces the rows with the authoritative
+      // filtered page; this optimistic pass prevents a search box from appearing inert when a
+      // request is slow (or when an older response is still being replaced).
+      return this.search().trim() ? this.applySearch(this.rows()) : this.rows();
     }
     const filtered = this.applyFilters(this.rows());
     const sorted = this.applySort(filtered);
@@ -434,31 +444,8 @@ export class DataTable<T> {
   }
 
   private applyFilters(rows: readonly T[]): T[] {
-    const search = this.search().trim().toLowerCase();
     const columnFilters = this.columnFilters();
-    const columns = this.columns();
-    const explicitlySearchable = columns.filter(
-      (column) => column.searchable && column.accessor,
-    );
-    // A visible search box must always have a useful scope. Older table
-    // descriptors did not mark every text column with `searchable`, so fall
-    // back to all accessor-backed columns when none was explicitly opted in.
-    const searchableColumns =
-      explicitlySearchable.length > 0
-        ? explicitlySearchable
-        : columns.filter((column) => column.accessor);
-    return rows.filter((row) => {
-      if (search && searchableColumns.length > 0) {
-        const matches = searchableColumns.some((column) => {
-          const value = column.accessor!(row);
-          return (
-            value !== null && value !== undefined && String(value).toLowerCase().includes(search)
-          );
-        });
-        if (!matches) {
-          return false;
-        }
-      }
+    return this.applySearch(rows).filter((row) => {
       for (const [key, value] of Object.entries(columnFilters)) {
         if (!value) {
           continue;
@@ -474,6 +461,58 @@ export class DataTable<T> {
       }
       return true;
     });
+  }
+
+  private applySearch(rows: readonly T[]): T[] {
+    const search = this.search().trim().toLowerCase();
+    if (!search) {
+      return [...rows];
+    }
+
+    const columns = this.columns();
+    const explicitlySearchable = columns.filter((column) => column.searchable && column.accessor);
+    // A visible search box must always have a useful scope. Older table
+    // descriptors did not mark every text column with `searchable`, so fall
+    // back to all accessor-backed columns when none was explicitly opted in.
+    const searchableColumns =
+      explicitlySearchable.length > 0
+        ? explicitlySearchable
+        : columns.filter((column) => column.accessor);
+
+    if (searchableColumns.length === 0) {
+      return [...rows];
+    }
+
+    return rows.filter((row) =>
+      searchableColumns.some((column) => {
+        const value = column.accessor!(row);
+        return (
+          value !== null && value !== undefined && String(value).toLowerCase().includes(search)
+        );
+      }),
+    );
+  }
+
+  /**
+   * Computed column descriptors are often recreated when their host rows or
+   * permissions change. Their array identity is not a structural change, so
+   * use the parts that affect table state instead of resetting on every new
+   * array instance.
+   */
+  private columnSignature(columns: readonly DataTableColumn<T>[]): string {
+    return columns
+      .map((column) =>
+        [
+          column.key,
+          column.sortable ? 'sortable' : '',
+          column.searchable ? 'searchable' : '',
+          column.align ?? '',
+          column.accessor ? 'accessor' : '',
+          column.comparator ? 'comparator' : '',
+          (column.filterOptions ?? []).map((option) => option.value).join(','),
+        ].join(':'),
+      )
+      .join('|');
   }
 
   private applySort(rows: readonly T[]): T[] {

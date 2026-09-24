@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { Icon, type IconName } from '../icon/icon';
 
 /** Chip tones the design system defines. */
 type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
@@ -17,6 +18,7 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
 @Component({
   selector: 'app-status-chip',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
   styles: `
     .chip {
       display: inline-flex;
@@ -65,13 +67,28 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
       border-color: var(--color-border);
     }
   `,
-  template: `<span class="chip" [class]="'chip--' + tone()"><span class="status-dot"></span>{{ display() }}</span>`,
+  template: `
+    <span class="chip" [class]="'chip--' + tone()">
+      @if (icon(); as iconName) {
+        <app-icon [name]="iconName" size="0.75rem" />
+      } @else if (showDot()) {
+        <span class="status-dot"></span>
+      }
+      {{ display() }}
+    </span>
+  `,
 })
 export class StatusChip {
   readonly value = input.required<string>();
 
   /** Explicit tone override for statuses this map cannot know about. */
   readonly toneOverride = input<ChipTone | undefined>(undefined);
+  /** Optional translated label. Falls back to a humanized status value. */
+  readonly label = input<string | undefined>(undefined);
+  /** Optional icon replacing the default status dot. */
+  readonly icon = input<IconName | undefined>(undefined);
+  /** Whether an unmapped status should render the default dot. */
+  readonly showDot = input(true);
 
   private static readonly TONES: Readonly<Record<string, ChipTone>> = {
     // Bank / splits
@@ -111,6 +128,8 @@ export class StatusChip {
   );
 
   protected readonly display = computed(() => {
+    const label = this.label();
+    if (label !== undefined) return label;
     const raw = this.value();
     if (!raw) return '';
     return raw

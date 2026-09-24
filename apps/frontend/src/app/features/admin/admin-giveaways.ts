@@ -19,7 +19,11 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -237,9 +241,13 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
             [rows]="rows()"
             [loading]="logsLoading()"
             [trackBy]="trackById"
+            [serverMode]="true"
+            [totalItems]="totalItems()"
+            [pageSize]="tableQuery().pageSize"
             emptyLabel="giveaways.empty"
             [rowClickable]="true"
             (rowClick)="openLog($event)"
+            (pageChange)="onTableChange($event)"
           />
         </section>
       }
@@ -266,6 +274,14 @@ export class AdminGiveaways {
   protected readonly channels = signal<DiscordChannelView[]>([]);
   protected readonly roles = signal<DiscordRoleView[]>([]);
   protected readonly rows = signal<GiveawayView[]>([]);
+  protected readonly totalItems = signal(0);
+  protected readonly tableQuery = signal<DataTablePageChange>({
+    page: 1,
+    pageSize: 25,
+    search: '',
+    sort: null,
+    columnFilters: {},
+  });
   protected readonly title = signal('');
   protected readonly description = signal('');
   protected readonly endsAt = signal(defaultEndsAtLocal());
@@ -289,9 +305,25 @@ export class AdminGiveaways {
   protected readonly roleOptions = computed(() => roleSelectOptions(this.roles(), this.roleId()));
 
   protected readonly columns: DataTableColumn<GiveawayView>[] = [
-    { key: 'title', label: 'giveaways.field.title', accessor: (row) => row.title },
-    { key: 'status', label: 'common.status', accessor: (row) => this.statusLabel(row.status) },
-    { key: 'ends_at', label: 'giveaways.ends', accessor: (row) => formatWhen(row.ends_at) },
+    {
+      key: 'title',
+      label: 'giveaways.field.title',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.title,
+    },
+    {
+      key: 'status',
+      label: 'common.status',
+      sortable: true,
+      accessor: (row) => row.status,
+    },
+    {
+      key: 'ends_at',
+      label: 'giveaways.ends',
+      sortable: true,
+      accessor: (row) => row.ends_at,
+    },
     {
       key: 'entry_count',
       label: 'giveaways.participants',
@@ -308,6 +340,11 @@ export class AdminGiveaways {
 
   protected openLog(row: GiveawayView): void {
     void this.router.navigate(['/admin/giveaways', row.id]);
+  }
+
+  protected onTableChange(change: DataTablePageChange): void {
+    this.tableQuery.set(change);
+    void this.loadLogs();
   }
 
   constructor() {
@@ -456,15 +493,18 @@ export class AdminGiveaways {
   private async loadLogs(): Promise<void> {
     this.logsLoading.set(true);
     try {
+      const query = this.tableQuery();
       const page = await firstValueFrom(
         this.api.get<PaginatedData<GiveawayView>>('api/giveaways', {
-          page: 1,
-          limit: 50,
-          sort: 'created_at',
-          order: 'desc',
+          page: query.page,
+          limit: query.pageSize,
+          search: query.search.trim() || undefined,
+          sort: query.sort?.columnKey ?? 'created_at',
+          order: query.sort?.direction ?? 'desc',
         }),
       );
       this.rows.set(page.items);
+      this.totalItems.set(page.total_items);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
