@@ -1,4 +1,39 @@
 :host {
   display: block;
   width: 100%;
+  min-width: 0;
+}
+
+/* The table is shared by nearly every workbench page, so keep its geometry
+   compact here instead of making each feature override the same controls. */
+:host input,
+:host select,
+:host button {
+  border-radius: var(--radius-inputs, 2px);
+}
+
+:host .rounded-lg,
+:host .rounded-md {
+  border-radius: var(--radius-inputs, 2px);
+}
+
+:host .rounded-full {
+  border-radius: var(--radius-badges, 2px);
+}
+
+:host th {
+  padding-block: 0.5rem;
+}
+
+:host td {
+  padding-block: 0.625rem;
+}
+
+:host table {
+  min-width: 100%;
+}
+
+:host [role='region'] {
+  scrollbar-gutter: stable;
+  overscroll-behavior-x: contain;
 }
