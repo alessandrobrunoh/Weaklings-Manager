@@ -452,24 +452,31 @@ export function buildEventCalendarV2Components(
     .slice(0, 25);
   const sections = new Map<string, string[]>();
   for (const event of orderedEvents) {
-    const section = event.status === "live" ? "LIVE / TODAY" : "UPCOMING";
+    const section = event.status === "live" ? "🔴 Live now" : "✦ Next up";
     const threadId = threadIds[String(event.id)];
+    const kind = event.call_to_arms ? "CALL TO ARMS" : event.comp_name;
+    const description = event.description?.trim();
     sections.set(section, [
       ...(sections.get(section) ?? []),
       [
         `### ${event.title}`,
-        `Starts <t:${eventTimestamp(event, "start")}:R> · <t:${eventTimestamp(event, "start")}:F>`,
-        threadId ? `Discussion: <#${threadId}>` : "Discussion thread is being prepared.",
+        `**${kind}** · <t:${eventTimestamp(event, "start")}:F> · <t:${eventTimestamp(event, "start")}:R>`,
+        ...(description ? [`> ${description.replace(/\n+/g, " ").slice(0, 180)}`] : []),
+        threadId ? `💬 <#${threadId}>` : "*Discussion thread is being prepared.*",
       ].join("\n"),
     ]);
   }
   const text = sections.size > 0
-    ? [...sections.entries()].map(([name, lines]) => `**${name}**\n${lines.join("\n\n")}`).join("\n\n")
-    : "*No upcoming events found.*";
+    ? [...sections.entries()].map(([name, lines]) => `## ${name}\n\n${lines.join("\n\n---\n\n")}`).join("\n\n")
+    : "*There are no live or upcoming events right now.*";
   const container = new ContainerBuilder()
     .setAccentColor(BOT_COLORS.BRAND)
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent("# Upcoming Guild Events\n\n" + text),
+      new TextDisplayBuilder().setContent(
+        "# 📅 Content Pings\n\n" +
+        "*Your quick view of what is happening next. Open an event thread for details and sign-up.*\n\n" +
+        text,
+      ),
     )
     .addSeparatorComponents(new SeparatorBuilder());
   return [container];

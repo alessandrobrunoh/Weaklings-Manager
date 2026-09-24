@@ -15,6 +15,7 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 | View Balance | `/balance` |
 | Request Withdrawal | `/balance-request` |
 | View Battles | `/battles [page]` |
+| View Build | `/build [nome]` — uses `Nome Categoria Creatore` without hyphens and sends one item-collage image |
 | View Members | `/users [search] [page]` |
 | Link Albion Account | `/link [player_id] [player_name]` |
 | Auto-announce Events | Polling → events channel (Admin → Discord integration in the web app) |
