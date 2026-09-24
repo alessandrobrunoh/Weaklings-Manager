@@ -2171,6 +2171,8 @@ export const uk: TranslationDict = {
   'platform.tenants.icon': 'Хеш іконки Discord',
   'platform.tenants.suspendedAt': 'Призупинено',
   'platform.tenants.rank': 'Ранг',
+  'platform.tenants.default': 'Тенант за замовчуванням',
+  'platform.tenants.defaultHint': 'Користувачі з кількома тенантами автоматично відкриватимуть цей.',
   'platform.tenant.subtitle': 'Запис контрольної площини для цієї гільдії Discord.',
   'platform.tenant.features': 'Флаги функцій',
   'platform.tenant.rename': 'Відображуване ім\'я',

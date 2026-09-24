@@ -24,6 +24,7 @@ const mockTenant: PlatformTenant = {
   icon_hash: 'abc',
   albion_allied_guild_ids: 'a,b',
   albion_allied_guild_names: 'Ally',
+  is_default: false,
 };
 
 describe('PlatformTenantDetail', () => {
@@ -105,6 +106,7 @@ describe('PlatformTenantDetail', () => {
       albion_allied_guild_ids: 'a,b',
       albion_allied_guild_names: 'Ally',
       rank_id: '',
+      is_default: false,
     });
     expect(toasts.success).toHaveBeenCalledWith('platform.tenants.updatedToast');
   });

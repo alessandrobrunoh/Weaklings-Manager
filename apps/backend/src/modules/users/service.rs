@@ -8,6 +8,8 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set, TransactionTrait,
 };
+use sea_orm::sea_query::{Expr, Func};
+use sea_orm::Condition;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
@@ -541,8 +543,36 @@ impl UserService {
 
         let mut query = UserEntity::find();
 
-        if let Some(ref username) = filters.username {
-            query = query.filter(UserColumn::Username.contains(username));
+        if let Some(username) = filters
+            .username
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            // The UI displays a linked Albion character name, while the
+            // users row keeps the Discord username. Search both identities so
+            // every member picker and the users table use the same name.
+            let pattern = format!("%{}%", username.to_lowercase());
+            let linked_discord_ids = crate::modules::albion::entities::albion_link::Entity::find()
+                .filter(
+                    Expr::expr(Func::lower(Expr::col(
+                        crate::modules::albion::entities::albion_link::Column::AlbionPlayerName,
+                    )))
+                    .like(pattern.clone()),
+                )
+                .all(db)
+                .await?
+                .into_iter()
+                .map(|link| link.discord_id)
+                .collect::<Vec<_>>();
+
+            let mut name_filter = Condition::any().add(
+                Expr::expr(Func::lower(Expr::col(UserColumn::Username))).like(pattern),
+            );
+            if !linked_discord_ids.is_empty() {
+                name_filter = name_filter.add(UserColumn::DiscordId.is_in(linked_discord_ids));
+            }
+            query = query.filter(name_filter);
         }
         if let Some(ref email) = filters.email {
             query = query.filter(UserColumn::Email.eq(email.clone()));
@@ -1053,6 +1083,23 @@ mod tests {
         assert_eq!(profile.username, "Kay");
         assert_eq!(profile.role, "Member");
         assert_eq!(profile.email, provisional_discord_email("111"));
+
+        let found_by_albion_name = service
+            .list_users(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &UserFilters {
+                    username: Some("kay".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("search by linked Albion name");
+        assert_eq!(found_by_albion_name.total_items, 1);
+        assert_eq!(found_by_albion_name.items[0].username, "Kay");
 
         let again = service
             .create_linked_member(

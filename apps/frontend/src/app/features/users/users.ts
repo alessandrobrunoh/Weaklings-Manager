@@ -378,6 +378,7 @@ export class Users {
   private readonly tableSearch = signal('');
   private readonly tableSort = signal<DataTablePageChange['sort']>(null);
   private readonly tableFilters = signal<Readonly<Record<string, string>>>({});
+  private loadRequest = 0;
 
   protected readonly columns: readonly DataTableColumn<UserProfile>[] = [
     {
@@ -510,7 +511,10 @@ export class Users {
         firstValueFrom(this.api.get<DiscordMemberView[]>('api/admin/discord/members')),
         firstValueFrom(
           this.api.get<PaginatedData<AlbionGuildMember> | AlbionGuildMember[]>('api/albion/guild/roster', {
-            limit: 500,
+            // The roster endpoint defaults to ten rows. Load the largest
+            // supported page so this picker can search the complete tenant
+            // roster locally.
+            limit: 1000,
           }),
         ),
       ]);
@@ -527,6 +531,7 @@ export class Users {
   }
 
   protected async load(): Promise<void> {
+    const request = ++this.loadRequest;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
@@ -542,15 +547,23 @@ export class Users {
           order: sort?.direction,
         }),
       );
+      if (request !== this.loadRequest) {
+        return;
+      }
       this.users.set(data.items ?? []);
       this.totalItems.set(data.total_items ?? 0);
     } catch (error) {
+      if (request !== this.loadRequest) {
+        return;
+      }
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
       this.users.set([]);
       this.totalItems.set(0);
     } finally {
-      this.loading.set(false);
+      if (request === this.loadRequest) {
+        this.loading.set(false);
+      }
     }
   }
 }

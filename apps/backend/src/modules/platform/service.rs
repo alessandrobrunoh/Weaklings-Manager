@@ -18,7 +18,7 @@ use super::models::{
 const TENANT_SELECT: &str = "SELECT t.id, t.name, t.slug, t.schema_name, t.status, t.owner_discord_id, \
      t.created_at::text, t.suspended_at::text, t.albion_guild_id, t.albion_api_region, \
      t.discord_icon_hash, t.albion_allied_guild_ids, t.albion_allied_guild_names, \
-     t.rank_id::text, r.name, t.kind \
+     t.rank_id::text, r.name, t.kind, t.is_default \
      FROM tenants t LEFT JOIN tenant_ranks r ON r.id = t.rank_id";
 
 /// Control-plane operations.
@@ -638,6 +638,7 @@ impl PlatformService {
                 name: row.try_get_by_index(1)?,
                 slug: row.try_get_by_index(2)?,
                 icon_hash: row.try_get_by_index(3).ok(),
+                is_default: false,
             });
         }
         Ok(out)
@@ -759,6 +760,28 @@ impl PlatformService {
                 Self::sync_rank_flags(control, tenant_id, Some(rank_id), actor).await?;
             }
             registry.evict(tenant_id);
+        }
+
+        if let Some(is_default) = body.is_default {
+            if is_default {
+                // The partial unique index also protects this invariant for
+                // concurrent requests; clearing first keeps the update
+                // deterministic for normal requests.
+                control
+                    .execute(Statement::from_sql_and_values(
+                        control.get_database_backend(),
+                        "UPDATE tenants SET is_default = false WHERE is_default",
+                        [],
+                    ))
+                    .await?;
+            }
+            control
+                .execute(Statement::from_sql_and_values(
+                    control.get_database_backend(),
+                    "UPDATE tenants SET is_default = $2 WHERE id = $1",
+                    [tenant_id.into(), is_default.into()],
+                ))
+                .await?;
         }
 
         if let Some(status) = body.status.as_deref() {
@@ -1406,6 +1429,7 @@ fn row_to_view(row: &sea_orm::QueryResult) -> Result<TenantView, DbErr> {
             .ok()
             .filter(|kind: &String| !kind.is_empty())
             .unwrap_or_else(|| "guild".to_owned()),
+        is_default: row.try_get_by_index(16).unwrap_or(false),
     })
 }
 
@@ -1518,6 +1542,7 @@ mod tests {
                 albion_allied_guild_names: Some("Ally".into()),
                 status: None,
                 rank_id: None,
+                is_default: None,
             },
             "tester",
         )

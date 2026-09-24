@@ -2174,6 +2174,8 @@ export const fr: TranslationDict = {
   'platform.tenants.icon': 'Hash d’icône Discord',
   'platform.tenants.suspendedAt': 'Suspendu',
   'platform.tenants.rank': 'Rang',
+  'platform.tenants.default': 'Tenant par défaut',
+  'platform.tenants.defaultHint': 'Les utilisateurs appartenant à plusieurs tenants ouvriront celui-ci automatiquement.',
   'platform.tenant.subtitle': 'Enregistrement du plan de contrôle pour cette guilde Discord.',
   'platform.tenant.features': 'Drapeaux de fonctionnalité',
   'platform.tenant.rename': 'Nom affiché',

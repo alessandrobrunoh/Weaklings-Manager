@@ -388,6 +388,7 @@ export class AdminTransactions {
   protected readonly showRosterSearch = signal(false);
   protected readonly rosterSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly searchingRoster = signal(false);
+  private rosterSearchRequest = 0;
   private rosterTarget: RosterTarget = 'create-to';
 
   /**
@@ -679,9 +680,11 @@ export class AdminTransactions {
     dateFrom: string;
     dateTo: string;
   }): Promise<void> {
+    const request = ++this.rosterSearchRequest;
     const query = filters.search.trim();
     if (!query) {
       this.rosterSearchOptions.set([]);
+      this.searchingRoster.set(false);
       return;
     }
     this.searchingRoster.set(true);
@@ -692,13 +695,19 @@ export class AdminTransactions {
           limit: 25,
         }),
       );
-      this.rosterSearchOptions.set(
-        rosterPage.items.map((member) => ({ id: member.id, title: member.name })),
-      );
+      if (request === this.rosterSearchRequest) {
+        this.rosterSearchOptions.set(
+          rosterPage.items.map((member) => ({ id: member.id, title: member.name })),
+        );
+      }
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (request === this.rosterSearchRequest) {
+        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      }
     } finally {
-      this.searchingRoster.set(false);
+      if (request === this.rosterSearchRequest) {
+        this.searchingRoster.set(false);
+      }
     }
   }
 

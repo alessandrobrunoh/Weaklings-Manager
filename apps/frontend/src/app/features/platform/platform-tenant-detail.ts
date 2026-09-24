@@ -102,6 +102,22 @@ const REGIONS = [
               }
             </select>
           </label>
+          <label class="flex items-start gap-2" for="tenant-default">
+            <input
+              id="tenant-default"
+              class="checkbox mt-1"
+              name="is_default"
+              type="checkbox"
+              [checked]="defaultDraft()"
+              (change)="onDefaultChange($event)"
+            />
+            <span>
+              <span class="label">{{ t('platform.tenants.default') }}</span>
+              <span class="block text-xs mt-0.5" style="color: var(--color-text-secondary)">
+                {{ t('platform.tenants.defaultHint') }}
+              </span>
+            </span>
+          </label>
           <label class="block" for="tenant-owner">
             <span class="label">{{ t('platform.tenants.superadmin') }}</span>
             <input
@@ -227,6 +243,7 @@ export class PlatformTenantDetail {
   protected readonly alliedIdsDraft = signal('');
   protected readonly alliedNamesDraft = signal('');
   protected readonly rankDraft = signal('');
+  protected readonly defaultDraft = signal(false);
   protected readonly ranks = signal<TenantRankView[]>([]);
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
@@ -241,6 +258,10 @@ export class PlatformTenantDetail {
 
   protected onRankChange(event: Event): void {
     this.rankDraft.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected onDefaultChange(event: Event): void {
+    this.defaultDraft.set((event.target as HTMLInputElement).checked);
   }
 
   constructor() {
@@ -295,6 +316,7 @@ export class PlatformTenantDetail {
           albion_allied_guild_ids: this.alliedIdsDraft().trim(),
           albion_allied_guild_names: this.alliedNamesDraft().trim(),
           rank_id: this.rankDraft(),
+          is_default: this.defaultDraft(),
         }),
       );
       this.applyTenant(updated);
@@ -329,6 +351,7 @@ export class PlatformTenantDetail {
     this.alliedIdsDraft.set(row.albion_allied_guild_ids ?? '');
     this.alliedNamesDraft.set(row.albion_allied_guild_names ?? '');
     this.rankDraft.set(row.rank_id ?? '');
+    this.defaultDraft.set(row.is_default === true);
     const region = row.albion_api_region;
     if (region === 'americas' || region === 'asia' || region === 'europe') {
       this.regionDraft.set(region);

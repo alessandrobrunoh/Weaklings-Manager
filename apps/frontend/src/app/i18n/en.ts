@@ -2342,6 +2342,8 @@ export const en = {
   'platform.tenants.icon': 'Discord icon hash',
   'platform.tenants.suspendedAt': 'Suspended',
   'platform.tenants.rank': 'Rank',
+  'platform.tenants.default': 'Default tenant',
+  'platform.tenants.defaultHint': 'Users who belong to multiple tenants open this one automatically.',
   'platform.tenant.subtitle': 'Control-plane record for this Discord guild.',
   'platform.tenant.features': 'Feature flags',
   'platform.tenant.rename': 'Display name',

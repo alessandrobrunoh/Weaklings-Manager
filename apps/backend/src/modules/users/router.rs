@@ -209,7 +209,8 @@ async fn update_user_specializations(
     description = "Open to any authenticated user (not just admins): this is the endpoint the split \
         request form uses to populate its participant picker, and the only way to resolve a \
         username to the internal `user_id` needed by `POST /splits` or `POST /splits/{id}/participants`. \
-        Supports filtering by `username` (case-insensitive substring), exact `email`, or `role`, plus \
+        Supports filtering by `username`/display name (case-insensitive substring; linked Albion \
+        character names are included), exact `email`, or `role`, plus \
         standard `page`/`limit` pagination (default `limit=10`). Page through results rather than \
         requesting an oversized `limit`. Sort with `sort=username|role` and `order=asc|desc`; \
         unknown `sort` values return 400.",

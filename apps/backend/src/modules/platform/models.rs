@@ -45,6 +45,10 @@ pub struct TenantView {
     /// Assigned tenant rank name, if any.
     #[serde(default)]
     pub rank_name: Option<String>,
+    /// Whether this is the tenant selected automatically when a user belongs
+    /// to more than one tenant. At most one tenant can be default.
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 fn default_tenant_kind() -> String {
@@ -178,6 +182,9 @@ pub struct PatchTenantRequest {
     pub albion_allied_guild_names: Option<String>,
     /// Rank to assign; empty string clears it.
     pub rank_id: Option<String>,
+    /// Make this the automatic tenant, or clear its default status.
+    #[serde(default)]
+    pub is_default: Option<bool>,
 }
 
 /// A platform-created tenant rank (plan).
