@@ -2,9 +2,13 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
   ModalBuilder,
+  MessageFlags,
   TextInputBuilder,
   TextInputStyle,
+  SeparatorBuilder,
+  TextDisplayBuilder,
   type APIEmbed,
 } from 'discord.js';
 import type { GuildSettingsView } from '../api/types.js';
@@ -253,6 +257,48 @@ export function buildApplicationPanelComponents(
         .setDisabled(!settings.discord_applications_open),
     ),
   ];
+}
+
+/**
+ * Builds the public application panel with Discord's Components V2 layout.
+ *
+ * Unlike an embed, a container gives the panel the native card treatment
+ * (including the coloured edge) and lets the call-to-action live inside the
+ * card instead of below it as a separate legacy action row.
+ */
+export function buildApplicationPanelV2Components(settings: GuildSettingsView): ContainerBuilder[] {
+  const status = settings.discord_applications_open ? '🟢 APERTE' : '🔴 CHIUSE';
+  return [
+    new ContainerBuilder()
+      .setAccentColor(settings.discord_applications_open ? BOT_COLORS.SUCCESS : BOT_COLORS.DANGER)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `# ${settings.discord_applications_panel_title}\n` +
+          `${settings.discord_applications_panel_message}\n\n` +
+          `**Stato:** ${status}`,
+        ),
+      )
+      .addSeparatorComponents(new SeparatorBuilder())
+      .addActionRowComponents(
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId('application:create')
+            .setLabel('Open an application')
+            .setEmoji('🎟️')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(!settings.discord_applications_open),
+        ),
+      ),
+  ];
+}
+
+/** Complete payload for the Components V2 application panel message. */
+export function buildApplicationPanelMessage(settings: GuildSettingsView) {
+  return {
+    flags: [MessageFlags.IsComponentsV2] as const,
+    components: buildApplicationPanelV2Components(settings),
+    allowedMentions: { parse: [] as const },
+  };
 }
 
 /** Payload for the final channel post; never lets configured text create mentions. */

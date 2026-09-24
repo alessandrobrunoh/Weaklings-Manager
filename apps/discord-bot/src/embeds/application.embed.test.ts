@@ -7,6 +7,8 @@ import {
   buildApplicationFinalEmbed,
   buildApplicationManageEmbed,
   buildApplicationNoPermissionEmbed,
+  buildApplicationPanelMessage,
+  buildApplicationPanelV2Components,
   buildApplicationPanelComponents,
   buildApplicationPanelEmbed,
   buildApplicationStatusAnnouncement,
@@ -61,6 +63,25 @@ test('application panel shows configured copy and open state', () => {
   assert.equal(buildApplicationPanelComponents(settings)[0].components[0].data.disabled, false);
 });
 
+test('application panel uses a Components V2 container with an in-card CTA', () => {
+  const message = buildApplicationPanelMessage(settings);
+  assert.deepEqual(message.flags, [32768]);
+  assert.deepEqual(message.allowedMentions, { parse: [] });
+
+  const container = buildApplicationPanelV2Components(settings)[0].toJSON();
+  assert.equal(container.type, 17);
+  assert.equal(container.accent_color, 0x2ecc71);
+  assert.equal(container.components[0].type, 10);
+  assert.ok(container.components[0].content.startsWith('# '));
+  assert.match(container.components[0].content, /Clicca per creare/);
+  assert.equal(container.components[1].type, 14);
+  assert.equal(container.components[2].type, 1);
+  const button = container.components[2].components[0] as { custom_id?: string; label?: string; style?: number };
+  assert.equal(button.custom_id, 'application:create');
+  assert.equal(button.label, 'Open an application');
+  assert.equal(button.style, 2);
+});
+
 test('status announcement mentions everyone and uses the matching configured copy', () => {
   const announcement = buildApplicationStatusAnnouncement(settings);
   assert.equal(announcement.content, '@everyone');
@@ -97,6 +118,11 @@ test('closed application panel disables creation', () => {
     buildApplicationPanelComponents({ ...settings, discord_applications_open: false })[0].components[0].data.disabled,
     true,
   );
+  const container = buildApplicationPanelV2Components({ ...settings, discord_applications_open: false })[0].toJSON();
+  assert.equal(container.accent_color, 0xed4245);
+  const actionRow = container.components[2] as { components: unknown[] };
+  const button = actionRow.components[0] as { disabled?: boolean };
+  assert.equal(button.disabled, true);
 });
 
 test('accept-as-trial final response keeps the accept copy and stable terminal custom IDs', () => {

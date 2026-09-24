@@ -2,7 +2,7 @@
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, TransactionTrait, Value};
 
-use crate::control_migration::SUPERADMIN_ROLE_ID;
+use crate::control_migration::{FEATURE_SIDEBAR, SUPERADMIN_ROLE_ID};
 use crate::errors::AppError;
 use crate::postgres::{tenant_schema_name, tenant_slug};
 use crate::tenant::TenantRegistry;
@@ -127,6 +127,20 @@ impl PlatformService {
             Self::sync_rank_flags(control, id, Some(&rank_id), actor).await?;
             registry.evict(id);
         }
+
+        // Navigation is a tenant-level platform setting rather than a plan
+        // capability. New tenants start with it enabled, while platform
+        // admins can turn it off later from the feature screen.
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "INSERT INTO tenant_feature_flags \
+                 (tenant_id, feature_key, enabled, enabled_at, enabled_by) \
+                 VALUES ($1, $2, true, now(), $3) \
+                 ON CONFLICT (tenant_id, feature_key) DO NOTHING",
+                [id.into(), FEATURE_SIDEBAR.into(), actor.into()],
+            ))
+            .await?;
 
         if let Some(region) = body.albion_api_region.as_deref() {
             Self::update_albion_settings(
@@ -1318,9 +1332,10 @@ impl PlatformService {
                 .execute(Statement::from_sql_and_values(
                     control.get_database_backend(),
                     "UPDATE tenant_feature_flags SET enabled = false, enabled_at = NULL \
-                     WHERE tenant_id = $1 AND enabled AND feature_key NOT IN \
+                     WHERE tenant_id = $1 AND enabled AND feature_key <> $3 \
+                     AND feature_key NOT IN \
                      (SELECT feature_key FROM tenant_rank_features WHERE rank_id = $2::uuid)",
-                    [tenant_id.into(), rank_id.into()],
+                    [tenant_id.into(), rank_id.into(), FEATURE_SIDEBAR.into()],
                 ))
                 .await?;
         } else {
@@ -1328,8 +1343,8 @@ impl PlatformService {
                 .execute(Statement::from_sql_and_values(
                     control.get_database_backend(),
                     "UPDATE tenant_feature_flags SET enabled = false, enabled_at = NULL \
-                     WHERE tenant_id = $1 AND enabled",
-                    [tenant_id.into()],
+                     WHERE tenant_id = $1 AND enabled AND feature_key <> $2",
+                    [tenant_id.into(), FEATURE_SIDEBAR.into()],
                 ))
                 .await?;
         }
