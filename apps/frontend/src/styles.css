@@ -550,8 +550,8 @@ html.light {
 }
 
 /* -----------------------------------------------------------------
-   Buttons — 12px radius floor (DESIGN.md), blurple reserved for the
-   primary action only.
+   Buttons — compact, low-radius controls keep the workbench dense while
+   the tenant primary color remains reserved for the primary action.
    ----------------------------------------------------------------- */
 @layer components {
   .btn {
@@ -596,15 +596,16 @@ html.light {
     background-color: var(--color-primary-active);
   }
 
-  /* Secondary: the filled neutral surface Discord pairs with blurple. */
+  /* Secondary actions stay light and bordered so the tenant color keeps priority. */
   .btn--tonal {
-    background-color: var(--color-surface-2);
+    background-color: var(--color-surface);
     color: var(--color-text);
-    border-color: transparent;
+    border-color: var(--color-border);
   }
 
   .btn--tonal:hover:not(:disabled) {
-    background-color: var(--color-surface-3);
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
   }
 
   .btn--ghost {
@@ -705,7 +706,7 @@ html.light {
     width: 100%;
     min-height: 2.25rem;
     padding: 0.5rem 0.75rem;
-    background-color: var(--color-surface-2);
+    background-color: var(--color-surface-1);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-inputs);
     color: var(--color-text);
@@ -738,8 +739,9 @@ html.light {
   .select:focus-visible,
   .textarea:focus-visible {
     outline: 2px solid var(--color-primary);
-    outline-offset: 1px;
+    outline-offset: 2px;
     border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-bg);
   }
 
   .input--sm,
@@ -1675,14 +1677,14 @@ app-shell .data-table__row--clickable:focus-visible {
 :root,
 html.light {
   color-scheme: light;
-  --color-rail: #f4f4f2;
+  --color-rail: #f8f7f3;
   --color-chrome: #ffffff;
-  --color-bg: #e5e7eb;
+  --color-bg: #faf9f6;
   --color-surface: #ffffff;
   --color-surface-1: #ffffff;
-  --color-surface-2: #f4f4f2;
-  --color-surface-3: #e5e7eb;
-  --color-surface-muted: #f4f4f2;
+  --color-surface-2: #f5f4f0;
+  --color-surface-3: #ebe9e3;
+  --color-surface-muted: #f5f4f0;
   --color-surface-hover: #e6effe;
   --color-surface-active: #e6effe;
   --color-border: #dadde2;
@@ -1694,7 +1696,7 @@ html.light {
   --color-text-tertiary: #5d636f;
   --color-text-muted: #6a7282;
   --color-text-steel: #878a98;
-  --color-text-disabled: #b2b5bb;
+  --color-text-disabled: #6a7282;
   --color-primary: color-mix(in oklab, var(--brand-primary, #1348dc) 88%, #000);
   --color-primary-hover: color-mix(in oklab, var(--color-primary) 84%, #000);
   --color-primary-active: color-mix(in oklab, var(--color-primary) 70%, #000);
@@ -1723,6 +1725,7 @@ html.light {
 }
 
 html.dark {
+  color-scheme: dark;
   --color-rail: #282c33;
   --color-chrome: #2f343e;
   --color-bg: #20242b;

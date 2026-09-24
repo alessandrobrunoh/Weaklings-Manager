@@ -39,44 +39,57 @@ export interface ViewToggleOption {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon],
   styles: `
+    .toggle-scroll {
+      max-width: 100%;
+      overscroll-behavior-x: contain;
+    }
     .toggle-container {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md, 6px);
-      padding: 3px;
-      display: inline-flex;
-      gap: var(--spacing-4, 3px);
+      display: flex;
+      width: max-content;
+      min-width: 100%;
+      gap: 0.125rem;
+      border-bottom: 1px solid var(--color-border);
     }
     .toggle-btn {
       display: inline-flex;
-      min-height: 1.75rem;
+      min-height: 2rem;
       align-items: center;
       gap: 0.375rem;
       white-space: nowrap;
-      border-radius: 6px;
-      padding: 0.25rem 0.625rem;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      margin-bottom: -1px;
+      padding: 0.375rem 0.625rem 0.4375rem;
       font-size: 0.75rem;
       font-weight: 500;
-      border: 1px solid transparent;
       cursor: pointer;
-      transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast);
+      transition: color var(--motion-fast), border-color var(--motion-fast), background-color var(--motion-fast);
       color: var(--color-text-secondary);
       background: transparent;
     }
     .toggle-btn:hover:not([aria-selected="true"]) {
       color: var(--color-text);
-      background: var(--color-surface-hover);
+      background: color-mix(in srgb, var(--color-surface-hover) 55%, transparent);
     }
     .toggle-btn[aria-selected="true"] {
-      background: var(--color-surface-hover);
       color: var(--color-text-heading);
       font-weight: 600;
-      border-color: var(--color-border-strong);
-      box-shadow: var(--shadow-subtle-2);
+      border-bottom-color: var(--color-primary);
+    }
+    .toggle-btn:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: -2px;
+      z-index: 1;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .toggle-btn {
+        transition: none;
+      }
     }
   `,
   template: `
-    <div class="overflow-x-auto scrollbar-thin">
+    <div class="toggle-scroll overflow-x-auto scrollbar-thin">
       <div
         class="toggle-container"
         role="tablist"
