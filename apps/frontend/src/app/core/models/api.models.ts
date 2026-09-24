@@ -152,6 +152,8 @@ export interface PlatformTenant {
   albion_allied_guild_names?: string | null;
   rank_id?: string | null;
   rank_name?: string | null;
+  /** Whether this tenant is selected automatically when a user has multiple tenants. */
+  is_default?: boolean;
 }
 
 export interface TenantRankView {
@@ -194,6 +196,7 @@ export interface TenantChoice {
   name: string;
   slug: string;
   icon_hash?: string | null;
+  is_default?: boolean;
 }
 
 export interface RegisterableGuild {

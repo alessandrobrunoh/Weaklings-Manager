@@ -2351,6 +2351,8 @@ export const it: TranslationDict = {
   'platform.tenants.icon': 'Hash icona Discord',
   'platform.tenants.suspendedAt': 'Sospeso il',
   'platform.tenants.rank': 'Rank',
+  'platform.tenants.default': 'Tenant predefinito',
+  'platform.tenants.defaultHint': 'Gli utenti che appartengono a più tenant apriranno automaticamente questo.',
   'platform.tenant.subtitle': 'Record di control-plane per questa gilda Discord.',
   'platform.tenant.features': 'Feature flag',
   'platform.tenant.rename': 'Nome visibile',

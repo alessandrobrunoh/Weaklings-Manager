@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::admin::models::BrandColorsView;
 use crate::modules::admin::service::AdminService;
+use crate::modules::platform::service::PlatformService;
 use crate::platform_admins::PlatformAdmins;
 use crate::postgres::list_active_tenants;
 use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
@@ -228,60 +229,62 @@ pub async fn discord_callback(
 
     let after_login = |path: &str| format!("{}{path}", cfg.frontend_url);
 
-    match matches.as_slice() {
-        [] => {
-            let private_jar = remove_oauth_cookies(with_registerable_guilds(
-                PrivateCookieJar::from_headers(&headers, key)
-                    .add(session_cookie(&profile)?)
-                    .remove(pending_cookie_tombstone()),
-                &user_guilds,
-            )?);
-            Ok((
-                private_jar,
-                Redirect::temporary(&format!("{}/needs-tenant", cfg.frontend_url)),
-            ))
-        }
-        [tenant] => {
-            let profile = finalize_session(
-                &cfg,
-                &registry,
-                &admins,
-                &control.0,
-                &token_resp.access_token,
-                profile,
-                tenant,
-            )
-            .await?;
-            let private_jar = remove_oauth_cookies(with_registerable_guilds(
-                PrivateCookieJar::from_headers(&headers, key)
-                    .add(session_cookie(&profile)?)
-                    .remove(pending_cookie_tombstone()),
-                &user_guilds,
-            )?);
-            Ok((
-                private_jar,
-                Redirect::temporary(&after_login(next_path.as_deref().unwrap_or("/dashboard"))),
-            ))
-        }
-        _ => {
-            let pending = OauthPending {
-                access_token: token_resp.access_token,
-                profile,
-                tenants: matches,
-            };
-            let pending_json = serde_json::to_string(&pending).map_err(|e| {
-                AppError::Internal(format!("failed to serialize pending oauth: {e}"))
-            })?;
-            let private_jar = remove_oauth_cookies(with_registerable_guilds(
-                PrivateCookieJar::from_headers(&headers, key).add(pending_cookie(pending_json)),
-                &user_guilds,
-            )?);
-            Ok((
-                private_jar,
-                Redirect::temporary(&format!("{}/choose-server", cfg.frontend_url)),
-            ))
-        }
+    let automatic_tenant = matches
+        .iter()
+        .find(|tenant| tenant.is_default)
+        .or_else(|| matches.first().filter(|_| matches.len() == 1));
+
+    if let Some(tenant) = automatic_tenant {
+        let profile = finalize_session(
+            &cfg,
+            &registry,
+            &admins,
+            &control.0,
+            &token_resp.access_token,
+            profile,
+            tenant,
+        )
+        .await?;
+        let private_jar = remove_oauth_cookies(with_registerable_guilds(
+            PrivateCookieJar::from_headers(&headers, key)
+                .add(session_cookie(&profile)?)
+                .remove(pending_cookie_tombstone()),
+            &user_guilds,
+        )?);
+        return Ok((
+            private_jar,
+            Redirect::temporary(&after_login(next_path.as_deref().unwrap_or("/dashboard"))),
+        ));
     }
+
+    if matches.is_empty() {
+        let private_jar = remove_oauth_cookies(with_registerable_guilds(
+            PrivateCookieJar::from_headers(&headers, key)
+                .add(session_cookie(&profile)?)
+                .remove(pending_cookie_tombstone()),
+            &user_guilds,
+        )?);
+        return Ok((
+            private_jar,
+            Redirect::temporary(&format!("{}/needs-tenant", cfg.frontend_url)),
+        ));
+    }
+
+    let pending = OauthPending {
+        access_token: token_resp.access_token,
+        profile,
+        tenants: matches,
+    };
+    let pending_json = serde_json::to_string(&pending)
+        .map_err(|e| AppError::Internal(format!("failed to serialize pending oauth: {e}")))?;
+    let private_jar = remove_oauth_cookies(with_registerable_guilds(
+        PrivateCookieJar::from_headers(&headers, key).add(pending_cookie(pending_json)),
+        &user_guilds,
+    )?);
+    Ok((
+        private_jar,
+        Redirect::temporary(&format!("{}/choose-server", cfg.frontend_url)),
+    ))
 }
 
 /// Tenants shown on the choose-server page (from the pending OAuth cookie).
@@ -649,7 +652,11 @@ fn read_pending(headers: &HeaderMap, key: Key) -> Result<OauthPending, AppError>
 async fn registered_tenants(
     control_db: &sea_orm::DatabaseConnection,
 ) -> Result<Vec<TenantChoice>, AppError> {
-    let active = list_active_tenants(control_db).await?;
+    let active = PlatformService::list_tenants(control_db)
+        .await?
+        .into_iter()
+        .filter(|tenant| tenant.status == "active")
+        .collect::<Vec<_>>();
     Ok(active
         .into_iter()
         .map(|tenant| TenantChoice {
@@ -657,6 +664,7 @@ async fn registered_tenants(
             name: tenant.name,
             slug: tenant.slug,
             icon_hash: None,
+            is_default: tenant.is_default,
         })
         .collect())
 }

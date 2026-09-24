@@ -113,6 +113,9 @@ pub struct TenantChoice {
     /// Discord guild icon hash, when known.
     #[serde(default)]
     pub icon_hash: Option<String>,
+    /// Whether platform configured this tenant as the automatic login target.
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 /// A Discord guild the user may register as a tenant.
@@ -698,6 +701,7 @@ mod tests {
             name: name.to_string(),
             slug: id.to_string(),
             icon_hash: None,
+            is_default: false,
         }
     }
 
