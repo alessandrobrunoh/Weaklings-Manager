@@ -595,7 +595,7 @@ export class Poller {
         // persistent calendar/thread design safely.
         if (!channel || !channel.threads?.create) continue;
         const events = channels.get(channelId) ?? [];
-        const payload = buildEventCalendarMessage(events, this.guildId, this.state.eventThreadIds);
+        const payload = buildEventCalendarMessage(events, this.state.eventThreadIds);
         const messageId = this.state.eventCalendarMessageIds[channelId];
         let message: Message | undefined;
         if (messageId) {
