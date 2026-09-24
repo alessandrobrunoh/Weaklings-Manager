@@ -1974,7 +1974,7 @@ interface AddEventMemberRequest {
     @if (showJoinForm()) {
       <app-dialog
         [title]="currentParticipant() ? t('events.detail.change_build') : t('events.participate')"
-        size="md"
+        size="xl"
         (closed)="toggleJoinForm()"
       >
         <form class="grid gap-4" (submit)="onJoinSubmit($event)">
@@ -1986,28 +1986,48 @@ interface AddEventMemberRequest {
                 {{ t('events.detail.no_builds') }}
               </p>
             }
-            <label>
-              <span class="label">{{ t('events.detail.primary_build') }} *</span>
-              <select class="select" required (change)="onPrimaryBuildChange($event)">
-                <option value="" [selected]="!draftPrimaryBuildId()">
-                  — Seleziona Build Primaria —
-                </option>
-                <option [value]="fillValue" [selected]="isFillSelected()">
-                  {{ t('events.detail.fill_option') }}
-                </option>
-                @for (entry of availableBuilds(); track entry.build_id) {
-                  <option
-                    [value]="entry.build_id"
-                    [selected]="isSelectedBuild(draftPrimaryBuildId(), entry.build_id)"
-                  >
-                    {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
-                    @if (entry.build.category_name) {
-                      ({{ entry.build.category_name }})
-                    }
-                  </option>
+            <section class="build-choice-panel" aria-labelledby="primary-build-choice-title">
+              <div class="flex items-center justify-between gap-3">
+                <span id="primary-build-choice-title" class="label">{{ t('events.detail.primary_build') }} *</span>
+                @if (isFillSelected()) {
+                  <span class="chip chip--info">Fill</span>
                 }
-              </select>
-            </label>
+              </div>
+              <div class="build-choice-grid">
+                <button
+                  type="button"
+                  class="build-choice-card build-choice-card--fill"
+                  [class.build-choice-card--selected]="isFillSelected()"
+                  [attr.aria-pressed]="isFillSelected()"
+                  (click)="selectJoinPrimary(fillValue)"
+                >
+                  <span class="build-choice-card__glyph">＋</span>
+                  <span class="build-choice-card__copy">
+                    <strong>{{ t('events.detail.fill_option') }}</strong>
+                    <small>Partecipa senza build</small>
+                  </span>
+                </button>
+                @for (entry of availableBuilds(); track entry.build_id) {
+                  <button
+                    type="button"
+                    class="build-choice-card"
+                    [class.build-choice-card--selected]="isSelectedBuild(draftPrimaryBuildId(), entry.build_id)"
+                    [attr.aria-pressed]="isSelectedBuild(draftPrimaryBuildId(), entry.build_id)"
+                    (click)="selectJoinPrimary(buildIdValue(entry.build_id))"
+                  >
+                    @if (buildWeaponIcon(entry.build_id); as iconUrl) {
+                      <img class="build-choice-card__icon" [src]="iconUrl" [alt]="entry.build.name" width="64" height="64" loading="lazy" />
+                    } @else {
+                      <span class="build-choice-card__glyph">{{ roleGlyph(entry.build.role) }}</span>
+                    }
+                    <span class="build-choice-card__copy">
+                      <strong>{{ entry.build.name }}</strong>
+                      <small>{{ roleLabelName(entry.build.role) }} · {{ entry.build.category_name || t('comps.noCategory') }}</small>
+                    </span>
+                  </button>
+                }
+              </div>
+            </section>
 
             @if (!isFillSelected()) {
               <div
@@ -2023,22 +2043,46 @@ interface AddEventMemberRequest {
                 </div>
               </div>
 
-              <label>
-                <span class="label">{{ t('events.detail.secondary_build') }}</span>
-                <select class="select" (change)="onSecondaryBuildChange($event)">
-                  <option value="" [selected]="!draftSecondaryBuildId()">
-                    — Nessuna (Opzionale) —
-                  </option>
+              <section class="build-choice-panel" aria-labelledby="secondary-build-choice-title">
+                <div class="flex items-center justify-between gap-3">
+                  <span id="secondary-build-choice-title" class="label">{{ t('events.detail.secondary_build') }}</span>
+                  <span class="text-xs text-[var(--color-text-secondary)]">Opzionale</span>
+                </div>
+                <div class="build-choice-grid">
+                  <button
+                    type="button"
+                    class="build-choice-card build-choice-card--none"
+                    [class.build-choice-card--selected]="!draftSecondaryBuildId()"
+                    [attr.aria-pressed]="!draftSecondaryBuildId()"
+                    (click)="selectJoinSecondary('')"
+                  >
+                    <span class="build-choice-card__glyph">×</span>
+                    <span class="build-choice-card__copy">
+                      <strong>Nessuna</strong>
+                      <small>Non assegnare una seconda build</small>
+                    </span>
+                  </button>
                   @for (entry of availableBuilds(); track entry.build_id) {
-                    <option
-                      [value]="entry.build_id"
-                      [selected]="isSelectedBuild(draftSecondaryBuildId(), entry.build_id)"
+                    <button
+                      type="button"
+                      class="build-choice-card"
+                      [class.build-choice-card--selected]="isSelectedBuild(draftSecondaryBuildId(), entry.build_id)"
+                      [attr.aria-pressed]="isSelectedBuild(draftSecondaryBuildId(), entry.build_id)"
+                      (click)="selectJoinSecondary(buildIdValue(entry.build_id))"
                     >
-                      {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
-                    </option>
+                      @if (buildWeaponIcon(entry.build_id); as iconUrl) {
+                        <img class="build-choice-card__icon" [src]="iconUrl" [alt]="entry.build.name" width="64" height="64" loading="lazy" />
+                      } @else {
+                        <span class="build-choice-card__glyph">{{ roleGlyph(entry.build.role) }}</span>
+                      }
+                      <span class="build-choice-card__copy">
+                        <strong>{{ entry.build.name }}</strong>
+                        <small>{{ roleLabelName(entry.build.role) }}</small>
+                      </span>
+                    </button>
                   }
-                </select>
-              </label>
+                </div>
+              </section>
             }
 
             @if (joinError()) {
@@ -2711,6 +2755,23 @@ interface AddEventMemberRequest {
   `,
   styles: `
     @layer components {
+      :host {
+        display: block;
+        color: var(--color-text);
+      }
+      :host ::ng-deep .rounded-xl,
+      :host ::ng-deep .rounded-2xl {
+        border-radius: var(--radius-cards, 2px);
+        box-shadow: none;
+      }
+      :host ::ng-deep .rounded-lg,
+      :host ::ng-deep .rounded-md {
+        border-radius: var(--radius-cards, 2px);
+        box-shadow: none;
+      }
+      :host ::ng-deep .border {
+        border-color: var(--color-border);
+      }
       .event-detail__label {
         color: var(--color-text-secondary);
         font-family: var(--font-universalsans);
@@ -2731,6 +2792,76 @@ interface AddEventMemberRequest {
         font-family: var(--font-geistmono, monospace);
         font-size: 1rem;
         font-weight: 600;
+      }
+      .build-choice-panel {
+        display: grid;
+        gap: 0.625rem;
+        padding: 0.875rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface-1);
+      }
+      .build-choice-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+        gap: 0.625rem;
+        max-height: min(38vh, 25rem);
+        overflow-y: auto;
+        padding: 0.125rem;
+      }
+      .build-choice-card {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.625rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface);
+        color: var(--color-text);
+        cursor: pointer;
+        text-align: left;
+        transition: border-color var(--motion-fast), background-color var(--motion-fast), transform var(--motion-fast);
+      }
+      .build-choice-card:hover,
+      .build-choice-card:focus-visible,
+      .build-choice-card--selected {
+        border-color: var(--color-primary);
+        background: var(--color-primary-container);
+        transform: translateY(-1px);
+      }
+      .build-choice-card__icon,
+      .build-choice-card__glyph {
+        display: inline-flex;
+        width: 4rem;
+        height: 4rem;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        object-fit: contain;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface-2);
+      }
+      .build-choice-card__glyph {
+        color: var(--color-primary);
+        font-size: 1.25rem;
+        font-weight: 700;
+      }
+      .build-choice-card__copy {
+        display: grid;
+        min-width: 0;
+        gap: 0.2rem;
+      }
+      .build-choice-card__copy strong,
+      .build-choice-card__copy small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .build-choice-card__copy small {
+        color: var(--color-text-secondary);
+        font-size: 0.6875rem;
       }
       .event-detail__sub {
         color: var(--color-text-secondary);
@@ -4959,6 +5090,10 @@ export class EventDetailPage {
 
   protected onPrimaryBuildChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
+    this.selectJoinPrimary(value);
+  }
+
+  protected selectJoinPrimary(value: string): void {
     this.draftPrimaryBuildId.set(value);
     if (value === FILL_BUILD_VALUE) {
       this.draftSecondaryBuildId.set('');
@@ -4975,8 +5110,21 @@ export class EventDetailPage {
     return selected === String(buildId);
   }
 
+  protected buildIdValue(buildId: number): string {
+    return String(buildId);
+  }
+
   protected onSecondaryBuildChange(event: Event): void {
-    this.draftSecondaryBuildId.set((event.target as HTMLSelectElement).value);
+    this.selectJoinSecondary((event.target as HTMLSelectElement).value);
+  }
+
+  protected selectJoinSecondary(value: string): void {
+    this.draftSecondaryBuildId.set(value);
+    this.joinError.set(null);
+  }
+
+  protected buildWeaponIcon(buildId: number): string | null {
+    return this.buildWeaponByBuildId().get(buildId)?.openalbion_item_icon ?? null;
   }
 
   protected async onJoinSubmit(submit: SubmitEvent): Promise<void> {

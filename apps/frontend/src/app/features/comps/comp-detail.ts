@@ -129,6 +129,24 @@ interface BuildOptionGroup {
     TooltipDirective,
   ],
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
+      box-shadow: none;
+    }
+    :host ::ng-deep input,
+    :host ::ng-deep select,
+    :host ::ng-deep button {
+      border-radius: var(--radius-sm, 2px);
+    }
     .comp-detail__party-tab--active {
       border-bottom-color: var(--color-primary);
       color: var(--color-text);
@@ -595,7 +613,7 @@ interface BuildOptionGroup {
                           </button>
                           <a
                             class="text-xs text-secondary hover:text-[var(--color-text)]"
-                            [routerLink]="['/comps', 'builds', entry.build_id]"
+                            [routerLink]="['/builds', entry.build_id]"
                           >
                             Vai alla build &rarr;
                           </a>
@@ -931,7 +949,7 @@ interface BuildOptionGroup {
             <button type="button" class="btn btn--outline btn--sm" (click)="inspectedBuildId.set(null)">
               Chiudi
             </button>
-            <a class="btn btn--primary btn--sm" [routerLink]="['/comps', 'builds', inspected.id]" (click)="inspectedBuildId.set(null)">
+            <a class="btn btn--primary btn--sm" [routerLink]="['/builds', inspected.id]" (click)="inspectedBuildId.set(null)">
               Apri Scheda Build Completa &rarr;
             </a>
           </div>

@@ -64,6 +64,7 @@ export const uk: TranslationDict = {
   'nav.battles': 'Битви',
   'nav.intel': 'Інформація',
   'nav.comps': 'Композиції',
+  'nav.builds': 'Білди',
   'nav.tests': 'Тести',
   'nav.siphoned': 'Висмоктано',
   'nav.regears': 'Regear',

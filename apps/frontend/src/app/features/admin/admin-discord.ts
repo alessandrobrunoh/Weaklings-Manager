@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -68,6 +69,7 @@ const SPLIT_TAG_FIELDS = [
 @Component({
   selector: 'app-admin-discord',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Loading, PageHeader, PageStack, SearchableSelect],
   template: `
     <app-page-header [title]="t('admin.discord.title')" [subtitle]="t('admin.discord.hint')" />

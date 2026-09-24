@@ -137,13 +137,19 @@ export const routes: Routes = [
       },
       {
         path: 'builds/:buildId',
-        redirectTo: 'comps/builds/:buildId',
+        loadComponent: () =>
+          import('./features/comps/comp-build-detail').then((m) => m.CompBuildDetailPage),
         pathMatch: 'full',
       },
       {
-        path: 'comps/builds/:buildId',
+        path: 'builds',
         loadComponent: () =>
-          import('./features/comps/comp-build-detail').then((m) => m.CompBuildDetailPage),
+          import('./features/comps/builds').then((m) => m.Builds),
+      },
+      {
+        path: 'comps/builds/:buildId',
+        redirectTo: 'builds/:buildId',
+        pathMatch: 'full',
       },
       {
         path: 'comps/:compId',

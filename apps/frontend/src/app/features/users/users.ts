@@ -61,6 +61,19 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     TooltipDirective,
   ],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .kpi-card {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -137,7 +150,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       }
     </app-page-header>
 
-    <app-page-stack>
+    <app-page-stack class="workbench-page">
       <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
         <!-- Card 1: Total -->
         <article class="kpi-card">

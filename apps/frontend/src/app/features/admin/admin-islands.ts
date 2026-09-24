@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -40,7 +41,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
   selector: 'app-admin-islands',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, RouterLink],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -62,7 +63,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
       border-radius: 0.5rem;
       flex-shrink: 0;
     }
-  `,
+  `],
   template: `
     <app-page-header [title]="t('admin.islands.title')" [subtitle]="pageSubtitle()">
       @if (canMutateCatalog()) {

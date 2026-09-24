@@ -800,6 +800,7 @@ export function filterAlbionEquipmentCatalog(
   return catalog
     .filter(
       (item) =>
+        isAlbionCatalogItemAvailable(item.identifier ?? '') &&
         (item.identifier ?? '').toUpperCase().startsWith(`${tier.toUpperCase()}_`) &&
         belongsToSlot(item.identifier ?? '', slot),
     )
@@ -808,6 +809,64 @@ export function filterAlbionEquipmentCatalog(
         normalizedQuery.length === 0 || normalizeSearchText(item.name).includes(normalizedQuery),
     )
     .slice(0, 100);
+}
+
+/** True when the selected item has Albion quality grades (Normal … Masterpiece). */
+export function albionItemSupportsQuality(identifier: string | null | undefined): boolean {
+  const normalized = identifier?.trim().toUpperCase() ?? '';
+  return (
+    !normalized.includes('_POTION_') &&
+    !normalized.includes('_MEAL_') &&
+    !normalized.includes('_MOUNT_')
+  );
+}
+
+/** True when the item can carry an enchantment suffix; mounts are always plain tiered items. */
+export function albionItemSupportsEnchantment(identifier: string | null | undefined): boolean {
+  return !(identifier?.trim().toUpperCase() ?? '').includes('_MOUNT_');
+}
+
+/**
+ * Returns false for family/tier combinations that are not craftable in Albion.
+ *
+ * The local fallback catalog expands family names across every tier. Keep this guard here as well
+ * as in the backend catalog so offline/fallback searches cannot offer impossible consumables.
+ */
+export function isAlbionCatalogItemAvailable(identifier: string): boolean {
+  const parts = identifier.trim().toUpperCase().split('_');
+  const tier = Number(parts.shift()?.replace(/^T/, ''));
+  const family = parts.join('_');
+  if (!Number.isInteger(tier) || !family) return true;
+
+  let validTiers: readonly number[] | undefined;
+  if (family.startsWith('POTION_HEAL') || family.startsWith('POTION_ENERGY')) {
+    validTiers = [2, 4, 6];
+  } else if (
+    [
+      'POTION_REVIVE',
+      'POTION_STONESKIN',
+      'POTION_SLOWFIELD',
+      'POTION_MOB_RESET',
+      'POTION_CLEANSE2',
+      'POTION_ACID',
+    ].includes(family)
+  ) {
+    validTiers = [3, 5, 7];
+  } else if (
+    ['POTION_BERSERK', 'POTION_LAVA', 'POTION_GATHER', 'POTION_TORNADO'].includes(family)
+  ) {
+    validTiers = [4, 6, 8];
+  } else if (
+    family.startsWith('MEAL_PIE') ||
+    family.startsWith('MEAL_OMELETTE') ||
+    family.startsWith('MEAL_ROAST')
+  ) {
+    validTiers = [3, 5, 7];
+  } else if (family.startsWith('MEAL_STEW') || family.startsWith('MEAL_SANDWICH')) {
+    validTiers = [4, 6, 8];
+  }
+
+  return validTiers?.includes(tier) ?? true;
 }
 
 /** Removes the tier prefix so all eight tiers share one specialization node. */

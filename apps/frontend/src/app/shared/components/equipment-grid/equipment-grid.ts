@@ -13,7 +13,9 @@ import {
   albionItemQualityLabel,
   DEFAULT_ALBION_ITEM_QUALITY,
 } from '../../data/albion-item-quality';
+import { albionItemSupportsQuality } from '../../data/albion-equipment-catalog';
 import { AbilityBar, type AbilityChoiceChange } from '../ability-bar/ability-bar';
+import { Dialog } from '../dialog/dialog';
 
 /**
  * Canonical character-sheet slot order.
@@ -87,7 +89,92 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
 @Component({
   selector: 'app-equipment-grid',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AbilityBar],
+  imports: [AbilityBar, Dialog],
+  styles: `
+    .equipment-picker__toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .equipment-picker__search {
+      grid-column: 1 / -1;
+    }
+
+    .equipment-picker__results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+      gap: 0.75rem;
+      max-height: min(52vh, 34rem);
+      overflow: auto;
+      padding: 0.25rem;
+    }
+
+    .equipment-picker__option {
+      display: flex;
+      min-height: 9.5rem;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.7rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-cards);
+      background: var(--color-surface-1);
+      color: var(--color-text);
+      cursor: pointer;
+      text-align: center;
+      transition: border-color 120ms ease-out, background-color 120ms ease-out, transform 120ms ease-out;
+    }
+
+    .equipment-picker__option:hover,
+    .equipment-picker__option:focus-visible,
+    .equipment-picker__option--selected {
+      border-color: var(--color-primary);
+      background: var(--color-primary-container);
+      transform: translateY(-1px);
+    }
+
+    .equipment-picker__option-icon {
+      width: 4.5rem;
+      height: 4.5rem;
+      object-fit: contain;
+      image-rendering: auto;
+    }
+
+    .equipment-picker__option-copy {
+      display: grid;
+      gap: 0.15rem;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .equipment-picker__option-copy strong,
+    .equipment-picker__option-copy small {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .equipment-picker__option-copy small {
+      color: var(--color-text-secondary);
+    }
+
+    .equipment-picker__empty {
+      grid-column: 1 / -1;
+      padding: 2rem 1rem;
+      color: var(--color-text-secondary);
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      .equipment-picker__toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+  `,
   template: `
     <div class="equipment-grid equipment-grid--paperdoll" role="group" aria-label="Equipment">
       @for (slot of slots; track slot) {
@@ -120,12 +207,14 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
             @if (tierLabel(entry)) {
               <span class="equipment-slot__tier">{{ tierLabel(entry) }}</span>
             }
-            <span
-              class="equipment-slot__quality equipment-slot__quality--{{ itemQuality(entry) }}"
-              [title]="qualityLabel(entry)"
-            >
-              {{ qualityShort(entry) }}
-            </span>
+            @if (supportsQuality(entry.openalbion_item_icon, entry.slot)) {
+              <span
+                class="equipment-slot__quality equipment-slot__quality--{{ itemQuality(entry) }}"
+                [title]="qualityLabel(entry)"
+              >
+                {{ qualityShort(entry) }}
+              </span>
+            }
           }
 
           @if (canManage()) {
@@ -149,13 +238,25 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
           }
 
           @if (editingSlot() === slot) {
-            <div
-              class="equipment-popover equipment-popover--{{ popoverAlign(slot) }}"
-              role="dialog"
-              [attr.aria-label]="slotLabel(slot) + ' picker'"
-              (click)="$event.stopPropagation()"
+            <app-dialog
+              [title]="slotLabel(slot) + ' — scegli equipaggiamento'"
+              subtitle="Cerca per nome e scegli direttamente l'icona dell'oggetto."
+              size="xl"
+              (closed)="cancelEdit.emit()"
             >
-              <div class="grid gap-2">
+              <div class="grid gap-4">
+                <div class="equipment-picker__toolbar">
+                  <label class="equipment-picker__search text-left">
+                    <span class="label">Cerca oggetto</span>
+                    <input
+                      class="input"
+                      type="search"
+                      placeholder="Nome oggetto…"
+                      [value]="draftSearch()"
+                      (input)="onSearchInput($event)"
+                    />
+                  </label>
+
                 <label class="text-left">
                   <span class="label">Tier</span>
                   <select class="select" [value]="draftTier()" (change)="onTierChange($event)">
@@ -165,51 +266,49 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   </select>
                 </label>
 
-                <label class="text-left">
-                  <span class="label">Enchantment</span>
-                  <select
-                    class="select"
-                    [value]="draftEnchantment()"
-                    (change)="onEnchantmentChange($event)"
-                  >
-                    @for (level of enchantments; track level) {
-                      <option [value]="level">{{ level === 0 ? 'Plain' : '.' + level }}</option>
-                    }
-                  </select>
-                </label>
+                @if (supportsEnchantmentForSlot(slot)) {
+                  <label class="text-left">
+                    <span class="label">Enchantment</span>
+                    <select
+                      class="select"
+                      [value]="draftEnchantment()"
+                      (change)="onEnchantmentChange($event)"
+                    >
+                      @for (level of enchantments; track level) {
+                        <option [value]="level">{{ level === 0 ? 'Plain' : '.' + level }}</option>
+                      }
+                    </select>
+                  </label>
+                }
 
-                <label class="text-left">
-                  <span class="label">Quality</span>
-                  <select class="select" [value]="draftQuality()" (change)="onQualityChange($event)">
-                    @for (grade of qualities; track grade.id) {
-                      <option [value]="grade.id">{{ grade.label }}</option>
-                    }
-                  </select>
-                </label>
+                @if (supportsQualityForSlot(slot)) {
+                  <label class="text-left">
+                    <span class="label">Quality</span>
+                    <select class="select" [value]="draftQuality()" (change)="onQualityChange($event)">
+                      @for (grade of qualities; track grade.id) {
+                        <option [value]="grade.id">{{ grade.label }}</option>
+                      }
+                    </select>
+                  </label>
+                }
 
-                <label class="text-left">
-                  <span class="label">Search item</span>
-                  <input
-                    class="input"
-                    type="search"
-                    placeholder="Type item name…"
-                    [value]="draftSearch()"
-                    (input)="onSearchInput($event)"
-                  />
-                </label>
+                </div>
 
                 <div class="text-left">
-                  <span class="label" id="equipment-result-label">Result</span>
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="label">Oggetti disponibili</span>
+                    <span class="chip">{{ searchResults().length }}</span>
+                  </div>
                   <div
                     class="equipment-picker__results"
                     role="listbox"
-                    aria-labelledby="equipment-result-label"
+                    aria-label="Oggetti disponibili"
                     [attr.aria-busy]="searchLoading()"
                   >
                     @if (searchLoading()) {
-                      <p class="equipment-picker__empty" role="status">Searching…</p>
+                      <p class="equipment-picker__empty" role="status">Ricerca in corso…</p>
                     } @else if (searchResults().length === 0) {
-                      <p class="equipment-picker__empty">Type to search the catalogue</p>
+                      <p class="equipment-picker__empty">Nessun oggetto disponibile per questo slot.</p>
                     } @else {
                       @for (item of searchResults(); track item.id) {
                         <button
@@ -225,8 +324,8 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                             class="equipment-picker__option-icon"
                             [src]="item.icon ?? ''"
                             alt=""
-                            width="48"
-                            height="48"
+                            width="72"
+                            height="72"
                             loading="lazy"
                           />
                           <span class="equipment-picker__option-copy">
@@ -234,7 +333,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                             <small>{{ item.tier }} · {{ item.identifier ?? '' }}</small>
                           </span>
                           @if (isSelected(item)) {
-                            <span class="equipment-picker__check" aria-hidden="true">✓</span>
+                            <span class="equipment-picker__check" aria-hidden="true">✓ Selezionato</span>
                           }
                         </button>
                       }
@@ -253,8 +352,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   </div>
                 }
               </div>
-
-              <div class="flex justify-between gap-2">
+              <div class="flex justify-between gap-2 mt-4">
                 <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEdit.emit()">
                   Cancel
                 </button>
@@ -267,7 +365,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   Save
                 </button>
               </div>
-            </div>
+            </app-dialog>
           }
         </div>
       }
@@ -281,31 +379,31 @@ export class EquipmentGrid {
   /** Whether the slot cards are interactive (parent has manage permission). */
   readonly canManage = input(false);
 
-  /** Slot currently being edited — drives which popover is open. */
+  /** Slot currently being edited — drives which large native dialog is open. */
   readonly editingSlot = input<BuildSlot | null>(null);
 
-  /** Tier filter bound to the open popover's tier `<select>`. */
+  /** Tier filter bound to the open picker dialog's tier `<select>`. */
   readonly draftTier = input('T8');
 
-  /** Albion quality (1..=5) bound to the open popover's quality `<select>`. */
+  /** Albion quality (1..=5) bound to the open picker dialog's quality `<select>`. */
   readonly draftQuality = input(DEFAULT_ALBION_ITEM_QUALITY);
 
-  /** Albion enchantment (0..=4) bound to the open popover's enchantment `<select>`. */
+  /** Albion enchantment (0..=4) bound to the open picker dialog's enchantment `<select>`. */
   readonly draftEnchantment = input<number>(DEFAULT_ALBION_ITEM_ENCHANTMENT);
 
-  /** Search box value of the open popover. */
+  /** Search box value of the open picker dialog. */
   readonly draftSearch = input('');
 
-  /** Currently selected OpenAlbion item id (string to ease `<select>` binding). */
+  /** Currently selected OpenAlbion item id. */
   readonly draftItemId = input('');
 
-  /** OpenAlbion search results to populate the popover's item dropdown. */
+  /** OpenAlbion search results shown as large icon cards. */
   readonly searchResults = input<readonly OpenAlbionItem[]>([]);
 
-  /** Loading flag rendered inside the popover's empty option. */
+  /** Loading flag rendered inside the icon grid. */
   readonly searchLoading = input(false);
 
-  /** Tier options shown in the popover's tier select. */
+  /** Tier options shown in the picker dialog's tier select. */
   readonly tiers = input<readonly string[]>(['T4', 'T5', 'T6', 'T7', 'T8']);
 
   /**
@@ -318,25 +416,25 @@ export class EquipmentGrid {
   /** Fired when the user clicks anywhere on a slot card. */
   readonly slotToggle = output<BuildSlot>();
 
-  /** Fired when the user changes the tier dropdown inside the popover. */
+  /** Fired when the user changes the tier dropdown inside the picker dialog. */
   readonly tierChange = output<string>();
 
-  /** Fired when the user changes the quality dropdown inside the popover. */
+  /** Fired when the user changes the quality dropdown inside the picker dialog. */
   readonly qualityChange = output<number>();
 
-  /** Fired when the user changes the enchantment dropdown inside the popover. */
+  /** Fired when the user changes the enchantment dropdown inside the picker dialog. */
   readonly enchantmentChange = output<number>();
 
-  /** Fired on each search input keystroke (parent debounces the API call). */
+  /** Fired on each search input keystroke (parent debounces the catalogue filter). */
   readonly searchChange = output<string>();
 
-  /** Fired with the picked item id from the search results dropdown. */
+  /** Fired with the picked item id from the icon grid. */
   readonly itemSelect = output<string>();
 
-  /** Fired when the user confirms the popover (Save). Slot is echoed for context. */
+  /** Fired when the user confirms the picker dialog (Save). Slot is echoed for context. */
   readonly saveSlot = output<BuildSlot>();
 
-  /** Fired when the user dismisses the popover (Cancel). */
+  /** Fired when the user dismisses the picker dialog (Cancel). */
   readonly cancelEdit = output<void>();
 
   /** Fired when the user clicks the inline clear (×) button on a filled slot. */
@@ -375,28 +473,6 @@ export class EquipmentGrid {
     this.itemSelect.emit(String(item.id));
   }
 
-  /**
-   * Anchor the popover so it never overflows the viewport edge.
-   *
-   * Slots in the leftmost column open right-aligned (popover grows toward
-   * the centre); rightmost column opens left-aligned; centre slots can
-   * safely centre the popover.
-   */
-  protected popoverAlign(slot: BuildSlot): 'left' | 'right' | 'center' {
-    switch (slot) {
-      case 'bag':
-      case 'weapon':
-      case 'potion':
-        return 'left';
-      case 'cape':
-      case 'off_hand':
-      case 'food':
-        return 'right';
-      default:
-        return 'center';
-    }
-  }
-
   protected onTierChange(event: Event): void {
     this.tierChange.emit((event.target as HTMLSelectElement).value);
   }
@@ -429,22 +505,29 @@ export class EquipmentGrid {
     return ALBION_ITEM_QUALITIES.find((grade) => grade.id === quality)?.short ?? 'E';
   }
 
+  protected supportsQuality(icon: string | null | undefined, slot: BuildSlot): boolean {
+    const identifier = icon?.match(/\/item\/([^.?]+)/)?.[1];
+    return albionItemSupportsQuality(identifier) && this.supportsQualityForSlot(slot);
+  }
+
+  protected supportsQualityForSlot(slot: BuildSlot): boolean {
+    return slot !== 'potion' && slot !== 'food' && slot !== 'mount';
+  }
+
+  protected supportsEnchantmentForSlot(slot: BuildSlot): boolean {
+    return slot !== 'mount';
+  }
+
   protected itemIcon(entry: BuildItemSlot | undefined): string {
-    return albionIconUrlWithQuality(entry?.openalbion_item_icon, entry?.openalbion_item_quality);
+    const quality = entry && this.supportsQualityForSlot(entry.slot) ? entry.openalbion_item_quality : 1;
+    return albionIconUrlWithQuality(entry?.openalbion_item_icon, quality);
   }
 
   protected onSearchInput(event: Event): void {
     this.searchChange.emit((event.target as HTMLInputElement).value);
   }
 
-  protected onItemSelect(event: Event): void {
-    this.itemSelect.emit((event.target as HTMLSelectElement).value);
-  }
-
-  /**
-   * Stop the synthetic full-card click so the clear action does not also
-   * toggle the popover open.
-   */
+  /** Stop the synthetic full-card click so the clear action does not also open the picker. */
   protected onClearClick(event: MouseEvent, slot: BuildSlot): void {
     event.stopPropagation();
     this.removeItem.emit(slot);

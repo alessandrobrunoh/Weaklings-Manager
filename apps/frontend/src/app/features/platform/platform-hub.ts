@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -17,6 +18,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 @Component({
   selector: 'app-platform-hub',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Icon, PageHeader, PageStack, RouterLink],
   template: `
     <app-page-header [title]="t('platform.title')" [subtitle]="t('platform.hub.subtitle')" />

@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest';
 import type { OpenAlbionItem } from '../../core/models/api.models';
 import {
   albionCombatIconUrl,
+  albionItemSupportsEnchantment,
+  albionItemSupportsQuality,
   deduplicateAlbionCombatCatalog,
   filterAlbionEquipmentCatalog,
+  isAlbionCatalogItemAvailable,
   isAlbionGatheringGear,
   normalizeAlbionEquipmentName,
 } from './albion-equipment-catalog';
@@ -57,6 +60,24 @@ describe('Albion equipment catalog names', () => {
     expect(filterAlbionEquipmentCatalog([rotcaller], 'Rootcaller', 'weapon', 'T8')).toEqual([
       rotcaller,
     ]);
+  });
+
+  it('only offers real consumable tiers', () => {
+    expect(isAlbionCatalogItemAvailable('T2_POTION_HEAL')).toBe(true);
+    expect(isAlbionCatalogItemAvailable('T3_POTION_HEAL')).toBe(false);
+    expect(isAlbionCatalogItemAvailable('T3_MEAL_PIE')).toBe(true);
+    expect(isAlbionCatalogItemAvailable('T4_MEAL_PIE')).toBe(false);
+    expect(isAlbionCatalogItemAvailable('T8_MEAL_STEW')).toBe(true);
+    expect(isAlbionCatalogItemAvailable('T7_MEAL_STEW')).toBe(false);
+  });
+
+  it('does not expose quality controls for consumables or mounts', () => {
+    expect(albionItemSupportsQuality('T8_MAIN_SWORD')).toBe(true);
+    expect(albionItemSupportsQuality('T4_POTION_HEAL')).toBe(false);
+    expect(albionItemSupportsQuality('T8_MEAL_STEW')).toBe(false);
+    expect(albionItemSupportsQuality('T8_MOUNT_HORSE')).toBe(false);
+    expect(albionItemSupportsEnchantment('T8_MAIN_SWORD')).toBe(true);
+    expect(albionItemSupportsEnchantment('T8_MOUNT_HORSE')).toBe(false);
   });
 
   it('keeps one specialization node per weapon family across all tiers', () => {

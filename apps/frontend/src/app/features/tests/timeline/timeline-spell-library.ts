@@ -91,6 +91,10 @@ interface LibrarySection {
     </div>
   `,
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
     .library-entry {
       display: flex;
       width: 100%;

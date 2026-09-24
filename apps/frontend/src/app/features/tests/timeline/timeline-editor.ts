@@ -368,6 +368,10 @@ const MAGNET_PX = 6;
     </div>
   `,
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
     .timeline-scroller {
       overflow: auto;
       overscroll-behavior-x: contain;

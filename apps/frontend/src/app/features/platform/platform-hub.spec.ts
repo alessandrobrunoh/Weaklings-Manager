@@ -50,6 +50,7 @@ describe('PlatformHub', () => {
     expect(compiled.textContent).toContain('nav.platform.admins');
     expect(compiled.textContent).toContain('2');
     expect(compiled.textContent).toContain('1');
+    expect(compiled.querySelectorAll('article.card')).toHaveLength(2);
     expect(compiled.querySelector('a[href="/platform/tenants"]')).toBeTruthy();
     expect(compiled.querySelector('a[href="/platform/admins"]')).toBeTruthy();
     expect(compiled.querySelector('a[href="/platform/ranks"]')).toBeTruthy();

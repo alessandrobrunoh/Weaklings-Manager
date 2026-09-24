@@ -96,6 +96,19 @@ function newSplitBag(amount = 0): SplitBagDraft {
     TooltipDirective,
   ],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .kpi-card {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+    }
     :host {
       display: block;
       width: 100%;
@@ -233,7 +246,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
       }
     </app-page-header>
 
-    <app-page-stack>
+    <app-page-stack class="workbench-page">
       <!-- Row 1: KPI Summary Cards -->
       <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5" aria-label="Split KPI Summary">
         <!-- Card 1: Total Distributed -->

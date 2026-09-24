@@ -14,7 +14,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
     :host {
       display: flex;
       flex-direction: column;
-      gap: var(--page-gap, var(--spacing-24, 1.5rem));
+      gap: var(--page-gap, var(--spacing-16, 1rem));
     }
   `,
 })

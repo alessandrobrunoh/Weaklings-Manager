@@ -48,11 +48,11 @@ import { Icon } from '../icon/icon';
   `,
   styles: `
     .error-state__icon {
-      border-radius: var(--radius-xl, 12px);
+      border-radius: var(--radius-sm, 2px);
       border-color: color-mix(in oklab, var(--color-error) 24%, var(--color-border));
       background: var(--color-error-container);
       color: var(--color-error);
-      box-shadow: var(--shadow-subtle);
+      box-shadow: none;
     }
   `,
 })

@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -126,7 +127,7 @@ function toDateInput(date: Date): string {
     TooltipDirective,
     ViewToggle,
   ],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .fin-filters {
       display: flex;
       flex-wrap: wrap;
@@ -441,7 +442,7 @@ function toDateInput(date: Date): string {
         grid-template-columns: 1fr;
       }
     }
-  `,
+  `],
   template: `
     <app-page-header [title]="t('bank.finance.heading')" [subtitle]="t('bank.finance.description')">
       <button

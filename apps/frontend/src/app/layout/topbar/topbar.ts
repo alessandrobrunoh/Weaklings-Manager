@@ -25,11 +25,8 @@ import { NotificationsPanel } from './notifications-panel';
 import type { NavSection } from '../sidebar/sidebar';
 
 /**
- * Channel header.
- *
- * Discord puts the open channel on the left of this bar and the utility
- * icons on the right; the equivalent here is the open route, prefixed by
- * the server it belongs to on wide screens.
+ * Compact workbench header with the open route on the left and utilities on
+ * the right. Its geometry stays stable while the content area changes route.
  */
 @Component({
   selector: 'app-topbar',
@@ -55,8 +52,8 @@ import type { NavSection } from '../sidebar/sidebar';
       align-items: center;
       gap: 0.375rem;
       font-family: var(--font-sans);
-      font-size: 0.9375rem;
-      font-weight: 700;
+      font-size: 0.8125rem;
+      font-weight: 600;
       color: var(--color-text);
       letter-spacing: -0.005em;
     }
@@ -78,7 +75,7 @@ import type { NavSection } from '../sidebar/sidebar';
   `,
   template: `
     <header
-      class="topbar flex items-center justify-between gap-3 px-3 sm:px-4"
+      class="topbar flex items-center justify-between gap-2 px-2 sm:px-3"
       aria-label="Application toolbar"
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -106,7 +103,7 @@ import type { NavSection } from '../sidebar/sidebar';
           <app-icon name="menu" size="1.25rem" />
         </button>
 
-        <!-- Open route, in the position Discord gives the open channel -->
+        <!-- Current route title remains visible on narrow screens. -->
         <div class="topbar__route">
           <app-icon
             name="hash"
@@ -252,6 +249,7 @@ export class Topbar {
     if (path === '' || path === '/' || path === '/dashboard') return this.t('nav.dashboard');
     if (path.startsWith('/season')) return this.t('nav.season');
     if (path.startsWith('/events')) return this.t('nav.events');
+    if (path.startsWith('/builds')) return this.t('nav.builds');
     if (path.startsWith('/comps')) return this.t('nav.comps');
     if (path.startsWith('/battles')) return this.t('nav.battles');
     if (path.startsWith('/fights')) return 'Fights';

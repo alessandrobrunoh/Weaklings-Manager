@@ -82,6 +82,19 @@ const STATS_FETCH_LIMIT = 1000;
     ViewToggle,
   ],
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
+      box-shadow: none;
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;

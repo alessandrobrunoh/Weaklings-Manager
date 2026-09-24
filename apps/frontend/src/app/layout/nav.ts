@@ -127,6 +127,7 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     items: [
       { path: '/events', icon: 'calendar', labelKey: 'nav.events', featureKey: 'events' },
       { path: '/comps', icon: 'package', labelKey: 'nav.comps', featureKey: 'comps' },
+      { path: '/builds', icon: 'package', labelKey: 'nav.builds', featureKey: 'comps' },
       {
         path: '/tests',
         icon: 'activity',

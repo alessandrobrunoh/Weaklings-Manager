@@ -59,7 +59,7 @@ interface NextMassCard {
     .action-panel {
       background-color: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-cards);
+      border-radius: var(--radius-sm, 2px);
       transition: border-color 150ms ease, background-color 150ms ease;
     }
     .identity-card:hover,
@@ -69,7 +69,7 @@ interface NextMassCard {
     }
 
     .kpi-card {
-      padding: 1.125rem 1.25rem;
+      padding: 0.75rem 0.875rem;
       display: flex;
       flex-direction: column;
       text-decoration: none;
@@ -79,44 +79,29 @@ interface NextMassCard {
     }
 
     .icon-capsule {
-      width: 2.125rem;
-      height: 2.125rem;
-      border-radius: 6px;
+      width: 1.75rem;
+      height: 1.75rem;
+      border-radius: var(--radius-sm, 2px);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
     }
-    .icon-capsule--red {
-      background: rgba(220, 38, 38, 0.12);
-      color: #ef4444;
-    }
-    .icon-capsule--green {
-      background: rgba(34, 197, 94, 0.12);
-      color: #4cc36a;
-    }
-    .icon-capsule--amber {
-      background: rgba(234, 179, 8, 0.12);
-      color: #eab308;
-    }
-    .icon-capsule--purple {
-      background: rgba(168, 85, 247, 0.12);
-      color: #c084fc;
-    }
-    .icon-capsule--sky {
-      background: rgba(56, 189, 248, 0.12);
-      color: #7dd3fc;
-    }
+    .icon-capsule--red { background: var(--color-error-container); color: var(--color-error); }
+    .icon-capsule--green { background: var(--color-success-container); color: var(--color-success); }
+    .icon-capsule--amber { background: var(--color-warning-container); color: var(--color-warning); }
+    .icon-capsule--purple { background: var(--color-primary-container); color: var(--color-primary); }
+    .icon-capsule--sky { background: var(--color-info-container); color: var(--color-info); }
 
     .xp-track {
       height: 0.375rem;
-      border-radius: 9999px;
+      border-radius: 1px;
       overflow: hidden;
       background: var(--color-surface-2);
     }
     .xp-track__fill {
       height: 100%;
-      border-radius: 9999px;
+      border-radius: 1px;
       background: var(--color-primary);
     }
 
@@ -126,8 +111,8 @@ interface NextMassCard {
     }
 
     .date-box {
-      background-color: #16171a;
-      border: 1px solid #2d2024;
+      background-color: var(--color-surface-2);
+      border: 1px solid var(--color-border-strong);
       min-width: 5.75rem;
     }
 
@@ -136,41 +121,41 @@ interface NextMassCard {
       align-items: center;
       gap: 0.375rem;
       padding: 0.375rem 0.75rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-sm, 2px);
       font-size: 0.75rem;
       font-weight: 500;
       line-height: 1;
     }
     .status-pill--ready {
-      background-color: rgba(34, 197, 94, 0.08);
-      border: 1px solid rgba(34, 197, 94, 0.25);
-      color: #4cc36a;
+      background-color: var(--color-success-container);
+      border: 1px solid var(--color-success);
+      color: var(--color-success);
     }
     .status-pill--live {
-      background-color: rgba(220, 38, 38, 0.1);
-      border: 1px solid rgba(220, 38, 38, 0.28);
-      color: #f87171;
+      background-color: var(--color-error-container);
+      border: 1px solid var(--color-error);
+      color: var(--color-error);
     }
 
     .btn-open-event {
       background-color: var(--color-weaklings-red);
-      color: #ffffff;
+      color: var(--color-on-primary, #ffffff);
       font-size: 0.75rem;
       font-weight: 600;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
+      padding: 0.375rem 0.75rem;
+      border-radius: var(--radius-sm, 2px);
       transition: background-color 150ms ease;
       line-height: 1.25;
     }
     .btn-open-event:hover {
-      background-color: #b91c1c;
+      background-color: var(--color-primary-hover);
     }
   `,
   template: `
-    <div class="dashboard-page flex flex-col gap-6 max-w-7xl mx-auto pb-10">
-      <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1">
+    <div class="dashboard-page flex flex-col gap-4 max-w-7xl mx-auto pb-6">
+      <header class="dashboard-toolbar flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
         <div>
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) m-0">
+          <h1 class="text-xl sm:text-2xl font-normal tracking-tight text-(--color-text-heading) m-0">
             {{ greeting() }}, {{ username() }}
           </h1>
           <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">
@@ -199,7 +184,7 @@ interface NextMassCard {
         </div>
       </header>
 
-      <section class="identity-card p-5 sm:p-6" [attr.aria-label]="t('dashboard.identity')">
+      <section class="identity-card p-3 sm:p-4" [attr.aria-label]="t('dashboard.identity')">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="flex items-center gap-4 min-w-0">
             <app-avatar
@@ -257,7 +242,7 @@ interface NextMassCard {
         </div>
       </section>
 
-      <section [attr.aria-label]="t('dashboard.kpis')" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
+      <section [attr.aria-label]="t('dashboard.kpis')" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-px bg-[var(--color-border)]">
         <a routerLink="/bank" class="kpi-card group" [attr.aria-label]="t('dashboard.stat.balance')">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -355,8 +340,8 @@ interface NextMassCard {
         </a>
       </section>
 
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-stretch">
-        <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-px bg-[var(--color-border)] items-stretch">
+        <div class="action-panel p-3 sm:p-4 flex flex-col justify-between">
           <div>
             <div class="flex items-center gap-2 mb-4">
               <h2 class="text-base font-bold text-(--color-text) m-0">{{ t('dashboard.attention.title') }}</h2>
@@ -393,7 +378,7 @@ interface NextMassCard {
                 }
               </ul>
             } @else {
-              <div class="caught-up-banner p-3.5 rounded-xl flex items-center gap-3.5">
+              <div class="caught-up-banner p-3 flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-[var(--color-success-container)] text-[var(--color-success)] flex items-center justify-center shrink-0">
                   <app-icon name="check" size="1rem" />
                 </div>
@@ -406,7 +391,7 @@ interface NextMassCard {
           </div>
         </div>
 
-        <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
+        <div class="action-panel p-3 sm:p-4 flex flex-col justify-between">
           @if (nextMassCard(); as mass) {
             <div>
               <div class="flex items-center gap-2 mb-5">
@@ -422,7 +407,7 @@ interface NextMassCard {
               </div>
 
               <div class="flex items-center gap-4 sm:gap-6 mt-1">
-                <div class="date-box shrink-0 flex flex-col items-center justify-center rounded-xl p-3 sm:px-4 sm:py-3.5">
+                <div class="date-box shrink-0 flex flex-col items-center justify-center rounded-sm p-3 sm:px-4 sm:py-3">
                   <app-icon name="calendar" size="1.25rem" class="text-[var(--color-primary)] mb-1" />
                   <span class="text-[10px] font-bold text-[var(--color-primary)] tracking-wider uppercase">
                     {{ mass.dayLabel }}

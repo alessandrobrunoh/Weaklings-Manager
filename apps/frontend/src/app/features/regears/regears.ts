@@ -68,6 +68,19 @@ const STATS_FETCH_LIMIT = 1000;
     ViewToggle,
   ],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .kpi-card {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -160,7 +173,7 @@ const STATS_FETCH_LIMIT = 1000;
       />
     </app-page-header>
 
-    <app-page-stack>
+    <app-page-stack class="workbench-page">
       <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear summary">
         @if (tab() === 'mine') {
           <article class="kpi-card">

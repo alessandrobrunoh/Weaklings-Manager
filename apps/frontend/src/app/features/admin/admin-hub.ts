@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -32,7 +33,7 @@ import type { AuditLog } from '../audit/audit';
   selector: 'app-admin-hub',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, PageHeader, PageStack, RouterLink, TooltipDirective],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .admin-card-hover {
       transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
     }
@@ -76,7 +77,7 @@ import type { AuditLog } from '../audit/audit';
     .admin-queue-card:hover {
       border-color: var(--color-border-hover);
     }
-  `,
+  `],
   template: `
     <app-page-header
       [title]="t('admin.title')"

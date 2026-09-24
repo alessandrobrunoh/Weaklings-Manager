@@ -24,7 +24,7 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
       gap: 0.375rem;
       min-height: 1.375rem;
       padding: 0.125rem 0.5rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-sm, 2px);
       font-size: 0.6875rem;
       font-weight: 600;
       letter-spacing: 0.02em;
@@ -33,8 +33,8 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
     }
     .status-dot {
       display: inline-block;
-      width: 0.375rem;
-      height: 0.375rem;
+      width: 0.3125rem;
+      height: 0.3125rem;
       border-radius: 9999px;
       background-color: currentColor;
       flex-shrink: 0;

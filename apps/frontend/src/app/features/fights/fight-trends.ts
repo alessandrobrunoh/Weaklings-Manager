@@ -31,6 +31,19 @@ interface PlannedSelection {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, ErrorState, Loading, PageHeader, PageStack],
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
+      box-shadow: none;
+    }
     .fight-trends { display: grid; gap: 1rem; }
     .fight-trends__period { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
     .fight-trends__period-label { margin: 0; color: var(--color-text-secondary); font-size: 0.75rem; }

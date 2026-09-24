@@ -44,17 +44,27 @@ import { Topbar } from '../topbar/topbar';
     '(document:keydown.escape)': 'closeDrawer()',
   },
   styles: `
-    /* Chrome geometry follows the Discord client: a dark server rail, a
-       channel sidebar, then the content pane on the lightest ground. */
-    .workspace { background: var(--color-rail); }
-    .workspace-sidebar {
-      transition: width 200ms ease-in-out;
+    .workspace {
+      background-color: var(--color-bg);
+      background-image: radial-gradient(var(--color-border) 0.6px, transparent 0.6px);
+      background-size: 8px 8px;
     }
-    .workspace-content { background: var(--color-bg); }
-    .workspace-main { padding: 1rem; }
-    @media (min-width: 40rem) { .workspace-main { padding: 1.25rem; } }
-    @media (min-width: 64rem) { .workspace-main { padding: 1.5rem 2rem; } }
+    .workspace-sidebar {
+      border-right: 1px solid var(--color-border);
+      transition: width 150ms ease-in-out;
+    }
+    .workspace-content {
+      background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+    }
+    .workspace-main { padding: 0.75rem; }
+    @media (min-width: 40rem) { .workspace-main { padding: 1rem; } }
+    @media (min-width: 64rem) { .workspace-main { padding: 1rem 1.5rem; } }
     .workspace-main__inner { max-width: var(--page-max-width); margin-inline: auto; }
+    .drawer-panel {
+      border-right: 1px solid var(--color-border);
+      background: var(--color-chrome);
+      box-shadow: 4px 0 12px rgb(40 44 51 / 8%);
+    }
   `,
   template: `
     <div class="workspace flex h-dvh overflow-hidden">
@@ -87,7 +97,7 @@ import { Topbar } from '../topbar/topbar';
             (click)="closeDrawer()"
             aria-label="Close menu"
           ></button>
-          <div class="relative flex h-full w-[19rem] max-w-[85%] bg-[var(--color-chrome)]">
+          <div class="drawer-panel relative flex h-full w-[19rem] max-w-[85%]">
             @if (!inPlatform() && tenantRailEnabled()) {
               <app-tenant-rail
                 (navigate)="closeDrawer()"

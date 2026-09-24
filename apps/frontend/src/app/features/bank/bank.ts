@@ -57,6 +57,19 @@ function emptyPageChange(): DataTablePageChange {
     TooltipDirective,
   ],
   styles: `
+    .workbench-page {
+      --page-gap: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .workbench-page > section,
+    .workbench-page > app-data-table {
+      min-width: 0;
+    }
+    .workbench-page .kpi-card {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -151,7 +164,7 @@ function emptyPageChange(): DataTablePageChange {
       </button>
     </app-page-header>
 
-    <app-page-stack>
+    <app-page-stack class="workbench-page">
       <!-- KPI Row: 4 modern cards -->
       <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.personalSummary')">
         <!-- Card 1: Available credits -->

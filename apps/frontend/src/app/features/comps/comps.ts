@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -123,6 +123,24 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
     TooltipDirective,
   ],
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
+      box-shadow: none;
+    }
+    :host ::ng-deep input,
+    :host ::ng-deep select,
+    :host ::ng-deep button {
+      border-radius: var(--radius-sm, 2px);
+    }
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -144,9 +162,65 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
       border-radius: 0.5rem;
       flex-shrink: 0;
     }
+    .template-option {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.625rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-cards);
+      background: var(--color-surface-1);
+      color: var(--color-text);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color var(--motion-fast), background-color var(--motion-fast);
+    }
+    .template-option:hover,
+    .template-option:focus-visible,
+    .template-option--selected {
+      border-color: var(--color-primary);
+      background: var(--color-primary-container);
+    }
+    .template-option__empty,
+    .template-option__role {
+      display: inline-flex;
+      width: 2.25rem;
+      height: 2.25rem;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-cards);
+      color: var(--color-primary);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .template-option__empty {
+      font-size: 1.25rem;
+    }
+    .template-option__copy {
+      display: grid;
+      min-width: 0;
+      gap: 0.15rem;
+    }
+    .template-option__copy strong,
+    .template-option__copy small {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .template-option__copy small {
+      color: var(--color-text-secondary);
+      font-size: 0.6875rem;
+    }
   `,
   template: `
-    <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
+    <app-page-header
+      [title]="page() === 'builds' ? t('comps.builds') : t('comps.title')"
+      [subtitle]="t('comps.subtitle')"
+    >
       <button
         type="button"
         class="btn btn--outline btn--sm"
@@ -665,7 +739,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
-              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', 'builds', row.id]">{{
+              <a class="btn btn--tonal btn--sm" [routerLink]="['/builds', row.id]">{{
                 t('common.open')
               }}</a>
               @if (canArchiveBuilds()) {
@@ -794,6 +868,52 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 }
               </select>
             </label>
+
+            <section class="surface grid gap-3 p-4" aria-labelledby="build-template-title">
+              <header class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 id="build-template-title" class="text-sm font-semibold" style="color: var(--color-text)">
+                    Template build
+                  </h3>
+                  <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
+                    Parti da una build vuota oppure copia gli oggetti di una build esistente.
+                  </p>
+                </div>
+                @if (templateLoading()) {
+                  <span class="chip">Caricamento…</span>
+                }
+              </header>
+              <div class="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
+                <button
+                  type="button"
+                  class="template-option"
+                  [class.template-option--selected]="draftTemplateBuildId() === null"
+                  [attr.aria-pressed]="draftTemplateBuildId() === null"
+                  (click)="selectBuildTemplate(null)"
+                >
+                  <span class="template-option__empty" aria-hidden="true">+</span>
+                  <span class="template-option__copy">
+                    <strong>Empty</strong>
+                    <small>Nessun equipaggiamento</small>
+                  </span>
+                </button>
+                @for (template of buildOptions(); track template.id) {
+                  <button
+                    type="button"
+                    class="template-option"
+                    [class.template-option--selected]="draftTemplateBuildId() === template.id"
+                    [attr.aria-pressed]="draftTemplateBuildId() === template.id"
+                    (click)="selectBuildTemplate(template.id)"
+                  >
+                    <span class="template-option__role">{{ roleLabel(template.role) }}</span>
+                    <span class="template-option__copy">
+                      <strong>{{ template.name }}</strong>
+                      <small>{{ template.item_count }} oggetti · {{ template.category_name || t('comps.noCategory') }}</small>
+                    </span>
+                  </button>
+                }
+              </div>
+            </section>
 
             <section class="surface grid gap-4 p-4" [attr.aria-label]="t('comps.equipment')">
               <header class="flex items-center justify-between gap-3">
@@ -1005,6 +1125,9 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
   `,
 })
 export class Comps {
+  /** Which workspace is exposed by the route: compositions or builds. */
+  readonly page = input<'comps' | 'builds'>('comps');
+
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -1015,11 +1138,14 @@ export class Comps {
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly tab = signal<TabId>('comps');
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'comps', label: this.t('comps.comps') },
-    { id: 'builds', label: this.t('comps.builds') },
-    { id: 'categories', label: this.t('comps.categories') },
-  ]);
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
+    this.page() === 'comps'
+      ? [{ id: 'comps', label: this.t('comps.comps') }]
+      : [
+          { id: 'builds', label: this.t('comps.builds') },
+          { id: 'categories', label: this.t('comps.categories') },
+        ],
+  );
   protected readonly loading = signal(false);
   protected readonly categoriesLoading = signal(false);
   protected readonly loadFailed = signal(false);
@@ -1139,6 +1265,9 @@ export class Comps {
   protected readonly draftDescription = signal('');
   protected readonly draftCategoryId = signal('');
   protected readonly draftRole = signal<BuildRole>('dps');
+  /** New builds start empty; selecting a template copies its current item loadout. */
+  protected readonly draftTemplateBuildId = signal<number | null>(null);
+  protected readonly templateLoading = signal(false);
   protected readonly draftParentCompId = signal('');
   protected readonly selectedBuildId = signal('');
   protected readonly selectedBuildQuantity = signal(1);
@@ -1327,6 +1456,7 @@ export class Comps {
     this.translate.t(key, params);
 
   constructor() {
+    effect(() => this.tab.set(this.page()));
     void this.init();
     // Static application data; one fetch serves every dialog opened in the session.
     void this.albionAbilities
@@ -1337,7 +1467,11 @@ export class Comps {
 
   private async init(): Promise<void> {
     await this.loadCategories();
-    await this.loadComps();
+    if (this.page() === 'builds') {
+      await this.loadBuilds();
+    } else {
+      await this.loadComps();
+    }
   }
 
   protected async refreshNow(): Promise<void> {
@@ -1528,7 +1662,7 @@ export class Comps {
   }
 
   protected openBuild(row: BuildSummary): void {
-    void this.router.navigate(['/comps', 'builds', row.id]);
+    void this.router.navigate(['/builds', row.id]);
   }
 
   protected onCompsPageChange(event: DataTablePageChange): void {
@@ -1555,6 +1689,36 @@ export class Comps {
 
   protected onRoleChange(event: Event): void {
     this.draftRole.set((event.target as HTMLSelectElement).value as BuildRole);
+  }
+
+  protected async selectBuildTemplate(buildId: number | null): Promise<void> {
+    this.draftTemplateBuildId.set(buildId);
+    if (buildId === null) {
+      this.draftItems.set([]);
+      return;
+    }
+
+    const template = this.buildOptions().find((build) => build.id === buildId);
+    if (template) {
+      this.draftRole.set(template.role);
+    }
+
+    this.templateLoading.set(true);
+    try {
+      const detail = await firstValueFrom(
+        this.api.get<BuildDetail>(`api/comps/builds/${buildId}`),
+      );
+      // A new build starts from the template's main set. Swap loadouts remain
+      // intentionally local to the source build and can be added afterwards.
+      this.draftItems.set(detail.items.filter((item) => item.loadout === 'main'));
+      this.draftRole.set(detail.role);
+    } catch (error) {
+      this.draftTemplateBuildId.set(null);
+      this.draftItems.set([]);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.templateLoading.set(false);
+    }
   }
 
   protected onParentCompChange(event: Event): void {
@@ -2063,6 +2227,8 @@ export class Comps {
     this.draftDescription.set('');
     this.draftCategoryId.set('');
     this.draftRole.set('dps');
+    this.draftTemplateBuildId.set(null);
+    this.templateLoading.set(false);
     this.draftParentCompId.set('');
     this.selectedBuildId.set('');
     this.selectedBuildQuantity.set(1);

@@ -66,6 +66,7 @@ export const it: TranslationDict = {
   'nav.battles': 'Battaglie',
   'nav.intel': 'Intel',
   'nav.comps': 'Composizioni',
+  'nav.builds': 'Build',
   'nav.tests': 'Test',
   'nav.siphoned': 'Siphoned',
   'nav.regears': 'Regears',

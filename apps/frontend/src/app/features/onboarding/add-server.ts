@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 
@@ -42,7 +43,7 @@ const FAQ: readonly { readonly q: TranslationKey; readonly a: TranslationKey }[]
   selector: 'app-add-server',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, RouterLink],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     :host {
       display: block;
     }
@@ -53,7 +54,8 @@ const FAQ: readonly { readonly q: TranslationKey; readonly a: TranslationKey }[]
       overflow: hidden;
       border-radius: var(--radius-panels);
       padding: clamp(1.75rem, 4vw, 3rem);
-      background: var(--gradient-brand);
+      background: var(--color-primary);
+      border: 1px solid color-mix(in srgb, var(--color-primary) 72%, var(--color-border));
       color: #ffffff;
     }
     .hero__title {
@@ -82,6 +84,7 @@ const FAQ: readonly { readonly q: TranslationKey; readonly a: TranslationKey }[]
       border-radius: 50%;
       background: radial-gradient(circle at 30% 30%, rgb(255 255 255 / 28%), transparent 62%);
       pointer-events: none;
+      display: none;
     }
     .hero__cta {
       display: flex;
@@ -162,7 +165,7 @@ const FAQ: readonly { readonly q: TranslationKey; readonly a: TranslationKey }[]
       height: 100%;
       object-fit: cover;
     }
-  `,
+  `],
   template: `
     <div class="flex flex-col gap-6 pb-8">
       <!-- Hero -->

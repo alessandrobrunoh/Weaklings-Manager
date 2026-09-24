@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -40,6 +41,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 @Component({
   selector: 'app-admin-island-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Dialog, ErrorState, Loading, PageHeader, PageStack, RouterLink],
   template: `
     <a routerLink="/admin/islands" class="btn btn--ghost mb-4 inline-flex">

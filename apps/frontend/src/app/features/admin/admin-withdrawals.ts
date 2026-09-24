@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -65,7 +66,7 @@ const GROUPING_FETCH_LIMIT = 500;
   selector: 'app-admin-withdrawals',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Dialog, Icon, TooltipDirective],
-  styles: `
+  styles: [COMPACT_FEATURE_STYLES, `
     .kpi-card {
       position: relative;
       overflow: hidden;
@@ -117,7 +118,7 @@ const GROUPING_FETCH_LIMIT = 500;
       color: var(--color-error);
       border: 1px solid var(--color-error);
     }
-  `,
+  `],
   template: `
     <app-page-header [title]="t('admin.withdrawals.title')" [subtitle]="t('bank.queue.description')">
       <button

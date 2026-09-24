@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -19,6 +20,7 @@ import { albionItemQualityLabel } from '../../shared/data/albion-item-quality';
 @Component({
   selector: 'app-admin-giveaway-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Loading, PageHeader, PageStack, RouterLink],
   template: `
     <app-page-header [title]="title()" [subtitle]="t('giveaways.detail')">

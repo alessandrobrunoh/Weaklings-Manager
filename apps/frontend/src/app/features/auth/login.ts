@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -24,6 +25,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
 @Component({
   selector: 'app-login',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [Icon, TooltipDirective, WeaklingsLogo],
   template: `
     <div class="auth-shell">

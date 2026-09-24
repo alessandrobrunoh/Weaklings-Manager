@@ -16,8 +16,7 @@ import type {
 import {
   buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
-  buildEventCalendarActionRows,
-  buildEventCalendarEmbed,
+  buildEventCalendarMessage,
   shouldPingAllianceDiscord,
   withAlliancePingRoles,
   type AllianceLifecycleKind,
@@ -596,10 +595,7 @@ export class Poller {
         // persistent calendar/thread design safely.
         if (!channel || !channel.threads?.create) continue;
         const events = channels.get(channelId) ?? [];
-        const payload = {
-          embeds: [buildEventCalendarEmbed(events)],
-          components: buildEventCalendarActionRows(events, this.guildId, this.state.eventThreadIds),
-        };
+        const payload = buildEventCalendarMessage(events, this.state.eventThreadIds);
         const messageId = this.state.eventCalendarMessageIds[channelId];
         let message: Message | undefined;
         if (messageId) {
@@ -609,7 +605,9 @@ export class Poller {
           message = await channel.send(payload);
           this.state.eventCalendarMessageIds[channelId] = message.id;
         } else {
-          await message.edit(payload);
+          // Clearing embeds is required when converting an older calendar panel
+          // to Components V2.
+          await message.edit({ ...payload, embeds: [] });
         }
       }
       this.save();

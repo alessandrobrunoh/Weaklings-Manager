@@ -27,6 +27,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   `,
   styles: [
     `
+      :host { display: block; }
       .spinner {
         display: inline-block;
         border-style: solid;

@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -18,6 +19,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 @Component({
   selector: 'app-platform-admins',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [DataTable, DataTableCell, PageHeader, PageStack],
   template: `
     <app-page-header [title]="t('platform.admins.title')" [subtitle]="t('platform.admins.subtitle')" />

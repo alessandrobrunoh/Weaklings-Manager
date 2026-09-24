@@ -1074,6 +1074,19 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
     }
   `,
   styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
+    }
+    :host ::ng-deep .rounded-xl,
+    :host ::ng-deep .rounded-2xl,
+    :host ::ng-deep .rounded-lg,
+    :host ::ng-deep .rounded-md,
+    :host ::ng-deep .shadow-lg,
+    :host ::ng-deep .shadow-xl {
+      border-radius: var(--radius-cards, 2px);
+      box-shadow: none;
+    }
     @layer components {
       .battle-detail__label {
         color: var(--color-text-disabled);

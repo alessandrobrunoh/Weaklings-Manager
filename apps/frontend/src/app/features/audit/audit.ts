@@ -77,6 +77,24 @@ function emptyPageChange(): DataTablePageChange {
 @Component({
   selector: 'app-audit',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: `
+    :host {
+      display: block;
+      min-width: 0;
+    }
+    .audit-page {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: var(--page-gap, 0.75rem);
+    }
+    .audit-page > app-page-stack {
+      min-width: 0;
+    }
+    .audit-page section {
+      min-width: 0;
+    }
+  `,
   imports: [
     PageHeader,
     PageStack,
@@ -89,25 +107,26 @@ function emptyPageChange(): DataTablePageChange {
     TooltipDirective,
   ],
   template: `
-    <app-page-header
-      [title]="t('audit.title')"
-      [subtitle]="t('audit.subtitle')"
-    >
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
+    <div class="audit-page">
+      <app-page-header
+        [title]="t('audit.title')"
+        [subtitle]="t('audit.subtitle')"
       >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-    </app-page-header>
+        <button
+          type="button"
+          class="btn btn--outline btn--sm"
+          [disabled]="loading()"
+          (click)="refreshNow()"
+          [appTooltip]="t('common.refreshNow')"
+          tooltipPosition="bottom"
+        >
+          <app-icon name="sparkles" size="0.875rem" />
+          {{ t('common.refreshNow') }}
+        </button>
+      </app-page-header>
 
-    <app-page-stack>
-      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Audit summary">
+      <app-page-stack>
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Audit summary">
         <app-stat-card
           [label]="t('audit.stat.total')"
           [value]="totalItems()"
@@ -136,21 +155,21 @@ function emptyPageChange(): DataTablePageChange {
           icon="users"
           tone="success"
         />
-      </section>
+        </section>
 
-      <app-data-table
-        [columns]="columns"
-        [rows]="logs()"
-        [loading]="loading()"
-        [error]="loadFailed()"
-        (retry)="load()"
-        [trackBy]="trackById"
-        [serverMode]="true"
-        [totalItems]="totalItems()"
-        [pageSize]="20"
-        emptyIcon="activity"
-        (pageChange)="onTableChange($event)"
-      >
+        <app-data-table
+          [columns]="columns"
+          [rows]="logs()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          (retry)="load()"
+          [trackBy]="trackById"
+          [serverMode]="true"
+          [totalItems]="totalItems()"
+          [pageSize]="20"
+          emptyIcon="activity"
+          (pageChange)="onTableChange($event)"
+        >
         <ng-template dataTableCell="action" let-row>
           <span style="font-weight: 500">{{ row.action }}</span>
         </ng-template>
@@ -187,8 +206,9 @@ function emptyPageChange(): DataTablePageChange {
             row.created_at | date: 'short'
           }}</span>
         </ng-template>
-      </app-data-table>
-    </app-page-stack>
+        </app-data-table>
+      </app-page-stack>
+    </div>
   `,
 })
 export class Audit {

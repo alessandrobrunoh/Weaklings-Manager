@@ -71,6 +71,7 @@ export const en = {
   'nav.battles': 'Battles',
   'nav.intel': 'Intel',
   'nav.comps': 'Compositions',
+  'nav.builds': 'Builds',
   'nav.tests': 'Tests',
   'nav.siphoned': 'Siphoned',
   'nav.regears': 'Regears',

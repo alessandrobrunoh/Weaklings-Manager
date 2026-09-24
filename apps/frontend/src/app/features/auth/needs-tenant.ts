@@ -1,3 +1,4 @@
+import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
@@ -15,6 +16,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
 @Component({
   selector: 'app-needs-tenant',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [COMPACT_FEATURE_STYLES],
   imports: [WeaklingsLogo],
   template: `
     <div class="auth-shell">
