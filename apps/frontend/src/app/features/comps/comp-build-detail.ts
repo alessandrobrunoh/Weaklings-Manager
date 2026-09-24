@@ -29,7 +29,11 @@ import type {
   PaginatedData,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
-import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
+import {
+  albionItemSupportsEnchantment,
+  albionItemSupportsQuality,
+  filterAlbionEquipmentCatalog,
+} from '../../shared/data/albion-equipment-catalog';
 import {
   DEFAULT_ALBION_ITEM_ENCHANTMENT,
   normalizeAlbionItemEnchantment,
@@ -102,20 +106,13 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 };
 
 const ITEM_TIERS = [
+  'T2',
+  'T3',
   'T4',
-  'T4.1',
-  'T4.2',
-  'T4.3',
   'T5',
-  'T5.1',
   'T6',
-  'T6.1',
   'T7',
-  'T7.1',
   'T8',
-  'T8.1',
-  'T8.2',
-  'T8.3',
 ];
 
 /**
@@ -1045,9 +1042,15 @@ export class CompBuildDetailPage {
     const current = this.itemForSlot(loadout, slot);
     this.editing.set({ loadout, slot });
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
-    this.draftQuality.set(normalizeAlbionItemQuality(current?.openalbion_item_quality));
+    this.draftQuality.set(
+      slot === 'potion' || slot === 'food' || slot === 'mount'
+        ? DEFAULT_ALBION_ITEM_QUALITY
+        : normalizeAlbionItemQuality(current?.openalbion_item_quality),
+    );
     this.draftEnchantment.set(
-      normalizeAlbionItemEnchantment(current?.openalbion_item_enchantment),
+      slot === 'mount'
+        ? DEFAULT_ALBION_ITEM_ENCHANTMENT
+        : normalizeAlbionItemEnchantment(current?.openalbion_item_enchantment),
     );
     this.draftSearch.set(current?.openalbion_item_name ?? '');
     this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
@@ -1073,6 +1076,12 @@ export class CompBuildDetailPage {
 
   protected onDraftTierChangeValue(tier: string): void {
     this.draftTier.set(tier);
+    this.draftItemId.set('');
+    this.draftItemName.set('');
+    this.draftItemType.set('');
+    this.draftItemIcon.set(null);
+    this.draftAbilityKey.set(null);
+    this.draftSpells.set({ active: {}, passive: {} });
     void this.runItemSearch();
   }
 
@@ -1098,6 +1107,13 @@ export class CompBuildDetailPage {
     this.draftItemId.set(itemId);
     const item = this.searchResults().find((result) => String(result.id) === itemId);
     if (item) {
+      this.draftTier.set(`T${item.tier.replace(/^T/i, '').split('.')[0]}`);
+      if (!albionItemSupportsQuality(item.identifier)) {
+        this.draftQuality.set(DEFAULT_ALBION_ITEM_QUALITY);
+      }
+      if (!albionItemSupportsEnchantment(item.identifier)) {
+        this.draftEnchantment.set(DEFAULT_ALBION_ITEM_ENCHANTMENT);
+      }
       this.draftItemName.set(item.name);
       this.draftItemType.set(item.type);
       this.draftItemIcon.set(item.icon ?? null);

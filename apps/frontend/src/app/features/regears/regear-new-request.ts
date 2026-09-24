@@ -17,7 +17,11 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
+import {
+  albionItemSupportsEnchantment,
+  albionItemSupportsQuality,
+  filterAlbionEquipmentCatalog,
+} from '../../shared/data/albion-equipment-catalog';
 import {
   DEFAULT_ALBION_ITEM_ENCHANTMENT,
   normalizeAlbionItemEnchantment,
@@ -35,7 +39,7 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 
-const ITEM_TIERS = ['T4', 'T5', 'T6', 'T7', 'T8'];
+const ITEM_TIERS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8'];
 
 /**
  * A local-only override, kept richer than the wire `RegearItemOverride` shape so the grid can
@@ -390,8 +394,16 @@ export class RegearNewRequest {
     const current = this.gridItems().find((item) => item.slot === slot) ?? null;
     this.editingSlot.set(slot);
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
-    this.draftQuality.set(normalizeAlbionItemQuality(current?.openalbion_item_quality));
-    this.draftEnchantment.set(normalizeAlbionItemEnchantment(current?.openalbion_item_enchantment));
+    this.draftQuality.set(
+      slot === 'potion' || slot === 'food' || slot === 'mount'
+        ? DEFAULT_ALBION_ITEM_QUALITY
+        : normalizeAlbionItemQuality(current?.openalbion_item_quality),
+    );
+    this.draftEnchantment.set(
+      slot === 'mount'
+        ? DEFAULT_ALBION_ITEM_ENCHANTMENT
+        : normalizeAlbionItemEnchantment(current?.openalbion_item_enchantment),
+    );
     this.draftSearch.set(current?.openalbion_item_name ?? '');
     this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
     this.draftItemName = current?.openalbion_item_name ?? '';
@@ -412,6 +424,10 @@ export class RegearNewRequest {
 
   protected onDraftTierChange(tier: string): void {
     this.draftTier.set(tier);
+    this.draftItemId.set('');
+    this.draftItemName = '';
+    this.draftItemType = '';
+    this.draftItemIcon = null;
     void this.runItemSearch();
   }
 
@@ -435,6 +451,13 @@ export class RegearNewRequest {
     this.draftItemId.set(itemId);
     const item = this.searchResults().find((result) => String(result.id) === itemId);
     if (item) {
+      this.draftTier.set(`T${item.tier.replace(/^T/i, '').split('.')[0]}`);
+      if (!albionItemSupportsQuality(item.identifier)) {
+        this.draftQuality.set(DEFAULT_ALBION_ITEM_QUALITY);
+      }
+      if (!albionItemSupportsEnchantment(item.identifier)) {
+        this.draftEnchantment.set(DEFAULT_ALBION_ITEM_ENCHANTMENT);
+      }
       this.draftItemName = item.name;
       this.draftItemType = item.type;
       this.draftItemIcon = item.icon ?? null;
