@@ -133,7 +133,8 @@ export const routes: Routes = [
       },
       {
         path: 'comps',
-        loadComponent: () => import('./features/comps/comps').then((m) => m.Comps),
+        loadComponent: () =>
+          import('./features/comps/compositions').then((m) => m.Compositions),
       },
       {
         path: 'builds/:buildId',

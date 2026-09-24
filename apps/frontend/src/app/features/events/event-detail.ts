@@ -498,7 +498,7 @@ interface AddEventMemberRequest {
                   >
                     <!-- Panchina Card -->
                     <div
-                      class="card p-0 overflow-hidden transition-all shadow-sm"
+                      class="event-roster-bench card p-0 overflow-hidden transition-all shadow-sm"
                       [class.border-[var(--color-border)]]="!isDropTargetBench()"
                       [class.border-[var(--color-warning)]]="isDropTargetBench()"
                       [class.border-dashed]="isDropTargetBench()"
@@ -615,7 +615,7 @@ interface AddEventMemberRequest {
                     </div>
 
                     <!-- Roster Controls & Actions Card -->
-                    <div class="card p-3 space-y-3">
+                    <div class="event-roster-controls card p-3 space-y-3">
                       <div class="flex items-center justify-between">
                         <span
                           class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
@@ -802,7 +802,7 @@ interface AddEventMemberRequest {
 
                     @if (activeRosterParty(); as party) {
                       <section
-                        class="card overflow-hidden border border-[var(--color-border)] p-0 shadow-sm"
+                        class="event-roster-party card overflow-hidden border border-[var(--color-border)] p-0 shadow-sm"
                         role="tabpanel"
                         [id]="'event-party-panel-' + party.partyNumber"
                         [attr.aria-label]="rosterPartyName(party)"
@@ -839,7 +839,7 @@ interface AddEventMemberRequest {
 
                         <!-- Seats List -->
                         <ol
-                          class="divide-y divide-[var(--color-border)]"
+                          class="event-roster-seats divide-y divide-[var(--color-border)]"
                           [attr.aria-label]="rosterPartyName(party)"
                         >
                           @for (
@@ -847,7 +847,7 @@ interface AddEventMemberRequest {
                             track seat.party_number + ':' + seat.position
                           ) {
                             <li
-                              class="px-3 py-2 transition-all flex items-center justify-between gap-2.5 hover:bg-[var(--color-surface-hover)] select-none"
+                              class="event-roster-seat px-3 py-2 transition-all flex items-center justify-between gap-2.5 hover:bg-[var(--color-surface-hover)] select-none cursor-pointer"
                               [class]="roleBorderClass(seat.role)"
                               [class.bg-[var(--color-surface-2)]]="
                                 rosterSwapSource()?.key === rosterSeatKey(seat) ||
@@ -872,6 +872,7 @@ interface AddEventMemberRequest {
                               (dragover)="onSeatDragOver($event, seat)"
                               (dragleave)="onSeatDragLeave($event, seat)"
                               (drop)="onSeatDrop($event, seat)"
+                              (click)="onRosterSeatClick(seat)"
                             >
                               <!-- Left: Grip, Weapon Icon, Role & Build -->
                               <div class="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1049,7 +1050,7 @@ interface AddEventMemberRequest {
 
                   <!-- 3. RIGHT SIDEBAR: SIDEBAR CON EQUIP -->
                   <aside
-                    class="card p-3.5 space-y-3.5 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin"
+                    class="event-roster-inspector card p-3.5 space-y-3.5 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin"
                   >
                     @if (activeInspectSeat(); as seat) {
                       <!-- Header -->
@@ -2792,6 +2793,24 @@ interface AddEventMemberRequest {
       .event-roster-main {
         min-width: 0;
       }
+      .event-roster-bench,
+      .event-roster-controls,
+      .event-roster-party,
+      .event-roster-inspector {
+        border: 1px solid var(--color-border);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-subtle-2);
+      }
+      .event-roster-bench > :first-child {
+        background: var(--color-surface-2);
+      }
+      .event-roster-bench .surface {
+        background: var(--color-surface-1);
+        border-color: var(--color-border);
+      }
+      .event-roster-controls {
+        padding: 0.875rem;
+      }
       .event-roster-sidebar > .card,
       .event-roster-main > .card,
       .event-roster-main section.card {
@@ -2800,6 +2819,30 @@ interface AddEventMemberRequest {
       }
       .event-roster-sidebar > .card {
         box-shadow: var(--shadow-subtle-2);
+      }
+      .event-roster-party {
+        border-radius: var(--radius-cards);
+      }
+      .event-roster-party > header {
+        min-height: 3.25rem;
+      }
+      .event-roster-seat {
+        min-height: 4.25rem;
+        border-left-width: 3px;
+        border-left-style: solid;
+        border-top-color: transparent;
+        border-right-color: transparent;
+        border-bottom-color: var(--color-border);
+        background: var(--color-surface);
+      }
+      .event-roster-seat:last-child {
+        border-bottom-color: transparent;
+      }
+      .event-roster-seat:hover {
+        box-shadow: inset 0 0 0 1px var(--color-border-hover);
+      }
+      .event-roster-inspector {
+        border-color: var(--color-border);
       }
       .event-roster-main section.card {
         box-shadow: var(--shadow-subtle);
@@ -4445,6 +4488,13 @@ export class EventDetailPage {
 
   protected onSeatWeaponMouseLeave(): void {
     this.activeWeaponTooltip.set(null);
+  }
+
+  protected onRosterSeatClick(seat: EventRosterSeat): void {
+    if (this.draggedSeat()) {
+      return;
+    }
+    this.selectedInspectSeat.set(seat);
   }
 
   protected onSeatWeaponClick(seat: EventRosterSeat): void {
