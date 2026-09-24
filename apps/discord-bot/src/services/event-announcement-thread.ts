@@ -1,7 +1,8 @@
-import { Message, ThreadAutoArchiveDuration, type ThreadChannel } from "discord.js";
+import { ChannelType, Message, ThreadAutoArchiveDuration, type TextChannel, type ThreadChannel } from "discord.js";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
   buildEventEmbed,
+  buildEventAnnouncementMessage,
   buildEventThreadActionRows,
 } from "../embeds/event.embed.js";
 import {
@@ -10,9 +11,7 @@ import {
   withReopenedThread,
 } from "./discord-thread.js";
 
-export type EventAnnouncementThread = Awaited<
-  ReturnType<Message["startThread"]>
->;
+export type EventAnnouncementThread = ThreadChannel;
 
 /**
  * Discord thread names are capped at 100 characters, so event titles must be trimmed without
@@ -62,6 +61,37 @@ export async function createEventAnnouncementThread(
       `[${sourceLabel}] Failed to create Discord thread for event #${event.id} on message ${message.id}:`,
       error,
     );
+    return null;
+  }
+}
+
+/** Opens an event discussion without creating a second parent-channel message. */
+export async function createStandaloneEventThread(
+  channel: TextChannel,
+  event: EventView,
+  sourceLabel: string,
+): Promise<EventAnnouncementThread | null> {
+  try {
+    // Keep lightweight channel doubles (and older Discord.js adapters) working;
+    // real TextChannels always expose `threads.create`.
+    if (!channel.threads?.create) {
+      const announcement = await channel.send(buildEventAnnouncementMessage(event));
+      return await announcement.startThread({
+        name: buildEventThreadName(event.title),
+        autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+        reason: `Event #${event.id} ${sourceLabel} discussion`,
+      });
+    }
+    const thread = await channel.threads.create({
+      name: buildEventThreadName(event.title),
+      type: ChannelType.PublicThread,
+      autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+      reason: `Event #${event.id} ${sourceLabel} discussion`,
+    });
+    console.log(`[${sourceLabel}] Created standalone thread for event #${event.id}`);
+    return thread;
+  } catch (error: unknown) {
+    console.warn(`[${sourceLabel}] Failed to create standalone thread for event #${event.id}:`, error);
     return null;
   }
 }

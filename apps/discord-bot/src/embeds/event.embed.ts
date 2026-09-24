@@ -370,6 +370,73 @@ export function buildEventSummaryEmbed(
   return embed;
 }
 
+/** Persistent, compact event index used by the events and call-to-arms channels. */
+export function buildEventCalendarEmbed(events: EventView[]): EmbedBuilder {
+  const embed = createBaseEmbed({
+    category: "CONTENT PINGS",
+    title: "📅 Upcoming Guild Events",
+    description: "*Open an event thread to discuss details and manage participation.*",
+    color: BOT_COLORS.BRAND,
+    footerText: "Content Pings • [REDACTED] Guild Manager",
+  });
+
+  if (events.length === 0) {
+    embed.setDescription("*No upcoming events found.*");
+    return embed;
+  }
+
+  const sections = new Map<string, string[]>();
+  const orderedEvents = [...events]
+    .filter((event) => event.status === "scheduled" || event.status === "live")
+    .sort((a, b) => eventTimestamp(a, "start") - eventTimestamp(b, "start"))
+    .slice(0, 25);
+  for (const event of orderedEvents) {
+    const section = event.status === "live"
+      ? "🔴 LIVE / TODAY"
+      : event.status === "scheduled"
+        ? "🟡 UPCOMING"
+        : "🟢 PLANNED";
+    const timestamp = eventTimestamp(event, "start");
+    const line = [
+      `${event.call_to_arms ? "🚨" : "📌"} **${event.title}**`,
+      `• ⚡ \`${STATUS_LABEL[event.status] ?? event.status.toUpperCase()}\` · Start <t:${timestamp}:R> · <t:${timestamp}:d>`,
+    ].join("\n");
+    sections.set(section, [...(sections.get(section) ?? []), line]);
+  }
+
+  embed.setDescription(
+    [...sections.entries()].map(([name, lines]) => `**${name}**\n${lines.join("\n\n")}`).join("\n\n"),
+  );
+  return embed;
+}
+
+/** URL buttons keep the index message useful while all discussion stays in event threads. */
+export function buildEventCalendarActionRows(
+  events: EventView[],
+  guildId: string,
+  threadIds: Readonly<Record<string, string>>,
+): ActionRowBuilder<ButtonBuilder>[] {
+  const buttons = events
+    .filter((event) => event.status === "scheduled" || event.status === "live")
+    .sort((a, b) => eventTimestamp(a, "start") - eventTimestamp(b, "start"))
+    .slice(0, 25)
+    .flatMap((event) => {
+      const threadId = threadIds[String(event.id)];
+      return threadId
+        ? [new ButtonBuilder()
+            .setLabel(`#${event.id} ${event.title}`.slice(0, 80))
+            .setStyle(ButtonStyle.Link)
+            .setURL(`https://discord.com/channels/${guildId}/${threadId}`)]
+        : [];
+    });
+
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let index = 0; index < buttons.length; index += 5) {
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(index, index + 5)));
+  }
+  return rows;
+}
+
 // ── Event participation buttons ──────────────────────────────────────────────
 
 /**
