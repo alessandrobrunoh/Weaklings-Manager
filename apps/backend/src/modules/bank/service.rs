@@ -19,10 +19,15 @@ use sea_orm::{
 };
 
 use crate::errors::AppError;
+use crate::modules::albion::entities::albion_link::{
+    Column as AlbionLinkColumn, Entity as AlbionLinkEntity,
+};
 use crate::modules::splits::entities::split::{Column as SplitColumn, Entity as SplitEntity};
 use crate::modules::splits::status::SplitStatus;
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
-use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
+use crate::pagination::{
+    PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
+};
 
 use super::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
 use super::models::{
@@ -69,6 +74,46 @@ fn confirmed_clawback_condition() -> Condition {
         .add(Column::Status.eq(TransactionStatus::Withdrawn.to_string()))
         .add(Column::Amount.lt(Decimal::ZERO))
         .add(Column::Type.eq(TYPE_SPLIT_CREDIT))
+}
+
+/// Resolves recipient ids using the same names that transaction views display.
+///
+/// Linked recipients are shown with their Albion character name, not their
+/// Discord username. Searching only `users.username` would therefore make a
+/// visible recipient impossible to find after linking an Albion character.
+async fn recipient_ids_matching_search(
+    db: &DatabaseConnection,
+    term: &str,
+) -> Result<Vec<i64>, AppError> {
+    let pattern = format!("%{}%", term.to_lowercase());
+    let linked_discord_ids = AlbionLinkEntity::find()
+        .filter(
+            Expr::expr(Func::lower(Expr::col(AlbionLinkColumn::AlbionPlayerName)))
+                .like(pattern.clone()),
+        )
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|link| link.discord_id)
+        .collect::<Vec<_>>();
+
+    let username_match = Expr::expr(Func::lower(Expr::col(UserColumn::Username))).like(pattern);
+    let query = if linked_discord_ids.is_empty() {
+        UserEntity::find().filter(username_match)
+    } else {
+        UserEntity::find().filter(
+            Condition::any()
+                .add(username_match)
+                .add(UserColumn::DiscordId.is_in(linked_discord_ids)),
+        )
+    };
+
+    Ok(query
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|user| user.id)
+        .collect())
 }
 
 async fn net_requestable_total(
@@ -471,16 +516,16 @@ impl BankService {
             ],
             "created_at",
         )?;
-        let needs_user_join = search.is_some() || sort_key == "to_username";
+        if let Some(term) = search {
+            let matching_user_ids = recipient_ids_matching_search(db, term).await?;
+            if matching_user_ids.is_empty() {
+                return Ok(paginate_vec(Vec::<TransactionView>::new(), pagination));
+            }
+            query = query.filter(Column::ToUserId.is_in(matching_user_ids));
+        }
+        let needs_user_join = sort_key == "to_username";
         if needs_user_join {
             query = query.join(JoinType::InnerJoin, super::entities::Relation::ToUser.def());
-        }
-        if let Some(term) = search {
-            let pattern = format!("%{}%", term.to_lowercase());
-            query = query.filter(
-                Expr::expr(Func::lower(Expr::col((UserEntity, UserColumn::Username))))
-                    .like(pattern),
-            );
         }
 
         let order = SortOrder::from_query(filters.order.as_deref());
@@ -1694,6 +1739,60 @@ mod tests {
                 "20".parse().unwrap(),
                 "30".parse().unwrap()
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_transactions_searches_linked_albion_display_name() {
+        let db = seed_db().await;
+        use crate::modules::albion::entities::albion_link::ActiveModel as AlbionLinkActiveModel;
+        use crate::modules::users::entities::ActiveModel as UserActiveModel;
+
+        let user = UserActiveModel {
+            username: Set("discord-user".to_string()),
+            email: Set("discord-user@example.com".to_string()),
+            role: Set("User".to_string()),
+            discord_id: Set(Some("discord-user-id".to_string())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("Failed to insert linked user")
+        .id;
+        AlbionLinkActiveModel {
+            discord_id: Set("discord-user-id".to_string()),
+            albion_player_id: Set("albion-player-id".to_string()),
+            albion_player_name: Set("Albion User".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("Failed to insert Albion link");
+        insert_transaction(&db, user, "30.00", TransactionStatus::Pending).await;
+        insert_transaction(&db, user, "20.00", TransactionStatus::Requested).await;
+
+        let searched = BankService::new()
+            .list_transactions(
+                &db,
+                None,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &TransactionFilters {
+                    search: Some("albion user".into()),
+                    ..TransactionFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(searched.total_items, 2);
+        assert!(
+            searched
+                .items
+                .iter()
+                .all(|tx| tx.to_username == "Albion User")
         );
     }
 

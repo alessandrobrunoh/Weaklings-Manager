@@ -242,7 +242,8 @@ pub async fn get_admin_summary(
         `requested`, or the paying officer's user id once `status` is `withdrawn`. Filter with \
         `?status=pending`, `?status=requested`, `?status=rejected`, or `?status=withdrawn` (see \
         `TransactionStatus`); omit it to get every status. Search recipients with `search` \
-        (case-insensitive username substring). Sort with `sort=created_at|amount|status|to_username` \
+        (case-insensitive display-name substring; linked Albion character names are searched before \
+        falling back to the username). Sort with `sort=created_at|amount|status|to_username` \
         and `order=asc|desc` (default `created_at` desc). Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
         another member's transactions — administrator-only, same rule as `GET /bank/balance`. Pass `?global=true` to list \
         every member's transactions instead (the officer withdrawal review queue); this requires either `bank.view_others` \

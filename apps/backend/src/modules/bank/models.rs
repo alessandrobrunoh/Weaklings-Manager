@@ -210,7 +210,8 @@ pub struct BankAnalyticsSummary {
 pub struct TransactionFilters {
     /// Filter by transaction status.
     pub status: Option<TransactionStatus>,
-    /// Case-insensitive substring match on the recipient username.
+    /// Case-insensitive substring match on the recipient display name. This is
+    /// the linked Albion character name when available, otherwise the username.
     pub search: Option<String>,
     /// Sort column. Allowed: `created_at` (default), `amount`, `status`, `to_username`.
     pub sort: Option<String>,
