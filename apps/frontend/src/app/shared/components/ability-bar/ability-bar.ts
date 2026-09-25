@@ -169,8 +169,15 @@ export interface AbilityChoiceChange {
     }
   `,
   styles: `
+    :host {
+      display: block;
+      min-width: 0;
+      max-width: 100%;
+    }
+
     .ability-bar {
       display: flex;
+      width: 100%;
       flex-wrap: wrap;
       gap: 0.75rem;
       margin: 0;
@@ -180,16 +187,22 @@ export interface AbilityChoiceChange {
 
     .ability-bar__slot {
       display: flex;
+      flex: 1 1 100%;
+      flex-wrap: wrap;
       align-items: flex-start;
       gap: 0.5rem;
+      width: 100%;
+      max-width: 100%;
       min-width: 0;
     }
 
     .ability-bar__picker-trigger {
       display: flex;
+      flex: 1 1 12rem;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.375rem;
+      max-width: 100%;
       min-width: 0;
       padding: 0.25rem 0.45rem;
       border: 1px solid var(--color-border);
@@ -207,8 +220,10 @@ export interface AbilityChoiceChange {
 
     .ability-bar__choices {
       display: flex;
+      flex: 1 1 auto;
       flex-wrap: wrap;
       gap: 0.375rem;
+      max-width: 100%;
       min-width: 0;
     }
 

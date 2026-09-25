@@ -409,7 +409,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           </article>
         }
       </section>
-      @if (page() === 'comps') {
+      @if (tab() === 'comps') {
         <section class="grid gap-4" aria-label="Compositions list">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
