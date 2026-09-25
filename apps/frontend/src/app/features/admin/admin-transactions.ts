@@ -441,7 +441,12 @@ export class AdminTransactions {
   protected readonly canDelete = computed(() => this.auth.hasPermission('bank.transactions.delete'));
 
   protected readonly columns = computed<DataTableColumn<TransactionView>[]>(() => [
-    { key: 'to_username', label: 'admin.transactions.fields.to', accessor: (row) => row.to_username },
+    {
+      key: 'to_username',
+      label: 'admin.transactions.fields.to',
+      searchable: true,
+      accessor: (row) => row.to_username,
+    },
     {
       key: 'amount',
       label: 'common.amount',
