@@ -5,7 +5,7 @@
  * appear together in one plot clears the colour-blind separation floor
  * (OKLab ΔE ≥ 8 under protan/deutan/tritan simulation) and the normal-vision
  * floor (ΔE ≥ 15) against this app's two chart surfaces (`#ffffff` light,
- * `#2b2c36` dark — the Discord card ground; the closest series still clears the
+ * `#1d2026` dark — the workbench surface; the closest series still clears the
  * floor at ΔE 30). Do not re-order or hand-tune these hexes without re-running
  * that validation — the ordering *is* the accessibility mechanism.
  *
@@ -88,13 +88,13 @@ const LIGHT_CHROME: ChartChrome = {
 };
 
 const DARK_CHROME: ChartChrome = {
-  surface: '#2b2c36',
-  elevated: '#33353f',
+  surface: '#1d2026',
+  elevated: '#252930',
   textPrimary: '#ffffff',
-  textSecondary: '#babcd9',
-  textMuted: '#9aa0bf',
-  gridline: '#383a45',
-  axis: '#4a4c58',
+  textSecondary: '#dadde2',
+  textMuted: '#a4abb6',
+  gridline: '#3b424c',
+  axis: '#535c68',
 };
 
 export function chartPalette(isDark: boolean): ChartPalette {

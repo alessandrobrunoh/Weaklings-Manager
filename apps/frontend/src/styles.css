@@ -920,20 +920,20 @@ html.light {
   }
 
   .nav-link:hover {
-    background-color: var(--color-surface-hover);
-    color: var(--color-text-secondary);
+    background-color: var(--color-primary-subtle);
+    color: var(--color-primary);
   }
 
   .nav-link--active,
   .nav-link--active:hover {
-    background-color: var(--color-surface-active);
-    color: var(--color-text);
+    background-color: var(--color-primary-container);
+    color: var(--color-primary);
     font-weight: 600;
   }
 
   .nav-link--active app-icon,
   .nav-link--active .app-icon {
-    color: var(--color-text);
+    color: var(--color-primary);
   }
 
   .scrollbar-thin {
@@ -1671,9 +1671,9 @@ app-shell .data-table__row--clickable:focus-visible {
   }
 }
 
-/* Zed workbench foundation: quiet paper canvas, hairline structure, and one
-   blue anchor. Legacy feature classes keep their names and behavior while
-   the authenticated shell uses this compact geometry. */
+/* Zed workbench foundation: quiet paper canvas, hairline structure, and the
+   active tenant color as its accent. Legacy feature classes keep their names
+   and behavior while the authenticated shell uses this compact geometry. */
 :root,
 html.light {
   color-scheme: light;
@@ -1685,19 +1685,19 @@ html.light {
   --color-surface-2: #f5f4f0;
   --color-surface-3: #ebe9e3;
   --color-surface-muted: #f5f4f0;
-  --color-surface-hover: #e6effe;
-  --color-surface-active: #e6effe;
+  --color-surface-hover: #eef0f3;
+  --color-surface-active: #e3e7ec;
   --color-border: #dadde2;
   --color-border-strong: #b2b5bb;
   --color-overlay: rgb(40 44 51 / 48%);
   --color-text: #3a3d43;
-  --color-text-heading: #1348dc;
+  --color-text-heading: var(--color-primary);
   --color-text-secondary: #464b57;
   --color-text-tertiary: #5d636f;
   --color-text-muted: #6a7282;
   --color-text-steel: #878a98;
   --color-text-disabled: #6a7282;
-  --color-primary: color-mix(in oklab, var(--brand-primary, #1348dc) 88%, #000);
+  --color-primary: color-mix(in oklab, var(--brand-primary, var(--color-blurple)) 88%, #000);
   --color-primary-hover: color-mix(in oklab, var(--color-primary) 84%, #000);
   --color-primary-active: color-mix(in oklab, var(--color-primary) 70%, #000);
   --color-primary-container: color-mix(in oklab, var(--color-primary) 14%, transparent);
@@ -1726,27 +1726,27 @@ html.light {
 
 html.dark {
   color-scheme: dark;
-  --color-rail: #282c33;
-  --color-chrome: #2f343e;
-  --color-bg: #20242b;
-  --color-surface: #2f343e;
-  --color-surface-1: #2f343e;
-  --color-surface-2: #3a3f49;
-  --color-surface-3: #464b57;
-  --color-surface-muted: #3a3f49;
-  --color-surface-hover: #464b57;
-  --color-surface-active: #3f4652;
-  --color-border: #555c67;
-  --color-border-strong: #6a7282;
-  --color-overlay: rgb(0 0 0 / 62%);
+  --color-rail: #0b0c0f;
+  --color-chrome: #111318;
+  --color-bg: #17191e;
+  --color-surface: #1d2026;
+  --color-surface-1: #1d2026;
+  --color-surface-2: #252930;
+  --color-surface-3: #2f353d;
+  --color-surface-muted: #252930;
+  --color-surface-hover: #30363f;
+  --color-surface-active: #292f37;
+  --color-border: #3b424c;
+  --color-border-strong: #535c68;
+  --color-overlay: rgb(0 0 0 / 72%);
   --color-text: #f4f4f2;
-  --color-text-heading: #8ec5ff;
+  --color-text-heading: var(--color-primary);
   --color-text-secondary: #dadde2;
-  --color-text-tertiary: #b2b5bb;
-  --color-text-muted: #a0a7b2;
-  --color-text-steel: #878a98;
-  --color-text-disabled: #6a7282;
-  --color-primary: color-mix(in oklab, var(--brand-primary, #2b7fff) 92%, #fff);
+  --color-text-tertiary: #b7bdc7;
+  --color-text-muted: #a4abb6;
+  --color-text-steel: #8e96a2;
+  --color-text-disabled: #707985;
+  --color-primary: color-mix(in oklab, var(--brand-primary, var(--color-blurple)) 92%, #fff);
   --color-primary-container: color-mix(in oklab, var(--color-primary) 20%, transparent);
   --color-primary-subtle: color-mix(in oklab, var(--color-primary) 12%, transparent);
 }
