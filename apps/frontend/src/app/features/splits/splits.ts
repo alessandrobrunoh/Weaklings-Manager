@@ -149,7 +149,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
     }
-    .icon-capsule--blue {
+    .icon-capsule--primary {
       background: var(--color-surface-2);
       color: var(--color-primary);
     }
@@ -306,7 +306,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
         <!-- Card 4: Participants -->
         <div class="kpi-card">
           <div class="flex items-center gap-3">
-            <div class="icon-capsule icon-capsule--blue">
+            <div class="icon-capsule icon-capsule--primary">
               <app-icon name="users" size="1.125rem" />
             </div>
             <span class="text-xs font-medium text-[var(--color-text-secondary)]">
