@@ -587,6 +587,12 @@ export class Siphoned {
     if (!quote) return;
     this.saving.set(true);
     try {
+      await firstValueFrom(this.api.post<SiphonedEntryView>('api/siphoned/entries', {
+        occurred_at: new Date().toISOString(),
+        player_name: quote.player,
+        reason: 'Siphoned debt settlement',
+        amount: quote.debt,
+      } satisfies SiphonedEntryMutationRequest));
       await firstValueFrom(this.api.post<TransactionView>('api/bank/transactions', {
         to_user_id: quote.userId,
         amount: quote.total,
@@ -595,6 +601,7 @@ export class Siphoned {
       } satisfies CreateTransactionRequest));
       this.settlement.set(null);
       this.toasts.success(this.t('siphoned.settle.success'));
+      await Promise.all([this.load(), this.loadStats()]);
     } catch {
       this.toasts.error(this.t('siphoned.settle.createFailed'));
     } finally {
