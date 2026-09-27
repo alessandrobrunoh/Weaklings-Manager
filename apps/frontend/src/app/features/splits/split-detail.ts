@@ -41,7 +41,12 @@ import {
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
-import { participantWeightsAreValid, redistributeWeights } from './splits';
+import {
+  evenParticipantWeight,
+  participantWeightsAreValid,
+  redistributeWeights,
+  upgradeLegacyUnitShares,
+} from './splits';
 
 type DetailMode = 'view' | 'edit';
 
@@ -290,14 +295,13 @@ function parsePercentageInput(raw: string): number | null {
                     <div class="grid gap-2 sm:grid-cols-2">
                       <label class="block">
                         <span class="label font-medium text-xs">{{ t('splits.island') }}</span>
-                        <select
-                          class="select text-xs"
-                          [value]="editIslandId()"
-                          (change)="onEditIslandChange($event)"
-                        >
-                          <option value="">{{ t('splits.pick_island') }}</option>
+                        <select class="select text-xs" (change)="onEditIslandChange($event)">
+                          <option value="" [selected]="!editIslandId()">{{ t('splits.pick_island') }}</option>
                           @for (island of islands(); track island.id) {
-                            <option [value]="island.id">
+                            <option
+                              [value]="island.id"
+                              [selected]="isSelectedId(editIslandId(), island.id)"
+                            >
                               {{ cityLabel(island.city) }} &middot; {{ island.name }}
                             </option>
                           }
@@ -307,13 +311,14 @@ function parsePercentageInput(raw: string): number | null {
                         <span class="label font-medium text-xs">{{ t('splits.tab') }}</span>
                         <select
                           class="select text-xs"
-                          [value]="editTabId()"
                           [disabled]="!editIslandId()"
                           (change)="onEditTabChange($event)"
                         >
-                          <option value="">{{ t('splits.pick_tab') }}</option>
+                          <option value="" [selected]="!editTabId()">{{ t('splits.pick_tab') }}</option>
                           @for (tab of editIslandTabs(); track tab.id) {
-                            <option [value]="tab.id">{{ tab.name }}</option>
+                            <option [value]="tab.id" [selected]="isSelectedId(editTabId(), tab.id)">
+                              {{ tab.name }}
+                            </option>
                           }
                         </select>
                       </label>
@@ -1302,11 +1307,11 @@ export class SplitDetailPage {
       const added: SplitParticipant = {
         user_id: userId,
         username: opt.title,
-        weight: 1,
+        weight: evenParticipantWeight(1),
         share_amount: null,
       };
-      const next = [...this.editParticipants(), added];
-      this.editParticipants.set(this.normalizeParticipants(next));
+      const next = this.normalizeParticipants([...this.editParticipants(), added]);
+      this.editParticipants.set(next);
       this.editWeightInputs.set(this.weightInputsFor(next));
       this.toasts.success(this.t('splits.added_to_split', { name: opt.title }));
       this.showParticipantSearch.set(false);
@@ -1317,12 +1322,13 @@ export class SplitDetailPage {
       const detail = await firstValueFrom(
         this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
           user_id: userId,
-          weight: 1,
+          weight: evenParticipantWeight(1),
         }),
       );
       this.split.set(detail);
-      this.editParticipants.set(this.normalizeParticipants(detail.participants));
-      this.editWeightInputs.set(this.weightInputsFor(detail.participants));
+      const participants = this.normalizeParticipants(detail.participants);
+      this.editParticipants.set(participants);
+      this.editWeightInputs.set(this.weightInputsFor(participants));
       this.toasts.success(this.t('splits.added_to_split', { name: opt.title }));
       this.showParticipantSearch.set(false);
     } catch (error) {
@@ -1352,8 +1358,9 @@ export class SplitDetailPage {
       );
       if (detail?.participants) {
         this.split.set(detail);
-        this.editParticipants.set(this.normalizeParticipants(detail.participants));
-        this.editWeightInputs.set(this.weightInputsFor(detail.participants));
+        const participants = this.normalizeParticipants(detail.participants);
+        this.editParticipants.set(participants);
+        this.editWeightInputs.set(this.weightInputsFor(participants));
       } else {
         this.editParticipants.update((list) =>
           list.filter((participant) => participant.user_id !== userId),
@@ -1529,8 +1536,9 @@ export class SplitDetailPage {
     this.editEventTitle.set(detail.event_title || '');
     this.editIslandId.set(detail.island_id ? String(detail.island_id) : '');
     this.editTabId.set(detail.island_tab_id ? String(detail.island_tab_id) : '');
-    this.editParticipants.set(this.normalizeParticipants(detail.participants));
-    this.editWeightInputs.set(this.weightInputsFor(detail.participants));
+    const participants = this.normalizeParticipants(detail.participants);
+    this.editParticipants.set(participants);
+    this.editWeightInputs.set(this.weightInputsFor(participants));
   }
 
 
@@ -1694,11 +1702,22 @@ export class SplitDetailPage {
     }
   }
 
+  /**
+   * Options for these selects load asynchronously, so a `[value]` binding on the `<select>` is
+   * applied while the list is still empty and the browser silently resets it. Marking the matching
+   * `<option>` as selected instead keeps the current island/tab visible once the catalog arrives.
+   */
+  protected isSelectedId(selected: string, id: number | null | undefined): boolean {
+    return id != null && selected === String(id);
+  }
+
   private normalizeParticipants(participants: SplitParticipant[]): SplitParticipant[] {
-    return participants.map((participant) => ({
-      ...participant,
-      weight: Number(participant.weight),
-    }));
+    return upgradeLegacyUnitShares(
+      participants.map((participant) => ({
+        ...participant,
+        weight: Number(participant.weight),
+      })),
+    );
   }
 
   private weightInputsFor(participants: SplitParticipant[]): Record<number, string> {
@@ -1711,7 +1730,11 @@ export class SplitDetailPage {
   }
 
   private formatWeightInput(value: number | string): string {
-    return String(value).replace('.', ',');
+    const parsed = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(parsed)) {
+      return '';
+    }
+    return String(parsed).replace('.', ',');
   }
 
   private async loadIslands(): Promise<void> {

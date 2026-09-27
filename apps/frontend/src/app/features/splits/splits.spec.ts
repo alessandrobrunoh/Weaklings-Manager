@@ -16,6 +16,7 @@ import {
   isSplitBatchSelectable,
   participantWeightsAreValid,
   redistributeWeights,
+  upgradeLegacyUnitShares,
 } from './splits';
 
 describe('split creation participants', () => {
@@ -62,6 +63,26 @@ describe('split creation participants', () => {
     expect(participantWeightsAreValid([100, 0])).toBe(false);
     expect(participantWeightsAreValid([100, -1])).toBe(false);
     expect(participantWeightsAreValid([])).toBe(false);
+  });
+
+  it('upgrades a roster of unit shares (1) to full 100% shares', () => {
+    expect(
+      upgradeLegacyUnitShares([
+        { user_id: 1, weight: 1 },
+        { user_id: 2, weight: 1 },
+      ]),
+    ).toEqual([
+      { user_id: 1, weight: 100 },
+      { user_id: 2, weight: 100 },
+    ]);
+  });
+
+  it('leaves mixed weights alone so a real 1% share is not rewritten', () => {
+    const mixed = [
+      { user_id: 1, weight: 1 },
+      { user_id: 2, weight: 100 },
+    ];
+    expect(upgradeLegacyUnitShares(mixed)).toEqual(mixed);
   });
 
   it('does not duplicate the authenticated user when reopening the dialog', () => {

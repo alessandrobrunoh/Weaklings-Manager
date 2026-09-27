@@ -1686,7 +1686,7 @@ export class Splits {
       raw_name: opt.title,
       user_id: Number(opt.id),
       username: opt.title,
-      weight: 1,
+      weight: evenParticipantWeight(1),
     };
     if (this.participants().some((participant) => participant.user_id === draft.user_id)) {
       this.toasts.info(this.t('splits.already_in_roster', { name: draft.raw_name }));
@@ -1945,7 +1945,7 @@ export function addCurrentUserToParticipants(
       raw_name: profile.username,
       user_id: profile.user_id,
       username: profile.username,
-      weight: 1,
+      weight: evenParticipantWeight(1),
     },
   ]);
 }
@@ -1955,7 +1955,7 @@ function toDraftParticipants(matched: MatchedParticipant[]): SplitParticipantDra
     raw_name: participant.matched_name,
     user_id: participant.user_id,
     username: participant.username,
-    weight: 1,
+    weight: evenParticipantWeight(1),
   }));
 }
 
@@ -1968,6 +1968,19 @@ function toDraftParticipants(matched: MatchedParticipant[]): SplitParticipantDra
  */
 export function evenParticipantWeight(count: number): number {
   return count > 0 ? 100 : 0;
+}
+
+/**
+ * Backend defaults (event import, older add-participant paths) stored one full share as `1`.
+ * The edit UI labels the field as `%`, so `1,00` reads as 1% instead of 100%. When every
+ * participant still has that unit share, lift them to the 100-scale the rest of the UI uses.
+ * Mixed weights are left alone — `1` next to `100` is a real 1% share.
+ */
+export function upgradeLegacyUnitShares<T extends { weight: number }>(participants: T[]): T[] {
+  if (participants.length === 0 || participants.some((participant) => participant.weight !== 1)) {
+    return participants;
+  }
+  return redistributeWeights(participants);
 }
 
 /**

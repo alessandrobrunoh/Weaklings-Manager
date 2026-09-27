@@ -303,10 +303,12 @@ const DEFAULT_SPLIT_FEE_PERCENT: i32 = 20;
 
 /// Default weight assigned to split participants imported from a linked event.
 ///
-/// Events only record who signed up, not how the loot should be weighted, so imported
-/// participants receive this baseline. Officers can still tune weights afterwards via
-/// `add_or_update_participant`.
-const IMPORTED_EVENT_PARTICIPANT_WEIGHT: Decimal = Decimal::ONE;
+/// One full share (100), matching the frontend's even-share default. Events only record who
+/// signed up, not how the loot should be weighted, so imported participants receive this
+/// baseline. Officers can still tune weights afterwards via `add_or_update_participant`.
+fn imported_event_participant_weight() -> Decimal {
+    Decimal::from(100u32)
+}
 
 fn event_has_ended(status: &str) -> bool {
     matches!(status, "stopped" | "auto_stopped")
@@ -876,7 +878,7 @@ impl SplitService {
                 .into_iter()
                 .map(|user_id| UpsertParticipantRequest {
                     user_id,
-                    weight: IMPORTED_EVENT_PARTICIPANT_WEIGHT,
+                    weight: imported_event_participant_weight(),
                 })
                 .collect();
         }
@@ -1099,7 +1101,7 @@ impl SplitService {
     /// synchronizes the roster with that event's sign-ups. Saving the same event again does
     /// not restore people an officer already removed. Participants already in the split keep
     /// their weights; sign-ups not yet in the split are added with
-    /// [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`].
+    /// [`imported_event_participant_weight`].
     ///
     /// # Errors
     ///
@@ -1229,7 +1231,7 @@ impl SplitService {
     /// Implemented as a set reconciliation over user ids:
     /// - participants present in the split but absent from the event are deleted;
     /// - participants present in the event but absent from the split are inserted with
-    ///   [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`];
+    ///   [`imported_event_participant_weight`];
     /// - participants in both keep their existing weight untouched.
     ///
     /// An empty event roster is valid: it clears the linked split roster, which will remain
@@ -1276,7 +1278,7 @@ impl SplitService {
             let active = ParticipantActiveModel {
                 split_id: Set(split_id),
                 user_id: Set(user_id),
-                weight: Set(IMPORTED_EVENT_PARTICIPANT_WEIGHT),
+                weight: Set(imported_event_participant_weight()),
                 ..Default::default()
             };
             active.insert(db).await?;
@@ -3759,6 +3761,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(split.participants.len(), 2);
+        assert!(split
+            .participants
+            .iter()
+            .all(|participant| participant.weight == Decimal::new(100, 0)));
         service
             .remove_participant(&db, split.summary.id, extra)
             .await

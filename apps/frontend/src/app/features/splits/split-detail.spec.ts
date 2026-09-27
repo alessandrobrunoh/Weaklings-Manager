@@ -10,6 +10,15 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { SplitDetailPage } from './split-detail';
 
+const islandCatalog = [
+  {
+    id: 1,
+    name: 'HQ',
+    city: 'lymhurst',
+    tabs: [{ id: 2, name: 'Loot', sort_order: 0 }],
+  },
+];
+
 const pendingSplit = {
   id: 7,
   created_by_username: 'officer',
@@ -36,7 +45,10 @@ const pendingSplit = {
   participants: [{ user_id: 12, username: 'alice', weight: 100, share_amount: null }],
 };
 
-async function render(tenantKind: 'guild' | 'alliance'): Promise<ComponentFixture<SplitDetailPage>> {
+async function render(
+  tenantKind: 'guild' | 'alliance',
+  split: typeof pendingSplit = pendingSplit,
+): Promise<ComponentFixture<SplitDetailPage>> {
   const profile = signal({
     user_id: 1,
     username: 'officer',
@@ -53,7 +65,7 @@ async function render(tenantKind: 'guild' | 'alliance'): Promise<ComponentFixtur
         useValue: {
           get: (url: string) => {
             if (url.includes('islands')) {
-              return of([]);
+              return of(islandCatalog);
             }
             if (url.includes('events') || url.includes('transactions') || url.includes('users')) {
               return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 50 });
@@ -62,7 +74,7 @@ async function render(tenantKind: 'guild' | 'alliance'): Promise<ComponentFixtur
               return of({ shared: false });
             }
             if (url.includes('api/splits/7') || url.endsWith('/splits/7')) {
-              return of(pendingSplit);
+              return of(split);
             }
             return of({ items: [] });
           },
@@ -130,6 +142,74 @@ describe('SplitDetailPage alliance share', () => {
     expect(page.isReadOnly()).toBe(true);
     expect(page.canShare()).toBe(false);
     expect(page.canAct()).toBe(false);
+    fixture.destroy();
+  });
+});
+
+type EditApi = {
+  toggleMode: () => void;
+  islands: { set: (value: typeof islandCatalog) => void };
+  editParticipants: () => Array<{ user_id: number; weight: number }>;
+};
+
+function editSelects(fixture: ComponentFixture<SplitDetailPage>): HTMLSelectElement[] {
+  return Array.from(fixture.nativeElement.querySelectorAll('select')) as HTMLSelectElement[];
+}
+
+describe('SplitDetailPage edit form', () => {
+  it('keeps the saved island, tab, and 100% share visible in edit', async () => {
+      const fixture = await render('guild');
+      const page = fixture.componentInstance as unknown as EditApi;
+      page.toggleMode();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const [islandSelect, tabSelect] = editSelects(fixture);
+      expect(islandSelect?.value).toBe('1');
+      expect(tabSelect?.value).toBe('2');
+      const weightInput = fixture.nativeElement.querySelector(
+        'input[placeholder="12,33"]',
+      ) as HTMLInputElement | null;
+      expect(weightInput?.value).toBe('100');
+      fixture.destroy();
+    });
+
+  it('selects island and tab after the catalog arrives', async () => {
+      const fixture = await render('guild');
+      const page = fixture.componentInstance as unknown as EditApi;
+      page.islands.set([]);
+      page.toggleMode();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      page.islands.set(islandCatalog);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const [islandSelect, tabSelect] = editSelects(fixture);
+      expect(islandSelect?.value).toBe('1');
+      expect(tabSelect?.value).toBe('2');
+      fixture.destroy();
+    });
+
+  it('shows a unit-share weight of 1 as 100%', async () => {
+    const fixture = await render('guild', {
+      ...pendingSplit,
+      participants: [{ user_id: 12, username: 'alice', weight: 1, share_amount: null }],
+    });
+    const page = fixture.componentInstance as unknown as EditApi;
+    page.toggleMode();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(page.editParticipants()[0]?.weight).toBe(100);
+    const weightInput = fixture.nativeElement.querySelector(
+      'input[placeholder="12,33"]',
+    ) as HTMLInputElement | null;
+    expect(weightInput?.value).toBe('100');
     fixture.destroy();
   });
 });
