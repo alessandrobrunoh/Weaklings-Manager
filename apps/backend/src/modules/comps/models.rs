@@ -531,6 +531,17 @@ pub struct BuildFilters {
         deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
     )]
     pub archived: Option<bool>,
+    /// When `true`, only builds created by the current user. Defaults to `false` so callers that
+    /// omit the flag still see the whole guild; the UI defaults to mine by sending this explicitly.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
+    pub mine: Option<bool>,
+    /// Internal: populated by the router when [`Self::mine`] is true. Not accepted from the query.
+    #[serde(skip)]
+    #[schema(ignore)]
+    pub created_by: Option<i64>,
 }
 
 /// Filters for listing comps.
@@ -558,4 +569,15 @@ pub struct CompFilters {
         deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
     )]
     pub archived: Option<bool>,
+    /// When `true`, only comps created by the current user. Defaults to `false` so callers that
+    /// omit the flag still see the whole guild; the UI defaults to mine by sending this explicitly.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
+    pub mine: Option<bool>,
+    /// Internal: populated by the router when [`Self::mine`] is true. Not accepted from the query.
+    #[serde(skip)]
+    #[schema(ignore)]
+    pub created_by: Option<i64>,
 }

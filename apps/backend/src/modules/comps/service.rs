@@ -831,6 +831,9 @@ impl CompService {
         if let Some(category_id) = filters.category_id {
             query = query.filter(BuildColumn::CategoryId.eq(category_id));
         }
+        if let Some(created_by) = filters.created_by {
+            query = query.filter(BuildColumn::CreatedBy.eq(created_by));
+        }
 
         let search = filters.search.or(filters.q);
         if let Some(s) = search.filter(|value| !value.trim().is_empty()) {
@@ -1652,6 +1655,9 @@ impl CompService {
 
         if let Some(category_id) = filters.category_id {
             query = query.filter(CompColumn::CategoryId.eq(category_id));
+        }
+        if let Some(created_by) = filters.created_by {
+            query = query.filter(CompColumn::CreatedBy.eq(created_by));
         }
 
         let search = filters.search.or(filters.q);
@@ -4808,6 +4814,80 @@ mod tests {
             .expect("alice's build must remain");
         assert_eq!(still_alices.summary.archived_at, None);
         assert_eq!(still_alices.summary.name, "Heavy Mace");
+    }
+
+    #[tokio::test]
+    async fn list_builds_created_by_returns_only_that_creators_rows() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tank = insert_build_category(&db, "Tank").await;
+        insert_build(&db, "Heavy Mace", "tank", tank, alice).await;
+        insert_build(&db, "Heavy Mace", "tank", tank, bob).await;
+        let service = CompService::new();
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+
+        let alice_only = service
+            .list_builds(
+                &db,
+                BuildFilters {
+                    created_by: Some(alice),
+                    sort: Some("name".to_string()),
+                    order: Some("asc".to_string()),
+                    ..Default::default()
+                },
+                pagination.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(alice_only.items.len(), 1);
+        assert_eq!(alice_only.items[0].created_by_username, "alice");
+
+        let everyone = service
+            .list_builds(&db, BuildFilters::default(), pagination)
+            .await
+            .unwrap();
+        assert_eq!(everyone.items.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn list_comps_created_by_returns_only_that_creators_rows() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        insert_comp(&db, "Roaming", zvz, alice).await;
+        insert_comp(&db, "Roaming", zvz, bob).await;
+        let service = CompService::new();
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+
+        let alice_only = service
+            .list_comps(
+                &db,
+                CompFilters {
+                    created_by: Some(alice),
+                    sort: Some("name".to_string()),
+                    order: Some("asc".to_string()),
+                    ..Default::default()
+                },
+                pagination.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(alice_only.items.len(), 1);
+        assert_eq!(alice_only.items[0].created_by_username, "alice");
+
+        let everyone = service
+            .list_comps(&db, CompFilters::default(), pagination)
+            .await
+            .unwrap();
+        assert_eq!(everyone.items.len(), 2);
     }
 
     #[tokio::test]

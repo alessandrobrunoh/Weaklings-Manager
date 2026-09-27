@@ -33,6 +33,12 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { roleSelectOptionsMany } from '../../shared/discord/discord-options';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import {
+  ownershipListParams,
+  ownershipOptionLabel,
+  type OwnershipScope,
+} from '../../shared/data/ownership-scope';
 
 const PAGE_SIZE = 10;
 const EVENT_STATUSES: readonly EventStatus[] = ['scheduled', 'live', 'stopped', 'auto_stopped', 'cancelled'];
@@ -62,6 +68,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     SearchableSelect,
     StatCard,
     TooltipDirective,
+    OwnershipScopeToggle,
   ],
   styles: `
     :host {
@@ -295,8 +302,12 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           </label>
 
           <div class="grid gap-4 sm:grid-cols-5">
-            <label>
+            <div class="grid gap-2">
               <span class="label">{{ t('events.detail.comp') }}</span>
+              <app-ownership-scope-toggle
+                [scope]="compScope()"
+                (scopeChange)="setCompScope($event)"
+              />
               <select
                 class="select"
                 [value]="draftCompId()"
@@ -305,10 +316,12 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
               >
                 <option value="">{{ compsLoading() ? t('common.loading') : '—' }}</option>
                 @for (comp of comps(); track comp.id) {
-                  <option [value]="comp.id">{{ comp.name }}</option>
+                  <option [value]="comp.id">{{
+                    ownershipLabel(comp.name, comp.created_by_username)
+                  }}</option>
                 }
               </select>
-            </label>
+            </div>
 
             <label>
               <span class="label">{{ t('events.create.playerCap') }}</span>
@@ -596,6 +609,7 @@ export class Events {
   protected readonly saving = signal(false);
   protected readonly compsLoading = signal(false);
   protected readonly comps = signal<CompSummary[]>([]);
+  protected readonly compScope = signal<OwnershipScope>('mine');
   protected readonly draftTitle = signal('');
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
@@ -664,8 +678,21 @@ export class Events {
 
   protected openCreate(): void {
     this.resetCreateDraft();
+    this.compScope.set('mine');
     this.createOpen.set(true);
     void this.loadCreateOptions();
+  }
+
+  protected setCompScope(scope: OwnershipScope): void {
+    if (this.compScope() === scope) {
+      return;
+    }
+    this.compScope.set(scope);
+    void this.loadCreateComps();
+  }
+
+  protected ownershipLabel(name: string, createdBy: string): string {
+    return ownershipOptionLabel(name, createdBy, this.compScope());
   }
 
   protected closeCreate(): void {
@@ -994,13 +1021,39 @@ export class Events {
     this.compError.set(null);
   }
 
+  private async loadCreateComps(): Promise<void> {
+    this.compsLoading.set(true);
+    try {
+      const comps = await firstValueFrom(
+        this.api.get<PaginatedData<CompSummary>>('api/comps', {
+          page: 1,
+          limit: 100,
+          sort: 'name',
+          order: 'asc',
+          ...ownershipListParams(this.compScope()),
+        }),
+      );
+      this.comps.set(comps.items);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.compsLoading.set(false);
+    }
+  }
+
   private async loadCreateOptions(): Promise<void> {
     this.compsLoading.set(true);
     this.allianceId.set(null);
     this.allianceMembershipStatus.set(null);
     try {
       const [comps, islands, alliance] = await Promise.all([
-        firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 })),
+        firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', {
+          page: 1,
+          limit: 100,
+          sort: 'name',
+          order: 'asc',
+          ...ownershipListParams(this.compScope()),
+        })),
         firstValueFrom(this.api.get<SplitIsland[]>('api/splits/islands')),
         firstValueFrom(this.api.get<AllianceContext>('api/alliances/me')).catch(() => null),
       ]);
