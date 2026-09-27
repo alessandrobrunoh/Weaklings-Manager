@@ -85,6 +85,12 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import {
+  ownershipListParams,
+  ownershipOptionLabel,
+  type OwnershipScope,
+} from '../../shared/data/ownership-scope';
 
 /**
  * Sentinel `<select>` value for the virtual Fill role — a participation with no build. The wire
@@ -192,6 +198,7 @@ interface AddEventMemberRequest {
     StatusChip,
     TooltipDirective,
     ViewToggle,
+    OwnershipScopeToggle,
   ],
   template: `
     @if (loading()) {
@@ -2246,6 +2253,10 @@ interface AddEventMemberRequest {
 
           <form class="grid gap-2" (submit)="addRosterRole($event)">
             <label for="extra-roster-build" class="label">Aggiungi nuova build al roster</label>
+            <app-ownership-scope-toggle
+              [scope]="rosterBuildScope()"
+              (scopeChange)="setRosterBuildScope($event)"
+            />
             <div class="flex gap-2">
               <select
                 id="extra-roster-build"
@@ -2258,7 +2269,7 @@ interface AddEventMemberRequest {
                 <option value="">{{ t('events.detail.select_build') }}</option>
                 @for (build of availableExtraRoleBuilds(); track build.id) {
                   <option [value]="build.id">
-                    {{ build.name }} &middot; {{ roleLabelName(build.role) }}
+                    {{ extraBuildLabel(build) }}
                   </option>
                 }
               </select>
@@ -2476,6 +2487,9 @@ interface AddEventMemberRequest {
         [options]="compSearchOptions()"
         [loading]="compSearchLoading()"
         [showDateFilters]="true"
+        [showOwnershipScope]="true"
+        [scope]="compSearchScope()"
+        (scopeChange)="setCompSearchScope($event)"
         (filterChange)="onCompSearchFilter($event)"
         (select)="onCompSelected($event)"
         (close)="showCompSearch.set(false)"
@@ -3113,6 +3127,8 @@ export class EventDetailPage {
   protected readonly showCompSearch = signal(false);
   protected readonly compSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly compSearchLoading = signal(false);
+  protected readonly compSearchScope = signal<OwnershipScope>('mine');
+  private lastCompSearchFilter = { search: '', dateFrom: '', dateTo: '' };
   protected readonly draftCompTitle = signal('');
 
   protected readonly showBattleSearch = signal(false);
@@ -3183,6 +3199,7 @@ export class EventDetailPage {
   protected readonly joinError = signal<string | null>(null);
   protected readonly availableBuilds = signal<CompBuildEntry[]>([]);
   protected readonly allBuilds = signal<BuildSummary[]>([]);
+  protected readonly rosterBuildScope = signal<OwnershipScope>('mine');
   protected readonly rosterRoleManagerOpen = signal(false);
   protected readonly rosterRoleSaving = signal(false);
   protected readonly rosterRoleError = signal<string | null>(null);
@@ -3925,8 +3942,23 @@ export class EventDetailPage {
   protected openRosterRoleManager(): void {
     this.rosterRoleError.set(null);
     this.draftRosterRoleBuildId.set('');
+    this.rosterBuildScope.set('mine');
     this.rosterRoleManagerOpen.set(true);
-    void this.loadAllBuilds();
+    void this.loadAllBuilds(true);
+  }
+
+  protected setRosterBuildScope(scope: OwnershipScope): void {
+    if (this.rosterBuildScope() === scope) {
+      return;
+    }
+    this.rosterBuildScope.set(scope);
+    this.draftRosterRoleBuildId.set('');
+    void this.loadAllBuilds(true);
+  }
+
+  protected extraBuildLabel(build: BuildSummary): string {
+    const name = ownershipOptionLabel(build.name, build.created_by_username, this.rosterBuildScope());
+    return name + ' · ' + this.roleLabelName(build.role);
   }
 
   protected closeRosterRoleManager(): void {
@@ -4748,14 +4780,25 @@ export class EventDetailPage {
     this.memberError.set(null);
   }
 
+  protected setCompSearchScope(scope: OwnershipScope): void {
+    if (this.compSearchScope() === scope) {
+      return;
+    }
+    this.compSearchScope.set(scope);
+    void this.onCompSearchFilter(this.lastCompSearchFilter);
+  }
+
   protected async onCompSearchFilter(filter: {
     search: string;
     dateFrom: string;
     dateTo: string;
   }): Promise<void> {
+    this.lastCompSearchFilter = filter;
     this.compSearchLoading.set(true);
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string | boolean> = {
+        ...ownershipListParams(this.compSearchScope()),
+      };
       if (filter.search) params['search'] = filter.search;
       if (filter.dateFrom) params['date_from'] = filter.dateFrom;
       if (filter.dateTo) params['date_to'] = filter.dateTo;
@@ -4763,7 +4806,12 @@ export class EventDetailPage {
       const data = await firstValueFrom(
         this.api.get<PaginatedData<CompSummary>>('api/comps', params),
       );
-      this.compSearchOptions.set(data.items.map((c) => ({ id: String(c.id), title: c.name })));
+      this.compSearchOptions.set(
+        data.items.map((c) => ({
+          id: String(c.id),
+          title: ownershipOptionLabel(c.name, c.created_by_username, this.compSearchScope()),
+        })),
+      );
     } finally {
       this.compSearchLoading.set(false);
     }
@@ -5648,8 +5696,8 @@ export class EventDetailPage {
     }
   }
 
-  private async loadAllBuilds(): Promise<void> {
-    if (this.allBuilds().length > 0) return;
+  private async loadAllBuilds(force = false): Promise<void> {
+    if (!force && this.allBuilds().length > 0) return;
     try {
       const response = await firstValueFrom(
         this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
@@ -5657,6 +5705,7 @@ export class EventDetailPage {
           limit: 500,
           sort: 'name',
           order: 'asc',
+          ...ownershipListParams(this.rosterBuildScope()),
         }),
       );
       this.allBuilds.set(response.items);

@@ -12,10 +12,12 @@ import {
 
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
+import type { OwnershipScope } from '../../data/ownership-scope';
 import { Dialog } from '../dialog/dialog';
 import { EmptyState } from '../empty-state/empty-state';
 import { Icon } from '../icon/icon';
 import { Loading } from '../loading/loading';
+import { OwnershipScopeToggle } from '../ownership-scope-toggle/ownership-scope-toggle';
 
 export interface SearchDialogOption {
   id: string | number;
@@ -34,7 +36,7 @@ export interface SearchDialogOption {
 @Component({
   selector: 'app-search-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Dialog, Icon, Loading, EmptyState],
+  imports: [Dialog, Icon, Loading, EmptyState, OwnershipScopeToggle],
   template: `
     <app-dialog [title]="title()" (closed)="close.emit()">
       <div class="grid gap-3">
@@ -52,6 +54,10 @@ export interface SearchDialogOption {
             (input)="onSearchChange($event)"
           />
         </div>
+
+        @if (showOwnershipScope()) {
+          <app-ownership-scope-toggle [scope]="scope()" (scopeChange)="scopeChange.emit($event)" />
+        }
 
         @if (showDateFilters()) {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -137,8 +143,11 @@ export class SearchDialog {
   readonly options = input.required<SearchDialogOption[]>();
   readonly loading = input<boolean>(false);
   readonly showDateFilters = input<boolean>(false);
+  readonly showOwnershipScope = input<boolean>(false);
+  readonly scope = input<OwnershipScope>('mine');
 
   readonly close = output<void>();
+  readonly scopeChange = output<OwnershipScope>();
   readonly select = output<SearchDialogOption>();
   readonly filterChange = output<{ search: string; dateFrom: string; dateTo: string }>();
 

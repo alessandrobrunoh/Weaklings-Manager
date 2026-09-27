@@ -149,7 +149,7 @@ describe('CompDetailPage roster', () => {
 
     expect(apiGet).toHaveBeenCalledWith(
       'api/comps/builds',
-      expect.objectContaining({ sort: 'name', order: 'asc' }),
+      expect.objectContaining({ sort: 'name', order: 'asc', mine: true }),
     );
     expect(page.filteredAvailableBuilds().map((item) => item.name)).toEqual(['Permafrost Prism']);
   });

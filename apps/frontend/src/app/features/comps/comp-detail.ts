@@ -41,6 +41,12 @@ import type { VersionDiffEntry } from './version-diff';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import {
+  ownershipListParams,
+  ownershipOptionLabel,
+  type OwnershipScope,
+} from '../../shared/data/ownership-scope';
 import { itemsForLoadout } from './build-loadouts';
 import type { BuildLoadout } from '../../core/models/api.models';
 import { abilityKeyForItem, abilitySlotsFor, albionAbilityIconUrl } from '../../shared/data/albion-abilities';
@@ -92,6 +98,7 @@ interface BuildOptionGroup {
   key: string;
   name: string;
   categoryName: string | null;
+  createdBy: string;
   role: BuildRole;
   versions: BuildSummary[];
 }
@@ -125,6 +132,7 @@ interface BuildOptionGroup {
     AbilityBar,
     EquipmentGrid,
     ViewToggle,
+    OwnershipScopeToggle,
     Icon,
     TooltipDirective,
   ],
@@ -961,6 +969,10 @@ interface BuildOptionGroup {
         <app-dialog [title]="t('comps.addBuild')" size="md" (closed)="closeAddBuildModal()">
           <div class="space-y-4">
             <div class="space-y-2" role="search">
+              <app-ownership-scope-toggle
+                [scope]="addBuildScope()"
+                (scopeChange)="setAddBuildScope($event)"
+              />
               <input
                 type="search"
                 class="input input--sm w-full text-xs"
@@ -1026,7 +1038,12 @@ interface BuildOptionGroup {
                         </div>
                         <div class="min-w-0">
                           <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ group.name }}</span>
-                          <span class="text-[10px] text-secondary">{{ group.categoryName || t('comps.noCategory') }}</span>
+                          <span class="text-[10px] text-secondary">
+                            {{ group.categoryName || t('comps.noCategory') }}
+                            @if (addBuildScope() === 'all') {
+                              · {{ group.createdBy }}
+                            }
+                          </span>
                         </div>
                       </div>
                       <div class="flex items-center gap-1.5 shrink-0">
@@ -1153,20 +1170,26 @@ interface BuildOptionGroup {
                 (input)="onEditDescriptionChange($event)"
               ></textarea>
             </label>
-            <label>
-              <span class="label">{{ t('comps.parent') }}</span>
-              <select class="select" (change)="onEditParentChange($event)">
-                <option value="" [selected]="!editParentId()">{{ t('comps.noParent') }}</option>
-                @for (sibling of editParentOptions(); track sibling.id) {
-                  <option
-                    [value]="sibling.id"
-                    [selected]="isSelectedId(editParentId(), sibling.id)"
-                  >
-                    {{ sibling.name }}
-                  </option>
-                }
-              </select>
-            </label>
+            <div class="grid gap-2">
+              <app-ownership-scope-toggle
+                [scope]="editParentScope()"
+                (scopeChange)="setEditParentScope($event)"
+              />
+              <label>
+                <span class="label">{{ t('comps.parent') }}</span>
+                <select class="select" (change)="onEditParentChange($event)">
+                  <option value="" [selected]="!editParentId()">{{ t('comps.noParent') }}</option>
+                  @for (sibling of editParentOptions(); track sibling.id) {
+                    <option
+                      [value]="sibling.id"
+                      [selected]="isSelectedId(editParentId(), sibling.id)"
+                    >
+                      {{ ownershipLabel(sibling.name, sibling.created_by_username) }}
+                    </option>
+                  }
+                </select>
+              </label>
+            </div>
             <div class="flex justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
               <button type="button" class="btn btn--ghost" (click)="closeEditMeta()">
                 {{ t('common.cancel') }}
@@ -1361,6 +1384,8 @@ export class CompDetailPage {
   protected readonly editMetaOpen = signal(false);
   protected readonly addBuildModalOpen = signal(false);
   protected readonly addBuildRoleFilter = signal<BuildRole | 'all'>('all');
+  protected readonly addBuildScope = signal<OwnershipScope>('mine');
+  protected readonly editParentScope = signal<OwnershipScope>('mine');
   protected readonly buildOptionsLoading = signal(false);
   /** Key (`categoryId::name`) of the build group currently expanded to show its version list, if any. */
   protected readonly expandedBuildGroupKey = signal<string | null>(null);
@@ -1539,7 +1564,10 @@ export class CompDetailPage {
     const q = this.newBuildSearch().trim().toLowerCase();
     if (q) {
       list = list.filter(
-        (b) => b.name.toLowerCase().includes(q) || (b.category_name ?? '').toLowerCase().includes(q),
+        (b) =>
+          b.name.toLowerCase().includes(q) ||
+          (b.category_name ?? '').toLowerCase().includes(q) ||
+          b.created_by_username.toLowerCase().includes(q),
       );
     }
     return list;
@@ -1547,13 +1575,13 @@ export class CompDetailPage {
 
   /**
    * The "Add Build" picker collapses every version of a build into a single row, keyed by
-   * `(category_id, name)` — matching how the backend groups a build's version history. Expanding
+   * `(category_id, created_by, name)` so homonyms from different creators stay separate. Expanding
    * a row (see {@link expandedBuildGroupKey}) reveals its versions, newest first, for selection.
    */
   protected readonly availableBuildGroups = computed(() => {
     const groups = new Map<string, BuildOptionGroup>();
     for (const build of this.filteredAvailableBuilds()) {
-      const key = `${build.category_id}::${build.name}`;
+      const key = `${build.category_id}::${build.created_by_username}::${build.name}`;
       const group = groups.get(key);
       if (group) {
         group.versions.push(build);
@@ -1562,6 +1590,7 @@ export class CompDetailPage {
           key,
           name: build.name,
           categoryName: build.category_name,
+          createdBy: build.created_by_username,
           role: build.role,
           versions: [build],
         });
@@ -1665,6 +1694,7 @@ export class CompDetailPage {
     this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
     this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
     this.editDescription.set(current.description ?? '');
+    this.editParentScope.set('mine');
     this.editMetaOpen.set(true);
     // The category and parent selects read `compCategories()` / `compSummaries()`,
     // and only this call fills them. Without it `editCategoryOptions()` falls back
@@ -1682,9 +1712,32 @@ export class CompDetailPage {
     this.newBuildSearch.set('');
     this.newBuildQuantity.set(1);
     this.addBuildRoleFilter.set('all');
+    this.addBuildScope.set('mine');
     this.expandedBuildGroupKey.set(null);
     this.addBuildModalOpen.set(true);
     void this.searchAvailableBuilds();
+  }
+
+  protected setAddBuildScope(scope: OwnershipScope): void {
+    if (this.addBuildScope() === scope) {
+      return;
+    }
+    this.addBuildScope.set(scope);
+    this.expandedBuildGroupKey.set(null);
+    this.newBuildId.set('');
+    void this.searchAvailableBuilds();
+  }
+
+  protected setEditParentScope(scope: OwnershipScope): void {
+    if (this.editParentScope() === scope) {
+      return;
+    }
+    this.editParentScope.set(scope);
+    void this.loadEditOptions();
+  }
+
+  protected ownershipLabel(name: string, createdBy: string): string {
+    return ownershipOptionLabel(name, createdBy, this.editParentScope());
   }
 
   protected closeAddBuildModal(): void {
@@ -2256,6 +2309,7 @@ export class CompDetailPage {
           limit: 500,
           sort: 'name',
           order: 'asc',
+          ...ownershipListParams(this.editParentScope()),
         }),
       ).catch(() => ({ items: [] as CompSummary[] })),
     ]);
@@ -2288,6 +2342,7 @@ export class CompDetailPage {
           order: 'asc',
           q: q || undefined,
           role: role === 'all' ? undefined : role,
+          ...ownershipListParams(this.addBuildScope()),
         }),
       );
       if (seq !== this.buildSearchSeq) return;
