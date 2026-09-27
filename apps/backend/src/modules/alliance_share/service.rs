@@ -1241,28 +1241,11 @@ mod tests {
     }
 
     fn empty_comp_filters() -> CompFilters {
-        CompFilters {
-            category_id: None,
-            q: None,
-            search: None,
-            date_from: None,
-            date_to: None,
-            sort: None,
-            order: None,
-            archived: None,
-        }
+        CompFilters::default()
     }
 
     fn empty_build_filters() -> BuildFilters {
-        BuildFilters {
-            role: None,
-            category_id: None,
-            q: None,
-            search: None,
-            sort: None,
-            order: None,
-            archived: None,
-        }
+        BuildFilters::default()
     }
 
     fn page50() -> PaginationParams {
@@ -1629,15 +1612,7 @@ mod tests {
         let listed = comps
             .list_builds(
                 &alliance_ctx.db,
-                BuildFilters {
-                    role: None,
-                    category_id: None,
-                    q: None,
-                    search: None,
-                    sort: None,
-                    order: None,
-                    archived: None,
-                },
+                BuildFilters::default(),
                 PaginationParams {
                     page: Some(1),
                     limit: Some(50),

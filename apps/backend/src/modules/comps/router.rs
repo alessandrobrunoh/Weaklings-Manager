@@ -97,6 +97,22 @@ impl ListCompsQuery {
     }
 }
 
+/// Pins `created_by` to the current user when the query asked for `mine=true`.
+fn apply_build_mine_filter(mut filters: BuildFilters, user_id: i64) -> BuildFilters {
+    if filters.mine.unwrap_or(false) {
+        filters.created_by = Some(user_id);
+    }
+    filters
+}
+
+/// Pins `created_by` to the current user when the query asked for `mine=true`.
+fn apply_comp_mine_filter(mut filters: CompFilters, user_id: i64) -> CompFilters {
+    if filters.mine.unwrap_or(false) {
+        filters.created_by = Some(user_id);
+    }
+    filters
+}
+
 /// Creates the router for the comps module.
 pub fn router() -> Router {
     Router::new()
@@ -430,7 +446,7 @@ async fn delete_comp_category(
     path = "/api/comps/builds",
     tag = "comps",
     summary = "List builds",
-    description = "Returns a paginated list of builds with optional filtering by role, category, and name, plus sort (`name`, `role`, `created_at`) and order (`asc`|`desc`). Any authenticated user can call this.",
+    description = "Returns a paginated list of builds with optional filtering by role, category, and name, plus sort (`name`, `role`, `created_at`) and order (`asc`|`desc`). Pass `mine=true` to restrict the list to builds created by the current user. Any authenticated user can call this.",
     security(("session_cookie" = [])),
     params(ListBuildsQuery),
     responses(
@@ -447,7 +463,7 @@ async fn list_builds(
     user.require(&perms, Permission::CompsBuildsView).await?;
     let service = CompService::new();
     let pagination = query.pagination();
-    let filters = query.filters.clone();
+    let filters = apply_build_mine_filter(query.filters.clone(), user.user_id);
     let paginated = service.list_builds(&db, filters, pagination).await?;
     Ok(Json(ApiResponse::new(paginated.into())))
 }
@@ -817,7 +833,7 @@ async fn unarchive_build(
     path = "/api/comps",
     tag = "comps",
     summary = "List comps",
-    description = "Returns a paginated list of comps with optional filtering by category and name, plus sort (`name`, `created_at`, `category`) and order (`asc`|`desc`). Any authenticated user can call this.",
+    description = "Returns a paginated list of comps with optional filtering by category and name, plus sort (`name`, `created_at`, `category`) and order (`asc`|`desc`). Pass `mine=true` to restrict the list to comps created by the current user. Any authenticated user can call this.",
     security(("session_cookie" = [])),
     params(ListCompsQuery),
     responses(
@@ -834,7 +850,7 @@ async fn list_comps(
     user.require(&perms, Permission::CompsCompsView).await?;
     let service = CompService::new();
     let pagination = query.pagination();
-    let filters = query.filters.clone();
+    let filters = apply_comp_mine_filter(query.filters.clone(), user.user_id);
     let paginated = service.list_comps(&db, filters, pagination).await?;
     Ok(Json(ApiResponse::new(paginated.into())))
 }

@@ -75,6 +75,12 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import {
+  ownershipListParams,
+  ownershipOptionLabel,
+  type OwnershipScope,
+} from '../../shared/data/ownership-scope';
 import {
   buildCompForest,
   filterCompForest,
@@ -113,6 +119,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
     PageHeader,
     PageStack,
     ViewToggle,
+    OwnershipScopeToggle,
     DataTable,
     DataTableCell,
     Dialog,
@@ -451,6 +458,11 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
+              <app-ownership-scope-toggle
+                [scope]="listScope()"
+                (scopeChange)="setListScope($event)"
+              />
+
               <app-view-toggle
                 [options]="compTypeFilterOptions()"
                 [active]="compFilterType()"
@@ -498,7 +510,13 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           } @else if (visibleCompRows().length === 0) {
             <app-empty-state
               icon="package"
-              [message]="comps().length === 0 ? t('common.empty') : t('comps.noCompsMatch')"
+              [message]="
+                comps().length === 0
+                  ? listScope() === 'mine'
+                    ? t('comps.scope.emptyMine')
+                    : t('common.empty')
+                  : t('comps.noCompsMatch')
+              "
             />
           } @else {
             <div class="grid gap-3">
@@ -690,8 +708,12 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           }
         </section>
       } @else if (tab() === 'builds') {
-        @if (canArchiveBuilds()) {
-          <div class="flex justify-end">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <app-ownership-scope-toggle
+            [scope]="listScope()"
+            (scopeChange)="setListScope($event)"
+          />
+          @if (canArchiveBuilds()) {
             <button
               type="button"
               class="btn btn--sm"
@@ -701,8 +723,8 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             >
               {{ t('comps.showArchived') }}
             </button>
-          </div>
-        }
+          }
+        </div>
         <app-data-table
           [columns]="buildColumns()"
           [rows]="buildsGrouped()"
@@ -714,6 +736,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           [trackBy]="trackBuild"
           [rowClickable]="true"
           emptyIcon="package"
+          [emptyLabel]="listScope() === 'mine' ? 'comps.scope.emptyMine' : 'common.empty'"
           (retry)="loadBuilds()"
           (pageChange)="onBuildsPageChange($event)"
           (rowClick)="openBuild($event)"
@@ -866,6 +889,10 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             </label>
 
             <section class="surface grid gap-3 p-4" aria-labelledby="build-template-title">
+              <app-ownership-scope-toggle
+                [scope]="pickerScope()"
+                (scopeChange)="setPickerScope($event)"
+              />
               <header class="flex items-start justify-between gap-3">
                 <div>
                   <h3 id="build-template-title" class="text-sm font-semibold" style="color: var(--color-text)">
@@ -904,7 +931,12 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                     <span class="template-option__role">{{ roleLabel(template.role) }}</span>
                     <span class="template-option__copy">
                       <strong>{{ template.name }}</strong>
-                      <small>{{ template.item_count }} oggetti · {{ template.category_name || t('comps.noCategory') }}</small>
+                      <small>
+                        {{ template.item_count }} oggetti · {{ template.category_name || t('comps.noCategory') }}
+                        @if (pickerScope() === 'all') {
+                          · {{ template.created_by_username }}
+                        }
+                      </small>
                     </span>
                   </button>
                 }
@@ -946,19 +978,27 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
               />
             </section>
           } @else {
-            <label>
-              <span class="label">{{ t('comps.parent') }}</span>
-              <select
-                class="select"
-                [value]="draftParentCompId()"
-                (change)="onParentCompChange($event)"
-              >
-                <option value="">{{ t('comps.noParent') }}</option>
-                @for (comp of parentOptions(); track comp.id) {
-                  <option [value]="comp.id">{{ comp.name }}</option>
-                }
-              </select>
-            </label>
+            <div class="grid gap-2">
+              <app-ownership-scope-toggle
+                [scope]="pickerScope()"
+                (scopeChange)="setPickerScope($event)"
+              />
+              <label>
+                <span class="label">{{ t('comps.parent') }}</span>
+                <select
+                  class="select"
+                  [value]="draftParentCompId()"
+                  (change)="onParentCompChange($event)"
+                >
+                  <option value="">{{ t('comps.noParent') }}</option>
+                  @for (comp of parentOptions(); track comp.id) {
+                    <option [value]="comp.id">{{
+                      ownershipLabel(comp.name, comp.created_by_username)
+                    }}</option>
+                  }
+                </select>
+              </label>
+            </div>
 
             @if (draftParentCompId()) {
               <p class="text-sm" style="color: var(--color-text-secondary)">
@@ -980,7 +1020,8 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                   <option value="">{{ t('comps.selectBuild') }}</option>
                   @for (build of buildOptions(); track build.id) {
                     <option [value]="build.id">
-                      {{ build.name }} — {{ roleLabel(build.role) }} —
+                      {{ ownershipLabel(build.name, build.created_by_username) }}
+                      — {{ roleLabel(build.role) }} —
                       {{ build.category_name || t('comps.noCategory') }}
                     </option>
                   }
@@ -1256,6 +1297,10 @@ export class Comps {
   /** Whether the comps/builds tabs are currently browsing the archive instead of active rows. */
   protected readonly showArchivedComps = signal(false);
   protected readonly showArchivedBuilds = signal(false);
+  /** Listings default to the current user's rows; Everyone is an explicit second section. */
+  protected readonly listScope = signal<OwnershipScope>('mine');
+  /** Create-dialog pickers follow the same Mine / Everyone split as the lists. */
+  protected readonly pickerScope = signal<OwnershipScope>('mine');
 
   protected readonly draftName = signal('');
   protected readonly draftDescription = signal('');
@@ -1540,6 +1585,7 @@ export class Comps {
       return;
     }
     this.createOpen.set(true);
+    this.pickerScope.set('mine');
     void this.loadCreateOptions();
   }
 
@@ -2030,6 +2076,32 @@ export class Comps {
     void this.loadBuilds();
   }
 
+  protected setListScope(scope: OwnershipScope): void {
+    if (this.listScope() === scope) {
+      return;
+    }
+    this.listScope.set(scope);
+    this.compsPage = null;
+    this.buildsPage = null;
+    if (this.tab() === 'builds') {
+      void this.loadBuilds();
+    } else if (this.tab() === 'comps') {
+      void this.loadComps();
+    }
+  }
+
+  protected setPickerScope(scope: OwnershipScope): void {
+    if (this.pickerScope() === scope) {
+      return;
+    }
+    this.pickerScope.set(scope);
+    void this.loadCreateOptions();
+  }
+
+  protected ownershipLabel(name: string, createdBy: string): string {
+    return ownershipOptionLabel(name, createdBy, this.pickerScope());
+  }
+
   protected askDeleteCategory(category: ManagedCategory): void {
     this.pendingDelete.set({
       kind: 'category',
@@ -2283,8 +2355,8 @@ export class Comps {
     }
   }
 
-  private listParams(event: DataTablePageChange | null): Record<string, string | number> {
-    const params: Record<string, string | number> = {
+  private listParams(event: DataTablePageChange | null): Record<string, string | number | boolean> {
+    const params: Record<string, string | number | boolean> = {
       page: event?.page ?? 1,
       limit: event?.pageSize ?? PAGE_SIZE,
     };
@@ -2307,6 +2379,7 @@ export class Comps {
     if (this.showArchivedBuilds()) {
       params['archived'] = 'true';
     }
+    Object.assign(params, ownershipListParams(this.listScope()));
     return params;
   }
 
@@ -2319,6 +2392,7 @@ export class Comps {
             limit: OPTIONS_LIMIT,
             sort: 'name',
             order: 'asc',
+            ...ownershipListParams(this.pickerScope()),
           }),
         ),
         firstValueFrom(
@@ -2327,6 +2401,7 @@ export class Comps {
             limit: OPTIONS_LIMIT,
             sort: 'name',
             order: 'asc',
+            ...ownershipListParams(this.pickerScope()),
           }),
         ),
       ]);
@@ -2366,6 +2441,7 @@ export class Comps {
           limit: OPTIONS_LIMIT,
           sort: 'name',
           order: 'asc',
+          ...ownershipListParams(this.listScope()),
           ...(this.showArchivedComps() ? { archived: 'true' } : {}),
         }),
       );
@@ -2401,6 +2477,7 @@ export class Comps {
           limit: OPTIONS_LIMIT,
           sort: 'name',
           order: 'asc',
+          ...ownershipListParams(this.listScope()),
           ...(this.showArchivedComps() ? { archived: 'true' } : {}),
         }),
       );

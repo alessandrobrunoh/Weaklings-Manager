@@ -121,7 +121,14 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           }
         </ng-template>
         <ng-template dataTableCell="created_at" let-row>
-          <span style="color: var(--color-text-secondary)">{{ formatDate(row.created_at) }}</span>
+          <div class="whitespace-nowrap">
+            <div class="text-xs font-medium text-[var(--color-text)]">
+              {{ formatDateDay(row.created_at) }}
+            </div>
+            <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+              {{ formatDateTime(row.created_at) }}
+            </div>
+          </div>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
           <div class="flex items-center justify-end gap-2">
@@ -763,11 +770,26 @@ export class AdminTransactions {
     );
   }
 
-  protected formatDate(iso: string | null | undefined): string {
+  protected formatDateDay(iso: string | null | undefined): string {
     if (!iso) {
       return '—';
     }
-    return new Date(iso).toLocaleDateString(this.translate.locale());
+    return new Date(iso).toLocaleDateString(this.translate.locale(), {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  protected formatDateTime(iso: string | null | undefined): string {
+    if (!iso) {
+      return '—';
+    }
+    return new Date(iso).toLocaleTimeString(this.translate.locale(), {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
   }
 
   protected statusChipClass(status: TransactionStatus): string {
