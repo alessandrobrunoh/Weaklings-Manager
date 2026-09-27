@@ -20,6 +20,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -41,9 +42,7 @@ const STATUSES: readonly TransactionStatus[] = [
 ];
 const DEFAULT_TYPE = 'manual_adjustment';
 
-function emptyPageChange(): DataTablePageChange {
-  return { page: 1, pageSize: 25, search: '', sort: null, columnFilters: {} };
-}
+
 
 /** Which recipient/payer field the roster search dialog is currently filling. */
 type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
@@ -122,7 +121,14 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           }
         </ng-template>
         <ng-template dataTableCell="created_at" let-row>
-          <span style="color: var(--color-text-secondary)">{{ formatDate(row.created_at) }}</span>
+          <div class="whitespace-nowrap">
+            <div class="text-xs font-medium text-[var(--color-text)]">
+              {{ formatDateDay(row.created_at) }}
+            </div>
+            <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+              {{ formatDateTime(row.created_at) }}
+            </div>
+          </div>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
           <div class="flex items-center justify-end gap-2">
@@ -426,7 +432,10 @@ export class AdminTransactions {
   })();
 
   private readonly tableQuery = signal<DataTablePageChange>({
-    ...emptyPageChange(),
+    ...parseDataTableQuery(this.entryParams, {
+      defaultPageSize: 25,
+      filterKeys: ['status'],
+    }),
     search: this.initialSearch,
     columnFilters: this.initialColumnFilters,
   });
@@ -761,11 +770,26 @@ export class AdminTransactions {
     );
   }
 
-  protected formatDate(iso: string | null | undefined): string {
+  protected formatDateDay(iso: string | null | undefined): string {
     if (!iso) {
       return '—';
     }
-    return new Date(iso).toLocaleDateString(this.translate.locale());
+    return new Date(iso).toLocaleDateString(this.translate.locale(), {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  protected formatDateTime(iso: string | null | undefined): string {
+    if (!iso) {
+      return '—';
+    }
+    return new Date(iso).toLocaleTimeString(this.translate.locale(), {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
   }
 
   protected statusChipClass(status: TransactionStatus): string {

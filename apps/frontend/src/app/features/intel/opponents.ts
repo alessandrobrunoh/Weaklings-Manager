@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { EnemyGuildSummary, EnemyPlayerSummary } from '../../core/models/api.models';
@@ -16,6 +16,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Icon } from '../../shared/components/icon/icon';
@@ -217,6 +218,7 @@ const PAGE_LIMIT = 25;
 export class Opponents {
   private readonly enemies = inject(EnemiesService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
@@ -236,21 +238,13 @@ export class Opponents {
 
   protected readonly guildIdFilter = signal('');
 
-  private guildsParams: DataTablePageChange = {
-    page: 1,
-    pageSize: PAGE_LIMIT,
-    search: '',
-    sort: null,
-    columnFilters: {},
-  };
+  private guildsParams: DataTablePageChange = parseDataTableQuery(this.route.snapshot.queryParamMap, {
+    defaultPageSize: PAGE_LIMIT,
+  });
 
-  private playersParams: DataTablePageChange = {
-    page: 1,
-    pageSize: PAGE_LIMIT,
-    search: '',
-    sort: null,
-    columnFilters: {},
-  };
+  private playersParams: DataTablePageChange = parseDataTableQuery(this.route.snapshot.queryParamMap, {
+    defaultPageSize: PAGE_LIMIT,
+  });
 
   protected readonly tabs = computed<ViewToggleOption[]>(() => [
     { id: 'guilds', label: this.t('intel.opponents.tab.guilds') },

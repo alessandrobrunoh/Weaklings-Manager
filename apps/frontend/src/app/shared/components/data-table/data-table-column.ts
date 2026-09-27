@@ -32,6 +32,11 @@ export interface DataTableColumn<T> {
   readonly comparator?: (a: T, b: T) => number;
   /** Optional accessor used by both the global search and the per-column text filter. */
   readonly accessor?: (row: T) => string | number | null | undefined;
+  /**
+   * Value compared against `filterOptions` in client mode. Defaults to `accessor`.
+   * Use this when the cell displays a label but the dropdown filters by id.
+   */
+  readonly filterValue?: (row: T) => string | number | null | undefined;
   /** Optional filter options. When provided, renders a dropdown for this column. */
   readonly filterOptions?: readonly DataTableFilterOption[];
   /** Optional alignment for the rendered cell. Defaults to `left`. */

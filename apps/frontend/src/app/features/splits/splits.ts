@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -27,7 +27,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
-  type DataTableTab,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -405,29 +405,13 @@ function newSplitBag(amount = 0): SplitBagDraft {
         (rowClick)="openSplit($event)"
         (pageChange)="onPageChange($event)"
         searchPlaceholder="Search splits by note or ID..."
+        [initialSearch]="initialQuery.search"
+        [initialColumnFilters]="initialQuery.columnFilters"
         itemLabel="splits"
         emptyIcon="swords"
         emptyTitle="No splits found"
         emptySubtitle="There are no splits matching the selected filters."
-        [tabs]="splitTabs()"
-        [activeTab]="statusFilter()"
-        (tabChange)="onTabSelect($event)"
       >
-        @if (islands().length > 0) {
-          <select
-            dataTableActions
-            class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--color-text)] cursor-pointer outline-none transition-all"
-            [value]="islandFilter()"
-            (change)="onIslandFilterChange($event)"
-          >
-            <option value="">{{ t('splits.all_islands') }}</option>
-            @for (island of islands(); track island.id) {
-              <option [value]="island.id" class="bg-[var(--color-surface)] text-[var(--color-text)]">
-                {{ cityLabel(island.city) }} &middot; {{ island.name }}
-              </option>
-            }
-          </select>
-        }
         <ng-template dataTableCell="select" let-row>
           @if (canAct() && row.status === 'pending' && !row.archived_at) {
             <input
@@ -1098,58 +1082,40 @@ function newSplitBag(amount = 0): SplitBagDraft {
 export class Splits {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  protected readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
+    defaultPageSize: 10,
+    filterKeys: ['status', 'island'],
+  });
 
   protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly kpi = signal<SplitKpiSummary | null>(null);
   protected readonly totalItems = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly islandFilter = signal('');
+  protected readonly islandFilter = signal(this.initialQuery.columnFilters['island'] ?? '');
   protected readonly islands = signal<SplitIsland[]>([]);
-  protected readonly page = signal(1);
-  protected readonly pageSize = signal(10);
-  protected readonly searchQuery = signal('');
-  protected readonly statusFilter = signal<SplitStatus | ''>('');
-  protected readonly sortKey = signal<string | null>(null);
-  protected readonly sortOrder = signal<'asc' | 'desc' | null>(null);
-
-  protected readonly splitTabs = computed<DataTableTab[]>(() => [
-    {
-      id: '',
-      label: this.t('common.all'),
-      count: this.totalItems(),
-    },
-    {
-      id: 'pending',
-      label: this.t('splits.status.pending'),
-      dotClass: 'bg-[var(--color-warning)]',
-      count: this.kpi()?.pending_count,
-    },
-    {
-      id: 'awaiting_event',
-      label: this.t('splits.status.awaiting_event'),
-      dotClass: 'bg-[var(--color-primary)]',
-    },
-    {
-      id: 'completed',
-      label: this.t('splits.status.completed'),
-      dotClass: 'bg-[var(--color-success)]',
-      count: this.kpi()?.completed_count,
-    },
-  ]);
-
-  protected onTabSelect(tabId: string): void {
-    this.setStatusFilter(tabId as SplitStatus | '');
-  }
+  protected readonly page = signal(this.initialQuery.page);
+  protected readonly pageSize = signal(this.initialQuery.pageSize);
+  protected readonly searchQuery = signal(this.initialQuery.search);
+  protected readonly statusFilter = signal<SplitStatus | ''>(
+    isSplitStatus(this.initialQuery.columnFilters['status'] ?? '')
+      ? (this.initialQuery.columnFilters['status'] as SplitStatus)
+      : '',
+  );
+  protected readonly sortKey = signal<string | null>(this.initialQuery.sort?.columnKey ?? null);
+  protected readonly sortOrder = signal<'asc' | 'desc' | null>(
+    this.initialQuery.sort?.direction ?? null,
+  );
 
   private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
   protected readonly batchRunning = signal(false);
   protected readonly showBatchConfirmDialog = signal(false);
   protected readonly archiveTarget = signal<SplitSummary | null>(null);
-  protected readonly showArchived = signal(false);
+  protected readonly showArchived = signal(this.route.snapshot.queryParamMap.get('archived') === 'true');
 
   protected readonly showCreateForm = signal(false);
   protected readonly draftTitle = signal('');
@@ -1241,24 +1207,6 @@ export class Splits {
     () => this.auth.hasPermission('splits.islands.manage') && !this.isAllianceTenant(),
   );
 
-  protected readonly hasActiveFilters = computed(
-    () => Boolean(this.statusFilter() || this.islandFilter() || this.searchQuery().trim()),
-  );
-
-  protected setStatusFilter(status: SplitStatus | ''): void {
-    this.statusFilter.set(status);
-    this.page.set(1);
-    void this.load();
-  }
-
-  protected resetFilters(): void {
-    this.statusFilter.set('');
-    this.islandFilter.set('');
-    this.searchQuery.set('');
-    this.page.set(1);
-    void this.load();
-  }
-
   protected clearSelection(): void {
     this.selectedIds.set(new Set<number>());
   }
@@ -1284,6 +1232,7 @@ export class Splits {
         accessor: (row) => row.status,
         filterOptions: [
           { value: 'pending', label: this.t('splits.status.pending') },
+          { value: 'awaiting_event', label: this.t('splits.status.awaiting_event') },
           { value: 'completed', label: this.t('splits.status.completed') },
           { value: 'not_completed', label: this.t('splits.status.not_completed') },
           { value: 'lost', label: this.t('splits.status.lost') },
@@ -1293,6 +1242,7 @@ export class Splits {
         key: 'island',
         label: 'splits.island',
         accessor: (row) => this.locationLabel(row),
+        filterValue: (row) => (row.island_id == null ? '' : String(row.island_id)),
         filterOptions: this.islands().map((island) => ({
           value: String(island.id),
           label: `${this.cityLabel(island.city)} · ${island.name}`,
@@ -1409,6 +1359,12 @@ export class Splits {
   protected toggleShowArchived(): void {
     this.showArchived.update((value) => !value);
     this.page.set(1);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { archived: this.showArchived() ? 'true' : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
     void this.load();
   }
 
@@ -1451,14 +1407,9 @@ export class Splits {
     this.page.set(event.page);
     this.pageSize.set(event.pageSize);
     this.searchQuery.set(event.search);
-    const status = event.columnFilters['status'];
-    if (isSplitStatus(status)) {
-      this.statusFilter.set(status);
-    }
-    const island = event.columnFilters['island'];
-    if (island) {
-      this.islandFilter.set(island);
-    }
+    const status = event.columnFilters['status'] ?? '';
+    this.statusFilter.set(isSplitStatus(status) ? status : '');
+    this.islandFilter.set(event.columnFilters['island'] ?? '');
     if (event.sort && SORT_WHITELIST.has(event.sort.columnKey)) {
       this.sortKey.set(event.sort.columnKey);
       this.sortOrder.set(event.sort.direction);
@@ -1466,12 +1417,6 @@ export class Splits {
       this.sortKey.set(null);
       this.sortOrder.set(null);
     }
-    void this.load();
-  }
-
-  protected onIslandFilterChange(event: Event): void {
-    this.islandFilter.set((event.target as HTMLSelectElement).value);
-    this.page.set(1);
     void this.load();
   }
 

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -21,6 +22,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -476,6 +478,7 @@ const STATS_FETCH_LIMIT = 1000;
 export class Siphoned {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
@@ -532,8 +535,15 @@ export class Siphoned {
   protected readonly trackEntry = (entry: SiphonedEntryView): unknown => entry.id;
   protected readonly trackBatch = (batch: SiphonedBatchSummary): unknown => batch.batch_id;
 
-  private readonly entryQuery = signal<DataTablePageChange>(emptyPageChange());
-  private readonly balanceQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly entryQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, {
+      defaultPageSize: 10,
+      filterKeys: ['reason'],
+    }),
+  );
+  private readonly balanceQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, { defaultPageSize: 10 }),
+  );
 
   protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
 

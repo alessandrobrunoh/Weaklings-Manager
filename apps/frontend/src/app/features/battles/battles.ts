@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -27,6 +27,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -428,6 +429,7 @@ export class Battles {
   private readonly api = inject(ApiService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
@@ -457,13 +459,12 @@ export class Battles {
     this.formatCountdown(this.secondsUntilRefresh()),
   );
 
-  private readonly tableQuery = signal<DataTablePageChange>({
-    page: 1,
-    pageSize: PAGE_SIZE,
-    search: '',
-    sort: null,
-    columnFilters: {},
-  });
+  private readonly tableQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, {
+      defaultPageSize: PAGE_SIZE,
+      filterKeys: ['outcome'],
+    }),
+  );
 
   protected readonly columns = computed<readonly DataTableColumn<BattleListRow>[]>(() => {
     const shared: DataTableColumn<BattleListRow>[] = [

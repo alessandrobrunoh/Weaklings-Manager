@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/services/api.service';
@@ -23,6 +23,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
@@ -927,6 +928,7 @@ export class Intel {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly intel = inject(IntelService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
@@ -950,13 +952,10 @@ export class Intel {
   protected readonly libraryFailed = signal(false);
   private readonly scoutNames = signal<Readonly<Record<number, string>>>({});
 
-  private libraryParams: DataTablePageChange = {
-    page: 1,
-    pageSize: SCOUT_PAGE_LIMIT,
-    search: '',
-    sort: null,
-    columnFilters: {},
-  };
+  private libraryParams: DataTablePageChange = parseDataTableQuery(
+    this.route.snapshot.queryParamMap,
+    { defaultPageSize: SCOUT_PAGE_LIMIT, filterKeys: ['category'] },
+  );
 
   protected readonly tabs = computed<ViewToggleOption[]>(() => [
     { id: 'overview', label: this.t('intel.nav.overview') },

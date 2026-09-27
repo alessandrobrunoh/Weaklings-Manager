@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -17,6 +17,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Icon } from '../../shared/components/icon/icon';
@@ -429,6 +430,7 @@ const STATS_FETCH_LIMIT = 1000;
 export class Regears {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
@@ -469,11 +471,15 @@ export class Regears {
 
   protected readonly trackById = (death: RegearDeathView): unknown => death.id;
 
-  private readonly tablePage = signal(1);
-  private readonly tablePageSize = signal(PAGE_SIZE);
-  private readonly tableSearch = signal('');
-  private readonly tableSort = signal<DataTablePageChange['sort']>(null);
-  private readonly tableFilters = signal<Readonly<Record<string, string>>>({});
+  private readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
+    defaultPageSize: PAGE_SIZE,
+    filterKeys: ['status'],
+  });
+  private readonly tablePage = signal(this.initialQuery.page);
+  private readonly tablePageSize = signal(this.initialQuery.pageSize);
+  private readonly tableSearch = signal(this.initialQuery.search);
+  private readonly tableSort = signal<DataTablePageChange['sort']>(this.initialQuery.sort);
+  private readonly tableFilters = signal<Readonly<Record<string, string>>>(this.initialQuery.columnFilters);
 
   protected readonly canAdjudicate = computed(() => this.auth.hasPermission('regear.adjudicate'));
   protected readonly canOpenNewRequest = computed(() => this.auth.hasPermission('regear.request'));

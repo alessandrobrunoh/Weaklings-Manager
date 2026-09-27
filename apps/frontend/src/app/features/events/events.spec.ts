@@ -121,12 +121,16 @@ describe('Events', () => {
     expect(select).toBeTruthy();
   });
 
-  it('renders all 4 status tabs with counts', () => {
-    const text = fixture.nativeElement.textContent;
-    expect(text).toContain('All');
-    expect(text).toContain('Live');
-    expect(text).toContain('Scheduled');
-    expect(text).toContain('Finished');
+  it('renders a status column filter instead of status tabs', () => {
+    const options = Array.from(
+      fixture.nativeElement.querySelectorAll('select option'),
+      (option) => (option as HTMLOptionElement).textContent ?? '',
+    ).join(' ');
+    expect(options).toContain('Live');
+    expect(options).toContain('Scheduled');
+    expect(options).toContain('Stopped');
+    expect(options).toContain('Cancelled');
+    expect(fixture.nativeElement.querySelectorAll('nav button').length).toBe(0);
   });
 
   it('renders the table headers correctly', () => {
