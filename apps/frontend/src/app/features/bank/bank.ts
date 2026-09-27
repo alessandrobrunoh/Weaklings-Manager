@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -19,7 +19,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
-  type DataTableTab,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -29,10 +29,6 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-
-function emptyPageChange(): DataTablePageChange {
-  return { page: 1, pageSize: 10, search: '', sort: null, columnFilters: {} };
-}
 
 /**
  * Personal Guild Bank ledger.
@@ -254,9 +250,6 @@ function emptyPageChange(): DataTablePageChange {
         emptyIcon="bank"
         emptyTitle="No transactions found"
         emptySubtitle="There are no transactions matching the selected filters."
-        [tabs]="bankTabs()"
-        [activeTab]="statusFilter()"
-        (tabChange)="onTabSelect($event)"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="guild" let-row>
@@ -422,6 +415,7 @@ function emptyPageChange(): DataTablePageChange {
 export class Bank {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   protected readonly translate = inject(TranslateService);
 
@@ -430,7 +424,6 @@ export class Bank {
   protected readonly transactionTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly transactionsLoadFailed = signal(false);
-  protected readonly statusFilter = signal<TransactionStatus | ''>('');
 
   protected readonly totalWithdrawn = computed(() => {
     return this.transactions()
@@ -449,9 +442,16 @@ export class Bank {
   protected readonly trackRow = (row: TransactionView): string =>
     `${row.guild_tenant_id ?? ''}:${row.id}`;
 
-  private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly tableQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, {
+      defaultPageSize: 10,
+      filterKeys: ['status'],
+    }),
+  );
 
-  protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => [
+  protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
+    this.translate.dict();
+    return [
     {
       key: 'transaction',
       label: 'bank.transactions.title',
@@ -485,6 +485,9 @@ export class Bank {
       label: 'common.status',
       sortable: true,
       accessor: (row) => row.status,
+      filterOptions: (['pending', 'requested', 'withdrawn', 'rejected', 'donated'] as const).map(
+        (status) => ({ value: status, label: this.statusLabel(status) }),
+      ),
     },
     {
       key: 'amount',
@@ -500,41 +503,8 @@ export class Bank {
       accessor: (row) => row.id,
       align: 'right',
     },
-  ]);
-
-  protected readonly bankTabs = computed<DataTableTab[]>(() => [
-    {
-      id: '',
-      label: this.t('common.all'),
-      count: this.transactionTotal(),
-    },
-    {
-      id: 'requested',
-      label: this.t('bank.status.requested'),
-      dotClass: 'bg-[var(--color-warning)] animate-pulse',
-      count: this.balance()?.requested_count,
-    },
-    {
-      id: 'pending',
-      label: this.t('bank.status.pending'),
-      dotClass: 'bg-[var(--color-info)]',
-      count: this.balance()?.pending_count,
-    },
-    {
-      id: 'withdrawn',
-      label: this.t('bank.status.withdrawn'),
-      dotClass: 'bg-[var(--color-success)]',
-    },
-    {
-      id: 'rejected',
-      label: this.t('bank.status.rejected'),
-      dotClass: 'bg-[var(--color-error)]',
-    },
-  ]);
-
-  protected onTabSelect(tabId: string): void {
-    this.setStatusFilter(tabId as TransactionStatus | '');
-  }
+  ];
+  });
 
   protected formatDateDay(dateStr: string | null | undefined): string {
     if (!dateStr) return '—';
@@ -573,19 +543,6 @@ export class Bank {
       this.withdrawGuildId.set(pending[0].guild_tenant_id);
     }
     this.confirmWithdrawalOpen.set(true);
-  }
-
-  protected setStatusFilter(status: TransactionStatus | ''): void {
-    this.statusFilter.set(status);
-    const query = this.tableQuery();
-    const columnFilters = { ...query.columnFilters };
-    if (status) {
-      columnFilters['status'] = status;
-    } else {
-      delete columnFilters['status'];
-    }
-    this.tableQuery.set({ ...query, page: 1, columnFilters });
-    void this.loadTransactions();
   }
 
   protected onTableChange(event: DataTablePageChange): void {
@@ -646,8 +603,7 @@ export class Bank {
         params['sort'] = query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
-      const filterStatus = this.statusFilter();
-      const status = (filterStatus || query.columnFilters['status']) as TransactionStatus;
+      const status = query.columnFilters['status'] as TransactionStatus | undefined;
       if (status) {
         params['status'] = status;
       }

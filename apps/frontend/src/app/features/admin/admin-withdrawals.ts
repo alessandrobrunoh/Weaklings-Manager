@@ -18,7 +18,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
-  type DataTableTab,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -39,10 +39,6 @@ export interface WithdrawalQueueRow {
   transactions: TransactionView[];
   guild_tenant_id?: string | null;
   guild_name?: string | null;
-}
-
-function emptyPageChange(): DataTablePageChange {
-  return { page: 1, pageSize: 10, search: '', sort: null, columnFilters: {} };
 }
 
 /**
@@ -216,9 +212,6 @@ const GROUPING_FETCH_LIMIT = 500;
         emptyIcon="bank"
         emptyTitle="No withdrawal requests"
         emptySubtitle="There are no withdrawal requests matching the selected filters."
-        [tabs]="withdrawalTabs()"
-        [activeTab]="statusFilter()"
-        (tabChange)="onTabSelect($event)"
         (rowClick)="onRowClick($event)"
         (pageChange)="onTableChange($event)"
       >
@@ -419,19 +412,13 @@ export class AdminWithdrawals {
 
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly transactionTotal = signal(0);
-  protected readonly allTransactionsTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly statusFilter = signal<TransactionStatus | ''>('requested');
 
   protected readonly pendingPayoutSilver = computed(() => {
     return this.transactions()
       .filter((t) => t.status === 'requested')
       .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-  });
-
-  protected readonly pendingRequestsCount = computed(() => {
-    return this.transactions().filter((t) => t.status === 'requested').length;
   });
 
   protected readonly totalMembersCredit = computed(() => {
@@ -472,48 +459,12 @@ export class AdminWithdrawals {
   protected readonly trackRow = (row: WithdrawalQueueRow): unknown =>
     `${row.guild_tenant_id ?? ''}-${row.to_user_id}-${row.status}-${row.id}`;
 
-  protected readonly withdrawalTabs = computed<DataTableTab[]>(() => [
-    {
-      id: 'requested',
-      label: this.t('bank.status.requested'),
-      dotClass: 'bg-[var(--color-warning)] animate-pulse',
-      count: this.pendingRequestsCount(),
-    },
-    {
-      id: '',
-      label: this.t('common.all'),
-      count: this.allTransactionsTotal(),
-    },
-    {
-      id: 'withdrawn',
-      label: this.t('bank.status.withdrawn'),
-      dotClass: 'bg-[var(--color-success)]',
-    },
-    {
-      id: 'rejected',
-      label: this.t('bank.status.rejected'),
-      dotClass: 'bg-[var(--color-error)]',
-    },
-  ]);
-
-  protected onTabSelect(tabId: string): void {
-    this.setStatusFilter(tabId as TransactionStatus | '');
-  }
-
-  private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
-
-  protected setStatusFilter(status: TransactionStatus | ''): void {
-    this.statusFilter.set(status);
-    const query = this.tableQuery();
-    const columnFilters = { ...query.columnFilters };
-    if (status) {
-      columnFilters['status'] = status;
-    } else {
-      delete columnFilters['status'];
-    }
-    this.tableQuery.set({ ...query, page: 1, columnFilters });
-    void this.loadTransactions();
-  }
+  private readonly tableQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, {
+      defaultPageSize: 10,
+      filterKeys: ['status'],
+    }),
+  );
 
   protected formatCompact(value: number | string | null | undefined): string {
     const num = Number(value ?? 0);
@@ -762,7 +713,7 @@ export class AdminWithdrawals {
         params['sort'] = query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
-      const status = (query.columnFilters['status'] as TransactionStatus) || this.statusFilter();
+      const status = query.columnFilters['status'] as TransactionStatus | undefined;
       if (status) {
         params['status'] = status;
       }
@@ -771,19 +722,6 @@ export class AdminWithdrawals {
       );
       this.transactions.set(data.items);
       this.transactionTotal.set(data.total_items);
-
-      if (!status) {
-        this.allTransactionsTotal.set(data.total_items);
-      } else {
-        const allData = await firstValueFrom(
-          this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
-            page: 1,
-            limit: GROUPING_FETCH_LIMIT,
-            global: true,
-          }),
-        );
-        this.allTransactionsTotal.set(allData.total_items);
-      }
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

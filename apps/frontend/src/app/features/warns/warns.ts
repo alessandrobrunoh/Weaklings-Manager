@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -19,6 +20,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -463,6 +465,7 @@ function isWarnsTab(value: string): value is WarnsTab {
 export class Warns {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
@@ -503,8 +506,15 @@ export class Warns {
 
   protected readonly canIssue = computed(() => this.auth.hasPermission('warns.issue'));
 
-  private readonly warnQuery = signal<DataTablePageChange>(emptyPageChange());
-  private readonly escalationQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly warnQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, {
+      defaultPageSize: 20,
+      filterKeys: ['severity', 'status'],
+    }),
+  );
+  private readonly escalationQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, { defaultPageSize: 20 }),
+  );
 
   protected readonly columns = computed<readonly DataTableColumn<WarnView>[]>(() => [
     {

@@ -1,5 +1,6 @@
 import { DatePipe, JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { PaginatedData } from '../../core/models/api.models';
@@ -11,6 +12,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Icon } from '../../shared/components/icon/icon';
@@ -69,10 +71,6 @@ const ENTITY_FILTERS = [
   'GUILD_SETTINGS',
   'ROLE',
 ] as const;
-
-function emptyPageChange(): DataTablePageChange {
-  return { page: 1, pageSize: 20, search: '', sort: null, columnFilters: {} };
-}
 
 @Component({
   selector: 'app-audit',
@@ -213,6 +211,7 @@ function emptyPageChange(): DataTablePageChange {
 })
 export class Audit {
   private readonly api = inject(ApiService);
+  private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
@@ -238,7 +237,12 @@ export class Audit {
 
   protected readonly trackById = (log: AuditLog): unknown => log.id;
 
-  private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly tableQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, {
+      defaultPageSize: 20,
+      filterKeys: ['action', 'entity'],
+    }),
+  );
 
   protected readonly columns: readonly DataTableColumn<AuditLog>[] = [
     {

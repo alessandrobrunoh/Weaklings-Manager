@@ -1,5 +1,6 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { TranslateService } from '../../../core/services/translate.service';
@@ -42,7 +43,7 @@ describe('DataTable', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [DataTable],
-      providers: [provideZonelessChangeDetection(), TranslateService],
+      providers: [provideZonelessChangeDetection(), provideRouter([]), TranslateService],
     }).compileComponents();
 
     fixture = TestBed.createComponent(DataTable<Row>);
@@ -103,5 +104,55 @@ describe('DataTable', () => {
     expect(
       (fixture.nativeElement.querySelector('input[type="search"]') as HTMLInputElement).value,
     ).toBe('alpha');
+  });
+
+  it('filters client rows by the column dropdown', async () => {
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'closed';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const body = fixture.nativeElement.querySelector('tbody')?.textContent ?? '';
+    expect(body).toContain('Bravo');
+    expect(body).not.toContain('Alpha');
+  });
+
+  it('emits rowClick when the row body is activated, not when a nested button is clicked', async () => {
+    fixture.componentRef.setInput('rowClickable', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const clicked: Row[] = [];
+    fixture.componentInstance.rowClick.subscribe((row) => clicked.push(row));
+
+    const firstRow = fixture.nativeElement.querySelector('tbody tr') as HTMLTableRowElement;
+    firstRow.click();
+    expect(clicked).toEqual([rows[0]]);
+
+    clicked.length = 0;
+    const nested = document.createElement('button');
+    firstRow.appendChild(nested);
+    nested.click();
+    expect(clicked).toEqual([]);
+  });
+
+  it('writes column filters into the URL', async () => {
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'open';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: expect.objectContaining({ status: 'open' }),
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
   });
 });

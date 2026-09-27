@@ -87,42 +87,6 @@
       </div>
     }
 
-    <!-- Status Tabs (matching /events) -->
-    @if (tabs() && tabs()!.length > 0) {
-      <nav class="flex items-center gap-6 border-b border-[var(--color-border)] overflow-x-auto mb-2">
-        @for (tab of tabs()!; track tab.id) {
-          <button
-            type="button"
-            class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-            [class.border-[var(--color-primary)]]="activeTab() === tab.id"
-            [class.text-[var(--color-text)]]="activeTab() === tab.id"
-            [class.border-transparent]="activeTab() !== tab.id"
-            [class.text-[var(--color-text-tertiary)]]="activeTab() !== tab.id"
-            [class.hover:text-[var(--color-text)]]="activeTab() !== tab.id"
-            (click)="onTabClick(tab.id)"
-          >
-            @if (tab.dotClass) {
-              <span class="h-1.5 w-1.5 rounded-full {{ tab.dotClass }}"></span>
-            }
-            <span>{{ tab.label }}</span>
-            @if (tab.count !== undefined) {
-              <span
-                class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
-                [class.bg-white/10]="activeTab() === tab.id"
-                [class.border-[var(--color-border-strong)]]="activeTab() === tab.id"
-                [class.text-[var(--color-text)]]="activeTab() === tab.id"
-                [class.bg-[var(--color-surface-2)]]="activeTab() !== tab.id"
-                [class.border-[var(--color-border)]]="activeTab() !== tab.id"
-                [class.text-[var(--color-text-tertiary)]]="activeTab() !== tab.id"
-              >
-                {{ tab.count }}
-              </span>
-            }
-          </button>
-        }
-      </nav>
-    }
-
     @if (processedRows().length === 0) {
       <!-- Clean Centered Empty State (matching /events) -->
       <div class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
@@ -176,10 +140,10 @@
           <tbody class="divide-y divide-[var(--color-border)]">
             @for (row of processedRows(); track trackBy()(row)) {
               <tr
-                class="hover:bg-white/[0.02] transition-colors group"
-                [class.cursor-pointer]="rowClickable()"
+                class="transition-colors group"
+                [class.data-table__row--clickable]="rowClickable()"
                 [attr.tabindex]="rowClickable() ? 0 : null"
-                (click)="onRowClick(row)"
+                (click)="onRowClick($event, row)"
                 (keydown)="onRowKeydown($event, row)"
               >
                 @for (column of columns(); track column.key) {

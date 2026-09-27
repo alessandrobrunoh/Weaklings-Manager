@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import {
@@ -60,6 +60,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -1125,6 +1126,7 @@ export class Comps {
 
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
@@ -1320,8 +1322,14 @@ export class Comps {
   protected readonly trackBuild = (row: BuildSummary): unknown => row.id;
   protected readonly trackCategory = (row: ManagedCategory): unknown => row.id;
 
-  private compsPage: DataTablePageChange | null = null;
-  private buildsPage: DataTablePageChange | null = null;
+  private compsPage: DataTablePageChange | null = parseDataTableQuery(
+    this.route.snapshot.queryParamMap,
+    { defaultPageSize: PAGE_SIZE, filterKeys: ['category'] },
+  );
+  private buildsPage: DataTablePageChange | null = parseDataTableQuery(
+    this.route.snapshot.queryParamMap,
+    { defaultPageSize: PAGE_SIZE, filterKeys: ['role', 'category'] },
+  );
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly canCreateComps = computed(() => this.auth.hasPermission('comps.comps.create'));

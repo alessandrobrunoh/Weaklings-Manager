@@ -4,14 +4,18 @@ import {
   Component,
   computed,
   contentChildren,
+  DestroyRef,
   effect,
   inject,
   input,
-  model,
   output,
   signal,
   untracked,
+  type Signal,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, convertToParamMap, Router, type ParamMap } from '@angular/router';
+import type { Observable } from 'rxjs';
 
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
@@ -34,12 +38,35 @@ import type {
   SortDirection,
   SortState,
 } from './data-table-column';
+import {
+  dataTableFilterQueryKey,
+  dataTableQueriesEqual,
+  dataTableQueryKey,
+  dataTableQueryMatchesParams,
+  DATA_TABLE_PAGE_PARAM,
+  DATA_TABLE_SEARCH_PARAM,
+  DATA_TABLE_SIZE_PARAM,
+  DATA_TABLE_SORT_PARAM,
+  parseDataTableQuery,
+  serializeDataTableQuery,
+} from './data-table-query';
+export {
+  emptyDataTableQuery,
+  parseDataTableQuery,
+  serializeDataTableQuery,
+} from './data-table-query';
 
-export interface DataTableTab {
-  readonly id: string;
-  readonly label: string;
-  readonly count?: number;
-  readonly dotClass?: string;
+const ROW_CLICK_IGNORE =
+  'a, button, input, select, textarea, label, option, form, [role="button"], [role="link"], [data-stop-row-click]';
+
+function queryParamMapSignal(route: ActivatedRoute | null): Signal<ParamMap> {
+  const params$ = route?.queryParamMap as Observable<ParamMap> | undefined;
+  if (params$ && typeof params$.subscribe === 'function') {
+    return toSignal(params$, {
+      initialValue: route?.snapshot.queryParamMap ?? convertToParamMap({}),
+    });
+  }
+  return signal(route?.snapshot.queryParamMap ?? convertToParamMap({}));
 }
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -55,6 +82,10 @@ const SEARCH_DEBOUNCE_MS = 300;
 })
 export class DataTable<T> {
   private readonly translate = inject(TranslateService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router, { optional: true });
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly queryParamMap = queryParamMapSignal(this.route);
 
   /** Column descriptors that drive rendering, sorting and filtering. */
   readonly columns = input.required<readonly DataTableColumn<T>[]>();
@@ -88,14 +119,17 @@ export class DataTable<T> {
   /** Optional custom noun for results (e.g. 'events', 'members'). Falls back to totalResults. */
   readonly itemLabel = input<string>('');
 
-  /** Optional tabs rendered below the toolbar, matching the /events tab style. */
-  readonly tabs = input<readonly DataTableTab[] | null>(null);
+  /**
+   * When true (default), search, sort, page, page size and column filters are
+   * mirrored to the page URL so a shared link restores the same table state.
+   */
+  readonly syncUrl = input(true);
 
-  /** Active tab ID. Can be two-way bound with [(activeTab)]. */
-  readonly activeTab = model<string>('');
-
-  /** Emitted when a tab is selected. */
-  readonly tabChange = output<string>();
+  /**
+   * Optional prefix for query params when several tables share a page.
+   * `urlKey="builds"` stores `builds.search`, `builds.role`, etc.
+   */
+  readonly urlKey = input('');
 
   /** Optional custom search placeholder. */
   readonly searchPlaceholder = input<string>('');
@@ -125,9 +159,8 @@ export class DataTable<T> {
   readonly hidePageSize = input(false);
 
   /**
-   * Search term the table starts with, e.g. when a page deep-links into the
-   * table pre-filtered. Re-applied whenever `columns()` changes, alongside the
-   * rest of the toolbar reset.
+   * Search term the table starts with when the URL has no `search` param.
+   * Hosts can pass a deep-link fallback; URL state always wins when present.
    */
   readonly initialSearch = input('');
 
@@ -174,41 +207,62 @@ export class DataTable<T> {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    // Synchronise the page size signal with the input.
-    effect(() => this.currentPageSize.set(this.pageSize()));
-
-    // Reset to first page whenever structural inputs (columns) change. In server
-    // mode the host keeps responsibility for resetting on its own data changes,
-    // but a genuine structural change still needs to trigger a refetch of page 1.
-    // `pageSize` is read untracked below: it's already kept in sync by the
-    // sibling effect above, and tracking it here would re-fire this reset on
-    // every page-size change instead of only on `columns()` changes.
-    let columnsInitialized = false;
-    let previousColumnSignature = '';
-    effect(() => {
-      const columns = this.columns();
-      const columnSignature = this.columnSignature(columns);
-      if (columnsInitialized && columnSignature === previousColumnSignature) {
-        return;
-      }
-      previousColumnSignature = columnSignature;
+    this.destroyRef.onDestroy(() => {
       if (this.searchTimer) {
         clearTimeout(this.searchTimer);
         this.searchTimer = null;
       }
-      this.currentPageSize.set(untracked(() => this.pageSize()));
-      this.page.set(1);
-      this.search.set(untracked(() => this.initialSearch()));
-      this.sort.set(null);
-      this.columnFilters.set(untracked(() => ({ ...this.initialColumnFilters() })));
-      // The host already fetches its own initial page; only notify it here for
-      // a genuine post-mount structural change, not for the effect's first run.
-      if (columnsInitialized) {
-        this.emitChange();
-      }
-      columnsInitialized = true;
+    });
+
+    const snapshot = parseDataTableQuery(
+      this.route?.snapshot.queryParamMap ?? convertToParamMap({}),
+      { defaultPageSize: DEFAULT_PAGE_SIZE },
+    );
+    this.page.set(snapshot.page);
+    this.currentPageSize.set(snapshot.pageSize);
+    this.search.set(snapshot.search);
+    this.sort.set(snapshot.sort);
+
+    let initialized = false;
+    effect(() => {
+      const params = this.syncUrl() ? this.queryParamMap() : null;
+      const prefix = this.urlKey();
+      const pageSize = this.pageSize();
+      const initialSearch = this.initialSearch();
+      const initialColumnFilters = this.initialColumnFilters();
+      const filterKeys = this.filterKeys();
+      untracked(() => {
+        const next = this.resolveQuery({
+          params,
+          prefix,
+          pageSize,
+          initialSearch,
+          initialColumnFilters,
+          filterKeys,
+          initialized,
+        });
+        if (dataTableQueriesEqual(next, this.currentQuery())) {
+          initialized = true;
+          return;
+        }
+        if (this.searchTimer) {
+          clearTimeout(this.searchTimer);
+          this.searchTimer = null;
+        }
+        this.applyQuery(next);
+        if (initialized) {
+          this.emitChange({ syncUrl: false });
+        }
+        initialized = true;
+      });
     });
   }
+
+  private readonly filterKeys = computed(() =>
+    this.columns()
+      .filter((column) => column.filterOptions && column.filterOptions.length > 0)
+      .map((column) => column.key),
+  );
 
   /** Filtered, sorted and sliced rows shown in the current page (client mode). */
   protected readonly processedRows = computed<readonly T[]>(() => {
@@ -343,7 +397,14 @@ export class DataTable<T> {
 
   protected onColumnFilter(columnKey: string, event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
-    this.columnFilters.update((filters) => ({ ...filters, [columnKey]: value }));
+    this.columnFilters.update((filters) => {
+      if (!value) {
+        const next = { ...filters };
+        delete next[columnKey];
+        return next;
+      }
+      return { ...filters, [columnKey]: value };
+    });
     this.page.set(1);
     this.emitChange();
   }
@@ -379,17 +440,6 @@ export class DataTable<T> {
     this.emitChange();
   }
 
-  protected onTabClick(tabId: string): void {
-    if (this.activeTab() === tabId) {
-      return;
-    }
-    this.activeTab.set(tabId);
-    this.page.set(1);
-    // Hosts own tab filtering via `tabChange`. Do not emit `pageChange` here:
-    // that payload has empty `columnFilters` and would clobber the tab state.
-    this.tabChange.emit(tabId);
-  }
-
   protected columnFilterValue(columnKey: string): string {
     return this.columnFilters()[columnKey] ?? '';
   }
@@ -410,8 +460,12 @@ export class DataTable<T> {
     return current.direction === 'asc' ? 'ascending' : 'descending';
   }
 
-  protected onRowClick(row: T): void {
-    if (!this.rowClickable()) {
+  protected onRowClick(event: MouseEvent, row: T): void {
+    if (!this.rowClickable() || event.defaultPrevented || event.button !== 0) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest(ROW_CLICK_IGNORE)) {
       return;
     }
     this.rowClick.emit(row);
@@ -419,6 +473,10 @@ export class DataTable<T> {
 
   protected onRowKeydown(event: KeyboardEvent, row: T): void {
     if (!this.rowClickable()) {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof Element && target.closest(ROW_CLICK_IGNORE)) {
       return;
     }
     if (event.key === 'Enter' || event.key === ' ') {
@@ -451,10 +509,11 @@ export class DataTable<T> {
           continue;
         }
         const column = this.columns().find((current) => current.key === key);
-        if (!column?.accessor) {
+        const read = column?.filterValue ?? column?.accessor;
+        if (!read) {
           continue;
         }
-        const cell = String(column.accessor(row) ?? '');
+        const cell = String(read(row) ?? '');
         if (cell !== value) {
           return false;
         }
@@ -493,28 +552,6 @@ export class DataTable<T> {
     );
   }
 
-  /**
-   * Computed column descriptors are often recreated when their host rows or
-   * permissions change. Their array identity is not a structural change, so
-   * use the parts that affect table state instead of resetting on every new
-   * array instance.
-   */
-  private columnSignature(columns: readonly DataTableColumn<T>[]): string {
-    return columns
-      .map((column) =>
-        [
-          column.key,
-          column.sortable ? 'sortable' : '',
-          column.searchable ? 'searchable' : '',
-          column.align ?? '',
-          column.accessor ? 'accessor' : '',
-          column.comparator ? 'comparator' : '',
-          (column.filterOptions ?? []).map((option) => option.value).join(','),
-        ].join(':'),
-      )
-      .join('|');
-  }
-
   private applySort(rows: readonly T[]): T[] {
     const state = this.sort();
     if (!state) {
@@ -541,13 +578,120 @@ export class DataTable<T> {
     return [...rows].slice(start, start + this.currentPageSize());
   }
 
-  private emitChange(): void {
-    this.pageChange.emit({
+  private emitChange(options?: { syncUrl?: boolean }): void {
+    const payload = this.currentQuery();
+    if (this.syncUrl() && options?.syncUrl !== false) {
+      this.writeUrl(payload);
+    }
+    this.pageChange.emit(payload);
+  }
+
+  private currentQuery(): DataTablePageChange {
+    return {
       page: this.page(),
       pageSize: this.currentPageSize(),
       search: this.search(),
       sort: this.sort(),
       columnFilters: this.columnFilters(),
+    };
+  }
+
+  private applyQuery(query: DataTablePageChange): void {
+    this.page.set(query.page);
+    this.currentPageSize.set(query.pageSize);
+    this.search.set(query.search);
+    this.sort.set(query.sort);
+    this.columnFilters.set({ ...query.columnFilters });
+  }
+
+  private resolveQuery(input: {
+    params: ParamMap | null;
+    prefix: string;
+    pageSize: number;
+    initialSearch: string;
+    initialColumnFilters: Readonly<Record<string, string>>;
+    filterKeys: readonly string[];
+    initialized: boolean;
+  }): DataTablePageChange {
+    const fromUrl = input.params
+      ? parseDataTableQuery(input.params, {
+          prefix: input.prefix,
+          defaultPageSize: input.pageSize,
+          filterKeys: input.filterKeys,
+        })
+      : {
+          page: 1,
+          pageSize: input.pageSize,
+          search: '',
+          sort: null,
+          columnFilters: {} as Record<string, string>,
+        };
+    const current = this.currentQuery();
+    const searchKey = dataTableQueryKey(DATA_TABLE_SEARCH_PARAM, input.prefix);
+    const pageKey = dataTableQueryKey(DATA_TABLE_PAGE_PARAM, input.prefix);
+    const sizeKey = dataTableQueryKey(DATA_TABLE_SIZE_PARAM, input.prefix);
+    const sortKey = dataTableQueryKey(DATA_TABLE_SORT_PARAM, input.prefix);
+
+    const search = input.params?.has(searchKey)
+      ? fromUrl.search
+      : input.initialized
+        ? current.search
+        : input.initialSearch;
+    const page = input.params?.has(pageKey)
+      ? fromUrl.page
+      : input.initialized
+        ? current.page
+        : 1;
+    const pageSize = input.params?.has(sizeKey)
+      ? fromUrl.pageSize
+      : input.initialized
+        ? current.pageSize
+        : input.pageSize;
+    const sort = input.params?.has(sortKey)
+      ? fromUrl.sort
+      : input.initialized
+        ? current.sort
+        : null;
+
+    const columnFilters: Record<string, string> = input.initialized
+      ? { ...current.columnFilters }
+      : { ...input.initialColumnFilters };
+    if (input.params) {
+      for (const key of input.filterKeys) {
+        const queryKey = dataTableFilterQueryKey(key, input.prefix);
+        if (!input.params.has(queryKey)) {
+          continue;
+        }
+        const value = input.params.get(queryKey) ?? '';
+        if (value) {
+          columnFilters[key] = value;
+        } else {
+          delete columnFilters[key];
+        }
+      }
+    }
+
+    return { page, pageSize, search, sort, columnFilters };
+  }
+
+  private writeUrl(state: DataTablePageChange): void {
+    if (!this.router || !this.route) {
+      return;
+    }
+    const serialized = serializeDataTableQuery(state, {
+      prefix: this.urlKey(),
+      defaultPageSize: this.pageSize(),
+      filterKeys: this.filterKeys(),
+    });
+    const current = this.route.snapshot.queryParamMap ?? convertToParamMap({});
+    if (dataTableQueryMatchesParams(current, serialized)) {
+      return;
+    }
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: serialized,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 }

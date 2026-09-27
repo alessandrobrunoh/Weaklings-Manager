@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -25,7 +25,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
-  type DataTableTab,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -157,9 +157,10 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         emptyTitle="No events found"
         emptySubtitle="There are no events matching the selected filters."
         searchPlaceholder="Search events..."
-        [tabs]="statusTabs()"
-        [activeTab]="statusFilter()"
-        (tabChange)="setStatusFilter($event)"
+        [initialSearch]="initialQuery.search"
+        [initialColumnFilters]="initialQuery.columnFilters"
+        [rowClickable]="true"
+        (rowClick)="openEventDetail($event.id)"
         (pageChange)="onTablePageChange($event)"
         (retry)="refreshNow()"
       >
@@ -229,7 +230,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         </ng-template>
 
         <ng-template dataTableCell="actions" let-event>
-          <div class="inline-flex items-center justify-end gap-1.5">
+          <div class="inline-flex items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
             <button type="button" class="btn btn--ghost btn--sm" (click)="openEventDetail(event.id)">
               {{ t('common.open') }}
             </button>
@@ -510,78 +511,69 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 export class Events {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  protected readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
+    defaultPageSize: PAGE_SIZE,
+    filterKeys: ['status'],
+  });
 
   protected readonly events = signal<EventView[]>([]);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly page = signal(1);
-  protected readonly pageSize = signal(PAGE_SIZE);
+  protected readonly page = signal(this.initialQuery.page);
+  protected readonly pageSize = signal(this.initialQuery.pageSize);
   protected readonly totalItems = signal(0);
-  protected readonly search = signal('');
-  protected readonly statusFilter = signal('');
+  protected readonly search = signal(this.initialQuery.search);
+  protected readonly statusFilter = signal(this.initialQuery.columnFilters['status'] ?? '');
   // Keep the initial table view aligned with the API's newest-first default.
-  protected readonly sortColumn = signal<string | null>('date');
-  protected readonly sortOrder = signal<'asc' | 'desc' | null>('desc');
+  protected readonly sortColumn = signal<string | null>(this.initialQuery.sort?.columnKey ?? 'date');
+  protected readonly sortOrder = signal<'asc' | 'desc' | null>(
+    this.initialQuery.sort?.direction ?? 'desc',
+  );
 
   protected readonly totalEventsCount = signal(0);
   protected readonly liveEventsCount = signal(0);
   protected readonly scheduledEventsCount = signal(0);
   protected readonly ctaEventsCount = signal(0);
-  protected readonly finishedEventsCount = signal(0);
 
-  protected readonly columns = computed<readonly DataTableColumn<EventView>[]>(() => [
-    {
-      key: 'title',
-      label: 'events.table.event',
-      sortable: true,
-      searchable: true,
-      accessor: (event) => event.title,
-    },
-    {
-      key: 'date',
-      label: 'events.table.date',
-      sortable: true,
-      accessor: (event) => event.start_time_utc ?? event.event_date_utc,
-    },
-    {
-      key: 'comp_name',
-      label: 'events.table.composition',
-      searchable: true,
-      accessor: (event) => event.comp_name,
-    },
-    {
-      key: 'status',
-      label: 'events.table.status',
-      sortable: true,
-      accessor: (event) => event.status,
-    },
-    { key: 'actions', label: 'events.table.actions', align: 'right' },
-  ]);
-
-  protected readonly statusTabs = computed<readonly DataTableTab[]>(() => [
-    { id: '', label: this.t('common.all'), count: this.totalEventsCount() },
-    {
-      id: 'live',
-      label: this.t('events.status.live'),
-      count: this.liveEventsCount(),
-      dotClass: 'bg-[var(--color-success)]',
-    },
-    {
-      id: 'scheduled',
-      label: this.t('events.status.scheduled'),
-      count: this.scheduledEventsCount(),
-      dotClass: 'bg-[var(--color-info)]',
-    },
-    {
-      id: 'stopped',
-      label: 'Finished',
-      count: this.finishedEventsCount(),
-      dotClass: 'bg-[var(--color-text-tertiary)]',
-    },
-  ]);
+  protected readonly columns = computed<readonly DataTableColumn<EventView>[]>(() => {
+    this.translate.dict();
+    return [
+      {
+        key: 'title',
+        label: 'events.table.event',
+        sortable: true,
+        searchable: true,
+        accessor: (event) => event.title,
+      },
+      {
+        key: 'date',
+        label: 'events.table.date',
+        sortable: true,
+        accessor: (event) => event.start_time_utc ?? event.event_date_utc,
+      },
+      {
+        key: 'comp_name',
+        label: 'events.table.composition',
+        searchable: true,
+        accessor: (event) => event.comp_name,
+      },
+      {
+        key: 'status',
+        label: 'events.table.status',
+        sortable: true,
+        accessor: (event) => event.status,
+        filterOptions: EVENT_STATUSES.map((status) => ({
+          value: status,
+          label: this.t(`events.status.${status}` as TranslationKey),
+        })),
+      },
+      { key: 'actions', label: 'events.table.actions', align: 'right' },
+    ];
+  });
 
   protected async refreshNow(): Promise<void> {
     await Promise.all([this.load(), this.loadStats()]);
@@ -632,7 +624,7 @@ export class Events {
   protected readonly pendingUncancel = signal<EventView | null>(null);
   protected readonly archiving = signal(false);
   protected readonly reopening = signal(false);
-  protected readonly showArchived = signal(false);
+  protected readonly showArchived = signal(this.route.snapshot.queryParamMap.get('archived') === 'true');
 
   protected readonly trackById = (event: EventView): number => event.id;
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -655,6 +647,12 @@ export class Events {
   protected toggleShowArchived(): void {
     this.showArchived.update((value) => !value);
     this.page.set(1);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { archived: this.showArchived() ? 'true' : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
     void this.load();
   }
 
@@ -761,16 +759,11 @@ export class Events {
     }
   }
 
-  protected setStatusFilter(status: string): void {
-    this.statusFilter.set(status);
-    this.page.set(1);
-    void this.load();
-  }
-
   protected onTablePageChange(change: DataTablePageChange): void {
     this.page.set(change.page);
     this.pageSize.set(change.pageSize);
     this.search.set(change.search);
+    this.statusFilter.set(change.columnFilters['status'] ?? '');
     this.sortColumn.set(change.sort?.columnKey ?? null);
     this.sortOrder.set(change.sort?.direction ?? null);
     void this.load();
@@ -805,9 +798,6 @@ export class Events {
       this.liveEventsCount.set(items.filter((e) => e.status === 'live').length);
       this.scheduledEventsCount.set(items.filter((e) => e.status === 'scheduled').length);
       this.ctaEventsCount.set(items.filter((e) => e.call_to_arms).length);
-      this.finishedEventsCount.set(
-        items.filter((e) => e.status === 'stopped' || e.status === 'auto_stopped' || e.status === 'cancelled').length,
-      );
     } catch {
       // Fallback
     }

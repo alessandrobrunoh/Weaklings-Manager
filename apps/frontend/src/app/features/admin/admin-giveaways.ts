@@ -1,6 +1,6 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -23,6 +23,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -260,6 +261,7 @@ export class AdminGiveaways {
   private readonly toasts = inject(ToastService);
   private readonly i18n = inject(TranslateService);
   private readonly catalog = inject(AlbionCatalogService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   protected readonly Math = Math;
@@ -275,13 +277,9 @@ export class AdminGiveaways {
   protected readonly roles = signal<DiscordRoleView[]>([]);
   protected readonly rows = signal<GiveawayView[]>([]);
   protected readonly totalItems = signal(0);
-  protected readonly tableQuery = signal<DataTablePageChange>({
-    page: 1,
-    pageSize: 25,
-    search: '',
-    sort: null,
-    columnFilters: {},
-  });
+  protected readonly tableQuery = signal<DataTablePageChange>(
+    parseDataTableQuery(this.route.snapshot.queryParamMap, { defaultPageSize: 25 }),
+  );
   protected readonly title = signal('');
   protected readonly description = signal('');
   protected readonly endsAt = signal(defaultEndsAtLocal());

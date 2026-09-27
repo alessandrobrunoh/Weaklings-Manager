@@ -1,6 +1,6 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { SplitIsland, SplitIslandCity, UpdateIslandRequest } from '../../core/models/api.models';
@@ -158,6 +158,8 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             [emptyLabel]="emptyLabel()"
             emptyIcon="swords"
             [pageSize]="25"
+            [rowClickable]="true"
+            (rowClick)="openIsland($event)"
           >
             <ng-template dataTableCell="name" let-row>
               <a
@@ -345,6 +347,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 export class AdminIslands {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
@@ -423,6 +426,10 @@ export class AdminIslands {
 
   protected cityLabel(city: SplitIslandCity): string {
     return this.t(`splits.city.${city}` as TranslationKey);
+  }
+
+  protected openIsland(row: SplitIsland): void {
+    void this.router.navigate(['/admin/islands', row.id]);
   }
 
   protected openCreate(): void {

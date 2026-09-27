@@ -20,6 +20,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -41,9 +42,7 @@ const STATUSES: readonly TransactionStatus[] = [
 ];
 const DEFAULT_TYPE = 'manual_adjustment';
 
-function emptyPageChange(): DataTablePageChange {
-  return { page: 1, pageSize: 25, search: '', sort: null, columnFilters: {} };
-}
+
 
 /** Which recipient/payer field the roster search dialog is currently filling. */
 type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
@@ -426,7 +425,10 @@ export class AdminTransactions {
   })();
 
   private readonly tableQuery = signal<DataTablePageChange>({
-    ...emptyPageChange(),
+    ...parseDataTableQuery(this.entryParams, {
+      defaultPageSize: 25,
+      filterKeys: ['status'],
+    }),
     search: this.initialSearch,
     columnFilters: this.initialColumnFilters,
   });
