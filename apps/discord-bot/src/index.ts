@@ -47,12 +47,16 @@ async function main(): Promise<void> {
   // Slash commands are registered per guild on ready / GuildCreate.
 
   // Message Content is a privileged intent that must be enabled in the Discord Developer Portal.
+  // GuildVoiceStates is unprivileged and required to see who is in event voice channels.
+  // Without it the live empty-channel auto-stop treats every channel as empty and deletes
+  // the Mass voice as soon as Start flips the event to live.
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildVoiceStates,
     ],
   });
 

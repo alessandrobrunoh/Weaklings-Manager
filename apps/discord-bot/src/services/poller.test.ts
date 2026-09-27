@@ -1082,3 +1082,135 @@ test("poller never announces an event that is no longer awaiting its start", asy
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+function liveVoiceEvent() {
+  return {
+    id: 41,
+    title: "Castle Fight",
+    description: null,
+    call_to_arms: false,
+    discord_role_ids: [],
+    regear: false,
+    comp_id: 7,
+    comp_name: "Main ZvZ",
+    created_by: 1,
+    created_by_username: "Officer",
+    event_date_utc: "2026-09-01T20:00:00Z",
+    mass_time_utc: "2026-09-01T19:30:00Z",
+    start_time_utc: "2026-09-01T20:00:00Z",
+    created_at: "2026-09-01T10:00:00Z",
+    updated_at: "2026-09-01T20:00:00Z",
+    status: "live",
+    started_at: "2026-09-01T20:00:00Z",
+    stopped_at: null,
+    auto_stop_deadline: null,
+    link_status: "in_progress",
+    discord_voice_channel_id: "voice-41",
+  };
+}
+
+function liveVoicePollerHarness(directory: string, occupantChannelIds: string[]) {
+  const event = liveVoiceEvent();
+  const posts: string[] = [];
+  const voiceChannel = {
+    id: "voice-41",
+    isVoiceBased: () => true,
+    members: { size: 0 },
+    guild: {
+      voiceStates: {
+        cache: {
+          filter: (predicate: (state: { channelId: string | null }) => boolean) => ({
+            size: occupantChannelIds.map((id) => ({ channelId: id })).filter(predicate).length,
+          }),
+        },
+      },
+    },
+    delete: async () => undefined,
+  };
+  const api = {
+    guildId: "100000000000000001",
+    get: async (path: string) => {
+      if (path === "api/events") {
+        return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+      }
+      if (path === "api/events/revisions") return [eventRevision(41, event.status)];
+      if (path === "api/battles" || path === "api/giveaways") return emptyPage();
+      throw new Error(`unexpected GET ${path}`);
+    },
+    post: async (path: string) => {
+      posts.push(path);
+      if (path === "api/events/41/stop") return { ...event, status: "stopped" };
+      throw new Error(`unexpected POST ${path}`);
+    },
+    delete: async (path: string) => {
+      if (path === "api/events/41/discord-voice-channel") {
+        return { ...event, status: "stopped", discord_voice_channel_id: null };
+      }
+      throw new Error(`unexpected DELETE ${path}`);
+    },
+  } as unknown as ApiClient;
+  const settings = {
+    applicationsSettings: async () => ({ discord_applications_open: true }),
+    splitsForumChannelId: async () => null,
+    eventsChannelId: async () => null,
+    callToArmsChannelId: async () => null,
+    battlesChannelId: async () => null,
+    giveawaysChannelId: async () => null,
+    giveawaysRoleId: async () => null,
+  } as unknown as SettingsService;
+  const client = {
+    channels: {
+      fetch: async (id: string) => {
+        if (id === "voice-41") return voiceChannel;
+        throw new Error(`unexpected channel ${id}`);
+      },
+    },
+  } as unknown as Client;
+  writeFileSync(
+    join(directory, "poller-state-100000000000000001.json"),
+    JSON.stringify({
+      lastEventId: 41,
+      lastBattleId: 0,
+      pinged1hEvents: [],
+      eventThreadIds: {},
+      splitUpdatedAt: null,
+      splitAfterId: null,
+      massedEvents: [41],
+      emptyLiveChecks: {},
+      occupiedLiveEvents: [],
+      initialized: true,
+    }),
+    "utf-8",
+  );
+  return { posts, poller: new Poller(client, api, settings, 60_000, directory) };
+}
+
+test("poller does not auto-stop a live Mass voice that has never been occupied", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const occupants: string[] = [];
+    const { posts, poller } = liveVoicePollerHarness(directory, occupants);
+    await poller.pollNow();
+    await poller.pollNow();
+    assert.deepEqual(posts, [], "Start must not delete an unused Mass voice");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("poller auto-stops a live voice only after occupancy then two empty ticks", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const occupants = ["voice-41"];
+    const { posts, poller } = liveVoicePollerHarness(directory, occupants);
+    await poller.pollNow();
+    assert.deepEqual(posts, []);
+    occupants.length = 0;
+    await poller.pollNow();
+    assert.deepEqual(posts, []);
+    await poller.pollNow();
+    assert.deepEqual(posts, ["api/events/41/stop"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

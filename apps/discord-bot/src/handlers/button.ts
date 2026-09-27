@@ -31,7 +31,7 @@ import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { config } from "../config.js";
 import { formatSilver } from '../format.js';
-import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
+import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "../services/event-lifecycle.js";
 import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 import {
@@ -660,7 +660,7 @@ async function handleEventButton(
     if (event.discord_voice_channel_id) {
       try {
         const channel = await interaction.client.channels.fetch(event.discord_voice_channel_id);
-        if (channel?.isVoiceBased() && channel.members.size === 0) {
+        if (channel?.isVoiceBased() && voiceChannelOccupantCount(channel) === 0) {
           await channel.delete(`Event #${eventId} cancelled and voice channel was empty`);
           event = await api.delete<EventDetailView>(
             `api/events/${eventId}/discord-voice-channel`,

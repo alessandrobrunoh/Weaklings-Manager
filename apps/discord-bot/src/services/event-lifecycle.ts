@@ -1,4 +1,4 @@
-import { ChannelType, type Client, type ThreadChannel } from "discord.js";
+import { ChannelType, type Client, type ThreadChannel, type VoiceBasedChannel } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventDetailView } from "../api/types.js";
 import { buildEventMassMessage, buildEventStartMessage } from "../embeds/event.embed.js";
@@ -15,6 +15,41 @@ export interface StoppedDiscordEvent {
   event: EventDetailView;
   voiceChannelDeleted: boolean;
   voiceChannelOccupied: boolean;
+}
+
+/** Consecutive empty live ticks required before auto-stop. */
+export const EMPTY_LIVE_VOICE_STOP_TICKS = 2;
+
+/**
+ * Counts occupants from guild voice states, not `channel.members`.
+ * Without GuildVoiceStates, `members` is always empty even when people are in the channel.
+ */
+export function voiceChannelOccupantCount(channel: VoiceBasedChannel): number {
+  return channel.guild.voiceStates.cache.filter((state) => state.channelId === channel.id).size;
+}
+
+/**
+ * Auto-stop only after the live voice was occupied at least once, then empty for two ticks.
+ * Mass creates the channel while the event is still scheduled; Start flips it to live. Counting
+ * empty ticks at that transition would delete the Mass channel before people finish joining.
+ */
+export function nextEmptyLiveVoiceCheck(
+  previousEmptyTicks: number,
+  occupantCount: number,
+  seenOccupied: boolean,
+): { emptyTicks: number; seenOccupied: boolean; shouldStop: boolean } {
+  if (occupantCount > 0) {
+    return { emptyTicks: 0, seenOccupied: true, shouldStop: false };
+  }
+  if (!seenOccupied) {
+    return { emptyTicks: 0, seenOccupied: false, shouldStop: false };
+  }
+  const emptyTicks = previousEmptyTicks + 1;
+  return {
+    emptyTicks,
+    seenOccupied: true,
+    shouldStop: emptyTicks >= EMPTY_LIVE_VOICE_STOP_TICKS,
+  };
 }
 
 const massLocks = new Map<number, Promise<MassedDiscordEvent>>();
@@ -104,7 +139,7 @@ export async function stopDiscordEvent(client: Client, api: ApiClient, discordUs
     return { event: cleared ?? event, voiceChannelDeleted: true, voiceChannelOccupied: false };
   }
   if (!channel.isVoiceBased()) throw new Error("The event's stored Discord channel is not a voice channel.");
-  if (channel.members.size > 0) return { event, voiceChannelDeleted: false, voiceChannelOccupied: true };
+  if (voiceChannelOccupantCount(channel) > 0) return { event, voiceChannelDeleted: false, voiceChannelOccupied: true };
   await channel.delete(`Event #${eventId} stopped and voice channel was empty`);
   const cleared = await api.delete<EventDetailView>(`api/events/${eventId}/discord-voice-channel`, discordUserId);
   return { event: cleared ?? event, voiceChannelDeleted: true, voiceChannelOccupied: false };

@@ -43,7 +43,13 @@ import {
   refreshEventSignupCard,
   sendEventSignupMessage,
 } from "./event-announcement-thread.js";
-import { massDiscordEvent, startDiscordEvent, stopDiscordEvent } from "./event-lifecycle.js";
+import {
+  massDiscordEvent,
+  nextEmptyLiveVoiceCheck,
+  startDiscordEvent,
+  stopDiscordEvent,
+  voiceChannelOccupantCount,
+} from "./event-lifecycle.js";
 import { SplitForumAdapter } from "./split-forum.js";
 import {
   isUnknownDiscordChannel,
@@ -83,6 +89,8 @@ interface PollerState {
   splitAfterId: number | null;
   massedEvents: number[];
   emptyLiveChecks: Record<string, number>;
+  /** Live events whose voice channel has been seen occupied at least once. */
+  occupiedLiveEvents: number[];
   applicationsOpen?: boolean;
   lastGiveawayId: number;
   postedGiveawayIds: number[];
@@ -113,6 +121,7 @@ function createDefaultState(): PollerState {
     splitAfterId: null,
     massedEvents: [],
     emptyLiveChecks: {},
+    occupiedLiveEvents: [],
     applicationsOpen: undefined,
     lastGiveawayId: 0,
     postedGiveawayIds: [],
@@ -185,6 +194,7 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
       splitAfterId: parsedState.splitAfterId ?? null,
       massedEvents: parsedState.massedEvents ?? [],
       emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
+      occupiedLiveEvents: parsedState.occupiedLiveEvents ?? [],
       applicationsOpen: parsedState.applicationsOpen,
       lastGiveawayId: parsedState.lastGiveawayId ?? 0,
       postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
@@ -866,7 +876,7 @@ export class Poller {
     }
   }
 
-  /** Executes Mass and Start automatically, then auto-stops only live empty events. */
+  /** Executes Mass and Start automatically, then auto-stops live events after occupied voice goes empty. */
   private async checkEventLifecycle(): Promise<void> {
     try {
       const result = await this.api.get<PaginatedData<EventView>>("api/events", undefined, { page: 1, limit: 50 });
@@ -899,7 +909,7 @@ export class Poller {
           continue;
         }
         if (event.status !== "live" || !event.discord_voice_channel_id) {
-          delete this.state.emptyLiveChecks[String(event.id)];
+          this.forgetLiveVoiceWatch(event.id);
           continue;
         }
         try {
@@ -909,12 +919,20 @@ export class Poller {
             delete this.state.emptyLiveChecks[key];
             continue;
           }
-          const empty = channel.members.size === 0;
-          this.state.emptyLiveChecks[key] = empty ? (this.state.emptyLiveChecks[key] ?? 0) + 1 : 0;
-          if (empty && this.state.emptyLiveChecks[key] >= 2) {
+          const seenOccupied = this.state.occupiedLiveEvents.includes(event.id);
+          const next = nextEmptyLiveVoiceCheck(
+            this.state.emptyLiveChecks[key] ?? 0,
+            voiceChannelOccupantCount(channel),
+            seenOccupied,
+          );
+          if (next.seenOccupied && !seenOccupied) {
+            this.state.occupiedLiveEvents.push(event.id);
+          }
+          this.state.emptyLiveChecks[key] = next.emptyTicks;
+          if (next.shouldStop) {
             await stopDiscordEvent(this.client, this.api, "", event.id);
             await this.closeEventThread(event.id);
-            delete this.state.emptyLiveChecks[key];
+            this.forgetLiveVoiceWatch(event.id);
           }
           this.save();
         } catch (error) {
@@ -924,6 +942,11 @@ export class Poller {
     } catch (error) {
       console.error("[Poller] Failed to process event lifecycle:", error);
     }
+  }
+
+  private forgetLiveVoiceWatch(eventId: number): void {
+    delete this.state.emptyLiveChecks[String(eventId)];
+    this.state.occupiedLiveEvents = this.state.occupiedLiveEvents.filter((id) => id !== eventId);
   }
 
   private async getEventThread(eventId: number): Promise<import("discord.js").ThreadChannel | null> {
