@@ -21,6 +21,7 @@ import {
   findReusableTicket,
   linkIngameName,
   reopenTicket,
+  staffRolePing,
   type TicketChannel,
 } from '../services/application-ticket.js';
 
@@ -146,9 +147,9 @@ async function submitApplication(
     channel = reusable.channel;
     reopened = true;
     await channel.send({
+      ...staffRolePing(manageRole?.id),
       embeds: [buildApplicationReopenedEmbed(settings, application.reopen_count ?? 1)],
       components: buildApplicationWelcomeComponents(application.id),
-      allowedMentions: { parse: [] },
     });
   } else {
     channel = await createPrivateTicketThread(
@@ -174,9 +175,9 @@ async function submitApplication(
       throw error;
     }
     await channel.send({
+      ...staffRolePing(manageRole?.id),
       embeds: [buildApplicationWelcomeEmbed(settings)],
       components: buildApplicationWelcomeComponents(application.id),
-      allowedMentions: { parse: [] },
     });
   }
 
