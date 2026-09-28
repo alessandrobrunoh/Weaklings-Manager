@@ -1,0 +1,5 @@
+#!/bin/sh
+# Delta runs this in every new workspace: clones node_modules / target/ from the
+# primary checkout (APFS copy-on-write) when the local delta-prepare script exists.
+[ -x "$HOME/.local/bin/delta-prepare" ] && exec "$HOME/.local/bin/delta-prepare"
+exit 0

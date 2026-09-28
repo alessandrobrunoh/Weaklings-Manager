@@ -113,7 +113,10 @@ export default defineConfig(({ mode }) => {
       // and over, every reload tearing down an in-flight server render. Giving HMR its own port
       // keeps the two off each other's upgrades without disabling the websocket support the live
       // roster route needs.
-      hmr: { port: 5174 },
+      //
+      // Under portless (one dev server per Delta workspace) the app port is assigned per run,
+      // so the HMR port follows it; a fixed 5174 would collide between parallel workspaces.
+      hmr: { port: process.env.PORTLESS_URL ? Number(process.env.PORT) + 1 : 5174 },
       proxy: {
         '/api': { target: backendTarget, changeOrigin: true, secure: false },
         '/scalar': { target: backendTarget, changeOrigin: true, secure: false },
