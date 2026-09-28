@@ -360,24 +360,102 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
             </label>
           }
 
-          <!-- Balance Summary Banner -->
+          <!-- Net balance available for selected guild -->
           <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4 flex items-center justify-between">
             <div>
               <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
-                {{ t('bank.balance.pending') }}
+                {{ t('bank.withdraw.netAvailable') }}
               </span>
               <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
-                {{ t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 }) }}
+                {{ t('bank.creditsAvailable', { count: withdrawalAvailableCount() }) }}
               </p>
             </div>
             <div class="text-right">
               <span class="font-mono text-2xl font-bold text-success">
-                {{ formatAmount(balance()?.pending_total) }}
+                {{ formatAmount(withdrawalAvailableBalance()) }}
               </span>
               <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)] uppercase">
                 silver
               </span>
             </div>
+          </div>
+
+          <fieldset class="space-y-2">
+            <legend class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
+              {{ t('bank.withdraw.selectCredits') }}
+            </legend>
+            <p id="withdrawal-selection-hint" class="text-xs text-[var(--color-text-secondary)]">
+              {{ t('bank.withdraw.selectionHint') }}
+            </p>
+
+            @if (loadingRequestableCredits()) {
+              <p role="status" aria-live="polite" class="py-3 text-sm text-[var(--color-text-secondary)]">
+                {{ t('common.loading') }}
+              </p>
+            } @else if (requestableCreditsLoadFailed()) {
+              <div role="alert" class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] p-3">
+                <span class="text-sm text-[var(--color-text-secondary)]">
+                  {{ t('bank.withdraw.creditsLoadFailed') }}
+                </span>
+                <button type="button" class="btn btn--ghost btn--sm" (click)="retryRequestableCredits()">
+                  {{ t('common.retry') }}
+                </button>
+              </div>
+            } @else if (requestableCredits().length === 0) {
+              <p class="py-3 text-sm text-[var(--color-text-secondary)]">
+                {{ t('bank.withdraw.noCredits') }}
+              </p>
+            } @else {
+              <div class="max-h-56 space-y-2 overflow-y-auto">
+                @for (credit of requestableCredits(); track credit.id) {
+                  <label
+                    [attr.for]="'withdrawal-credit-' + credit.id"
+                    class="flex min-h-12 items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3"
+                    [class.opacity-50]="!canSelectWithdrawalCredit(credit)"
+                  >
+                    <input
+                      type="checkbox"
+                      name="transaction_ids"
+                      [id]="'withdrawal-credit-' + credit.id"
+                      [checked]="isWithdrawalCreditSelected(credit.id)"
+                      [disabled]="withdrawing() || !canSelectWithdrawalCredit(credit)"
+                      aria-describedby="withdrawal-selection-hint"
+                      class="size-4 accent-[var(--color-primary)]"
+                      (change)="toggleWithdrawalCredit(credit.id)"
+                    />
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-sm font-medium text-[var(--color-text)]">
+                        {{ t('bank.withdraw.credit', { id: credit.id }) }}
+                      </span>
+                      <span class="block text-xs text-[var(--color-text-secondary)]">
+                        {{ statusLabel(credit.status) }}
+                        @if (credit.split_id) {
+                          · {{ t('bank.withdraw.split', { id: credit.split_id }) }}
+                        }
+                      </span>
+                    </span>
+                    <span class="whitespace-nowrap text-right font-mono text-sm font-semibold text-[var(--color-text)]">
+                      {{ formatAmount(credit.amount) }} silver
+                    </span>
+                  </label>
+                }
+              </div>
+            }
+          </fieldset>
+
+          <div
+            class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+            aria-live="polite"
+          >
+            <span class="text-sm font-medium text-[var(--color-text)]">
+              {{ t('bank.withdraw.selectedTotal') }}
+              <span class="text-xs text-[var(--color-text-secondary)]">
+                ({{ t('bank.withdraw.selectedCount', { count: selectedWithdrawalIds().length }) }})
+              </span>
+            </span>
+            <span class="whitespace-nowrap font-mono text-sm font-semibold text-[var(--color-text)]">
+              {{ formatAmount(withdrawalSelectionTotal()) }} silver
+            </span>
           </div>
 
           <!-- Info Card -->
@@ -401,7 +479,12 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
           <button
             type="button"
             class="btn btn--primary btn--sm"
-            [disabled]="withdrawing()"
+            [disabled]="
+              withdrawing() ||
+              loadingRequestableCredits() ||
+              requestableCreditsLoadFailed() ||
+              selectedWithdrawalIds().length === 0
+            "
             (click)="executeWithdrawal()"
           >
             <app-icon name="check" size="0.875rem" />
@@ -439,8 +522,35 @@ export class Bank {
     (this.balance()?.guilds ?? []).filter((guild) => Number(guild.pending_total) > 0),
   );
   protected readonly withdrawGuildId = signal('');
+  protected readonly requestableCredits = signal<TransactionView[]>([]);
+  protected readonly selectedWithdrawalIds = signal<number[]>([]);
+  protected readonly loadingRequestableCredits = signal(false);
+  protected readonly requestableCreditsLoadFailed = signal(false);
+  private readonly selectedGuildBalance = computed(() => {
+    const guilds = this.balance()?.guilds ?? [];
+    const guildTenantId = this.withdrawGuildId() || guilds[0]?.guild_tenant_id;
+    return guilds.find((guild) => guild.guild_tenant_id === guildTenantId) ?? null;
+  });
+  protected readonly withdrawalSelectionTotal = computed(() => {
+    const selectedIds = new Set(this.selectedWithdrawalIds());
+    return this.requestableCredits().reduce(
+      (total, credit) => (selectedIds.has(credit.id) ? total + Number(credit.amount) : total),
+      0,
+    );
+  });
+  protected readonly withdrawalAvailableBalance = computed(() =>
+    this.isAlliance()
+      ? Number(this.selectedGuildBalance()?.pending_total ?? 0)
+      : Number(this.balance()?.pending_total ?? 0),
+  );
+  protected readonly withdrawalAvailableCount = computed(() =>
+    this.isAlliance()
+      ? (this.selectedGuildBalance()?.pending_count ?? 0)
+      : (this.balance()?.pending_count ?? 0),
+  );
   protected readonly trackRow = (row: TransactionView): string =>
     `${row.guild_tenant_id ?? ''}:${row.id}`;
+  private requestableCreditsLoadSequence = 0;
 
   private readonly tableQuery = signal<DataTablePageChange>(
     parseDataTableQuery(this.route.snapshot.queryParamMap, {
@@ -534,15 +644,58 @@ export class Bank {
   }
 
   protected onWithdrawGuildChange(event: Event): void {
-    this.withdrawGuildId.set((event.target as HTMLSelectElement).value);
+    const guildTenantId = (event.target as HTMLSelectElement).value;
+    this.withdrawGuildId.set(guildTenantId);
+    this.selectedWithdrawalIds.set([]);
+    void this.loadRequestableCredits(guildTenantId);
   }
 
   protected openWithdrawal(): void {
     const pending = this.pendingGuilds();
-    if (!this.withdrawGuildId() && pending[0]) {
+    if (!pending.some((guild) => guild.guild_tenant_id === this.withdrawGuildId()) && pending[0]) {
       this.withdrawGuildId.set(pending[0].guild_tenant_id);
     }
+    const guildTenantId = this.isAlliance()
+      ? this.withdrawGuildId() || pending[0]?.guild_tenant_id
+      : undefined;
+    this.selectedWithdrawalIds.set([]);
     this.confirmWithdrawalOpen.set(true);
+    void this.loadRequestableCredits(guildTenantId);
+  }
+
+  protected isWithdrawalCreditSelected(creditId: number): boolean {
+    return this.selectedWithdrawalIds().includes(creditId);
+  }
+
+  protected canSelectWithdrawalCredit(credit: TransactionView): boolean {
+    if (this.isWithdrawalCreditSelected(credit.id)) {
+      return true;
+    }
+    return (
+      this.toSilverCents(this.withdrawalSelectionTotal()) + this.toSilverCents(credit.amount) <=
+      this.toSilverCents(this.withdrawalAvailableBalance())
+    );
+  }
+
+  protected toggleWithdrawalCredit(creditId: number): void {
+    if (this.isWithdrawalCreditSelected(creditId)) {
+      this.selectedWithdrawalIds.update((ids) => ids.filter((id) => id !== creditId));
+      return;
+    }
+
+    const credit = this.requestableCredits().find((item) => item.id === creditId);
+    if (!credit || !this.canSelectWithdrawalCredit(credit)) {
+      return;
+    }
+    this.selectedWithdrawalIds.update((ids) => [...ids, creditId]);
+  }
+
+  protected retryRequestableCredits(): void {
+    const pending = this.pendingGuilds();
+    const guildTenantId = this.isAlliance()
+      ? this.withdrawGuildId() || pending[0]?.guild_tenant_id
+      : undefined;
+    void this.loadRequestableCredits(guildTenantId);
   }
 
   protected onTableChange(event: DataTablePageChange): void {
@@ -561,10 +714,14 @@ export class Bank {
       this.toasts.error(this.t('bank.withdraw.chooseGuild'));
       return;
     }
+    const transactionIds = this.selectedWithdrawalIds();
+    if (transactionIds.length === 0) {
+      return;
+    }
     this.withdrawing.set(true);
     this.confirmWithdrawalOpen.set(false);
     try {
-      const body: WithdrawRequest = { all: true };
+      const body: WithdrawRequest = { transaction_ids: transactionIds };
       if (this.isAlliance() && guildTenantId) {
         body.guild_tenant_id = guildTenantId;
       }
@@ -572,6 +729,63 @@ export class Bank {
     } finally {
       this.withdrawing.set(false);
     }
+  }
+
+  private async loadRequestableCredits(guildTenantId?: string): Promise<void> {
+    const sequence = ++this.requestableCreditsLoadSequence;
+    this.requestableCredits.set([]);
+    this.selectedWithdrawalIds.set([]);
+    this.loadingRequestableCredits.set(true);
+    this.requestableCreditsLoadFailed.set(false);
+    try {
+      const [pending, rejected] = await Promise.all([
+        this.loadTransactionsByStatus('pending'),
+        this.loadTransactionsByStatus('rejected'),
+      ]);
+      if (sequence !== this.requestableCreditsLoadSequence) {
+        return;
+      }
+      this.requestableCredits.set(
+        [...pending, ...rejected].filter(
+          (transaction) =>
+            Number(transaction.amount) > 0 &&
+            (!this.isAlliance() || transaction.guild_tenant_id === guildTenantId),
+        ),
+      );
+    } catch {
+      if (sequence === this.requestableCreditsLoadSequence) {
+        this.requestableCreditsLoadFailed.set(true);
+      }
+    } finally {
+      if (sequence === this.requestableCreditsLoadSequence) {
+        this.loadingRequestableCredits.set(false);
+      }
+    }
+  }
+
+  private async loadTransactionsByStatus(status: TransactionStatus): Promise<TransactionView[]> {
+    const limit = 1000;
+    const all: TransactionView[] = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
+          page,
+          limit,
+          status,
+        }),
+      );
+      all.push(...data.items);
+      totalPages = data.total_pages;
+      page += 1;
+    } while (page <= totalPages);
+    return all;
+  }
+
+  private toSilverCents(amount: number | string | null | undefined): number {
+    const numeric = Number(amount ?? 0);
+    return Number.isFinite(numeric) ? Math.round(numeric * 100) : 0;
   }
 
   private async load(): Promise<void> {
