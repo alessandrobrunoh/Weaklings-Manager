@@ -20,6 +20,7 @@ pub(crate) mod responses;
 pub(crate) mod serde_helpers;
 
 use axum::Router;
+use axum::extract::MatchedPath;
 use sea_orm_migration::MigratorTrait;
 use std::net::SocketAddr;
 use tower_http::{
@@ -207,13 +208,68 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(unscoped_permissions))
         .layer(axum::Extension(platform_admins))
         .layer(axum::Extension(session_key))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    // Keep raw paths and query strings out of telemetry: they can contain
+                    // identifiers or OAuth values. MatchedPath is a low-cardinality route template.
+                    let route = request
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map_or("unmatched", MatchedPath::as_str);
+                    tracing::info_span!(
+                        "http.server.request",
+                        "http.request.method" = %request.method(),
+                        "http.route" = %route,
+                        "http.response.status_code" = tracing::field::Empty,
+                    )
+                })
+                .on_response(
+                    |response: &axum::http::Response<axum::body::Body>,
+                     latency: std::time::Duration,
+                     span: &tracing::Span| {
+                        span.record("http.response.status_code", response.status().as_u16());
+                        tracing::info!(
+                            parent: span,
+                            status = %response.status(),
+                            latency = ?latency,
+                            "finished processing request"
+                        );
+                    },
+                ),
+        )
         .layer(cors);
 
     tracing::info!(version = config::VERSION, "listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for Ctrl+C");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to listen for SIGTERM");
+        signal.recv().await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
+    tracing::info!("shutdown signal received; draining HTTP requests");
 }

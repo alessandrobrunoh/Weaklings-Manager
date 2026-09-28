@@ -56,6 +56,8 @@ The platform is a **monorepo** with three deployable components:
 ### Audit & Observability
 - Full audit log stored in the database, with optional Discord notifications (`DISCORD_AUDIT_LOG_CHANNEL_ID`).
 - Structured `tracing` logging (`RUST_LOG`) and an OpenAPI-compliant docs UI.
+- Optional OpenTelemetry request traces exported to self-hosted SigNoz; see
+  [observability setup](observability/README.md).
 
 ### Discord Bot (mirror of the web app)
 - Slash commands for events, balance, battles, members, and Albion linking — see [the bot's README](apps/discord-bot/README.md).

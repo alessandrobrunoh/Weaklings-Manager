@@ -1,0 +1,9 @@
+services:
+  backend:
+    networks:
+      - signoz-network
+
+networks:
+  signoz-network:
+    name: signoz-network
+    external: true
