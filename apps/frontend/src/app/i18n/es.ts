@@ -1392,6 +1392,14 @@ export const es: TranslationDict = {
   'bank.withdraw.requestConfirmBody': 'Estás a punto de solicitar el retiro de',
   'bank.withdraw.requestConfirmHint':
     'Un oficial autorizado completará la transferencia en el juego.',
+  'bank.withdraw.netAvailable': 'Saldo neto disponible',
+  'bank.withdraw.selectCredits': 'Elige los créditos que quieres solicitar',
+  'bank.withdraw.selectionHint':
+    'Selecciona créditos individuales. Se desactivará un crédito si añadirlo supera tu saldo neto disponible.',
+  'bank.withdraw.creditsLoadFailed': 'No se pudieron cargar los créditos disponibles. Inténtalo de nuevo.',
+  'bank.withdraw.noCredits': 'No se encontraron créditos que puedas solicitar.',
+  'bank.withdraw.credit': 'Crédito n.º {id}',
+  'bank.withdraw.split': 'Split n.º {id}',
 
   'admin.title': 'Administración',
   'admin.loadError': 'No se pudo cargar la matriz de permisos. Intenta recargar la página.',

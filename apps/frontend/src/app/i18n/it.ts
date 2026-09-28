@@ -1394,6 +1394,14 @@ export const it: TranslationDict = {
   'bank.withdraw.requestConfirmSubtitle': 'Conferma la richiesta di prelievo',
   'bank.withdraw.requestConfirmBody': 'Stai per richiedere il prelievo di',
   'bank.withdraw.requestConfirmHint': 'Un Officer autorizzato completerà il trasferimento in-game.',
+  'bank.withdraw.netAvailable': 'Saldo netto disponibile',
+  'bank.withdraw.selectCredits': 'Scegli i crediti da richiedere',
+  'bank.withdraw.selectionHint':
+    'Seleziona i singoli crediti. Un credito viene disabilitato se aggiungerlo supera il saldo netto disponibile.',
+  'bank.withdraw.creditsLoadFailed': 'Impossibile caricare i crediti disponibili. Riprova.',
+  'bank.withdraw.noCredits': 'Non sono stati trovati crediti richiedibili.',
+  'bank.withdraw.credit': 'Credito #{id}',
+  'bank.withdraw.split': 'Split #{id}',
 
   'admin.title': 'Amministrazione',
   'admin.loadError': 'Impossibile caricare la matrice dei permessi. Prova a ricaricare la pagina.',

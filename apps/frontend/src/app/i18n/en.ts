@@ -1597,6 +1597,14 @@ export const en = {
   'bank.withdraw.requestConfirmSubtitle': 'Confirm the withdrawal request',
   'bank.withdraw.requestConfirmBody': 'You are about to request a withdrawal of',
   'bank.withdraw.requestConfirmHint': 'An authorized officer will complete the in-game transfer.',
+  'bank.withdraw.netAvailable': 'Net available balance',
+  'bank.withdraw.selectCredits': 'Choose credits to request',
+  'bank.withdraw.selectionHint':
+    'Select individual credits. A credit is disabled if adding it would exceed your net available balance.',
+  'bank.withdraw.creditsLoadFailed': 'Could not load available credits. Try again.',
+  'bank.withdraw.noCredits': 'No requestable credits were found.',
+  'bank.withdraw.credit': 'Credit #{id}',
+  'bank.withdraw.split': 'Split #{id}',
 
   // Albion settings
   'albionSettings.title': 'Albion account',
