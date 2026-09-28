@@ -72,6 +72,20 @@ export function ticketOverwrites(
 
 export type TicketChannel = TextChannel | ThreadChannel;
 
+/** Explicitly allows the configured staff role mention, while blocking all other mentions. */
+export function staffRolePing(roleId: string | null | undefined): {
+  content?: string;
+  allowedMentions: { parse: []; roles?: string[] };
+} {
+  if (!roleId) {
+    return { allowedMentions: { parse: [] } };
+  }
+  return {
+    content: `<@&${roleId}>`,
+    allowedMentions: { parse: [], roles: [roleId] },
+  };
+}
+
 /** Adds the applicant and every cached member of the configured manager role. */
 export async function grantThreadAccess(
   thread: ThreadChannel,

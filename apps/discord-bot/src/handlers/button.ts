@@ -43,6 +43,7 @@ import { getSettingsService } from "../services/settings.js";
 import {
   createPrivateTicketThread,
   fetchGuildChannel,
+  staffRolePing,
   ticketThreadName,
 } from "../services/application-ticket.js";
 import {
@@ -178,9 +179,9 @@ async function handleTicketButton(
     throw error;
   });
   await thread.send({
+    ...staffRolePing(settings.discord_applications_manage_role_id),
     embeds: [buildTicketWelcomeEmbed(settings)],
     components: buildTicketComponents(ticket.id),
-    allowedMentions: { parse: [] },
   });
   await interaction.editReply({
     embeds: [createResponseEmbed(

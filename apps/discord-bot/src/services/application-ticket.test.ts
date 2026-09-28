@@ -9,6 +9,7 @@ import {
   findReusableTicket,
   linkIngameName,
   reopenTicket,
+  staffRolePing,
   ticketChannelName,
   ticketThreadName,
   ticketOverwrites,
@@ -73,6 +74,19 @@ test('ticketOverwrites gives the applicant back the access closing took away', (
       .find((entry) => entry.id === GUILD_ID)
       ?.deny?.includes(PermissionFlagsBits.ViewChannel),
   );
+});
+
+test('staffRolePing explicitly allows only the configured role mention', () => {
+  assert.deepEqual(staffRolePing('staff-role'), {
+    content: '<@&staff-role>',
+    allowedMentions: { parse: [], roles: ['staff-role'] },
+  });
+});
+
+test('staffRolePing blocks mentions when no staff role is configured', () => {
+  assert.deepEqual(staffRolePing(null), {
+    allowedMentions: { parse: [] },
+  });
 });
 
 test('createPrivateTicketThread creates a private thread and grants configured members access', async () => {
