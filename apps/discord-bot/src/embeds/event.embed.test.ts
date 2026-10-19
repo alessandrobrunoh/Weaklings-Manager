@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ComponentType } from "discord.js";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
   buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
+  buildEventCalendarMessages,
   buildEventEmbed,
   buildEventMassMessage,
   buildEventReminderMessage,
@@ -37,6 +39,47 @@ function event(overrides: Partial<EventView> = {}): EventView {
     ...overrides,
   };
 }
+
+test("Content Pings keeps more than 25 events in Discord-safe Components V2 message pages", () => {
+  const events = Array.from({ length: 40 }, (_, index) =>
+    event({
+      id: index + 1,
+      title: `Castle Fight ${index + 1}`,
+      event_date_utc: `2027-01-${String((index % 28) + 1).padStart(2, "0")}T20:00:00Z`,
+      status: index % 5 === 0 ? "live" : "scheduled",
+    }),
+  );
+  const pages = buildEventCalendarMessages(events, {});
+  const textDisplays = pages
+    .flatMap((page) => page.components.flatMap((container) => container.toJSON().components))
+    .filter((component) => component.type === ComponentType.TextDisplay);
+
+  assert.ok(pages.length > 1);
+  for (const calendarEvent of events) {
+    assert.ok(
+      textDisplays.some((component) => component.content.includes(calendarEvent.title)),
+      `calendar omitted ${calendarEvent.title}`,
+    );
+  }
+  for (const page of pages) {
+    const components = page.components.flatMap((container) => container.toJSON().components);
+    const pageText = components
+      .filter((component) => component.type === ComponentType.TextDisplay)
+      .reduce((length, component) => length + component.content.length, 0);
+    assert.ok(pageText <= 4_000, `calendar page has ${pageText} combined text characters`);
+    assert.ok(components.length + page.components.length <= 40);
+  }
+});
+
+test("empty Content Pings keeps the live/upcoming empty-state copy", () => {
+  const text = buildEventCalendarMessages([], {})
+    .flatMap((page) => page.components.flatMap((container) => container.toJSON().components))
+    .filter((component) => component.type === ComponentType.TextDisplay)
+    .map((component) => component.content)
+    .join("\n");
+
+  assert.match(text, /There are no live or upcoming events right now/);
+});
 
 test("event embed places an assigned member on the officer seat, not the signup build", () => {
   const embed = buildEventEmbed({

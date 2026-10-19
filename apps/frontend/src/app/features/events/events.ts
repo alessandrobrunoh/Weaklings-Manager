@@ -87,17 +87,15 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
   `,
   template: `
     <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
-      @if (canDelete()) {
-        <button
-          type="button"
-          class="btn btn--sm"
-          [class.btn--tonal]="showArchived()"
-          [class.btn--outline]="!showArchived()"
-          (click)="toggleShowArchived()"
-        >
-          {{ t('events.showArchived') }}
-        </button>
-      }
+      <button
+        type="button"
+        class="btn btn--sm"
+        [class.btn--tonal]="showArchived()"
+        [class.btn--outline]="!showArchived()"
+        (click)="toggleShowArchived()"
+      >
+        {{ t('events.showArchived') }}
+      </button>
       <button
         type="button"
         class="btn btn--outline btn--sm"
@@ -246,7 +244,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                 {{ t('events.participate') }}
               </button>
             }
-            @if (canEdit() && event.status === 'cancelled' && !event.archived_at) {
+            @if (canEdit(event) && event.status === 'cancelled' && !event.archived_at) {
               <button
                 type="button"
                 class="btn btn--primary btn--sm"
@@ -256,7 +254,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                 {{ t('events.uncancel') }}
               </button>
             }
-            @if (canDelete()) {
+            @if (canDelete(event)) {
               @if (event.archived_at) {
                 <button
                   type="button"
@@ -648,14 +646,20 @@ export class Events {
     return this.auth.hasPermission('events.create');
   }
 
-  /** True when the current user can archive or restore an event. */
-  protected canDelete(): boolean {
-    return this.auth.hasPermission('events.delete');
+  /** True when the current user can archive or restore the given event. */
+  protected canDelete(event: EventView): boolean {
+    return (
+      this.auth.hasPermission('events.delete') ||
+      event.created_by === this.auth.profile()?.user_id
+    );
   }
 
-  /** True when the current user can cancel or reopen an event. */
-  protected canEdit(): boolean {
-    return this.auth.hasPermission('events.edit');
+  /** True when the current user can edit the given event. */
+  protected canEdit(event: EventView): boolean {
+    return (
+      this.auth.hasPermission('events.edit') ||
+      event.created_by === this.auth.profile()?.user_id
+    );
   }
 
   protected toggleShowArchived(): void {

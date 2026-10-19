@@ -3,8 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { Client, ThreadChannel } from "discord.js";
+import type { Client, Message, ThreadChannel } from "discord.js";
 import { ApiError, type ApiClient } from "../api/client.js";
+import type { EventView } from "../api/types.js";
 import type { SettingsService } from "./settings.js";
 import { Poller } from "./poller.js";
 
@@ -22,6 +23,30 @@ function eventRevision(
     status,
     roster_version: extras.roster_version ?? 0,
     archived_at: extras.archived_at ?? null,
+  };
+}
+
+function calendarEvent(id: number, title: string): EventView {
+  return {
+    id,
+    title,
+    description: null,
+    call_to_arms: false,
+    discord_role_ids: [],
+    regear: false,
+    comp_id: 1,
+    comp_name: "Main",
+    created_by: 1,
+    created_by_username: "Officer",
+    event_date_utc: `2030-01-${String((id % 28) + 1).padStart(2, "0")}T20:00:00Z`,
+    created_at: "2029-12-01T10:00:00Z",
+    updated_at: "2029-12-01T10:00:00Z",
+    status: "scheduled",
+    started_at: null,
+    stopped_at: null,
+    auto_stop_deadline: null,
+    discord_voice_channel_id: null,
+    link_status: "pending",
   };
 }
 
@@ -114,12 +139,11 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
     assert.equal(apiGets.includes("api/events/revisions"), true);
-    assert.equal(apiGets.includes("api/events/28"), false);
-    assert.equal(apiGets.includes("api/events/32"), false);
+    assert.equal(apiGets.some((path) => /^api\/events\/\d+$/.test(path)), false);
 
     apiGets.length = 0;
     await poller.pollNow();
-    assert.equal(apiGets.some((path) => path.startsWith("api/events/")), false);
+    assert.equal(apiGets.some((path) => /^api\/events\/\d+$/.test(path)), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -412,6 +436,7 @@ test("new events announce text-only in the parent channel and put signup control
     const api = {
       guildId: "100000000000000001",
       get: async (path: string) => {
+        if (path === "api/events/calendar") return [event];
         if (path === "api/events") {
           return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
         }
@@ -547,6 +572,7 @@ test("ping_alliance dual-posts to alliance Discord without a signup thread", asy
         guildId,
         withGuild: (id: string) => makeApi(id),
         get: async (path: string) => {
+          if (path === "api/events/calendar") return [event];
           if (path === "api/events") {
             return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
           }
@@ -945,6 +971,7 @@ function backlogHarness(sent: string[]) {
   const api = {
     guildId: "100000000000000002",
     get: async (path: string) => {
+      if (path === "api/events/calendar") return events;
       if (path === "api/events") return page(events);
       if (path === "api/battles") return page(battles);
       if (path === "api/giveaways") return page(giveaways);
@@ -1210,6 +1237,266 @@ test("poller auto-stops a live voice only after occupancy then two empty ticks",
     assert.deepEqual(posts, []);
     await poller.pollNow();
     assert.deepEqual(posts, ["api/events/41/stop"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("manual event calendar refresh routes all events and uses the caller's permission context", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const event = (
+      id: number,
+      title: string,
+      callToArms: boolean,
+    ): EventView => ({
+      id,
+      title,
+      description: null,
+      call_to_arms: callToArms,
+      discord_role_ids: [],
+      regear: false,
+      comp_id: 1,
+      comp_name: "Main",
+      created_by: 1,
+      created_by_username: "Officer",
+      event_date_utc: "2030-01-01T20:00:00Z",
+      created_at: "2029-12-01T10:00:00Z",
+      updated_at: "2029-12-01T10:00:00Z",
+      status: "scheduled",
+      started_at: null,
+      stopped_at: null,
+      auto_stop_deadline: null,
+      discord_voice_channel_id: null,
+      link_status: "pending",
+    });
+    const events = [
+      event(1, "Standard event", false),
+      event(2, "Urgent CTA event", true),
+    ];
+    const payloads = new Map<string, Record<string, unknown>>();
+    const sentChannels: string[] = [];
+    const editedChannels: string[] = [];
+    const channels = new Map(
+      ["events-channel", "cta-channel"].map((id) => [
+        id,
+        {
+          id,
+          isTextBased: () => true,
+          threads: { create: async () => undefined },
+          messages: {
+            fetch: async () => ({
+              id: `${id}-calendar`,
+              edit: async (payload: Record<string, unknown>) => {
+                editedChannels.push(id);
+                payloads.set(id, payload);
+              },
+            }),
+          },
+          send: async (payload: Record<string, unknown>) => {
+            sentChannels.push(id);
+            payloads.set(id, payload);
+            return { id: `${id}-calendar` };
+          },
+        },
+      ]),
+    );
+    const api = {
+      guildId: "100000000000000099",
+      get: async (path: string, discordId?: string) => {
+        assert.equal(path, "api/events/calendar");
+        assert.equal(discordId, "calendar-manager");
+        return events;
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => "cta-channel",
+    } as unknown as SettingsService;
+    const client = {
+      channels: {
+        fetch: async (id: string) => channels.get(id) ?? null,
+      },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+
+    const result = await poller.refreshEventCalendars("calendar-manager");
+
+    assert.equal(result.eventCount, 2);
+    assert.equal(result.configuredChannels, 2);
+    assert.deepEqual(result.updatedChannels, ["events-channel", "cta-channel"]);
+    assert.deepEqual(result.failedChannels, []);
+    assert.deepEqual(sentChannels, ["events-channel", "cta-channel"]);
+    assert.match(JSON.stringify(payloads.get("events-channel")), /Standard event/);
+    assert.doesNotMatch(JSON.stringify(payloads.get("events-channel")), /Urgent CTA event/);
+    assert.match(JSON.stringify(payloads.get("cta-channel")), /Urgent CTA event/);
+    assert.doesNotMatch(JSON.stringify(payloads.get("cta-channel")), /Standard event/);
+
+    await poller.refreshEventCalendars("calendar-manager");
+    assert.deepEqual(editedChannels, ["events-channel", "cta-channel"]);
+    assert.deepEqual(sentChannels, ["events-channel", "cta-channel"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("calendar page messages are stored, edited, and removed as pages disappear", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000099.json"),
+      JSON.stringify({
+        eventCalendarMessageIds: { "events-channel": "legacy-calendar-message" },
+        initialized: true,
+      }),
+      "utf-8",
+    );
+    let events = Array.from(
+      { length: 40 },
+      (_, index) => calendarEvent(index + 1, `Scheduled event ${index + 1} — upcoming mass`),
+    );
+    const messages = new Map<string, Message>();
+    let sends = 0;
+    let edits = 0;
+    let deletes = 0;
+    const makeMessage = (id: string): Message => {
+      const message = {
+        id,
+        edit: async () => {
+          edits++;
+          return message;
+        },
+        delete: async () => {
+          deletes++;
+          messages.delete(id);
+        },
+      } as unknown as Message;
+      messages.set(id, message);
+      return message;
+    };
+    makeMessage("legacy-calendar-message");
+    const channel = {
+      id: "events-channel",
+      isTextBased: () => true,
+      threads: { create: async () => undefined },
+      messages: {
+        fetch: async (id: string) => {
+          const message = messages.get(id);
+          if (!message) throw Object.assign(new Error("Unknown Message"), { code: 10008 });
+          return message;
+        },
+      },
+      send: async () => makeMessage(`calendar-page-${++sends}`),
+    };
+    const api = {
+      guildId: "100000000000000099",
+      get: async (path: string, discordId?: string) => {
+        assert.equal(path, "api/events/calendar");
+        assert.equal(discordId, "calendar-manager");
+        return events;
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => null,
+    } as unknown as SettingsService;
+    const client = {
+      channels: { fetch: async () => channel },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+
+    await poller.refreshEventCalendars("calendar-manager");
+    const initialPageCount = messages.size;
+    assert.ok(initialPageCount > 1);
+    assert.equal(edits, 1);
+
+    events = [calendarEvent(1, "Only remaining event")];
+    await poller.refreshEventCalendars("calendar-manager");
+
+    assert.equal(messages.size, 1);
+    assert.equal(deletes, initialPageCount - 1);
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000099.json"), "utf-8"),
+    ) as { eventCalendarMessageIds: Record<string, string[]> };
+    assert.equal(saved.eventCalendarMessageIds["events-channel"]?.length, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("scheduled and manual calendar refreshes serialize without duplicating messages", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const apiActors: Array<string | undefined> = [];
+    const api = {
+      guildId: "100000000000000100",
+      get: async (path: string, discordId?: string) => {
+        assert.equal(path, "api/events/calendar");
+        apiActors.push(discordId);
+        return [];
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => null,
+    } as unknown as SettingsService;
+    let sendCount = 0;
+    let editCount = 0;
+    let releaseSend!: () => void;
+    let markSendStarted!: () => void;
+    const sendGate = new Promise<void>((resolve) => {
+      releaseSend = resolve;
+    });
+    const sendStarted = new Promise<void>((resolve) => {
+      markSendStarted = resolve;
+    });
+    let storedMessage: Message | undefined;
+    const channel = {
+      id: "events-channel",
+      isTextBased: () => true,
+      threads: { create: async () => undefined },
+      messages: {
+        fetch: async () => {
+          if (!storedMessage) {
+            throw Object.assign(new Error("Unknown Message"), { code: 10008 });
+          }
+          return storedMessage;
+        },
+      },
+      send: async () => {
+        sendCount++;
+        if (sendCount === 1) {
+          markSendStarted();
+          await sendGate;
+        }
+        const message = {
+          id: "calendar-message",
+          edit: async () => {
+            editCount++;
+            return message;
+          },
+          delete: async () => undefined,
+        } as unknown as Message;
+        storedMessage = message;
+        return message;
+      },
+    };
+    const client = {
+      channels: { fetch: async () => channel },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+
+    const manualRefresh = poller.refreshEventCalendars("calendar-manager");
+    await sendStarted;
+    const scheduledRefresh = (
+      poller as unknown as { updateEventCalendars(): Promise<void> }
+    ).updateEventCalendars();
+    releaseSend();
+    await Promise.all([manualRefresh, scheduledRefresh]);
+
+    assert.equal(sendCount, 1);
+    assert.equal(editCount, 1);
+    assert.deepEqual(apiActors, ["calendar-manager", undefined]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

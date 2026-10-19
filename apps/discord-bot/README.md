@@ -8,6 +8,7 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 |---|---|
 | View Events | `/events [page]` |
 | Create Event | `/event-create` (Officer+) |
+| Refresh Content Pings / Call to Arms calendars | `/event-calendar-refresh` (`events.edit`) |
 | Join Event by Role | `/event-join [event_id]` + role buttons |
 | Leave Event | `/event-leave [event_id]` |
 | Start Event | `/event-start [event_id]` (Officer+) |

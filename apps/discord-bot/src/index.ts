@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { config } from "./config.js";
 import { ApiClient } from "./api/client.js";
+import { discordRoleIdsFromMember } from "./api/discord-role-ids.js";
 import type {
   AlbionLinkStatus,
   AwardMessageRequest,
@@ -103,21 +104,39 @@ async function main(): Promise<void> {
     // Button interactions
     if (interaction.isButton()) {
       if (!interaction.guildId) return;
-      await handleButton(interaction, api.withGuild(interaction.guildId));
+      const actorApi = api
+        .withGuild(interaction.guildId)
+        .withDiscordActor(
+          interaction.user.id,
+          discordRoleIdsFromMember(interaction.member),
+        );
+      await handleButton(interaction, actorApi);
       return;
     }
 
     // Select menu interactions
     if (interaction.isStringSelectMenu()) {
       if (!interaction.guildId) return;
-      await handleSelectMenu(interaction, api.withGuild(interaction.guildId));
+      const actorApi = api
+        .withGuild(interaction.guildId)
+        .withDiscordActor(
+          interaction.user.id,
+          discordRoleIdsFromMember(interaction.member),
+        );
+      await handleSelectMenu(interaction, actorApi);
       return;
     }
 
     // Modal submissions (Discord forms opened by a button)
     if (interaction.isModalSubmit()) {
       if (!interaction.guildId) return;
-      await handleModal(interaction, api.withGuild(interaction.guildId));
+      const actorApi = api
+        .withGuild(interaction.guildId)
+        .withDiscordActor(
+          interaction.user.id,
+          discordRoleIdsFromMember(interaction.member),
+        );
+      await handleModal(interaction, actorApi);
       return;
     }
   });

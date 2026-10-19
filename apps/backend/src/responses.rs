@@ -430,6 +430,16 @@ pub struct ApiResponseEventList {
     pub data: crate::pagination::PaginatedEventSummary,
 }
 
+/// `OpenAPI` schema wrapper for the complete live/upcoming event calendar feed.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventCalendarList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Every non-archived live event and future scheduled event.
+    pub data: Vec<crate::modules::events::models::EventView>,
+}
+
 /// `OpenAPI` schema wrapper for event revision fingerprints.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventRevisionList {

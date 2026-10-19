@@ -5,6 +5,7 @@ import { NEVER, of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
 import type {
+  EventDetailView,
   EventParticipant,
   EventRosterParticipant,
   EventRosterSeat,
@@ -38,6 +39,12 @@ interface EventDetailRosterAccess {
   onDragEnd(): void;
 }
 
+interface EventDetailPermissionAccess {
+  readonly event: WritableSignal<EventDetailView | null>;
+  readonly canEdit: Signal<boolean>;
+  readonly canDelete: Signal<boolean>;
+}
+
 function seat(
   partyNumber: number,
   position: number,
@@ -69,6 +76,56 @@ function seat(
 }
 
 describe('EventDetailPage roster room', () => {
+  it('lets the event creator manage their own event and keeps edit/delete grants separate', () => {
+    const permissions = signal(new Set<string>());
+    const profile = signal({ user_id: 42 });
+    TestBed.configureTestingModule({
+      imports: [EventDetailPage],
+      providers: [
+        { provide: ApiService, useValue: { get: () => of({ items: [] }) } },
+        {
+          provide: AuthService,
+          useValue: {
+            hasPermission: (permission: string) => permissions().has(permission),
+            profile,
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: of(convertToParamMap({ id: '1' })) },
+        },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: { error: () => undefined, success: () => undefined } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve([]) } },
+        {
+          provide: RealtimeRosterService,
+          useValue: {
+            close: () => undefined,
+            connect: () => undefined,
+            messages: NEVER,
+            connectionState: signal('disconnected'),
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(EventDetailPage);
+    const page = fixture.componentInstance as unknown as EventDetailPermissionAccess;
+    page.event.set({ created_by: 42 } as EventDetailView);
+
+    expect(page.canEdit()).toBe(true);
+    expect(page.canDelete()).toBe(true);
+
+    page.event.set({ created_by: 43 } as EventDetailView);
+    expect(page.canEdit()).toBe(false);
+    expect(page.canDelete()).toBe(false);
+
+    permissions.set(new Set(['events.edit']));
+    expect(page.canEdit()).toBe(true);
+    expect(page.canDelete()).toBe(false);
+  });
+
   it('uses the snapshot party and seat position for the current member assignment', () => {
     TestBed.configureTestingModule({
       imports: [EventDetailPage],
