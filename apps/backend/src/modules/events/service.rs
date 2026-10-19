@@ -2383,6 +2383,41 @@ impl EventService {
             .collect())
     }
 
+    /// Lists every non-archived live event and every scheduled event that has not started yet.
+    ///
+    /// This feed is intentionally unpaginated: the Discord calendar must not omit upcoming events
+    /// because old terminal events occupy an earlier page.
+    pub async fn list_calendar_events(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<EventView>, AppError> {
+        let now: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
+        let scheduled_start_is_future = sea_orm::Condition::any()
+            .add(event::Column::StartTimeUtc.gte(now.clone()))
+            .add(
+                sea_orm::Condition::all()
+                    .add(event::Column::StartTimeUtc.is_null())
+                    .add(event::Column::EventDateUtc.gte(now)),
+            );
+        let models = event::Entity::find()
+            .filter(event::Column::ArchivedAt.is_null())
+            .filter(
+                sea_orm::Condition::any()
+                    .add(event::Column::Status.eq("live"))
+                    .add(
+                        sea_orm::Condition::all()
+                            .add(event::Column::Status.eq("scheduled"))
+                            .add(scheduled_start_is_future),
+                    ),
+            )
+            .order_by_asc(event::Column::StartTimeUtc)
+            .order_by_asc(event::Column::Id)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        self.to_event_views(db, models).await
+    }
+
     /// Lists paginated events.
     pub async fn list_events(
         &self,
@@ -7652,6 +7687,116 @@ mod tests {
             .collect();
         assert_eq!(titles, vec!["Alpha", "Zebra"]);
         assert_eq!(sorted.items[0].id, alpha.id);
+    }
+
+    #[tokio::test]
+    async fn calendar_feed_includes_all_live_and_future_events_only() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "calendar-author", "calendar@example.com").await;
+        let category = create_comp_category(&db, "calendar-comps").await;
+        let comp_id = create_comp(&db, "calendar-comp", category, None, vec![]).await;
+        let now = Utc::now();
+        let past = now - ChronoDuration::hours(1);
+        let future = now + ChronoDuration::hours(1);
+
+        for index in 0..60 {
+            event::ActiveModel {
+                title: Set(format!("Stopped history {index}")),
+                comp_id: Set(comp_id),
+                created_by: Set(author),
+                event_date_utc: Set(past.into()),
+                start_time_utc: Set(Some(past.into())),
+                status: Set("stopped".to_string()),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("stopped history event should insert");
+        }
+
+        let mut expected_ids = HashSet::new();
+        for index in 0..30 {
+            let created = event::ActiveModel {
+                title: Set(format!("Upcoming {index}")),
+                comp_id: Set(comp_id),
+                created_by: Set(author),
+                event_date_utc: Set(future.into()),
+                start_time_utc: Set(Some(future.into())),
+                status: Set("scheduled".to_string()),
+                call_to_arms: Set(index % 2 == 0),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("upcoming event should insert");
+            expected_ids.insert(created.id);
+        }
+
+        let live = event::ActiveModel {
+            title: Set("Live now".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(author),
+            event_date_utc: Set(past.into()),
+            start_time_utc: Set(Some(past.into())),
+            status: Set("live".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("live event should insert");
+        expected_ids.insert(live.id);
+
+        let legacy_upcoming = event::ActiveModel {
+            title: Set("Legacy upcoming".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(author),
+            event_date_utc: Set(future.into()),
+            start_time_utc: Set(None),
+            status: Set("scheduled".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("legacy upcoming event should insert");
+        expected_ids.insert(legacy_upcoming.id);
+
+        event::ActiveModel {
+            title: Set("Already passed".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(author),
+            event_date_utc: Set(past.into()),
+            start_time_utc: Set(Some(past.into())),
+            status: Set("scheduled".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("past scheduled event should insert");
+
+        let mut archived: event::ActiveModel = event::ActiveModel {
+            title: Set("Archived future".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(author),
+            event_date_utc: Set(future.into()),
+            start_time_utc: Set(Some(future.into())),
+            status: Set("scheduled".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("archived future event should insert")
+        .into();
+        archived.archived_at = Set(Some(now.into()));
+        archived.update(&db).await.expect("event should archive");
+
+        let actual_ids: HashSet<_> = EventService::new()
+            .list_calendar_events(&db)
+            .await
+            .expect("calendar feed should load")
+            .into_iter()
+            .map(|event| event.id)
+            .collect();
+        assert_eq!(actual_ids, expected_ids);
     }
 
     #[tokio::test]

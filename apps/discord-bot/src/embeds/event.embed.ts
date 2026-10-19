@@ -4,7 +4,6 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ContainerBuilder,
-  SeparatorBuilder,
   TextDisplayBuilder,
   MessageFlags,
 } from "discord.js";
@@ -441,57 +440,95 @@ export function buildEventCalendarActionRows(
   return rows;
 }
 
-/** Components V2 version of the persistent calendar, matching the application panel treatment. */
-export function buildEventCalendarV2Components(
+/** Builds one Discord-safe Components V2 message per page of the event calendar. */
+export function buildEventCalendarMessages(
   events: EventView[],
   threadIds: Readonly<Record<string, string>>,
-): ContainerBuilder[] {
+): Array<{
+  flags: readonly [MessageFlags.IsComponentsV2];
+  components: ContainerBuilder[];
+  allowedMentions: { parse: readonly [] };
+}> {
+  return buildEventCalendarPageTexts(events, threadIds).map((content) => ({
+    flags: [MessageFlags.IsComponentsV2] as const,
+    components: [
+      new ContainerBuilder()
+        .setAccentColor(BOT_COLORS.BRAND)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(content)),
+    ],
+    allowedMentions: { parse: [] as const },
+  }));
+}
+
+function buildEventCalendarPageTexts(
+  events: EventView[],
+  threadIds: Readonly<Record<string, string>>,
+): string[] {
   const orderedEvents = [...events]
     .filter((event) => event.status === "scheduled" || event.status === "live")
-    .sort((a, b) => eventTimestamp(a, "start") - eventTimestamp(b, "start"))
-    .slice(0, 25);
-  const sections = new Map<string, string[]>();
+    .sort((a, b) => eventTimestamp(a, "start") - eventTimestamp(b, "start"));
+  let current = calendarIntroduction();
+  const pages: string[] = [];
+  const seenSections = new Set<string>();
+  let currentSection: string | undefined;
+  let hasEvents = false;
+
   for (const event of orderedEvents) {
     const section = event.status === "live" ? "🔴 Live now" : "✦ Next up";
     const threadId = threadIds[String(event.id)];
     const kind = event.call_to_arms ? "CALL TO ARMS" : event.comp_name;
     const description = event.description?.trim();
-    sections.set(section, [
-      ...(sections.get(section) ?? []),
-      [
-        `### ${event.title}`,
-        `**${kind}** · <t:${eventTimestamp(event, "start")}:F> · <t:${eventTimestamp(event, "start")}:R>`,
-        ...(description ? [`> ${description.replace(/\n+/g, " ").slice(0, 180)}`] : []),
-        threadId ? `💬 <#${threadId}>` : "*Discussion thread is being prepared.*",
-      ].join("\n"),
-    ]);
+    const entry = [
+      `### ${event.title.slice(0, 240)}`,
+      `**${kind.slice(0, 120)}** · <t:${eventTimestamp(event, "start")}:F> · <t:${eventTimestamp(event, "start")}:R>`,
+      ...(description ? [`> ${description.replace(/\n+/g, " ").slice(0, 180)}`] : []),
+      threadId ? `💬 <#${threadId}>` : "*Discussion thread is being prepared.*",
+    ].join("\n");
+
+    let heading = currentSection === section ? "" : `## ${section}\n\n`;
+    let block = `${hasEvents ? "\n\n---\n\n" : ""}${heading}${entry}`;
+    if (current.length + block.length > EVENT_CALENDAR_TEXT_LIMIT) {
+      pages.push(current);
+      current = calendarContinuation();
+      hasEvents = false;
+      currentSection = undefined;
+      heading = seenSections.has(section)
+        ? `## ${section} (continued)\n\n`
+        : `## ${section}\n\n`;
+      block = `${heading}${entry}`;
+    }
+
+    if (current.length + block.length > EVENT_CALENDAR_TEXT_LIMIT) {
+      throw new RangeError("An event calendar entry exceeds Discord's message text limit.");
+    }
+    current += block;
+    currentSection = section;
+    seenSections.add(section);
+    hasEvents = true;
   }
-  const text = sections.size > 0
-    ? [...sections.entries()].map(([name, lines]) => `## ${name}\n\n${lines.join("\n\n---\n\n")}`).join("\n\n")
-    : "*There are no live or upcoming events right now.*";
-  const container = new ContainerBuilder()
-    .setAccentColor(BOT_COLORS.BRAND)
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        "# 📅 Content Pings\n\n" +
-        "*Your quick view of what is happening next. Open an event thread for details and sign-up.*\n\n" +
-        text,
-      ),
-    )
-    .addSeparatorComponents(new SeparatorBuilder());
-  return [container];
+
+  if (orderedEvents.length === 0) {
+    current += "*There are no live or upcoming events right now.*";
+  }
+  pages.push(current);
+  return pages;
 }
 
-/** Complete Components V2 payload for the persistent event calendar. */
-export function buildEventCalendarMessage(
-  events: EventView[],
-  threadIds: Readonly<Record<string, string>>,
-) {
-  return {
-    flags: [MessageFlags.IsComponentsV2] as const,
-    components: buildEventCalendarV2Components(events, threadIds),
-    allowedMentions: { parse: [] as const },
-  };
+/** Keep each message below Discord's 4,000-character combined Text Display limit. */
+const EVENT_CALENDAR_TEXT_LIMIT = 3_800;
+
+function calendarIntroduction(): string {
+  return (
+    "# 📅 Content Pings\n\n" +
+    "*Your quick view of what is happening next. Open an event thread for details and sign-up.*\n\n"
+  );
+}
+
+function calendarContinuation(): string {
+  return (
+    "# 📅 Content Pings (continued)\n\n" +
+    "*Your quick view of what is happening next. Open an event thread for details and sign-up.*\n\n"
+  );
 }
 
 // ── Event participation buttons ──────────────────────────────────────────────

@@ -558,6 +558,62 @@ pub fn resolve_linked_roles(
     (names, highest)
 }
 
+/// Resolves Discord role IDs supplied by an authenticated bot request to the
+/// current tenant's linked role names. Requests from older bot builds keep
+/// using the persisted highest-role value until the bot sends the new header.
+pub async fn resolve_bot_role_ids(
+    db: &DatabaseConnection,
+    role_ids_header: Option<&str>,
+    fallback_role: &str,
+) -> Result<(Vec<String>, String), AppError> {
+    let Some(header) = role_ids_header else {
+        return Ok((vec![fallback_role.to_string()], fallback_role.to_string()));
+    };
+    let role_ids = parse_bot_role_ids_header(header)?;
+    let db_roles = super::entities::role::Entity::find()
+        .all(db)
+        .await
+        .map_err(|_| {
+            AppError::Internal("Could not load role mappings for bot authorization".into())
+        })?;
+    Ok(resolve_linked_roles(&role_ids, &db_roles))
+}
+
+fn parse_bot_role_ids_header(header: &str) -> Result<Vec<String>, AppError> {
+    const MAX_HEADER_BYTES: usize = 8_192;
+    const MAX_ROLE_IDS: usize = 250;
+
+    if header.len() > MAX_HEADER_BYTES {
+        return Err(AppError::Unauthorized(
+            "Discord role ID header is too large".to_string(),
+        ));
+    }
+    if header.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let parts: Vec<&str> = header.split(',').map(str::trim).collect();
+    if parts.len() > MAX_ROLE_IDS
+        || parts.iter().any(|role_id| {
+            role_id.is_empty()
+                || role_id.len() > 20
+                || !role_id.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    {
+        return Err(AppError::Unauthorized(
+            "Discord role ID header is invalid".to_string(),
+        ));
+    }
+
+    let mut role_ids = Vec::with_capacity(parts.len());
+    for role_id in parts {
+        if !role_ids.iter().any(|existing| existing == role_id) {
+            role_ids.push(role_id.to_string());
+        }
+    }
+    Ok(role_ids)
+}
+
 fn fallback_unmatched_roles(db_roles: &[super::entities::role::Model]) -> (Vec<String>, String) {
     if let Some(default) = db_roles.iter().find(|role| role.is_default) {
         return (vec![default.name.clone()], default.name.clone());
@@ -693,6 +749,23 @@ mod tests {
         let (names, highest) = resolve_linked_roles(&[], &roles);
         assert_eq!(names, vec!["User".to_string()]);
         assert_eq!(highest, "User");
+    }
+
+    #[test]
+    fn parses_and_deduplicates_bot_role_id_header() {
+        assert_eq!(
+            parse_bot_role_ids_header(" 111111111111111111,222222222222222222,111111111111111111 ")
+                .unwrap(),
+            vec![
+                "111111111111111111".to_string(),
+                "222222222222222222".to_string()
+            ]
+        );
+        assert!(parse_bot_role_ids_header("").unwrap().is_empty());
+        assert!(matches!(
+            parse_bot_role_ids_header("111111111111111111,not-a-snowflake"),
+            Err(AppError::Unauthorized(_))
+        ));
     }
 
     fn choice(id: &str, name: &str) -> TenantChoice {

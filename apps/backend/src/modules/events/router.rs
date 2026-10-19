@@ -20,8 +20,8 @@ use crate::pagination::{PaginatedData, PaginationParams};
 use serde::Deserialize;
 
 use crate::responses::{
-    ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRevisionList,
-    ApiResponseEventRosterRoleList, ApiResponseEventView,
+    ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail, ApiResponseEventList,
+    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventView,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
@@ -106,6 +106,7 @@ async fn hydrate_event_list(
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_events).post(create_event))
+        .route("/calendar", get(list_event_calendar))
         .route("/revisions", get(list_event_revisions))
         .route(
             "/{id}",
@@ -154,6 +155,35 @@ pub fn router() -> Router {
             "/{id}/battles",
             get(list_event_battles).put(replace_event_battles),
         )
+}
+
+/// Returns all live and upcoming events used by the Discord calendar.
+///
+/// Requires `events.edit` because the corresponding bot command republishes the guild-wide
+/// calendar message.
+#[utoipa::path(
+    get,
+    path = "/api/events/calendar",
+    tag = "events",
+    summary = "List events for the Discord calendar",
+    description = "Returns every non-archived live event and every future scheduled event, without \
+        pagination. Requires `events.edit`; the bot uses this feed for both its scheduled calendar \
+        updates and the manual `/event-calendar-refresh` command.",
+    security(("session_cookie" = ["events.edit"])),
+    responses(
+        (status = 200, description = "Calendar events retrieved", body = ApiResponseEventCalendarList),
+        (status = 401, description = "Unauthorized - no active session or linked website account", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails)
+    )
+)]
+pub async fn list_event_calendar(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<EventView>>>, AppError> {
+    user.require(&perms, Permission::EventsEdit).await?;
+    let events = EventService::new().list_calendar_events(&db).await?;
+    Ok(Json(ApiResponse::new(events)))
 }
 
 /// Lists all events (paginated).
@@ -385,7 +415,7 @@ async fn assign_roster_seat(
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let version = EventService::new()
         .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
         .await?;
@@ -411,7 +441,7 @@ async fn clear_roster_seat(
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let version = EventService::new()
         .clear_roster_seat(&db, id, &seat_key, request)
         .await?;
@@ -437,7 +467,7 @@ async fn swap_roster_seats(
     Path(id): Path<i64>,
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let keys = vec![
         request.source_seat_key.clone(),
         request.target_seat_key.clone(),
@@ -466,7 +496,7 @@ async fn auto_fill_roster(
     Path(id): Path<i64>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let (version, changed) = EventService::new()
         .auto_fill_roster(&db, id, request, user.user_id)
         .await?;
@@ -631,7 +661,7 @@ async fn create_event_roster_role(
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
@@ -665,7 +695,7 @@ async fn delete_event_roster_role(
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
@@ -770,12 +800,12 @@ async fn create_event(
     path = "/api/events/discord-roles",
     tag = "events",
     summary = "List Discord roles available for event announcements",
-    description = "Returns non-managed roles in this tenant's Discord server. Requires events.edit.",
+    description = "Returns non-managed roles in this tenant's Discord server. Requires events.create.",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.create permission", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
     )
 )]
@@ -785,7 +815,7 @@ async fn list_event_discord_roles(
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    user.require(&perms, Permission::EventsCreate).await?;
     Ok(Json(ApiResponse::new(
         AdminService::discord_roles(&cfg, &tenant.0).await?,
     )))
@@ -823,7 +853,7 @@ async fn update_event(
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     if req.ping_alliance == Some(true) {
         assert_active_alliance(&control.0, &tenant_id).await?;
     }
@@ -869,7 +899,7 @@ async fn delete_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::EventsDelete).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     let service = EventService::new();
     service.delete_event(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -896,7 +926,7 @@ async fn archive_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsDelete).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     let event = EventService::new().archive_event(&db, id).await?;
     Ok(Json(ApiResponse::new(event)))
 }
@@ -922,7 +952,7 @@ async fn unarchive_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsDelete).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     let event = EventService::new().unarchive_event(&db, id).await?;
     Ok(Json(ApiResponse::new(event)))
 }
@@ -1039,23 +1069,21 @@ async fn cancel_participation(
     Ok(Json(ApiResponse::new(detail)))
 }
 
-/// Guard for endpoints that mutate an event's participant roster on behalf of
-/// someone other than the caller: either the event's creator or any user with
-/// `events.edit` may act. Everyone else gets a 403.
+/// Guard for an event-specific management mutation. The creator may manage
+/// their own event; everyone else needs the permission for the requested action.
 ///
 /// We intentionally avoid `UserContext::require` here because the policy is an
-/// OR between role-based permission and ownership of the row, not a single
-/// permission gate.
+/// OR between a role-based permission and ownership of the row.
 async fn require_event_management_authority(
     user: &UserContext,
     perms: &Permissions,
     db: &sea_orm::DatabaseConnection,
     event_id: i64,
+    permission: Permission,
 ) -> Result<(), AppError> {
-    if user.is_superadmin()
-        || perms
-            .check(user.is_superadmin(), &user.roles, Permission::EventsEdit)
-            .await
+    if perms
+        .check(user.is_superadmin(), &user.roles, permission)
+        .await
     {
         return Ok(());
     }
@@ -1071,9 +1099,10 @@ async fn require_event_management_authority(
         return Ok(());
     }
 
-    Err(AppError::Forbidden(
-        "Only the event creator or users with events.edit may manage participants".to_string(),
-    ))
+    Err(AppError::Forbidden(format!(
+        "Only the event creator or users with {} may manage this event",
+        permission.as_str()
+    )))
 }
 
 /// Adds or updates a participant on behalf of an arbitrary guild member.
@@ -1105,7 +1134,7 @@ async fn add_event_member(
     Path(id): Path<i64>,
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
     let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
     tracing::info!(
@@ -1155,7 +1184,7 @@ async fn set_participant(
     Path((id, target_user_id)): Path<(i64, i64)>,
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
     let (detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
@@ -1194,7 +1223,7 @@ async fn remove_participant(
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
     let (detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
@@ -1241,7 +1270,7 @@ async fn remind_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
 
     let _ = AuditService::log(
@@ -1284,7 +1313,7 @@ async fn set_event_voice_channel(
     Path(id): Path<i64>,
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
         .await?;
@@ -1324,7 +1353,7 @@ async fn clear_event_voice_channel(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
         .await?;
@@ -1365,7 +1394,7 @@ async fn start_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
     let event = service.start_event(&db, id).await?;
     Ok(Json(ApiResponse::new(event)))
@@ -1396,7 +1425,7 @@ async fn cancel_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     Ok(Json(ApiResponse::new(
         EventService::new().cancel_event(&db, id).await?,
     )))
@@ -1427,7 +1456,7 @@ async fn uncancel_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     Ok(Json(ApiResponse::new(
         EventService::new().uncancel_event(&db, id).await?,
     )))
@@ -1459,7 +1488,7 @@ async fn stop_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
     let event = service.stop_event(&db, id, false).await?;
     Ok(Json(ApiResponse::new(event)))
@@ -1535,7 +1564,7 @@ async fn replace_event_battles(
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
     let server = normalize_server(Some(&cfg.albion_api_region));
     let context = BattleLinkingContext::new(
@@ -1551,8 +1580,118 @@ async fn replace_event_battles(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_event_revision_ids;
+    use super::{
+        list_event_calendar, parse_event_revision_ids, require_event_management_authority,
+    };
     use crate::errors::AppError;
+    use crate::modules::auth::{
+        Permission, Permissions, UserContext,
+        entities::{role, role_permission},
+    };
+    use crate::modules::comps::entities::{comp, comp_category};
+    use crate::modules::events::entities::event;
+    use crate::modules::users::entities as users;
+    use axum::Extension;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database, DatabaseConnection};
+    use sea_orm_migration::MigratorTrait;
+
+    async fn authorization_test_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("test database should connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("test database migrations should run");
+        db
+    }
+
+    async fn insert_authorization_test_user(db: &DatabaseConnection, name: &str) -> i64 {
+        users::ActiveModel {
+            username: Set(name.to_string()),
+            email: Set(format!("{name}@example.com")),
+            role: Set("User".to_string()),
+            discord_id: Set(Some(format!("discord-{name}"))),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("test user should be inserted")
+        .id
+    }
+
+    async fn insert_authorization_test_event(
+        db: &DatabaseConnection,
+        title: &str,
+        creator_id: i64,
+    ) -> i64 {
+        let category_id = comp_category::ActiveModel {
+            name: Set(format!("category-{title}")),
+            slug: Set(format!("category-{title}").to_lowercase()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("test comp category should be inserted")
+        .id;
+        let comp_id = comp::ActiveModel {
+            name: Set(format!("comp-{title}")),
+            category_id: Set(category_id),
+            created_by: Set(creator_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("test comp should be inserted")
+        .id;
+        event::ActiveModel {
+            title: Set(title.to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(creator_id),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("test event should be inserted")
+        .id
+    }
+
+    async fn insert_test_role_with_permission(
+        db: &DatabaseConnection,
+        role_id: &str,
+        permission: Permission,
+    ) {
+        role::ActiveModel {
+            id: Set(role_id.to_string()),
+            name: Set(format!("Test {role_id}")),
+            priority: Set(50),
+            discord_role_id: Set(Some(format!("discord-{role_id}"))),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("test role should be inserted");
+        role_permission::ActiveModel {
+            role_id: Set(role_id.to_string()),
+            permission: Set(permission.as_str().to_string()),
+        }
+        .insert(db)
+        .await
+        .expect("test role permission should be inserted");
+    }
+
+    fn authorization_test_user(user_id: i64, role: &str) -> UserContext {
+        UserContext {
+            id: format!("discord-{user_id}"),
+            username: format!("Member {user_id}"),
+            email: None,
+            avatar: None,
+            roles: vec![role.to_string()],
+            highest_role: role.to_string(),
+            user_id,
+            super_admin_id: None,
+        }
+    }
 
     #[test]
     fn parse_event_revision_ids_dedupes_and_drops_junk() {
@@ -1562,6 +1701,146 @@ mod tests {
         assert!(matches!(
             parse_event_revision_ids("1,nope"),
             Err(AppError::Validation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn calendar_feed_requires_events_edit() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("test database should connect");
+        let user = UserContext {
+            id: "discord-user".to_string(),
+            username: "Member".to_string(),
+            email: None,
+            avatar: None,
+            roles: vec!["User".to_string()],
+            highest_role: "User".to_string(),
+            user_id: 1,
+            super_admin_id: None,
+        };
+
+        let result =
+            list_event_calendar(user, Extension(Permissions::new_empty()), Extension(db)).await;
+
+        assert!(matches!(
+            result,
+            Err(AppError::Forbidden(message)) if message.contains("events.edit")
+        ));
+    }
+
+    #[tokio::test]
+    async fn event_management_allows_owners_and_requires_matching_permission_for_other_events() {
+        let db = authorization_test_db().await;
+        let owner_id = insert_authorization_test_user(&db, "owner").await;
+        let other_owner_id = insert_authorization_test_user(&db, "other-owner").await;
+        let editor_id = insert_authorization_test_user(&db, "editor").await;
+        let deleter_id = insert_authorization_test_user(&db, "deleter").await;
+        let first_event = insert_authorization_test_event(&db, "first", owner_id).await;
+        let second_event = insert_authorization_test_event(&db, "second", other_owner_id).await;
+        insert_test_role_with_permission(&db, "test-events-editor", Permission::EventsEdit).await;
+        insert_test_role_with_permission(&db, "test-events-deleter", Permission::EventsDelete)
+            .await;
+        let permissions = Permissions::new_empty();
+        permissions
+            .reload(&db)
+            .await
+            .expect("test permissions should load");
+
+        let owner = authorization_test_user(owner_id, "User");
+        assert!(
+            require_event_management_authority(
+                &owner,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsEdit
+            )
+            .await
+            .is_ok()
+        );
+        assert!(
+            require_event_management_authority(
+                &owner,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsDelete
+            )
+            .await
+            .is_ok()
+        );
+        assert!(matches!(
+            require_event_management_authority(
+                &owner,
+                &permissions,
+                &db,
+                second_event,
+                Permission::EventsEdit
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+
+        let editor = authorization_test_user(editor_id, "Test test-events-editor");
+        assert!(
+            require_event_management_authority(
+                &editor,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsEdit
+            )
+            .await
+            .is_ok()
+        );
+        assert!(matches!(
+            require_event_management_authority(
+                &editor,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsDelete
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+
+        let deleter = authorization_test_user(deleter_id, "Test test-events-deleter");
+        assert!(
+            require_event_management_authority(
+                &deleter,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsDelete
+            )
+            .await
+            .is_ok()
+        );
+        assert!(matches!(
+            require_event_management_authority(
+                &deleter,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsEdit
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+
+        let member = authorization_test_user(other_owner_id, "User");
+        assert!(matches!(
+            require_event_management_authority(
+                &member,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsEdit
+            )
+            .await,
+            Err(AppError::Forbidden(_))
         ));
     }
 }

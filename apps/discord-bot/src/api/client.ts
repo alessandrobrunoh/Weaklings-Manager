@@ -25,11 +25,21 @@ export class ApiClient {
      * `guildId` argument that could drift out of sync with the header.
      */
     readonly guildId?: string,
+    private readonly actor?: { discordId: string; roleIds: string[] },
   ) {}
 
   /** Return a client that stamps `X-Guild-Id` on every request. */
   withGuild(guildId: string): ApiClient {
     return new ApiClient(this.baseUrl, this.botSecret, guildId);
+  }
+
+  /** Return a guild-scoped client that carries the Discord actor's trusted member-role claim. */
+  withDiscordActor(discordId: string, roleIds: string[]): ApiClient {
+    const uniqueRoleIds = [...new Set(roleIds.filter((roleId) => /^\d+$/.test(roleId)))];
+    return new ApiClient(this.baseUrl, this.botSecret, this.guildId, {
+      discordId,
+      roleIds: uniqueRoleIds,
+    });
   }
 
   async get<T>(
@@ -116,6 +126,9 @@ export class ApiClient {
     };
     if (discordId) {
       h['X-Discord-Id'] = discordId;
+      if (this.actor?.discordId === discordId) {
+        h['X-Discord-Role-Ids'] = this.actor.roleIds.join(',');
+      }
     }
     if (this.guildId) {
       h['X-Guild-Id'] = this.guildId;

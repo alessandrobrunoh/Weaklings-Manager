@@ -25,7 +25,17 @@ impl PermissionCache {
     /// Returns `true` if `role` has been granted `perm`.
     #[must_use]
     pub fn role_has(&self, role: &str, perm: Permission) -> bool {
-        self.inner.get(role).is_some_and(|set| set.contains(&perm))
+        self.inner.get(role).is_some_and(|permissions| {
+            permissions.contains(&perm)
+                || (permissions.contains(&Permission::EventsManage)
+                    && matches!(
+                        perm,
+                        Permission::EventsView
+                            | Permission::EventsCreate
+                            | Permission::EventsEdit
+                            | Permission::EventsDelete
+                    ))
+        })
     }
 
     /// Load a fresh snapshot from the database.
@@ -155,5 +165,32 @@ impl Permissions {
                 perm.as_str()
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PermissionCache;
+    use crate::modules::auth::Permission;
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn legacy_events_manage_grant_covers_granular_event_permissions() {
+        let cache = PermissionCache {
+            inner: HashMap::from([(
+                "Legacy event manager".to_string(),
+                HashSet::from([Permission::EventsManage]),
+            )]),
+        };
+
+        for permission in [
+            Permission::EventsView,
+            Permission::EventsCreate,
+            Permission::EventsEdit,
+            Permission::EventsDelete,
+        ] {
+            assert!(cache.role_has("Legacy event manager", permission));
+        }
+        assert!(!cache.role_has("Member", Permission::EventsEdit));
     }
 }

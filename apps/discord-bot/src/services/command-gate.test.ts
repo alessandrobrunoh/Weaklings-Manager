@@ -38,6 +38,7 @@ const GUILD_ONLY_COMMANDS = [
   'event-create',
   'event-start',
   'event-stop',
+  'event-calendar-refresh',
   'event-roster',
 ] as const;
 
@@ -55,7 +56,12 @@ afterEach(() => {
 });
 
 function stubApi(status: TenantStatus): ApiClient {
-  const scoped = { guildId: status.id } as ApiClient;
+  const scoped = {
+    guildId: status.id,
+    withDiscordActor() {
+      return scoped;
+    },
+  } as unknown as ApiClient;
   return {
     async get() {
       return status;
@@ -74,6 +80,8 @@ function stubInteraction(opts: {
   return {
     commandName: opts.commandName,
     guildId: opts.guildId === undefined ? nextGuildId() : opts.guildId,
+    user: { id: 'member-id' },
+    member: { roles: [] },
     replied: false,
     deferred: false,
     replies,

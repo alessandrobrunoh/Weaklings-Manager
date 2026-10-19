@@ -3074,8 +3074,22 @@ export class EventDetailPage {
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly canEdit = computed(() => this.auth.hasPermission('events.edit'));
-  protected readonly canDelete = computed(() => this.auth.hasPermission('events.delete'));
+  protected readonly canEdit = computed(() => {
+    const event = this.event();
+    const userId = this.auth.profile()?.user_id;
+    return (
+      this.auth.hasPermission('events.edit') ||
+      (userId !== undefined && event?.created_by === userId)
+    );
+  });
+  protected readonly canDelete = computed(() => {
+    const event = this.event();
+    const userId = this.auth.profile()?.user_id;
+    return (
+      this.auth.hasPermission('events.delete') ||
+      (userId !== undefined && event?.created_by === userId)
+    );
+  });
   protected readonly showEditForm = signal(false);
   protected readonly tab = signal<EventDetailTab>('roster');
   protected readonly pendingConfirm = signal<PendingConfirm | null>(null);
@@ -3225,10 +3239,7 @@ export class EventDetailPage {
   });
 
   protected readonly canManageParticipants = computed(() => {
-    const detail = this.event();
-    const userId = this.auth.profile()?.user_id ?? null;
-    if (userId === null) return false;
-    return this.canEdit() || detail?.created_by === userId;
+    return this.canEdit();
   });
 
   protected readonly showMemberSearch = signal(false);

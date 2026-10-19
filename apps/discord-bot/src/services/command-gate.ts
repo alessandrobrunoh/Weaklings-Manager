@@ -1,5 +1,6 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
+import { discordRoleIdsFromMember } from '../api/discord-role-ids.js';
 import type { BotCommand } from '../commands/index.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 import { fetchTenantStatus, requireRegisteredTenant } from './tenant-gate.js';
@@ -68,5 +69,9 @@ export async function executeSlashCommand(
     return;
   }
 
-  await command.execute(interaction, guildApi);
+  const actorApi = guildApi.withDiscordActor(
+    interaction.user.id,
+    discordRoleIdsFromMember(interaction.member),
+  );
+  await command.execute(interaction, actorApi);
 }

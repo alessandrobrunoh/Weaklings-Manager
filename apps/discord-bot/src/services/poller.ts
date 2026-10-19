@@ -16,7 +16,7 @@ import type {
 import {
   buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
-  buildEventCalendarMessage,
+  buildEventCalendarMessages,
   shouldPingAllianceDiscord,
   withAlliancePingRoles,
   type AllianceLifecycleKind,
@@ -52,6 +52,7 @@ import {
 } from "./event-lifecycle.js";
 import { SplitForumAdapter } from "./split-forum.js";
 import {
+  discordErrorCode,
   isUnknownDiscordChannel,
   withUnarchivedThread,
 } from "./discord-thread.js";
@@ -80,8 +81,8 @@ interface PollerState {
   eventThreadIds: Record<string, string>;
   /** Signup card message id inside each event thread. */
   eventSignupMessageIds: Record<string, string>;
-  /** Persistent calendar message id keyed by its parent channel id. */
-  eventCalendarMessageIds: Record<string, string>;
+  /** Persistent calendar page message ids keyed by their parent channel id. */
+  eventCalendarMessageIds: Record<string, string[]>;
   /** Last Discord-synced `${roster_version}:${status}` per event. */
   eventSignupRevisions: Record<string, string>;
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
@@ -108,6 +109,25 @@ interface PollerState {
   initialized: boolean;
 }
 
+export interface EventCalendarRefreshResult {
+  eventCount: number;
+  configuredChannels: number;
+  updatedChannels: string[];
+  failedChannels: EventCalendarChannelFailure[];
+  unroutedEvents: number;
+  unroutedCallToArms: number;
+}
+
+export interface EventCalendarChannelFailure {
+  channelId: string;
+  reason: string;
+}
+
+/** Discord JSON error for a message id that no longer exists. */
+const DISCORD_UNKNOWN_MESSAGE = 10008;
+/** Discord JSON error for an operation the bot's current channel permissions reject. */
+const DISCORD_MISSING_PERMISSIONS = 50013;
+
 function createDefaultState(): PollerState {
   return {
     lastEventId: 0,
@@ -128,6 +148,27 @@ function createDefaultState(): PollerState {
     announcedGiveawayDraws: [],
     initialized: false,
   };
+}
+
+function restoreEventCalendarMessageIds(value: unknown): Record<string, string[]> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([channelId, stored]) => {
+      if (typeof stored === "string" && stored.length > 0) {
+        return [[channelId, [stored]]];
+      }
+      if (Array.isArray(stored)) {
+        return [
+          [
+            channelId,
+            stored.filter((messageId): messageId is string => typeof messageId === "string"),
+          ],
+        ];
+      }
+      return [];
+    }),
+  );
 }
 
 /**
@@ -188,7 +229,9 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
       eventThreadIds: parsedState.eventThreadIds ?? {},
       eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
-      eventCalendarMessageIds: parsedState.eventCalendarMessageIds ?? {},
+      eventCalendarMessageIds: restoreEventCalendarMessageIds(
+        parsedState.eventCalendarMessageIds,
+      ),
       eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
       splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
       splitAfterId: parsedState.splitAfterId ?? null,
@@ -255,6 +298,8 @@ export class Poller {
    *  both would otherwise read the same stale `lastEventId`/`lastBattleId`
    *  and could announce the same event or battle twice. */
   private polling = false;
+  /** Serializes scheduled and manual calendar writes without sharing API identities. */
+  private calendarSyncQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly client: Client,
@@ -567,63 +612,183 @@ export class Poller {
     }
   }
 
-  /** Keeps one editable event index per configured announcement channel. */
+  /** Keeps editable event calendar pages in each configured announcement channel. */
   private async updateEventCalendars(): Promise<void> {
     try {
-      const [result, eventsChannelId, callToArmsChannelId] = await Promise.all([
-        this.api.get<PaginatedData<EventView>>("api/events", undefined, {
-          page: 1,
-          limit: 50,
-          sort: "start_time_utc",
-          order: "asc",
-        }),
-        this.settings.eventsChannelId(),
-        this.settings.callToArmsChannelId(),
-      ]);
-      const channels = new Map<string, EventView[]>();
-      for (const event of result.items) {
-        if (event.archived_at || !["scheduled", "live"].includes(event.status)) continue;
-        const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
-        if (!channelId) continue;
-        channels.set(channelId, [...(channels.get(channelId) ?? []), event]);
-      }
-      for (const [channelId, events] of channels) {
-        channels.set(
-          channelId,
-          events.sort(
-            (a, b) =>
-              new Date(a.start_time_utc ?? a.event_date_utc).getTime() -
-              new Date(b.start_time_utc ?? b.event_date_utc).getTime(),
-          ),
+      const result = await this.syncEventCalendars();
+      for (const failure of result.failedChannels) {
+        console.warn(
+          `[Poller] Could not update the event calendar in channel ${failure.channelId}: ${failure.reason}`,
         );
       }
-
-      for (const channelId of new Set([eventsChannelId, callToArmsChannelId].filter(Boolean) as string[])) {
-        const channel = await this.getTextChannel(channelId);
-        // Older adapter doubles do not expose thread collections. They still
-        // support the legacy announcement path, but cannot represent the
-        // persistent calendar/thread design safely.
-        if (!channel || !channel.threads?.create) continue;
-        const events = channels.get(channelId) ?? [];
-        const payload = buildEventCalendarMessage(events, this.state.eventThreadIds);
-        const messageId = this.state.eventCalendarMessageIds[channelId];
-        let message: Message | undefined;
-        if (messageId) {
-          message = await channel.messages.fetch(messageId).catch(() => undefined);
-        }
-        if (!message) {
-          message = await channel.send(payload);
-          this.state.eventCalendarMessageIds[channelId] = message.id;
-        } else {
-          // Clearing embeds is required when converting an older calendar panel
-          // to Components V2.
-          await message.edit({ ...payload, embeds: [] });
-        }
+      if (result.unroutedEvents > 0) {
+        console.warn(
+          `[Poller] ${result.unroutedEvents} standard event(s) have no events channel configured`,
+        );
       }
-      this.save();
+      if (result.unroutedCallToArms > 0) {
+        console.warn(
+          `[Poller] ${result.unroutedCallToArms} Call to Arms event(s) have no CTA channel configured`,
+        );
+      }
     } catch (error) {
       console.warn(`[Poller] Could not update event calendars for guild ${this.guildId}:`, error);
     }
+  }
+
+  /** Refreshes the event calendars on demand, using the caller's backend permissions. */
+  async refreshEventCalendars(discordUserId: string): Promise<EventCalendarRefreshResult> {
+    return this.syncEventCalendars(discordUserId);
+  }
+
+  private async syncEventCalendars(
+    discordUserId?: string,
+  ): Promise<EventCalendarRefreshResult> {
+    const sync = this.calendarSyncQueue.then(() =>
+      this.performEventCalendarSync(discordUserId),
+    );
+    this.calendarSyncQueue = sync.then(
+      () => undefined,
+      () => undefined,
+    );
+    return sync;
+  }
+
+  private async performEventCalendarSync(
+    discordUserId?: string,
+  ): Promise<EventCalendarRefreshResult> {
+    const [eventsChannelId, callToArmsChannelId] = await Promise.all([
+      this.settings.eventsChannelId(),
+      this.settings.callToArmsChannelId(),
+    ]);
+    const configuredChannelIds = [
+      ...new Set([eventsChannelId, callToArmsChannelId].filter(Boolean) as string[]),
+    ];
+    if (configuredChannelIds.length === 0 && !discordUserId) {
+      return {
+        eventCount: 0,
+        configuredChannels: 0,
+        updatedChannels: [],
+        failedChannels: [],
+        unroutedEvents: 0,
+        unroutedCallToArms: 0,
+      };
+    }
+
+    const events = await this.api.get<EventView[]>("api/events/calendar", discordUserId);
+    const channels = new Map<string, EventView[]>();
+    let unroutedEvents = 0;
+    let unroutedCallToArms = 0;
+    for (const event of events) {
+      const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
+      if (!channelId) {
+        if (event.call_to_arms) unroutedCallToArms++;
+        else unroutedEvents++;
+        continue;
+      }
+      channels.set(channelId, [...(channels.get(channelId) ?? []), event]);
+    }
+
+    const updatedChannels: string[] = [];
+    const failedChannels: EventCalendarChannelFailure[] = [];
+    for (const channelId of configuredChannelIds) {
+      try {
+        const channel = await this.getTextChannel(channelId);
+        if (!channel) {
+          throw new Error("The configured channel is missing or is not a text channel.");
+        }
+        // Adapter doubles without a thread manager cannot represent the persistent calendar.
+        if (!channel.threads?.create) {
+          if (!discordUserId) continue;
+          throw new Error("The configured channel cannot host the event discussion threads.");
+        }
+
+        const channelEvents = channels.get(channelId) ?? [];
+        const payloads = buildEventCalendarMessages(channelEvents, this.state.eventThreadIds);
+        const messageIds = [...(this.state.eventCalendarMessageIds[channelId] ?? [])];
+        for (const [pageIndex, payload] of payloads.entries()) {
+          const messageId = messageIds[pageIndex];
+          let message: Message | undefined;
+          if (messageId) {
+            try {
+              message = await channel.messages.fetch(messageId);
+            } catch (error) {
+              if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) {
+                throw new Error("The saved calendar message could not be fetched.", { cause: error });
+              }
+            }
+          }
+          if (!message) {
+            message = await channel.send(payload);
+            messageIds[pageIndex] = message.id;
+            this.state.eventCalendarMessageIds[channelId] = messageIds;
+            this.save();
+          } else {
+            // Clearing embeds is required when converting an older calendar panel to Components V2.
+            try {
+              await message.edit({ ...payload, embeds: [] });
+            } catch (error) {
+              if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) throw error;
+              message = await channel.send(payload);
+              messageIds[pageIndex] = message.id;
+              this.state.eventCalendarMessageIds[channelId] = messageIds;
+              this.save();
+            }
+          }
+        }
+        for (const messageId of messageIds.slice(payloads.length)) {
+          try {
+            const staleMessage = await channel.messages.fetch(messageId);
+            await staleMessage.delete();
+          } catch (error) {
+            if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) {
+              throw new Error("An obsolete calendar page could not be deleted.", { cause: error });
+            }
+          }
+        }
+        this.state.eventCalendarMessageIds[channelId] = messageIds.slice(0, payloads.length);
+        this.save();
+        updatedChannels.push(channelId);
+      } catch (error) {
+        failedChannels.push({
+          channelId,
+          reason: this.eventCalendarFailureReason(error),
+        });
+        console.warn(`[Poller] Could not update event calendar in channel ${channelId}:`, error);
+      }
+    }
+
+    this.save();
+    return {
+      eventCount: events.length,
+      configuredChannels: configuredChannelIds.length,
+      updatedChannels,
+      failedChannels,
+      unroutedEvents,
+      unroutedCallToArms,
+    };
+  }
+
+  private eventCalendarFailureReason(error: unknown): string {
+    const cause = error instanceof Error && "cause" in error ? error.cause : error;
+    if (cause instanceof RangeError) return cause.message;
+    const code = discordErrorCode(cause);
+    if (code === DISCORD_MISSING_PERMISSIONS) {
+      return "The bot is missing a Discord permission required to refresh this channel's calendar.";
+    }
+    if (code === 10003) {
+      return "The configured channel no longer exists.";
+    }
+    if (
+      error instanceof Error &&
+      (error.message === "The configured channel is missing or is not a text channel." ||
+        error.message === "The configured channel cannot host the event discussion threads." ||
+        error.message === "The saved calendar message could not be fetched." ||
+        error.message === "An obsolete calendar page could not be deleted.")
+    ) {
+      return error.message;
+    }
+    return "Discord rejected the calendar update. Check the bot's channel access and logs.";
   }
 
   /** Closes a known event discussion thread immediately after a Discord stop command. */

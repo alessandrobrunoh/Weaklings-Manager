@@ -223,6 +223,18 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
             ))
         })?;
 
+    let role_ids_header = parts
+        .headers
+        .get("X-Discord-Role-Ids")
+        .map(|value| {
+            value
+                .to_str()
+                .map_err(|_| AppError::Unauthorized("Invalid Discord role ID header".to_string()))
+        })
+        .transpose()?;
+    let (mut roles, mut highest_role) =
+        super::service::resolve_bot_role_ids(db, role_ids_header, &user.role).await?;
+
     let super_admin_id = parts
         .extensions
         .get::<PlatformAdmins>()
@@ -234,20 +246,16 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         .extensions
         .get::<super::permission_cache::Permissions>();
     let _permissions = if let Some(perms) = perms {
-        let roles = vec![user.role.clone()];
         perms.granted_permissions(is_superadmin, &roles).await
     } else {
         vec![]
     };
 
-    // Build roles list from single DB role (same shape as cookie-based UserContext)
-    let roles = if is_superadmin {
-        vec!["SuperAdmin".to_string(), user.role.clone()]
-    } else {
-        vec![user.role.clone()]
-    };
-
-    let highest_role = roles.first().cloned().unwrap_or_default();
+    // Platform-level access takes precedence over tenant role priority.
+    if is_superadmin {
+        roles.insert(0, "SuperAdmin".to_string());
+        highest_role = "SuperAdmin".to_string();
+    }
 
     tracing::debug!(
         discord_id = %discord_id,
@@ -511,6 +519,137 @@ mod tests {
             .expect("extract");
         assert_eq!(context.id, "222");
         assert_eq!(context.user_id, bob);
+    }
+
+    #[tokio::test]
+    async fn bot_user_context_resolves_and_validates_role_headers() {
+        use crate::migration::MigratorTrait;
+        use crate::modules::auth::entities::role;
+        use crate::modules::users::entities as user_entities;
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+
+        async fn extract_bot_context(
+            db: &DatabaseConnection,
+            role_ids: Option<axum::http::HeaderValue>,
+            is_platform_admin: bool,
+        ) -> Result<UserContext, AppError> {
+            let mut request = Request::builder()
+                .header("X-Bot-Secret", "test-bot-secret")
+                .header("X-Discord-Id", "111");
+            if let Some(role_ids) = role_ids {
+                request = request.header("X-Discord-Role-Ids", role_ids);
+            }
+            let (mut parts, _) = request.body(()).unwrap().into_parts();
+            parts.extensions.insert(Config {
+                backend_port: 3000,
+                database_url: "sqlite::memory:".into(),
+                control_database_url: None,
+                discord_client_id: "test-client".into(),
+                discord_client_secret: "test-secret".into(),
+                discord_redirect_uri: "http://localhost/callback".into(),
+                bot_api_secret: Some("test-bot-secret".into()),
+                discord_bot_token: None,
+                super_admin_discord_id: "111".into(),
+                session_secret: "x".repeat(64),
+                frontend_url: "http://localhost".into(),
+                albion_api_region: "europe".into(),
+                albion_guild_id: "test-guild".into(),
+                albion_allied_guild_ids: String::new(),
+                albion_allied_guild_names: String::new(),
+                mistral_api_key: String::new(),
+                albionbb_base_url: "http://localhost".into(),
+                albionbb_request_timeout_secs: 60,
+                albiondata_request_timeout_secs: 30,
+            });
+            parts.extensions.insert(db.clone());
+            let admins = PlatformAdmins::new_empty();
+            if is_platform_admin {
+                admins.insert_for_test("111");
+            }
+            parts.extensions.insert(admins);
+            UserContext::from_request_parts(&mut parts, &()).await
+        }
+
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        user_entities::ActiveModel {
+            username: Set("bot-user".into()),
+            email: Set("bot-user@example.com".into()),
+            role: Set("Legacy".into()),
+            discord_id: Set(Some("111".into())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("insert user");
+        role::ActiveModel {
+            id: Set("manager-role".into()),
+            name: Set("Manager".into()),
+            priority: Set(20),
+            discord_role_id: Set(Some("100000000000000001".into())),
+            is_default: Set(false),
+            is_staff: Set(false),
+            grants_staff: Set(false),
+        }
+        .insert(&db)
+        .await
+        .expect("insert manager role");
+        role::ActiveModel {
+            id: Set("moderator-role".into()),
+            name: Set("Event Moderator".into()),
+            priority: Set(10),
+            discord_role_id: Set(Some("200000000000000002".into())),
+            is_default: Set(false),
+            is_staff: Set(false),
+            grants_staff: Set(false),
+        }
+        .insert(&db)
+        .await
+        .expect("insert moderator role");
+
+        let mapped = extract_bot_context(
+            &db,
+            Some(axum::http::HeaderValue::from_static(
+                "100000000000000001,200000000000000002",
+            )),
+            false,
+        )
+        .await
+        .expect("bot auth");
+        assert_eq!(mapped.roles, vec!["Manager", "Event Moderator"]);
+        assert_eq!(mapped.highest_role, "Manager");
+
+        let platform_admin = extract_bot_context(
+            &db,
+            Some(axum::http::HeaderValue::from_static(
+                "100000000000000001,200000000000000002",
+            )),
+            true,
+        )
+        .await
+        .expect("bot auth");
+        assert_eq!(
+            platform_admin.roles,
+            vec!["SuperAdmin", "Manager", "Event Moderator"]
+        );
+        assert_eq!(platform_admin.highest_role, "SuperAdmin");
+
+        let legacy = extract_bot_context(&db, None, false)
+            .await
+            .expect("bot auth");
+        assert_eq!(legacy.roles, vec!["Legacy"]);
+        assert_eq!(legacy.highest_role, "Legacy");
+
+        let malformed_header =
+            axum::http::HeaderValue::from_bytes(&[0xff]).expect("valid opaque header value");
+        let malformed = extract_bot_context(&db, Some(malformed_header), false).await;
+        assert!(matches!(
+            malformed,
+            Err(AppError::Unauthorized(message))
+                if message == "Invalid Discord role ID header"
+        ));
     }
 
     #[tokio::test]

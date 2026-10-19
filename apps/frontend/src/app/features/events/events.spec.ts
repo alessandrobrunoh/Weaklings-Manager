@@ -8,11 +8,14 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
+import type { EventView } from '../../core/models/api.models';
 import { Events } from './events';
 
 describe('Events', () => {
   let fixture: ComponentFixture<Events>;
   let component: Events;
+  let currentUserId: number | undefined;
+  let currentPermissions: Set<string>;
 
   const mockEvents = [
     {
@@ -25,6 +28,7 @@ describe('Events', () => {
       status: 'scheduled',
       call_to_arms: false,
       regear: true,
+      created_by: 100,
       created_by_username: 'Galvdon',
     },
     {
@@ -37,6 +41,7 @@ describe('Events', () => {
       status: 'stopped',
       call_to_arms: true,
       regear: false,
+      created_by: 100,
       created_by_username: 'Galvdon',
     },
     {
@@ -49,6 +54,7 @@ describe('Events', () => {
       status: 'cancelled',
       call_to_arms: false,
       regear: false,
+      created_by: 200,
       created_by_username: 'Officer',
     },
   ];
@@ -71,8 +77,8 @@ describe('Events', () => {
   };
 
   const mockAuthService = {
-    hasPermission: vi.fn().mockReturnValue(true),
-    profile: () => ({ tenant_kind: 'guild' }),
+    hasPermission: vi.fn((permission: string) => currentPermissions.has(permission)),
+    profile: () => ({ tenant_kind: 'guild', user_id: currentUserId }),
   };
 
   const mockToastService = {
@@ -81,6 +87,8 @@ describe('Events', () => {
   };
 
   beforeEach(async () => {
+    currentUserId = 100;
+    currentPermissions = new Set(['events.create', 'events.edit', 'events.delete']);
     await TestBed.configureTestingModule({
       imports: [Events],
       providers: [
@@ -155,6 +163,23 @@ describe('Events', () => {
     expect(text).toContain('Reopen');
     expect(text).toContain('Join');
     expect(text).toContain('Archive');
+  });
+
+  it('allows owners to manage their event but preserves separate permissions for other events', () => {
+    currentPermissions = new Set();
+    const page = component as unknown as {
+      canEdit: (event?: EventView) => boolean;
+      canDelete: (event?: EventView) => boolean;
+    };
+
+    expect(page.canEdit(mockEvents[0] as EventView)).toBe(true);
+    expect(page.canDelete(mockEvents[0] as EventView)).toBe(true);
+    expect(page.canEdit(mockEvents[2] as EventView)).toBe(false);
+    expect(page.canDelete(mockEvents[2] as EventView)).toBe(false);
+
+    currentPermissions = new Set(['events.edit']);
+    expect(page.canEdit(mockEvents[2] as EventView)).toBe(true);
+    expect(page.canDelete(mockEvents[2] as EventView)).toBe(false);
   });
 
   it('renders the pagination footer with correct item counts and page buttons', () => {
