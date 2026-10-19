@@ -111,8 +111,9 @@ The website’s existing role-permission system remains the source of authority.
 - Checks passed: `cd apps/discord-bot && npm test` (113 tests); `cd apps/frontend && npm test -- src/app/features/events/events.spec.ts src/app/features/events/event-detail.spec.ts` (19 tests).
 - Backend tests passed: `cargo test -p backend event_management_allows_owners_and_requires_matching_permission_for_other_events` (1); `cargo test -p backend calendar_feed` (2); `cargo test -p backend legacy_events_manage_grant_covers_granular_event_permissions` (1); `cargo test -p backend parses_and_deduplicates_bot_role_id_header` (1); and `cargo test -p backend rbac::tests` (6, including malformed role-header rejection).
 - `rustfmt --edition 2024 --check` passed for the changed backend Rust files. The CRLF-aware check `git -c core.whitespace=cr-at-eol diff --check` passed; plain `git diff --check` treats the repository’s CRLF line endings as trailing whitespace.
-- The Discord bot suite passed (`npm test`: 113 tests), and the two event frontend specs passed (19 tests). `cd apps/frontend && npm run build` timed out during Vite’s client/SSR transform without reporting a build error.
-- No full backend suite or live Discord refresh was run.
+- The full `cargo test -p backend` run timed out after 15 minutes and reported `a_build_detail_lists_every_version_in_its_group` failing in the unmodified `apps/backend/src/modules/comps/service.rs`; an isolated rerun reproduced the version-list assertion mismatch. This test failure is a landing blocker until it is addressed or confirmed as an accepted baseline.
+- The full frontend `npm test` could not start because `vitest` was unavailable after the user’s dependency cleanup. The targeted event specs passed earlier (19 tests). The frontend build timed out during Vite’s client/SSR transform without reporting a build error.
+- No live Discord refresh or remote CI run was performed.
 
 ### Slice 3 — Give Discord users specific, safe action errors
 
