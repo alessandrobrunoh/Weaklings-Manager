@@ -108,7 +108,7 @@ type PendingConfirm =
   | { kind: 'uncancel'; eventId: number }
   | { kind: 'unlink-split'; splitId: number }
   | { kind: 'clear-all' }
-  | { kind: 'remove-participant'; userId: number; username: string; slotKey?: string };
+  | { kind: 'remove-participant'; userId: number; username: string };
 
 function isEventDetailTab(value: string): value is EventDetailTab {
   return value === 'roster' || value === 'overview' || value === 'battles' || value === 'splits';
@@ -591,6 +591,20 @@ interface AddEventMemberRequest {
                                 >
                                   P{{ target.party_number }} #{{ target.position }}
                                 </button>
+                              } @else if (canManageParticipants()) {
+                                <button
+                                  type="button"
+                                  class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-error hover:bg-[var(--color-error-container)]"
+                                  [disabled]="rosterCommandSaving()"
+                                  (click)="requestRemoveParticipant(member)"
+                                  [appTooltip]="t('events.detail.remove_participant')"
+                                  tooltipPosition="top"
+                                  [attr.aria-label]="
+                                    t('events.detail.remove_participant') + ': ' + member.username
+                                  "
+                                >
+                                  <app-icon name="user-x" size="0.75rem" />
+                                </button>
                               }
                             </div>
 
@@ -1011,7 +1025,7 @@ interface AddEventMemberRequest {
                                     }
                                   } @else if (rosterAssignTarget(); as target) {
                                     <!-- Waiting for bench pick -->
-                                  } @else if (seat.participant) {
+                                  } @else if (seat.participant; as occupant) {
                                     <button
                                       type="button"
                                       class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-white"
@@ -1031,6 +1045,19 @@ interface AddEventMemberRequest {
                                       tooltipPosition="top"
                                     >
                                       <app-icon name="close" size="0.75rem" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="btn btn--ghost btn--sm p-1 text-error hover:bg-[var(--color-error-container)]"
+                                      [disabled]="rosterCommandSaving()"
+                                      (click)="requestRemoveParticipant(occupant)"
+                                      [appTooltip]="t('events.detail.remove_participant')"
+                                      tooltipPosition="top"
+                                      [attr.aria-label]="
+                                        t('events.detail.remove_participant') + ': ' + occupant.username
+                                      "
+                                    >
+                                      <app-icon name="user-x" size="0.75rem" />
                                     </button>
                                   } @else {
                                     <button
@@ -4104,7 +4131,7 @@ export class EventDetailPage {
   }
 
   private isLegacyRosterConfirm(confirm: PendingConfirm | null): boolean {
-    return confirm?.kind === 'clear-all' || confirm?.kind === 'remove-participant';
+    return confirm?.kind === 'clear-all';
   }
 
   private clearLegacyRosterInteractionState(): void {
@@ -4936,6 +4963,33 @@ export class EventDetailPage {
     }
   }
 
+  /** Asks the manager to confirm kicking a signed-up participant off the event. */
+  protected requestRemoveParticipant(participant: EventParticipant): void {
+    if (!this.canManageParticipants()) return;
+    this.rosterSwapSource.set(null);
+    this.rosterAssignTarget.set(null);
+    this.pendingConfirm.set({
+      kind: 'remove-participant',
+      userId: participant.user_id,
+      username: participant.username,
+    });
+  }
+
+  private async performRemoveParticipant(userId: number): Promise<void> {
+    try {
+      const detail = await firstValueFrom(
+        this.api.delete<EventDetailView>(`api/events/${this.eventId}/participants/${userId}`),
+      );
+      if (detail) {
+        this.event.set(detail);
+      }
+      this.toasts.success(this.t('events.detail.remove_participant'));
+      await this.load(true);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
   protected backToEvents(): void {
     void this.router.navigate(['/events']);
   }
@@ -5035,6 +5089,7 @@ export class EventDetailPage {
       case 'clear-all':
         break;
       case 'remove-participant':
+        await this.performRemoveParticipant(confirm.userId);
         break;
     }
   }
