@@ -116,6 +116,159 @@ async fn recipient_ids_matching_search(
         .collect())
 }
 
+/// Folds legacy split credits and confirmed clawbacks for `user_id` so that:
+/// 1. Multiple open (`Pending`/`Rejected`) `split_credit` rows for the same `split_id` are merged
+///    into a single row with their net amount.
+/// 2. Any confirmed negative clawback (`Withdrawn`, `amount < 0`, `split_credit`) is absorbed by
+///    reducing the user's open `Pending`/`Rejected` credits (starting with the same split if any,
+///    then across other open credits), ensuring that the sum of requestable rows equals
+///    `pending_total` and the user can always select and withdraw 100% of their available credits.
+async fn consolidate_user_open_credits<C>(db: &C, user_id: i64) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let open_rows = TransactionEntity::find()
+        .filter(Column::ToUserId.eq(user_id))
+        .filter(
+            Condition::any()
+                .add(Column::Status.eq(TransactionStatus::Pending.to_string()))
+                .add(Column::Status.eq(TransactionStatus::Rejected.to_string())),
+        )
+        .order_by_asc(Column::Id)
+        .all(db)
+        .await?;
+
+    let clawbacks = TransactionEntity::find()
+        .filter(Column::ToUserId.eq(user_id))
+        .filter(confirmed_clawback_condition())
+        .order_by_asc(Column::Id)
+        .all(db)
+        .await?;
+
+    let mut split_counts: HashMap<i64, usize> = HashMap::new();
+    let mut has_negative_split_open = false;
+    for row in &open_rows {
+        if row.r#type == TYPE_SPLIT_CREDIT
+            && let Some(split_id) = row.split_id
+        {
+            *split_counts.entry(split_id).or_insert(0) += 1;
+            if row.amount <= Decimal::ZERO {
+                has_negative_split_open = true;
+            }
+        }
+    }
+    let has_duplicate_split_open = split_counts.values().any(|&count| count > 1);
+
+    if !has_negative_split_open && !has_duplicate_split_open && clawbacks.is_empty() {
+        return Ok(());
+    }
+
+    let now = chrono::Utc::now().into();
+
+    // 1. Delete any non-positive open split rows after folding their amounts into debt_to_absorb
+    let mut debt_to_absorb: Decimal = clawbacks.iter().map(|c| -c.amount).sum();
+    let mut negative_open_ids = Vec::new();
+    for row in &open_rows {
+        if row.amount <= Decimal::ZERO && row.split_id.is_some() {
+            debt_to_absorb += -row.amount;
+            negative_open_ids.push(row.id);
+        }
+    }
+    if !negative_open_ids.is_empty() {
+        TransactionEntity::delete_many()
+            .filter(Column::Id.is_in(negative_open_ids))
+            .exec(db)
+            .await?;
+    }
+
+    // 2. Group positive open rows by split_id (for split_credit) so each split has at most 1 open row
+    let mut consolidated_open: Vec<Model> = Vec::new();
+    let mut by_split: HashMap<i64, Vec<Model>> = HashMap::new();
+    for row in open_rows {
+        if row.amount <= Decimal::ZERO {
+            continue;
+        }
+        if row.r#type == TYPE_SPLIT_CREDIT
+            && let Some(split_id) = row.split_id
+        {
+            by_split.entry(split_id).or_default().push(row);
+        } else {
+            consolidated_open.push(row);
+        }
+    }
+
+    let mut split_ids: Vec<i64> = by_split.keys().copied().collect();
+    split_ids.sort_unstable();
+    for split_id in split_ids {
+        let rows = by_split.remove(&split_id).unwrap_or_default();
+        if let Some(first) = rows.first() {
+            let sum: Decimal = rows.iter().map(|r| r.amount).sum();
+            let extra_ids: Vec<i64> = rows.iter().skip(1).map(|r| r.id).collect();
+            if !extra_ids.is_empty() {
+                TransactionEntity::delete_many()
+                    .filter(Column::Id.is_in(extra_ids))
+                    .exec(db)
+                    .await?;
+            }
+            let mut keep = first.clone();
+            if keep.amount != sum {
+                let mut active: ActiveModel = keep.clone().into();
+                active.amount = Set(sum);
+                active.updated_at = Set(now);
+                keep = active.update(db).await?;
+            }
+            consolidated_open.push(keep);
+        }
+    }
+
+    consolidated_open.sort_by_key(|r| r.id);
+
+    // 3. Absorb `debt_to_absorb` across `consolidated_open` rows so positive open rows match net balance
+    if debt_to_absorb > Decimal::ZERO && !consolidated_open.is_empty() {
+        for row in consolidated_open {
+            if debt_to_absorb <= Decimal::ZERO {
+                break;
+            }
+            if row.amount <= debt_to_absorb {
+                debt_to_absorb = (debt_to_absorb - row.amount).round_dp(2);
+                TransactionEntity::delete_by_id(row.id).exec(db).await?;
+            } else {
+                let new_amount = (row.amount - debt_to_absorb).round_dp(2);
+                debt_to_absorb = Decimal::ZERO;
+                let mut active: ActiveModel = row.into();
+                active.amount = Set(new_amount);
+                active.updated_at = Set(now);
+                active.update(db).await?;
+            }
+        }
+
+        // Update or clear the clawback rows to reflect the absorbed debt
+        let all_cb_ids: Vec<i64> = clawbacks.iter().map(|c| c.id).collect();
+        if debt_to_absorb <= Decimal::ZERO {
+            if !all_cb_ids.is_empty() {
+                TransactionEntity::delete_many()
+                    .filter(Column::Id.is_in(all_cb_ids))
+                    .exec(db)
+                    .await?;
+            }
+        } else if let Some(first_cb) = clawbacks.first() {
+            let extra_cb_ids: Vec<i64> = clawbacks.iter().skip(1).map(|c| c.id).collect();
+            if !extra_cb_ids.is_empty() {
+                TransactionEntity::delete_many()
+                    .filter(Column::Id.is_in(extra_cb_ids))
+                    .exec(db)
+                    .await?;
+            }
+            let mut active_cb: ActiveModel = first_cb.clone().into();
+            active_cb.amount = Set(-debt_to_absorb);
+            active_cb.updated_at = Set(now);
+            active_cb.update(db).await?;
+        }
+    }
+
+    Ok(())
+}
+
 async fn net_requestable_total(
     db: &impl ConnectionTrait,
     user_id: i64,
@@ -232,6 +385,7 @@ impl BankService {
         db: &DatabaseConnection,
         user_id: i64,
     ) -> Result<BalanceSummary, AppError> {
+        consolidate_user_open_credits(db, user_id).await?;
         let pending = TransactionEntity::find()
             .filter(Column::ToUserId.eq(user_id))
             .filter(requestable_transaction_condition())
@@ -487,6 +641,9 @@ impl BankService {
         pagination: &PaginationParams,
         filters: &TransactionFilters,
     ) -> Result<PaginatedData<TransactionView>, AppError> {
+        if let Some(uid) = user_id {
+            consolidate_user_open_credits(db, uid).await?;
+        }
         let mut query = TransactionEntity::find();
 
         if let Some(uid) = user_id {
@@ -590,6 +747,7 @@ impl BankService {
         req: &WithdrawRequest,
     ) -> Result<Vec<TransactionView>, AppError> {
         let ids: Vec<i64> = if req.all.unwrap_or(false) {
+            consolidate_user_open_credits(db, user_id).await?;
             TransactionEntity::find()
                 .filter(Column::ToUserId.eq(user_id))
                 .filter(requestable_transaction_condition())
@@ -2134,5 +2292,77 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn get_balance_consolidates_legacy_split_rows_and_absorbs_clawbacks() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let old = chrono::Utc::now() - chrono::Duration::days(1);
+        let split_a = insert_completed_split(&db, officer, old).await;
+        let split_b = insert_completed_split(&db, officer, old).await;
+
+        // Legacy multiple open rows for split_a (e.g. 50.00 + 20.00 - 10.00 = 60.00)
+        insert_split_transaction(
+            &db,
+            alice,
+            "50.00",
+            TransactionStatus::Pending,
+            Some(split_a),
+        )
+        .await;
+        insert_split_transaction(
+            &db,
+            alice,
+            "20.00",
+            TransactionStatus::Pending,
+            Some(split_a),
+        )
+        .await;
+        insert_split_transaction(
+            &db,
+            alice,
+            "-10.00",
+            TransactionStatus::Pending,
+            Some(split_a),
+        )
+        .await;
+
+        // Confirmed clawback on split_b (-15.00 Withdrawn)
+        insert_split_transaction(
+            &db,
+            alice,
+            "-15.00",
+            TransactionStatus::Withdrawn,
+            Some(split_b),
+        )
+        .await;
+
+        let service = BankService::new();
+        let balance = service.get_balance(&db, alice).await.unwrap();
+
+        // Net open credit for split_a is 60.00 - 15.00 = 45.00 in a single pending row
+        assert_eq!(balance.pending_count, 1);
+        assert_eq!(balance.pending_total, "45.00".parse::<Decimal>().unwrap());
+
+        let listed = service
+            .list_transactions(
+                &db,
+                Some(alice),
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &TransactionFilters {
+                    status: Some(TransactionStatus::Pending),
+                    ..TransactionFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.items[0].split_id, Some(split_a));
+        assert_eq!(listed.items[0].amount, "45.00".parse::<Decimal>().unwrap());
     }
 }

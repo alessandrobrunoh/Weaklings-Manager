@@ -193,7 +193,14 @@ async fn insert_split_credit<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Append-only: post signed split_credit rows so net credits match the current roster.
+/// Reconciles split_credit rows for a completed split so each participant's net credit matches
+/// their current target share.
+///
+/// Open (`Pending`, `Rejected`, `Requested`) credit rows for a participant on this split are
+/// consolidated into a single row and adjusted in place first so the participant sees one
+/// updated credit for the split instead of multiple fragmented delta rows. Already-settled
+/// (`Withdrawn` / `Donated`) rows are never modified; a negative `Withdrawn` clawback row is
+/// only inserted when a participant has already settled more than their new target share.
 async fn reconcile_completed_split_credits<C: ConnectionTrait>(
     db: &C,
     split_id: i64,
@@ -223,9 +230,10 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
             "split net value must be positive to amend".to_string(),
         ));
     }
+    let now = chrono::Utc::now().into();
     let mut active: SplitActiveModel = split.into();
     active.net_value = Set(Some(net_value));
-    active.updated_at = Set(chrono::Utc::now().into());
+    active.updated_at = Set(now);
     active.update(db).await?;
 
     let weights: Vec<(i64, Decimal)> = participants
@@ -233,30 +241,126 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
         .map(|participant| (participant.user_id, participant.weight))
         .collect();
     let targets = participant_shares(net_value, &weights);
-    let mut posted: HashMap<i64, Decimal> = HashMap::new();
     let transactions = TransactionEntity::find()
         .filter(TransactionColumn::SplitId.eq(split_id))
+        .order_by_asc(TransactionColumn::Id)
         .all(db)
         .await?;
-    for transaction in &transactions {
-        *posted
-            .entry(transaction.to_user_id)
-            .or_insert(Decimal::ZERO) += transaction.amount;
+
+    let mut rows_by_user: HashMap<i64, Vec<crate::modules::bank::entities::Model>> =
+        HashMap::new();
+    for tx in transactions {
+        rows_by_user.entry(tx.to_user_id).or_default().push(tx);
     }
-    let mut users: HashSet<i64> = posted.keys().copied().collect();
+
+    let mut users: HashSet<i64> = rows_by_user.keys().copied().collect();
     users.extend(targets.iter().map(|(user_id, _)| *user_id));
     let target_by_user: HashMap<i64, Decimal> = targets.into_iter().collect();
+
     for user_id in users {
         let target = target_by_user
             .get(&user_id)
             .copied()
             .unwrap_or(Decimal::ZERO);
-        let already = posted.get(&user_id).copied().unwrap_or(Decimal::ZERO);
-        let delta = (target - already).round_dp(2);
-        if delta == Decimal::ZERO {
-            continue;
+        let user_rows = rows_by_user.remove(&user_id).unwrap_or_default();
+
+        let mut open_rows = Vec::new();
+        let mut positive_settled_total = Decimal::ZERO;
+        let mut existing_clawbacks = Vec::new();
+
+        for row in user_rows {
+            let status = TransactionStatus::from_str(&row.status).unwrap_or(TransactionStatus::Pending);
+            match status {
+                TransactionStatus::Pending
+                | TransactionStatus::Rejected
+                | TransactionStatus::Requested => {
+                    open_rows.push(row);
+                }
+                TransactionStatus::Withdrawn if row.amount < Decimal::ZERO => {
+                    existing_clawbacks.push(row);
+                }
+                TransactionStatus::Withdrawn | TransactionStatus::Donated => {
+                    positive_settled_total += row.amount;
+                }
+            }
         }
-        insert_split_credit(db, split_id, user_id, delta).await?;
+
+        let desired_unsettled = (target - positive_settled_total).round_dp(2);
+
+        if desired_unsettled > Decimal::ZERO {
+            // Remove any stale clawback rows for this split if the user now has a positive remaining share
+            if !existing_clawbacks.is_empty() {
+                let clawback_ids: Vec<i64> = existing_clawbacks.iter().map(|r| r.id).collect();
+                TransactionEntity::delete_many()
+                    .filter(TransactionColumn::Id.is_in(clawback_ids))
+                    .exec(db)
+                    .await?;
+            }
+
+            if let Some(first_open) = open_rows.first() {
+                let open_sum: Decimal = open_rows.iter().map(|r| r.amount).sum();
+                let extra_open_ids: Vec<i64> = open_rows.iter().skip(1).map(|r| r.id).collect();
+                if !extra_open_ids.is_empty() {
+                    TransactionEntity::delete_many()
+                        .filter(TransactionColumn::Id.is_in(extra_open_ids))
+                        .exec(db)
+                        .await?;
+                }
+                if first_open.amount != desired_unsettled || open_rows.len() > 1 {
+                    let mut active_tx: TransactionActiveModel = first_open.clone().into();
+                    active_tx.amount = Set(desired_unsettled);
+                    if open_sum != desired_unsettled
+                        && first_open.status == TransactionStatus::Rejected.to_string()
+                    {
+                        active_tx.status = Set(TransactionStatus::Pending.to_string());
+                    }
+                    active_tx.updated_at = Set(now);
+                    active_tx.update(db).await?;
+                }
+            } else {
+                insert_split_credit(db, split_id, user_id, desired_unsettled).await?;
+            }
+        } else {
+            // desired_unsettled <= 0: remove any open unpaid rows first
+            if !open_rows.is_empty() {
+                let open_ids: Vec<i64> = open_rows.iter().map(|r| r.id).collect();
+                TransactionEntity::delete_many()
+                    .filter(TransactionColumn::Id.is_in(open_ids))
+                    .exec(db)
+                    .await?;
+            }
+
+            // If desired_unsettled < 0, the user has already settled (Withdrawn/Donated) more than
+            // their new target share, so we need a net clawback equal to `desired_unsettled`.
+            let current_clawback_sum: Decimal =
+                existing_clawbacks.iter().map(|r| r.amount).sum();
+            let clawback_delta = (desired_unsettled - current_clawback_sum).round_dp(2);
+            if clawback_delta != Decimal::ZERO {
+                if desired_unsettled == Decimal::ZERO && !existing_clawbacks.is_empty() {
+                    let clawback_ids: Vec<i64> =
+                        existing_clawbacks.iter().map(|r| r.id).collect();
+                    TransactionEntity::delete_many()
+                        .filter(TransactionColumn::Id.is_in(clawback_ids))
+                        .exec(db)
+                        .await?;
+                } else if let Some(first_cb) = existing_clawbacks.first() {
+                    let extra_cb_ids: Vec<i64> =
+                        existing_clawbacks.iter().skip(1).map(|r| r.id).collect();
+                    if !extra_cb_ids.is_empty() {
+                        TransactionEntity::delete_many()
+                            .filter(TransactionColumn::Id.is_in(extra_cb_ids))
+                            .exec(db)
+                            .await?;
+                    }
+                    let mut active_cb: TransactionActiveModel = first_cb.clone().into();
+                    active_cb.amount = Set(desired_unsettled);
+                    active_cb.updated_at = Set(now);
+                    active_cb.update(db).await?;
+                } else {
+                    insert_split_credit(db, split_id, user_id, desired_unsettled).await?;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -2767,7 +2871,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn amending_a_completed_split_posts_deltas_and_keeps_original_credits() {
+    async fn amending_a_completed_split_updates_open_credits_in_place() {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
@@ -2846,18 +2950,12 @@ mod tests {
             .all(&db)
             .await
             .unwrap();
-        assert_eq!(credits.len(), 5);
+        assert_eq!(credits.len(), 3);
         assert!(
             original_ids
                 .iter()
                 .all(|id| credits.iter().any(|tx| tx.id == *id))
         );
-        assert!(original.iter().all(|tx| {
-            credits
-                .iter()
-                .find(|row| row.id == tx.id)
-                .is_some_and(|row| row.amount == tx.amount && row.status == tx.status)
-        }));
 
         let mut net: HashMap<i64, Decimal> = HashMap::new();
         for tx in &credits {
@@ -2870,7 +2968,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_a_completed_split_participant_posts_a_clawback() {
+    async fn removing_a_completed_split_participant_removes_unpaid_row_or_posts_clawback_if_withdrawn() {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
@@ -2914,18 +3012,10 @@ mod tests {
             .all(&db)
             .await
             .unwrap();
-        let mut net: HashMap<i64, Decimal> = HashMap::new();
-        for tx in &credits {
-            *net.entry(tx.to_user_id).or_insert(Decimal::ZERO) += tx.amount;
-        }
-        assert_eq!(net.get(&alice).copied().unwrap(), "100.00".parse().unwrap());
-        assert_eq!(net.get(&bob).copied().unwrap(), Decimal::ZERO);
-        assert!(credits.iter().any(|tx| {
-            tx.to_user_id == bob
-                && tx.amount < Decimal::ZERO
-                && tx.status == TransactionStatus::Withdrawn.to_string()
-        }));
-        assert_eq!(credits.len(), 4);
+        assert_eq!(credits.len(), 1);
+        assert_eq!(credits[0].to_user_id, alice);
+        assert_eq!(credits[0].amount, "100.00".parse::<Decimal>().unwrap());
+
         let bank = crate::modules::bank::service::BankService::new();
         let bob_balance = bank.get_balance(&db, bob).await.unwrap();
         assert_eq!(bob_balance.pending_total, Decimal::ZERO);

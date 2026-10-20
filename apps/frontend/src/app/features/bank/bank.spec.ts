@@ -155,4 +155,66 @@ describe('Bank withdrawal credit selection', () => {
       transaction_ids: [237],
     });
   });
+
+  it('consolidates multiple rows of the same split into one net row and supports Select All', async () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'get').mockImplementation(
+      (path: string, params?: Record<string, string | number | boolean>) => {
+        if (path === 'api/bank/balance') {
+          return of({
+            user_id: 7,
+            pending_total: 1_500_000,
+            pending_count: 2,
+            requested_total: 0,
+            requested_count: 0,
+          }) as never;
+        }
+        if (path === 'api/bank/transactions' && params?.['status'] === 'pending') {
+          return of(
+            page([
+              { ...transaction(301, 1_000_000), split_id: 78 },
+              { ...transaction(302, 400_000), split_id: 78 },
+              { ...transaction(303, -200_000), split_id: 78 },
+              { ...transaction(304, 300_000), split_id: 79 },
+            ]),
+          ) as never;
+        }
+        return of(page([])) as never;
+      },
+    );
+
+    await (fixture.componentInstance as unknown as { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+
+    const requestButton = [...fixture.nativeElement.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Request withdrawal'),
+    ) as HTMLButtonElement;
+    requestButton.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    const checkboxes = fixture.nativeElement.querySelectorAll(
+      'input[type="checkbox"][id^="withdrawal-credit-"]',
+    );
+    expect(checkboxes.length).toBe(2);
+
+    const selectAllButton = [...fixture.nativeElement.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Select all'),
+    ) as HTMLButtonElement;
+    expect(selectAllButton).toBeTruthy();
+    selectAllButton.click();
+    fixture.detectChanges();
+
+    const confirmButton = [...fixture.nativeElement.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Confirm',
+    ) as HTMLButtonElement;
+    confirmButton.click();
+    await fixture.whenStable();
+
+    expect(apiPost).toHaveBeenCalledWith('api/bank/transactions/withdraw', {
+      transaction_ids: [301, 302, 304],
+    });
+  });
 });

@@ -30,6 +30,18 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
+export interface WithdrawalSelectableGroup {
+  readonly key: string;
+  readonly primaryId: number;
+  readonly transactionIds: number[];
+  readonly splitId: number | null;
+  readonly status: TransactionStatus;
+  readonly amount: number;
+  readonly createdAt: string;
+  readonly guildTenantId?: string | null;
+  readonly guildName?: string | null;
+}
+
 /**
  * Personal Guild Bank ledger.
  *
@@ -258,15 +270,24 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
         <ng-template dataTableCell="transaction" let-row>
           <div class="min-w-[200px]">
-            <span class="text-sm font-semibold text-[var(--color-text)]">
-              @if (row.type === 'split') {
-                Split #{{ row.split_id || row.id }} Payout
-              } @else if (row.type === 'withdrawal') {
-                Withdrawal to {{ row.to_username || row.to_label }}
-              } @else {
-                {{ row.type || 'Transaction' }} #{{ row.id }}
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold text-[var(--color-text)]">
+                @if (row.split_id) {
+                  {{ t('bank.withdraw.split', { id: row.split_id }) }}
+                } @else if (row.type === 'split_credit' || row.type === 'split') {
+                  {{ t('bank.type.splitCredit') }} #{{ row.id }}
+                } @else if (row.type === 'split_donation') {
+                  {{ t('bank.type.splitDonation') }} #{{ row.id }}
+                } @else {
+                  {{ t('bank.withdraw.credit', { id: row.id }) }}
+                }
+              </span>
+              @if (toNumber(row.amount) < 0) {
+                <span class="rounded bg-[var(--color-error-container)] px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wider text-error">
+                  {{ t('bank.type.clawback') }}
+                </span>
               }
-            </span>
+            </div>
             <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
               {{ row.from_label || 'Guild Bank' }} &rarr; {{ row.to_label || row.to_username || 'Member' }}
             </div>
@@ -287,11 +308,11 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
         <ng-template dataTableCell="type" let-row>
           <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)] whitespace-nowrap">
             <app-icon
-              [name]="row.type === 'split' ? 'swords' : row.type === 'withdrawal' ? 'bank' : 'coins'"
+              [name]="row.type === 'split_credit' || row.type === 'split' ? 'swords' : row.type === 'split_donation' ? 'bank' : 'coins'"
               size="0.875rem"
               class="text-[var(--color-text-tertiary)] shrink-0"
             />
-            <span class="capitalize">{{ row.type }}</span>
+            <span>{{ transactionTypeLabel(row) }}</span>
           </div>
         </ng-template>
 
@@ -307,9 +328,9 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
           <div class="whitespace-nowrap text-right">
             <span
               class="font-mono text-sm font-semibold"
-              [class.text-success]="row.status === 'withdrawn' || row.status === 'pending'"
-              [class.text-warning]="row.status === 'requested'"
-              [class.text-error]="row.status === 'rejected'"
+              [class.text-success]="toNumber(row.amount) > 0 && (row.status === 'withdrawn' || row.status === 'pending')"
+              [class.text-warning]="toNumber(row.amount) > 0 && row.status === 'requested'"
+              [class.text-error]="toNumber(row.amount) < 0 || row.status === 'rejected'"
             >
               {{ formatAmount(row.amount) }}
             </span>
@@ -324,7 +345,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                 [routerLink]="['/splits', row.split_id]"
                 class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] border border-[var(--color-border)] rounded-md transition-all no-underline"
               >
-                Split
+                Split #{{ row.split_id }}
               </a>
             }
           </div>
@@ -361,13 +382,13 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
           }
 
           <!-- Net balance available for selected guild -->
-          <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4 flex items-center justify-between">
+          <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4 flex items-center justify-between gap-4">
             <div>
               <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
                 {{ t('bank.withdraw.netAvailable') }}
               </span>
               <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
-                {{ t('bank.creditsAvailable', { count: withdrawalAvailableCount() }) }}
+                {{ t('bank.creditsAvailable', { count: groupedRequestableCredits().length || withdrawalAvailableCount() }) }}
               </p>
             </div>
             <div class="text-right">
@@ -380,10 +401,23 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
             </div>
           </div>
 
-          <fieldset class="space-y-2">
-            <legend class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
-              {{ t('bank.withdraw.selectCredits') }}
-            </legend>
+          <fieldset class="space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <legend class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
+                {{ t('bank.withdraw.selectCredits') }}
+              </legend>
+              @if (groupedRequestableCredits().length > 0) {
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm text-xs py-1 px-2.5"
+                  [disabled]="withdrawing() || loadingRequestableCredits()"
+                  (click)="toggleSelectAllWithdrawalCredits()"
+                >
+                  <app-icon [name]="allSelectableCreditsSelected() ? 'close' : 'check'" size="0.75rem" />
+                  {{ allSelectableCreditsSelected() ? t('bank.withdraw.deselectAll') : t('bank.withdraw.selectAll') }}
+                </button>
+              }
+            </div>
             <p id="withdrawal-selection-hint" class="text-xs text-[var(--color-text-secondary)]">
               {{ t('bank.withdraw.selectionHint') }}
             </p>
@@ -401,41 +435,65 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                   {{ t('common.retry') }}
                 </button>
               </div>
-            } @else if (requestableCredits().length === 0) {
+            } @else if (groupedRequestableCredits().length === 0) {
               <p class="py-3 text-sm text-[var(--color-text-secondary)]">
                 {{ t('bank.withdraw.noCredits') }}
               </p>
             } @else {
-              <div class="max-h-56 space-y-2 overflow-y-auto">
-                @for (credit of requestableCredits(); track credit.id) {
+              <div class="max-h-64 space-y-2 overflow-y-auto pr-0.5">
+                @for (group of groupedRequestableCredits(); track group.key) {
                   <label
-                    [attr.for]="'withdrawal-credit-' + credit.id"
-                    class="flex min-h-12 items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3"
-                    [class.opacity-50]="!canSelectWithdrawalCredit(credit)"
+                    [attr.for]="'withdrawal-credit-' + group.primaryId"
+                    class="flex min-h-14 cursor-pointer select-none items-center gap-3 rounded-xl border p-3 transition-colors"
+                    [class.border-[var(--color-primary)]]="isWithdrawalGroupSelected(group)"
+                    [class.bg-[var(--color-surface-2)]]="isWithdrawalGroupSelected(group)"
+                    [class.border-[var(--color-border)]]="!isWithdrawalGroupSelected(group)"
+                    [class.bg-[var(--color-surface-1)]]="!isWithdrawalGroupSelected(group)"
+                    [class.opacity-50]="!canSelectWithdrawalGroup(group)"
+                    [class.cursor-not-allowed]="!canSelectWithdrawalGroup(group)"
                   >
                     <input
                       type="checkbox"
                       name="transaction_ids"
-                      [id]="'withdrawal-credit-' + credit.id"
-                      [checked]="isWithdrawalCreditSelected(credit.id)"
-                      [disabled]="withdrawing() || !canSelectWithdrawalCredit(credit)"
+                      [id]="'withdrawal-credit-' + group.primaryId"
+                      [checked]="isWithdrawalGroupSelected(group)"
+                      [disabled]="withdrawing() || !canSelectWithdrawalGroup(group)"
                       aria-describedby="withdrawal-selection-hint"
-                      class="size-4 accent-[var(--color-primary)]"
-                      (change)="toggleWithdrawalCredit(credit.id)"
+                      class="size-4 accent-[var(--color-primary)] shrink-0"
+                      (change)="toggleWithdrawalGroup(group)"
                     />
                     <span class="min-w-0 flex-1">
-                      <span class="block text-sm font-medium text-[var(--color-text)]">
-                        {{ t('bank.withdraw.credit', { id: credit.id }) }}
+                      <span class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+                        @if (group.splitId) {
+                          <app-icon name="swords" size="0.875rem" class="text-[var(--color-primary)] shrink-0" />
+                          <span>{{ t('bank.withdraw.split', { id: group.splitId }) }}</span>
+                        } @else {
+                          <app-icon name="coins" size="0.875rem" class="text-[var(--color-text-secondary)] shrink-0" />
+                          <span>{{ t('bank.withdraw.credit', { id: group.primaryId }) }}</span>
+                        }
+                        @if (group.transactionIds.length > 1) {
+                          <span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[0.625rem] font-medium text-[var(--color-text-secondary)]">
+                            {{ t('bank.withdraw.consolidatedHint', { count: group.transactionIds.length }) }}
+                          </span>
+                        }
                       </span>
-                      <span class="block text-xs text-[var(--color-text-secondary)]">
-                        {{ statusLabel(credit.status) }}
-                        @if (credit.split_id) {
-                          · {{ t('bank.withdraw.split', { id: credit.split_id }) }}
+                      <span class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
+                        <span>{{ statusLabel(group.status) }}</span>
+                        <span>&middot;</span>
+                        <span>{{ formatDateDay(group.createdAt) }}</span>
+                        @if (!group.splitId) {
+                          <span>&middot;</span>
+                          <span>#{{ group.primaryId }}</span>
                         }
                       </span>
                     </span>
-                    <span class="whitespace-nowrap text-right font-mono text-sm font-semibold text-[var(--color-text)]">
-                      {{ formatAmount(credit.amount) }} silver
+                    <span class="whitespace-nowrap text-right">
+                      <span class="block font-mono text-sm font-bold text-success">
+                        +{{ formatAmount(group.amount) }}
+                      </span>
+                      <span class="block text-[0.625rem] font-mono uppercase text-[var(--color-text-tertiary)]">
+                        silver
+                      </span>
                     </span>
                   </label>
                 }
@@ -444,16 +502,16 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
           </fieldset>
 
           <div
-            class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+            class="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5"
             aria-live="polite"
           >
             <span class="text-sm font-medium text-[var(--color-text)]">
               {{ t('bank.withdraw.selectedTotal') }}
-              <span class="text-xs text-[var(--color-text-secondary)]">
-                ({{ t('bank.withdraw.selectedCount', { count: selectedWithdrawalIds().length }) }})
+              <span class="text-xs text-[var(--color-text-secondary)] ml-1">
+                ({{ t('bank.withdraw.selectedCount', { count: selectedGroupCount() }) }})
               </span>
             </span>
-            <span class="whitespace-nowrap font-mono text-sm font-semibold text-[var(--color-text)]">
+            <span class="whitespace-nowrap font-mono text-base font-bold text-success">
               {{ formatAmount(withdrawalSelectionTotal()) }} silver
             </span>
           </div>
@@ -510,7 +568,7 @@ export class Bank {
 
   protected readonly totalWithdrawn = computed(() => {
     return this.transactions()
-      .filter((t) => t.status === 'withdrawn')
+      .filter((t) => t.status === 'withdrawn' && Number(t.amount) > 0)
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   });
 
@@ -531,11 +589,78 @@ export class Bank {
     const guildTenantId = this.withdrawGuildId() || guilds[0]?.guild_tenant_id;
     return guilds.find((guild) => guild.guild_tenant_id === guildTenantId) ?? null;
   });
+
+  /**
+   * Consolidates requestable transactions by split_id so that even if legacy rows exist
+   * for the same split (including negative adjustments), the user sees a single row per
+   * Split with the updated net positive amount.
+   */
+  protected readonly groupedRequestableCredits = computed<WithdrawalSelectableGroup[]>(() => {
+    const groups = new Map<string, WithdrawalSelectableGroup>();
+    for (const credit of this.requestableCredits()) {
+      const amount = Number(credit.amount) || 0;
+      const key =
+        credit.split_id != null
+          ? `split:${credit.guild_tenant_id ?? ''}:${credit.split_id}`
+          : `tx:${credit.guild_tenant_id ?? ''}:${credit.id}`;
+      const existing = groups.get(key);
+      if (existing) {
+        if (amount > 0) {
+          existing.transactionIds.push(credit.id);
+          if (existing.transactionIds.length === 1) {
+            (existing as { primaryId: number }).primaryId = credit.id;
+          }
+        }
+        (existing as { amount: number }).amount =
+          Math.round((existing.amount + amount) * 100) / 100;
+        if (credit.status === 'pending') {
+          (existing as { status: TransactionStatus }).status = 'pending';
+        }
+      } else {
+        groups.set(key, {
+          key,
+          primaryId: credit.id,
+          transactionIds: amount > 0 ? [credit.id] : [],
+          splitId: credit.split_id ?? null,
+          status: credit.status,
+          amount,
+          createdAt: credit.created_at,
+          guildTenantId: credit.guild_tenant_id,
+          guildName: credit.guild_name,
+        });
+      }
+    }
+    return [...groups.values()].filter((group) => group.amount > 0);
+  });
+
   protected readonly withdrawalSelectionTotal = computed(() => {
     const selectedIds = new Set(this.selectedWithdrawalIds());
-    return this.requestableCredits().reduce(
-      (total, credit) => (selectedIds.has(credit.id) ? total + Number(credit.amount) : total),
+    return this.groupedRequestableCredits().reduce(
+      (total, group) =>
+        group.transactionIds.every((id) => selectedIds.has(id)) ? total + group.amount : total,
       0,
+    );
+  });
+  protected readonly selectedGroupCount = computed(() => {
+    const selectedIds = new Set(this.selectedWithdrawalIds());
+    return this.groupedRequestableCredits().filter((group) =>
+      group.transactionIds.every((id) => selectedIds.has(id)),
+    ).length;
+  });
+  protected readonly allSelectableCreditsSelected = computed(() => {
+    const groups = this.groupedRequestableCredits();
+    if (groups.length === 0) {
+      return false;
+    }
+    const selectedCount = this.selectedGroupCount();
+    if (selectedCount === groups.length) {
+      return true;
+    }
+    return (
+      selectedCount > 0 &&
+      groups.every(
+        (group) => this.isWithdrawalGroupSelected(group) || !this.canSelectWithdrawalGroup(group),
+      )
     );
   });
   protected readonly withdrawalAvailableBalance = computed(() =>
@@ -663,31 +788,80 @@ export class Bank {
     void this.loadRequestableCredits(guildTenantId);
   }
 
-  protected isWithdrawalCreditSelected(creditId: number): boolean {
-    return this.selectedWithdrawalIds().includes(creditId);
+  protected isWithdrawalGroupSelected(group: WithdrawalSelectableGroup): boolean {
+    const selectedIds = new Set(this.selectedWithdrawalIds());
+    return group.transactionIds.length > 0 && group.transactionIds.every((id) => selectedIds.has(id));
   }
 
-  protected canSelectWithdrawalCredit(credit: TransactionView): boolean {
-    if (this.isWithdrawalCreditSelected(credit.id)) {
+  protected canSelectWithdrawalGroup(group: WithdrawalSelectableGroup): boolean {
+    if (this.isWithdrawalGroupSelected(group)) {
       return true;
     }
     return (
-      this.toSilverCents(this.withdrawalSelectionTotal()) + this.toSilverCents(credit.amount) <=
+      this.toSilverCents(this.withdrawalSelectionTotal()) + this.toSilverCents(group.amount) <=
       this.toSilverCents(this.withdrawalAvailableBalance())
     );
   }
 
-  protected toggleWithdrawalCredit(creditId: number): void {
-    if (this.isWithdrawalCreditSelected(creditId)) {
-      this.selectedWithdrawalIds.update((ids) => ids.filter((id) => id !== creditId));
+  protected toggleWithdrawalGroup(group: WithdrawalSelectableGroup): void {
+    const groupIds = new Set(group.transactionIds);
+    if (this.isWithdrawalGroupSelected(group)) {
+      this.selectedWithdrawalIds.update((ids) => ids.filter((id) => !groupIds.has(id)));
+      return;
+    }
+    if (!this.canSelectWithdrawalGroup(group)) {
+      return;
+    }
+    this.selectedWithdrawalIds.update((ids) => {
+      const next = new Set(ids);
+      for (const id of group.transactionIds) {
+        next.add(id);
+      }
+      return [...next];
+    });
+  }
+
+  protected toggleSelectAllWithdrawalCredits(): void {
+    if (this.allSelectableCreditsSelected()) {
+      this.selectedWithdrawalIds.set([]);
       return;
     }
 
-    const credit = this.requestableCredits().find((item) => item.id === creditId);
-    if (!credit || !this.canSelectWithdrawalCredit(credit)) {
-      return;
+    const availableCents = this.toSilverCents(this.withdrawalAvailableBalance());
+    let runningCents = 0;
+    const nextIds: number[] = [];
+
+    for (const group of this.groupedRequestableCredits()) {
+      const groupCents = this.toSilverCents(group.amount);
+      if (groupCents > 0 && runningCents + groupCents <= availableCents) {
+        runningCents += groupCents;
+        nextIds.push(...group.transactionIds);
+      }
     }
-    this.selectedWithdrawalIds.update((ids) => [...ids, creditId]);
+    this.selectedWithdrawalIds.set(nextIds);
+  }
+
+  protected toNumber(value: number | string | null | undefined): number {
+    const numeric = Number(value ?? 0);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+
+  protected transactionTypeLabel(row: TransactionView | string): string {
+    const type = typeof row === 'string' ? row : row.type;
+    if (typeof row !== 'string' && this.toNumber(row.amount) < 0) {
+      return this.t('bank.type.clawback');
+    }
+    switch (type) {
+      case 'split_credit':
+      case 'split':
+        return this.t('bank.type.splitCredit');
+      case 'split_donation':
+        return this.t('bank.type.splitDonation');
+      case 'manual_adjustment':
+        return this.t('bank.type.manualAdjustment');
+      default:
+        return type.replace(/_/g, ' ');
+    }
   }
 
   protected retryRequestableCredits(): void {
@@ -748,7 +922,7 @@ export class Bank {
       this.requestableCredits.set(
         [...pending, ...rejected].filter(
           (transaction) =>
-            Number(transaction.amount) > 0 &&
+            (Number(transaction.amount) > 0 || transaction.split_id != null) &&
             (!this.isAlliance() || transaction.guild_tenant_id === guildTenantId),
         ),
       );

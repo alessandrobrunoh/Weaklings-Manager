@@ -2465,4 +2465,10 @@ export const uk: TranslationDict = {
   'bank.finance.searchMemberPlaceholder': 'Пошук учасника або персонажа Albion…',
   'bank.finance.totalReceived': 'Всього отримано',
   'bank.finance.netCombatBalance': 'Баланс проти втрат',
+  'bank.withdraw.deselectAll': 'Зняти вибір',
+  'bank.withdraw.consolidatedHint': 'Об’єднано {count} коригувань',
+  'bank.type.splitCredit': 'Кредит спліту',
+  'bank.type.splitDonation': 'Пожертва спліту',
+  'bank.type.manualAdjustment': 'Ручне коригування',
+  'bank.type.clawback': 'Коригування спліту',
 };

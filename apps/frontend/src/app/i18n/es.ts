@@ -2653,4 +2653,10 @@ export const es: TranslationDict = {
   'bank.finance.searchMemberPlaceholder': 'Buscar miembro o personaje de Albion…',
   'bank.finance.totalReceived': 'Total recibido',
   'bank.finance.netCombatBalance': 'Balance vs pérdidas',
+  'bank.withdraw.deselectAll': 'Deseleccionar todo',
+  'bank.withdraw.consolidatedHint': '{count} ajustes unificados',
+  'bank.type.splitCredit': 'Crédito de Split',
+  'bank.type.splitDonation': 'Donación de Split',
+  'bank.type.manualAdjustment': 'Ajuste manual',
+  'bank.type.clawback': 'Ajuste de Split',
 };

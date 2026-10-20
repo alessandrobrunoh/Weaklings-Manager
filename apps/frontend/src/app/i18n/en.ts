@@ -2652,6 +2652,12 @@ export const en = {
   'bank.finance.searchMemberPlaceholder': 'Search member or Albion character…',
   'bank.finance.totalReceived': 'Total received',
   'bank.finance.netCombatBalance': 'Net vs losses',
+  'bank.withdraw.deselectAll': 'Deselect all',
+  'bank.withdraw.consolidatedHint': '{count} adjustments merged',
+  'bank.type.splitCredit': 'Split credit',
+  'bank.type.splitDonation': 'Split donation',
+  'bank.type.manualAdjustment': 'Manual adjustment',
+  'bank.type.clawback': 'Split adjustment',
 } as const;
 
 export type TranslationKey = keyof typeof en;
