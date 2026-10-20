@@ -193,10 +193,34 @@ pub struct ReportEconomy {
     pub bank_pending: i64,
     pub bank_requested: i64,
     pub bank_withdrawn: i64,
+    pub bank_donated: i64,
     pub regear_open: i64,
     pub regear_paid: i64,
+    pub regear_approved_total: i64,
+    pub regear_approved_count: i64,
+    pub regear_pending_count: i64,
     pub split_pending: i64,
     pub split_completed: i64,
+    pub split_completed_count: i64,
+    pub split_pending_count: i64,
+    /// Gross market value (`estimated_market_value`) across completed splits in window.
+    pub split_gross_loot: i64,
+    /// Silver bags (`bags_value`) across completed splits in window.
+    pub split_bags_total: i64,
+    /// Repair expenses (`repair_value`) across completed splits in window.
+    pub split_repair_total: i64,
+    /// Guild tax retained across completed splits in window.
+    pub split_tax_total: i64,
+    /// Net silver distributed to participants after repairs and guild tax.
+    pub split_net_distributed: i64,
+    /// Effective guild tax rate across completed splits in window (`0.0..=100.0`).
+    pub split_avg_fee_pct: f64,
+    /// Repair expenses across pending/awaiting splits in window.
+    pub split_pending_repair_total: i64,
+    /// Expected guild tax across pending/awaiting splits in window.
+    pub split_pending_tax_total: i64,
+    /// Guild treasury net balance from splits and regears (`split_tax_total + bank_donated - regear_paid - outflow_other`).
+    pub guild_treasury_net: i64,
     pub siphoned_net: i64,
     pub fame_per_player: i64,
     /// Kill fame earned per million silver lost.
@@ -301,6 +325,16 @@ pub struct TrendBucket {
     pub attendance: i64,
     /// Silver from splits completed this week.
     pub loot_in: i64,
+    /// Gross market loot from splits completed in this bucket.
+    pub gross_loot: i64,
+    /// Silver bags from splits completed in this bucket.
+    pub bags_in: i64,
+    /// Repair expenses deducted from splits completed in this bucket.
+    pub repair_cost: i64,
+    /// Guild tax retained from splits completed in this bucket.
+    pub tax_in: i64,
+    /// Net silver distributed to participants from splits completed in this bucket.
+    pub net_distributed: i64,
     /// Silver withdrawn from the bank this week.
     pub outflow: i64,
     /// Regear credits actually withdrawn from the bank this week.
@@ -982,6 +1016,30 @@ fn count_status(events: &[event::Model], status: &str) -> i64 {
     events.iter().filter(|e| e.status == status).count() as i64
 }
 
+fn split_value_breakdown(s: &split::Model) -> (i64, i64, i64, i64, i64, i64) {
+    let gross = to_i64(s.estimated_market_value);
+    let bags = to_i64(s.bags_value);
+    let repair = to_i64(s.repair_value);
+    let before_fee_dec =
+        (s.estimated_market_value - s.repair_value + s.bags_value).max(Decimal::ZERO);
+    let computed_net_dec =
+        (before_fee_dec - (before_fee_dec * s.fee / Decimal::from(100))).round_dp(2);
+    let net_dec = s
+        .net_value
+        .filter(|v| *v > Decimal::ZERO)
+        .unwrap_or(computed_net_dec)
+        .max(Decimal::ZERO);
+    let tax_dec = (before_fee_dec - net_dec).max(Decimal::ZERO);
+    (
+        gross,
+        bags,
+        repair,
+        to_i64(before_fee_dec),
+        to_i64(tax_dec),
+        to_i64(net_dec),
+    )
+}
+
 /// Silver flow, with the reference implementation's double-count corrected.
 ///
 /// # The bug this fixes
@@ -1004,6 +1062,7 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview, fights: &[Fight]) -
 
     let mut bank_pending = 0i64;
     let mut bank_requested = 0i64;
+    let mut bank_donated = 0i64;
     let mut outflow_total = 0i64;
     let mut outflow_splits = 0i64;
     let mut outflow_regear = 0i64;
@@ -1013,6 +1072,7 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview, fights: &[Fight]) -
         match tx.status.as_str() {
             "pending" => bank_pending += amount,
             "requested" => bank_requested += amount,
+            "donated" => bank_donated += amount,
             "withdrawn" => {
                 outflow_total += amount;
                 if tx.split_id.is_some() {
@@ -1030,34 +1090,76 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview, fights: &[Fight]) -
     );
     let outflow_other = outflow_total - outflow_splits - outflow_regear;
 
-    let split_net = |s: &split::Model| -> i64 {
-        let net = to_i64(s.estimated_market_value) - to_i64(s.repair_value) + to_i64(s.bags_value);
-        net.max(0)
+    let mut split_pending = 0i64;
+    let mut split_pending_count = 0i64;
+    let mut split_pending_repair_total = 0i64;
+    let mut split_pending_tax_total = 0i64;
+
+    let mut split_completed = 0i64;
+    let mut split_completed_count = 0i64;
+    let mut split_gross_loot = 0i64;
+    let mut split_bags_total = 0i64;
+    let mut split_repair_total = 0i64;
+    let mut split_tax_total = 0i64;
+    let mut split_net_distributed = 0i64;
+    let mut fee_sum = 0.0_f64;
+
+    for s in &raw.splits {
+        let (gross, bags, repair, before_fee, tax, net_dist) = split_value_breakdown(s);
+        match s.status.as_str() {
+            "pending" | "awaiting_event" => {
+                split_pending_count += 1;
+                split_pending += before_fee;
+                split_pending_repair_total += repair;
+                split_pending_tax_total += tax;
+            }
+            "completed" => {
+                split_completed_count += 1;
+                split_completed += before_fee;
+                split_gross_loot += gross;
+                split_bags_total += bags;
+                split_repair_total += repair;
+                split_tax_total += tax;
+                split_net_distributed += net_dist;
+                fee_sum += s.fee.to_f64().unwrap_or(0.0);
+            }
+            _ => {}
+        }
+    }
+
+    let split_avg_fee_pct = if split_completed > 0 {
+        ((split_tax_total as f64 / split_completed as f64) * 1000.0).round() / 10.0
+    } else if split_completed_count > 0 {
+        ((fee_sum / split_completed_count as f64) * 10.0).round() / 10.0
+    } else {
+        0.0
     };
-    let split_pending: i64 = raw
-        .splits
-        .iter()
-        .filter(|s| s.status == "pending")
-        .map(split_net)
-        .sum();
-    let split_completed: i64 = raw
-        .splits
-        .iter()
-        .filter(|s| s.status == "completed")
-        .map(split_net)
-        .sum();
 
     let regear_amount =
         |r: &regear::regear_death::Model| to_i64(r.final_amount.unwrap_or(r.auto_estimate_total));
-    let regear_open: i64 = raw
-        .regears
-        .iter()
-        .filter(|r| r.status == "available" || r.status == "pending")
-        .map(regear_amount)
-        .sum();
+    let mut regear_open = 0i64;
+    let mut regear_pending_count = 0i64;
+    let mut regear_approved_total = 0i64;
+    let mut regear_approved_count = 0i64;
+
+    for r in &raw.regears {
+        let amt = regear_amount(r);
+        match r.status.as_str() {
+            "available" | "pending" => {
+                regear_open += amt;
+                regear_pending_count += 1;
+            }
+            "approved" => {
+                regear_approved_total += amt;
+                regear_approved_count += 1;
+            }
+            _ => {}
+        }
+    }
     // A regear is paid only after its linked bank transaction is withdrawn.
     // `approved` means the credit was created, not that the member received it.
     let regear_paid = outflow_regear;
+    let guild_treasury_net = split_tax_total + bank_donated - regear_paid - outflow_other;
 
     // Distinct players, not battle snapshots: a member who fought every battle in
     // the window must not multiply the denominator once per fight they were in.
@@ -1088,10 +1190,25 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview, fights: &[Fight]) -
         bank_pending,
         bank_requested,
         bank_withdrawn: outflow_total,
+        bank_donated,
         regear_open,
         regear_paid,
+        regear_approved_total,
+        regear_approved_count,
+        regear_pending_count,
         split_pending,
         split_completed,
+        split_completed_count,
+        split_pending_count,
+        split_gross_loot,
+        split_bags_total,
+        split_repair_total,
+        split_tax_total,
+        split_net_distributed,
+        split_avg_fee_pct,
+        split_pending_repair_total,
+        split_pending_tax_total,
+        guild_treasury_net,
         siphoned_net: raw.siphoned.iter().map(|e| to_i64(e.amount)).sum(),
         fame_per_player,
         fame_per_million_lost,
@@ -1550,6 +1667,11 @@ fn compute_trends(
                     events: 0,
                     attendance: 0,
                     loot_in: 0,
+                    gross_loot: 0,
+                    bags_in: 0,
+                    repair_cost: 0,
+                    tax_in: 0,
+                    net_distributed: 0,
                     outflow: 0,
                     regear_paid: 0,
                 },
@@ -1601,9 +1723,13 @@ fn compute_trends(
         // completed without that timestamp ever being set.
         let paid_at = split.finalized_at.unwrap_or(split.created_at);
         if let Some(bucket) = buckets.get_mut(&bucket_fn(paid_at)) {
-            let net = to_i64(split.estimated_market_value) - to_i64(split.repair_value)
-                + to_i64(split.bags_value);
-            bucket.loot_in += net.max(0);
+            let (gross, bags, repair, before_fee, tax, net_dist) = split_value_breakdown(split);
+            bucket.loot_in += before_fee;
+            bucket.gross_loot += gross;
+            bucket.bags_in += bags;
+            bucket.repair_cost += repair;
+            bucket.tax_in += tax;
+            bucket.net_distributed += net_dist;
         }
     }
 
@@ -2191,6 +2317,13 @@ mod tests {
         let economy = compute_economy(&raw, &compute_overview(&[], &HashSet::new()), &[]);
         assert_eq!(economy.split_completed, 95_000);
         assert_eq!(economy.loot_in, 95_000);
+        assert_eq!(economy.split_gross_loot, 100_000);
+        assert_eq!(economy.split_repair_total, 10_000);
+        assert_eq!(economy.split_bags_total, 5_000);
+        assert_eq!(economy.split_tax_total, 0);
+        assert_eq!(economy.split_net_distributed, 95_000);
+        assert_eq!(economy.split_completed_count, 1);
+        assert_eq!(economy.split_pending_count, 1);
 
         let buckets = compute_trends(&raw, &[], &range, "week");
         let week = buckets
@@ -2198,7 +2331,63 @@ mod tests {
             .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
             .unwrap();
         assert_eq!(week.loot_in, 95_000);
+        assert_eq!(week.gross_loot, 100_000);
+        assert_eq!(week.repair_cost, 10_000);
+        assert_eq!(week.bags_in, 5_000);
+        assert_eq!(week.tax_in, 0);
+        assert_eq!(week.net_distributed, 95_000);
         assert_eq!(week.outflow, 42_000);
+    }
+
+    #[test]
+    fn economy_and_trends_compute_guild_tax_and_repair_from_splits() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let mut raw = empty_raw();
+        // Completed split: 200k market - 30k repair + 10k bags = 180k pre-fee.
+        // 20% fee = 36k guild tax, 144k net distributed to members.
+        raw.splits.push(split::Model {
+            id: 10,
+            created_by: 1,
+            status: "completed".to_string(),
+            estimated_market_value: Decimal::new(200_000, 0),
+            fee: Decimal::new(20, 0),
+            repair_value: Decimal::new(30_000, 0),
+            bags_value: Decimal::new(10_000, 0),
+            net_value: Some(Decimal::new(144_000, 0)),
+            note: None,
+            event_id: None,
+            island_tab_id: None,
+            created_at: ts("2026-08-18T00:00:00Z"),
+            updated_at: ts("2026-08-18T00:00:00Z"),
+            finalized_at: Some(ts("2026-08-19T00:00:00Z")),
+            archived_at: None,
+            origin_read_only: false,
+        });
+
+        let economy = compute_economy(&raw, &compute_overview(&[], &HashSet::new()), &[]);
+        assert_eq!(economy.split_gross_loot, 200_000);
+        assert_eq!(economy.split_repair_total, 30_000);
+        assert_eq!(economy.split_bags_total, 10_000);
+        assert_eq!(economy.split_completed, 180_000);
+        assert_eq!(economy.split_tax_total, 36_000);
+        assert_eq!(economy.split_net_distributed, 144_000);
+        assert!((economy.split_avg_fee_pct - 20.0).abs() < f64::EPSILON);
+        assert_eq!(economy.guild_treasury_net, 36_000);
+
+        let buckets = compute_trends(&raw, &[], &range, "week");
+        let week = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        assert_eq!(week.gross_loot, 200_000);
+        assert_eq!(week.repair_cost, 30_000);
+        assert_eq!(week.bags_in, 10_000);
+        assert_eq!(week.loot_in, 180_000);
+        assert_eq!(week.tax_in, 36_000);
+        assert_eq!(week.net_distributed, 144_000);
     }
 
     /// A fight with one named `BattlePlayer` on our side, contributing their

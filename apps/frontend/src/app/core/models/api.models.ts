@@ -2412,10 +2412,25 @@ export interface ReportEconomy {
   bank_pending: number;
   bank_requested: number;
   bank_withdrawn: number;
+  bank_donated?: number;
   regear_open: number;
   regear_paid: number;
+  regear_approved_total?: number;
+  regear_approved_count?: number;
+  regear_pending_count?: number;
   split_pending: number;
   split_completed: number;
+  split_completed_count?: number;
+  split_pending_count?: number;
+  split_gross_loot?: number;
+  split_bags_total?: number;
+  split_repair_total?: number;
+  split_tax_total?: number;
+  split_net_distributed?: number;
+  split_avg_fee_pct?: number;
+  split_pending_repair_total?: number;
+  split_pending_tax_total?: number;
+  guild_treasury_net?: number;
   siphoned_net: number;
   fame_per_player: number;
   fame_per_million_lost: number;
@@ -2497,6 +2512,11 @@ export interface TrendBucket {
   events: number;
   attendance: number;
   loot_in: number;
+  gross_loot?: number;
+  bags_in?: number;
+  repair_cost?: number;
+  tax_in?: number;
+  net_distributed?: number;
   outflow: number;
   regear_paid: number;
 }
