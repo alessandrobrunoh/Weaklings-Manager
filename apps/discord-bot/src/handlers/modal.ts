@@ -147,7 +147,7 @@ async function submitApplication(
     channel = reusable.channel;
     reopened = true;
     await channel.send({
-      ...staffRolePing(manageRole?.id),
+      ...staffRolePing(configuredManageRoleId),
       embeds: [buildApplicationReopenedEmbed(settings, application.reopen_count ?? 1)],
       components: buildApplicationWelcomeComponents(application.id),
     });
@@ -175,7 +175,7 @@ async function submitApplication(
       throw error;
     }
     await channel.send({
-      ...staffRolePing(manageRole?.id),
+      ...staffRolePing(configuredManageRoleId),
       embeds: [buildApplicationWelcomeEmbed(settings)],
       components: buildApplicationWelcomeComponents(application.id),
     });
