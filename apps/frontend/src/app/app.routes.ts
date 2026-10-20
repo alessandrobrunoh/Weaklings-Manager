@@ -106,7 +106,7 @@ export const routes: Routes = [
       },
       {
         path: 'intel',
-        canActivate: [guildOnlyGuard],
+        canActivate: [guildOnlyGuard, permissionGuard('intel.view')],
         loadComponent: () => import('./features/intel/intel').then((m) => m.Intel),
       },
       {
@@ -128,6 +128,7 @@ export const routes: Routes = [
       },
       {
         path: 'intel/:scoutId',
+        canActivate: [guildOnlyGuard, permissionGuard('intel.view')],
         loadComponent: () =>
           import('./features/intel/intel-detail').then((m) => m.IntelDetailPage),
       },

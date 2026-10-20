@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import type { BattleDetail, BattleGuildSummary } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -240,6 +241,7 @@ interface AggregatedGuildStats {
 })
 export class BattleGroupPage {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
@@ -404,6 +406,8 @@ export class BattleGroupPage {
       battles: number;
     }>();
 
+    const targetGuild = this.auth.profile()?.tenant_name?.trim().toLowerCase() || 'weaklings';
+
     for (const battle of this.battleDetails()) {
       for (const guild of battle.guilds) {
         const name = guild.name || this.t('common.none');
@@ -413,7 +417,7 @@ export class BattleGroupPage {
         const previous = statsByGuild.get(key) ?? {
           name,
           alliance_name: guild.alliance_name ?? null,
-          isOurGuild: name.toLowerCase() === 'weaklings',
+          isOurGuild: key === targetGuild,
           players: 0,
           kills: 0,
           deaths: 0,

@@ -168,6 +168,28 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
           />
         </div>
 
+        @if (s.source_battle_ids && s.source_battle_ids.length > 0) {
+          <section class="card p-4">
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="eyebrow mb-0">Source Battles</h2>
+              <span class="text-xs text-[var(--color-text-secondary)] font-mono">
+                {{ s.source_battle_ids.length }} linked
+              </span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              @for (battleId of s.source_battle_ids; track battleId) {
+                <a
+                  class="chip chip--neutral hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] font-mono text-xs no-underline inline-flex items-center gap-1.5 transition-colors"
+                  [routerLink]="['/battles', battleId]"
+                >
+                  <app-icon name="swords" size="0.75rem" />
+                  <span>#{{ battleId }}</span>
+                </a>
+              }
+            </div>
+          </section>
+        }
+
         @if (!s.full_weapon_coverage) {
           <div
             class="mb-6 flex items-start gap-2.5 rounded-2xl border p-3.5 text-sm bg-[var(--color-warning-container)] border-[var(--color-warning)] text-warning"

@@ -1250,8 +1250,14 @@ export class FightDetailPage {
 
   protected readonly ourGuildName = computed(() => {
     const profile = this.auth.profile();
-    if (profile && 'guild_name' in profile && typeof profile.guild_name === 'string' && profile.guild_name.trim()) {
-      return profile.guild_name.trim();
+    if (profile?.tenant_name?.trim()) {
+      return profile.tenant_name.trim();
+    }
+    if (profile && 'guild_name' in profile && typeof (profile as Record<string, unknown>)['guild_name'] === 'string') {
+      const g = (profile as Record<string, unknown>)['guild_name'] as string;
+      if (g.trim()) {
+        return g.trim();
+      }
     }
     return DEFAULT_OUR_GUILD_NAME;
   });

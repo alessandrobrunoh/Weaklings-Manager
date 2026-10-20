@@ -817,10 +817,16 @@ async fn ensure_seed_fights_for_event(
                 }
                 Some(_) => continue,
                 None => {
+                    let fight_id = existing_fight.id;
                     let mut active: fight::ActiveModel = existing_fight.into();
                     active.event_id = Set(Some(event_id));
                     active.updated_at = Set(Utc::now().into());
                     active.update(db).await.map_err(AppError::Database)?;
+                    let _ = crate::modules::fight_analytics::writer::recompute_fight_analytics(
+                        db,
+                        fight_id,
+                    )
+                    .await;
                     continue;
                 }
             }
@@ -845,6 +851,11 @@ async fn ensure_seed_fights_for_event(
         .insert(db)
         .await
         .map_err(AppError::Database)?;
+        let _ = crate::modules::fight_analytics::writer::recompute_fight_analytics(
+            db,
+            created.id,
+        )
+        .await;
     }
     Ok(())
 }
@@ -1044,6 +1055,11 @@ async fn group_fights_by_adjacent_evidence(
                         *fight_id = left_fight_id;
                     }
                 }
+                let _ = crate::modules::fight_analytics::writer::recompute_fight_analytics(
+                    db,
+                    left_fight_id,
+                )
+                .await;
             }
             FightGroupingDecision::NeedsReview => {
                 for fight_id in [left_fight_id, right_fight_id] {
@@ -3818,10 +3834,12 @@ impl EventService {
 
             let snapshot = linked_battle_snapshot(&battle, context);
             if battle_is_assigned_to_another_event(db, event_id, battle.id).await? {
-                return Err(AppError::Conflict(format!(
-                    "Battle {} is already assigned to another event",
-                    battle.id
-                )));
+                tracing::warn!(
+                    event_id,
+                    battle_id = battle.id,
+                    "Battle is already assigned to another event, skipping"
+                );
+                continue;
             }
 
             let existing = event_battle::Entity::find()
@@ -3941,6 +3959,43 @@ impl EventService {
                 return Err(AppError::Conflict(format!(
                     "Battle {battle_id} is already assigned to another event"
                 )));
+            }
+        }
+
+        let active_battle_ids: std::collections::HashSet<i64> = snapshots
+            .iter()
+            .filter_map(|(id_str, _, _)| id_str.parse::<i64>().ok())
+            .collect();
+
+        let existing_fights = fight::Entity::find()
+            .filter(fight::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        for old_fight in existing_fights {
+            let segments = fight_battle::Entity::find()
+                .filter(fight_battle::Column::FightId.eq(old_fight.id))
+                .all(db)
+                .await
+                .map_err(AppError::Database)?;
+
+            let has_active_segment = segments
+                .iter()
+                .any(|segment| active_battle_ids.contains(&segment.battle_id));
+
+            if !has_active_segment {
+                if old_fight.grouping_method == "seeded" && segments.len() <= 1 {
+                    fight::Entity::delete_by_id(old_fight.id)
+                        .exec(db)
+                        .await
+                        .map_err(AppError::Database)?;
+                } else {
+                    let mut active: fight::ActiveModel = old_fight.into();
+                    active.event_id = Set(None);
+                    active.updated_at = Set(Utc::now().into());
+                    active.update(db).await.map_err(AppError::Database)?;
+                }
             }
         }
 

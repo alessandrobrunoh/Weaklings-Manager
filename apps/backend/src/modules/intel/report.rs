@@ -40,7 +40,9 @@ use crate::modules::battles::models::{
     BattleGuildSummary, BattleKillEvent, BattleLossEstimate, BattlePlayer,
 };
 use crate::modules::comps::entities::{build, comp, comp_build};
-use crate::modules::events::entities::{event, event_battle, event_participation, fight};
+use crate::modules::events::entities::{
+    event, event_battle, event_participation, fight, fight_battle,
+};
 use crate::modules::events::service::{BattleLinkingContext, kill_death_ratio, ratio_percent};
 use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
@@ -650,10 +652,20 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
         Vec::new()
     } else {
         fight_stat::Entity::find()
-            .filter(fight_stat::Column::FightId.is_in(fight_ids))
+            .filter(fight_stat::Column::FightId.is_in(fight_ids.clone()))
             .all(db)
             .await?
     };
+
+    let fight_battles = if fight_ids.is_empty() {
+        Vec::new()
+    } else {
+        fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.is_in(fight_ids.clone()))
+            .all(db)
+            .await?
+    };
+    let fight_battle_ids: Vec<i64> = fight_battles.iter().map(|fb| fb.battle_id).collect();
 
     let splits = split::Entity::find()
         .filter(split::Column::CreatedAt.between(range.from, range.to))
@@ -669,11 +681,25 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
             .await?
     };
 
-    Ok(RawData {
-        snapshots: snapshot::Entity::find()
-            .filter(snapshot::Column::StartTime.between(range.from, range.to))
+    let mut snapshots = snapshot::Entity::find()
+        .filter(snapshot::Column::StartTime.between(range.from, range.to))
+        .all(db)
+        .await?;
+    let existing_snapshot_ids: HashSet<i64> = snapshots.iter().map(|s| s.battle_id).collect();
+    let missing_battle_ids: Vec<i64> = fight_battle_ids
+        .into_iter()
+        .filter(|id| !existing_snapshot_ids.contains(id))
+        .collect();
+    if !missing_battle_ids.is_empty() {
+        let extra_snapshots = snapshot::Entity::find()
+            .filter(snapshot::Column::BattleId.is_in(missing_battle_ids))
             .all(db)
-            .await?,
+            .await?;
+        snapshots.extend(extra_snapshots);
+    }
+
+    Ok(RawData {
+        snapshots,
         event_battles: event_battle::Entity::find()
             .filter(event_battle::Column::BattleStartedAt.between(range.from, range.to))
             .all(db)
@@ -1414,7 +1440,7 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
             let losses = i64::try_from(
                 comp_fights
                     .iter()
-                    .filter(|f| f.outcome == "defeat" || f.outcome == "draw")
+                    .filter(|f| f.outcome == "defeat")
                     .count(),
             )
             .unwrap_or(i64::MAX);
@@ -2745,10 +2771,10 @@ mod tests {
             assert_eq!(row.deaths, 1);
         }
 
-        /// `"defeat"` and `"draw"` are both losses; kills/deaths still fold
+        /// `"defeat"` is a loss while `"draw"` is not; kills/deaths still fold
         /// in from each fight's `fight_stat` row.
         #[tokio::test]
-        async fn compute_comps_counts_defeat_and_draw_as_losses() {
+        async fn compute_comps_does_not_count_draw_as_loss() {
             let db = seed_db().await;
             let comp_id = insert_test_comp(&db, "Comp C").await;
             let event_id = insert_test_event(&db, comp_id).await;
@@ -2764,10 +2790,43 @@ mod tests {
             let row = comp_row(&rows, comp_id);
             assert_eq!(row.fights, 2);
             assert_eq!(row.wins, 0);
-            assert_eq!(row.losses, 2);
+            assert_eq!(row.losses, 1);
             assert!((row.win_rate - 0.0).abs() < f64::EPSILON);
             assert_eq!(row.kills, 5);
             assert_eq!(row.deaths, 8);
+        }
+
+        #[tokio::test]
+        async fn load_includes_snapshots_for_event_fights_outside_date_range() {
+            let db = seed_db().await;
+            let comp_id = insert_test_comp(&db, "Late Night Comp").await;
+            let event_id = insert_test_event(&db, comp_id).await;
+            let fight_id = insert_test_fight(&db, event_id, "victory").await;
+            link_test_fight_battle(&db, fight_id, 999, 1).await;
+
+            snapshot::ActiveModel {
+                battle_id: Set(999),
+                start_time: Set(ts("2026-08-25T02:00:00Z")),
+                end_time: Set(None),
+                total_players: Set(10),
+                total_kills: Set(5),
+                total_fame: Set(1000),
+                guilds_json: Set("[]".to_string()),
+                players_json: Set("[]".to_string()),
+                kills_json: Set("[]".to_string()),
+                losses_json: Set("{\"total_estimated_loss\": 0, \"players\": []}".to_string()),
+                fetched_at: Set(ts("2026-08-25T03:00:00Z")),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("insert late night snapshot");
+
+            let raw = load(&db, report_range()).await.expect("load");
+            assert!(
+                raw.snapshots.iter().any(|s| s.battle_id == 999),
+                "snapshot for event fight battle crossing range boundary must be included"
+            );
         }
     }
 }

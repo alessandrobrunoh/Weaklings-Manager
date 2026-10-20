@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -55,6 +55,7 @@ interface BattleScopeStats {
   readonly kills: number;
   readonly deaths: number;
   readonly fame: number;
+  readonly victories: number;
 }
 
 /**
@@ -74,6 +75,7 @@ interface BattleScopeStats {
     TooltipDirective,
     ViewToggle,
     Icon,
+    RouterLink,
   ],
   styles: `
     :host {
@@ -171,6 +173,15 @@ interface BattleScopeStats {
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('battles.refresh_now') }}
       </button>
+      <a
+        routerLink="/fights/trends"
+        class="btn btn--outline btn--sm inline-flex items-center gap-1.5"
+        [appTooltip]="'View fight trends and attendance'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="chart" size="0.875rem" />
+        Fight Trends
+      </a>
       <app-view-toggle
         pageTabs
         [options]="tabOptions()"
@@ -267,17 +278,23 @@ interface BattleScopeStats {
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                    Guild K/D
+                    {{ scopeStats().deaths > 0 ? 'Guild K/D' : 'Win Rate' }}
                   </p>
                   <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                    {{ scopeStats().deaths > 0 ? (scopeStats().kills / scopeStats().deaths).toFixed(2) : scopeStats().kills }}
+                    @if (scopeStats().deaths > 0) {
+                      {{ (scopeStats().kills / scopeStats().deaths).toFixed(2) }}
+                    } @else if (scopeStats().battles > 0) {
+                      {{ winRatePercent() }}%
+                    } @else {
+                      0%
+                    }
                   </p>
                   <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                    Ratio in loaded battles
+                    {{ scopeStats().deaths > 0 ? 'Ratio in loaded battles' : scopeStats().victories + ' victories in loaded fights' }}
                   </p>
                 </div>
                 <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                  <app-icon name="coins" size="1.25rem" />
+                  <app-icon [name]="scopeStats().deaths > 0 ? 'coins' : 'trophy'" size="1.25rem" />
                 </div>
               </div>
             </article>
@@ -723,7 +740,7 @@ export class Battles {
         params['search'] = query.search.trim();
       }
       if (query.sort) {
-        params['sort'] = query.sort.columnKey;
+        params['sort'] = query.sort.columnKey === 'time' ? 'start_time' : query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
       const outcome = query.columnFilters['outcome'];
@@ -760,8 +777,14 @@ export class Battles {
     }
   }
 
+  protected winRatePercent(): number {
+    const stats = this.scopeStats();
+    if (stats.battles === 0) return 0;
+    return Math.round((stats.victories / stats.battles) * 100);
+  }
+
   private emptyScopeStats(): BattleScopeStats {
-    return { battles: 0, players: 0, kills: 0, deaths: 0, fame: 0 };
+    return { battles: 0, players: 0, kills: 0, deaths: 0, fame: 0, victories: 0 };
   }
 
   private buildGuildScopeStats(fights: readonly FightListItem[]): BattleScopeStats {
@@ -772,6 +795,7 @@ export class Battles {
         kills: stats.kills + fight.total_kills,
         deaths: stats.deaths,
         fame: stats.fame + fight.total_fame,
+        victories: stats.victories + (fight.outcome.outcome === 'victory' ? 1 : 0),
       }),
       this.emptyScopeStats(),
     );
@@ -801,6 +825,7 @@ export class Battles {
         kills: stats.kills + player.kills,
         deaths: stats.deaths + player.deaths,
         fame: stats.fame + player.kill_fame,
+        victories: stats.victories,
       };
     }, this.emptyScopeStats());
   }

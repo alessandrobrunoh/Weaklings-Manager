@@ -249,11 +249,10 @@ pub async fn matchups(
         // exactly as uninformative as a battle with no event association —
         // excluded from both wins and losses, not counted as a loss, and
         // left open for another segment to resolve the outcome later.
-        let is_win = match fight {
+        let outcome = match fight {
             FightKey::Fight(fight_id) => {
                 match outcome_by_fight.get(&fight_id).map(String::as_str) {
-                    Some("victory") => true,
-                    Some("defeat" | "draw") => false,
+                    Some(outcome @ ("victory" | "defeat" | "draw")) => outcome,
                     _ => continue,
                 }
             }
@@ -277,16 +276,16 @@ pub async fn matchups(
                 win_rate: 0.0,
             });
         cell.battles += 1;
-        if is_win {
+        if outcome == "victory" {
             cell.wins += 1;
-        } else {
+        } else if outcome == "defeat" {
             cell.losses += 1;
         }
     }
 
     let mut rows: Vec<MatchupRow> = cells.into_values().collect();
     for row in &mut rows {
-        row.win_rate = ratio_percent(row.wins, row.battles);
+        row.win_rate = ratio_percent(row.wins, row.wins + row.losses);
     }
     rows.sort_by(|a, b| {
         b.battles
@@ -561,6 +560,32 @@ mod tests {
         assert_eq!(report.rows[0].battles, 2);
         assert_eq!(report.rows[0].wins, 1);
         assert_eq!(report.rows[0].losses, 1);
+        assert_eq!(report.coverage.total_battles, 2);
+        assert_eq!(report.coverage.battles_with_comp, 2);
+    }
+
+    #[tokio::test]
+    async fn matchups_does_not_count_draw_as_loss() {
+        let db = seed_db().await;
+        let comp_id = insert_comp(&db, "Comp A").await;
+        let event_id = insert_event(&db, comp_id).await;
+        insert_event_battle(&db, event_id, 250).await;
+        insert_event_battle(&db, event_id, 251).await;
+        let scout_id = insert_scouted_comp(&db, "Scout A").await;
+        link_scout_battle(&db, scout_id, 250).await;
+        link_scout_battle(&db, scout_id, 251).await;
+        let fight_a = insert_fight(&db, "victory").await;
+        let fight_b = insert_fight(&db, "draw").await;
+        link_fight_battle(&db, fight_a, 250, 1).await;
+        link_fight_battle(&db, fight_b, 251, 1).await;
+
+        let report = matchups(&db, &[scout_id]).await.expect("matchups");
+
+        assert_eq!(report.rows.len(), 1);
+        assert_eq!(report.rows[0].battles, 2);
+        assert_eq!(report.rows[0].wins, 1);
+        assert_eq!(report.rows[0].losses, 0);
+        assert!((report.rows[0].win_rate - 100.0).abs() < f64::EPSILON);
         assert_eq!(report.coverage.total_battles, 2);
         assert_eq!(report.coverage.battles_with_comp, 2);
     }

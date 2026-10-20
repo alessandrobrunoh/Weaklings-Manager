@@ -871,6 +871,11 @@ async fn merge_fights(
         fight::Entity::delete_by_id(*fight_id).exec(&txn).await?;
     }
     let battle_ids = ordered_battle_ids(&txn, request.target_fight_id).await?;
+    if let Some(event_id) = event_id {
+        for battle_id in &battle_ids {
+            sync_event_battle_for_battle(&txn, event_id, *battle_id).await?;
+        }
+    }
     txn.commit().await?;
 
     log_fight_mutation(
@@ -985,6 +990,11 @@ async fn move_battle(
     };
     refresh_manual_fight(&txn, request.target_fight_id, &snapshots).await?;
     let battle_ids = ordered_battle_ids(&txn, request.target_fight_id).await?;
+    if let Some(event_id) = event_id {
+        for battle_id in &battle_ids {
+            sync_event_battle_for_battle(&txn, event_id, *battle_id).await?;
+        }
+    }
     txn.commit().await?;
 
     log_fight_mutation(
@@ -1100,6 +1110,11 @@ async fn split_fight(
     refresh_manual_fight(&txn, source_fight_id, &snapshots).await?;
     refresh_manual_fight(&txn, new_fight.id, &snapshots).await?;
     let battle_ids = ordered_battle_ids(&txn, new_fight.id).await?;
+    if let Some(event_id) = source.event_id {
+        for battle_id in &battle_ids {
+            sync_event_battle_for_battle(&txn, event_id, *battle_id).await?;
+        }
+    }
     txn.commit().await?;
 
     log_fight_mutation(
@@ -1229,6 +1244,43 @@ async fn attach_event_if_unassigned(
         active.updated_at = Set(Utc::now().into());
         active.update(db).await?;
     }
+    Ok(())
+}
+
+async fn sync_event_battle_for_battle(
+    db: &DatabaseTransaction,
+    event_id: i64,
+    battle_id: i64,
+) -> Result<(), AppError> {
+    let existing = event_battle::Entity::find()
+        .filter(event_battle::Column::EventId.eq(event_id))
+        .filter(event_battle::Column::AlbionbbBattleId.eq(battle_id.to_string()))
+        .one(db)
+        .await?;
+    if existing.is_some() {
+        return Ok(());
+    }
+
+    let snapshot = GuildBattleSnapshotEntity::find()
+        .filter(GuildBattleSnapshotColumn::BattleId.eq(battle_id))
+        .one(db)
+        .await?;
+    let Some(snapshot) = snapshot else {
+        return Ok(());
+    };
+
+    let total_players = i32::try_from(snapshot.total_players).ok();
+    let now = Utc::now().into();
+    let row = event_battle::ActiveModel {
+        event_id: Set(event_id),
+        albionbb_battle_id: Set(battle_id.to_string()),
+        battle_started_at: Set(snapshot.start_time),
+        guild_players_count: Set(0),
+        battle_total_players: Set(total_players),
+        fetched_at: Set(now),
+        ..Default::default()
+    };
+    row.insert(db).await?;
     Ok(())
 }
 

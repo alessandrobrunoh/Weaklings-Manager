@@ -464,6 +464,7 @@ export const uk: TranslationDict = {
   'events.detail.primary_build': 'Основна збірка',
   'events.detail.secondary_build': 'Додаткова збірка',
   'events.detail.fill_option': 'Заповнити — будь-яка роль/збірка',
+  'events.detail.no_losses': 'Втрат поки що не зафіксовано.',
   'events.detail.no_opponents': 'Даних про супротивника ще немає.',
   'events.detail.no_battles': 'Бої ще не підключені.',
   'events.detail.manage_battles': 'Керування боями',

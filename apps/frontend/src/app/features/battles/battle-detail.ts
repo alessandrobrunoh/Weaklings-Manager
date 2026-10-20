@@ -5,6 +5,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { EChartsOption } from 'echarts';
 import { firstValueFrom } from 'rxjs';
@@ -19,6 +20,8 @@ import type {
   BuildSlot,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { IntelService } from '../../core/services/intel.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -30,6 +33,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { ErrorState } from '../../shared/components/error-state/error-state';
+import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -135,6 +139,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
     DataTableCell,
     EquipmentGrid,
     ErrorState,
+    Icon,
     Loading,
     PageHeader,
     PageStack,
@@ -166,6 +171,18 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
         >
           {{ t('battles.view_on_albionbb') }} ↗
         </a>
+        @if (canScoutBattle()) {
+          <button
+            type="button"
+            class="btn btn--outline btn--sm inline-flex items-center gap-1.5"
+            [disabled]="scouting()"
+            (click)="scoutBattle(detail.battle_id)"
+            title="Extract enemy comps to Intel"
+          >
+            <app-icon name="scan" size="0.875rem" />
+            {{ scouting() ? t('common.loading') : 'Scout Battle' }}
+          </button>
+        }
         <app-view-toggle
           pageTabs
           [options]="tabOptions()"
@@ -1187,6 +1204,8 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
 })
 export class BattleDetailPage {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
+  private readonly intelService = inject(IntelService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly theme = inject(ThemeService);
@@ -1201,6 +1220,13 @@ export class BattleDetailPage {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly tab = signal<DetailTab>('overview');
+  protected readonly scouting = signal(false);
+  protected readonly canScoutBattle = computed(() => {
+    return (
+      this.auth.hasPermission('intel.create') ||
+      this.auth.hasPermission('intel.manage')
+    );
+  });
 
   // Filter signals
   protected readonly selectedTimelineMinute = signal<number | null>(null);
@@ -1222,8 +1248,10 @@ export class BattleDetailPage {
   protected readonly ourGuild = computed<BattleGuildSummary | null>(() => {
     const detail = this.battle();
     if (!detail) return null;
+    const targetGuildName =
+      this.auth.profile()?.tenant_name?.trim().toLowerCase() || DEFAULT_OUR_GUILD_NAME;
     return (
-      detail.guilds.find((g) => g.name.toLowerCase() === DEFAULT_OUR_GUILD_NAME) ??
+      detail.guilds.find((g) => g.name.toLowerCase() === targetGuildName) ??
       detail.guilds.find((g) => g.winner) ??
       detail.guilds[0] ??
       null
@@ -2313,7 +2341,15 @@ export class BattleDetailPage {
     this.translate.t(key, params);
 
   constructor() {
-    void this.load();
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const battleId = Number(params.get('battleId'));
+      if (battleId > 0) {
+        void this.load(battleId);
+      } else {
+        this.toasts.error(this.t('common.error'));
+        this.backToBattles();
+      }
+    });
   }
 
   protected backToBattles(): void {
@@ -2664,8 +2700,27 @@ export class BattleDetailPage {
     return typeof value === 'string' ? value : null;
   }
 
-  protected async load(): Promise<void> {
-    const battleId = Number(this.route.snapshot.paramMap.get('battleId'));
+  protected async scoutBattle(battleId: number): Promise<void> {
+    if (this.scouting()) return;
+    this.scouting.set(true);
+    try {
+      const outcomes = await firstValueFrom(this.intelService.scoutBattle(battleId));
+      const count = outcomes.length;
+      this.toasts.success(
+        count === 1
+          ? 'Extracted 1 enemy comp into intel'
+          : `Extracted ${count} enemy comps into intel`,
+      );
+      void this.router.navigate(['/intel']);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.scouting.set(false);
+    }
+  }
+
+  protected async load(targetId?: number): Promise<void> {
+    const battleId = targetId ?? Number(this.route.snapshot.paramMap.get('battleId'));
     if (battleId <= 0) {
       this.toasts.error(this.t('common.error'));
       this.backToBattles();

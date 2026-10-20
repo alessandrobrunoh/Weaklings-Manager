@@ -338,16 +338,16 @@ fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str, column: &str) -> Result<T
 /// two-tier rule the reference implementation used.
 #[must_use]
 pub fn is_same_comp(existing: &scouted_comp::Model, incoming: &ScoutDraft) -> bool {
-    if existing.fingerprint == incoming.fingerprint {
-        return true;
-    }
     let same_guild = match (&existing.opponent_guild_id, &incoming.opponent_guild_id) {
         (Some(left), Some(right)) => left == right,
         _ => existing
             .opponent_guild_name
             .eq_ignore_ascii_case(&incoming.opponent_guild_name),
     };
-    same_guild && existing.category == incoming.category.as_str()
+    if !same_guild {
+        return false;
+    }
+    existing.fingerprint == incoming.fingerprint || existing.category == incoming.category.as_str()
 }
 
 #[cfg(test)]
@@ -621,5 +621,57 @@ mod tests {
         snap.players_json = "{not json".to_string();
         let err = scout_from_snapshot(&snap, &ctx(), &RoleClassifier::default()).unwrap_err();
         assert!(format!("{err}").contains("players_json"), "got: {err}");
+    }
+
+    #[test]
+    fn is_same_comp_requires_matching_guild_even_with_identical_fingerprint() {
+        let existing = scouted_comp::Model {
+            id: 1,
+            name: "Guild A SmallScale".to_string(),
+            opponent_guild_id: Some("guild-a".to_string()),
+            opponent_guild_name: "Guild A".to_string(),
+            opponent_alliance_name: None,
+            category: "small_scale".to_string(),
+            player_count: 5,
+            weapon_sample_size: 5,
+            avg_ip: 1400.0,
+            roles_json: "{}".to_string(),
+            weapons_json: "{}".to_string(),
+            players_json: "[]".to_string(),
+            fingerprint: "shared-fingerprint-123".to_string(),
+            source_battle_count: 1,
+            threat_score: 5,
+            notes: None,
+            is_archived: false,
+            first_seen_at: chrono::Utc::now().into(),
+            saved_at: chrono::Utc::now().into(),
+            created_by_user_id: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        };
+
+        let incoming_different_guild = ScoutDraft {
+            name: "Guild B SmallScale".to_string(),
+            opponent_guild_id: Some("guild-b".to_string()),
+            opponent_guild_name: "Guild B".to_string(),
+            opponent_alliance_name: None,
+            category: IntelScoutCategory::SmallScale,
+            profile: CompProfile::default(),
+            players: Vec::new(),
+            avg_ip: 1400.0,
+            player_count: 5,
+            weapon_sample_size: 5,
+            fingerprint: "shared-fingerprint-123".to_string(),
+            battle_id: 100,
+            observed_at: chrono::Utc::now().into(),
+        };
+
+        assert!(!is_same_comp(&existing, &incoming_different_guild));
+
+        let mut incoming_same_guild = incoming_different_guild.clone();
+        incoming_same_guild.opponent_guild_id = Some("guild-a".to_string());
+        incoming_same_guild.opponent_guild_name = "Guild A".to_string();
+
+        assert!(is_same_comp(&existing, &incoming_same_guild));
     }
 }

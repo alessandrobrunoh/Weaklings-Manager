@@ -65,6 +65,7 @@ import {
   normalizeAlbionEquipmentName,
 } from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
+import { battleOutcomeLabel } from '../battles/battle-outcome';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
@@ -1399,7 +1400,7 @@ interface AddEventMemberRequest {
                   </div>
                 } @else {
                   <p class="event-detail__empty text-center py-8">
-                    {{ t('events.detail.no_opponents') }}
+                    {{ t('events.detail.no_losses') }}
                   </p>
                 }
               </section>
@@ -1424,9 +1425,21 @@ interface AddEventMemberRequest {
                     ) {
                       <div class="surface p-3 space-y-2">
                         <div class="flex items-center justify-between gap-2">
-                          <span class="text-xs font-bold text-[var(--color-text)] truncate">
-                            {{ opponent.guild_name || 'Gilda sconosciuta' }}
-                          </span>
+                          @if (canViewOpponents()) {
+                            <a
+                              class="text-xs font-bold text-[var(--color-primary)] hover:underline truncate inline-flex items-center gap-1"
+                              routerLink="/intel/opponents"
+                              [queryParams]="{ q: opponent.guild_name }"
+                              title="View opponent intel"
+                            >
+                              <span>{{ opponent.guild_name || 'Gilda sconosciuta' }}</span>
+                              <app-icon name="arrow-right" size="0.75rem" />
+                            </a>
+                          } @else {
+                            <span class="text-xs font-bold text-[var(--color-text)] truncate">
+                              {{ opponent.guild_name || 'Gilda sconosciuta' }}
+                            </span>
+                          }
                           <span
                             class="text-xs font-mono font-medium text-[var(--color-text-secondary)]"
                           >
@@ -2215,10 +2228,30 @@ interface AddEventMemberRequest {
               <button
                 type="button"
                 class="btn btn--outline btn--sm text-xs"
-                (click)="showBattleSearch.set(true)"
+                (click)="openBattleSearch()"
+              >
+                <app-icon name="search" size="0.75rem" />
+                {{ t('events.detail.search_battles') }}
+              </button>
+            </div>
+
+            <div class="flex gap-2 mb-3">
+              <input
+                type="text"
+                class="input flex-1 text-xs"
+                placeholder="Enter or paste Battle ID (e.g. 1054231)"
+                [value]="manualBattleIdInput()"
+                (input)="manualBattleIdInput.set($any($event.target).value)"
+                (keydown.enter)="$event.preventDefault(); addManualBattleId()"
+              />
+              <button
+                type="button"
+                class="btn btn--outline btn--sm text-xs"
+                [disabled]="!canAddManualBattleId()"
+                (click)="addManualBattleId()"
               >
                 <app-icon name="plus" size="0.75rem" />
-                {{ t('events.detail.add_battle') }}
+                {{ t('common.add') }}
               </button>
             </div>
 
@@ -3175,20 +3208,62 @@ export class EventDetailPage {
   protected readonly showBattleSearch = signal(false);
   protected readonly battleSearchRaw = signal<SearchDialogOption[]>([]);
   protected readonly battleSearchTerm = signal('');
+  protected readonly manualBattleIdInput = signal('');
+  protected readonly canAddManualBattleId = computed(() => {
+    const raw = this.manualBattleIdInput().trim().replace(/^#/, '');
+    const num = parseInt(raw, 10);
+    return !Number.isNaN(num) && num > 0;
+  });
+
   protected readonly battleSearchOptions = computed<SearchDialogOption[]>(() => {
-    const term = this.battleSearchTerm().trim().toLowerCase();
+    const rawTerm = this.battleSearchTerm().trim();
+    const term = rawTerm.toLowerCase();
     const items = this.battleSearchRaw();
-    if (!term) return items;
-    return items.filter(
-      (option) =>
-        option.title.toLowerCase().includes(term) ||
-        (option.subtitle?.toLowerCase().includes(term) ?? false) ||
-        (option.chip?.toLowerCase().includes(term) ?? false),
-    );
+    const filtered = !term
+      ? items
+      : items.filter(
+          (option) =>
+            String(option.id).includes(term) ||
+            option.title.toLowerCase().includes(term) ||
+            (option.subtitle?.toLowerCase().includes(term) ?? false) ||
+            (option.chip?.toLowerCase().includes(term) ?? false),
+        );
+
+    const numericId = parseInt(rawTerm.replace(/^#/, ''), 10);
+    if (!Number.isNaN(numericId) && numericId > 0 && !filtered.some((opt) => opt.id === numericId)) {
+      return [
+        {
+          id: numericId,
+          title: `Battle #${numericId}`,
+          subtitle: 'Direct Battle ID',
+          chip: 'Custom ID',
+        },
+        ...filtered,
+      ];
+    }
+    return filtered;
   });
   protected readonly battleSearchLoading = signal(false);
   protected readonly battleLinksSaving = signal(false);
   protected readonly draftBattleLinks = signal<{ id: string; title: string }[]>([]);
+
+  protected openBattleSearch(): void {
+    this.showBattleSearch.set(true);
+    if (this.battleSearchRaw().length === 0) {
+      void this.loadGuildBattles();
+    }
+  }
+
+  protected addManualBattleId(): void {
+    const raw = this.manualBattleIdInput().trim().replace(/^#/, '');
+    const num = parseInt(raw, 10);
+    if (Number.isNaN(num) || num <= 0) return;
+    const current = this.draftBattleLinks();
+    if (!current.some((b) => b.id === String(num))) {
+      this.draftBattleLinks.set([...current, { id: String(num), title: `Battle #${num}` }]);
+    }
+    this.manualBattleIdInput.set('');
+  }
   protected readonly comps = signal<CompSummary[]>([]);
   protected readonly totalSplitValue = computed(() =>
     (this.event()?.splits ?? []).reduce(
@@ -3268,6 +3343,10 @@ export class EventDetailPage {
   protected readonly canManageParticipants = computed(() => {
     return this.canEdit();
   });
+
+  protected readonly canViewOpponents = computed(() =>
+    this.auth.hasPermission('intel.opponents.view'),
+  );
 
   protected readonly showMemberSearch = signal(false);
   protected readonly memberSearchOptions = signal<SearchDialogOption[]>([]);
@@ -4868,15 +4947,23 @@ export class EventDetailPage {
 
   protected onBattleSearchFilter(filter: { search: string; dateFrom: string; dateTo: string }) {
     this.battleSearchTerm.set(filter.search);
-    if (this.battleSearchRaw().length === 0) {
-      void this.loadGuildBattles();
-    }
+    void this.loadGuildBattles(filter);
   }
 
-  private async loadGuildBattles(): Promise<void> {
+  private async loadGuildBattles(filter?: {
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<void> {
     this.battleSearchLoading.set(true);
     try {
-      const data = await firstValueFrom(this.api.get<PaginatedData<BattleSummary>>('api/battles'));
+      const params: Record<string, string | number> = { limit: 50 };
+      if (filter?.search) params['search'] = filter.search;
+      if (filter?.dateFrom) params['date_from'] = filter.dateFrom;
+      if (filter?.dateTo) params['date_to'] = filter.dateTo;
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<BattleSummary>>('api/battles', params),
+      );
       this.battleSearchRaw.set(
         data.items.map((battle) => ({
           id: battle.battle_id,
@@ -5433,10 +5520,7 @@ export class EventDetailPage {
   }
 
   protected openFight(fight: EventFight): void {
-    if (fight.battle_ids.length === 0) return;
-    void this.router.navigate(['/battles/group'], {
-      queryParams: { ids: fight.battle_ids.join(',') },
-    });
+    void this.router.navigate(['/fights', fight.id]);
   }
 
   protected openBattleGroup(detail: EventDetailView): void {
@@ -5450,16 +5534,7 @@ export class EventDetailPage {
   }
 
   protected battleOutcomeChipLabel(outcome: EventBattleSummary['outcome']): string {
-    switch (outcome) {
-      case 'victory':
-        return 'VITTORIA';
-      case 'defeat':
-        return 'SCONFITTA';
-      case 'draw':
-        return 'PAREGGIO';
-      case 'unknown':
-        return 'SCONOSCIUTO';
-    }
+    return this.t(battleOutcomeLabel(outcome));
   }
 
   protected fightMetrics(fight: EventFight, battles: readonly EventBattleSummary[]): FightKpis {
@@ -5800,6 +5875,10 @@ export class EventDetailPage {
   }
 
   private async loadLinkedBattleLosses(detail: EventDetailView): Promise<void> {
+    if (detail.estimated_losses != null) {
+      this.eventLossEstimate.set(detail.estimated_losses);
+      return;
+    }
     if (detail.battles.length === 0) return;
     try {
       const battleDetails = await Promise.all(

@@ -498,6 +498,7 @@ export const en = {
   'events.detail.primary_build': 'Primary build',
   'events.detail.secondary_build': 'Secondary build',
   'events.detail.fill_option': 'Fill — any role / build',
+  'events.detail.no_losses': 'No recorded losses yet.',
   'events.detail.no_opponents': 'No opponent data yet.',
   'events.detail.no_battles': 'No battles linked yet.',
   'events.detail.manage_battles': 'Manage battles',

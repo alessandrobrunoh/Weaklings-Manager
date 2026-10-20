@@ -492,6 +492,7 @@ export const it: TranslationDict = {
   'events.detail.primary_build': 'Build primaria',
   'events.detail.secondary_build': 'Build secondaria',
   'events.detail.fill_option': 'Fill — qualsiasi ruolo / build',
+  'events.detail.no_losses': 'Nessuna perdita registrata.',
   'events.detail.no_opponents': 'Nessun dato avversari.',
   'events.detail.no_battles': 'Nessuna battaglia collegata.',
   'events.detail.manage_battles': 'Gestisci battaglie',

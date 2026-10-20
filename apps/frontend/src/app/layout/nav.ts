@@ -147,6 +147,7 @@ export const APP_NAV_SECTIONS: NavSection[] = [
         path: '/intel',
         icon: 'scan',
         labelKey: 'nav.intel',
+        permissions: ['intel.view'],
         featureKey: 'intel',
         hiddenForAlliance: true,
       },
