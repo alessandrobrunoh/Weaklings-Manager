@@ -41,6 +41,10 @@ import {
 import { unlockAndUnarchiveThread } from "../services/discord-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import {
+  buildWebsiteAccountRequiredReply,
+  isWebsiteUserRegistered,
+} from "../services/website-account.js";
+import {
   createPrivateTicketThread,
   fetchGuildChannel,
   staffRolePing,
@@ -533,6 +537,11 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
 
     await interaction.deferReply({ flags: ["Ephemeral"] });
+
+    if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
+      await interaction.editReply(buildWebsiteAccountRequiredReply());
+      return;
+    }
 
     let signupOptions;
     try {

@@ -4,6 +4,10 @@ import { discordRoleIdsFromMember } from '../api/discord-role-ids.js';
 import type { BotCommand } from '../commands/index.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 import { fetchTenantStatus, requireRegisteredTenant } from './tenant-gate.js';
+import {
+  buildWebsiteAccountRequiredReply,
+  isWebsiteUserRegistered,
+} from './website-account.js';
 
 /**
  * Slash commands that belong on an alliance Discord hub.
@@ -73,5 +77,13 @@ export async function executeSlashCommand(
     interaction.user.id,
     discordRoleIdsFromMember(interaction.member),
   );
+  if (!(await isWebsiteUserRegistered(actorApi, interaction.user.id))) {
+    await interaction.reply({
+      ...buildWebsiteAccountRequiredReply(),
+      flags: ['Ephemeral'],
+    });
+    return;
+  }
+
   await command.execute(interaction, actorApi);
 }
