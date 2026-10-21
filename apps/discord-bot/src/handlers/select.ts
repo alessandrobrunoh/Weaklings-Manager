@@ -7,6 +7,10 @@ import {
   FILL_SIGNUP_VALUE,
   type SignupRoleValue,
 } from "../services/event-signup.js";
+import {
+  buildWebsiteAccountRequiredReply,
+  isWebsiteUserRegistered,
+} from "../services/website-account.js";
 
 export async function handleSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -22,6 +26,10 @@ export async function handleSelectMenu(
       const role = interaction.values[0] as SignupRoleValue;
 
       await interaction.deferUpdate();
+      if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
+        await interaction.editReply(buildWebsiteAccountRequiredReply());
+        return;
+      }
 
       if (role === FILL_SIGNUP_VALUE) {
         await api.post(
@@ -128,6 +136,10 @@ export async function handleSelectMenu(
       const buildId = Number(interaction.values[0]);
 
       await interaction.deferUpdate();
+      if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
+        await interaction.editReply(buildWebsiteAccountRequiredReply());
+        return;
+      }
 
       await api.post(
         `api/events/${eventId}/participate`,
