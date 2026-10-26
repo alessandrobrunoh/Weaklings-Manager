@@ -394,12 +394,16 @@ async fn validate_event_link(
         return Ok(());
     };
 
-    let exists = EventEntity::find_by_id(event_id).count(db).await? > 0;
-    if exists {
-        return Ok(());
+    let event = EventEntity::find_by_id(event_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+    if event.is_flash() {
+        return Err(AppError::Conflict(
+            "flash masses do not support loot splits".to_string(),
+        ));
     }
-
-    Err(AppError::NotFound(format!("Event {event_id} not found")))
+    Ok(())
 }
 
 /// Fallback fee percentage used when guild settings are unavailable.
@@ -2361,6 +2365,28 @@ mod tests {
         user.insert(db).await.expect("Failed to insert user").id
     }
 
+    #[tokio::test]
+    async fn flash_mass_cannot_be_linked_to_a_loot_split() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "flash", "flash@example.com").await;
+        let flash = crate::modules::events::entities::event::ActiveModel {
+            title: Set("Flash mass".to_string()),
+            event_kind: Set(crate::modules::events::entities::event::KIND_FLASH.to_string()),
+            comp_id: Set(None),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("insert flash event");
+
+        assert!(matches!(
+            validate_event_link(&db, Some(flash.id)).await,
+            Err(AppError::Conflict(message)) if message.contains("flash masses")
+        ));
+    }
+
     async fn insert_user_with_discord_id(
         db: &DatabaseConnection,
         username: &str,
@@ -3808,7 +3834,7 @@ mod tests {
         .unwrap();
         let event = crate::modules::events::entities::event::ActiveModel {
             title: Set("loot event".to_string()),
-            comp_id: Set(comp.id),
+            comp_id: Set(Some(comp.id)),
             created_by: Set(creator),
             event_date_utc: Set(chrono::Utc::now().into()),
             status: Set("stopped".to_string()),
@@ -3909,7 +3935,7 @@ mod tests {
 
         let event = crate::modules::events::entities::event::ActiveModel {
             title: Set("scheduled event".to_string()),
-            comp_id: Set(comp.id),
+            comp_id: Set(Some(comp.id)),
             created_by: Set(creator),
             event_date_utc: Set(chrono::Utc::now().into()),
             status: Set("scheduled".to_string()),
@@ -3999,7 +4025,7 @@ mod tests {
         .unwrap();
         let event = crate::modules::events::entities::event::ActiveModel {
             title: Set("stopped event".to_string()),
-            comp_id: Set(comp.id),
+            comp_id: Set(Some(comp.id)),
             created_by: Set(creator),
             event_date_utc: Set(chrono::Utc::now().into()),
             status: Set("stopped".to_string()),

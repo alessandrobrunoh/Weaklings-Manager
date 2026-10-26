@@ -174,6 +174,9 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             @if (event.call_to_arms) {
               <span class="text-warning font-bold text-sm select-none" [title]="t('events.call_to_arms')">★</span>
             }
+            @if (event.event_kind === 'flash') {
+              <span class="chip chip--info text-[10px]">{{ t('events.flashMass') }}</span>
+            }
             <a
               [routerLink]="['/events', event.id]"
               class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors no-underline truncate max-w-xs"
@@ -200,8 +203,12 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 
         <ng-template dataTableCell="comp_name" let-event>
           <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)]">
-            <app-icon name="swords" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
-            <span>{{ event.comp_name || t('events.detail.fill_option') }}</span>
+            @if (event.event_kind === 'flash') {
+              <span>{{ t('events.flashMass') }}</span>
+            } @else {
+              <app-icon name="swords" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
+              <span>{{ event.comp_name || t('events.detail.fill_option') }}</span>
+            }
           </div>
         </ng-template>
 

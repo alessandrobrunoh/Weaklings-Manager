@@ -2,7 +2,8 @@
 
 ## Overview
 
-This directory contains the events module's router, service, data models, sync, roster-hub, and fight-grouping code.
+- This directory contains the events module's router, service, data models, sync, roster-hub, and fight-grouping code.
+- Events carry an `event_kind` discriminant: `organized` (default; full comp/roster/split machinery, `comp_id` required) or `flash` (binary participation, no comp, `comp_id` NULL). Flash is never inferred from a NULL comp — `event::Model::is_flash()` / `organized_comp_id()` are the only guards; comp-shaped routes (roster, signup-options, splits, regear) return `409 Conflict` for flash rather than degrading.
 
 ## Interface
 

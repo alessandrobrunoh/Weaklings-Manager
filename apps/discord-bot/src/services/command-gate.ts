@@ -1,7 +1,10 @@
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type {
+  ChatInputCommandInteraction,
+  MessageContextMenuCommandInteraction,
+} from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import { discordRoleIdsFromMember } from '../api/discord-role-ids.js';
-import type { BotCommand } from '../commands/index.js';
+import type { BotCommand, BotMessageCommand } from '../commands/index.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 import { fetchTenantStatus, requireRegisteredTenant } from './tenant-gate.js';
 import {
@@ -85,5 +88,46 @@ export async function executeSlashCommand(
     return;
   }
 
+  await command.execute(interaction, actorApi);
+}
+
+/** Tenant and account gate for message context-menu commands. */
+export async function executeMessageContextCommand(
+  interaction: MessageContextMenuCommandInteraction,
+  api: ApiClient,
+  command: BotMessageCommand,
+): Promise<void> {
+  const guildApi = await requireRegisteredTenant(interaction, api);
+  if (!guildApi) return;
+  const guildId = interaction.guildId;
+  if (!guildId) return;
+
+  const status = await fetchTenantStatus(api, guildId);
+  if (!isCommandAllowedOnTenant('flash', status.kind)) {
+    await interaction.reply({
+      embeds: [
+        createResponseEmbed(
+          'warning',
+          'Guild Discord only',
+          ALLIANCE_GUILD_ONLY_MESSAGE,
+          'COMMAND',
+        ),
+      ],
+      flags: ['Ephemeral'],
+    });
+    return;
+  }
+
+  const actorApi = guildApi.withDiscordActor(
+    interaction.user.id,
+    discordRoleIdsFromMember(interaction.member),
+  );
+  if (!(await isWebsiteUserRegistered(actorApi, interaction.user.id))) {
+    await interaction.reply({
+      ...buildWebsiteAccountRequiredReply(),
+      flags: ['Ephemeral'],
+    });
+    return;
+  }
   await command.execute(interaction, actorApi);
 }

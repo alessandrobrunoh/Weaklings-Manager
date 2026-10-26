@@ -72,7 +72,14 @@ async function massDiscordEventLocked(client: Client, api: ApiClient, discordUse
   event = await api.get<EventDetailView>(`api/events/${eventId}`, discordUserId);
   if (thread) {
     await withUnarchivedThread(thread, `Event #${eventId} mass`, (active) =>
-      active.send(buildEventMassMessage(event, event.participants, voiceChannelId)),
+      active.send(
+        buildEventMassMessage(
+          event,
+          event.participants,
+          voiceChannelId,
+          active.guild?.preferredLocale,
+        ),
+      ),
     );
   }
   return { event, voiceChannelId, createdVoiceChannel: !hadVoiceChannel };
@@ -100,7 +107,14 @@ async function startDiscordEventLocked(client: Client, api: ApiClient, discordUs
   event = await api.get<EventDetailView>(`api/events/${eventId}`, discordUserId);
   if (thread) {
     await withUnarchivedThread(thread, `Event #${eventId} start`, (active) =>
-      active.send(buildEventStartMessage(event, event.participants, voiceChannelId)),
+      active.send(
+        buildEventStartMessage(
+          event,
+          event.participants,
+          voiceChannelId,
+          active.guild?.preferredLocale,
+        ),
+      ),
     );
   }
   return { event, voiceChannelId, createdVoiceChannel: !hadVoiceChannel };

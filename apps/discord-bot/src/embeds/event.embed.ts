@@ -8,6 +8,7 @@ import {
   MessageFlags,
 } from "discord.js";
 import type { EventView, EventDetailView } from "../api/types.js";
+import { flashCopy, resolveFlashLocale } from "../services/flash-copy.js";
 import { BOT_COLORS, buildAsciiBar, createBaseEmbed } from "./theme.js";
 
 /**
@@ -105,26 +106,46 @@ export function buildEventMassMessage(
   event: EventView,
   participants: Array<{ discord_id: string | null; username: string }>,
   voiceChannelId: string,
+  locale?: string | null,
 ): EventStartMessage {
   const linkedUserIds = [...new Set(participants.flatMap((p) => p.discord_id ? [p.discord_id] : []))];
   const unlinkedNames = participants.filter((p) => !p.discord_id).map((p) => p.username);
   const mentions = linkedUserIds.map((id) => `<@${id}>`).join(" ") || "No linked Discord participants yet.";
   const unlinked = unlinkedNames.length ? `\nNot linked on Discord: ${unlinkedNames.join(", ")}.` : "";
   return {
-    content: `🔔 ${mentions}\n**${event.title}** mass is starting — join <#${voiceChannelId}>. Start: <t:${eventTimestamp(event, "start")}:R>.${unlinked}`,
+    content: event.event_kind === "flash"
+      ? flashCopy(locale, "massNotice", {
+          mentions: linkedUserIds.length ? mentions : flashCopy(locale, "noParticipants"),
+          title: event.title,
+          voiceChannelId,
+          startTs: eventTimestamp(event, "start"),
+          unlinked: unlinkedNames.length
+            ? flashCopy(locale, "unlinked", { names: unlinkedNames.join(", ") })
+            : "",
+        })
+      : `🔔 ${mentions}\n**${event.title}** mass is starting — join <#${voiceChannelId}>. Start: <t:${eventTimestamp(event, "start")}:R>.${unlinked}`,
     allowedMentions: { parse: [], users: linkedUserIds },
   };
 }
 
 /** Builds the manual pre-event reminder without enabling broad Discord mention parsing. */
-export function buildEventReminderMessage(event: EventView): EventReminderMessage {
+export function buildEventReminderMessage(
+  event: EventView,
+  locale?: string | null,
+): EventReminderMessage {
   const timestamp = eventTimestamp(event, "start");
   const roleIds = [...new Set(event.discord_role_ids ?? [])];
   const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
   const prefix = roleMentions ? `${roleMentions} ` : "";
 
   return {
-    content: `🔔 ${prefix}Reminder: **${event.title}** starts <t:${timestamp}:R>. Use **Join / Change Build** to sign up!`,
+    content: event.event_kind === "flash"
+      ? flashCopy(locale, "reminder", {
+          prefix,
+          title: event.title,
+          timestamp,
+        })
+      : `🔔 ${prefix}Reminder: **${event.title}** starts <t:${timestamp}:R>. Use **Join / Change Build** to sign up!`,
     allowedMentions: roleIds.length > 0
       ? { parse: [], roles: roleIds }
       : { parse: [] },
@@ -136,6 +157,7 @@ export function buildEventStartMessage(
   event: EventView,
   participants: Array<{ discord_id: string | null; username: string }>,
   voiceChannelId: string,
+  locale?: string | null,
 ): EventStartMessage {
   const linkedUserIds = [...new Set(
     participants.flatMap((participant) => participant.discord_id ? [participant.discord_id] : []),
@@ -150,7 +172,16 @@ export function buildEventStartMessage(
     : "";
 
   return {
-    content: `🚨 ${recipientLine}\n**${event.title}** is now **LIVE** — join <#${voiceChannelId}>.${unlinkedLine}`,
+    content: event.event_kind === "flash"
+      ? flashCopy(locale, "startNotice", {
+          mentions: linkedUserIds.length ? recipientLine : flashCopy(locale, "noParticipants"),
+          title: event.title,
+          voiceChannelId,
+          unlinked: unlinkedNames.length
+            ? flashCopy(locale, "unlinked", { names: unlinkedNames.join(", ") })
+            : "",
+        })
+      : `🚨 ${recipientLine}\n**${event.title}** is now **LIVE** — join <#${voiceChannelId}>.${unlinkedLine}`,
     allowedMentions: { parse: [], users: linkedUserIds },
   };
 }
@@ -176,9 +207,23 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function buildEventEmbed(
   event: EventView | EventDetailView,
+  locale?: string | null,
 ): EmbedBuilder {
   const color = STATUS_COLOR[event.status] ?? BOT_COLORS.BRAND;
-  const status = STATUS_LABEL[event.status] ?? event.status.toUpperCase();
+  const flashLocale = resolveFlashLocale(locale);
+  const flashStatus = flashLocale === "it"
+    ? {
+        scheduled: "PROGRAMMATA",
+        live: "IN CORSO",
+        stopped: "FERMATA",
+        auto_stopped: "FERMATA AUTOMATICAMENTE",
+        cancelled: "ANNULLATA",
+      }[event.status]
+    : undefined;
+  const status =
+    (event.event_kind === "flash" ? flashStatus : undefined) ??
+    STATUS_LABEL[event.status] ??
+    event.status.toUpperCase();
   const dateTs = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
   const massTs = event.mass_time_utc
     ? Math.floor(new Date(event.mass_time_utc).getTime() / 1000)
@@ -197,13 +242,21 @@ export function buildEventEmbed(
   const rosterCount = detail.participants?.length ?? 0;
 
   descLines.push(
-    `🗓️ **Date** — <t:${dateTs}:d>`,
-    `📣 **Mass** — <t:${massTs}:F> (<t:${massTs}:R>)`,
-    `▶️ **Start** — <t:${startTs}:F> (<t:${startTs}:R>)`,
-    `⚡ **Status** — ${status}`,
-    `⚔️ **Composition** — ${detail.active_comp_name ?? event.comp_name}`,
-    `👑 **Organizer** — ${event.created_by_username}`,
-    `📋 **Roster** — ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`,
+    `🗓️ **${event.event_kind === "flash" ? flashCopy(locale, "date") : "Date"}** — <t:${dateTs}:d>`,
+    `📣 **${event.event_kind === "flash" ? flashCopy(locale, "mass") : "Mass"}** — <t:${massTs}:F> (<t:${massTs}:R>)`,
+    `▶️ **${event.event_kind === "flash" ? flashCopy(locale, "start") : "Start"}** — <t:${startTs}:F> (<t:${startTs}:R>)`,
+    `⚡ **${event.event_kind === "flash" ? flashCopy(locale, "status") : "Status"}** — ${status}`,
+    // Flash masses carry no comp; rendering a `null` comp name here would
+    // train people to distrust the card.
+    ...(event.event_kind === 'flash'
+      ? []
+      : [
+          `⚔️ **Composition** — ${detail.active_comp_name ?? event.comp_name ?? '—'}`,
+        ]),
+    `👑 **${event.event_kind === "flash" ? flashCopy(locale, "organizer") : "Organizer"}** — ${event.created_by_username}`,
+    ...(event.event_kind === "flash"
+      ? []
+      : [`📋 **Roster** — ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`]),
     ...(detail.active_comp_capacity && detail.active_comp_capacity > 0
       ? [`\`\`\`\nFill Rate  ${buildAsciiBar(rosterCount, detail.active_comp_capacity, 14)}  ${rosterCount} / ${detail.active_comp_capacity} (${Math.round((rosterCount / detail.active_comp_capacity) * 100)}%)\n\`\`\``]
       : []),
@@ -229,7 +282,26 @@ export function buildEventEmbed(
   // shotcallers see missing roles directly in the announcement instead of
   // inferring them from a list that only contained the builds already chosen.
   const compBuilds = detail.comp_builds ?? [];
-  if (compBuilds.length > 0) {
+  // Flash masses are binary: a plain "who is coming" list, never build seats.
+  if (event.event_kind === 'flash') {
+    if (rosterCount > 0) {
+      embed.addFields({
+        name: `📋 ${flashCopy(locale, "coming")} (${rosterCount})`,
+        value: formatNameList(
+          detail.participants.map((participant) =>
+            participant.discord_id ? `<@${participant.discord_id}>` : participant.username,
+          ),
+        ),
+        inline: false,
+      });
+    } else {
+      embed.addFields({
+        name: `📋 ${flashCopy(locale, "coming")}`,
+        value: flashCopy(locale, "nobody"),
+        inline: false,
+      });
+    }
+  } else if (compBuilds.length > 0) {
     const namesByBuildId = new Map<number, string[]>();
     const fillNames: string[] = [];
     for (const participant of detail.participants) {
@@ -441,15 +513,25 @@ export function buildEventCalendarActionRows(
 }
 
 /** Builds one Discord-safe Components V2 message per page of the event calendar. */
+export interface EventCalendarOptions {
+  /** Calendar heading; the flash channel passes its own so the panels are distinguishable. */
+  heading?: string;
+  /** One-line subtitle under the heading. */
+  subtitle?: string;
+  /** Discord locale used for flash-only calendar copy. */
+  locale?: string;
+}
+
 export function buildEventCalendarMessages(
   events: EventView[],
   threadIds: Readonly<Record<string, string>>,
+  options: EventCalendarOptions = {},
 ): Array<{
   flags: readonly [MessageFlags.IsComponentsV2];
   components: ContainerBuilder[];
   allowedMentions: { parse: readonly [] };
 }> {
-  return buildEventCalendarPageTexts(events, threadIds).map((content) => ({
+  return buildEventCalendarPageTexts(events, threadIds, options).map((content) => ({
     flags: [MessageFlags.IsComponentsV2] as const,
     components: [
       new ContainerBuilder()
@@ -463,37 +545,48 @@ export function buildEventCalendarMessages(
 function buildEventCalendarPageTexts(
   events: EventView[],
   threadIds: Readonly<Record<string, string>>,
+  options: EventCalendarOptions = {},
 ): string[] {
   const orderedEvents = [...events]
     .filter((event) => event.status === "scheduled" || event.status === "live")
     .sort((a, b) => eventTimestamp(a, "start") - eventTimestamp(b, "start"));
-  let current = calendarIntroduction();
+  let current = calendarIntroduction(options);
   const pages: string[] = [];
   const seenSections = new Set<string>();
   let currentSection: string | undefined;
   let hasEvents = false;
 
   for (const event of orderedEvents) {
-    const section = event.status === "live" ? "🔴 Live now" : "✦ Next up";
+    const section =
+      event.status === 'live'
+        ? flashCopy(options.locale, "calendarSectionLive")
+        : flashCopy(options.locale, "calendarSectionNext");
     const threadId = threadIds[String(event.id)];
-    const kind = event.call_to_arms ? "CALL TO ARMS" : event.comp_name;
+    const kind =
+      event.event_kind === 'flash'
+        ? flashCopy(options.locale, "calendarFlashKind")
+        : event.call_to_arms
+          ? 'CALL TO ARMS'
+          : (event.comp_name ?? 'Event');
     const description = event.description?.trim();
     const entry = [
       `### ${event.title.slice(0, 240)}`,
       `**${kind.slice(0, 120)}** · <t:${eventTimestamp(event, "start")}:F> · <t:${eventTimestamp(event, "start")}:R>`,
       ...(description ? [`> ${description.replace(/\n+/g, " ").slice(0, 180)}`] : []),
-      threadId ? `💬 <#${threadId}>` : "*Discussion thread is being prepared.*",
+      threadId
+        ? `💬 <#${threadId}>`
+        : flashCopy(options.locale, "calendarPendingThread"),
     ].join("\n");
 
     let heading = currentSection === section ? "" : `## ${section}\n\n`;
     let block = `${hasEvents ? "\n\n---\n\n" : ""}${heading}${entry}`;
     if (current.length + block.length > EVENT_CALENDAR_TEXT_LIMIT) {
       pages.push(current);
-      current = calendarContinuation();
+      current = calendarContinuation(options);
       hasEvents = false;
       currentSection = undefined;
       heading = seenSections.has(section)
-        ? `## ${section} (continued)\n\n`
+        ? `## ${section} (${flashCopy(options.locale, "calendarContinuation")})\n\n`
         : `## ${section}\n\n`;
       block = `${heading}${entry}`;
     }
@@ -508,7 +601,7 @@ function buildEventCalendarPageTexts(
   }
 
   if (orderedEvents.length === 0) {
-    current += "*There are no live or upcoming events right now.*";
+    current += flashCopy(options.locale, "calendarEmpty");
   }
   pages.push(current);
   return pages;
@@ -517,18 +610,20 @@ function buildEventCalendarPageTexts(
 /** Keep each message below Discord's 4,000-character combined Text Display limit. */
 const EVENT_CALENDAR_TEXT_LIMIT = 3_800;
 
-function calendarIntroduction(): string {
-  return (
-    "# 📅 Content Pings\n\n" +
-    "*Your quick view of what is happening next. Open an event thread for details and sign-up.*\n\n"
-  );
+function calendarIntroduction(options: EventCalendarOptions): string {
+  const heading = options.heading ?? '📅 Call to Arms';
+  const subtitle =
+    options.subtitle ??
+    '*Upcoming organized events, with comp and sign-up details in each thread.*';
+  return `# ${heading}\n\n${subtitle}\n\n`;
 }
 
-function calendarContinuation(): string {
-  return (
-    "# 📅 Content Pings (continued)\n\n" +
-    "*Your quick view of what is happening next. Open an event thread for details and sign-up.*\n\n"
-  );
+function calendarContinuation(options: EventCalendarOptions): string {
+  const heading = options.heading ?? '📅 Call to Arms';
+  const subtitle =
+    options.subtitle ??
+    '*Upcoming organized events, with comp and sign-up details in each thread.*';
+  return `# ${heading} (${flashCopy(options.locale, "calendarContinuation")})\n\n${subtitle}\n\n`;
 }
 
 // ── Event participation buttons ──────────────────────────────────────────────
@@ -565,50 +660,52 @@ export function buildEventManageActionRow(
 /** Builds the shared event control rows shown inside an event announcement thread. */
 export function buildEventThreadActionRows(
   event: EventView,
+  locale?: string | null,
 ): ActionRowBuilder<ButtonBuilder>[] {
   const isScheduled = event.status === "scheduled";
   const isLive = event.status === "live";
   const isCancelled = event.status === "cancelled";
+  const isFlash = event.event_kind === "flash";
   const buttons = [
     new ButtonBuilder()
       .setCustomId(`event:join:${event.id}`)
-      .setLabel("Join / Change Build")
+      .setLabel(isFlash ? flashCopy(locale, "join") : "Join / Change Build")
       .setEmoji("✅")
       .setStyle(ButtonStyle.Success)
       .setDisabled(!isScheduled),
     new ButtonBuilder()
       .setCustomId(`event:leave:${event.id}`)
-      .setLabel("Leave")
+      .setLabel(isFlash ? flashCopy(locale, "leave") : "Leave")
       .setEmoji("🚪")
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!isScheduled),
     new ButtonBuilder()
       .setCustomId(`event:ping:${event.id}`)
-      .setLabel("Ping")
+      .setLabel(isFlash ? flashCopy(locale, "ping") : "Ping")
       .setEmoji("🔔")
       .setStyle(ButtonStyle.Primary)
       .setDisabled(!isScheduled),
     new ButtonBuilder()
       .setCustomId(`event:start:${event.id}`)
-      .setLabel("Start")
+      .setLabel(isFlash ? flashCopy(locale, "startAction") : "Start")
       .setEmoji("▶️")
       .setStyle(ButtonStyle.Success)
       .setDisabled(!isScheduled),
     new ButtonBuilder()
       .setCustomId(`event:stop:${event.id}`)
-      .setLabel("Stop")
+      .setLabel(isFlash ? flashCopy(locale, "stop") : "Stop")
       .setEmoji("⏹️")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isLive),
     isCancelled
       ? new ButtonBuilder()
           .setCustomId(`event:uncancel:${event.id}`)
-          .setLabel("Reopen")
+          .setLabel(isFlash ? flashCopy(locale, "reopen") : "Reopen")
           .setEmoji("♻️")
           .setStyle(ButtonStyle.Primary)
       : new ButtonBuilder()
           .setCustomId(`event:cancel:${event.id}`)
-          .setLabel("Cancel")
+          .setLabel(isFlash ? flashCopy(locale, "cancel") : "Cancel")
           .setEmoji("❌")
           .setStyle(ButtonStyle.Danger)
           .setDisabled(!(isScheduled || isLive)),

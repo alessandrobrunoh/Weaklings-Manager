@@ -390,7 +390,7 @@ mod tests {
             description: Set(None),
             call_to_arms: Set(false),
             regear: Set(true),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             player_cap: Set(None),
             created_by: Set(user_id),
             event_date_utc: Set(ts("2026-01-01T00:00:00Z")),

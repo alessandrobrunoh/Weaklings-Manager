@@ -1494,7 +1494,7 @@ async fn get_fight_trends(
             .all(&db)
             .await?
     };
-    let comp_ids = events.iter().map(|row| row.comp_id).collect::<Vec<_>>();
+    let comp_ids = events.iter().filter_map(|row| row.comp_id).collect::<Vec<_>>();
     let comps = if comp_ids.is_empty() {
         Vec::new()
     } else {
@@ -1656,8 +1656,10 @@ fn build_fight_trend_period(
         if let Some(event_id) = fight.event_id {
             linked_event_fights += 1;
             linked_event_ids.insert(event_id);
-            if let Some(event) = events_by_id.get(&event_id) {
-                *comps.entry(event.comp_id).or_default() += 1;
+            if let Some(event) = events_by_id.get(&event_id)
+                && let Some(comp_id) = event.comp_id
+            {
+                *comps.entry(comp_id).or_default() += 1;
             }
             if let Some(participations) = participations_by_event.get(&event_id) {
                 for participation in participations {
@@ -1824,12 +1826,16 @@ async fn fight_planned_comp(
     let Some(event) = event else {
         return Ok(None);
     };
-    let comp_name = comp::Entity::find_by_id(event.comp_id)
+    // Flash masses have no planned comp.
+    let Some(comp_id) = event.comp_id else {
+        return Ok(None);
+    };
+    let comp_name = comp::Entity::find_by_id(comp_id)
         .one(db)
         .await?
         .map(|comp| comp.name);
     Ok(Some(FightPlannedCompView {
-        id: event.comp_id,
+        id: comp_id,
         name: comp_name,
     }))
 }
@@ -3130,7 +3136,7 @@ mod tests {
             description: Set(None),
             call_to_arms: Set(false),
             regear: Set(true),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             player_cap: Set(None),
             created_by: Set(user_id),
             event_date_utc: Set(timestamp(0)),

@@ -1499,7 +1499,7 @@ mod comp_readiness_tests {
             description: Set(None),
             call_to_arms: Set(false),
             regear: Set(false),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             player_cap: Set(None),
             created_by: Set(created_by),
             event_date_utc: Set(now.into()),
@@ -2204,7 +2204,7 @@ mod calibration_tests {
         .expect("failed to insert comp");
         let created_event = event::ActiveModel {
             title: Set("Calibration mass".to_string()),
-            comp_id: Set(comp.id),
+            comp_id: Set(Some(comp.id)),
             created_by: Set(user_id),
             event_date_utc: Set(when),
             ..Default::default()

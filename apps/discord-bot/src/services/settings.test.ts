@@ -13,6 +13,8 @@ const settings: GuildSettingsView = {
   discord_events_channel_id: null,
   discord_battles_channel_id: null,
   discord_battles_cta_channel_id: null,
+  discord_flash_mass_channel_id: null,
+  discord_event_timezone: "Europe/Rome",
   discord_audit_log_channel_id: null,
   discord_transaction_spam_channel_id: null,
   discord_event_role_id: null,
@@ -55,6 +57,26 @@ test("SettingsService exposes the configured event voice category", async () => 
   const service = new SettingsService(api);
 
   assert.equal(await service.eventVoiceCategoryId(), "123456789012345678");
+});
+
+test("SettingsService routes organized and flash channels and exposes guild timezone", async () => {
+  const api = {
+    get: async () => ({
+      ...settings,
+      discord_events_channel_id: "organized",
+      discord_battles_cta_channel_id: "legacy-cta",
+      discord_flash_mass_channel_id: "flash",
+      discord_event_timezone: "Europe/Rome",
+    }),
+  } as unknown as ApiClient;
+  const service = new SettingsService(api);
+
+  assert.deepEqual(await service.eventChannelRoutes(), {
+    events: "organized",
+    callToArms: "legacy-cta",
+    flashMass: "flash",
+  });
+  assert.equal((await service.get()).discord_event_timezone, "Europe/Rome");
 });
 
 test("the settings registry keeps one cache per guild", async () => {

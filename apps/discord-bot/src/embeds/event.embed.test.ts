@@ -21,6 +21,7 @@ function event(overrides: Partial<EventView> = {}): EventView {
     title: "Castle Fight",
     description: null,
     call_to_arms: false,
+    event_kind: "organized",
     discord_role_ids: ["111111111111111111", "222222222222222222"],
     regear: false,
     comp_id: 7,
@@ -40,7 +41,7 @@ function event(overrides: Partial<EventView> = {}): EventView {
   };
 }
 
-test("Content Pings keeps more than 25 events in Discord-safe Components V2 message pages", () => {
+test("Call to Arms calendar keeps more than 25 events in Discord-safe Components V2 message pages", () => {
   const events = Array.from({ length: 40 }, (_, index) =>
     event({
       id: index + 1,
@@ -71,7 +72,7 @@ test("Content Pings keeps more than 25 events in Discord-safe Components V2 mess
   }
 });
 
-test("empty Content Pings keeps the live/upcoming empty-state copy", () => {
+test("empty Call to Arms calendar keeps the live/upcoming empty-state copy", () => {
   const text = buildEventCalendarMessages([], {})
     .flatMap((page) => page.components.flatMap((container) => container.toJSON().components))
     .filter((component) => component.type === ComponentType.TextDisplay)
@@ -79,6 +80,40 @@ test("empty Content Pings keeps the live/upcoming empty-state copy", () => {
     .join("\n");
 
   assert.match(text, /There are no live or upcoming events right now/);
+});
+
+test("flash calendar has its own heading", () => {
+  const text = buildEventCalendarMessages([], {}, {
+    heading: "⚡ Flash Masses",
+    subtitle: "*Spontaneous content — one tap to join.*",
+  })
+    .flatMap((page) => page.components.flatMap((container) => container.toJSON().components))
+    .filter((component) => component.type === ComponentType.TextDisplay)
+    .map((component) => component.content)
+    .join("\n");
+
+  assert.match(text, /⚡ Flash Masses/);
+  assert.match(text, /one tap to join/);
+});
+
+test("flash calendar entries follow the guild's Italian locale", () => {
+  const text = buildEventCalendarMessages(
+    [event({ event_kind: "flash", comp_id: null, comp_name: null })],
+    {},
+    {
+      heading: "⚡ Flash mass",
+      subtitle: "*Contenuti spontanei.*",
+      locale: "it",
+    },
+  )
+    .flatMap((page) => page.components.flatMap((container) => container.toJSON().components))
+    .filter((component) => component.type === ComponentType.TextDisplay)
+    .map((component) => component.content)
+    .join("\n");
+
+  assert.match(text, /✦ Prossime/);
+  assert.match(text, /MASSA FLASH/);
+  assert.match(text, /thread della discussione è in preparazione/);
 });
 
 test("event embed places an assigned member on the officer seat, not the signup build", () => {
@@ -118,6 +153,67 @@ test("event embed places an assigned member on the officer seat, not the signup 
       inline: true,
     },
   ]);
+});
+
+test("flash event embed shows a plain Coming list and no composition field", () => {
+  const embed = buildEventEmbed({
+    ...event({
+      event_kind: "flash",
+      comp_id: null,
+      comp_name: null,
+      discord_role_ids: [],
+    }),
+    active_comp_id: null,
+    active_comp_name: null,
+    active_comp_capacity: null,
+    comp_builds: [],
+    participants: [
+      {
+        user_id: 1,
+        username: "Alessandro",
+        discord_id: "333333333333333333",
+        primary_build_id: null,
+        primary_build_name: "Fill",
+        secondary_build_id: null,
+        secondary_build_name: null,
+      },
+    ],
+  } as EventDetailView).toJSON();
+
+  assert.equal(embed.description?.includes("Composition"), false);
+  assert.deepEqual(embed.fields, [
+    {
+      name: "📋 Coming (1)",
+      value: "• <@333333333333333333>",
+      inline: false,
+    },
+  ]);
+});
+
+test("flash card and controls use Italian when the Discord guild locale is Italian", () => {
+  const detail = {
+    ...event({
+      event_kind: "flash",
+      comp_id: null,
+      comp_name: null,
+      discord_role_ids: [],
+    }),
+    active_comp_id: null,
+    active_comp_name: null,
+    active_comp_capacity: null,
+    comp_builds: [],
+    participants: [],
+  } as EventDetailView;
+  const embed = buildEventEmbed(detail, "it").toJSON();
+  const labels = buildEventThreadActionRows(detail, "it")
+    .flatMap((row) => row.toJSON().components)
+    .flatMap((component) => ("label" in component ? [component.label] : []));
+
+  assert.match(embed.description ?? "", /\*\*Data\*\*/);
+  assert.match(embed.description ?? "", /\*\*Mass\*\*/);
+  assert.match(embed.description ?? "", /\*\*Stato\*\* — PROGRAMMATA/);
+  assert.equal(embed.description?.includes("Roster"), false);
+  assert.deepEqual(labels, ["Partecipa", "Esci", "Avvisa", "Inizia", "Ferma", "Annulla"]);
 });
 
 test("event embed renders every active comp build and marks empty seats", () => {

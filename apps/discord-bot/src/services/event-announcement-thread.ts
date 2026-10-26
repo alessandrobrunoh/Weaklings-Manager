@@ -10,6 +10,7 @@ import {
   lockAndArchiveThread,
   withReopenedThread,
 } from "./discord-thread.js";
+import { flashCopy } from "./flash-copy.js";
 
 export type EventAnnouncementThread = ThreadChannel;
 
@@ -172,15 +173,18 @@ export async function sendEventSignupMessage(
   sourceLabel: string,
 ): Promise<string | null> {
   try {
+    const locale = thread.guild?.preferredLocale;
     const roleIds = [...new Set(event.discord_role_ids ?? [])];
     const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
     const message = await thread.send({
       content: [
         roleMentions,
-        "Use the controls below to manage participation or operate the event.",
+        event.event_kind === "flash"
+          ? flashCopy(locale, "controlsHint")
+          : "Use the controls below to manage participation or operate the event.",
       ].filter(Boolean).join("\n"),
-      embeds: [buildEventEmbed(event)],
-      components: buildEventThreadActionRows(event),
+      embeds: [buildEventEmbed(event, locale)],
+      components: buildEventThreadActionRows(event, locale),
       allowedMentions: roleIds.length > 0 ? { parse: [], roles: roleIds } : { parse: [] },
     });
     console.log(
@@ -243,6 +247,7 @@ export async function refreshEventSignupCard(
       thread,
       `Refresh event #${event.id} signup card (${sourceLabel})`,
       async (active) => {
+        const locale = active.guild?.preferredLocale;
         const message = await findEventSignupMessage(active, event.id, messageId);
         if (!message) {
           console.warn(
@@ -251,8 +256,8 @@ export async function refreshEventSignupCard(
           return null;
         }
         await message.edit({
-          embeds: [buildEventEmbed(event)],
-          components: buildEventThreadActionRows(event),
+          embeds: [buildEventEmbed(event, locale)],
+          components: buildEventThreadActionRows(event, locale),
         });
         return message.id;
       },

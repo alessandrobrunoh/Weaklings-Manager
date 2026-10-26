@@ -258,12 +258,16 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  /** `'flash'` (binary participation, no comp) or `'organized'`. */
+  /** Missing only when talking to a pre-migration backend; treat it as organized. */
+  event_kind?: 'flash' | 'organized';
   discord_role_ids: string[];
   regear: boolean;
   /** Optional planning threshold that advances comp expansions without blocking signups. */
   player_cap?: number | null;
-  comp_id: number;
-  comp_name: string;
+  /** `null` for flash masses — never use a null comp to detect flash, use `event_kind`. */
+  comp_id: number | null;
+  comp_name: string | null;
   created_by: number;
   created_by_username: string;
   event_date_utc: string;
@@ -307,9 +311,9 @@ export interface EventCompBuild {
 }
 
 export interface EventDetailView extends EventView {
-  active_comp_id: number;
-  active_comp_name: string;
-  active_comp_capacity: number;
+  active_comp_id: number | null;
+  active_comp_name: string | null;
+  active_comp_capacity: number | null;
   /** Full active comp snapshot so the Discord message can render empty slots. */
   comp_builds?: EventCompBuild[];
   participants: EventParticipant[];
@@ -338,7 +342,9 @@ export interface CreateEventRequest {
   description?: string;
   call_to_arms?: boolean;
   regear?: boolean;
-  comp_id: number;
+  /** `'flash'` skips the comp entirely and rejects comp-shaped options. */
+  event_kind?: 'flash' | 'organized';
+  comp_id?: number;
   player_cap?: number;
   event_date_utc: string;
   mass_time_utc?: string;
@@ -468,6 +474,11 @@ export interface GuildSettingsView {
   discord_events_channel_id: string | null;
   discord_battles_channel_id: string | null;
   discord_battles_cta_channel_id: string | null;
+  /** Flash masses announce here; until set, flash announcements retry loudly. */
+  /** Missing only when talking to a backend before the flash-channel migration. */
+  discord_flash_mass_channel_id?: string | null;
+  /** IANA timezone for wall-clock event inputs; older backends omit it. */
+  discord_event_timezone?: string;
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id?: string | null;

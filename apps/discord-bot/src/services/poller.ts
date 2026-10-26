@@ -1,6 +1,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Client, Message, TextChannel } from "discord.js";
+import { ChannelType } from "discord.js";
+import type { Client, Message, TextChannel, ThreadChannel } from "discord.js";
 import { ApiError, type ApiClient } from "../api/client.js";
 import type {
   PaginatedData,
@@ -35,9 +36,16 @@ import {
 import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
+import { flashCopy } from "./flash-copy.js";
+import {
+  calendarChannelIds,
+  destinationChannel,
+  destinationChannelLabel,
+} from "./event-channels.js";
 import {
   buildEventThreadName,
   closeEventAnnouncementThread,
+  createEventAnnouncementThread,
   createStandaloneEventThread,
   deleteEventAnnouncement,
   refreshEventSignupCard,
@@ -79,10 +87,28 @@ interface PollerState {
   pinged1hEvents: number[];
   /** Discord discussion thread keyed by event ID, used for event follow-ups. */
   eventThreadIds: Record<string, string>;
+  /** Parent-channel announcement message ids, needed to retry flash thread creation without re-pinging. */
+  eventParentMessageIds: Record<string, string>;
   /** Signup card message id inside each event thread. */
   eventSignupMessageIds: Record<string, string>;
   /** Persistent calendar page message ids keyed by their parent channel id. */
   eventCalendarMessageIds: Record<string, string[]>;
+  /** Last rendered payload fingerprint per calendar page; skips unchanged Discord edits. */
+  eventCalendarFingerprints: Record<string, string[]>;
+  /**
+   * Events waiting for their undo window or retrying a failed Discord delivery.
+   *
+   * `lastEventId` is a processed high-water mark, NOT an announced-one: an
+   * The event id is a durable work queue because `lastEventId` is only a
+   * processed high-water mark. Entries leave only when the announcement is
+   * posted or the event is gone/cancelled.
+   */
+  pendingAnnounces: Record<
+    string,
+    { attempts: number; lastError: string; since: string; status?: "undo_window" | "failed" }
+  >;
+  /** One-release compatibility for checkpoints written before the queue was renamed. */
+  failedAnnounces?: PollerState["pendingAnnounces"];
   /** Last Discord-synced `${roster_version}:${status}` per event. */
   eventSignupRevisions: Record<string, string>;
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
@@ -92,6 +118,8 @@ interface PollerState {
   emptyLiveChecks: Record<string, number>;
   /** Live events whose voice channel has been seen occupied at least once. */
   occupiedLiveEvents: number[];
+  /** Last completed orphan voice-channel sweep attempt (Unix milliseconds). */
+  lastVoiceSweepAt: number;
   applicationsOpen?: boolean;
   lastGiveawayId: number;
   postedGiveawayIds: number[];
@@ -127,6 +155,19 @@ export interface EventCalendarChannelFailure {
 const DISCORD_UNKNOWN_MESSAGE = 10008;
 /** Discord JSON error for an operation the bot's current channel permissions reject. */
 const DISCORD_MISSING_PERMISSIONS = 50013;
+/** Give the flash author a short undo window before sending a role-wide ping. */
+export const FLASH_UNDO_WINDOW_MS = 30_000;
+/** Run the orphan sweep sparsely; per-guild pollers share the same Discord token. */
+const VOICE_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+/** Do not sweep a just-created voice channel before the Mass joiners have arrived. */
+const VOICE_SWEEP_MIN_AGE_MS = 30 * 60 * 1000;
+
+function flashUndoTimeRemaining(event: Pick<EventView, "event_kind" | "created_at">): number {
+  if (event.event_kind !== "flash") return 0;
+  const createdAt = Date.parse(event.created_at);
+  if (!Number.isFinite(createdAt)) return 0;
+  return Math.max(0, createdAt + FLASH_UNDO_WINDOW_MS - Date.now());
+}
 
 function createDefaultState(): PollerState {
   return {
@@ -134,14 +175,18 @@ function createDefaultState(): PollerState {
     lastBattleId: 0,
     pinged1hEvents: [],
     eventThreadIds: {},
+    eventParentMessageIds: {},
     eventSignupMessageIds: {},
     eventCalendarMessageIds: {},
+    eventCalendarFingerprints: {},
+    pendingAnnounces: {},
     eventSignupRevisions: {},
     splitUpdatedAt: null,
     splitAfterId: null,
     massedEvents: [],
     emptyLiveChecks: {},
     occupiedLiveEvents: [],
+    lastVoiceSweepAt: Date.now(),
     applicationsOpen: undefined,
     lastGiveawayId: 0,
     postedGiveawayIds: [],
@@ -228,16 +273,22 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
       lastBattleId: parsedState.lastBattleId ?? 0,
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
       eventThreadIds: parsedState.eventThreadIds ?? {},
+      eventParentMessageIds: parsedState.eventParentMessageIds ?? {},
       eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
       eventCalendarMessageIds: restoreEventCalendarMessageIds(
         parsedState.eventCalendarMessageIds,
       ),
+      eventCalendarFingerprints: parsedState.eventCalendarFingerprints ?? {},
+      pendingAnnounces: parsedState.pendingAnnounces ?? parsedState.failedAnnounces ?? {},
       eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
       splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
       splitAfterId: parsedState.splitAfterId ?? null,
       massedEvents: parsedState.massedEvents ?? [],
       emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
       occupiedLiveEvents: parsedState.occupiedLiveEvents ?? [],
+      // Old checkpoints start the sweep interval from now, avoiding a tenant
+      // herd of channel-list/delete requests immediately after bot restart.
+      lastVoiceSweepAt: parsedState.lastVoiceSweepAt ?? Date.now(),
       applicationsOpen: parsedState.applicationsOpen,
       lastGiveawayId: parsedState.lastGiveawayId ?? 0,
       postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
@@ -294,6 +345,8 @@ export class Poller {
   private readonly stateFileName: string;
   private readonly state: PollerState;
   private timer: NodeJS.Timeout | undefined;
+  private delayedPollTimer: NodeJS.Timeout | undefined;
+  private delayedPollAt = 0;
   /** Guards against a manually-triggered check overlapping a scheduled one —
    *  both would otherwise read the same stale `lastEventId`/`lastBattleId`
    *  and could announce the same event or battle twice. */
@@ -324,6 +377,31 @@ export class Poller {
     saveState(this.stateDirectory, this.stateFileName, this.state);
   }
 
+  /** Reads unified routes, with a test/rolling-deploy fallback to the old accessors. */
+  private async loadEventChannelRoutes(): Promise<{
+    events: string | null;
+    callToArms: string | null;
+    flashMass: string | null;
+  }> {
+    const settings = this.settings as SettingsService & {
+      eventChannelRoutes?: () => Promise<{
+        events: string | null;
+        callToArms: string | null;
+        flashMass: string | null;
+      }>;
+      flashMassChannelId?: () => Promise<string | null>;
+    };
+    if (settings.eventChannelRoutes) {
+      return settings.eventChannelRoutes();
+    }
+    const [events, callToArms, flashMass] = await Promise.all([
+      settings.eventsChannelId(),
+      settings.callToArmsChannelId(),
+      settings.flashMassChannelId?.() ?? Promise.resolve(null),
+    ]);
+    return { events, callToArms, flashMass };
+  }
+
   /** Start the polling loop. */
   start(): void {
     // Seeding runs before the first real cycle so a command that asks for an
@@ -343,6 +421,24 @@ export class Poller {
   /** Stop the polling loop. */
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.delayedPollTimer) clearTimeout(this.delayedPollTimer);
+    this.delayedPollTimer = undefined;
+    this.delayedPollAt = 0;
+  }
+
+  /** Schedules a one-off poll without creating one timer per pending flash mass. */
+  private schedulePollAfter(delayMs: number): void {
+    const dueAt = Date.now() + Math.max(0, delayMs);
+    if (this.delayedPollTimer && dueAt >= this.delayedPollAt) return;
+    if (this.delayedPollTimer) clearTimeout(this.delayedPollTimer);
+
+    this.delayedPollAt = dueAt;
+    this.delayedPollTimer = setTimeout(() => {
+      this.delayedPollTimer = undefined;
+      this.delayedPollAt = 0;
+      void this.poll();
+    }, Math.max(0, dueAt - Date.now()));
+    this.delayedPollTimer.unref();
   }
 
   /**
@@ -377,6 +473,7 @@ export class Poller {
       await this.checkNewGiveaways();
       await this.checkGiveawayResults();
       await this.checkEventLifecycle();
+      await this.sweepOrphanEventVoiceChannels();
       await Promise.allSettled([
         this.checkNewBattles(),
         this.checkUpcomingEvents(),
@@ -544,7 +641,7 @@ export class Poller {
         .filter((e) => e.id > this.state.lastEventId)
         .sort((a, b) => a.id - b.id);
 
-      if (newEvents.length === 0) {
+      if (newEvents.length === 0 && Object.keys(this.state.pendingAnnounces).length === 0) {
         return;
       }
 
@@ -556,59 +653,189 @@ export class Poller {
       const announceable = newEvents.filter(
         (event) => event.status === "scheduled" && !event.archived_at,
       );
-      if (announceable.length === 0) {
-        this.state.lastEventId = newEvents[newEvents.length - 1]!.id;
-        this.save();
-        return;
+
+      const routes = await this.loadEventChannelRoutes();
+
+      // Pending announcements are retried before the new batch, so a held or
+      // stuck event never blocks later ones and never gets silently dropped.
+      for (const eventId of Object.keys(this.state.pendingAnnounces)) {
+        let eventView: EventView | undefined = announceable.find(
+          (event) => String(event.id) === eventId,
+        );
+        if (!eventView) {
+          try {
+            eventView = await this.api.get<EventView>(`api/events/${eventId}`);
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 404) {
+              // The event is gone (deleted) — nothing left to announce.
+              delete this.state.pendingAnnounces[eventId];
+              this.save();
+            } else {
+              console.warn(
+                `[Poller] announce_result=retry_deferred guild=${this.guildId} event=${eventId} stage=lookup error=${String(error)}`,
+              );
+            }
+            continue;
+          }
+        }
+        if (
+          eventView.status !== "scheduled" ||
+          eventView.archived_at ||
+          this.state.eventThreadIds[String(eventView.id)]
+        ) {
+          delete this.state.pendingAnnounces[eventId];
+          this.save();
+          continue;
+        }
+        await this.announceEvent(eventView, routes);
       }
 
-      const [eventsChannelId, callToArmsChannelId] = await Promise.all([
-        this.settings.eventsChannelId(),
-        this.settings.callToArmsChannelId(),
-      ]);
-
       for (const event of announceable) {
-        // Fetch the detail before resolving the guild channel so an alliance
-        // announcement does not depend on the originating guild having its
-        // own event channel configured. The alliance channel is a separate
-        // delivery target and should still receive the event when the guild
-        // announcement cannot be sent.
-        const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
-        await this.postAllianceAnnouncement(eventDetail);
-
-        const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
-        if (!channelId) {
-          console.warn(
-            `[Poller] Cannot announce event #${event.id}: no ${event.call_to_arms ? "Call to Arms" : "events"} channel is configured`,
-          );
-          return;
+        // Idempotence claim: an event that already has a thread recorded has
+        // been announced, whatever happened to `lastEventId`.
+        if (this.state.eventThreadIds[String(event.id)]) {
+          continue;
         }
-        const channel = await this.getTextChannel(channelId);
-        if (!channel) {
-          return;
-        }
+        await this.announceEvent(event, routes);
+      }
 
-        // The channel contains one persistent calendar; each event gets a standalone
-        // discussion thread so the calendar itself never scrolls away.
-        const thread = await createStandaloneEventThread(channel, eventDetail, "Poller");
-        if (thread) {
-          this.state.eventThreadIds[String(event.id)] = thread.id;
-          const signupMessageId = await sendEventSignupMessage(thread, eventDetail, "Poller");
-          if (signupMessageId) {
-            this.state.eventSignupMessageIds[String(event.id)] = signupMessageId;
-          }
-          this.state.eventSignupRevisions[String(event.id)] =
-            `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
-        }
-
-        this.state.lastEventId = event.id;
+      const newestProcessed = newEvents[newEvents.length - 1]?.id;
+      if (newestProcessed && newestProcessed > this.state.lastEventId) {
+        this.state.lastEventId = newestProcessed;
         this.save();
-        console.log(
-          `[Poller] Announced ${event.call_to_arms ? "Call to Arms" : "event"} #${event.id}: ${event.title}`,
-        );
       }
     } catch (err) {
       console.error("[Poller] Failed to check events:", err);
+    }
+  }
+
+  /**
+   * Announces one event and records the outcome honestly.
+   *
+   * Success means a Discord thread exists and is recorded in the checkpoint;
+   * anything else is a failure that lands in `pendingAnnounces` with a
+   * structured line (guild, event, stage, result) — "Announced" is never
+   * logged unless the ping actually went out, and a missing channel or a
+   * thread rejection never swallows the event: the next poll retries it.
+   */
+  private async announceEvent(event: EventView, routes: {
+    events: string | null;
+    callToArms: string | null;
+    flashMass: string | null;
+  }): Promise<void> {
+    const eventKey = String(event.id);
+    const fail = (stage: string, lastError: string) => {
+      const previous = this.state.pendingAnnounces[eventKey];
+      this.state.pendingAnnounces[eventKey] = {
+        attempts: (previous?.attempts ?? 0) + 1,
+        lastError,
+        since: previous?.since ?? new Date().toISOString(),
+        status: "failed",
+      };
+      this.save();
+      console.warn(
+        `[Poller] announce_result=failed stage=${stage} guild=${this.guildId} event=${event.id} attempts=${this.state.pendingAnnounces[eventKey]!.attempts} error=${lastError}`,
+      );
+    };
+
+    try {
+      const undoRemaining = flashUndoTimeRemaining(event);
+      if (undoRemaining > 0) {
+        const previous = this.state.pendingAnnounces[eventKey];
+        const undoUntil = new Date(Date.parse(event.created_at) + FLASH_UNDO_WINDOW_MS);
+        this.state.pendingAnnounces[eventKey] = {
+          attempts: previous?.attempts ?? 0,
+          lastError: `flash undo window open until ${undoUntil.toISOString()}`,
+          since: previous?.since ?? new Date().toISOString(),
+          status: "undo_window",
+        };
+        this.save();
+        this.schedulePollAfter(undoRemaining);
+        console.info(
+          `[Poller] announce_result=pending stage=undo_window guild=${this.guildId} event=${event.id} remaining_ms=${undoRemaining}`,
+        );
+        return;
+      }
+
+      // Fetch the detail before resolving the guild channel so an alliance
+      // announcement does not depend on the originating guild having its
+      // own event channel configured. The alliance channel is a separate
+      // delivery target and should still receive the event when the guild
+      // announcement cannot be sent.
+      const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
+      await this.postAllianceAnnouncement(eventDetail);
+
+      const label = destinationChannelLabel(event);
+      const channelId = destinationChannel(event, routes);
+      if (!channelId) {
+        // `continue`-per-event, never a mid-batch `return`: one missing
+        // channel must not freeze announcements for every later event.
+        fail(
+          "route",
+          `no ${label} channel is configured (Admin → Discord integration)`,
+        );
+        return;
+      }
+      const channel = await this.getTextChannel(channelId);
+      if (!channel) {
+        fail("channel", `${label} channel ${channelId} is missing or not a text channel`);
+        return;
+      }
+
+      // Flash needs a visible role ping in the channel before the discussion
+      // thread. Reuse the saved parent message on retry so a failed thread
+      // creation never repeats the role-wide ping.
+      let thread: ThreadChannel | null;
+      if (event.event_kind === "flash") {
+        let parent: Message | null = null;
+        const savedParentId = this.state.eventParentMessageIds[eventKey];
+        if (savedParentId) {
+          try {
+            parent = await channel.messages.fetch(savedParentId);
+          } catch (error) {
+            if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) {
+              fail("parent_fetch", `could not fetch saved flash announcement ${savedParentId}`);
+              return;
+            }
+            delete this.state.eventParentMessageIds[eventKey];
+          }
+        }
+        if (!parent) {
+          parent = await channel.send(buildEventAnnouncementMessage(eventDetail));
+          this.state.eventParentMessageIds[eventKey] = parent.id;
+          this.save();
+        }
+        thread = await createEventAnnouncementThread(parent, eventDetail, "Poller");
+      } else {
+        // Organized events preserve the current standalone-thread behavior.
+        thread = await createStandaloneEventThread(channel, eventDetail, "Poller");
+      }
+      if (!thread) {
+        fail("thread", "Discord rejected the discussion thread creation");
+        return;
+      }
+      this.state.eventThreadIds[eventKey] = thread.id;
+      const signupMessageId = await sendEventSignupMessage(thread, eventDetail, "Poller");
+      if (signupMessageId) {
+        this.state.eventSignupMessageIds[eventKey] = signupMessageId;
+      } else {
+        // The thread exists and is recorded, so the ping went out; only the
+        // interactive card is missing. Degraded, not failed — logged so the
+        // gap is visible without a retry loop that would duplicate the thread.
+        console.warn(
+          `[Poller] announce_result=degraded stage=signup guild=${this.guildId} event=${event.id} error=signup card was not posted`,
+        );
+      }
+      this.state.eventSignupRevisions[eventKey] =
+        `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
+
+      delete this.state.pendingAnnounces[eventKey];
+      this.save();
+      console.log(
+        `[Poller] announce_result=success guild=${this.guildId} event=${event.id} kind=${event.event_kind} thread=${thread.id} — ${event.title}`,
+      );
+    } catch (error) {
+      fail("unexpected", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -657,13 +884,8 @@ export class Poller {
   private async performEventCalendarSync(
     discordUserId?: string,
   ): Promise<EventCalendarRefreshResult> {
-    const [eventsChannelId, callToArmsChannelId] = await Promise.all([
-      this.settings.eventsChannelId(),
-      this.settings.callToArmsChannelId(),
-    ]);
-    const configuredChannelIds = [
-      ...new Set([eventsChannelId, callToArmsChannelId].filter(Boolean) as string[]),
-    ];
+    const routes = await this.loadEventChannelRoutes();
+    const configuredChannelIds = calendarChannelIds(routes);
     if (configuredChannelIds.length === 0 && !discordUserId) {
       return {
         eventCount: 0,
@@ -680,10 +902,18 @@ export class Poller {
     let unroutedEvents = 0;
     let unroutedCallToArms = 0;
     for (const event of events) {
-      const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
+      if (flashUndoTimeRemaining(event) > 0) continue;
+      const channelId = destinationChannel(event, routes);
       if (!channelId) {
-        if (event.call_to_arms) unroutedCallToArms++;
-        else unroutedEvents++;
+        if (event.event_kind === 'flash') {
+          console.warn(
+            `[Poller] Flash mass #${event.id} has no flash mass channel configured (Admin → Discord integration)`,
+          );
+        } else if (event.call_to_arms) {
+          unroutedCallToArms++;
+        } else {
+          unroutedEvents++;
+        }
         continue;
       }
       channels.set(channelId, [...(channels.get(channelId) ?? []), event]);
@@ -704,9 +934,25 @@ export class Poller {
         }
 
         const channelEvents = channels.get(channelId) ?? [];
-        const payloads = buildEventCalendarMessages(channelEvents, this.state.eventThreadIds);
+        // The flash channel gets its own panel so the two calendars are
+        // distinguishable at a glance; organized channels keep the classic one.
+        const locale = this.client.guilds?.cache?.get(this.guildId)?.preferredLocale;
+        const payloads =
+          channelId === routes.flashMass
+            ? buildEventCalendarMessages(channelEvents, this.state.eventThreadIds, {
+                heading: flashCopy(locale, "flashCalendarHeading"),
+                subtitle: flashCopy(locale, "flashCalendarSubtitle"),
+                locale: locale ?? undefined,
+              })
+            : buildEventCalendarMessages(channelEvents, this.state.eventThreadIds);
         const messageIds = [...(this.state.eventCalendarMessageIds[channelId] ?? [])];
+        const fingerprints = [...(this.state.eventCalendarFingerprints[channelId] ?? [])];
         for (const [pageIndex, payload] of payloads.entries()) {
+          const fingerprint = JSON.stringify({
+            flags: payload.flags,
+            components: payload.components.map((component) => component.toJSON()),
+            allowedMentions: payload.allowedMentions,
+          });
           const messageId = messageIds[pageIndex];
           let message: Message | undefined;
           if (messageId) {
@@ -721,17 +967,27 @@ export class Poller {
           if (!message) {
             message = await channel.send(payload);
             messageIds[pageIndex] = message.id;
+            fingerprints[pageIndex] = fingerprint;
             this.state.eventCalendarMessageIds[channelId] = messageIds;
+            this.state.eventCalendarFingerprints[channelId] = fingerprints;
             this.save();
+          } else if (fingerprints[pageIndex] === fingerprint) {
+            // The calendar content did not change. Fetching above still detects
+            // a manually deleted panel, but avoiding an identical edit cuts the
+            // per-route Discord write rate substantially across tenants.
+            continue;
           } else {
             // Clearing embeds is required when converting an older calendar panel to Components V2.
             try {
               await message.edit({ ...payload, embeds: [] });
+              fingerprints[pageIndex] = fingerprint;
             } catch (error) {
               if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) throw error;
               message = await channel.send(payload);
               messageIds[pageIndex] = message.id;
+              fingerprints[pageIndex] = fingerprint;
               this.state.eventCalendarMessageIds[channelId] = messageIds;
+              this.state.eventCalendarFingerprints[channelId] = fingerprints;
               this.save();
             }
           }
@@ -747,6 +1003,7 @@ export class Poller {
           }
         }
         this.state.eventCalendarMessageIds[channelId] = messageIds.slice(0, payloads.length);
+        this.state.eventCalendarFingerprints[channelId] = fingerprints.slice(0, payloads.length);
         this.save();
         updatedChannels.push(channelId);
       } catch (error) {
@@ -958,10 +1215,17 @@ export class Poller {
 
   private forgetEventThread(eventId: number | string): void {
     const key = String(eventId);
-    if (!(key in this.state.eventThreadIds) && !(key in this.state.eventSignupMessageIds)) return;
+    if (
+      !(key in this.state.eventThreadIds) &&
+      !(key in this.state.eventSignupMessageIds) &&
+      !(key in this.state.eventParentMessageIds) &&
+      !(key in this.state.pendingAnnounces)
+    ) return;
     delete this.state.eventThreadIds[key];
+    delete this.state.eventParentMessageIds[key];
     delete this.state.eventSignupMessageIds[key];
     delete this.state.eventSignupRevisions[key];
+    delete this.state.pendingAnnounces[key];
     this.save();
   }
 
@@ -1106,6 +1370,97 @@ export class Poller {
       }
     } catch (error) {
       console.error("[Poller] Failed to process event lifecycle:", error);
+    }
+  }
+
+  /**
+   * Removes old, empty voice channels created by the event lifecycle when their
+   * event no longer needs them. Only channels with the bot's `Event <id> —`
+   * name are considered; active scheduled/live bindings and occupied channels
+   * are always preserved.
+   */
+  private async sweepOrphanEventVoiceChannels(): Promise<void> {
+    if (Date.now() - this.state.lastVoiceSweepAt < VOICE_SWEEP_INTERVAL_MS) return;
+
+    const startedAt = Date.now();
+    let scanned = 0;
+    let deleted = 0;
+    let errors = 0;
+    const settings = this.settings as SettingsService & {
+      eventVoiceCategoryId?: () => Promise<string | null>;
+    };
+
+    try {
+      const categoryId = await settings.eventVoiceCategoryId?.();
+      if (!categoryId) return;
+
+      const category = await this.client.channels.fetch(categoryId);
+      if (!category || category.type !== ChannelType.GuildCategory) {
+        throw new Error("The configured event voice category is missing or is not a category.");
+      }
+
+      for (const channel of category.children.cache.values()) {
+        if (!channel.isVoiceBased()) continue;
+        const match = /^Event (\d+) —/.exec(channel.name);
+        if (!match) continue;
+        if (Date.now() - channel.createdTimestamp < VOICE_SWEEP_MIN_AGE_MS) continue;
+
+        scanned++;
+        if (voiceChannelOccupantCount(channel) > 0) continue;
+
+        const eventId = Number(match[1]);
+        let event: EventDetailView | null = null;
+        try {
+          event = await this.api.get<EventDetailView>(`api/events/${eventId}`);
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 404) {
+            errors++;
+            console.warn(
+              `[Poller] voice_sweep guild=${this.guildId} event=${eventId} result=lookup_failed error=${String(error)}`,
+            );
+            continue;
+          }
+        }
+
+        if (
+          event &&
+          (event.status === "scheduled" || event.status === "live") &&
+          event.discord_voice_channel_id === channel.id
+        ) {
+          continue;
+        }
+
+        if (event?.discord_voice_channel_id === channel.id) {
+          try {
+            await this.api.delete(`api/events/${eventId}/discord-voice-channel`);
+          } catch (error) {
+            errors++;
+            console.warn(
+              `[Poller] voice_sweep guild=${this.guildId} event=${eventId} result=binding_clear_failed error=${String(error)}`,
+            );
+            continue;
+          }
+        }
+
+        try {
+          await channel.delete(`Remove stale event voice channel for event #${eventId}`);
+          deleted++;
+        } catch (error) {
+          errors++;
+          console.warn(
+            `[Poller] voice_sweep guild=${this.guildId} event=${eventId} result=delete_failed error=${String(error)}`,
+          );
+        }
+      }
+    } catch (error) {
+      errors++;
+      console.warn(`[Poller] voice_sweep guild=${this.guildId} result=failed error=${String(error)}`);
+    } finally {
+      this.state.lastVoiceSweepAt = Date.now();
+      this.save();
+      console.info(
+        `[Poller] voice_sweep guild=${this.guildId} scanned=${scanned} deleted=${deleted} errors=${errors} duration_ms=${Date.now() - startedAt}`,
+      );
     }
   }
 

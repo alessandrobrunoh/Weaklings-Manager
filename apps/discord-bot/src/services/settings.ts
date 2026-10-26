@@ -64,6 +64,40 @@ export class SettingsService {
     return (await this.get()).discord_battles_cta_channel_id;
   }
 
+  /** Returns the dedicated channel for flash mass announcements (no fallback). */
+  async flashMassChannelId(): Promise<string | null> {
+    return (await this.get()).discord_flash_mass_channel_id ?? null;
+  }
+
+  /** Default guild event role used for flash-mass mentions. */
+  async eventRoleId(): Promise<string | null> {
+    return (await this.get()).discord_event_role_id ?? null;
+  }
+
+  /** Returns the configured event channel ids for destination routing. */
+  async eventChannelRoutes(): Promise<{
+    events: string | null;
+    callToArms: string | null;
+    flashMass: string | null;
+  }> {
+    const settings = await this.get();
+    const configuredFlashMass = settings.discord_flash_mass_channel_id ?? null;
+    const flashMass =
+      configuredFlashMass && configuredFlashMass === settings.discord_events_channel_id
+        ? null
+        : configuredFlashMass;
+    if (configuredFlashMass && !flashMass) {
+      console.warn(
+        '[Settings] Flash mass channel must be different from the organized Call to Arms channel; flash routing is disabled until corrected.',
+      );
+    }
+    return {
+      events: settings.discord_events_channel_id,
+      callToArms: settings.discord_battles_cta_channel_id,
+      flashMass,
+    };
+  }
+
   async applicationAcceptedRoleId(): Promise<string | null> {
     return (await this.get()).discord_applications_accepted_role_id ?? null;
   }

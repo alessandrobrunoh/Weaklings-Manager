@@ -134,6 +134,10 @@ pub struct GuildSettingsView {
     pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Channel where the bot announces flash masses (binary, no comp).
+    pub discord_flash_mass_channel_id: Option<String>,
+    /// IANA timezone used to interpret wall-clock times from Discord (for example `Europe/Rome`).
+    pub discord_event_timezone: String,
     /// Channel where the application panel is published.
     pub discord_applications_channel_id: Option<String>,
     /// Category where active application channels are created.
@@ -226,6 +230,8 @@ impl GuildSettingsView {
             discord_split_not_completed_tag_id: model.discord_split_not_completed_tag_id,
             discord_split_lost_tag_id: model.discord_split_lost_tag_id,
             discord_event_voice_category_id: model.discord_event_voice_category_id,
+            discord_flash_mass_channel_id: model.discord_flash_mass_channel_id,
+            discord_event_timezone: model.discord_event_timezone,
             discord_applications_channel_id: model.discord_applications_channel_id,
             discord_applications_category_id: model.discord_applications_category_id,
             discord_applications_archive_category_id: model
@@ -390,6 +396,10 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_split_lost_tag_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_voice_category_id: Option<String>,
+    /// Flash mass announcement channel. Omit to leave unchanged; send `""` to clear.
+    pub discord_flash_mass_channel_id: Option<String>,
+    /// IANA timezone used for wall-clock event times; cannot be cleared.
+    pub discord_event_timezone: Option<String>,
     /// Giveaway announcement channel. Omit to leave unchanged; send `""` to clear.
     pub discord_giveaways_channel_id: Option<String>,
     /// Giveaway ping role. Omit to leave unchanged; send `""` to clear.

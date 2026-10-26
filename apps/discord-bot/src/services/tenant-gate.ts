@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   type ChatInputCommandInteraction,
+  type MessageContextMenuCommandInteraction,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import { config } from '../config.js';
@@ -83,7 +84,7 @@ export async function isRegisteredTenant(api: ApiClient, guildId: string): Promi
  * link and return null. Otherwise return an API client stamped with X-Guild-Id.
  */
 export async function requireRegisteredTenant(
-  interaction: ChatInputCommandInteraction,
+  interaction: ChatInputCommandInteraction | MessageContextMenuCommandInteraction,
   api: ApiClient,
 ): Promise<ApiClient | null> {
   const guildId = interaction.guildId;

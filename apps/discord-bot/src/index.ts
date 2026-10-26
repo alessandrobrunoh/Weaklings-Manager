@@ -7,7 +7,7 @@ import type {
   AwardMessageRequest,
   AwardMessageResponse,
 } from "./api/types.js";
-import { commands } from "./commands/index.js";
+import { commands, messageCommands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleModal } from "./handlers/modal.js";
 import { handleSelectMenu } from "./handlers/select.js";
@@ -16,7 +16,10 @@ import { assignJoinRole } from "./services/join-role.js";
 import { initSettingsService, getSettingsService } from "./services/settings.js";
 import { initMessageXpGate, getMessageXpGate } from "./services/message-xp-gate.js";
 import { registerCommands } from "./services/registry.js";
-import { executeSlashCommand } from "./services/command-gate.js";
+import {
+  executeMessageContextCommand,
+  executeSlashCommand,
+} from "./services/command-gate.js";
 import { fetchTenantStatus, isRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -63,6 +66,38 @@ async function main(): Promise<void> {
 
   // ── Interaction handler ──────────────────────────────────────────────────
   client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isMessageContextMenuCommand()) {
+      const command = messageCommands.get(interaction.commandName);
+      if (!command) {
+        await interaction.reply({
+          embeds: [
+            createResponseEmbed(
+              "warning",
+              "Unknown Command",
+              "Message action not recognized by bot system.",
+              "COMMAND ERROR",
+            ),
+          ],
+          flags: ["Ephemeral"],
+        });
+        return;
+      }
+      try {
+        await executeMessageContextCommand(interaction, api, command);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "An unexpected error occurred.";
+        console.error(`[Bot] Error in message action "${interaction.commandName}":`, err);
+        await interaction.reply({
+          embeds: [
+            createResponseEmbed("error", "Command Error", message, "COMMAND FAILED"),
+          ],
+          flags: ["Ephemeral"],
+        });
+      }
+      return;
+    }
+
     // Slash commands
     if (interaction.isChatInputCommand()) {
       const command = commands.get(interaction.commandName);

@@ -36,6 +36,8 @@ const settings: GuildSettingsView = {
   discord_events_channel_id: 'ch-events',
   discord_battles_channel_id: null,
   discord_battles_cta_channel_id: null,
+  discord_flash_mass_channel_id: null,
+  discord_event_timezone: 'Europe/Rome',
   discord_audit_log_channel_id: null,
   discord_transaction_spam_channel_id: null,
   discord_event_role_id: 'role-event',

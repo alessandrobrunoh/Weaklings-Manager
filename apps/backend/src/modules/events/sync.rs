@@ -91,6 +91,11 @@ pub async fn create_mirror(
         actor: source_creator,
         authorized: true,
     };
+    let Some(event_comp_id) = source_event.comp_id else {
+        return Err(AppError::Conflict(
+            "flash masses cannot be shared to the alliance Discord".to_owned(),
+        ));
+    };
     let comp_share = AllianceShareService::share_comp(
         control,
         registry,
@@ -98,7 +103,7 @@ pub async fn create_mirror(
         params,
         CreateAllianceShareRequest {
             artifact_type: ArtifactType::Comp,
-            id: source_event.comp_id,
+            id: event_comp_id,
         },
     )
     .await?;
@@ -141,7 +146,8 @@ pub async fn create_mirror(
                 description: source_event.description.clone(),
                 call_to_arms: source_event.call_to_arms,
                 regear: source_event.regear,
-                comp_id: comp_share.published_id,
+                event_kind: None,
+                comp_id: Some(comp_share.published_id),
                 player_cap: source_event.player_cap,
                 event_date_utc: Some(source_event.start_time_utc.clone()),
                 mass_time_utc: Some(source_event.mass_time_utc.clone()),

@@ -20,8 +20,12 @@ pub mod event {
         pub call_to_arms: bool,
         /// Whether this event enables automatic and manual regear processing.
         pub regear: bool,
-        /// The composition associated with the event.
-        pub comp_id: i64,
+        /// Event discriminant: [`KIND_FLASH`] (binary participation, no comp) or
+        /// [`KIND_ORGANIZED`] (full comp/roster machinery). Never inferred from
+        /// a NULL `comp_id` — the column is the single source of truth.
+        pub event_kind: String,
+        /// The composition associated with the event. `None` only for flash masses.
+        pub comp_id: Option<i64>,
         /// Optional signup threshold that advances to the next comp expansion without blocking signups.
         pub player_cap: Option<i64>,
         /// The user who created the event.
@@ -73,6 +77,29 @@ pub mod event {
         DiscordRoles,
         RosterRoles,
         RosterAssignments,
+    }
+
+    /// Flash masses: binary participation, no comp, no builds.
+    pub const KIND_FLASH: &str = "flash";
+    /// Organized events: full comp/roster/split machinery.
+    pub const KIND_ORGANIZED: &str = "organized";
+
+    impl Model {
+        /// True when this event is a flash mass.
+        pub fn is_flash(&self) -> bool {
+            self.event_kind == KIND_FLASH
+        }
+
+        /// The event's comp id, or a conflict error explaining that flash
+        /// masses have no comp. Single guard every comp-dependent path uses.
+        pub fn organized_comp_id(&self) -> Result<i64, crate::errors::AppError> {
+            self.comp_id.ok_or_else(|| {
+                crate::errors::AppError::Conflict(format!(
+                    "Event {} is a flash mass: it has no comp roster",
+                    self.id
+                ))
+            })
+        }
     }
 
     impl RelationTrait for Relation {

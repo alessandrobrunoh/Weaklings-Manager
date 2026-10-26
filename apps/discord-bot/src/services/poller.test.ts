@@ -3,11 +3,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { ChannelType } from "discord.js";
 import type { Client, Message, ThreadChannel } from "discord.js";
 import { ApiError, type ApiClient } from "../api/client.js";
-import type { EventView } from "../api/types.js";
+import type { EventDetailView, EventView } from "../api/types.js";
 import type { SettingsService } from "./settings.js";
-import { Poller } from "./poller.js";
+import { FLASH_UNDO_WINDOW_MS, Poller } from "./poller.js";
 
 function emptyPage() {
   return { items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 50 };
@@ -485,6 +486,169 @@ test("new events announce text-only in the parent channel and put signup control
     ) as { eventThreadIds: Record<string, string>; lastEventId: number };
     assert.equal(saved.lastEventId, 41);
     assert.equal(saved.eventThreadIds["41"], "thread-41");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("flash announce retries thread creation without repeating the public role ping", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 0,
+        lastBattleId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        eventParentMessageIds: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        initialized: true,
+      }),
+      "utf-8",
+    );
+
+    const event = {
+      ...calendarEvent(1, "Castle dive"),
+      event_kind: "flash" as const,
+      comp_id: null,
+      comp_name: null,
+      discord_role_ids: ["111111111111111111"],
+      mass_time_utc: "2030-01-01T19:30:00Z",
+      start_time_utc: "2030-01-01T20:00:00Z",
+      created_at: new Date().toISOString(),
+    };
+    const detail = {
+      ...event,
+      active_comp_id: null,
+      active_comp_name: null,
+      active_comp_capacity: null,
+      comp_builds: [],
+      participants: [],
+    };
+
+    let parentSends = 0;
+    let threadAttempts = 0;
+    const threadSends: Array<Record<string, unknown>> = [];
+    const thread = {
+      id: "flash-thread",
+      isThread: () => true,
+      send: async (payload: Record<string, unknown>) => {
+        threadSends.push(payload);
+        return { id: "flash-signup" };
+      },
+    };
+    const parent = {
+      id: "flash-parent",
+      startThread: async () => {
+        threadAttempts++;
+        if (threadAttempts === 1) {
+          throw Object.assign(new Error("temporary thread error"), { code: 50013 });
+        }
+        return thread;
+      },
+    };
+    const calendarMessages = new Map<string, { edit: (payload: unknown) => Promise<void> }>();
+    const channel = {
+      id: "flash-channel",
+      isTextBased: () => true,
+      isDMBased: () => false,
+      threads: { create: async () => thread },
+      messages: {
+        fetch: async (id: string) => {
+          if (id === "flash-parent") return parent;
+          const message = calendarMessages.get(id);
+          if (message) return message;
+          throw Object.assign(new Error("Unknown Message"), { code: 10008 });
+        },
+      },
+      send: async (payload: Record<string, unknown>) => {
+        if ("content" in payload) {
+          parentSends++;
+          return parent;
+        }
+        const id = `calendar-${calendarMessages.size + 1}`;
+        calendarMessages.set(id, { edit: async () => undefined });
+        return { id, edit: async () => undefined };
+      },
+    };
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        if (path === "api/events") return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+        if (path === "api/events/calendar") return [event];
+        if (path === "api/events/revisions") return [eventRevision(1, "scheduled", { roster_version: 0 })];
+        if (path === "api/events/1") return detail;
+        if (path === "api/battles" || path === "api/giveaways") return emptyPage();
+        if (path === "api/splits/discord-sync") return { items: [], has_more: false };
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => "cta-channel",
+      flashMassChannelId: async () => "flash-channel",
+      eventChannelRoutes: async () => ({
+        events: "events-channel",
+        callToArms: "cta-channel",
+        flashMass: "flash-channel",
+      }),
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "flash-channel") return channel;
+          throw new Error(`unexpected channel ${id}`);
+        },
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+    assert.equal(parentSends, 0, "the public role ping waits through the undo window");
+    assert.equal(threadAttempts, 0);
+
+    let saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as {
+      lastEventId: number;
+      eventParentMessageIds: Record<string, string>;
+      pendingAnnounces: Record<string, { attempts: number; status?: string }>;
+    };
+    assert.equal(saved.lastEventId, 1);
+    assert.equal(saved.pendingAnnounces["1"]?.status, "undo_window");
+
+    // Simulate the durable grace period passing; the pending-announcement queue
+    // now owns delivery even though lastEventId has moved on.
+    event.created_at = new Date(Date.now() - FLASH_UNDO_WINDOW_MS - 1_000).toISOString();
+    detail.created_at = event.created_at;
+    await poller.pollNow();
+    assert.equal(parentSends, 1);
+    assert.equal(threadAttempts, 1);
+    saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as typeof saved;
+    assert.equal(saved.lastEventId, 1);
+    assert.equal(saved.eventParentMessageIds["1"], "flash-parent");
+    assert.equal(saved.pendingAnnounces["1"]?.attempts, 1);
+    assert.equal(saved.pendingAnnounces["1"]?.status, "failed");
+
+    await poller.pollNow();
+    assert.equal(parentSends, 1, "the retry must reuse the saved parent ping");
+    assert.equal(threadAttempts, 2);
+    assert.equal(threadSends.length, 1);
+    saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as typeof saved;
+    assert.equal(saved.pendingAnnounces["1"], undefined);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -1007,7 +1171,11 @@ function backlogHarness(sent: string[]) {
       sent.push("message");
       return {
         id: "message",
-        startThread: async () => null,
+        startThread: async () => ({
+          id: "thread",
+          isThread: () => true,
+          send: async () => ({ id: "signup" }),
+        }),
         edit: async () => undefined,
       };
     },
@@ -1242,6 +1410,131 @@ test("poller auto-stops a live voice only after occupancy then two empty ticks",
   }
 });
 
+test("poller sweeps old empty orphan event voice channels but preserves active, occupied, and recent ones", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const deletedChannels: string[] = [];
+    const clearedBindings: string[] = [];
+    const now = Date.now();
+    const makeVoice = (
+      id: string,
+      eventId: number,
+      ageMs: number,
+      occupants: string[] = [],
+    ) => ({
+      id,
+      name: `Event ${eventId} — Test`,
+      type: ChannelType.GuildVoice,
+      createdTimestamp: now - ageMs,
+      isVoiceBased: () => true,
+      guild: {
+        voiceStates: {
+          cache: {
+            filter: (predicate: (state: { channelId: string | null }) => boolean) => ({
+              size: occupants.map((channelId) => ({ channelId })).filter(predicate).length,
+            }),
+          },
+        },
+      },
+      delete: async () => {
+        deletedChannels.push(id);
+      },
+    });
+    const channels = [
+      makeVoice("voice-orphan", 10, 60 * 60 * 1000),
+      makeVoice("voice-active", 11, 60 * 60 * 1000),
+      makeVoice("voice-stopped", 12, 60 * 60 * 1000),
+      makeVoice("voice-occupied", 13, 60 * 60 * 1000, ["voice-occupied"]),
+      makeVoice("voice-recent", 14, 5 * 60 * 1000),
+    ];
+    const category = {
+      type: ChannelType.GuildCategory,
+      children: { cache: new Map(channels.map((channel) => [channel.id, channel])) },
+    };
+    const details: Record<number, Partial<EventDetailView>> = {
+      11: {
+        id: 11,
+        status: "scheduled",
+        archived_at: null,
+        discord_voice_channel_id: "voice-active",
+      },
+      12: {
+        id: 12,
+        status: "stopped",
+        archived_at: null,
+        discord_voice_channel_id: "voice-stopped",
+      },
+    };
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
+          return emptyPage();
+        }
+        const eventMatch = /^api\/events\/(\d+)$/.exec(path);
+        if (eventMatch) {
+          const eventId = Number(eventMatch[1]);
+          const detail = details[eventId];
+          if (!detail) throw new ApiError(404, "Event not found");
+          return detail;
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+      delete: async (path: string) => {
+        clearedBindings.push(path);
+        return null;
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventChannelRoutes: async () => ({
+        events: null,
+        callToArms: null,
+        flashMass: null,
+      }),
+      eventVoiceCategoryId: async () => "event-voice-category",
+    } as unknown as SettingsService;
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "event-voice-category") return category;
+          throw new Error(`unexpected channel ${id}`);
+        },
+      },
+    } as unknown as Client;
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 20,
+        lastBattleId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        occupiedLiveEvents: [],
+        lastVoiceSweepAt: now - 16 * 60 * 1000,
+        initialized: true,
+      }),
+      "utf-8",
+    );
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    assert.deepEqual(deletedChannels.sort(), ["voice-orphan", "voice-stopped"]);
+    assert.deepEqual(clearedBindings, ["api/events/12/discord-voice-channel"]);
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { lastVoiceSweepAt: number };
+    assert.ok(saved.lastVoiceSweepAt >= now);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("manual event calendar refresh routes all events and uses the caller's permission context", async () => {
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
@@ -1254,6 +1547,7 @@ test("manual event calendar refresh routes all events and uses the caller's perm
       title,
       description: null,
       call_to_arms: callToArms,
+      event_kind: "organized",
       discord_role_ids: [],
       regear: false,
       comp_id: 1,
@@ -1278,7 +1572,7 @@ test("manual event calendar refresh routes all events and uses the caller's perm
     const sentChannels: string[] = [];
     const editedChannels: string[] = [];
     const channels = new Map(
-      ["events-channel", "cta-channel"].map((id) => [
+      ["events-channel"].map((id) => [
         id,
         {
           id,
@@ -1312,6 +1606,11 @@ test("manual event calendar refresh routes all events and uses the caller's perm
     const settings = {
       eventsChannelId: async () => "events-channel",
       callToArmsChannelId: async () => "cta-channel",
+      eventChannelRoutes: async () => ({
+        events: "events-channel",
+        callToArms: "cta-channel",
+        flashMass: null,
+      }),
     } as unknown as SettingsService;
     const client = {
       channels: {
@@ -1323,18 +1622,16 @@ test("manual event calendar refresh routes all events and uses the caller's perm
     const result = await poller.refreshEventCalendars("calendar-manager");
 
     assert.equal(result.eventCount, 2);
-    assert.equal(result.configuredChannels, 2);
-    assert.deepEqual(result.updatedChannels, ["events-channel", "cta-channel"]);
+    assert.equal(result.configuredChannels, 1);
+    assert.deepEqual(result.updatedChannels, ["events-channel"]);
     assert.deepEqual(result.failedChannels, []);
-    assert.deepEqual(sentChannels, ["events-channel", "cta-channel"]);
+    assert.deepEqual(sentChannels, ["events-channel"]);
     assert.match(JSON.stringify(payloads.get("events-channel")), /Standard event/);
-    assert.doesNotMatch(JSON.stringify(payloads.get("events-channel")), /Urgent CTA event/);
-    assert.match(JSON.stringify(payloads.get("cta-channel")), /Urgent CTA event/);
-    assert.doesNotMatch(JSON.stringify(payloads.get("cta-channel")), /Standard event/);
+    assert.match(JSON.stringify(payloads.get("events-channel")), /Urgent CTA event/);
 
     await poller.refreshEventCalendars("calendar-manager");
-    assert.deepEqual(editedChannels, ["events-channel", "cta-channel"]);
-    assert.deepEqual(sentChannels, ["events-channel", "cta-channel"]);
+    assert.deepEqual(editedChannels, []);
+    assert.deepEqual(sentChannels, ["events-channel"]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -1495,7 +1792,7 @@ test("scheduled and manual calendar refreshes serialize without duplicating mess
     await Promise.all([manualRefresh, scheduledRefresh]);
 
     assert.equal(sendCount, 1);
-    assert.equal(editCount, 1);
+    assert.equal(editCount, 0, "unchanged calendar content should not be rewritten");
     assert.deepEqual(apiActors, ["calendar-manager", undefined]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
