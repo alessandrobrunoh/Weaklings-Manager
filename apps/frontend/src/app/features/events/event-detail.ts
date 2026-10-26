@@ -205,6 +205,65 @@ interface AddEventMemberRequest {
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (event(); as detail) {
+      @if (detail.event_kind === 'flash') {
+        <app-page-header
+          [title]="detail.title"
+          [badge]="detail.archived_at ? t('events.archived') : t('events.flashMass')"
+        >
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            (click)="backToEvents()"
+            [appTooltip]="t('events.detail.back')"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="chevron-left" size="0.875rem" />
+            {{ t('events.detail.back') }}
+          </button>
+        </app-page-header>
+        <app-page-stack>
+          <section class="card p-5 grid gap-4">
+            @if (detail.description) {
+              <p class="text-sm text-[var(--color-text-secondary)]">{{ detail.description }}</p>
+            }
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="surface p-3">
+                <span class="event-detail__label">{{ t('events.flashMass.mass') }}</span>
+                <p class="text-sm font-semibold text-[var(--color-text)] mt-0.5">
+                  {{ formatDate(detail.mass_time_utc ?? detail.event_date_utc) }}
+                </p>
+              </div>
+              <div class="surface p-3">
+                <span class="event-detail__label">{{ t('events.flashMass.start') }}</span>
+                <p class="text-sm font-semibold text-[var(--color-text)] mt-0.5">
+                  {{ formatDate(detail.start_time_utc ?? detail.event_date_utc) }}
+                </p>
+              </div>
+            </div>
+            <section>
+              <h2 class="text-sm font-semibold text-[var(--color-text)]">
+                {{ t('events.detail.participants') }} ({{ detail.participants.length }})
+              </h2>
+              @if (detail.participants.length > 0) {
+                <ul class="mt-2 grid gap-1">
+                  @for (participant of detail.participants; track participant.user_id) {
+                    <li class="text-sm text-[var(--color-text-secondary)]">
+                      {{ participant.username }}
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p class="mt-2 text-sm text-[var(--color-text-tertiary)]">
+                  {{ t('events.detail.no_participants') }}
+                </p>
+              }
+            </section>
+            <p class="text-xs text-[var(--color-text-tertiary)]">
+              {{ t('events.flashMass.discordOnly') }}
+            </p>
+          </section>
+        </app-page-stack>
+      } @else {
       <!-- ================= PAGE HEADER: title, officer actions, tabs ================= -->
       <app-page-header
         [title]="detail.title"
@@ -1872,6 +1931,7 @@ interface AddEventMemberRequest {
           }
         }
       </app-page-stack>
+      }
     } @else if (loadFailed()) {
       <app-error-state
         [message]="t('common.error')"
@@ -5699,8 +5759,15 @@ export class EventDetailPage {
       const detail = await firstValueFrom(this.api.get<EventDetailView>(`api/events/${eventId}`));
       if (this.isStaleLoad(generation, eventId)) return;
       this.event.set(detail);
-      this.realtimeRoster.connect(eventId);
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
+      // Flash masses have no comp roster. Avoid the comp-shaped roster,
+      // equipment catalog and realtime join flows; their presentation is the
+      // simple participant list above and participation is managed in Discord.
+      if (detail.event_kind === 'flash') {
+        this.rosterSnapshotState.set('ready');
+        return;
+      }
+      this.realtimeRoster.connect(eventId);
       void this.loadSpecializationCatalog();
       void this.loadAbilityCatalog();
       await Promise.all([

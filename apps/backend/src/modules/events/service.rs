@@ -249,7 +249,7 @@ fn normalize_discord_role_ids(role_ids: Vec<String>) -> Result<Vec<String>, AppE
 
 fn event_view_from_parts(
     model: event::Model,
-    comp_name: String,
+    comp_name: Option<String>,
     created_by_username: String,
     discord_role_ids: Vec<String>,
 ) -> EventView {
@@ -262,6 +262,7 @@ fn event_view_from_parts(
         title: model.title,
         description: model.description,
         call_to_arms: model.call_to_arms,
+        event_kind: model.event_kind,
         discord_role_ids,
         regear: model.regear,
         discord_voice_channel_id: model.discord_voice_channel_id,
@@ -1393,7 +1394,7 @@ impl EventService {
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 db,
-                event_model.comp_id,
+                event_model.organized_comp_id()?,
                 concrete,
                 extras,
                 event_model.player_cap,
@@ -1603,7 +1604,7 @@ impl EventService {
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 &txn,
-                event_model.comp_id,
+                event_model.organized_comp_id()?,
                 concrete,
                 extra_slots,
                 event_model.player_cap,
@@ -1678,7 +1679,7 @@ impl EventService {
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 &txn,
-                event_model.comp_id,
+                event_model.organized_comp_id()?,
                 concrete,
                 extra_slots,
                 event_model.player_cap,
@@ -1748,7 +1749,7 @@ impl EventService {
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 &txn,
-                event_model.comp_id,
+                event_model.organized_comp_id()?,
                 concrete,
                 extra_slots,
                 event_model.player_cap,
@@ -1835,7 +1836,7 @@ impl EventService {
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 &txn,
-                event_model.comp_id,
+                event_model.organized_comp_id()?,
                 concrete,
                 extra_slots,
                 event_model.player_cap,
@@ -1928,7 +1929,7 @@ impl EventService {
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 db,
-                event_model.comp_id,
+                event_model.organized_comp_id()?,
                 concrete,
                 extra_slots,
                 event_model.player_cap,
@@ -2238,7 +2239,7 @@ impl EventService {
         let (active_comp, active_comp_capacity) = self
             .resolve_active_comp_with_extra_slots(
                 db,
-                event.comp_id,
+                event.organized_comp_id()?,
                 prospective_target,
                 extra_roster_roles.len(),
                 event.player_cap,
@@ -2321,7 +2322,7 @@ impl EventService {
 
         let comp_ids = models
             .iter()
-            .map(|model| model.comp_id)
+            .filter_map(|model| model.comp_id)
             .collect::<HashSet<_>>();
         let comps = comp::Entity::find()
             .filter(comp::Column::Id.is_in(comp_ids.into_iter().collect::<Vec<_>>()))
@@ -2357,9 +2358,37 @@ impl EventService {
         models
             .into_iter()
             .map(|model| {
-                let comp_name = comps.get(&model.comp_id).cloned().ok_or_else(|| {
-                    AppError::NotFound(format!("Comp {} not found", model.comp_id))
-                })?;
+                // The explicit kind is authoritative. A nullable comp is only
+                // valid on flash rows; do not let malformed rows be guessed as
+                // a different kind at the API boundary.
+                if model.event_kind != event::KIND_FLASH
+                    && model.event_kind != event::KIND_ORGANIZED
+                {
+                    return Err(AppError::Internal(format!(
+                        "Event {} has unsupported kind '{}'",
+                        model.id, model.event_kind
+                    )));
+                }
+                if model.is_flash() && model.comp_id.is_some() {
+                    return Err(AppError::Internal(format!(
+                        "Flash event {} unexpectedly has a composition",
+                        model.id
+                    )));
+                }
+                if !model.is_flash() && model.comp_id.is_none() {
+                    return Err(AppError::Internal(format!(
+                        "Organized event {} is missing its composition",
+                        model.id
+                    )));
+                }
+                let comp_name = model
+                    .comp_id
+                    .map(|comp_id| {
+                        comps.get(&comp_id).cloned().ok_or_else(|| {
+                            AppError::NotFound(format!("Comp {comp_id} not found"))
+                        })
+                    })
+                    .transpose()?;
                 let created_by_username = names
                     .get(&model.created_by)
                     .cloned()
@@ -2582,20 +2611,30 @@ impl EventService {
             .count(db)
             .await
             .map_err(AppError::Database)? as usize;
-        let (active_comp, active_capacity) = self
-            .resolve_active_comp_with_extra_slots(
-                db,
-                event_model.comp_id,
-                comp_resolution_target(participations.len(), event_model.player_cap),
-                extra_roster_slots,
-                event_model.player_cap,
-            )
-            .await?;
-        let active_comp_builds = comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(active_comp.id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
+        // Flash masses carry no comp: the detail is the plain participant
+        // list the Discord card renders as "Coming".
+        let (active_comp, active_capacity) = if event_model.is_flash() {
+            (None, None)
+        } else {
+            let (active_comp, active_capacity) = self
+                .resolve_active_comp_with_extra_slots(
+                    db,
+                    event_model.organized_comp_id()?,
+                    comp_resolution_target(participations.len(), event_model.player_cap),
+                    extra_roster_slots,
+                    event_model.player_cap,
+                )
+                .await?;
+            (Some(active_comp), Some(active_capacity))
+        };
+        let active_comp_builds = match &active_comp {
+            None => Vec::new(),
+            Some(active_comp) => comp_build::Entity::find()
+                .filter(comp_build::Column::CompId.eq(active_comp.id))
+                .all(db)
+                .await
+                .map_err(AppError::Database)?,
+        };
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
         let mut specializations_by_user =
@@ -2750,8 +2789,8 @@ impl EventService {
 
         Ok(EventDetailView {
             event: event_view,
-            active_comp_id: active_comp.id,
-            active_comp_name: active_comp.name,
+            active_comp_id: active_comp.as_ref().map(|comp| comp.id),
+            active_comp_name: active_comp.as_ref().map(|comp| comp.name.clone()),
             active_comp_capacity: active_capacity,
             roster_roles,
             comp_builds: comp_build_views,
@@ -3179,18 +3218,56 @@ impl EventService {
             ));
         }
 
-        // Validate comp exists
-        let comp_exists = comp::Entity::find_by_id(req.comp_id)
-            .count(db)
-            .await
-            .map_err(AppError::Database)?
-            > 0;
-
-        if !comp_exists {
-            return Err(AppError::NotFound(format!(
-                "Composition {} not found",
-                req.comp_id
+        // The kind is the discriminant, never a NULL comp: organized events
+        // must carry one, flash masses must not carry any comp-shaped option.
+        let event_kind = req
+            .event_kind
+            .clone()
+            .unwrap_or_else(|| event::KIND_ORGANIZED.to_string());
+        if event_kind != event::KIND_ORGANIZED && event_kind != event::KIND_FLASH {
+            return Err(AppError::Validation(format!(
+                "event_kind must be '{}' or '{}', got '{event_kind}'",
+                event::KIND_ORGANIZED,
+                event::KIND_FLASH
             )));
+        }
+        if event_kind == event::KIND_FLASH {
+            for (present, field) in [
+                (req.comp_id.is_some(), "comp_id"),
+                (req.create_split, "create_split"),
+                (req.player_cap.is_some(), "player_cap"),
+                (req.regear, "regear"),
+                (req.call_to_arms, "call_to_arms"),
+                (req.ping_alliance, "ping_alliance"),
+            ] {
+                if present {
+                    return Err(AppError::Validation(format!(
+                        "{field} is not supported for flash masses"
+                    )));
+                }
+            }
+        }
+        let comp_id = if event_kind == event::KIND_FLASH {
+            None
+        } else {
+            Some(req.comp_id.ok_or_else(|| {
+                AppError::Validation("comp_id is required for organized events".to_string())
+            })?)
+        };
+
+        // Validate comp exists (organized events only)
+        if let Some(comp_id) = comp_id {
+            let comp_exists = comp::Entity::find_by_id(comp_id)
+                .count(db)
+                .await
+                .map_err(AppError::Database)?
+                > 0;
+
+            if !comp_exists {
+                return Err(AppError::NotFound(format!(
+                    "Composition {comp_id} not found"
+                )));
+            }
         }
 
         let linked_split_tab = if req.create_split {
@@ -3224,7 +3301,8 @@ impl EventService {
             description: Set(req.description),
             call_to_arms: Set(req.call_to_arms),
             regear: Set(req.regear),
-            comp_id: Set(req.comp_id),
+            event_kind: Set(event_kind),
+            comp_id: Set(comp_id),
             player_cap: Set(req.player_cap),
             created_by: Set(creator_id),
             event_date_utc: Set(start.into()),
@@ -3273,7 +3351,7 @@ impl EventService {
             Some(creator_id),
             Some(serde_json::json!({
                 "title": event_view.title,
-                "comp_id": req.comp_id
+                "comp_id": comp_id
             })),
         )
         .await;
@@ -3303,6 +3381,16 @@ impl EventService {
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
         reject_if_event_archived(&event_model)?;
+        if event_model.is_flash()
+            && (req.call_to_arms == Some(true)
+                || req.regear == Some(true)
+                || req.ping_alliance == Some(true))
+        {
+            return Err(AppError::Conflict(
+                "flash masses cannot be promoted to Call to Arms, regear, or alliance pings through event update"
+                    .to_string(),
+            ));
+        }
 
         let mut active: event::ActiveModel = event_model.clone().into();
 
@@ -3330,6 +3418,14 @@ impl EventService {
             });
         }
         if let Some(comp_id) = req.comp_id {
+            // Flash masses never gain a comp in place: the promote path (flash
+            // → organized) is a dedicated flow, not an update.
+            if event_model.is_flash() {
+                return Err(AppError::Conflict(
+                    "flash masses cannot receive a comp; promote the event instead"
+                        .to_string(),
+                ));
+            }
             // Validate comp exists
             let comp_exists = comp::Entity::find_by_id(comp_id)
                 .count(db)
@@ -3342,7 +3438,7 @@ impl EventService {
                     comp_id
                 )));
             }
-            active.comp_id = Set(comp_id);
+            active.comp_id = Set(Some(comp_id));
         }
         let current_start = event_model
             .start_time_utc
@@ -4239,23 +4335,38 @@ impl EventService {
             .map(|role| role.build_id)
             .collect();
 
-        // Each persisted extra role adds one primary slot when selecting a comp variant.
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                db,
-                event_model.comp_id,
-                target_size,
-                extra_roster_build_ids.len(),
-                event_model.player_cap,
-            )
-            .await?;
+        // Flash masses have binary participation: no build choices, no comp
+        // machinery. A build id on a flash signup is a client contract
+        // violation, not a silent default.
+        if event_model.is_flash()
+            && (primary_build_id.is_some() || secondary_build_id.is_some())
+        {
+            return Err(AppError::Validation(
+                "flash masses have binary participation; build choices are not accepted"
+                    .to_string(),
+            ));
+        }
 
-        // Fetch comp builds for active comp to validate build selections.
-        let active_comp_builds = comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(active_comp.id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
+        // Each persisted extra role adds one primary slot when selecting a comp variant.
+        let (active_comp, active_comp_builds) = if event_model.is_flash() {
+            (None, Vec::new())
+        } else {
+            let (active_comp, _) = self
+                .resolve_active_comp_with_extra_slots(
+                    db,
+                    event_model.organized_comp_id()?,
+                    target_size,
+                    extra_roster_build_ids.len(),
+                    event_model.player_cap,
+                )
+                .await?;
+            let active_comp_builds = comp_build::Entity::find()
+                .filter(comp_build::Column::CompId.eq(active_comp.id))
+                .all(db)
+                .await
+                .map_err(AppError::Database)?;
+            (Some(active_comp), active_comp_builds)
+        };
 
         // Fill does not consume a build slot. A concrete primary build remains constrained by the
         // resolved comp and event-specific extra roster roles.
@@ -4270,7 +4381,7 @@ impl EventService {
             if primary_slot_limit == 0 {
                 return Err(AppError::Validation(format!(
                     "Primary build {primary_build_id} is not allowed in comp {} or its extra roster roles",
-                    active_comp.name
+                    active_comp.as_ref().map(|comp| comp.name.clone()).unwrap_or_default()
                 )));
             }
 
@@ -4316,7 +4427,7 @@ impl EventService {
             if !in_active_comp && !extra_roster_build_ids.contains(&sec_id) {
                 return Err(AppError::Validation(format!(
                     "Secondary build {sec_id} is not allowed in comp {} or its extra roster roles",
-                    active_comp.name
+                    active_comp.as_ref().map(|comp| comp.name.clone()).unwrap_or_default()
                 )));
             }
         }
@@ -4848,7 +4959,7 @@ mod tests {
         let comp_id = create_comp(db, title, comp_category, None, Vec::new()).await;
         event::ActiveModel {
             title: Set(title.to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(creator),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -4996,7 +5107,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Roster event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(author),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -5060,7 +5171,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Admin add event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(creator),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -5128,6 +5239,151 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn flash_masses_are_binary_and_carry_no_comp() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "flash-author", "flash-author@example.com").await;
+        let member = insert_user(&db, "flash-member", "flash-member@example.com").await;
+        let second_member =
+            insert_user(&db, "flash-second", "flash-second@example.com").await;
+        let build_category = create_build_category(&db, "Flash builds").await;
+        let build = create_build(&db, "Great Fire Staff", build_category).await;
+        let service = EventService::new();
+
+        // Flash create: no comp, no comp-shaped options.
+        let flash = service
+            .create_event(
+                &db,
+                author,
+                CreateEventRequest {
+                    title: "Castle dive @ Mercer".to_string(),
+                    description: Some("meet Caerleon gate".to_string()),
+                    call_to_arms: false,
+                    regear: false,
+                    event_kind: Some("flash".to_string()),
+                    comp_id: None,
+                    player_cap: None,
+                    event_date_utc: Some("2026-10-26T20:00:00Z".to_string()),
+                    mass_time_utc: Some("2026-10-26T19:45:00Z".to_string()),
+                    start_time_utc: Some("2026-10-26T20:00:00Z".to_string()),
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                    ping_alliance: false,
+                },
+            )
+            .await
+            .expect("flash mass should create without a comp");
+        assert_eq!(flash.event_kind, "flash");
+        assert_eq!(flash.comp_id, None);
+        assert_eq!(flash.comp_name, None);
+
+        // Comp-shaped routes refuse flash masses explicitly (409), they do
+        // not silently degrade.
+        assert!(matches!(
+            service.get_event_signup_options(&db, flash.id, member).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            service.get_roster(&db, flash.id).await,
+            Err(AppError::Conflict(_))
+        ));
+
+        // Binary participation: a plain join works and lands as a name on
+        // the list; a build choice is a contract violation.
+        service
+            .participate(
+                &db,
+                flash.id,
+                member,
+                ParticipateEventRequest {
+                    primary_build_id: None,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("binary join should work");
+        assert!(matches!(
+            service
+                .participate(
+                    &db,
+                    flash.id,
+                    second_member,
+                    ParticipateEventRequest {
+                        primary_build_id: Some(build),
+                        secondary_build_id: None,
+                    },
+                )
+                .await,
+            Err(AppError::Validation(message)) if message.contains("binary")
+        ));
+
+        let detail = service
+            .get_event_detail(&db, flash.id)
+            .await
+            .expect("flash detail should load");
+        assert_eq!(detail.active_comp_id, None);
+        assert_eq!(detail.active_comp_name, None);
+        assert_eq!(detail.active_comp_capacity, None);
+        assert!(detail.comp_builds.is_empty());
+        assert_eq!(detail.participants.len(), 1);
+        assert_eq!(detail.participants[0].primary_build_id, None);
+    }
+
+    #[tokio::test]
+    async fn flash_create_rejects_comp_shaped_options_and_organized_requires_comp() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "strict-author", "strict-author@example.com").await;
+        let service = EventService::new();
+
+        let base = |title: &str| CreateEventRequest {
+            title: title.to_string(),
+            description: None,
+            call_to_arms: false,
+            regear: false,
+            event_kind: None,
+            comp_id: None,
+            player_cap: None,
+            event_date_utc: Some("2026-10-26T20:00:00Z".to_string()),
+            mass_time_utc: None,
+            start_time_utc: None,
+            discord_role_ids: vec![],
+            create_split: false,
+            island_tab_id: None,
+            ping_alliance: false,
+        };
+
+        let mut flash_with_comp = base("flash with comp");
+        flash_with_comp.event_kind = Some("flash".to_string());
+        flash_with_comp.comp_id = Some(1);
+        assert!(matches!(
+            service.create_event(&db, author, flash_with_comp).await,
+            Err(AppError::Validation(message)) if message.contains("comp_id")
+        ));
+
+        let mut flash_with_split = base("flash with split");
+        flash_with_split.event_kind = Some("flash".to_string());
+        flash_with_split.create_split = true;
+        assert!(matches!(
+            service.create_event(&db, author, flash_with_split).await,
+            Err(AppError::Validation(message)) if message.contains("create_split")
+        ));
+
+        let mut unknown_kind = base("unknown kind");
+        unknown_kind.event_kind = Some("surprise".to_string());
+        assert!(matches!(
+            service.create_event(&db, author, unknown_kind).await,
+            Err(AppError::Validation(message)) if message.contains("event_kind")
+        ));
+
+        // Organized stays the default and keeps requiring a comp: old
+        // clients that never send event_kind observe the old contract.
+        assert!(matches!(
+            service.create_event(&db, author, base("organized no comp")).await,
+            Err(AppError::Validation(message)) if message.contains("comp_id is required")
+        ));
+    }
+
+    #[tokio::test]
     async fn signup_options_use_the_prospective_comp_without_double_counting_members() {
         let db = seed_db().await;
         let author = insert_user(&db, "author", "author@example.com").await;
@@ -5146,7 +5402,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Signup options event".to_string()),
-            comp_id: Set(base),
+            comp_id: Set(Some(base)),
             created_by: Set(author),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -5324,7 +5580,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Fill event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(author),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -5438,7 +5694,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Fill expansion event".to_string()),
-            comp_id: Set(base),
+            comp_id: Set(Some(base)),
             created_by: Set(author),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -5461,7 +5717,7 @@ mod tests {
             )
             .await
             .expect("first Fill should be accepted");
-        assert_eq!(first_detail.active_comp_id, expansion);
+        assert_eq!(first_detail.active_comp_id, Some(expansion));
 
         let signup_options = service
             .get_event_signup_options(&db, event_id, concrete_member)
@@ -5481,7 +5737,7 @@ mod tests {
             )
             .await
             .expect("second Fill should activate the expansion");
-        assert_eq!(second_detail.active_comp_id, expansion);
+        assert_eq!(second_detail.active_comp_id, Some(expansion));
 
         service
             .participate(
@@ -6364,7 +6620,7 @@ mod tests {
         let comp_id = create_comp(&db, "spec-comp", comp_category, None, vec![(build_id, 1)]).await;
         let event_id = event::ActiveModel {
             title: Set("Spec event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(user_id),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -6462,7 +6718,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Auto-fill event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(officer),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -6534,7 +6790,7 @@ mod tests {
         .await;
         let event_id = event::ActiveModel {
             title: Set("Spec-optimal event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(officer),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -6614,7 +6870,7 @@ mod tests {
             create_comp(&db, "roster-comp", comp_category, None, vec![(build_id, 1)]).await;
         let event_id = event::ActiveModel {
             title: Set("Roster event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(user_id),
             event_date_utc: Set(ts()),
             ..Default::default()
@@ -6793,7 +7049,8 @@ mod tests {
                     description: Some("Fight for control".to_string()),
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: Some(10),
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -6812,7 +7069,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(event.title, "ZvZ Castle Fight");
-        assert_eq!(event.comp_id, comp_id);
+        assert_eq!(event.comp_id, Some(comp_id));
         assert_eq!(event.player_cap, Some(10));
         assert_eq!(event.mass_time_utc, "2026-07-20T19:30:00+00:00");
         assert_eq!(event.start_time_utc, "2026-07-20T20:00:00+00:00");
@@ -6847,7 +7104,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -6904,7 +7162,8 @@ mod tests {
                 description: None,
                 call_to_arms: false,
                 regear: false,
-                comp_id: 1,
+                event_kind: "organized".to_string(),
+                comp_id: Some(1),
                 player_cap: None,
                 created_by: 1,
                 event_date_utc: ts(),
@@ -6926,7 +7185,7 @@ mod tests {
                 ping_alliance: false,
                 alliance_discord_message_id: None,
             },
-            "comp".to_string(),
+            Some("comp".to_string()),
             "admin".to_string(),
             vec![],
         );
@@ -7070,7 +7329,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-09-01T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7112,7 +7372,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-09-01T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7198,7 +7459,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-09-01T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7242,7 +7504,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7285,7 +7548,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7356,7 +7620,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id: base_comp,
+                    event_kind: None,
+                    comp_id: Some(base_comp),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7384,8 +7649,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(detail.active_comp_id, variant_comp);
-        assert_eq!(detail.active_comp_capacity, 2);
+        assert_eq!(detail.active_comp_id, Some(variant_comp));
+        assert_eq!(detail.active_comp_capacity, Some(2));
         assert_eq!(detail.participants.len(), 1);
 
         // 2nd participant signs up as Healer; the expanded comp remains active.
@@ -7402,8 +7667,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(detail.active_comp_id, variant_comp);
-        assert_eq!(detail.active_comp_capacity, 2);
+        assert_eq!(detail.active_comp_id, Some(variant_comp));
+        assert_eq!(detail.active_comp_capacity, Some(2));
         assert_eq!(detail.participants.len(), 2);
 
         // 3rd sign up should fail because the maximum capacity of all variants (2) is exceeded.
@@ -7448,7 +7713,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7560,7 +7826,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7613,7 +7880,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7666,7 +7934,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-21T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7688,7 +7957,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-22T20:00:00Z".to_string()),
                     mass_time_utc: None,
@@ -7757,7 +8027,7 @@ mod tests {
         for index in 0..60 {
             event::ActiveModel {
                 title: Set(format!("Stopped history {index}")),
-                comp_id: Set(comp_id),
+                comp_id: Set(Some(comp_id)),
                 created_by: Set(author),
                 event_date_utc: Set(past.into()),
                 start_time_utc: Set(Some(past.into())),
@@ -7773,7 +8043,7 @@ mod tests {
         for index in 0..30 {
             let created = event::ActiveModel {
                 title: Set(format!("Upcoming {index}")),
-                comp_id: Set(comp_id),
+                comp_id: Set(Some(comp_id)),
                 created_by: Set(author),
                 event_date_utc: Set(future.into()),
                 start_time_utc: Set(Some(future.into())),
@@ -7789,7 +8059,7 @@ mod tests {
 
         let live = event::ActiveModel {
             title: Set("Live now".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(author),
             event_date_utc: Set(past.into()),
             start_time_utc: Set(Some(past.into())),
@@ -7803,7 +8073,7 @@ mod tests {
 
         let legacy_upcoming = event::ActiveModel {
             title: Set("Legacy upcoming".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(author),
             event_date_utc: Set(future.into()),
             start_time_utc: Set(None),
@@ -7817,7 +8087,7 @@ mod tests {
 
         event::ActiveModel {
             title: Set("Already passed".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(author),
             event_date_utc: Set(past.into()),
             start_time_utc: Set(Some(past.into())),
@@ -7830,7 +8100,7 @@ mod tests {
 
         let mut archived: event::ActiveModel = event::ActiveModel {
             title: Set("Archived future".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(author),
             event_date_utc: Set(future.into()),
             start_time_utc: Set(Some(future.into())),
@@ -7893,7 +8163,8 @@ mod tests {
                     description: None,
                     call_to_arms: false,
                     regear: false,
-                    comp_id,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
                     player_cap: None,
                     event_date_utc: Some("2026-07-21T20:00:00Z".to_string()),
                     mass_time_utc: None,

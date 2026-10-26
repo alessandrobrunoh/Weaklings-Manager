@@ -8,7 +8,8 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 |---|---|
 | View Events | `/events [page]` |
 | Create Event | `/event-create` (Officer+) |
-| Refresh Content Pings / Call to Arms calendars | `/event-calendar-refresh` (`events.edit`) |
+| Create Flash Mass | `/flash` or message `Apps → Flash mass` (`events.create`); a private 30-second undo window prevents accidental public pings |
+| Refresh event calendars | `/event-calendar-refresh` (`events.edit`) |
 | Join Event by Role | `/event-join [event_id]` + role/build select menus |
 | Leave Event | `/event-leave [event_id]` |
 | Start Event | `/event-start [event_id]` (Officer+) |
@@ -19,7 +20,8 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 | View Build | `/build [nome]` — uses `Nome Categoria Creatore` without hyphens and sends one item-collage image |
 | View Members | `/users [search] [page]` |
 | Link Albion Account | `/link [player_id] [player_name]` |
-| Auto-announce Events | Polling → events channel (Admin → Discord integration in the web app) |
+| Auto-announce organized events | Polling → Call-to-arms channel (Admin → Discord integration in the web app) |
+| Auto-announce flash masses | Polling → flash-mass channel and its separate calendar |
 | Auto-announce Battles | Polling → battles channel (Admin → Discord integration in the web app) |
 
 ## Setup
@@ -46,10 +48,17 @@ GUILD_NAME=YourInGameGuildName
 
 > **Backend setup**: The backend must also have `BOT_API_SECRET` set and must support the `X-Bot-Secret` / `X-Discord-Id` authentication headers.
 
-> **Channels and roles**: the events/battles announcement channels and the event-ping role are no
-> longer env vars here — set them once in the web app under **Admin → Discord integration** (after
-> logging in with an Admin account). The bot fetches them from the backend at startup and
-> refreshes periodically, so a change there takes effect without restarting the bot.
+> **Channels, timezone, roles, and voice**: set the organized-event (Call to Arms) channel,
+> flash-mass channel, default event-ping role, guild timezone, and event voice category under
+> **Admin → Discord integration**.
+> Organized events and CTA events share one channel/calendar; flash masses use their own channel
+> and calendar. The bot refreshes settings periodically, so changes take effect without a restart.
+> Give the bot permission to create/delete voice channels in the configured category.
+
+`/flash` accepts relative times such as `30m` and `1h30m`, or a guild-local wall time such as
+`21:00`. A clock time that has already passed means the next day. The message action opens the
+same form with the message text prefilled for review. The flash modal, calendar, thread card,
+Join/Leave and Undo copy use Italian or English based on the Discord locale.
 
 > **Multi-server**: one bot process serves every Discord server it is invited to. There is no
 > "the" server: slash commands are registered per guild, and each registered tenant gets its own
@@ -81,11 +90,13 @@ The bot is a long-running Discord.js v14 process. One process can serve multiple
 - Environment configuration is validated at startup; invalid configuration logs validation issues and exits.
 - Pollers are reconciled per registered guild and use guild-scoped API clients. Guild state and settings are isolated rather than shared across Discord servers.
 - Discord role claims are sent only when the requested Discord actor matches the client actor.
+- `event_kind` decides event routing: flash masses go only to the flash-mass channel; every organized event goes to the Call-to-arms channel. `call_to_arms` changes urgency, not destination.
+- Flash masses are binary Join/Leave events with no composition or build selection. The poller waits 30 seconds before the public ping; the creator gets a private Undo button during that window.
 
 ## Side Effects
 
-- The process communicates with Discord and the backend API, registers slash commands, and runs recurring guild polling.
-- Poller checkpoints are stored per guild beneath `POLLER_STATE_DIR` (default `/app/data`). The Docker image configures this directory but does not declare a volume; persistence across container replacement depends on the launch configuration.
+- The process communicates with Discord and the backend API, registers slash commands, and runs recurring guild polling. It creates event voice channels at Mass/Start and periodically removes old, empty orphan channels in the configured category.
+- Poller checkpoints are stored per guild beneath `POLLER_STATE_DIR` (default `/app/data`). The provided Compose file mounts a persistent `discord_bot_data` volume there; other launch configurations must provide equivalent persistence.
 - The container runs `node dist/index.js` as a non-root user and exposes no inbound port.
 
 ## Verification
@@ -123,4 +134,4 @@ Examples:
 
 ## Polling State
 
-The poller stores separate checkpoint state for each numeric guild ID beneath `POLLER_STATE_DIR` (default `/app/data`). Checkpoints include event and battle cursors along with Discord thread, signup-card, calendar, split-sync, voice-check, application, and giveaway state. An uninitialized checkpoint is seeded so existing records are not treated as new announcements on startup. The Docker image does not declare a volume, so mount `/app/data` if checkpoint persistence across container replacement is required.
+The poller stores separate checkpoint state for each numeric guild ID beneath `POLLER_STATE_DIR` (default `/app/data`). Checkpoints include event and battle cursors, pending announcement retries, Discord parent/thread/signup-card IDs, calendar fingerprints, split-sync cursors, voice checks and sweep time, application state, and giveaway state. An uninitialized checkpoint is seeded so existing records are not treated as new announcements on startup. Persist `/app/data` across bot replacement so retries and message IDs survive restarts.

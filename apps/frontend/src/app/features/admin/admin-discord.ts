@@ -30,6 +30,7 @@ interface DiscordSettingsDraft {
   discord_events_channel_id: string;
   discord_battles_channel_id: string;
   discord_battles_cta_channel_id: string;
+  discord_flash_mass_channel_id: string;
   discord_audit_log_channel_id: string;
   discord_transaction_spam_channel_id: string;
   discord_splits_forum_channel_id: string;
@@ -38,6 +39,7 @@ interface DiscordSettingsDraft {
   discord_split_not_completed_tag_id: string;
   discord_split_lost_tag_id: string;
   discord_event_voice_category_id: string;
+  discord_event_timezone: string;
   default_split_fee: string;
 }
 
@@ -45,6 +47,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_events_channel_id: '',
   discord_battles_channel_id: '',
   discord_battles_cta_channel_id: '',
+  discord_flash_mass_channel_id: '',
   discord_audit_log_channel_id: '',
   discord_transaction_spam_channel_id: '',
   discord_splits_forum_channel_id: '',
@@ -53,6 +56,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_split_not_completed_tag_id: '',
   discord_split_lost_tag_id: '',
   discord_event_voice_category_id: '',
+  discord_event_timezone: 'Europe/Rome',
   default_split_fee: '20',
 };
 
@@ -120,21 +124,36 @@ const SPLIT_TAG_FIELDS = [
                 </span>
               </label>
               <label>
-                <span class="label">{{ t('admin.discord.ctaChannel') }}</span>
+                <span class="label">{{ t('admin.discord.flashMassChannel') }}</span>
                 <app-searchable-select
                   class="mt-1 block"
-                  [options]="channelOptions(['text'], guildSettingsDraft().discord_battles_cta_channel_id)"
-                  [value]="guildSettingsDraft().discord_battles_cta_channel_id"
+                  [options]="channelOptions(['text'], guildSettingsDraft().discord_flash_mass_channel_id)"
+                  [value]="guildSettingsDraft().discord_flash_mass_channel_id"
                   [emptyLabel]="t('admin.discord.placeholder')"
                   [searchPlaceholder]="t('common.search')"
                   [noMatchesLabel]="t('picker.noMatches')"
                   [emptyOptionsLabel]="t('picker.empty')"
                   [loading]="catalogLoading()"
-                  [ariaLabel]="t('admin.discord.ctaChannel')"
-                  (valueChange)="setDraftValue('discord_battles_cta_channel_id', $event)"
+                  [ariaLabel]="t('admin.discord.flashMassChannel')"
+                  (valueChange)="setDraftValue('discord_flash_mass_channel_id', $event)"
                 />
                 <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.discord.ctaChannelHint') }}
+                  {{ t('admin.discord.flashMassChannelHint') }}
+                </span>
+              </label>
+              <label class="sm:col-span-2">
+                <span class="label">{{ t('admin.discord.eventTimezone') }}</span>
+                <input
+                  class="input mt-1"
+                  type="text"
+                  maxlength="64"
+                  autocomplete="off"
+                  [value]="guildSettingsDraft().discord_event_timezone"
+                  (input)="updateDraftField('discord_event_timezone', $event)"
+                  [attr.aria-label]="t('admin.discord.eventTimezone')"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.eventTimezoneHint') }}
                 </span>
               </label>
             </fieldset>
@@ -555,6 +574,8 @@ export class AdminDiscord {
       discord_events_channel_id: draft.discord_events_channel_id.trim(),
       discord_battles_channel_id: draft.discord_battles_channel_id.trim(),
       discord_battles_cta_channel_id: draft.discord_battles_cta_channel_id.trim(),
+      discord_flash_mass_channel_id: draft.discord_flash_mass_channel_id.trim(),
+      discord_event_timezone: draft.discord_event_timezone.trim(),
       discord_audit_log_channel_id: draft.discord_audit_log_channel_id.trim(),
       discord_transaction_spam_channel_id: draft.discord_transaction_spam_channel_id.trim(),
       discord_splits_forum_channel_id: draft.discord_splits_forum_channel_id.trim(),
@@ -615,6 +636,7 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_events_channel_id: settings.discord_events_channel_id ?? '',
     discord_battles_channel_id: settings.discord_battles_channel_id ?? '',
     discord_battles_cta_channel_id: settings.discord_battles_cta_channel_id ?? '',
+    discord_flash_mass_channel_id: settings.discord_flash_mass_channel_id ?? '',
     discord_audit_log_channel_id: settings.discord_audit_log_channel_id ?? '',
     discord_transaction_spam_channel_id: settings.discord_transaction_spam_channel_id ?? '',
     discord_splits_forum_channel_id: settings.discord_splits_forum_channel_id ?? '',
@@ -623,6 +645,7 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_split_not_completed_tag_id: settings.discord_split_not_completed_tag_id ?? '',
     discord_split_lost_tag_id: settings.discord_split_lost_tag_id ?? '',
     discord_event_voice_category_id: settings.discord_event_voice_category_id ?? '',
+    discord_event_timezone: settings.discord_event_timezone ?? 'Europe/Rome',
     default_split_fee: String(settings.default_split_fee ?? 20),
   };
 }

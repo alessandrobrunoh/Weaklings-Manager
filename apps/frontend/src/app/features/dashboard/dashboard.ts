@@ -562,7 +562,7 @@ export class Dashboard {
         ? this.t('dashboard.next_mass.today')
         : (massAt?.toLocaleDateString(this.translate.locale(), { weekday: 'short' }).toUpperCase() || this.t('dashboard.next_mass.today')),
       time: timeStr,
-      compName: selected.comp_name,
+      compName: selected.event_kind === 'flash' ? 'Flash Mass' : (selected.comp_name ?? '—'),
       capText: selected.player_cap
         ? this.t('dashboard.next_mass.cap', { count: selected.player_cap })
         : null,

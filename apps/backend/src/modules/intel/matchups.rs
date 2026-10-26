@@ -198,7 +198,7 @@ pub async fn matchups(
             .all(db)
             .await?
             .into_iter()
-            .map(|row| (row.id, row.comp_id))
+            .filter_map(|row| row.comp_id.map(|comp_id| (row.id, comp_id)))
             .collect()
     };
 
@@ -411,7 +411,7 @@ mod tests {
         let created_by = insert_user(db).await;
         event::ActiveModel {
             title: Set("Test Event".to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(created_by),
             event_date_utc: Set(ts()),
             ..Default::default()

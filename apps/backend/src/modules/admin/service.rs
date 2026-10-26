@@ -119,6 +119,19 @@ impl AdminService {
         if let Some(value) = &req.discord_battles_cta_channel_id {
             active.discord_battles_cta_channel_id = Set(normalize(value));
         }
+        if let Some(value) = &req.discord_flash_mass_channel_id {
+            active.discord_flash_mass_channel_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_event_timezone {
+            let timezone = value.trim();
+            if timezone.is_empty() || timezone.len() > 64 {
+                return Err(AppError::Validation(
+                    "discord_event_timezone must be a non-empty IANA timezone name (max 64 characters)"
+                        .to_string(),
+                ));
+            }
+            active.discord_event_timezone = Set(timezone.to_string());
+        }
         if let Some(value) = &req.discord_audit_log_channel_id {
             active.discord_audit_log_channel_id = Set(normalize(value));
         }
@@ -334,6 +347,8 @@ impl AdminService {
                 "discord_events_channel_id": req.discord_events_channel_id,
                 "discord_battles_channel_id": req.discord_battles_channel_id,
                 "discord_battles_cta_channel_id": req.discord_battles_cta_channel_id,
+                "discord_flash_mass_channel_id": req.discord_flash_mass_channel_id,
+                "discord_event_timezone": req.discord_event_timezone,
                 "discord_audit_log_channel_id": req.discord_audit_log_channel_id,
                 "discord_transaction_spam_channel_id": req.discord_transaction_spam_channel_id,
                 "discord_event_role_id": req.discord_event_role_id,
@@ -1445,6 +1460,80 @@ mod tests {
         )
         .await
         .expect_err("invalid snowflake must be rejected");
+        assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_flash_mass_channel_id() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_flash_mass_channel_id: Some(" 123456789012345678 ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save flash mass channel");
+        assert_eq!(
+            saved.discord_flash_mass_channel_id.as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            AdminService::get_guild_settings(&db)
+                .await
+                .expect("load flash mass channel")
+                .discord_flash_mass_channel_id
+                .as_deref(),
+            Some("123456789012345678")
+        );
+
+        let cleared = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_flash_mass_channel_id: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("clear flash mass channel");
+        assert_eq!(cleared.discord_flash_mass_channel_id, None);
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_event_timezone() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_event_timezone: Some(" Europe/Rome ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save timezone");
+        assert_eq!(saved.discord_event_timezone, "Europe/Rome");
+        assert_eq!(
+            AdminService::get_guild_settings(&db)
+                .await
+                .expect("load timezone")
+                .discord_event_timezone,
+            "Europe/Rome"
+        );
+
+        let error = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_event_timezone: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("empty timezone must be rejected");
         assert!(matches!(error, AppError::Validation(_)));
     }
 

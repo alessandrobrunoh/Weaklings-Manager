@@ -2,11 +2,12 @@
 
 ## Overview
 
-This directory defines the bot's slash-command interface. `index.ts` maps 26 command names to their modules; each module provides the command builder and executor.
+This directory defines the bot's slash-command interface plus registered message context actions. `index.ts` maps slash commands and the `Flash mass` message action to their modules.
 
 ## Interface
 
 - The shared `BotCommand` contract pairs a slash-command builder (`data`) with an async `execute(interaction, api)` function.
+- `BotMessageCommand` registers Discord message context-menu actions; the `Flash mass` action opens the same editable modal as `/flash` with title/time/notes prefilled from the selected message.
 - Command executors receive a `ChatInputCommandInteraction` and an `ApiClient`.
 - The command set covers event, battle, balance, build, member, registration, application, moderation, progression, and related guild workflows. The top-level bot README retains the user-facing feature list.
 
@@ -17,6 +18,7 @@ This directory defines the bot's slash-command interface. `index.ts` maps 26 com
 - Only `applications-panel` sets `ManageGuild` as builder-level default permission in this directory. Descriptions such as “Officer+” are not themselves permission enforcement; additional authorization may occur outside this module.
 - `event-join` displays signup controls; participation is submitted later by the interaction handler.
 - `event-create` creates the backend event and delegates announcement work to the poller rather than posting its own announcement or thread.
+- `/flash` creates a comp-less binary event. Backend `events.create` permission controls launch access; the poller is still the sole announcement owner, gives the author 30 seconds to undo before the role ping, and retries delivery failures from its checkpoint.
 
 ## Side Effects
 

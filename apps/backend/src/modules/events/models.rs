@@ -200,15 +200,17 @@ pub struct EventView {
     pub description: Option<String>,
     /// Whether this event is a priority call-to-arms announcement.
     pub call_to_arms: bool,
+    /// Event kind: `organized` or `flash` (binary participation, no comp).
+    pub event_kind: String,
     /// Discord role IDs mentioned by this event's announcement, in stable order.
     pub discord_role_ids: Vec<String>,
     /// Whether this event enables automatic and manual regear processing.
     pub regear: bool,
-    /// The base composition ID associated with the event.
+    /// The base composition ID, or `None` for flash masses.
     #[schema(example = 10)]
-    pub comp_id: i64,
-    /// The name of the base composition.
-    pub comp_name: String,
+    pub comp_id: Option<i64>,
+    /// The name of the base composition, or `None` for flash masses.
+    pub comp_name: Option<String>,
     /// Optional signup threshold that advances through comp expansions without blocking signups.
     pub player_cap: Option<i64>,
     /// The ID of the user who created this event.
@@ -434,13 +436,14 @@ pub struct EventDetailView {
     #[serde(flatten)]
     pub event: EventView,
     /// The active composition ID (might be base or variant depending on count).
+    /// `None` for flash masses.
     #[schema(example = 11)]
-    pub active_comp_id: i64,
-    /// The name of the active composition.
-    pub active_comp_name: String,
-    /// The total capacity of the active composition.
+    pub active_comp_id: Option<i64>,
+    /// The name of the active composition, or `None` for flash masses.
+    pub active_comp_name: Option<String>,
+    /// The total capacity of the active composition, or `None` for flash masses.
     #[schema(example = 25)]
-    pub active_comp_capacity: i64,
+    pub active_comp_capacity: Option<i64>,
     /// Available roster roles. `Fill` is always first and has unlimited capacity.
     pub roster_roles: Vec<EventRosterRoleView>,
     /// Every build and quantity in the active comp snapshot, including empty slots.
@@ -555,8 +558,13 @@ pub struct CreateEventRequest {
     /// Whether this event enables automatic and manual regear processing.
     #[serde(default)]
     pub regear: bool,
-    /// The base composition ID to use.
-    pub comp_id: i64,
+    /// Event kind: `organized` (default; full comp/roster) or `flash` (binary
+    /// participation, no comp). Flash is never inferred from a missing comp.
+    #[serde(default)]
+    pub event_kind: Option<String>,
+    /// The base composition ID. Required for `organized` events and rejected
+    /// for `flash` events.
+    pub comp_id: Option<i64>,
     /// Optional participant threshold that preemptively advances to the next comp expansion.
     /// It is a planning value, never a hard signup limit.
     #[serde(default)]

@@ -20,6 +20,10 @@ pub struct Model {
     pub discord_battles_channel_id: Option<String>,
     /// Channel where call-to-arms events get their urgent announcement.
     pub discord_battles_cta_channel_id: Option<String>,
+    /// Channel where the bot announces flash masses (binary, no comp).
+    pub discord_flash_mass_channel_id: Option<String>,
+    /// IANA timezone used to interpret guild wall-clock event times.
+    pub discord_event_timezone: String,
     /// Channel that receives a copy of every audit log entry.
     pub discord_audit_log_channel_id: Option<String>,
     /// Channel that receives transaction (bank ledger) activity.

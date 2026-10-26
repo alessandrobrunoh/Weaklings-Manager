@@ -449,6 +449,10 @@ export const es: TranslationDict = {
   'events.status.auto_stopped': 'Auto-detenido',
   'events.status.cancelled': 'Cancelado',
   'events.detail.back': 'Volver a eventos',
+  'events.flashMass': 'Flash Mass',
+  'events.flashMass.discordOnly': 'La participación en el flash mass se gestiona en el hilo de Discord con Unirse y Salir.',
+  'events.flashMass.mass': 'Mass',
+  'events.flashMass.start': 'Inicio',
   'events.detail.performance': 'Rendimiento',
   'events.detail.opponents': 'Top oponentes',
   'events.detail.battles': 'Batallas vinculadas',
@@ -1658,13 +1662,19 @@ export const es: TranslationDict = {
   'admin.discord.title': 'Integración con Discord',
   'admin.discord.hint':
     'Elige canales y roles de Discord en las listas. Un cambio aquí surte efecto sin redesplegar el bot.',
-  'admin.discord.eventsChannel': 'Canal de eventos',
-  'admin.discord.eventsChannelHint': 'Donde se anuncian los eventos nuevos.',
+  'admin.discord.eventsChannel': 'Canal de call-to-arms',
+  'admin.discord.eventsChannelHint': 'Todos los eventos organizados se anuncian aquí; el indicador call-to-arms marca la prioridad.',
   'admin.discord.battlesChannel': 'Canal de batallas',
   'admin.discord.battlesChannelHint': 'Donde se publican las batallas nuevas.',
   'admin.discord.ctaChannel': 'Canal de call-to-arms',
   'admin.discord.ctaChannelHint':
     'Los eventos call-to-arms urgentes reciben aquí un anuncio aparte.',
+  'admin.discord.flashMassChannel': 'Canal de flash mass',
+  'admin.discord.flashMassChannelHint':
+    'Los flash mass (contenido espontáneo, solo sí/no) se anuncian aquí.',
+  'admin.discord.eventTimezone': 'Zona horaria del gremio',
+  'admin.discord.eventTimezoneHint':
+    'Zona IANA para horas como 21:00 (por ejemplo Europe/Rome o UTC).',
   'admin.discord.splitsForumChannel': 'Canal Forum de splits',
   'admin.discord.splitsForumChannelHint': 'El bot crea aquí un hilo de Forum para cada split.',
   'admin.discord.splitPendingTag': 'Tag Split Pending',

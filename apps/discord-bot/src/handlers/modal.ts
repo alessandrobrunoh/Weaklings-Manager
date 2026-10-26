@@ -1,5 +1,11 @@
-import { ChannelType, type ModalSubmitInteraction } from 'discord.js';
-import type { ApiClient } from '../api/client.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  type ModalSubmitInteraction,
+} from 'discord.js';
+import { ApiError, type ApiClient } from '../api/client.js';
 import type { ApplicationView } from '../api/types.js';
 import {
   APPLICATION_INGAME_FIELD,
@@ -14,6 +20,16 @@ import {
 } from '../embeds/application.embed.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 import { getSettingsService } from '../services/settings.js';
+import { flashCopy } from '../services/flash-copy.js';
+import { parseFlashWhen } from '../services/flash-time.js';
+import { FLASH_UNDO_WINDOW_MS, getPoller } from '../services/poller.js';
+import type { EventView } from '../api/types.js';
+import {
+  FLASH_MODAL_ID,
+  FLASH_NOTES_FIELD,
+  FLASH_WHAT_FIELD,
+  FLASH_WHEN_FIELD,
+} from '../commands/flash.js';
 import {
   fetchGuildChannel,
   createPrivateTicketThread,
@@ -41,6 +57,10 @@ export async function handleModal(
       await submitApplication(interaction, api);
       return;
     }
+    if (interaction.customId === FLASH_MODAL_ID) {
+      await submitFlashMass(interaction, api);
+      return;
+    }
     await interaction.reply({
       embeds: [
         createResponseEmbed('warning', 'Unknown Form', 'Unknown form submission.', 'BOT SYSTEM'),
@@ -50,6 +70,14 @@ export async function handleModal(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
     let errEmbed = createResponseEmbed('error', 'Form Failed', message, 'BOT SYSTEM');
+    if (interaction.customId === FLASH_MODAL_ID) {
+      errEmbed = createResponseEmbed(
+        'error',
+        flashCopy(interaction.locale, 'modalFailed'),
+        message,
+        'FLASH MASS',
+      );
+    }
     if (interaction.customId.startsWith('application:')) {
       try {
         errEmbed = buildApplicationErrorEmbed(
@@ -69,8 +97,104 @@ export async function handleModal(
 }
 
 /**
- * Opens the applicant's ticket, or brings their archived one back.
- *
+ * Creates a flash mass from the `/flash` modal and asks the poller to announce
+ * immediately — the poller stays the only announcer, so the checkpoint
+ * semantics (and its `failedAnnounces` retry map) apply to flash pings too.
+ */
+async function submitFlashMass(
+  interaction: ModalSubmitInteraction,
+  api: ApiClient,
+): Promise<void> {
+  await interaction.deferReply({ flags: ['Ephemeral'] });
+
+  const what = interaction.fields.getTextInputValue(FLASH_WHAT_FIELD).trim();
+  const whenRaw = interaction.fields.getTextInputValue(FLASH_WHEN_FIELD).trim();
+  const notes = interaction.fields.getTextInputValue(FLASH_NOTES_FIELD).trim();
+
+  const settingsService = getSettingsService(api.guildId);
+  const [routes, guildSettings] = await Promise.all([
+    settingsService.eventChannelRoutes(),
+    settingsService.get(),
+  ]);
+  const timezone = guildSettings.discord_event_timezone ?? 'Europe/Rome';
+  const parsed = parseFlashWhen(whenRaw, new Date(), timezone);
+  if ('error' in parsed) {
+    throw new Error(flashCopy(interaction.locale, 'invalidTime', { when: whenRaw }));
+  }
+
+  if (!routes.flashMass) {
+    throw new Error(flashCopy(interaction.locale, 'missingChannel'));
+  }
+  const eventRoleId = guildSettings.discord_event_role_id;
+  if (!eventRoleId) {
+    throw new Error(flashCopy(interaction.locale, 'missingRole'));
+  }
+
+  const massAt = parsed.massAt;
+  const startAt = new Date(massAt.getTime() + 30 * 60 * 1000);
+  let event: EventView;
+  try {
+    event = await api.post<EventView>(
+      'api/events',
+      {
+        title: what,
+        ...(notes ? { description: notes } : {}),
+        event_kind: 'flash' as const,
+        discord_role_ids: [eventRoleId],
+        mass_time_utc: massAt.toISOString(),
+        start_time_utc: startAt.toISOString(),
+      },
+      interaction.user.id,
+    );
+  } catch (error) {
+    console.warn(`[FlashCommand] Could not create event for guild ${api.guildId}:`, error);
+    throw new Error(
+      error instanceof ApiError && error.status === 403
+        ? flashCopy(interaction.locale, 'noPermission')
+        : flashCopy(interaction.locale, 'createFailed'),
+    );
+  }
+
+  // Best-effort: the scheduled tick still announces within POLL_INTERVAL_MS if
+  // the immediate poll fails; the retry map covers a partial failure.
+  try {
+    await getPoller(api.guildId)?.pollNow();
+  } catch (err) {
+    console.warn('[FlashCommand] Immediate poll after creation failed:', err);
+  }
+
+  const massTs = Math.floor(massAt.getTime() / 1000);
+  const undoUntilTs = Math.floor(
+    (Date.parse(event.created_at) + FLASH_UNDO_WINDOW_MS) / 1000,
+  );
+  await interaction.editReply({
+    embeds: [
+      createResponseEmbed(
+        'success',
+        flashCopy(interaction.locale, 'createdTitle'),
+        flashCopy(interaction.locale, 'createdBody', {
+          id: event.id,
+          what,
+          massTs,
+          interpretation: parsed.interpretation,
+          channelId: routes.flashMass,
+          undoUntilTs,
+        }),
+        'FLASH MASS',
+      ),
+    ],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`event:undo-flash:${event.id}`)
+          .setLabel(flashCopy(interaction.locale, 'undoButton'))
+          .setStyle(ButtonStyle.Danger),
+      ),
+    ],
+  });
+}
+/**
+ * Opens the applicant's ticket, or brings an archived one back.
  * Reusing the old channel is the whole point of the reopen path: a member who
  * left and came back gets the same ticket, so the managers reading it still
  * have every previous message and decision in front of them.

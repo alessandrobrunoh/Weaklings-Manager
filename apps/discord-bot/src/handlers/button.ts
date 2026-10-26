@@ -32,7 +32,7 @@ import { createResponseEmbed } from '../embeds/theme.js';
 import { config } from "../config.js";
 import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "../services/event-lifecycle.js";
-import { getPoller } from "../services/poller.js";
+import { FLASH_UNDO_WINDOW_MS, getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 import {
   closeEventAnnouncementThread,
@@ -40,6 +40,7 @@ import {
 } from "../services/event-announcement-thread.js";
 import { unlockAndUnarchiveThread } from "../services/discord-thread.js";
 import { getSettingsService } from "../services/settings.js";
+import { flashCopy } from "../services/flash-copy.js";
 import {
   buildWebsiteAccountRequiredReply,
   isWebsiteUserRegistered,
@@ -463,6 +464,67 @@ async function handleEventButton(
   action: string,
   rest: string[],
 ): Promise<void> {
+  if (action === "undo-flash") {
+    await interaction.deferUpdate();
+    const [eventIdStr] = rest;
+    const eventId = Number(eventIdStr);
+    try {
+      if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+        throw new Error("Invalid event ID.");
+      }
+      const event = await api.get<EventDetailView>(
+        `api/events/${eventId}`,
+        interaction.user.id,
+      );
+      const createdAt = Date.parse(event.created_at);
+      if (
+        event.event_kind !== "flash" ||
+        event.status !== "scheduled" ||
+        !Number.isFinite(createdAt) ||
+        Date.now() >= createdAt + FLASH_UNDO_WINDOW_MS
+      ) {
+        throw new Error(flashCopy(interaction.locale, "undoExpired"));
+      }
+
+      await api.post(
+        `api/events/${eventId}/cancel`,
+        {},
+        interaction.user.id,
+      );
+      await getPoller(api.guildId)?.pollNow().catch((error) => {
+        console.warn(`[Button] Could not refresh after undoing flash mass #${eventId}:`, error);
+      });
+      await interaction.editReply({
+        embeds: [
+          createResponseEmbed(
+            "success",
+            flashCopy(interaction.locale, "undoSuccessTitle"),
+            flashCopy(interaction.locale, "undoSuccessBody", { id: eventId }),
+            "FLASH MASS",
+          ),
+        ],
+        components: [],
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : flashCopy(interaction.locale, "undoFailed");
+      await interaction.editReply({
+        embeds: [
+          createResponseEmbed(
+            "warning",
+            flashCopy(interaction.locale, "undoUnavailableTitle"),
+            message,
+            "FLASH MASS",
+          ),
+        ],
+        components: [],
+      });
+    }
+    return;
+  }
+
   if (action === "leave") {
     const [eventIdStr] = rest;
     const eventId = Number(eventIdStr);
@@ -509,13 +571,17 @@ async function handleEventButton(
         `api/events/${eventId}`,
         interaction.user.id,
       );
-      const embed = buildEventEmbed(updatedEvent);
+      const embed = buildEventEmbed(updatedEvent, interaction.guild?.preferredLocale);
       await interaction.message.edit({ embeds: [embed] });
 
       const successEmbed = createResponseEmbed(
         "success",
-        "Left Event",
-        `You have successfully left event **#${eventId}**.`,
+        event.event_kind === "flash"
+          ? flashCopy(interaction.locale, "leftTitle")
+          : "Left Event",
+        event.event_kind === "flash"
+          ? flashCopy(interaction.locale, "leftBody", { id: eventId })
+          : `You have successfully left event **#${eventId}**.`,
         "GUILD EVENT",
       );
       await interaction.editReply({ embeds: [successEmbed] });
@@ -523,8 +589,12 @@ async function handleEventButton(
       console.error("Failed to leave event", e);
       const errEmbed = createResponseEmbed(
         "error",
-        "Leave Failed",
-        "Failed to leave the event.",
+        event.event_kind === "flash"
+          ? flashCopy(interaction.locale, "leaveFailedTitle")
+          : "Leave Failed",
+        event.event_kind === "flash"
+          ? flashCopy(interaction.locale, "leaveFailed")
+          : "Failed to leave the event.",
         "GUILD EVENT",
       );
       await interaction.editReply({ embeds: [errEmbed] });
@@ -540,6 +610,62 @@ async function handleEventButton(
 
     if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
       await interaction.editReply(buildWebsiteAccountRequiredReply());
+      return;
+    }
+
+    // Flash masses are binary: the signup-options select menu is comp-shaped
+    // and answers 409 for them, so the kind decides the flow before any
+    // comp-specific call is made.
+    let eventDetail: EventDetailView;
+    try {
+      eventDetail = await api.get<EventDetailView>(
+        `api/events/${eventId}`,
+        interaction.user.id,
+      );
+    } catch (err) {
+      console.error("Failed to fetch event for join", err);
+      const errEmbed = createResponseEmbed(
+        "error",
+        "Fetch Error",
+        "Failed to fetch event details.",
+        "GUILD EVENT",
+      );
+      await interaction.editReply({ embeds: [errEmbed] });
+      return;
+    }
+
+    if (eventDetail.event_kind === "flash") {
+      try {
+        const updated = await api.post<EventDetailView>(
+          `api/events/${eventId}/participate`,
+          { primary_build_id: null, secondary_build_id: null },
+          interaction.user.id,
+        );
+        const embed = buildEventEmbed(updated, interaction.guild?.preferredLocale);
+        await interaction.message.edit({ embeds: [embed] });
+
+        const massTime = updated.mass_time_utc ?? updated.event_date_utc;
+        const massTs = Math.floor(new Date(massTime).getTime() / 1000);
+        const successEmbed = createResponseEmbed(
+          "success",
+          flashCopy(interaction.locale, "joinedTitle"),
+          flashCopy(interaction.locale, "joinedBody", {
+            id: eventId,
+            massTs,
+          }),
+          "FLASH MASS",
+        );
+        await interaction.editReply({ embeds: [successEmbed] });
+      } catch (e) {
+        console.error("Failed to join flash mass", e);
+        const errEmbed = createResponseEmbed(
+          "error",
+          flashCopy(interaction.locale, "joinFailedTitle"),
+          flashCopy(interaction.locale, "joinFailed"),
+          "FLASH MASS",
+        );
+        await interaction.editReply({ embeds: [errEmbed] });
+      }
       return;
     }
 
@@ -618,7 +744,9 @@ async function handleEventButton(
       {},
       interaction.user.id,
     );
-    await thread.send(buildEventReminderMessage(event));
+    await thread.send(
+      buildEventReminderMessage(event, interaction.guild?.preferredLocale),
+    );
 
     const successEmbed = createResponseEmbed(
       "success",
@@ -646,8 +774,11 @@ async function handleEventButton(
       interaction.channel?.isThread() ? interaction.channel : undefined,
     );
     await interaction.message.edit({
-      embeds: [buildEventEmbed(result.event)],
-      components: buildEventThreadActionRows(result.event),
+      embeds: [buildEventEmbed(result.event, interaction.guild?.preferredLocale)],
+      components: buildEventThreadActionRows(
+        result.event,
+        interaction.guild?.preferredLocale,
+      ),
     });
     const successEmbed = createResponseEmbed(
       "success",
@@ -682,8 +813,8 @@ async function handleEventButton(
       }
     }
     await interaction.message.edit({
-      embeds: [buildEventEmbed(event)],
-      components: buildEventThreadActionRows(event),
+      embeds: [buildEventEmbed(event, interaction.guild?.preferredLocale)],
+      components: buildEventThreadActionRows(event, interaction.guild?.preferredLocale),
     });
     const poller = getPoller(api.guildId);
     const closed = await poller?.closeEventThread(eventId, { keepMapping: true });
@@ -729,8 +860,8 @@ async function handleEventButton(
       );
     }
     await interaction.message.edit({
-      embeds: [buildEventEmbed(event)],
-      components: buildEventThreadActionRows(event),
+      embeds: [buildEventEmbed(event, interaction.guild?.preferredLocale)],
+      components: buildEventThreadActionRows(event, interaction.guild?.preferredLocale),
     });
     const successEmbed = createResponseEmbed(
       "success",
@@ -758,8 +889,11 @@ async function handleEventButton(
     );
     await getPoller(api.guildId)?.closeEventThread(eventId);
     await interaction.message.edit({
-      embeds: [buildEventEmbed(result.event)],
-      components: buildEventThreadActionRows(result.event),
+      embeds: [buildEventEmbed(result.event, interaction.guild?.preferredLocale)],
+      components: buildEventThreadActionRows(
+        result.event,
+        interaction.guild?.preferredLocale,
+      ),
     });
     const message = result.voiceChannelOccupied
       ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`

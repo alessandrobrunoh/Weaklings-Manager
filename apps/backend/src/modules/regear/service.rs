@@ -690,8 +690,12 @@ impl RegearService {
                 None => None,
             };
 
+            // Flash masses never enable regear; this guard is defensive.
+            let Some(event_comp_id) = event_row.comp_id else {
+                continue;
+            };
             let comp_build_rows = comp_build::Entity::find()
-                .filter(comp_build::Column::CompId.eq(event_row.comp_id))
+                .filter(comp_build::Column::CompId.eq(event_comp_id))
                 .all(db)
                 .await?;
             let mut comp_builds = Vec::with_capacity(comp_build_rows.len());
@@ -713,7 +717,7 @@ impl RegearService {
                 primary_build_name,
                 secondary_build_id: participation.secondary_build_id,
                 secondary_build_name,
-                comp_id: event_row.comp_id,
+                comp_id: event_comp_id,
                 comp_builds,
             });
         }
@@ -800,8 +804,13 @@ impl RegearService {
             ));
         }
 
+        let Some(event_comp_id) = event_row.comp_id else {
+            return Err(AppError::Conflict(
+                "flash masses do not support regear requests".to_string(),
+            ));
+        };
         comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(event_row.comp_id))
+            .filter(comp_build::Column::CompId.eq(event_comp_id))
             .filter(comp_build::Column::BuildId.eq(req.build_id))
             .one(db)
             .await?
@@ -1476,7 +1485,7 @@ mod tests {
     ) -> i64 {
         event::ActiveModel {
             title: Set(title.into()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(creator),
             event_date_utc: Set(Utc::now().into()),
             regear: Set(true),

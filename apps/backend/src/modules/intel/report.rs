@@ -973,8 +973,12 @@ fn compute_operations(raw: &RawData, _range: &DateRange) -> ReportOperations {
     let mut role_fill: HashMap<String, i64> = role_need.clone();
     let mut slots = 0i64;
     for e in &raw.events {
-        slots += seats_by_comp.get(&e.comp_id).copied().unwrap_or(0);
-        if let Some(needs) = need_by_comp.get(&e.comp_id) {
+        // Flash masses carry no comp and contribute no seat expectations.
+        let Some(event_comp) = e.comp_id else {
+            continue;
+        };
+        slots += seats_by_comp.get(&event_comp).copied().unwrap_or(0);
+        if let Some(needs) = need_by_comp.get(&event_comp) {
             for (role, count) in needs {
                 *role_need.entry(role.clone()).or_insert(0) += count;
             }
@@ -1380,7 +1384,9 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
 
     let events_by_comp: HashMap<i64, Vec<i64>> =
         raw.events.iter().fold(HashMap::new(), |mut a, e| {
-            a.entry(e.comp_id).or_default().push(e.id);
+            if let Some(comp_id) = e.comp_id {
+                a.entry(comp_id).or_default().push(e.id);
+            }
             a
         });
     let signups_by_event: HashMap<i64, i64> =
@@ -2223,7 +2229,8 @@ mod tests {
             description: None,
             call_to_arms: true,
             regear: false,
-            comp_id: 1,
+            event_kind: "organized".to_string(),
+            comp_id: Some(1),
             player_cap: None,
             created_by: 1,
             event_date_utc: ts("2026-08-19T20:00:00Z"),
@@ -2616,7 +2623,7 @@ mod tests {
             let created_by = insert_test_user(db).await;
             event::ActiveModel {
                 title: Set("Test Event".to_string()),
-                comp_id: Set(comp_id),
+                comp_id: Set(Some(comp_id)),
                 created_by: Set(created_by),
                 event_date_utc: Set(ts("2026-08-10T00:00:00Z")),
                 ..Default::default()

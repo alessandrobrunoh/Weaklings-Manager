@@ -1,5 +1,7 @@
 import type {
   ChatInputCommandInteraction,
+  ContextMenuCommandBuilder,
+  MessageContextMenuCommandInteraction,
   SlashCommandBuilder,
   SlashCommandOptionsOnlyBuilder,
   SlashCommandSubcommandsOnlyBuilder,
@@ -11,6 +13,11 @@ export interface BotCommand {
   execute(interaction: ChatInputCommandInteraction, api: ApiClient): Promise<void>;
 }
 
+export interface BotMessageCommand {
+  data: ContextMenuCommandBuilder;
+  execute(interaction: MessageContextMenuCommandInteraction, api: ApiClient): Promise<void>;
+}
+
 
 // Import all commands
 import * as events from './events.js';
@@ -20,6 +27,7 @@ import * as eventLeave from './event-leave.js';
 import * as eventStart from './event-start.js';
 import * as eventStop from './event-stop.js';
 import * as eventCalendarRefresh from './event-calendar-refresh.js';
+import * as flash from './flash.js';
 import * as balance from './balance.js';
 import * as balanceRequest from './balance-request.js';
 import * as battles from './battles.js';
@@ -52,6 +60,7 @@ export const commands = new Map<string, BotCommand>([
   ['event-start', eventStart],
   ['event-stop', eventStop],
   ['event-calendar-refresh', eventCalendarRefresh],
+  ['flash', flash],
   ['balance', balance],
   ['balance-request', balanceRequest],
   ['battles', battles],
@@ -71,4 +80,9 @@ export const commands = new Map<string, BotCommand>([
   ['unwarn', unwarn],
   ['applications-panel', applicationsPanel],
   ['build', build],
+]);
+
+/** Message context-menu commands share registration but use a separate interaction dispatcher. */
+export const messageCommands = new Map<string, BotMessageCommand>([
+  [flash.messageCommand.data.name, flash.messageCommand],
 ]);

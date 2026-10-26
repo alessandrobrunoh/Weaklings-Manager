@@ -3524,7 +3524,7 @@ mod tests {
 
         event::ActiveModel {
             title: Set("Roaming per i Draghi".to_string()),
-            comp_id: Set(comp.summary.id),
+            comp_id: Set(Some(comp.summary.id)),
             created_by: Set(user),
             event_date_utc: Set(now()),
             ..Default::default()
@@ -3556,7 +3556,7 @@ mod tests {
 
         event::ActiveModel {
             title: Set("Roaming per i Draghi".to_string()),
-            comp_id: Set(comp.summary.id),
+            comp_id: Set(Some(comp.summary.id)),
             created_by: Set(user),
             event_date_utc: Set(now()),
             ..Default::default()

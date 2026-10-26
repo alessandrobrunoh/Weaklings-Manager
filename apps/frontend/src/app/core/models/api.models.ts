@@ -591,12 +591,15 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  /** Missing only when talking to a backend before the flash-mass migration. */
+  event_kind?: 'flash' | 'organized';
   discord_role_ids: string[];
   regear: boolean;
   /** Optional threshold that advances the comp expansion without blocking signups. */
   player_cap?: number | null;
-  comp_id: number;
-  comp_name: string;
+  /** Null only for `event_kind === 'flash'`; never infer the kind from this. */
+  comp_id: number | null;
+  comp_name: string | null;
   created_by: number;
   created_by_username: string;
   event_date_utc: string;
@@ -834,9 +837,9 @@ export interface FightDetail extends EventFight {
 }
 
 export interface EventDetailView extends EventView {
-  active_comp_id: number;
-  active_comp_name: string;
-  active_comp_capacity: number;
+  active_comp_id: number | null;
+  active_comp_name: string | null;
+  active_comp_capacity: number | null;
   /** Fill is always present; all remaining entries are event-specific extra build roles. */
   roster_roles: EventRosterRole[];
   participants: EventParticipant[];
@@ -2794,6 +2797,8 @@ export interface GuildSettingsView {
   discord_events_channel_id: string | null;
   discord_battles_channel_id: string | null;
   discord_battles_cta_channel_id: string | null;
+  discord_flash_mass_channel_id: string | null;
+  discord_event_timezone: string;
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id?: string | null;

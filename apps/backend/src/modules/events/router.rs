@@ -1645,7 +1645,7 @@ mod tests {
         .id;
         event::ActiveModel {
             title: Set(title.to_string()),
-            comp_id: Set(comp_id),
+            comp_id: Set(Some(comp_id)),
             created_by: Set(creator_id),
             event_date_utc: Set(chrono::Utc::now().into()),
             ..Default::default()
