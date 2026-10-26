@@ -1,59 +1,67 @@
 # Frontend
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.17.
+Angular CLI is installed at `^21.2.17`, and the app uses Angular `^21.2.0`. This private frontend package uses AnalogJS and Vite for its application and build workflow, with Vitest for tests.
+
+## Overview
+
+The root HTML mounts `<app-root>` and loads `/src/main.ts`. Analog enables server rendering; the app also has client bootstrap, server bootstrap, and a server-side gateway for backend API and Scalar requests. The main source boundaries are indexed in [src](src/README.md).
+
+## Interface
+
+- `index.html` is the browser entry document; `vite.config.ts` default-exports the Vite/Analog configuration.
+- Package scripts are the supported development interface: `dev`, `start`, `build`, `preview`, `test`, and `serve:ssr:frontend`.
+- `/api` and `/scalar` proxy to `API_REWRITE_URL`, or to `http://localhost:${BACKEND_PORT ?? '3000'}`.
+
+## Invariants
+
+- Analog SSR is enabled; static output is disabled and the prerender route list is empty.
+- Vite writes client build output to `dist/client`; the SSR start script targets `dist/analog/server/index.mjs`.
+- TypeScript is strict, and the app configuration excludes `*.spec.ts` files.
+
+## Side Effects
+
+Vite configuration evaluation loads repository-root environment variables into `process.env`. The dev plugin installs a process-level `unhandledRejection` listener, and the root HTML loads Google Fonts from Google-hosted URLs.
 
 ## Development server
 
 To start a local development server, run:
 
 ```bash
-ng serve
+npm run dev --prefix apps/frontend
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Vite prints the local URL when it starts and reloads the app as source files change.
 
 ## Code scaffolding
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+Angular CLI remains available as a development dependency for Angular schematics. This package does not define a separate scaffolding script; consult the CLI command reference and follow the standalone component patterns used by the app.
 
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
+The Vite/Analog scripts below are the configured application commands; `ng serve`, `ng build`, and `ng test` are not package scripts.
 
 ## Building
 
-To build the project run:
+Build the application with:
 
 ```bash
-ng build
+npm run build --prefix apps/frontend
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+The build emits client and server artifacts under `dist/`. To serve the generated SSR bundle, run `npm run serve:ssr:frontend --prefix apps/frontend` after building. `npm run preview --prefix apps/frontend` starts the Vite preview server.
 
 ## Running unit tests
 
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+The package's test script invokes Vitest:
 
 ```bash
-ng test
+npm test --prefix apps/frontend
 ```
 
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+No end-to-end test script is configured in this package.
 
 ## Additional Resources
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+For Angular CLI command references and schematics, see the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli).
+
+## Verification
+
+From the repository root, run `npm test --prefix apps/frontend`. This is the configured frontend test target.

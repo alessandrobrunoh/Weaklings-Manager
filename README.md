@@ -336,6 +336,51 @@ Permission checks are centralized on a **permission cache** loaded from the data
 
 ---
 
+## Interface
+
+- [Application components](apps/README.md) — blueprint for the backend, web dashboard, and Discord
+  bot, with links to each component contract.
+- [Data-generation scripts](scripts/README.md) — offline tools for refreshing bundled Albion data.
+- [Observability setup](observability/README.md) — operational documentation for the optional
+  SigNoz/OpenTelemetry stack.
+
+## Subdirectories & System Boundaries
+
+- [`apps/`](apps/README.md) — deployable application components and their interfaces.
+- [`scripts/`](scripts/README.md) — manual data-generation tools; their outputs are consumed by the
+  backend.
+- [`observability/`](observability/README.md) — optional deployment configuration and instructions;
+  this directory does not contain application source code.
+- [`plans/`](plans) — design documents, not runtime components.
+
+## Invariants
+
+- The backend is the authority for shared guild state; the web dashboard and bot use its API.
+- Keep the backend at one replica while live roster notifications use the in-process WebSocket hub.
+- The bot's `BOT_API_SECRET` must match the backend configuration and must be treated as a
+  privileged credential.
+- Bundled Albion game data is refreshed by explicit generator runs; production application
+  processes do not fetch the source dumps.
+
+## Side Effects
+
+- The backend persists application data in PostgreSQL and integrates with Discord, Albion data
+  services, and optional OCR/telemetry providers.
+- The frontend and Discord bot make network requests to the backend; the bot also connects to the
+  Discord API.
+- Manual data-generation runs download and cache community data and update JSON assets under the
+  backend source tree.
+
+## System Verification
+
+Run the configured component test targets from the repository root:
+
+- `cargo test --workspace`
+- `npm test --prefix apps/frontend`
+- `npm test --prefix apps/discord-bot`
+
+---
+
 ## License
 
 [MIT](LICENSE) © 2026 Weaklings.

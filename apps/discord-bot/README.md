@@ -9,7 +9,7 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 | View Events | `/events [page]` |
 | Create Event | `/event-create` (Officer+) |
 | Refresh Content Pings / Call to Arms calendars | `/event-calendar-refresh` (`events.edit`) |
-| Join Event by Role | `/event-join [event_id]` + role buttons |
+| Join Event by Role | `/event-join [event_id]` + role/build select menus |
 | Leave Event | `/event-leave [event_id]` |
 | Start Event | `/event-start [event_id]` (Officer+) |
 | Stop Event | `/event-stop [event_id]` (Officer+) |
@@ -66,49 +66,61 @@ npm run build    # TypeScript compile
 npm start        # Production
 ```
 
+## Overview
+
+The bot is a long-running Discord.js v14 process. One process can serve multiple Discord guilds; registered guilds are treated as tenants with guild-scoped API clients, pollers, and checkpoint state.
+
+## Interface
+
+- Startup requires non-empty `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, and `BOT_API_SECRET`. `BACKEND_URL` and `FRONTEND_URL` are URL-validated; `POLL_INTERVAL_MS`, `POLLER_STATE_DIR`, and `GUILD_NAME` have defaults documented in the [source overview](src/README.md).
+- Slash commands and component interactions form the Discord interface; the existing feature list and setup instructions above describe user-facing commands and deployment configuration.
+- Backend requests use `X-Bot-Secret` and may include `X-Discord-Id`, `X-Guild-Id`, and actor-bound role IDs.
+
+## Invariants
+
+- Environment configuration is validated at startup; invalid configuration logs validation issues and exits.
+- Pollers are reconciled per registered guild and use guild-scoped API clients. Guild state and settings are isolated rather than shared across Discord servers.
+- Discord role claims are sent only when the requested Discord actor matches the client actor.
+
+## Side Effects
+
+- The process communicates with Discord and the backend API, registers slash commands, and runs recurring guild polling.
+- Poller checkpoints are stored per guild beneath `POLLER_STATE_DIR` (default `/app/data`). The Docker image configures this directory but does not declare a volume; persistence across container replacement depends on the launch configuration.
+- The container runs `node dist/index.js` as a non-root user and exposes no inbound port.
+
+## Verification
+
+Run the configured check from the repository root:
+
+```bash
+npm test --prefix apps/discord-bot
+```
+
+This runs the TypeScript build and the bot's configured Node test suite.
+
 ## Architecture
 
-```
-src/
-├── index.ts          # Entrypoint: login, register commands, start poller
-├── config.ts         # Env var validation with Zod
-├── api/
-│   ├── client.ts     # Fetch-based HTTP client for the backend
-│   └── types.ts      # Shared API type definitions
-├── commands/         # One file per slash command
-├── handlers/
-│   └── button.ts     # All ButtonInteraction handling
-├── embeds/
-│   ├── event.embed.ts   # Event embeds + role-selection buttons
-│   └── battle.embed.ts  # Battle result embeds
-└── services/
-    ├── poller.ts     # Polling loop for new events/battles
-    └── registry.ts   # Slash command registration
-```
+The runtime entrypoint is `src/index.ts`; its child-module boundaries are summarized in the [source README](src/README.md):
+
+- `src/api/` owns backend HTTP access and shared API types.
+- `src/commands/` defines slash-command builders and executors.
+- `src/embeds/` builds Discord embeds, controls, and message payloads.
+- `src/handlers/` routes button, modal, and select-menu interactions.
+- `src/services/` contains poller, tenant, event lifecycle, and other reusable workflows.
 
 ## Button Custom ID Format
 
-All buttons follow this format so the handler can parse them:
+Button handlers split custom IDs on `:` and dispatch by namespace and action. Remaining parts are action-specific; not every ID has an entity ID.
 
 ```
-{namespace}:{action}:{entityId}[:{extra}]
+{namespace}:{action}[:{entityId}[:{extra}]]
 ```
 
 Examples:
-- `event:join:42:healer` — Join event #42 as healer
-- `event:leave:42` — Leave event #42
-- `events:next:2` — Go to page 2 of events list
-- `battles:prev:3` — Go to page 2 of battles list
+- `ticket:create` — Start a ticket
+- `ticket:close:42` — Close ticket #42
+- `application:manage:42` — Open management controls for application #42
 
 ## Polling State
 
-The poller persists its state in `data/poller-state.json`:
-
-```json
-{
-  "lastEventId": 42,
-  "lastBattleId": 100
-}
-```
-
-Delete this file to re-announce all existing events/battles on next startup.
+The poller stores separate checkpoint state for each numeric guild ID beneath `POLLER_STATE_DIR` (default `/app/data`). Checkpoints include event and battle cursors along with Discord thread, signup-card, calendar, split-sync, voice-check, application, and giveaway state. An uninitialized checkpoint is seeded so existing records are not treated as new announcements on startup. The Docker image does not declare a volume, so mount `/app/data` if checkpoint persistence across container replacement is required.
