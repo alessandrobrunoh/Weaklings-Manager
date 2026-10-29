@@ -24,7 +24,7 @@ This directory defines the bot's slash-command interface plus registered message
 
 - Commands respond to Discord interactions and may call backend APIs or mutate Discord messages and channels.
 - `applications-panel` sends the configured panel and persists its message ID through the API.
-- Event calendar refresh/start/stop commands delegate to poller or event-lifecycle services; balance, moderation, and progression commands submit their corresponding API operations.
+- Event calendar refresh/start/stop commands delegate to poller or event-lifecycle services; balance, moderation, and progression commands submit their corresponding API operations. `/event-start` and `/event-stop` refuse anyone who is not the event organizer and does not hold Events Manage (`events.edit`).
 - A warning is persisted before its best-effort direct message; failure to DM does not undo the warning.
 
 ## Verification

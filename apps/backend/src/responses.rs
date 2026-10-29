@@ -460,6 +460,16 @@ pub struct ApiResponseEventView {
     pub data: crate::modules::events::models::EventView,
 }
 
+/// `OpenAPI` schema wrapper for the event management-authority decision.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventManagementAuthority {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Whether the caller is the organizer and may manage the event.
+    pub data: crate::modules::events::models::EventManagementAuthorityView,
+}
+
 /// `OpenAPI` schema wrapper for event roster-role list responses.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventRosterRoleList {

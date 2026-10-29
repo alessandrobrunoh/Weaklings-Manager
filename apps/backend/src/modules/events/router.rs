@@ -21,7 +21,8 @@ use serde::Deserialize;
 
 use crate::responses::{
     ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail, ApiResponseEventList,
-    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventView,
+    ApiResponseEventManagementAuthority, ApiResponseEventRevisionList, ApiResponseEventRosterRoleList,
+    ApiResponseEventView,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
@@ -30,8 +31,8 @@ use std::collections::HashSet;
 
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
-    CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventRevision,
-    EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
+    CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
+    EventRevision, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
     ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
     SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
@@ -143,6 +144,10 @@ pub fn router() -> Router {
             put(set_participant).delete(remove_participant),
         )
         .route("/{id}/remind", post(remind_event))
+        .route(
+            "/{id}/management-authority",
+            get(get_event_management_authority),
+        )
         .route(
             "/{id}/discord-voice-channel",
             put(set_event_voice_channel).delete(clear_event_voice_channel),
@@ -1069,6 +1074,19 @@ async fn cancel_participation(
     Ok(Json(ApiResponse::new(detail)))
 }
 
+/// Resolves the `users.id` that created the event.
+async fn event_creator_id(
+    db: &sea_orm::DatabaseConnection,
+    event_id: i64,
+) -> Result<i64, AppError> {
+    Ok(super::entities::event::Entity::find_by_id(event_id)
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+        .created_by)
+}
+
 /// Guard for an event-specific management mutation. The creator may manage
 /// their own event; everyone else needs the permission for the requested action.
 ///
@@ -1088,14 +1106,7 @@ async fn require_event_management_authority(
         return Ok(());
     }
 
-    let owner_id = super::entities::event::Entity::find_by_id(event_id)
-        .one(db)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
-        .created_by;
-
-    if owner_id == user.user_id {
+    if event_creator_id(db, event_id).await? == user.user_id {
         return Ok(());
     }
 
@@ -1284,6 +1295,45 @@ async fn remind_event(
     .await;
 
     Ok(Json(ApiResponse::new(event)))
+}
+
+/// Reports whether the caller may manage a given event — the read-only twin of
+/// the guards on start/stop/cancel/uncancel/remind. The Discord bot calls this
+/// before acting on the thread control buttons, so members who cannot manage
+/// an event get a clear ephemeral refusal instead of a raw mutation error.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/management-authority",
+    tag = "events",
+    summary = "Check whether the caller may manage this event",
+    description = "Returns the same organizer-or-`events.edit` decision that guards \
+         start/stop/cancel/uncancel/remind. Requires `events.view`.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Authority decision for the caller", body = ApiResponseEventManagementAuthority),
+        (status = 401, description = "Unauthorized - no active session or linked website account", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn get_event_management_authority(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventManagementAuthorityView>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
+    let is_organizer = event_creator_id(&db, id).await? == user.user_id;
+    let can_manage = is_organizer
+        || perms
+            .check(user.is_superadmin(), &user.roles, Permission::EventsEdit)
+            .await;
+    Ok(Json(ApiResponse::new(EventManagementAuthorityView {
+        is_organizer,
+        can_manage,
+        required_permission: Permission::EventsEdit.as_str().to_string(),
+    })))
 }
 
 /// Associates the Discord voice channel created by the bot at Mass or Start.
@@ -1581,7 +1631,8 @@ async fn replace_event_battles(
 #[cfg(test)]
 mod tests {
     use super::{
-        list_event_calendar, parse_event_revision_ids, require_event_management_authority,
+        get_event_management_authority, list_event_calendar, parse_event_revision_ids,
+        require_event_management_authority,
     };
     use crate::errors::AppError;
     use crate::modules::auth::{
@@ -1842,5 +1893,81 @@ mod tests {
             .await,
             Err(AppError::Forbidden(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn management_authority_reports_organizer_or_events_edit_decision() {
+        let db = authorization_test_db().await;
+        let owner_id = insert_authorization_test_user(&db, "authority-owner").await;
+        let member_id = insert_authorization_test_user(&db, "authority-member").await;
+        let event_id = insert_authorization_test_event(&db, "authority", owner_id).await;
+        insert_test_role_with_permission(&db, "test-events-manager", Permission::EventsManage).await;
+        let permissions = Permissions::new_empty();
+        permissions
+            .reload(&db)
+            .await
+            .expect("test permissions should load");
+
+        // The organizer may manage their own event without any role permission.
+        let owner = authorization_test_user(owner_id, "User");
+        let view = get_event_management_authority(
+            owner,
+            Extension(permissions.clone()),
+            Extension(db.clone()),
+            axum::extract::Path(event_id),
+        )
+        .await
+        .expect("organizer authority should resolve")
+        .0
+        .data;
+        assert!(view.is_organizer);
+        assert!(view.can_manage);
+        assert_eq!(view.required_permission, "events.edit");
+
+        // A plain member may neither — ownership belongs to someone else.
+        let member = authorization_test_user(member_id, "User");
+        let view = get_event_management_authority(
+            member,
+            Extension(permissions.clone()),
+            Extension(db.clone()),
+            axum::extract::Path(event_id),
+        )
+        .await
+        .expect("member authority should resolve")
+        .0
+        .data;
+        assert!(!view.is_organizer);
+        assert!(!view.can_manage);
+
+        // The seeded Officer role carries events.edit, so its holders can manage
+        // events they did not create.
+        let officer = authorization_test_user(member_id, "Officer");
+        let view = get_event_management_authority(
+            officer,
+            Extension(permissions.clone()),
+            Extension(db.clone()),
+            axum::extract::Path(event_id),
+        )
+        .await
+        .expect("officer authority should resolve")
+        .0
+        .data;
+        assert!(!view.is_organizer);
+        assert!(view.can_manage);
+
+        // The legacy events.manage permission still implies the granular one.
+        let manager = authorization_test_user(member_id, "Test test-events-manager");
+        let view = get_event_management_authority(
+            manager,
+            Extension(permissions),
+            Extension(db),
+            axum::extract::Path(event_id),
+        )
+        .await
+        .expect("manager authority should resolve")
+        .0
+        .data;
+        assert!(!view.is_organizer);
+        assert!(view.can_manage);
     }
 }

@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import { createResponseEmbed } from "../embeds/theme.js";
+import { ensureEventManagementAllowed } from "../services/event-authority.js";
 import { startDiscordEvent } from "../services/event-lifecycle.js";
 
 export const data = new SlashCommandBuilder()
@@ -21,6 +22,9 @@ export async function execute(
   await interaction.deferReply({ flags: ["Ephemeral"] });
 
   const eventId = interaction.options.getInteger("event_id", true);
+  if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
+    return;
+  }
 
   const result = await startDiscordEvent(
     interaction.client,

@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import { createResponseEmbed } from '../embeds/theme.js';
+import { ensureEventManagementAllowed } from '../services/event-authority.js';
 import { stopDiscordEvent } from '../services/event-lifecycle.js';
 import { getPoller } from '../services/poller.js';
 
@@ -18,6 +19,9 @@ export async function execute(
   await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const eventId = interaction.options.getInteger('event_id', true);
+  if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
+    return;
+  }
 
   const result = await stopDiscordEvent(
     interaction.client,

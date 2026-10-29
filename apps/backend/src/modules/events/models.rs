@@ -188,6 +188,21 @@ pub struct EventSplitStats {
     pub participant_entries: i64,
 }
 
+/// Whether the caller may manage a specific event (start/stop/cancel/ping).
+///
+/// Mirrors [`super::router::require_event_management_authority`] so clients can
+/// render controls and replies by capability instead of guessing from roles.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventManagementAuthorityView {
+    /// True when the caller created the event.
+    pub is_organizer: bool,
+    /// True when the caller may start, stop, cancel, reopen, or ping the event.
+    pub can_manage: bool,
+    /// The permission that grants management authority to non-organizers.
+    #[schema(example = "events.edit")]
+    pub required_permission: String,
+}
+
 /// General details of an event.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventView {
