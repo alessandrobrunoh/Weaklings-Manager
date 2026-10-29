@@ -31,6 +31,7 @@ import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { config } from "../config.js";
 import { formatSilver } from '../format.js';
+import { ensureEventManagementAllowed } from "../services/event-authority.js";
 import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "../services/event-lifecycle.js";
 import { FLASH_UNDO_WINDOW_MS, getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
@@ -737,6 +738,9 @@ async function handleEventButton(
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("Invalid event ID.");
     }
+    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
+      return;
+    }
     const thread = resolveEventReminderThread(interaction);
 
     const event = await api.post<EventView>(
@@ -765,6 +769,9 @@ async function handleEventButton(
     await interaction.deferReply({ flags: ["Ephemeral"] });
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("Invalid event ID.");
+    }
+    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
+      return;
     }
     const result = await startDiscordEvent(
       interaction.client,
@@ -795,6 +802,7 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
     await interaction.deferReply({ flags: ["Ephemeral"] });
     if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
+    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) return;
     let event = await api.post<EventDetailView>(`api/events/${eventId}/cancel`, {}, interaction.user.id);
     // Cancellation may leave a Mass-created voice behind. Remove it only when empty; occupied
     // channels remain available for members to leave safely.
@@ -844,6 +852,7 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
     await interaction.deferReply({ flags: ["Ephemeral"] });
     if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
+    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) return;
     const event = await api.post<EventDetailView>(
       `api/events/${eventId}/uncancel`,
       {},
@@ -880,6 +889,9 @@ async function handleEventButton(
     await interaction.deferReply({ flags: ["Ephemeral"] });
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("Invalid event ID.");
+    }
+    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
+      return;
     }
     const result = await stopDiscordEvent(
       interaction.client,

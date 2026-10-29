@@ -310,6 +310,13 @@ export interface EventCompBuild {
   quantity: number;
 }
 
+/** Caller-scoped decision for start/stop/cancel/reopen/ping. */
+export interface EventManagementAuthorityView {
+  is_organizer: boolean;
+  can_manage: boolean;
+  required_permission: string;
+}
+
 export interface EventDetailView extends EventView {
   active_comp_id: number | null;
   active_comp_name: string | null;
