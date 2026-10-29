@@ -1,14 +1,14 @@
 //! REST API routes and OpenAPI paths for the events module.
 
 use axum::{
-    Extension, Json, Router,
     extract::{
-        Path, Query,
         ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query,
     },
     http::{HeaderMap, StatusCode},
     response::Response,
     routing::{delete, get, post, put},
+    Extension, Json, Router,
 };
 
 use crate::config::Config;
@@ -21,8 +21,8 @@ use serde::Deserialize;
 
 use crate::responses::{
     ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail, ApiResponseEventList,
-    ApiResponseEventManagementAuthority, ApiResponseEventRevisionList, ApiResponseEventRosterRoleList,
-    ApiResponseEventView,
+    ApiResponseEventManagementAuthority, ApiResponseEventRevisionList,
+    ApiResponseEventRosterRoleList, ApiResponseEventView,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
@@ -38,7 +38,7 @@ use super::models::{
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{
-    BattleLinkingContext, EventService, apply_alliance_ping_targets, load_alliance_ping_targets,
+    apply_alliance_ping_targets, load_alliance_ping_targets, BattleLinkingContext, EventService,
 };
 use super::sync::{assert_active_alliance, create_mirror, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
@@ -1636,8 +1636,8 @@ mod tests {
     };
     use crate::errors::AppError;
     use crate::modules::auth::{
-        Permission, Permissions, UserContext,
         entities::{role, role_permission},
+        Permission, Permissions, UserContext,
     };
     use crate::modules::comps::entities::{comp, comp_category};
     use crate::modules::events::entities::event;
@@ -1799,28 +1799,24 @@ mod tests {
             .expect("test permissions should load");
 
         let owner = authorization_test_user(owner_id, "User");
-        assert!(
-            require_event_management_authority(
-                &owner,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsEdit
-            )
-            .await
-            .is_ok()
-        );
-        assert!(
-            require_event_management_authority(
-                &owner,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsDelete
-            )
-            .await
-            .is_ok()
-        );
+        assert!(require_event_management_authority(
+            &owner,
+            &permissions,
+            &db,
+            first_event,
+            Permission::EventsEdit
+        )
+        .await
+        .is_ok());
+        assert!(require_event_management_authority(
+            &owner,
+            &permissions,
+            &db,
+            first_event,
+            Permission::EventsDelete
+        )
+        .await
+        .is_ok());
         assert!(matches!(
             require_event_management_authority(
                 &owner,
@@ -1834,17 +1830,15 @@ mod tests {
         ));
 
         let editor = authorization_test_user(editor_id, "Test test-events-editor");
-        assert!(
-            require_event_management_authority(
-                &editor,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsEdit
-            )
-            .await
-            .is_ok()
-        );
+        assert!(require_event_management_authority(
+            &editor,
+            &permissions,
+            &db,
+            first_event,
+            Permission::EventsEdit
+        )
+        .await
+        .is_ok());
         assert!(matches!(
             require_event_management_authority(
                 &editor,
@@ -1858,17 +1852,15 @@ mod tests {
         ));
 
         let deleter = authorization_test_user(deleter_id, "Test test-events-deleter");
-        assert!(
-            require_event_management_authority(
-                &deleter,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsDelete
-            )
-            .await
-            .is_ok()
-        );
+        assert!(require_event_management_authority(
+            &deleter,
+            &permissions,
+            &db,
+            first_event,
+            Permission::EventsDelete
+        )
+        .await
+        .is_ok());
         assert!(matches!(
             require_event_management_authority(
                 &deleter,
@@ -1901,7 +1893,8 @@ mod tests {
         let owner_id = insert_authorization_test_user(&db, "authority-owner").await;
         let member_id = insert_authorization_test_user(&db, "authority-member").await;
         let event_id = insert_authorization_test_event(&db, "authority", owner_id).await;
-        insert_test_role_with_permission(&db, "test-events-manager", Permission::EventsManage).await;
+        insert_test_role_with_permission(&db, "test-events-manager", Permission::EventsManage)
+            .await;
         let permissions = Permissions::new_empty();
         permissions
             .reload(&db)
