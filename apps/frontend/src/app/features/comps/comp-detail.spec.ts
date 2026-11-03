@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BuildSummary, CompDetail, CompReadiness } from '../../core/models/api.models';
@@ -130,6 +130,76 @@ describe('CompDetailPage roster', () => {
     expect(parties[1]?.seats).toHaveLength(5);
     expect(fixture.nativeElement.textContent).toContain('/20');
     expect(fixture.nativeElement.textContent).not.toMatch(/\/5\b/);
+  });
+
+  it('clearly separates editing composition details from editing the roster', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.filter((button) => button.textContent?.trim() === 'Edit composition details')).toHaveLength(1);
+    const editRoster = buttons.find((button) => button.textContent?.includes('Edit roster'));
+    expect(editRoster).toBeDefined();
+    editRoster!.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Done editing');
+  });
+
+  it('shows each build and its main equipment and selected abilities without inspecting', async () => {
+    apiGet.mockImplementation((path: string) => {
+      if (path === `api/comps/${comp.id}`) return of(comp);
+      if (path === `api/comps/${comp.id}/performance`) return of(null);
+      if (path === 'api/comps/builds/1') return of({
+        ...tank,
+        items: [
+          { loadout: 'main', slot: 'weapon', openalbion_item_type: 'weapon', openalbion_item_id: 1,
+            openalbion_item_name: 'Polehammer', openalbion_item_icon: '/T8_MAIN_HAMMER.png',
+            spells: { active: { '1': 'SPELL_ONE' }, passive: {} } },
+          { loadout: 'swap', slot: 'weapon', openalbion_item_type: 'weapon', openalbion_item_id: 2,
+            openalbion_item_name: 'Swap weapon' },
+        ],
+      });
+      if (path === 'api/comps/builds/2') return throwError(() => new Error('unavailable'));
+      return of({ items: [] });
+    });
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const section = fixture.nativeElement.querySelector('[aria-labelledby="composition-builds-heading"]') as HTMLElement;
+    expect(section.querySelectorAll('article')).toHaveLength(2);
+    expect(section.textContent).toContain('Polehammer');
+    expect(section.textContent).toContain('SPELL_ONE');
+    expect(section.textContent).not.toContain('Swap weapon');
+    expect(section.textContent).toContain('Build details unavailable');
+    expect(fixture.nativeElement.querySelector('app-dialog')).toBeNull();
+    const translations = TestBed.inject(TranslateService);
+    translations.use('it');
+    fixture.detectChanges();
+    expect(section.textContent).toContain('Abilità selezionate');
+    expect(section.textContent).toContain('Attiva 1');
+    translations.use('en');
+    fixture.detectChanges();
+
+    const page = fixture.componentInstance as unknown as {
+      abilityCatalog: { set(value: unknown): void };
+      overviewBuilds: () => Map<number, unknown>;
+    };
+    page.abilityCatalog.set({
+      MAIN_HAMMER: {
+        label: 'Hammer', slot_type: 'weapon', two_handed: true, active_slots: 2, passive_slots: 0,
+        active: { '1': [{ id: 'SPELL_ONE', name: 'Chosen spell' }], '2': [{ id: 'SPELL_TWO', name: 'Unchosen spell' }] },
+        passive: {},
+      },
+    });
+    fixture.detectChanges();
+    const model = page.overviewBuilds().get(1);
+    fixture.detectChanges();
+    expect(page.overviewBuilds().get(1)).toBe(model);
+    expect(section.textContent).toContain('Chosen spell');
+    expect(section.textContent).not.toContain('Unchosen spell');
+    expect(section.querySelectorAll('app-ability-bar .ability-bar__slot')).toHaveLength(1);
   });
 
   it('loads available builds when opening the add-build dialog', async () => {

@@ -40,7 +40,7 @@ export interface AbilityChoiceChange {
         @for (slot of slots(); track slot.kind + slot.index) {
           @let chosen = selectedChoice(slot);
           <li class="ability-bar__slot">
-            <span class="ability-bar__key" aria-hidden="true">{{ slot.label }}</span>
+            <span class="ability-bar__key">{{ slot.label }}</span>
 
             @if (canManage()) {
               <button

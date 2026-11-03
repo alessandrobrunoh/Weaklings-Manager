@@ -54,6 +54,7 @@ describe('AbilityBar', () => {
       (node: Element) => node.textContent?.trim(),
     );
     expect(keys).toEqual(['Q', 'Passive']);
+    expect(fixture.nativeElement.querySelectorAll('.ability-bar__key[aria-hidden="true"]')).toHaveLength(0);
   });
 
   it('shows the chosen ability by name, not only as an icon', () => {

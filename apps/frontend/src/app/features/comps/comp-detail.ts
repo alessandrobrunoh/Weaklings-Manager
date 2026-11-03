@@ -204,7 +204,7 @@ interface BuildOptionGroup {
               (click)="enterEdit()"
               [disabled]="saving()"
             >
-              {{ t('common.edit') }}
+              {{ t('comps.editMeta') }}
             </button>
             <button
               type="button"
@@ -288,6 +288,60 @@ interface BuildOptionGroup {
           />
         </div>
 
+        @if (current.builds.length > 0) {
+          <section class="space-y-3" aria-labelledby="composition-builds-heading">
+            <h2 id="composition-builds-heading" class="text-lg font-bold">{{ t('comps.overviewBuilds') }}</h2>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              @for (entry of current.builds; track entry.build_id) {
+                <article class="card p-4 min-w-0 space-y-3 border border-[var(--color-border)]">
+                  <header class="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 class="font-bold">{{ entry.build.name }} <span class="text-secondary">×{{ entry.quantity }}</span></h3>
+                      <p class="text-xs text-secondary">{{ roleLabel(entry.build.role) }} · {{ entry.build.category_name || t('comps.noCategory') }} · v{{ entry.build.version }}</p>
+                    </div>
+                    <a class="btn btn--outline btn--sm" [routerLink]="['/builds', entry.build_id]" [attr.aria-label]="t('comps.openNamedBuild', { name: entry.build.name })">{{ t('comps.openBuild') }}</a>
+                  </header>
+                  @if (buildDetailsLoading()) {
+                    <p role="status" class="text-sm text-secondary">{{ t('common.loading') }}</p>
+                  } @else if (overviewBuilds().get(entry.build_id); as detail) {
+                    <h4 class="text-sm font-semibold">{{ t('comps.mainSet') }}</h4>
+                    <app-equipment-grid
+                      [items]="detail.items"
+                      [canManage]="false"
+                      [editingSlot]="null"
+                      [draftTier]="'T8'"
+                      [draftSearch]="''"
+                      [draftItemId]="''"
+                      [searchResults]="[]"
+                      [searchLoading]="false"
+                      [tiers]="[]"
+                      [draftAbilitySlots]="[]"
+                    />
+                    @if (detail.rows; as rows) {
+                      @if (rows.length > 0) {
+                        <h4 class="text-sm font-semibold">{{ t('comps.selectedAbilities') }}</h4>
+                        <ul class="space-y-2">
+                          @for (row of rows; track row.slot) {
+                            <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
+                              <span>{{ row.itemName }}</span>
+                              <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
+                            </li>
+                          }
+                        </ul>
+                      }
+                    }
+                    <button type="button" class="btn btn--ghost btn--sm" [attr.aria-label]="t('comps.inspectBuild', { name: entry.build.name })" (click)="inspectedBuildId.set(entry.build_id)">
+                      {{ t('comps.inspectSets') }}
+                    </button>
+                  } @else {
+                    <p class="text-sm text-secondary">{{ t('comps.buildDetailsUnavailable') }}</p>
+                  }
+                </article>
+              }
+            </div>
+          </section>
+        }
+
         <!-- ================= ROSTER CONTROL & VIEW TOGGLE ================= -->
         <div class="card p-4 border border-[var(--color-border)] flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3">
@@ -320,14 +374,6 @@ interface BuildOptionGroup {
                 <app-icon name="plus" size="0.75rem" />
                 {{ t('comps.addBuild') }}
               </button>
-              <button
-                type="button"
-                class="btn btn--sm btn--outline"
-                (click)="openEditMeta()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.editMeta') }}
-              </button>
             }
           </div>
         </div>
@@ -339,7 +385,7 @@ interface BuildOptionGroup {
               <app-icon name="edit" size="1rem" />
               <span>{{ t('comps.editRosterHint') }}</span>
             </div>
-            <button type="button" class="btn btn--sm btn--primary" (click)="mode.set('view')">
+            <button type="button" class="btn btn--sm btn--primary" (click)="toggleEditMode()" [disabled]="saving()">
               {{ t('comps.doneEditing') }}
             </button>
           </div>
@@ -1405,15 +1451,45 @@ export class CompDetailPage {
   protected readonly inspectedAbilityRows = computed(() => {
     const b = this.inspectedBuild();
     if (!b) return [];
+    return this.abilityRows(this.inspectedItems());
+  });
+
+  protected readonly overviewBuilds = computed(() => {
+    const result = new Map<number, { items: BuildItemSlot[]; rows: ReturnType<CompDetailPage['abilityRows']> }>();
+    for (const [id, build] of this.buildDetails()) {
+      const items = itemsForLoadout(build.items, 'main');
+      const rows = this.abilityRows(items)
+        .map((row) => ({ ...row, slots: row.slots.filter((slot) => slot.selected !== null) }))
+        .filter((row) => row.slots.length > 0);
+      result.set(id, { items, rows });
+    }
+    return result;
+  });
+
+  protected abilityRows(items: BuildItemSlot[]) {
     const catalog = this.abilityCatalog();
-    return this.inspectedItems().flatMap((item) => {
+    return items.flatMap((item) => {
       const key = abilityKeyForItem(item);
-      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
+      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells, this.t('comps.passiveAbilityLabel'));
+      for (const kind of ['active', 'passive'] as const) {
+        for (const [indexText, id] of Object.entries(item.spells?.[kind] ?? {})) {
+          const index = Number(indexText);
+          const existing = slots.find((slot) => slot.kind === kind && slot.index === index);
+          if (existing) {
+            if (!existing.choices.some((choice) => choice.id === id)) {
+              existing.choices = [...existing.choices, { id, name: id }];
+            }
+          } else {
+            const label = this.t(kind === 'active' ? 'comps.activeAbilitySlot' : 'comps.passiveAbilitySlot', { index });
+            slots.push({ kind, index, label, choices: [{ id, name: id }], selected: id });
+          }
+        }
+      }
       return slots.length === 0
         ? []
         : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
     });
-  });
+  }
 
   protected readonly activeWeaponTooltip = signal<{
     x: number;
