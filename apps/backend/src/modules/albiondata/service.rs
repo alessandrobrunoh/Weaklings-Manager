@@ -53,6 +53,14 @@ impl AlbionDataService {
         }
     }
 
+    /// Same client, with the tenant's region as the default server.
+    #[must_use]
+    pub fn with_default_server(&self, default_server: String) -> Self {
+        let mut cloned = self.clone();
+        cloned.default_server = default_server;
+        cloned
+    }
+
     /// Returns current market prices for a validated item list.
     ///
     /// Empty item ids are rejected before calling the public API because Albion Online Data would

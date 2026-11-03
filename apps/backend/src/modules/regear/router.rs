@@ -68,6 +68,16 @@ pub struct RegearGuildContext {
 }
 
 impl RegearGuildContext {
+    #[must_use]
+    pub fn for_scope(&self, scope: &crate::albion_scope::AlbionScope) -> Self {
+        Self {
+            guild_id: scope.guild_id.clone(),
+            server: scope.server(),
+        }
+    }
+}
+
+impl RegearGuildContext {
     /// Converts to the extractor's view of the same data.
     fn to_extraction_context(&self) -> ExtractionGuildContext {
         ExtractionGuildContext {
@@ -412,9 +422,17 @@ async fn run_extraction(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(albiondata): Extension<AlbionDataService>,
     Extension(guild_ctx): Extension<RegearGuildContext>,
+    Extension(cfg): Extension<crate::config::Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Query(query): Query<RunExtractionQuery>,
 ) -> Result<Json<ApiResponse<ExtractionReport>>, AppError> {
     user.require(&perms, Permission::RegearAdjudicate).await?;
+    let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+        .await
+        .map_err(AppError::from)?;
+    let guild_ctx = guild_ctx.for_scope(&scope);
+    let albiondata = albiondata.with_default_server(scope.region);
     let service = RegearService::new();
     let report = service
         .run_extraction(
@@ -587,9 +605,17 @@ async fn create_self_service_request(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(albiondata): Extension<AlbionDataService>,
     Extension(guild_ctx): Extension<RegearGuildContext>,
+    Extension(cfg): Extension<crate::config::Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Json(req): Json<CreateSelfServiceRegearRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::regear::models::DeathView>>, AppError> {
     user.require(&perms, Permission::RegearRequest).await?;
+    let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+        .await
+        .map_err(AppError::from)?;
+    let guild_ctx = guild_ctx.for_scope(&scope);
+    let albiondata = albiondata.with_default_server(scope.region);
     let service = RegearService::new();
     let death = service
         .create_self_service_request(

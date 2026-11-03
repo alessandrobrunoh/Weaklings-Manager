@@ -153,17 +153,63 @@ pub async fn my_alliance_context(
     responses(
         (status = 200, description = "Alliance memberships"),
         (status = 401, description = "No session", body = ProblemDetails),
+        (status = 403, description = "Caller is not in this alliance", body = ProblemDetails),
         (status = 404, description = "Not an alliance", body = ProblemDetails)
     )
 )]
 pub async fn list_alliance_members(
-    _session: SessionUser,
+    session: SessionUser,
     Extension(control): Extension<ControlDb>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<AllianceMemberView>>>, AppError> {
+    let session_tenant = session
+        .profile
+        .tenant_id
+        .as_deref()
+        .filter(|tenant| !tenant.is_empty());
+    let membership = match session_tenant {
+        Some(tenant) if tenant != id.as_str() => {
+            PlatformService::alliance_membership_status(&control.0, &id, tenant).await?
+        }
+        _ => None,
+    };
+    if !alliance_members_visible(
+        session.profile.is_superadmin,
+        session_tenant,
+        &id,
+        membership.as_deref(),
+    ) {
+        return Err(AppError::Forbidden(
+            "alliance membership is required to list its guilds".to_owned(),
+        ));
+    }
     Ok(Json(ApiResponse::new(
         PlatformService::list_alliance_members(&control.0, &id).await?,
     )))
+}
+
+/// Who may read an alliance's guild list.
+///
+/// The alliance tenant itself, a guild with any membership row in that alliance
+/// (pending or active — the same audience as `/api/alliances/me`), or a platform
+/// admin. Any other authenticated session is refused.
+#[must_use]
+pub fn alliance_members_visible(
+    is_superadmin: bool,
+    session_tenant_id: Option<&str>,
+    alliance_id: &str,
+    session_guild_membership: Option<&str>,
+) -> bool {
+    if is_superadmin {
+        return true;
+    }
+    let Some(session_tenant) = session_tenant_id.filter(|id| !id.is_empty()) else {
+        return false;
+    };
+    if session_tenant == alliance_id {
+        return true;
+    }
+    session_guild_membership.is_some_and(|status| !status.is_empty())
 }
 
 /// Guild owner accepts a pending alliance invite.
@@ -331,17 +377,13 @@ where
 /// Discord membership — all the check this replaces ever verified, and only
 /// when `DISCORD_BOT_TOKEN` happened to be set — is not the right bar.
 ///
-/// Two independent signals, either one sufficient:
-/// - The `registerable_guilds` cookie set at OAuth login (`guilds` scope, see
-///   `with_registerable_guilds`): no Discord round trip, but only as fresh as
-///   the caller's last login and capped at 40 guilds.
-/// - A live bot-token lookup (guild roles + member roles, cross-referenced):
-///   always current, covers a server the bot just joined, but unavailable
-///   without `DISCORD_BOT_TOKEN`.
+/// When `DISCORD_BOT_TOKEN` is set, only a live bot lookup counts. The
+/// `registerable_guilds` cookie is a fallback for deployments without a usable
+/// bot token: it is only as fresh as the last OAuth login and must not keep
+/// manage rights after Discord has revoked them.
 ///
-/// Fails closed: neither signal confirming manage rights is a `403`, not a
-/// silent pass — unlike the old check, which skipped itself entirely when the
-/// bot token was unset.
+/// Fails closed: no confirming signal is a `403`. A live lookup that cannot
+/// reach Discord is an internal error, not a cookie bypass.
 async fn assert_can_manage_guild(
     headers: &HeaderMap,
     key: Key,
@@ -349,12 +391,22 @@ async fn assert_can_manage_guild(
     discord_id: &str,
     bot_token: Option<&str>,
 ) -> Result<(), AppError> {
-    if cookie_confirms_can_manage(headers, key, guild_id) {
-        return Ok(());
+    // A bot token makes the live lookup authoritative. The login cookie is only
+    // a fallback when that lookup cannot be done: it is not refreshed on role
+    // revocation and must not keep manage rights afterwards.
+    if let Some(bot_token) = bot_token.filter(|token| {
+        let token = token.trim();
+        !token.is_empty() && token != "your_discord_bot_token"
+    }) {
+        return if live_check_confirms_can_manage(bot_token, guild_id, discord_id).await? {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden(
+                "you must own or manage that Discord server to register it".to_owned(),
+            ))
+        };
     }
-    if let Some(bot_token) = bot_token
-        && live_check_confirms_can_manage(bot_token, guild_id, discord_id).await?
-    {
+    if cookie_confirms_can_manage(headers, key, guild_id) {
         return Ok(());
     }
     Err(AppError::Forbidden(
@@ -502,6 +554,42 @@ async fn fetch_discord_guild_icon(bot_token: Option<&str>, guild_id: &str) -> Op
 mod tests {
     use super::*;
     use axum::response::IntoResponse;
+
+    #[test]
+    fn alliance_member_list_requires_that_alliance_or_platform_admin() {
+        assert!(alliance_members_visible(true, None, "alliance-1", None));
+        assert!(alliance_members_visible(
+            false,
+            Some("alliance-1"),
+            "alliance-1",
+            None
+        ));
+        assert!(alliance_members_visible(
+            false,
+            Some("guild-1"),
+            "alliance-1",
+            Some("pending")
+        ));
+        assert!(alliance_members_visible(
+            false,
+            Some("guild-1"),
+            "alliance-1",
+            Some("active")
+        ));
+        assert!(!alliance_members_visible(
+            false,
+            Some("guild-2"),
+            "alliance-1",
+            None
+        ));
+        assert!(!alliance_members_visible(false, None, "alliance-1", None));
+        assert!(!alliance_members_visible(
+            false,
+            Some(""),
+            "alliance-1",
+            Some("active")
+        ));
+    }
 
     #[test]
     fn owner_can_manage_with_no_roles_at_all() {

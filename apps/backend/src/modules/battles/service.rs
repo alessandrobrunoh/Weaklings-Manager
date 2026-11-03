@@ -94,6 +94,19 @@ impl BattlesService {
         }
     }
 
+    /// Guild-scoped copy. The catalog cache is not shared: it is keyed only by
+    /// page size, so two tenants would otherwise reuse each other's battles.
+    #[must_use]
+    pub fn for_scope(&self, scope: &crate::albion_scope::AlbionScope) -> Self {
+        Self::new(
+            self.albionbb.clone(),
+            scope.guild_id.clone(),
+            &scope.allied_guild_ids,
+            &scope.allied_guild_names,
+            scope.server(),
+        )
+    }
+
     /// Lists recent battles of the configured guild.
     ///
     /// AlbionBB cannot sort or search, so we hydrate a short catalog of recent

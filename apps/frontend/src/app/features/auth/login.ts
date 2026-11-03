@@ -67,6 +67,14 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
             {{ t('auth.no_tenant') }}
           </p>
         }
+        @if (sessionUnreachable()) {
+          <p class="mb-4 text-center text-sm text-[var(--color-error)]" role="alert">
+            {{ t('auth.session_unreachable') }}
+          </p>
+          <button type="button" class="btn btn--ghost mb-4 w-full" (click)="retrySession()">
+            {{ t('common.retry') }}
+          </button>
+        }
 
         <button type="button" class="btn btn--primary w-full" (click)="login()">
           <app-icon name="discord" />
@@ -91,6 +99,10 @@ export class Login {
     this.route.queryParamMap.pipe(map((params) => params.get('error') === 'no_tenant')),
     { initialValue: false },
   );
+  protected readonly sessionUnreachable = toSignal(
+    this.route.queryParamMap.pipe(map((params) => params.get('error') === 'session_unreachable')),
+    { initialValue: false },
+  );
 
   constructor() {
     const next = this.route.snapshot.queryParamMap.get('next');
@@ -106,6 +118,16 @@ export class Login {
   protected login(): void {
     const next = this.route.snapshot.queryParamMap.get('next');
     this.auth.login(next && next.startsWith('/') ? next : undefined);
+  }
+
+  protected async retrySession(): Promise<void> {
+    const profile = await this.auth.load();
+    if (!profile) {
+      return;
+    }
+    const next = this.route.snapshot.queryParamMap.get('next');
+    const fallback = profile.tenant_id ? '/dashboard' : '/needs-tenant';
+    await this.router.navigateByUrl(next && next.startsWith('/') ? next : fallback);
   }
 
   protected onLanguageChange(event: Event): void {

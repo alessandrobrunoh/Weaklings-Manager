@@ -38,11 +38,18 @@ pub fn router() -> Router {
         )
 }
 
-fn build_service(cfg: &Config) -> AlbionService {
-    AlbionService::new(
-        AlbionRegion::from_env_str(&cfg.albion_api_region),
-        cfg.albion_guild_id.clone(),
-    )
+async fn build_service(
+    _cfg: &Config,
+    control: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+) -> Result<AlbionService, AppError> {
+    let scope = crate::albion_scope::load_albion_scope(control, tenant_id)
+        .await
+        .map_err(AppError::from)?;
+    Ok(AlbionService::new(
+        AlbionRegion::from_env_str(&scope.region),
+        scope.guild_id,
+    ))
 }
 
 /// Query parameters for browsing the configured guild's roster.
@@ -94,9 +101,11 @@ impl RosterQuery {
 pub async fn get_guild_roster(
     _user: UserContext,
     Extension(cfg): Extension<Config>,
+    Extension(crate::tenant::ControlDb(control)): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Query(query): Query<RosterQuery>,
 ) -> Result<Json<ApiResponse<PaginatedAlbionGuildMember>>, AppError> {
-    let service = build_service(&cfg);
+    let service = build_service(&cfg, &control, &tenant_id).await?;
     let pagination = query.pagination();
     let paginated = service
         .search_configured_guild_roster(query.q.as_deref(), &pagination)
@@ -136,9 +145,11 @@ pub struct SearchQuery {
 pub async fn search(
     _user: UserContext,
     Extension(cfg): Extension<Config>,
+    Extension(crate::tenant::ControlDb(control)): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ApiResponse<AlbionSearchResult>>, AppError> {
-    let service = build_service(&cfg);
+    let service = build_service(&cfg, &control, &tenant_id).await?;
     Ok(Json(ApiResponse::new(service.search(&query.q).await?)))
 }
 
@@ -164,9 +175,11 @@ pub async fn search(
 pub async fn get_player(
     _user: UserContext,
     Extension(cfg): Extension<Config>,
+    Extension(crate::tenant::ControlDb(control)): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<AlbionPlayer>, AppError> {
-    let service = build_service(&cfg);
+    let service = build_service(&cfg, &control, &tenant_id).await?;
     Ok(Json(service.get_player(&id).await?))
 }
 
@@ -192,9 +205,11 @@ pub async fn get_player(
 pub async fn get_guild(
     _user: UserContext,
     Extension(cfg): Extension<Config>,
+    Extension(crate::tenant::ControlDb(control)): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<AlbionGuild>, AppError> {
-    let service = build_service(&cfg);
+    let service = build_service(&cfg, &control, &tenant_id).await?;
     Ok(Json(service.get_guild(&id).await?))
 }
 
@@ -287,7 +302,7 @@ pub async fn link_player(
     Extension(registry): Extension<TenantRegistry>,
     Json(body): Json<LinkPlayerRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
-    let player = build_service(&cfg)
+    let player = build_service(&cfg, &control.0, &tenant.0).await?
         .get_player(&body.albion_player_id)
         .await?;
 
@@ -305,10 +320,13 @@ pub async fn link_player(
         .await?;
 
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
+    let configured_guild = crate::albion_scope::load_albion_scope(&control.0, &tenant.0)
+        .await?
+        .guild_id;
     if kind.0 != "alliance"
         && super::discord_guild_role::belongs_to_configured_guild(
             player.guild_id.as_deref(),
-            &cfg.albion_guild_id,
+            &configured_guild,
         )
     {
         super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
@@ -365,7 +383,7 @@ pub async fn register_by_ign(
     Extension(registry): Extension<TenantRegistry>,
     Json(body): Json<RegisterByIgnRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
-    let service = build_service(&cfg);
+    let service = build_service(&cfg, &control.0, &tenant.0).await?;
     let search = service.search(&body.ign).await?;
     let summary = pick_exact_player(&search.players, &body.ign)?;
     let player = service.get_player(&summary.id).await?;
@@ -384,10 +402,13 @@ pub async fn register_by_ign(
         .await?;
 
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
+    let configured_guild = crate::albion_scope::load_albion_scope(&control.0, &tenant.0)
+        .await?
+        .guild_id;
     if kind.0 != "alliance"
         && super::discord_guild_role::belongs_to_configured_guild(
             player.guild_id.as_deref(),
-            &cfg.albion_guild_id,
+            &configured_guild,
         )
     {
         super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
@@ -520,13 +541,14 @@ pub async fn admin_link_user_handler(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<ControlDb>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path(user_id): Path<i64>,
     Json(body): Json<LinkPlayerRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
 
-    let player = build_service(&cfg)
+    let player = build_service(&cfg, &control.0, &tenant.0).await?
         .get_player(&body.albion_player_id)
         .await?;
 

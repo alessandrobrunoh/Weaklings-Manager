@@ -35,9 +35,10 @@ export async function resolveInternalUserId(
     );
     const items = result.items ?? [];
     const lower = targetUsername.toLowerCase();
-    const exact = items.find((u) => u.username.toLowerCase() === lower);
-    if (exact) return exact.id;
-    if (items.length === 1) return items[0].id;
+    const exact = items.filter((u) => u.username.toLowerCase() === lower);
+    // Directory search is a substring query. A single partial hit is not an
+    // identity: admin mutations must not warn or grant XP to a different person.
+    if (exact.length === 1) return exact[0].id;
   } catch {
     // Directory search failed.
   }

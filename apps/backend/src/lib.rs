@@ -2,6 +2,7 @@
 
 #![recursion_limit = "256"]
 
+pub(crate) mod albion_scope;
 pub(crate) mod battle_sync;
 pub(crate) mod control_migration;
 pub(crate) mod event_sessions;
@@ -48,14 +49,17 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     // `SESSION_SECRET` fails the deployment immediately instead of panicking mid-request.
     let session_key = cfg.session_key();
 
-    tracing::info!("connecting to database");
-    let admin = sea_orm::Database::connect(&cfg.database_url).await?;
+    // The control schema belongs on the control-plane DSN. Using `database_url`
+    // here created `control` on the tenant cluster whenever `CONTROL_DATABASE_URL`
+    // pointed somewhere else, and the following connection then failed to migrate.
+    tracing::info!("connecting to control-plane database");
+    let control_admin = sea_orm::Database::connect(cfg.control_plane_url()).await?;
 
     tracing::info!(
         schema = postgres::CONTROL_SCHEMA,
         "ensuring control-plane schema"
     );
-    postgres::ensure_schema(&admin, postgres::CONTROL_SCHEMA).await?;
+    postgres::ensure_schema(&control_admin, postgres::CONTROL_SCHEMA).await?;
     tracing::info!("connecting to control-plane");
     let control_db =
         postgres::connect_with_search_path(cfg.control_plane_url(), postgres::CONTROL_SCHEMA)
@@ -105,11 +109,12 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         battles_server,
     );
 
-    let intel_guild_context = modules::events::service::BattleLinkingContext::new(
-        &cfg.albion_guild_id,
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-    );
+    // Workers reload guild/region from the tenant row. Set the dependencies
+    // before the boot loop so `ensure_sync_workers` can see them.
+    registry.set_workers(tenant::TenantWorkers {
+        albionbb_service: albionbb_service.clone(),
+        albiondata_service: albiondata_service.clone(),
+    });
     for ctx in &tenant_contexts {
         if !tenant::starts_sync_workers(&ctx.kind) {
             tracing::info!(
@@ -119,32 +124,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             );
             continue;
         }
-        tracing::info!(tenant_id = %ctx.tenant_id, "starting per-tenant workers");
-        event_sessions::spawn(
-            ctx.db.clone(),
-            albionbb_service.clone(),
-            albiondata_service.clone(),
-            cfg.clone(),
-            ctx.tenant_id.clone(),
-        );
-        battle_sync::spawn(
-            ctx.db.clone(),
-            battles_service.clone(),
-            albiondata_service.clone(),
-            intel_guild_context.clone(),
-            ctx.tenant_id.clone(),
-        );
+        registry
+            .ensure_sync_workers(ctx.db.clone(), &ctx.tenant_id, &ctx.kind)
+            .await;
     }
-    // From here on, any tenant `registry.provision`s (created after this
-    // point, at runtime, through the platform admin API or self-service
-    // onboarding) starts its own workers immediately instead of waiting for
-    // the next restart — see `TenantRegistry::provision`.
-    registry.set_workers(tenant::TenantWorkers {
-        cfg: cfg.clone(),
-        albionbb_service: albionbb_service.clone(),
-        albiondata_service: albiondata_service.clone(),
-        battles_service: battles_service.clone(),
-    });
 
     let regear_guild_context = modules::regear::router::RegearGuildContext {
         guild_id: cfg.albion_guild_id.clone(),

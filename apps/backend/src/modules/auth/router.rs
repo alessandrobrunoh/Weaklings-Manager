@@ -853,27 +853,33 @@ pub async fn get_me(
         // selected tenant there is no server to ask, so the cookie's roles stand.
         if let Some(tenant_id) = profile.tenant_id.clone().filter(|id| !id.trim().is_empty()) {
             let service = AuthService::new();
-            if let Some(role_ids) = service
+            let lookup = service
                 .fetch_guild_member_role_ids(
                     &profile.id,
                     "",
                     &tenant_id,
                     cfg.discord_bot_token.as_deref(),
                 )
-                .await
-            {
-                if profile.is_superadmin {
-                    profile.roles = vec!["SuperAdmin".to_string()];
-                    profile.highest_role = "SuperAdmin".to_string();
-                } else {
-                    let db_roles = crate::modules::auth::entities::role::Entity::find()
-                        .all(db)
-                        .await?;
-                    let (roles, highest) =
-                        crate::modules::auth::service::resolve_linked_roles(&role_ids, &db_roles);
-                    profile.roles = roles;
-                    profile.highest_role = highest;
-                }
+                .await;
+            // Unavailable keeps the cookie. Absent and Present replace it, so a
+            // removed member or a removed Discord role cannot keep the old names
+            // until the 7-day cookie expires.
+            if !matches!(
+                lookup,
+                crate::modules::auth::service::GuildMemberLookup::Unavailable
+            ) {
+                let db_roles = crate::modules::auth::entities::role::Entity::find()
+                    .all(db)
+                    .await?;
+                let (roles, highest) = crate::modules::auth::service::roles_after_member_lookup(
+                    &lookup,
+                    &profile.roles,
+                    &profile.highest_role,
+                    &db_roles,
+                    profile.is_superadmin,
+                );
+                profile.roles = roles;
+                profile.highest_role = highest;
                 persist_session_highest_role(db, profile.user_id, &profile.highest_role).await?;
             } else if profile.is_superadmin
                 && !profile.roles.iter().any(|role| role == "SuperAdmin")

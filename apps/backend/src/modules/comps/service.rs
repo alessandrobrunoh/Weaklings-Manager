@@ -552,6 +552,9 @@ impl CompService {
     ///
     /// Entries point at specific *build versions*, not build groups, so a comp version keeps
     /// running the builds it was authored against until someone changes it.
+    ///
+    /// `created_by` is part of the group identity and is copied from the source. `creator_id` is
+    /// the officer who asked for the copy; it does not start a new group.
     pub async fn create_comp_version(
         &self,
         db: &DatabaseConnection,
@@ -562,6 +565,8 @@ impl CompService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        // The actor is authorized by the router. The row stays in the source creator's group.
+        let _ = creator_id;
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
@@ -575,7 +580,7 @@ impl CompService {
                     + 1;
 
             match self
-                .insert_comp_version(db, &source, creator_id, next_version)
+                .insert_comp_version(db, &source, next_version)
                 .await
             {
                 Ok(detail) => return Ok(detail),
@@ -596,7 +601,6 @@ impl CompService {
         &self,
         db: &DatabaseConnection,
         source: &comp::Model,
-        creator_id: i64,
         version: i32,
     ) -> Result<CompDetail, AppError> {
         let txn = db.begin().await?;
@@ -606,7 +610,7 @@ impl CompService {
             description: Set(source.description.clone()),
             category_id: Set(source.category_id),
             version: Set(version),
-            created_by: Set(creator_id),
+            created_by: Set(source.created_by),
             parent_id: Set(source.parent_id),
             ..Default::default()
         }
@@ -1200,8 +1204,9 @@ impl CompService {
     /// Creates the next version of a build: a full copy that can be edited on its own.
     ///
     /// The copy carries both loadouts and every ability choice, because a version that silently
-    /// dropped the swap would be worse than no version at all. Name and category are inherited —
-    /// they are the group's identity, and every version shares them.
+    /// dropped the swap would be worse than no version at all. Name, category, and `created_by`
+    /// are inherited — they are the group's identity, and every version shares them. `creator_id`
+    /// is the officer who asked for the copy; it does not start a new group.
     ///
     /// The new number is `max(version) + 1` within the group. Two concurrent requests would both
     /// compute the same number, so the `(name, category_id, version)` unique index is what actually
@@ -1216,6 +1221,8 @@ impl CompService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+        // The actor is authorized by the router. The row stays in the source creator's group.
+        let _ = creator_id;
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
@@ -1229,7 +1236,7 @@ impl CompService {
                     + 1;
 
             match self
-                .insert_build_version(db, &source, creator_id, next_version)
+                .insert_build_version(db, &source, next_version)
                 .await
             {
                 Ok(detail) => return Ok(detail),
@@ -1251,7 +1258,6 @@ impl CompService {
         &self,
         db: &DatabaseConnection,
         source: &build::Model,
-        creator_id: i64,
         version: i32,
     ) -> Result<BuildDetail, AppError> {
         let txn = db.begin().await?;
@@ -1262,7 +1268,7 @@ impl CompService {
             role: Set(source.role.clone()),
             category_id: Set(source.category_id),
             version: Set(version),
-            created_by: Set(creator_id),
+            created_by: Set(source.created_by),
             ..Default::default()
         }
         .insert(&txn)
@@ -3360,6 +3366,11 @@ mod tests {
             vec![(build_id, 1), (second.summary.id, 2)],
             "the switcher needs every sibling, in version order"
         );
+        assert_eq!(
+            second.summary.created_by_username, detail.summary.created_by_username,
+            "a version created by someone else stays attributed to the original creator"
+        );
+        assert_eq!(second.summary.created_by_username, "admin");
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@ import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
-import { ApiService } from './api.service';
+import { ApiError, ApiService } from './api.service';
 import { API_BASE_URL } from '../tokens/api-base.token';
 import type {
   BotInvite,
@@ -19,11 +19,10 @@ import type {
  * backend's Discord OAuth callback, so this service only reads `/api/auth/me`.
  *
  * Side effects:
- *  - On `load()`, an HTTP call is made to `/api/auth/me`; failures set the
- *    profile to `null` (treated as "not logged in") rather than throwing, so
- *    the auth guard can route unauthenticated users to the login page. The
- *    call is skipped entirely during server-side rendering — see
- *    `fetchProfile`.
+ *  - On `load()`, an HTTP call is made to `/api/auth/me`. A 401 or 403 means
+ *    there is no session. Other failures leave the last known profile in place
+ *    and set `sessionUnreachable`, so a blip is not treated as a logout. The
+ *    call is skipped entirely during server-side rendering — see `fetchProfile`.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -40,6 +39,12 @@ export class AuthService {
 
   /** True while the initial profile probe is in flight. */
   readonly loading = this._loading.asReadonly();
+
+  /**
+   * True when the last `/auth/me` probe failed for a reason other than
+   * "not signed in" (network or server). The cookie may still be valid.
+   */
+  readonly sessionUnreachable = signal(false);
 
   /** Reactive flag derived from the presence of a profile. */
   readonly isAuthenticated = signal(false);
@@ -93,13 +98,22 @@ export class AuthService {
     window.location.href = this.buildBrowserUrl(`api/auth/discord/login${suffix}`);
   }
 
-  /** Clear the session cookie via the backend and reset local state. */
+  /**
+   * Clear the session cookie via the backend, then reset local state.
+   *
+   * A failed call leaves the profile in place: the http-only cookie is still
+   * valid, so pretending the user signed out would only desync the UI.
+   * A 401 or 403 means the cookie is already gone.
+   */
   async logout(): Promise<void> {
     try {
       await firstValueFrom(this.api.post<void>('api/auth/logout', null));
-    } catch {
-      // Even if the call fails, drop local state — the cookie will expire.
+    } catch (err) {
+      if (!isSignedOut(err)) {
+        throw err;
+      }
     }
+    this.sessionUnreachable.set(false);
     this.setProfile(null);
   }
 
@@ -164,11 +178,17 @@ export class AuthService {
 
     try {
       const profile = await firstValueFrom(this.api.get<DiscordUserProfile>('api/auth/me'));
+      this.sessionUnreachable.set(false);
       this.setProfile(profile ?? null);
       return profile ?? null;
-    } catch {
-      this.setProfile(null);
-      return null;
+    } catch (err) {
+      if (isSignedOut(err)) {
+        this.sessionUnreachable.set(false);
+        this.setProfile(null);
+        return null;
+      }
+      this.sessionUnreachable.set(true);
+      return this._profile();
     }
   }
 
@@ -177,4 +197,9 @@ export class AuthService {
     const tail = path.startsWith('/') ? path : `/${path}`;
     return `${base}${tail}`;
   }
+}
+
+/** 401/403 are a missing session. Status 0 and 5xx are not. */
+function isSignedOut(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403);
 }

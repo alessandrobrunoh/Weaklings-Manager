@@ -9,7 +9,7 @@ import type {
   ReadAllResult,
   UnreadCountView,
 } from '../models/api.models';
-import { ApiService } from './api.service';
+import { ApiError, ApiService } from './api.service';
 
 const POLL_MS = 30_000;
 const INBOX_LIMIT = 20;
@@ -61,15 +61,22 @@ export class NotificationService {
     });
   }
 
-  /** Refresh the unread badge. Failures are swallowed so a 401 cannot loop. */
+  /**
+   * Refresh the unread badge.
+   *
+   * A 401 clears the badge (the session is gone). Any other failure keeps the
+   * last count so a blip is not shown as "nothing unread".
+   */
   async refreshUnread(): Promise<void> {
     try {
       const view = await firstValueFrom(
         this.api.get<UnreadCountView>('api/notifications/unread-count'),
       );
       this._unreadCount.set(view.count);
-    } catch {
-      this._unreadCount.set(0);
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        this._unreadCount.set(0);
+      }
     }
   }
 

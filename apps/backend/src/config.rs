@@ -253,7 +253,7 @@ impl Config {
 /// assert_eq!(items, vec!["a", "b", "c"]);
 /// ```
 #[must_use]
-fn split_csv(value: &str) -> Vec<String> {
+pub(crate) fn split_csv(value: &str) -> Vec<String> {
     value
         .split(',')
         .map(str::trim)
@@ -263,11 +263,10 @@ fn split_csv(value: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn stub() -> Config {
-        Config {
+impl Config {
+    #[must_use]
+    pub(crate) fn for_tests() -> Self {
+        Self {
             backend_port: 3000,
             database_url: "postgres://localhost/weaklings".to_string(),
             control_database_url: None,
@@ -288,6 +287,15 @@ mod tests {
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stub() -> Config {
+        Config::for_tests()
     }
 
     #[test]

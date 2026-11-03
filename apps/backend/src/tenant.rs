@@ -7,6 +7,7 @@
 //! into request extensions so existing handlers keep their signatures.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use axum::extract::{Request, State};
@@ -26,10 +27,8 @@ use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
 use crate::modules::auth::service::DiscordUserProfile;
-use crate::modules::battles::service::BattlesService;
-use crate::modules::events::service::BattleLinkingContext;
 use crate::postgres::{self, connect_with_search_path, list_active_tenants};
-use crate::{battle_sync, event_sessions};
+use crate::{albion_scope, battle_sync, event_sessions};
 
 /// Header the Discord bot sends to select a guild/tenant.
 ///
@@ -97,42 +96,33 @@ pub fn starts_sync_workers(kind: &str) -> bool {
 /// registry is holding onto a copy.
 #[derive(Clone)]
 pub struct TenantWorkers {
-    /// Used to derive [`BattleLinkingContext`] and passed through to
-    /// `event_sessions`, exactly as `run_server`'s own startup loop does.
-    pub cfg: Config,
     pub albionbb_service: AlbionBbService,
     pub albiondata_service: AlbionDataService,
-    pub battles_service: BattlesService,
 }
 
 impl TenantWorkers {
-    fn spawn_for(&self, db: DatabaseConnection, tenant_id: &str, kind: &str) {
-        if !starts_sync_workers(kind) {
-            tracing::info!(
-                tenant_id,
-                kind,
-                "skipping battle/event workers for alliance tenant"
-            );
-            return;
-        }
-        let guild_context = BattleLinkingContext::new(
-            &self.cfg.albion_guild_id,
-            &self.cfg.albion_allied_guild_ids(),
-            &self.cfg.albion_allied_guild_names(),
-        );
+    fn spawn_for(
+        &self,
+        db: DatabaseConnection,
+        tenant_id: &str,
+        control: DatabaseConnection,
+        stop: Arc<AtomicBool>,
+    ) {
         event_sessions::spawn(
             db.clone(),
             self.albionbb_service.clone(),
             self.albiondata_service.clone(),
-            self.cfg.clone(),
             tenant_id.to_owned(),
+            control.clone(),
+            stop.clone(),
         );
         battle_sync::spawn(
             db,
-            self.battles_service.clone(),
+            self.albionbb_service.clone(),
             self.albiondata_service.clone(),
-            guild_context,
             tenant_id.to_owned(),
+            control,
+            stop,
         );
     }
 }
@@ -148,6 +138,9 @@ pub struct TenantRegistry {
     /// request, via the `Extension` layer — shares the same slot, and nothing
     /// after startup ever needs to change which services `provision` uses.
     workers: Arc<OnceLock<TenantWorkers>>,
+    /// Tenants whose sync tasks are already running. The flag stops them when
+    /// the tenant is suspended; reactivation starts a new pair.
+    running_sync: Arc<DashMap<String, Arc<AtomicBool>>>,
 }
 
 impl TenantRegistry {
@@ -161,6 +154,71 @@ impl TenantRegistry {
             control_db,
             inner: Arc::new(DashMap::new()),
             workers: Arc::new(OnceLock::new()),
+            running_sync: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Starts event and battle sync once per guild tenant.
+    ///
+    /// No-ops for alliance tenants, when [`Self::set_workers`] has not run, and
+    /// when a pair is already running. Each tick re-reads Albion settings and
+    /// skips work unless the tenant is `active`.
+    pub async fn ensure_sync_workers(&self, db: DatabaseConnection, tenant_id: &str, kind: &str) {
+        if !starts_sync_workers(kind) {
+            return;
+        }
+        let Some(workers) = self.workers.get() else {
+            return;
+        };
+        if self.running_sync.contains_key(tenant_id) {
+            return;
+        }
+        let Ok(status_before) = self.tenant_status(tenant_id).await else {
+            return;
+        };
+        if !albion_scope::worker_start_allowed(&status_before, &status_before) {
+            return;
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        match self.running_sync.entry(tenant_id.to_owned()) {
+            dashmap::mapref::entry::Entry::Occupied(_) => return,
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(stop.clone());
+            }
+        }
+        let status_after = self.tenant_status(tenant_id).await.unwrap_or_default();
+        if !albion_scope::worker_start_allowed(&status_before, &status_after) {
+            stop.store(true, Ordering::Relaxed);
+            self.running_sync.remove_if(tenant_id, |_, current| Arc::ptr_eq(current, &stop));
+            tracing::info!(tenant_id, "sync workers not started; tenant is not active");
+            return;
+        }
+        tracing::info!(tenant_id, kind, "starting per-tenant sync workers");
+        workers.spawn_for(db, tenant_id, self.control_db.clone(), stop);
+    }
+
+    async fn tenant_status(&self, tenant_id: &str) -> Result<String, AppError> {
+        let row = self
+            .control_db
+            .query_one(Statement::from_sql_and_values(
+                self.control_db.get_database_backend(),
+                "SELECT status FROM tenants WHERE id = $1",
+                [tenant_id.into()],
+            ))
+            .await
+            .map_err(AppError::Database)?;
+        let Some(row) = row else {
+            return Err(AppError::NotFound(format!("tenant {tenant_id} is not registered")));
+        };
+        row.try_get_by_index(0).map_err(AppError::Database)
+    }
+
+    /// Asks the tenant's sync tasks to exit. The next [`Self::ensure_sync_workers`]
+    /// starts a fresh pair. In-flight ticks are not cancelled.
+    pub fn stop_sync_workers(&self, tenant_id: &str) {
+        if let Some((_, stop)) = self.running_sync.remove(tenant_id) {
+            stop.store(true, Ordering::Relaxed);
+            tracing::info!(tenant_id, "stopping per-tenant sync workers");
         }
     }
 
@@ -237,28 +295,32 @@ impl TenantRegistry {
         tenant_id: &str,
         schema_name: &str,
     ) -> Result<Arc<TenantContext>, AppError> {
-        postgres::ensure_schema(&self.control_db, schema_name)
+        // Tenant schemas live on `database_url`. `control_db` may point at a
+        // different cluster when `CONTROL_DATABASE_URL` is set, and creating
+        // the schema there would leave the tenant pool unable to see it.
+        let admin = sea_orm::Database::connect(&self.database_url)
+            .await
+            .map_err(AppError::Database)?;
+        postgres::ensure_schema(&admin, schema_name)
             .await
             .map_err(AppError::Database)?;
         let ctx = self.open_context(tenant_id, schema_name).await?;
         self.inner.insert(tenant_id.to_owned(), ctx.clone());
-        let kind = lookup_tenant_kind(&self.control_db, tenant_id).await;
-        match self.workers.get() {
-            Some(workers) => {
-                tracing::info!(tenant_id, kind = %kind, "starting workers for a newly provisioned tenant");
-                workers.spawn_for(ctx.db.clone(), tenant_id, &kind);
-            }
+        if self.workers.get().is_none() {
             // Should not happen outside of tests: `run_server` calls
             // `set_workers` before the router can accept a request that
             // reaches here. Proceeding without workers over failing the
             // registration outright — a tenant that exists but is not yet
             // auto-stopping sessions is recoverable with a restart; one that
             // never got created is not.
-            None => tracing::warn!(
+            tracing::warn!(
                 tenant_id,
                 "tenant provisioned with no worker dependencies configured; \
                  event_sessions/battle_sync will not run for it until the next restart"
-            ),
+            );
+        } else {
+            let kind = lookup_tenant_kind(&self.control_db, tenant_id).await?;
+            self.ensure_sync_workers(ctx.db.clone(), tenant_id, &kind).await;
         }
         Ok(ctx)
     }
@@ -303,7 +365,7 @@ impl TenantRegistry {
         let permissions = Permissions::new_empty();
         permissions.reload(&db).await.map_err(AppError::Database)?;
         let features = load_features(&self.control_db, tenant_id).await?;
-        let kind = lookup_tenant_kind(&self.control_db, tenant_id).await;
+        let kind = lookup_tenant_kind(&self.control_db, tenant_id).await?;
         Ok(Arc::new(TenantContext {
             tenant_id: tenant_id.to_owned(),
             schema_name: schema_name.to_owned(),
@@ -315,21 +377,30 @@ impl TenantRegistry {
     }
 }
 
-async fn lookup_tenant_kind(control_db: &DatabaseConnection, tenant_id: &str) -> String {
-    let Ok(Some(row)) = control_db
+async fn lookup_tenant_kind(
+    control_db: &DatabaseConnection,
+    tenant_id: &str,
+) -> Result<String, AppError> {
+    let row = control_db
         .query_one(Statement::from_sql_and_values(
             control_db.get_database_backend(),
             "SELECT kind FROM tenants WHERE id = $1",
             [tenant_id.into()],
         ))
         .await
-    else {
-        return "guild".to_owned();
+        .map_err(AppError::Database)?;
+    let Some(row) = row else {
+        return Err(AppError::NotFound(format!(
+            "tenant {tenant_id} is not registered"
+        )));
     };
-    row.try_get_by_index::<String>(0)
-        .ok()
-        .filter(|kind| !kind.is_empty())
-        .unwrap_or_else(|| "guild".to_owned())
+    let kind: String = row.try_get_by_index(0).map_err(AppError::Database)?;
+    if kind.is_empty() {
+        return Err(AppError::Database(sea_orm::DbErr::Custom(format!(
+            "tenant {tenant_id} has no kind"
+        ))));
+    }
+    Ok(kind)
 }
 
 async fn load_features(
@@ -1087,6 +1158,15 @@ mod tests {
 
         let id = unique_schema("tp");
         let schema = format!("tenant_{id}");
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "INSERT INTO tenants (id, slug, name, schema_name, status, kind) \
+                 VALUES ($1, $1, $1, $2, 'provisioning', 'guild')",
+                [id.clone().into(), schema.clone().into()],
+            ))
+            .await
+            .expect("insert provisioning tenant");
         let registry = TenantRegistry::new(url, control.clone());
 
         let ctx = registry
@@ -1097,5 +1177,8 @@ mod tests {
         assert_eq!(registry.cached_len(), 1);
 
         drop_schema(&admin, &schema).await.expect("drop schema");
+        cleanup_control_tenant(&control, &id, "")
+            .await
+            .expect("cleanup tenant");
     }
 }

@@ -23,7 +23,11 @@ export const authGuard: CanActivateFn = async (_route, state) => {
     return true;
   }
 
-  return router.createUrlTree(['/login'], { queryParams: { next: state.url } });
+  return router.createUrlTree(['/login'], {
+    queryParams: auth.sessionUnreachable()
+      ? { next: state.url, error: 'session_unreachable' }
+      : { next: state.url },
+  });
 };
 
 /**
@@ -70,6 +74,9 @@ export const tenantGuard: CanActivateFn = async () => {
   const auth = inject(AuthService);
   const router = inject(Router);
   const profile = auth.profile() ?? (await auth.load());
+  if (auth.sessionUnreachable() && !profile) {
+    return router.createUrlTree(['/login'], { queryParams: { error: 'session_unreachable' } });
+  }
   if (profile?.tenant_id) {
     return true;
   }

@@ -358,10 +358,16 @@ impl AuthService {
             return (vec!["SuperAdmin".to_string()], "SuperAdmin".to_string());
         }
 
-        let user_role_ids = self
+        let lookup = self
             .fetch_guild_member_role_ids(user_id, user_access_token, guild_id, bot_token)
-            .await
-            .unwrap_or_default();
+            .await;
+        // Login has no previous session to preserve. A member missing from the
+        // guild gets the default role; a Discord outage does too, rather than
+        // inventing privileges. `/auth/me` is what keeps a cache across outages.
+        let user_role_ids = match &lookup {
+            GuildMemberLookup::Present(ids) => ids.clone(),
+            GuildMemberLookup::Absent | GuildMemberLookup::Unavailable => Vec::new(),
+        };
 
         let db_roles = match super::entities::role::Entity::find().all(db).await {
             Ok(roles) => roles,
@@ -373,17 +379,26 @@ impl AuthService {
 
     /// Fetches the member's Discord role snowflakes from the guild.
     ///
-    /// Returns `None` when Discord cannot be reached (caller should keep cached session roles).
-    /// Returns `Some(ids)` when the member payload was parsed, including an empty list.
+    /// [`GuildMemberLookup::Absent`] is a confirmed 404 (removed from the guild)
+    /// and must drop cached privileges. [`GuildMemberLookup::Unavailable`] is a
+    /// transport or auth failure and must not be treated as a revocation.
+    /// Successful lookups are cached briefly so request authorization does not
+    /// call Discord on every call.
     pub async fn fetch_guild_member_role_ids(
         &self,
         user_id: &str,
         user_access_token: &str,
         guild_id: &str,
         bot_token: Option<&str>,
-    ) -> Option<Vec<String>> {
-        let client = crate::http_client::shared();
+    ) -> GuildMemberLookup {
+        let cache_key = (guild_id.to_owned(), user_id.to_owned());
+        if user_access_token.is_empty()
+            && let Some(hit) = cached_member_lookup(&cache_key)
+        {
+            return hit;
+        }
 
+        let client = crate::http_client::shared();
         if let Some(bot) = usable_bot_token(bot_token) {
             let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");
             if let Ok(res) = client
@@ -393,21 +408,25 @@ impl AuthService {
                 .send()
                 .await
             {
+                let status = res.status().as_u16();
+                if let Some(lookup) = classify_member_status(status) {
+                    remember_member_lookup(&cache_key, &lookup);
+                    return lookup;
+                }
                 #[derive(Deserialize)]
                 struct GuildMemberResponse {
                     roles: Vec<String>,
                 }
-
-                if res.status().is_success() {
-                    if let Ok(member) = res.json::<GuildMemberResponse>().await {
-                        return Some(member.roles);
-                    }
+                if let Ok(member) = res.json::<GuildMemberResponse>().await {
+                    let lookup = GuildMemberLookup::Present(member.roles);
+                    remember_member_lookup(&cache_key, &lookup);
+                    return lookup;
                 }
             }
         }
 
         if user_access_token.is_empty() {
-            return None;
+            return GuildMemberLookup::Unavailable;
         }
 
         let url = format!("https://discord.com/api/v10/users/@me/guilds/{guild_id}/member");
@@ -418,19 +437,20 @@ impl AuthService {
             .send()
             .await
         {
+            let status = res.status().as_u16();
+            if let Some(lookup) = classify_member_status(status) {
+                return lookup;
+            }
             #[derive(Deserialize)]
             struct UserGuildMemberResponse {
                 roles: Vec<String>,
             }
-
-            if res.status().is_success() {
-                if let Ok(member) = res.json::<UserGuildMemberResponse>().await {
-                    return Some(member.roles);
-                }
+            if let Ok(member) = res.json::<UserGuildMemberResponse>().await {
+                return GuildMemberLookup::Present(member.roles);
             }
         }
 
-        None
+        GuildMemberLookup::Unavailable
     }
 
     /// Finds or creates the local `users` row backing this Discord profile.
@@ -521,6 +541,91 @@ impl Default for AuthService {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Outcome of a Discord guild-member read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuildMemberLookup {
+    /// Member exists. `roles` may be empty.
+    Present(Vec<String>),
+    /// Discord returned 404: the user is not in this guild.
+    Absent,
+    /// Network error, 5xx, or the bot cannot read the member. Not a revocation.
+    Unavailable,
+}
+
+/// `Some` when the status itself decides the outcome. `None` when the body
+/// should be parsed as a member payload (2xx).
+#[must_use]
+pub fn classify_member_status(status: u16) -> Option<GuildMemberLookup> {
+    if (200..300).contains(&status) {
+        return None;
+    }
+    if status == 404 {
+        return Some(GuildMemberLookup::Absent);
+    }
+    Some(GuildMemberLookup::Unavailable)
+}
+
+/// Applies a live lookup to cached session roles.
+///
+/// Confirmed absence clears linked roles (default role only). An outage keeps
+/// the cache. Platform admins are not derived from Discord guild roles.
+#[must_use]
+pub fn roles_after_member_lookup(
+    lookup: &GuildMemberLookup,
+    cached_roles: &[String],
+    cached_highest: &str,
+    db_roles: &[super::entities::role::Model],
+    is_superadmin: bool,
+) -> (Vec<String>, String) {
+    if is_superadmin {
+        return (vec!["SuperAdmin".to_string()], "SuperAdmin".to_string());
+    }
+    match lookup {
+        GuildMemberLookup::Present(ids) => resolve_linked_roles(ids, db_roles),
+        GuildMemberLookup::Absent => resolve_linked_roles(&[], db_roles),
+        GuildMemberLookup::Unavailable => (cached_roles.to_vec(), cached_highest.to_string()),
+    }
+}
+
+fn cached_member_lookup(key: &(String, String)) -> Option<GuildMemberLookup> {
+    let cache = member_lookup_cache().lock().unwrap_or_else(|err| err.into_inner());
+    let entry = cache.get(key)?;
+    if entry.at.elapsed() > std::time::Duration::from_secs(60) {
+        return None;
+    }
+    Some(entry.lookup.clone())
+}
+
+fn remember_member_lookup(key: &(String, String), lookup: &GuildMemberLookup) {
+    if matches!(lookup, GuildMemberLookup::Unavailable) {
+        return;
+    }
+    let mut cache = member_lookup_cache()
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
+    cache.insert(
+        key.clone(),
+        CachedMemberLookup {
+            lookup: lookup.clone(),
+            at: std::time::Instant::now(),
+        },
+    );
+}
+
+struct CachedMemberLookup {
+    lookup: GuildMemberLookup,
+    at: std::time::Instant,
+}
+
+fn member_lookup_cache() -> &'static std::sync::Mutex<
+    std::collections::HashMap<(String, String), CachedMemberLookup>,
+> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<(String, String), CachedMemberLookup>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
 /// Maps a member's Discord role snowflakes onto gestionale role names.
@@ -741,6 +846,70 @@ mod tests {
         let (names, highest) = resolve_linked_roles(&["nope".into()], &roles);
         assert_eq!(names, vec!["Recruit".to_string()]);
         assert_eq!(highest, "Recruit");
+    }
+
+    #[test]
+    fn member_status_404_is_absence_not_an_outage() {
+        assert_eq!(
+            classify_member_status(404),
+            Some(GuildMemberLookup::Absent)
+        );
+        assert!(matches!(
+            classify_member_status(500),
+            Some(GuildMemberLookup::Unavailable)
+        ));
+        assert!(matches!(
+            classify_member_status(403),
+            Some(GuildMemberLookup::Unavailable)
+        ));
+        assert!(classify_member_status(200).is_none());
+    }
+
+    #[test]
+    fn confirmed_absence_drops_cached_officer_role() {
+        let roles = vec![
+            role("a", "Officer", 50, Some("111"), false),
+            role("b", "Recruit", 1, None, true),
+        ];
+        let (names, highest) = roles_after_member_lookup(
+            &GuildMemberLookup::Absent,
+            &["Officer".to_string()],
+            "Officer",
+            &roles,
+            false,
+        );
+        assert_eq!(names, vec!["Recruit".to_string()]);
+        assert_eq!(highest, "Recruit");
+    }
+
+    #[test]
+    fn discord_outage_keeps_cached_roles() {
+        let (names, highest) = roles_after_member_lookup(
+            &GuildMemberLookup::Unavailable,
+            &["Officer".to_string()],
+            "Officer",
+            &[],
+            false,
+        );
+        assert_eq!(names, vec!["Officer".to_string()]);
+        assert_eq!(highest, "Officer");
+    }
+
+    #[test]
+    fn present_roles_replace_a_revoked_cached_role() {
+        let roles = vec![
+            role("a", "Officer", 50, Some("111"), false),
+            role("b", "Raider", 30, Some("222"), false),
+        ];
+        let (names, highest) = roles_after_member_lookup(
+            &GuildMemberLookup::Present(vec!["222".to_string()]),
+            &["Officer".to_string()],
+            "Officer",
+            &roles,
+            false,
+        );
+        assert_eq!(names, vec!["Raider".to_string()]);
+        assert_eq!(highest, "Raider");
     }
 
     #[test]

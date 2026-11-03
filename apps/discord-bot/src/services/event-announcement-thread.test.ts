@@ -3,10 +3,12 @@ import test from "node:test";
 import type { ThreadChannel } from "discord.js";
 import type { EventDetailView } from "../api/types.js";
 import {
+  createStandaloneEventThread,
   deleteEventAnnouncement,
   refreshEventSignupCard,
   resolveEventReminderThread,
 } from "./event-announcement-thread.js";
+import type { EventView } from "../api/types.js";
 
 function thread(id: string): ThreadChannel {
   return { id, isThread: () => true } as unknown as ThreadChannel;
@@ -109,6 +111,34 @@ test("refreshEventSignupCard edits the join-button message in the thread", async
   const payload = edits[0] as { embeds: unknown[]; components: unknown[] };
   assert.equal(payload.embeds.length, 1);
   assert.ok(Array.isArray(payload.components));
+});
+
+test("organized events announce in the parent channel and open a public thread", async () => {
+  let privateCreates = 0;
+  const channel = {
+    threads: {
+      create: async () => {
+        privateCreates++;
+        return { id: "private" };
+      },
+    },
+    send: async () => ({
+      id: "public-msg",
+      startThread: async (options: { type?: number }) => {
+        assert.equal(options.type, undefined);
+        return { id: "public-thread" };
+      },
+    }),
+  };
+  const event = {
+    id: 3,
+    title: "Public mass",
+    discord_role_ids: [],
+    event_kind: "organized",
+  } as unknown as EventView;
+  const thread = await createStandaloneEventThread(channel as never, event, "Test");
+  assert.equal(thread?.id, "public-thread");
+  assert.equal(privateCreates, 0);
 });
 
 test("deleteEventAnnouncement removes the parent starter message", async () => {

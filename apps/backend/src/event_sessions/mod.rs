@@ -11,20 +11,22 @@
 pub mod auto_stop;
 pub mod battle_linker;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use tokio::time::interval;
 
 use crate::modules::giveaways::GiveawayService;
 use auto_stop::auto_stop_expired_sessions;
 use battle_linker::refresh_pending_links;
 
-use crate::config::Config;
+use crate::albion_scope::{self, AlbionScope};
 use crate::errors::AppError;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
-use crate::modules::events::service::{BattleLinkingContext, EventService};
+use crate::modules::events::service::EventService;
 use crate::modules::regear::extractor::ExtractionGuildContext;
 
 /// Tick interval for the worker. Short enough that auto-stop latency stays
@@ -42,18 +44,64 @@ pub fn spawn(
     db: DatabaseConnection,
     albionbb: AlbionBbService,
     albiondata: AlbionDataService,
-    cfg: Config,
     tenant_id: String,
+    control: DatabaseConnection,
+    stop: Arc<AtomicBool>,
 ) {
     tokio::spawn(async move {
         let mut ticker = interval(TICK_INTERVAL);
         loop {
             ticker.tick().await;
-            if let Err(e) = run_cycle(&db, &albionbb, &albiondata, &cfg).await {
-                tracing::error!(tenant_id, error = %e, "event-sessions worker cycle failed");
+            if stop.load(Ordering::Relaxed) {
+                tracing::info!(tenant_id, "event-sessions worker stopped");
+                break;
+            }
+            match prepare_cycle(&control, &tenant_id).await {
+                Ok(None) => {}
+                Ok(Some(scope)) if stop.load(Ordering::Relaxed) => {
+                    tracing::info!(tenant_id, "event-sessions worker stopped");
+                    break;
+                }
+                Ok(Some(scope)) => {
+                    let albiondata = albiondata.with_default_server(scope.region.clone());
+                    if let Err(e) = run_cycle(&db, &albionbb, &albiondata, &scope).await {
+                        tracing::error!(tenant_id, error = %e, "event-sessions worker cycle failed");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(tenant_id, error = %e, "event-sessions worker skipped cycle");
+                }
             }
         }
     });
+}
+
+/// `None` means the tenant is not an active guild and this tick must not sync.
+async fn prepare_cycle(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+) -> Result<Option<AlbionScope>, AppError> {
+    let kind_status = control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT status, kind FROM tenants WHERE id = $1",
+            [tenant_id.into()],
+        ))
+        .await
+        .map_err(AppError::Database)?;
+    let Some(row) = kind_status else {
+        return Ok(None);
+    };
+    let status: String = row.try_get_by_index(0).map_err(AppError::Database)?;
+    let kind: String = row.try_get_by_index(1).map_err(AppError::Database)?;
+    if kind.is_empty() || !albion_scope::sync_cycle_should_run(&status, &kind) {
+        return Ok(None);
+    }
+    match albion_scope::load_albion_scope(control, tenant_id).await {
+        Ok(scope) => Ok(Some(scope)),
+        Err(albion_scope::AlbionScopeError::NotConfigured) => Ok(None),
+        Err(albion_scope::AlbionScopeError::Database(err)) => Err(AppError::Database(err)),
+    }
 }
 
 /// One pass of the worker: auto-stop expired sessions, then refresh links.
@@ -64,27 +112,17 @@ async fn run_cycle(
     db: &DatabaseConnection,
     albionbb: &AlbionBbService,
     albiondata: &AlbionDataService,
-    cfg: &Config,
+    scope: &AlbionScope,
 ) -> Result<(), AppError> {
     auto_stop_expired_sessions(db, &EventService::new()).await?;
     if let Err(error) = GiveawayService::new().draw_due(db).await {
         tracing::warn!(error = %error, "giveaway auto-draw cycle failed");
     }
-    let context = BattleLinkingContext::new(
-        &cfg.albion_guild_id,
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-    )
-    .with_server(Some(crate::modules::albionbb::client::normalize_server(
-        Some(&cfg.albion_api_region),
-    )));
+    let context = scope.linking_context();
     let guild = ExtractionGuildContext {
-        guild_id: cfg.albion_guild_id.clone(),
+        guild_id: scope.guild_id.clone(),
         // The extractor treats an empty region as "use the service default".
-        server: Some(crate::modules::albionbb::client::normalize_server(Some(
-            &cfg.albion_api_region,
-        )))
-        .filter(|region| !region.is_empty()),
+        server: Some(scope.server()).filter(|region| !region.is_empty()),
     };
     refresh_pending_links(db, albionbb, albiondata, &context, &guild).await?;
     Ok(())

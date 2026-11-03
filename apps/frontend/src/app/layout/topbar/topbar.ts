@@ -317,7 +317,12 @@ export class Topbar {
   }
 
   protected async onLogout(): Promise<void> {
-    await this.auth.logout();
+    try {
+      await this.auth.logout();
+    } catch {
+      this.toasts.error(this.t('auth.logout_failed'));
+      return;
+    }
     await this.router.navigateByUrl('/login');
   }
 }

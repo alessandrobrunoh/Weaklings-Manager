@@ -162,7 +162,7 @@ const REGIONS = [
                       [id]="'region-' + region.id"
                       [value]="region.id"
                       [checked]="regionId() === region.id"
-                      (change)="regionId.set(region.id)"
+                      (change)="selectRegion(region.id)"
                     />
                     <span>{{ t(region.labelKey) }}</span>
                   </label>
@@ -354,7 +354,18 @@ export class RegisterTenant implements OnInit {
   protected onSearchInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.searchQ.set(value);
-    void this.searchGuilds(value);
+    this.searchGuilds(value);
+  }
+
+  /** A guild id is only meaningful in the region it was searched in. */
+  protected selectRegion(id: 'europe' | 'americas' | 'asia'): void {
+    if (this.regionId() === id) {
+      return;
+    }
+    this.regionId.set(id);
+    this.pickedGuild.set(null);
+    this.guildHits.set([]);
+    this.searchGuilds(this.searchQ());
   }
 
   protected nextFromAlbion(event: SubmitEvent): void {
@@ -429,35 +440,52 @@ export class RegisterTenant implements OnInit {
   }
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped on every keystroke and region change so a late response cannot win. */
+  private searchGeneration = 0;
 
-  private async searchGuilds(raw: string): Promise<void> {
+  private searchGuilds(raw: string): void {
     if (this.searchTimer) {
       clearTimeout(this.searchTimer);
     }
+    const generation = ++this.searchGeneration;
+    const region = this.regionId();
     const q = raw.trim();
     if (q.length < 2) {
       this.guildHits.set([]);
+      this.searching.set(false);
       return;
     }
     this.searchTimer = setTimeout(() => {
-      void this.runSearch(q);
+      void this.runSearch(q, region, generation);
     }, 250);
   }
 
-  private async runSearch(q: string): Promise<void> {
+  private async runSearch(
+    q: string,
+    region: 'europe' | 'americas' | 'asia',
+    generation: number,
+  ): Promise<void> {
     this.searching.set(true);
     try {
       const result = await firstValueFrom(
         this.api.get<AlbionSearchResult>('api/tenants/albion-search', {
           q,
-          region: this.regionId(),
+          region,
         }),
       );
+      if (generation !== this.searchGeneration) {
+        return;
+      }
       this.guildHits.set(result.guilds ?? []);
     } catch {
+      if (generation !== this.searchGeneration) {
+        return;
+      }
       this.guildHits.set([]);
     } finally {
-      this.searching.set(false);
+      if (generation === this.searchGeneration) {
+        this.searching.set(false);
+      }
     }
   }
 }

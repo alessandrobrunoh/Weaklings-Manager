@@ -122,7 +122,7 @@ async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         profile.user_id
     };
 
-    Some(UserContext {
+    let mut ctx = UserContext {
         id: profile.id,
         username: profile.username,
         email: profile.email,
@@ -131,7 +131,75 @@ async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         highest_role: profile.highest_role,
         user_id,
         super_admin_id,
-    })
+    };
+    apply_live_guild_roles(parts, &mut ctx).await;
+    Some(ctx)
+}
+
+/// Re-reads Discord guild roles for the request tenant when a bot token is
+/// configured. A confirmed removal replaces the cookie roles; an outage leaves
+/// them in place. No-ops when the tenant or token is missing, so tests and
+/// deployments without a bot keep the session cookie.
+async fn apply_live_guild_roles(parts: &Parts, ctx: &mut UserContext) {
+    if ctx.is_superadmin() {
+        return;
+    }
+    let Some(cfg) = parts.extensions.get::<Config>() else {
+        return;
+    };
+    let Some(tenant) = parts.extensions.get::<crate::tenant::CurrentTenantId>() else {
+        return;
+    };
+    if tenant.0.trim().is_empty() {
+        return;
+    }
+    let Some(db) = parts.extensions.get::<DatabaseConnection>() else {
+        return;
+    };
+    let lookup = super::service::AuthService::new()
+        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg.discord_bot_token.as_deref())
+        .await;
+    if matches!(lookup, super::service::GuildMemberLookup::Unavailable) {
+        return;
+    }
+    let Ok(db_roles) = super::entities::role::Entity::find().all(db).await else {
+        return;
+    };
+    let (roles, highest) = super::service::roles_after_member_lookup(
+        &lookup,
+        &ctx.roles,
+        &ctx.highest_role,
+        &db_roles,
+        false,
+    );
+    if ctx.user_id > 0 && ctx.highest_role != highest {
+        // Same row the bot fallback and alliance guild checks read. Ignore a
+        // write failure: this request still uses the live roles.
+        if let Err(error) = persist_highest_role(db, ctx.user_id, &highest).await {
+            tracing::warn!(error = %error, "could not persist refreshed guild role");
+        }
+    }
+    ctx.roles = roles;
+    ctx.highest_role = highest;
+}
+
+async fn persist_highest_role(
+    db: &DatabaseConnection,
+    user_id: i64,
+    highest_role: &str,
+) -> Result<(), sea_orm::DbErr> {
+    use crate::modules::users::entities::{ActiveModel as UserActive, Entity as UserEntity};
+    use sea_orm::{ActiveModelTrait, EntityTrait};
+    let Some(existing) = UserEntity::find_by_id(user_id).one(db).await? else {
+        return Ok(());
+    };
+    if existing.role == highest_role {
+        return Ok(());
+    }
+    let mut active: UserActive = existing.into();
+    active.role = sea_orm::Set(highest_role.to_string());
+    active.update(db).await?;
+    Ok(())
 }
 
 /// Attempts to build a `UserContext` from the `X-Bot-Secret` + `X-Discord-Id` headers.
@@ -380,10 +448,23 @@ where
             })?;
 
         let (user_id, username, roles) = if let Some(user) = user {
+            let role_ids_header = parts
+                .headers
+                .get("X-Discord-Role-Ids")
+                .map(|value| {
+                    value.to_str().map_err(|_| {
+                        AppError::Unauthorized("Invalid Discord role ID header".to_string())
+                    })
+                })
+                .transpose()?;
+            let (resolved, _) =
+                super::service::resolve_bot_role_ids(db, role_ids_header, &user.role).await?;
             let roles = if is_superadmin {
-                vec!["SuperAdmin".to_string(), user.role.clone()]
+                let mut roles = vec!["SuperAdmin".to_string()];
+                roles.extend(resolved.into_iter().filter(|role| role != "SuperAdmin"));
+                roles
             } else {
-                vec![user.role.clone()]
+                resolved
             };
             (Some(user.id), Some(user.username), roles)
         } else {

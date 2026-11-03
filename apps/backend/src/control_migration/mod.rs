@@ -41,6 +41,11 @@ pub const PERM_PLATFORM_ADMINS_MANAGE: &str = "platform_admins.manage";
 /// Platform permission: toggle per-tenant feature flags.
 pub const PERM_FEATURE_FLAGS_MANAGE: &str = "feature_flags.manage";
 
+/// Registered control-plane migrations. The unit test and the PostgreSQL
+/// bookkeeping test both compare against this so a new migration cannot leave
+/// the applied-count assertion behind.
+const CONTROL_MIGRATION_COUNT: usize = 17;
+
 /// Control-plane migrator.
 pub struct Migrator;
 
@@ -108,7 +113,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 17);
+        assert_eq!(control.len(), CONTROL_MIGRATION_COUNT);
     }
 
     #[tokio::test]
@@ -244,7 +249,7 @@ mod tests {
             .expect("row")
             .try_get_by_index(0)
             .expect("count");
-        assert_eq!(control_migration_count, 12);
+        assert_eq!(control_migration_count, CONTROL_MIGRATION_COUNT as i64);
         assert!(
             tenant_migration_count > 50,
             "expected the full tenant history, got {tenant_migration_count}"

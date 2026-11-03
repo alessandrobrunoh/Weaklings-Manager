@@ -106,6 +106,7 @@ describe('tenantGuard', () => {
           useValue: {
             profile: () => ({ tenant_id: '111' }),
             load: async () => ({ tenant_id: '111' }),
+            sessionUnreachable: () => false,
           },
         },
       ],
@@ -126,6 +127,7 @@ describe('tenantGuard', () => {
           useValue: {
             profile: () => ({ tenant_id: null }),
             load: async () => ({ tenant_id: null }),
+            sessionUnreachable: () => false,
           },
         },
       ],

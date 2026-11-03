@@ -67,6 +67,11 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
           }
         </div>
 
+        @if (logoutError()) {
+          <p class="mt-4 text-center text-sm text-[var(--color-error)]" role="alert">
+            {{ logoutError() }}
+          </p>
+        }
         <button type="button" class="btn btn--ghost mt-4 w-full" (click)="logout()">
           {{ t('nav.logout') }}
         </button>
@@ -81,6 +86,7 @@ export class NeedsTenant implements OnInit {
   protected readonly guilds = signal<RegisterableGuild[]>([]);
   protected readonly loading = signal(true);
   protected readonly inviteUrl = signal<string | null>(null);
+  protected readonly logoutError = signal<string | null>(null);
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   async ngOnInit(): Promise<void> {
@@ -111,7 +117,13 @@ export class NeedsTenant implements OnInit {
   }
 
   protected async logout(): Promise<void> {
-    await this.auth.logout();
+    this.logoutError.set(null);
+    try {
+      await this.auth.logout();
+    } catch {
+      this.logoutError.set(this.t('auth.logout_failed'));
+      return;
+    }
     window.location.href = '/login';
   }
 }

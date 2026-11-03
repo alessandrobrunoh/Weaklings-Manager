@@ -18,9 +18,12 @@ use utoipa::IntoParams;
 
 use super::models::BattleDetail;
 use super::service::BattlesService;
+use crate::albion_scope;
+use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::tenant::{ControlDb, CurrentTenantId};
 use crate::pagination::{PaginatedBattleSummary, PaginationParams, SortOrder};
 use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
 
@@ -96,9 +99,13 @@ pub async fn list_battles(
     Extension(perms): Extension<Permissions>,
     Extension(service): Extension<BattlesService>,
     Extension(db): Extension<DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(ControlDb(control)): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Query(query): Query<BattlesListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBattleSummary>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
+    let service = scoped_battles(&service, &control, &cfg, &tenant_id).await?;
     let pagination = PaginationParams {
         page: query.page,
         limit: query.limit,
@@ -143,9 +150,17 @@ pub async fn get_battle(
     Extension(service): Extension<BattlesService>,
     Extension(albiondata): Extension<AlbionDataService>,
     Extension(db): Extension<DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(ControlDb(control)): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(battle_id): Path<i64>,
 ) -> Result<Json<ApiResponse<BattleDetail>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
+    let service = scoped_battles(&service, &control, &cfg, &tenant_id).await?;
+    let scope = albion_scope::load_albion_scope(&control, &tenant_id)
+        .await
+        .map_err(AppError::from)?;
+    let albiondata = albiondata.with_default_server(scope.region);
     let detail = service
         .get_battle_detail_with_losses(&db, battle_id, &albiondata)
         .await?;
@@ -177,9 +192,13 @@ pub async fn list_my_battles(
     Extension(perms): Extension<Permissions>,
     Extension(service): Extension<BattlesService>,
     Extension(db): Extension<DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(ControlDb(control)): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Query(query): Query<MyBattlesQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBattleSummary>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
+    let service = scoped_battles(&service, &control, &cfg, &tenant_id).await?;
     let pagination = PaginationParams {
         page: query.page,
         limit: query.limit,
@@ -198,4 +217,16 @@ pub async fn list_my_battles(
     Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(
         paginated,
     ))))
+}
+
+async fn scoped_battles(
+    service: &BattlesService,
+    control: &DatabaseConnection,
+    _cfg: &Config,
+    tenant_id: &str,
+) -> Result<BattlesService, AppError> {
+    let scope = albion_scope::load_albion_scope(control, tenant_id)
+        .await
+        .map_err(AppError::from)?;
+    Ok(service.for_scope(&scope))
 }

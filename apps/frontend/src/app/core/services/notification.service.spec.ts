@@ -3,7 +3,7 @@ import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { NotificationView, PaginatedData, UnreadCountView } from '../models/api.models';
-import { ApiService } from './api.service';
+import { ApiError, ApiService } from './api.service';
 import { NotificationService } from './notification.service';
 
 function sample(overrides: Partial<NotificationView> = {}): NotificationView {
@@ -99,5 +99,57 @@ describe('NotificationService', () => {
     expect(view?.read_at).toBe('2026-08-30T12:01:00Z');
     expect(service.items()[0].read_at).toBe('2026-08-30T12:01:00Z');
     expect(api.post).toHaveBeenCalledWith('api/notifications/1/read', null);
+  });
+
+  it('keeps the last unread count when the badge request fails', async () => {
+    let fail = false;
+    const api = {
+      get: vi.fn((path: string) => {
+        if (path === 'api/notifications/unread-count') {
+          return fail
+            ? throwError(() => new ApiError(503, 'down'))
+            : of({ count: 4 } satisfies UnreadCountView);
+        }
+        return of(emptyPage());
+      }),
+      post: vi.fn(),
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: api }],
+    });
+    const service = TestBed.inject(NotificationService);
+
+    await service.refreshUnread();
+    fail = true;
+    await service.refreshUnread();
+
+    expect(service.unreadCount()).toBe(4);
+  });
+
+  it('clears the unread badge on 401', async () => {
+    let fail = false;
+    const api = {
+      get: vi.fn((path: string) => {
+        if (path === 'api/notifications/unread-count') {
+          return fail
+            ? throwError(() => new ApiError(401, 'nope'))
+            : of({ count: 4 } satisfies UnreadCountView);
+        }
+        return of(emptyPage());
+      }),
+      post: vi.fn(),
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: api }],
+    });
+    const service = TestBed.inject(NotificationService);
+
+    await service.refreshUnread();
+    fail = true;
+    await service.refreshUnread();
+
+    expect(service.unreadCount()).toBe(0);
   });
 });

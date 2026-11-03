@@ -85,28 +85,36 @@ impl PlatformService {
         let schema_name =
             tenant_schema_name(id).map_err(|err| AppError::Validation(err.to_string()))?;
 
-        if Self::get_tenant(control, id).await?.is_some() {
-            return Err(AppError::Conflict(format!("tenant {id} already exists")));
+        if let Some(existing) = Self::get_tenant(control, id).await? {
+            if existing.kind != kind
+                || !crate::albion_scope::can_resume_provisioning(&existing.status)
+            {
+                return Err(AppError::Conflict(format!("tenant {id} already exists")));
+            }
+            // A previous attempt inserted the row and then failed while creating
+            // the schema or running migrations. Resume that row instead of
+            // leaving it stuck in `provisioning` with no retry short of SQL.
+            registry.provision(id, &existing.schema_name).await?;
+        } else {
+            control
+                .execute(Statement::from_sql_and_values(
+                    control.get_database_backend(),
+                    "INSERT INTO tenants (id, slug, name, schema_name, status, owner_discord_id, kind) \
+                     VALUES ($1, $2, $3, $4, 'provisioning', $5, $6)",
+                    [
+                        id.into(),
+                        slug.clone().into(),
+                        name.into(),
+                        schema_name.clone().into(),
+                        actor.into(),
+                        kind.into(),
+                    ],
+                ))
+                .await
+                .map_err(map_unique)?;
+
+            registry.provision(id, &schema_name).await?;
         }
-
-        control
-            .execute(Statement::from_sql_and_values(
-                control.get_database_backend(),
-                "INSERT INTO tenants (id, slug, name, schema_name, status, owner_discord_id, kind) \
-                 VALUES ($1, $2, $3, $4, 'provisioning', $5, $6)",
-                [
-                    id.into(),
-                    slug.clone().into(),
-                    name.into(),
-                    schema_name.clone().into(),
-                    actor.into(),
-                    kind.into(),
-                ],
-            ))
-            .await
-            .map_err(map_unique)?;
-
-        registry.provision(id, &schema_name).await?;
 
         control
             .execute(Statement::from_sql_and_values(
@@ -154,6 +162,11 @@ impl PlatformService {
             )
             .await?;
         }
+
+        let ctx = registry.get_or_load(id).await?;
+        registry
+            .ensure_sync_workers(ctx.db.clone(), id, &ctx.kind)
+            .await;
 
         Self::get_tenant(control, id)
             .await?
@@ -437,6 +450,31 @@ impl PlatformService {
             });
         }
         Ok(out)
+    }
+
+    /// Membership status of one guild inside an alliance, if a row exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails. Does not check that
+    /// `alliance_id` is an alliance tenant; callers that list members already do.
+    pub async fn alliance_membership_status(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_tenant_id: &str,
+    ) -> Result<Option<String>, AppError> {
+        let row = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT status FROM alliance_memberships \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2",
+                [alliance_id.into(), guild_tenant_id.into()],
+            ))
+            .await?;
+        match row {
+            Some(row) => Ok(Some(row.try_get_by_index(0)?)),
+            None => Ok(None),
+        }
     }
 
     /// Alliance settings context for the session's current tenant.
@@ -795,6 +833,7 @@ impl PlatformService {
                             [tenant_id.into()],
                         ))
                         .await?;
+                    registry.stop_sync_workers(tenant_id);
                     registry.evict(tenant_id);
                 }
                 "active" => {
@@ -807,7 +846,10 @@ impl PlatformService {
                         ))
                         .await?;
                     registry.evict(tenant_id);
-                    let _ = registry.get_or_load(tenant_id).await?;
+                    let ctx = registry.get_or_load(tenant_id).await?;
+                    registry
+                        .ensure_sync_workers(ctx.db.clone(), tenant_id, &ctx.kind)
+                        .await;
                 }
                 other => {
                     return Err(AppError::Validation(format!(
@@ -1780,7 +1822,8 @@ mod tests {
             .filter(|flag| flag.enabled)
             .map(|flag| flag.key.as_str())
             .collect();
-        assert_eq!(enabled, vec!["events"]);
+        // Navigation is enabled for new tenants independently of rank features.
+        assert_eq!(enabled, vec!["events", "sidebar"]);
 
         drop_schema(&admin, &created.schema_name)
             .await

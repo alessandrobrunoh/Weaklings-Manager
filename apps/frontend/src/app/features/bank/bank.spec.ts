@@ -67,7 +67,7 @@ describe('Bank withdrawal credit selection', () => {
 
   beforeEach(async () => {
     stubDialogApi();
-    const apiGet = vi.fn((path: string, params?: Record<string, string | number | boolean>) => {
+    const apiGet = vi.fn((path: string, params?: Record<string, string | number | boolean | null | undefined>) => {
       if (path === 'api/bank/balance') {
         return of({
           user_id: 7,
@@ -95,7 +95,7 @@ describe('Bank withdrawal credit selection', () => {
         TranslateService,
         {
           provide: ApiService,
-          useValue: { get: apiGet, post: apiPost },
+          useValue: { get: apiGet, post: apiPost } as Pick<ApiService, 'get' | 'post'>,
         },
         {
           provide: AuthService,
@@ -159,7 +159,7 @@ describe('Bank withdrawal credit selection', () => {
   it('consolidates multiple rows of the same split into one net row and supports Select All', async () => {
     const api = TestBed.inject(ApiService);
     vi.spyOn(api, 'get').mockImplementation(
-      (path: string, params?: Record<string, string | number | boolean>) => {
+      (path: string, params?: Record<string, string | number | boolean | null | undefined>) => {
         if (path === 'api/bank/balance') {
           return of({
             user_id: 7,

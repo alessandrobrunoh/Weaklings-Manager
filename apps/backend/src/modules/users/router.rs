@@ -429,6 +429,7 @@ async fn create_user(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(tenant): Extension<CurrentTenantId>,
     Extension(kind): Extension<CurrentTenantKind>,
     Json(body): Json<CreateUserRequest>,
@@ -448,9 +449,12 @@ async fn create_user(
         .await?;
     let (_, highest) = crate::modules::auth::service::resolve_linked_roles(&role_ids, &db_roles);
 
+    let albion_scope = crate::albion_scope::load_albion_scope(&control.0, &tenant.0)
+        .await
+        .map_err(AppError::from)?;
     let albion = crate::modules::albion::service::AlbionService::new(
-        crate::modules::albion::client::AlbionRegion::from_env_str(&cfg.albion_api_region),
-        cfg.albion_guild_id.clone(),
+        crate::modules::albion::client::AlbionRegion::from_env_str(&albion_scope.region),
+        albion_scope.guild_id.clone(),
     );
     let roster = albion.get_configured_guild_roster().await?;
     let player = crate::modules::albion::service::pick_roster_member(
@@ -482,7 +486,7 @@ async fn create_user(
     if kind.0 != "alliance"
         && crate::modules::albion::discord_guild_role::belongs_to_configured_guild(
             player.guild_id.as_deref(),
-            &cfg.albion_guild_id,
+            &albion_scope.guild_id,
         )
     {
         crate::modules::albion::discord_guild_role::assign_guild_role(

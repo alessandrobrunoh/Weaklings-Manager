@@ -46,7 +46,6 @@ import {
   buildEventThreadName,
   closeEventAnnouncementThread,
   createEventAnnouncementThread,
-  createStandaloneEventThread,
   deleteEventAnnouncement,
   refreshEventSignupCard,
   sendEventSignupMessage,
@@ -500,41 +499,38 @@ export class Poller {
    */
   private async adoptCheckpointBaseline(): Promise<void> {
     try {
+      // A failed list must fail the whole seed. Treating it as an empty page
+      // would store a zero cursor and, once `initialized` is set, announce the
+      // backlog on the next successful poll.
       const [events, battles, giveaways] = await Promise.all([
-        this.api
-          .get<PaginatedData<EventView>>("api/events", undefined, {
-            page: 1,
-            limit: 50,
-            sort: "created_at",
-            order: "desc",
-          })
-          .catch(() => ({ items: [] as EventView[] })),
-        this.api
-          .get<PaginatedData<BattleSummary>>("api/battles", undefined, {
-            page: 1,
-            limit: 10,
-          })
-          .catch(() => ({ items: [] as BattleSummary[] })),
-        this.api
-          .get<PaginatedData<GiveawayView>>("api/giveaways", undefined, {
-            page: 1,
-            limit: 50,
-          })
-          .catch(() => ({ items: [] as GiveawayView[] })),
+        this.listSinceCheckpoint<EventView>(
+          "api/events",
+          0,
+          (event) => event.id,
+          50,
+          { sort: "created_at", order: "desc" },
+        ),
+        this.listSinceCheckpoint<BattleSummary>(
+          "api/battles",
+          0,
+          (battle) => battle.battle_id,
+          10,
+        ),
+        this.listSinceCheckpoint<GiveawayView>(
+          "api/giveaways",
+          0,
+          (giveaway) => giveaway.id,
+          50,
+          { sort: "created_at", order: "desc" },
+        ),
       ]);
+      if (!events.complete || !battles.complete || !giveaways.complete) {
+        throw new Error("checkpoint seed did not see every list page");
+      }
 
-      this.state.lastEventId = events.items.reduce(
-        (max, event) => Math.max(max, event.id),
-        this.state.lastEventId,
-      );
-      this.state.lastBattleId = battles.items.reduce(
-        (max, battle) => Math.max(max, battle.battle_id),
-        this.state.lastBattleId,
-      );
-      this.state.lastGiveawayId = giveaways.items.reduce(
-        (max, giveaway) => Math.max(max, giveaway.id),
-        this.state.lastGiveawayId,
-      );
+      this.state.lastEventId = Math.max(this.state.lastEventId, events.newestId);
+      this.state.lastBattleId = Math.max(this.state.lastBattleId, battles.newestId);
+      this.state.lastGiveawayId = Math.max(this.state.lastGiveawayId, giveaways.newestId);
       // The application panel announces transitions, not a current value, so
       // recording the current one here keeps the first real change as the first
       // message rather than announcing the status the bot booted into.
@@ -600,27 +596,63 @@ export class Poller {
     }
   }
 
+  /**
+   * Collects every row above the checkpoint by reading each reported page.
+   *
+   * List order is not an id order. Battles default to `start_time`, events to
+   * `created_at` or event date, so the highest id is not guaranteed to sit on
+   * page 1 and a later page can hold an id the cursor has not passed.
+   * `complete` is false when the scan stops before `total_pages`; callers must
+   * not move a high-water mark from a partial scan.
+   */
+  private async listSinceCheckpoint<T>(
+    path: string,
+    checkpoint: number,
+    idOf: (item: T) => number,
+    limit: number,
+    query: Record<string, string | number> = {},
+  ): Promise<{ items: T[]; newestId: number; complete: boolean }> {
+    const loadPage = (page: number) =>
+      this.api.get<PaginatedData<T>>(path, undefined, { ...query, page, limit });
+
+    const first = await loadPage(1);
+    const knownTotal = Math.max(1, first.total_pages ?? 1);
+    const maxPages = Math.min(knownTotal, 50);
+    const selected: T[] = [];
+    const seen = new Set<number>();
+    let newestId = 0;
+
+    for (let page = 1; page <= maxPages; page++) {
+      const items = page === 1 ? (first.items ?? []) : ((await loadPage(page)).items ?? []);
+      for (const item of items) {
+        const id = idOf(item);
+        if (id > newestId) newestId = id;
+        if (id <= checkpoint || seen.has(id)) continue;
+        seen.add(id);
+        selected.push(item);
+      }
+    }
+
+    selected.sort((a, b) => idOf(a) - idOf(b));
+    return { items: selected, newestId, complete: maxPages >= knownTotal };
+  }
+
   /** Fetches recently-created events and announces any not covered by the checkpoint. */
   private async checkNewEvents(): Promise<void> {
     try {
       // The API defaults to event-date ordering. That is unsuitable for a creation
       // checkpoint: an event scheduled far in the future can fall outside page 1.
-      const result = await this.api.get<PaginatedData<EventView>>(
+      const listed = await this.listSinceCheckpoint<EventView>(
         "api/events",
-        undefined,
-        {
-          page: 1,
-          limit: 50,
-          sort: "created_at",
-          order: "desc",
-        },
+        this.state.lastEventId,
+        (event) => event.id,
+        50,
+        { sort: "created_at", order: "desc" },
       );
+      const items = listed.items;
 
-      const newestEventId = result.items.reduce(
-        (max, event) => Math.max(max, event.id),
-        0,
-      );
-      if (newestEventId > 0 && newestEventId < this.state.lastEventId) {
+      const newestEventId = listed.complete ? listed.newestId : 0;
+      if (listed.complete && newestEventId > 0 && newestEventId < this.state.lastEventId) {
         // The checkpoint points at an event id that no longer sorts to the top of the
         // API window — almost always because that event (or a newer one) was deleted,
         // not because the database was wiped. Resetting to 0 here used to treat every
@@ -637,7 +669,7 @@ export class Poller {
         this.save();
       }
 
-      const newEvents = result.items
+      const newEvents = items
         .filter((e) => e.id > this.state.lastEventId)
         .sort((a, b) => a.id - b.id);
 
@@ -678,10 +710,14 @@ export class Poller {
             continue;
           }
         }
+        const eventKey = String(eventView.id);
+        const announced =
+          Boolean(this.state.eventThreadIds[eventKey]) &&
+          Boolean(this.state.eventSignupMessageIds[eventKey]);
         if (
           eventView.status !== "scheduled" ||
           eventView.archived_at ||
-          this.state.eventThreadIds[String(eventView.id)]
+          announced
         ) {
           delete this.state.pendingAnnounces[eventId];
           this.save();
@@ -691,17 +727,22 @@ export class Poller {
       }
 
       for (const event of announceable) {
-        // Idempotence claim: an event that already has a thread recorded has
-        // been announced, whatever happened to `lastEventId`.
-        if (this.state.eventThreadIds[String(event.id)]) {
+        const eventKey = String(event.id);
+        // Idempotence claim: a recorded thread AND signup card means the
+        // announcement finished. A thread without a card is retried below.
+        if (
+          this.state.eventThreadIds[eventKey] &&
+          this.state.eventSignupMessageIds[eventKey]
+        ) {
           continue;
         }
         await this.announceEvent(event, routes);
       }
 
-      const newestProcessed = newEvents[newEvents.length - 1]?.id;
-      if (newestProcessed && newestProcessed > this.state.lastEventId) {
-        this.state.lastEventId = newestProcessed;
+      // A partial scan must not advance the cursor: an unscanned page can
+      // still hold an id between the checkpoint and the max already seen.
+      if (listed.complete && listed.newestId > this.state.lastEventId) {
+        this.state.lastEventId = listed.newestId;
         this.save();
       }
     } catch (err) {
@@ -782,11 +823,34 @@ export class Poller {
         return;
       }
 
-      // Flash needs a visible role ping in the channel before the discussion
-      // thread. Reuse the saved parent message on retry so a failed thread
-      // creation never repeats the role-wide ping.
-      let thread: ThreadChannel | null;
-      if (event.event_kind === "flash") {
+      // Every event kind posts a public parent message, then a public thread.
+      // Reuse the saved parent on retry so a failed thread or signup card never
+      // repeats the role-wide ping. Private threads are not used: members who
+      // were not invited would never see the call.
+      const existingThreadId = this.state.eventThreadIds[eventKey];
+      let thread: ThreadChannel | null = null;
+      if (existingThreadId) {
+        try {
+          const existing = await this.client.channels.fetch(existingThreadId);
+          if (existing?.isThread()) {
+            thread = existing;
+          } else if (!existing) {
+            fail("thread_fetch", `thread ${existingThreadId} was not available`);
+            return;
+          } else {
+            delete this.state.eventThreadIds[eventKey];
+          }
+        } catch (error) {
+          // A blip must not forget the thread. The next startThread would hit
+          // "thread already exists" and the announcement would stay failed.
+          if (!isUnknownDiscordChannel(error)) {
+            fail("thread_fetch", `could not fetch thread ${existingThreadId}`);
+            return;
+          }
+          delete this.state.eventThreadIds[eventKey];
+        }
+      }
+      if (!thread) {
         let parent: Message | null = null;
         const savedParentId = this.state.eventParentMessageIds[eventKey];
         if (savedParentId) {
@@ -794,7 +858,7 @@ export class Poller {
             parent = await channel.messages.fetch(savedParentId);
           } catch (error) {
             if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) {
-              fail("parent_fetch", `could not fetch saved flash announcement ${savedParentId}`);
+              fail("parent_fetch", `could not fetch saved announcement ${savedParentId}`);
               return;
             }
             delete this.state.eventParentMessageIds[eventKey];
@@ -806,9 +870,12 @@ export class Poller {
           this.save();
         }
         thread = await createEventAnnouncementThread(parent, eventDetail, "Poller");
-      } else {
-        // Organized events preserve the current standalone-thread behavior.
-        thread = await createStandaloneEventThread(channel, eventDetail, "Poller");
+        if (!thread) {
+          // Threads opened from a message use that message id. Recover it
+          // instead of calling startThread again on every poll.
+          const recovered = await this.client.channels.fetch(parent.id).catch(() => null);
+          if (recovered?.isThread()) thread = recovered;
+        }
       }
       if (!thread) {
         fail("thread", "Discord rejected the discussion thread creation");
@@ -819,12 +886,8 @@ export class Poller {
       if (signupMessageId) {
         this.state.eventSignupMessageIds[eventKey] = signupMessageId;
       } else {
-        // The thread exists and is recorded, so the ping went out; only the
-        // interactive card is missing. Degraded, not failed — logged so the
-        // gap is visible without a retry loop that would duplicate the thread.
-        console.warn(
-          `[Poller] announce_result=degraded stage=signup guild=${this.guildId} event=${event.id} error=signup card was not posted`,
-        );
+        fail("signup", "signup card was not posted");
+        return;
       }
       this.state.eventSignupRevisions[eventKey] =
         `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
@@ -1601,20 +1664,27 @@ export class Poller {
   /** Fetches the latest battles and announces any with ID > lastBattleId. */
   private async checkNewBattles(): Promise<void> {
     try {
-      const result = await this.api.get<PaginatedData<BattleSummary>>(
+      const listedBattles = await this.listSinceCheckpoint<BattleSummary>(
         "api/battles",
-        undefined,
-        {
-          page: 1,
-          limit: 10,
-        },
+        this.state.lastBattleId,
+        (battle) => battle.battle_id,
+        10,
+      );
+      const newBattles = listedBattles.items.filter(
+        (battle) => battle.battle_id > this.state.lastBattleId,
       );
 
-      const newBattles = result.items
-        .filter((b) => b.battle_id > this.state.lastBattleId)
-        .sort((a, b) => a.battle_id - b.battle_id);
-
-      if (newBattles.length === 0) return;
+      if (newBattles.length === 0) {
+        if (
+          listedBattles.complete &&
+          listedBattles.newestId > 0 &&
+          listedBattles.newestId < this.state.lastBattleId
+        ) {
+          this.state.lastBattleId = listedBattles.newestId;
+          this.save();
+        }
+        return;
+      }
 
       const channel = await this.getTextChannel(await this.settings.battlesChannelId());
       if (!channel) return;
@@ -1622,10 +1692,11 @@ export class Poller {
       for (const battle of newBattles) {
         const embed = buildBattleEmbed(battle, GUILD_NAME);
         await channel.send({ embeds: [embed] });
-
-        this.state.lastBattleId = battle.battle_id;
-        this.save();
         console.log(`[Poller] Announced battle #${battle.battle_id}`);
+      }
+      if (listedBattles.complete && listedBattles.newestId > this.state.lastBattleId) {
+        this.state.lastBattleId = listedBattles.newestId;
+        this.save();
       }
     } catch (err) {
       console.error("[Poller] Failed to check battles:", err);
@@ -1635,20 +1706,23 @@ export class Poller {
   /** Announces newly created giveaways into the configured channel. */
   private async checkNewGiveaways(): Promise<void> {
     try {
-      const result = await this.api.get<PaginatedData<GiveawayView>>(
+      const listedGiveaways = await this.listSinceCheckpoint<GiveawayView>(
         "api/giveaways",
-        undefined,
-        { page: 1, limit: 50, sort: "created_at", order: "desc" },
+        this.state.lastGiveawayId,
+        (giveaway) => giveaway.id,
+        50,
+        { sort: "created_at", order: "desc" },
       );
-      const newestId = result.items.reduce((max, item) => Math.max(max, item.id), 0);
-      if (newestId > 0 && newestId < this.state.lastGiveawayId) {
+      const giveaways = listedGiveaways.items;
+      const newestId = listedGiveaways.complete ? listedGiveaways.newestId : 0;
+      if (listedGiveaways.complete && newestId > 0 && newestId < this.state.lastGiveawayId) {
         console.warn(
           `[Poller] Giveaway checkpoint ${this.state.lastGiveawayId} is ahead of the newest known giveaway (${newestId}); clamping`,
         );
         this.state.lastGiveawayId = newestId;
         this.save();
       }
-      const newGiveaways = result.items
+      const newGiveaways = giveaways
         .filter((item) => item.id > this.state.lastGiveawayId)
         .sort((a, b) => a.id - b.id);
       if (newGiveaways.length === 0) return;
@@ -1669,12 +1743,15 @@ export class Poller {
           `api/giveaways/${detail.id}/discord-message`,
           { message_id: message.id, channel_id: channel.id },
         );
-        this.state.lastGiveawayId = detail.id;
         if (!this.state.postedGiveawayIds.includes(detail.id)) {
           this.state.postedGiveawayIds.push(detail.id);
         }
         this.save();
         console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
+      }
+      if (listedGiveaways.complete && listedGiveaways.newestId > this.state.lastGiveawayId) {
+        this.state.lastGiveawayId = listedGiveaways.newestId;
+        this.save();
       }
     } catch (error) {
       console.error("[Poller] Failed to check giveaways:", error);

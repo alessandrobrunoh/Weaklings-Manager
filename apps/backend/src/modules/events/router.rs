@@ -37,13 +37,10 @@ use super::models::{
     SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
-use super::service::{
-    apply_alliance_ping_targets, load_alliance_ping_targets, BattleLinkingContext, EventService,
-};
+use super::service::{apply_alliance_ping_targets, load_alliance_ping_targets, EventService};
 use super::sync::{assert_active_alliance, create_mirror, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
-use crate::modules::albionbb::client::normalize_server;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::alliance_share::ShareActor;
 
@@ -324,11 +321,9 @@ async fn get_event(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
-    let context = BattleLinkingContext::new(
-        &cfg.albion_guild_id,
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-    );
+    let context = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+        .await?
+        .linking_context();
     let event = service
         .get_event_detail_with_context(&db, id, &context)
         .await?;
@@ -1568,15 +1563,15 @@ async fn list_event_battles(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
-    let context = BattleLinkingContext::new(
-        &cfg.albion_guild_id,
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-    );
+    let context = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+        .await?
+        .linking_context();
     let detail = service
         .get_event_detail_with_context(&db, id, &context)
         .await?;
@@ -1611,17 +1606,18 @@ async fn replace_event_battles(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(albionbb): Extension<AlbionBbService>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
-    let server = normalize_server(Some(&cfg.albion_api_region));
-    let context = BattleLinkingContext::new(
-        &cfg.albion_guild_id,
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-    );
+    let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+        .await
+        .map_err(AppError::from)?;
+    let server = scope.server();
+    let context = scope.linking_context();
     let detail = service
         .replace_event_battles(&db, &albionbb, &context, Some(&server), id, req)
         .await?;
@@ -1932,21 +1928,37 @@ mod tests {
         assert!(!view.is_organizer);
         assert!(!view.can_manage);
 
-        // The seeded Officer role carries events.edit, so its holders can manage
-        // events they did not create.
-        let officer = authorization_test_user(member_id, "Officer");
+        // Baseline roles are Admin, Moderator, and User. `events.edit` is seeded to
+        // Admin and Officer, but no Officer row is created, so that grant never lands.
+        // Admin is the seeded role that can manage an event it did not create.
+        let admin = authorization_test_user(member_id, "Admin");
         let view = get_event_management_authority(
-            officer,
+            admin,
             Extension(permissions.clone()),
             Extension(db.clone()),
             axum::extract::Path(event_id),
         )
         .await
-        .expect("officer authority should resolve")
+        .expect("admin authority should resolve")
         .0
         .data;
         assert!(!view.is_organizer);
         assert!(view.can_manage);
+
+        // Moderator is seeded and only receives events.view, not events.edit.
+        let moderator = authorization_test_user(member_id, "Moderator");
+        let view = get_event_management_authority(
+            moderator,
+            Extension(permissions.clone()),
+            Extension(db.clone()),
+            axum::extract::Path(event_id),
+        )
+        .await
+        .expect("moderator authority should resolve")
+        .0
+        .data;
+        assert!(!view.is_organizer);
+        assert!(!view.can_manage);
 
         // The legacy events.manage permission still implies the granular one.
         let manager = authorization_test_user(member_id, "Test test-events-manager");

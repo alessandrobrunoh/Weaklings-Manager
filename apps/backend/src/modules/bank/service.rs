@@ -13,9 +13,9 @@ use std::{
 use sea_orm::prelude::Decimal;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DbBackend,
     DatabaseConnection, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, TransactionTrait,
+    QuerySelect, RelationTrait, Statement, TransactionTrait,
 };
 
 use crate::errors::AppError;
@@ -66,6 +66,29 @@ fn requestable_transaction_condition() -> Condition {
                 .add(Column::Status.eq(TransactionStatus::Rejected.to_string())),
         )
         .add(Column::Amount.gt(Decimal::ZERO))
+}
+
+/// Serializes balance checks for one member inside the current transaction.
+///
+/// Withdrawal requests on different rows otherwise each observe the same net
+/// requestable total and can both pass. The lock is transaction-scoped and
+/// includes the schema name so tenant pools that share a database do not block
+/// each other. SQLite unit tests have no equivalent; the invariant is covered
+/// by the Postgres integration test.
+async fn serialize_user_requestable_balance<C>(db: &C, user_id: i64) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if db.get_database_backend() != DbBackend::Postgres {
+        return Ok(());
+    }
+    db.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT pg_advisory_xact_lock(hashtextextended(current_schema(), $1))",
+        [user_id.into()],
+    ))
+    .await?;
+    Ok(())
 }
 
 /// Settled split clawbacks: already confirmed, still reduce what the member can withdraw.
@@ -746,19 +769,12 @@ impl BankService {
         user_id: i64,
         req: &WithdrawRequest,
     ) -> Result<Vec<TransactionView>, AppError> {
-        let ids: Vec<i64> = if req.all.unwrap_or(false) {
-            consolidate_user_open_credits(db, user_id).await?;
-            TransactionEntity::find()
-                .filter(Column::ToUserId.eq(user_id))
-                .filter(requestable_transaction_condition())
-                .all(db)
-                .await?
-                .into_iter()
-                .map(|tx| tx.id)
-                .collect()
+        let withdraw_all = req.all.unwrap_or(false);
+        let requested_ids = if withdraw_all {
+            None
         } else {
             match &req.transaction_ids {
-                Some(ids) if !ids.is_empty() => ids.clone(),
+                Some(ids) if !ids.is_empty() => Some(ids.clone()),
                 _ => {
                     return Err(AppError::Validation(
                         "must provide transaction_ids or all=true".to_string(),
@@ -767,11 +783,28 @@ impl BankService {
             }
         };
 
-        if ids.is_empty() {
-            return Ok(Vec::new());
+        let txn = db.begin().await?;
+        serialize_user_requestable_balance(&txn, user_id).await?;
+        if withdraw_all {
+            consolidate_user_open_credits(&txn, user_id).await?;
         }
 
-        let txn = db.begin().await?;
+        let ids = match requested_ids {
+            Some(ids) => ids,
+            None => TransactionEntity::find()
+                .filter(Column::ToUserId.eq(user_id))
+                .filter(requestable_transaction_condition())
+                .all(&txn)
+                .await?
+                .into_iter()
+                .map(|tx| tx.id)
+                .collect(),
+        };
+
+        if ids.is_empty() {
+            txn.commit().await?;
+            return Ok(Vec::new());
+        }
 
         let targets = TransactionEntity::find()
             .filter(Column::Id.is_in(ids.clone()))
@@ -936,7 +969,9 @@ impl BankService {
         txn.commit().await?;
 
         for updated in &updated_models {
-            crate::modules::audit::service::AuditService::log(
+            // The payout is already durable. An audit failure must not turn that success into
+            // an error the officer would retry against rows that are no longer `requested`.
+            if let Err(error) = crate::modules::audit::service::AuditService::log(
                 db,
                 "WITHDRAW_ACCEPTED",
                 Some("TRANSACTION"),
@@ -949,7 +984,14 @@ impl BankService {
                     "split_id": updated.split_id
                 })),
             )
-            .await?;
+            .await
+            {
+                tracing::warn!(
+                    %error,
+                    transaction_id = updated.id,
+                    "withdrawal accepted but audit log failed"
+                );
+            }
             if updated.to_user_id != officer_user_id {
                 crate::modules::notifications::notify_best_effort(
                     db,
@@ -1063,7 +1105,7 @@ impl BankService {
         txn.commit().await?;
 
         for updated in &updated_models {
-            crate::modules::audit::service::AuditService::log(
+            if let Err(error) = crate::modules::audit::service::AuditService::log(
                 db,
                 "WITHDRAW_REJECTED",
                 Some("TRANSACTION"),
@@ -1076,7 +1118,14 @@ impl BankService {
                     "split_id": updated.split_id
                 })),
             )
-            .await?;
+            .await
+            {
+                tracing::warn!(
+                    %error,
+                    transaction_id = updated.id,
+                    "withdrawal rejected but audit log failed"
+                );
+            }
             if updated.to_user_id != officer_user_id {
                 crate::modules::notifications::notify_best_effort(
                     db,
@@ -2364,5 +2413,101 @@ mod tests {
         assert_eq!(listed.items.len(), 1);
         assert_eq!(listed.items[0].split_id, Some(split_a));
         assert_eq!(listed.items[0].amount, "45.00".parse::<Decimal>().unwrap());
+    }
+
+    /// Two overlapping withdrawal requests must not both pass the net-balance check.
+    ///
+    /// The test holds the same per-user advisory lock, then proves the request blocks
+    /// until that transaction commits a competing request. After the lock is released
+    /// the waiter re-reads the balance and rejects the second row.
+    #[tokio::test]
+    async fn concurrent_withdrawal_requests_cannot_exceed_net_balance() {
+        use crate::postgres::{
+            connect_with_search_path, drop_schema, ensure_schema,
+            test_support::{try_admin_db, unique_schema},
+        };
+        use std::time::Duration;
+
+        let Some((url, admin)) = try_admin_db().await else {
+            eprintln!("skipping concurrent withdrawal test: no postgres");
+            return;
+        };
+        let schema = unique_schema("it_wdl");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let result = async {
+            let db = connect_with_search_path(&url, &schema)
+                .await
+                .expect("connect");
+            let waiter_db = connect_with_search_path(&url, &schema)
+                .await
+                .expect("connect waiter");
+            crate::migration::Migrator::up(&db, None)
+                .await
+                .expect("migrate");
+
+            let user = insert_user(&db, "alice", "alice@example.com").await;
+            let first = insert_transaction(&db, user, "100.00", TransactionStatus::Pending).await;
+            let second = insert_transaction(&db, user, "100.00", TransactionStatus::Pending).await;
+            insert_transaction(&db, user, "-100.00", TransactionStatus::Withdrawn).await;
+
+            let holder = db.begin().await.expect("begin holder");
+            serialize_user_requestable_balance(&holder, user)
+                .await
+                .expect("lock balance");
+
+            let service = BankService::new();
+            let request = tokio::spawn(async move {
+                service
+                    .request_withdrawal(
+                        &waiter_db,
+                        user,
+                        &WithdrawRequest {
+                            transaction_ids: Some(vec![second]),
+                            all: None,
+                            guild_tenant_id: None,
+                        },
+                    )
+                    .await
+            });
+
+            let started = std::time::Instant::now();
+            while !request.is_finished() && started.elapsed() < Duration::from_secs(2) {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            assert!(
+                !request.is_finished(),
+                "withdrawal request did not wait for the user balance lock"
+            );
+
+            TransactionEntity::update_many()
+                .filter(Column::Id.eq(first))
+                .set(ActiveModel {
+                    status: Set(TransactionStatus::Requested.to_string()),
+                    ..Default::default()
+                })
+                .exec(&holder)
+                .await
+                .expect("mark competing request");
+            holder.commit().await.expect("commit holder");
+
+            let error = request
+                .await
+                .expect("request task")
+                .expect_err("second request must not exceed the net balance");
+            assert!(
+                matches!(error, AppError::Validation(ref message) if message.contains("net requestable")),
+                "unexpected error: {error}"
+            );
+
+            let still_pending = TransactionEntity::find_by_id(second)
+                .one(&db)
+                .await
+                .expect("load")
+                .expect("row");
+            assert_eq!(still_pending.status, TransactionStatus::Pending.to_string());
+        }
+        .await;
+        drop_schema(&admin, &schema).await.expect("drop schema");
+        result
     }
 }

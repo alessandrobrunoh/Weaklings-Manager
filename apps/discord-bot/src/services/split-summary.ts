@@ -41,6 +41,26 @@ function creditStatusPill(status: SplitParticipantCreditStatus | null | undefine
   }
 }
 
+/** Pending pool before the backend stores `net_value`.
+ *
+ * Matches `calculate_net_value`: fee applies to gross - repairs + bags, and bags
+ * increase the pool. Money is rounded to cents the same way the site previews it.
+ */
+export function pendingSplitPool(split: Pick<SplitDetail, "estimated_market_value" | "fee" | "repair_value" | "bags_value">): {
+  valueBeforeFee: number;
+  feeAmount: number;
+  net: number;
+} {
+  const valueBeforeFee = split.estimated_market_value - split.repair_value + split.bags_value;
+  const feeAmount = (valueBeforeFee * split.fee) / 100;
+  const net = Math.max(0, Math.round((valueBeforeFee - feeAmount) * 100) / 100);
+  return {
+    valueBeforeFee,
+    feeAmount: Math.round(feeAmount * 100) / 100,
+    net,
+  };
+}
+
 export function buildSplitThreadName(split: SplitDetail): string {
   const context = split.event_title?.trim() || "No event";
   return Array.from(`Split #${split.id} — ${context}`).slice(0, 100).join("");
@@ -74,9 +94,9 @@ export function buildSplitSummary(split: SplitDetail): SplitSummaryPayload {
     footerText: `Split #${split.id} • Weaklings Guild Manager`,
   });
 
-  const netValue = split.net_value ?? Math.max(0, split.estimated_market_value - (split.estimated_market_value * split.fee) / 100 - split.repair_value - split.bags_value);
-  const taxAmount = (split.estimated_market_value * split.fee) / 100;
-  const repairsAndBags = split.repair_value + split.bags_value;
+  const pool = pendingSplitPool(split);
+  const netValue = split.net_value ?? pool.net;
+  const taxAmount = pool.feeAmount;
 
   // Financial breakdown
   embed.addFields({
@@ -84,7 +104,8 @@ export function buildSplitSummary(split: SplitDetail): SplitSummaryPayload {
     value: [
       `• 💎 **Gross Loot Value:** **${formatSilver(split.estimated_market_value)}** Silver`,
       `• 🏛️ **Guild Fee (${split.fee}%):** -${formatSilver(taxAmount)} Silver`,
-      `• 🛠️ **Repairs & Bags:** -${formatSilver(repairsAndBags)} Silver`,
+      `• 🛠️ **Repairs:** -${formatSilver(split.repair_value)} Silver`,
+      `• 🎒 **Bags:** +${formatSilver(split.bags_value)} Silver`,
       `• 💵 **Net Split Pool:** **${formatSilver(netValue)}** Silver`,
     ].join("\n"),
     inline: false,
@@ -95,7 +116,7 @@ export function buildSplitSummary(split: SplitDetail): SplitSummaryPayload {
     const chartItems = [
       { label: "Players Share", value: Math.max(0, netValue), display: `${formatSilver(netValue)} Silver` },
       { label: "Guild Fee", value: taxAmount, display: `${formatSilver(taxAmount)} Silver` },
-      { label: "Repairs/Bags", value: repairsAndBags, display: `${formatSilver(repairsAndBags)} Silver` },
+      { label: "Repairs", value: split.repair_value, display: `${formatSilver(split.repair_value)} Silver` },
     ].filter((i) => i.value > 0);
 
     if (chartItems.length > 0) {

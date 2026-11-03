@@ -440,7 +440,7 @@ interface AddEventMemberRequest {
               <div
                 class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[11px]"
               >
-                <span>Capacità:</span>
+                <span>{{ t('events.detail.capacity') }}:</span>
                 <span class="font-mono font-bold text-white">
                   {{ rosterFilledSeats() }}/{{ rosterSeatCount() }}
                 </span>
@@ -609,7 +609,7 @@ interface AddEventMemberRequest {
                           class="m-2 p-2.5 rounded-lg border-2 border-dashed border-[var(--color-warning)] bg-[var(--color-warning-container)] text-warning text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2"
                         >
                           <app-icon name="users" size="0.875rem" />
-                          Rilascia per spostare in panchina
+                          {{ t('events.detail.drop_to_bench') }}
                         </div>
                       }
 
@@ -701,7 +701,7 @@ interface AddEventMemberRequest {
                         <span
                           class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
                         >
-                          Capacità Roster
+                          {{ t('events.detail.roster_capacity') }}
                         </span>
                         <span class="font-mono text-xs font-bold text-white">
                           {{ rosterFilledSeats() }} / {{ rosterSeatCount() }}
@@ -767,10 +767,10 @@ interface AddEventMemberRequest {
                             class="btn btn--tonal btn--sm text-xs w-full justify-center"
                             [disabled]="rosterCommandSaving() || roster.bench.length === 0"
                             (click)="autoFillServerRoster()"
-                            [appTooltip]="'Compila automaticamente posti liberi usando preferenze bench'"
+                            [appTooltip]="t('events.detail.auto_fill_hint')"
                           >
                             <app-icon name="sparkles" size="0.75rem" />
-                            Auto-fill
+                            {{ t('events.detail.auto_fill') }}
                           </button>
                           @if (canViewRosterSuggestions()) {
                             <button
@@ -811,12 +811,7 @@ interface AddEventMemberRequest {
                             size="1rem"
                             class="text-[var(--color-primary)]"
                           />
-                          <span
-                            >Seleziona il posto di destinazione per
-                            <strong>{{ source.participant?.username }}</strong> ({{
-                              source.build_name
-                            }})</span
-                          >
+                          <span>{{ t('events.detail.swap_destination', { name: source.participant?.username ?? '', build: source.build_name ?? '' }) }}</span>
                         </div>
                         <button
                           type="button"
@@ -832,10 +827,7 @@ interface AddEventMemberRequest {
                       >
                         <div class="flex items-center gap-2 text-xs font-semibold text-white">
                           <app-icon name="plus" size="1rem" class="text-[var(--color-primary)]" />
-                          <span
-                            >Seleziona un membro dalla panchina per Party {{ target.party_number }},
-                            pos. #{{ target.position }} ({{ target.build_name }})</span
-                          >
+                          <span>{{ t('events.detail.pick_bench_member', { party: target.party_number ?? '', position: target.position ?? '', build: target.build_name ?? '' }) }}</span>
                         </div>
                         <button
                           type="button"
@@ -1080,7 +1072,7 @@ interface AddEventMemberRequest {
                                         [disabled]="rosterCommandSaving()"
                                         (click)="swapServerRosterSeats(seat)"
                                       >
-                                        Scambia qui
+                                        {{ t('events.detail.swap_here') }}
                                       </button>
                                     }
                                   } @else if (rosterAssignTarget(); as target) {
@@ -1091,7 +1083,7 @@ interface AddEventMemberRequest {
                                       class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-white"
                                       [disabled]="rosterCommandSaving()"
                                       (click)="beginRosterSwap(seat)"
-                                      [appTooltip]="'Scambia posto'"
+                                      [appTooltip]="t('events.detail.swap_seat')"
                                       tooltipPosition="top"
                                     >
                                       <app-icon name="refresh" size="0.75rem" />
@@ -1101,7 +1093,7 @@ interface AddEventMemberRequest {
                                       class="btn btn--ghost btn--sm p-1 text-error hover:bg-[var(--color-error-container)]"
                                       [disabled]="rosterCommandSaving()"
                                       (click)="clearServerRosterSeat(seat)"
-                                      [appTooltip]="'Sposta in panchina'"
+                                      [appTooltip]="t('events.detail.move_to_bench')"
                                       tooltipPosition="top"
                                     >
                                       <app-icon name="close" size="0.75rem" />
@@ -1126,7 +1118,7 @@ interface AddEventMemberRequest {
                                       [disabled]="rosterCommandSaving()"
                                       (click)="selectRosterAssignTarget(seat)"
                                     >
-                                      + Assegna
+                                      + {{ t('events.detail.assign') }}
                                     </button>
                                   }
                                 }
@@ -1137,7 +1129,7 @@ interface AddEventMemberRequest {
                       </section>
                     } @else {
                       <p class="py-8 text-center text-xs text-[var(--color-text-secondary)]">
-                        Nessun party configurato.
+                        {{ t('events.detail.no_parties') }}
                       </p>
                     }
                   </div>
@@ -1256,7 +1248,7 @@ interface AddEventMemberRequest {
                           <p
                             class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
                           >
-                            Abilità scelte
+                            {{ t('events.detail.abilities_chosen') }}
                           </p>
                           <span class="text-[10px] text-[var(--color-text-tertiary)]"
                             >Spell configurate</span
@@ -1303,7 +1295,7 @@ interface AddEventMemberRequest {
                           </div>
                         } @else {
                           <p class="text-xs text-[var(--color-text-secondary)] italic">
-                            Nessuna abilità configurata per questa build.
+                            {{ t('events.detail.no_abilities_build') }}
                           </p>
                         }
                       </div>
@@ -2146,7 +2138,7 @@ interface AddEventMemberRequest {
                 <div class="min-w-0">
                   <p class="label mb-0.5">{{ t('events.detail.primary_build') }}</p>
                   <p class="text-sm font-semibold text-[var(--color-text)] truncate">
-                    {{ selectedJoinWeapon()?.openalbion_item_name || 'Arma non disponibile' }}
+                    {{ selectedJoinWeapon()?.openalbion_item_name || t('events.detail.join_confirm_weapon_missing') }}
                   </p>
                 </div>
               </div>
@@ -2154,7 +2146,7 @@ interface AddEventMemberRequest {
               <section class="build-choice-panel" aria-labelledby="secondary-build-choice-title">
                 <div class="flex items-center justify-between gap-3">
                   <span id="secondary-build-choice-title" class="label">{{ t('events.detail.secondary_build') }}</span>
-                  <span class="text-xs text-[var(--color-text-secondary)]">Opzionale</span>
+                  <span class="text-xs text-[var(--color-text-secondary)]">{{ t('events.detail.optional_label') }}</span>
                 </div>
                 <div class="build-choice-grid">
                   <button
@@ -2166,8 +2158,8 @@ interface AddEventMemberRequest {
                   >
                     <span class="build-choice-card__glyph">×</span>
                     <span class="build-choice-card__copy">
-                      <strong>Nessuna</strong>
-                      <small>Non assegnare una seconda build</small>
+                      <strong>{{ t('events.detail.none') }}</strong>
+                      <small>{{ t('events.detail.no_secondary') }}</small>
                     </span>
                   </button>
                   @for (entry of availableBuilds(); track entry.build_id) {
@@ -2214,7 +2206,7 @@ interface AddEventMemberRequest {
     @if (showJoinConfirm()) {
       <app-dialog
         [title]="t('events.participate')"
-        [subtitle]="'Controlla la build prima di confermare la partecipazione.'"
+        [subtitle]="t('events.detail.join_confirm_hint')"
         size="sm"
         (closed)="cancelJoinConfirm()"
       >
@@ -2226,15 +2218,15 @@ interface AddEventMemberRequest {
                 {{ t('events.detail.fill_option') }}
               </p>
               <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
-                Nessuna build o arma principale selezionata.
+                {{ t('events.detail.join_confirm_fill') }}
               </p>
             </div>
           } @else {
             <div class="surface p-3 space-y-2">
               <div>
-                <p class="label">Build / slot</p>
+                <p class="label">{{ t('events.detail.join_confirm_slot') }}</p>
                 <p class="text-sm font-semibold text-[var(--color-text)]">
-                  {{ selectedJoinBuild()?.build?.name || 'Build selezionata' }}
+                  {{ selectedJoinBuild()?.build?.name || t('events.detail.join_confirm_build_fallback') }}
                   @if (selectedJoinBuild()?.build?.role; as role) {
                     <span class="text-xs text-[var(--color-text-secondary)]">
                       &middot; {{ roleLabelName(role) }}
@@ -2243,9 +2235,9 @@ interface AddEventMemberRequest {
                 </p>
               </div>
               <div class="pt-2 border-t border-[var(--color-border)]">
-                <p class="label">Weapon principale</p>
+                <p class="label">{{ t('events.detail.join_confirm_weapon') }}</p>
                 <p class="text-sm font-semibold text-[var(--color-text)]">
-                  {{ selectedJoinWeapon()?.openalbion_item_name || 'Arma non disponibile' }}
+                  {{ selectedJoinWeapon()?.openalbion_item_name || t('events.detail.join_confirm_weapon_missing') }}
                 </p>
               </div>
             </div>
@@ -2253,8 +2245,8 @@ interface AddEventMemberRequest {
 
           @if (draftSecondaryBuildId() && !isFillSelected()) {
             <p class="text-xs text-[var(--color-text-secondary)]">
-              Build secondaria inclusa:
-              {{ selectedJoinSecondaryBuild()?.build?.name || 'Selezionata' }}
+              {{ t('events.detail.join_confirm_secondary') }}
+              {{ selectedJoinSecondaryBuild()?.build?.name || t('events.detail.join_confirm_secondary_fallback') }}
             </p>
           }
         </div>
@@ -2364,15 +2356,15 @@ interface AddEventMemberRequest {
               id="fill-role-heading"
               class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]"
             >
-              Fill Automatico
+              {{ t('events.detail.fill_role_title') }}
             </h2>
             <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
-              Ruolo con posti illimitati per chi non ha una posizione fissa.
+              {{ t('events.detail.unlimited_role') }}
             </p>
           </section>
 
           <form class="grid gap-2" (submit)="addRosterRole($event)">
-            <label for="extra-roster-build" class="label">Aggiungi nuova build al roster</label>
+            <label for="extra-roster-build" class="label">{{ t('events.detail.add_roster_build') }}</label>
             <app-ownership-scope-toggle
               [scope]="rosterBuildScope()"
               (scopeChange)="setRosterBuildScope($event)"
@@ -2398,7 +2390,7 @@ interface AddEventMemberRequest {
                 class="btn btn--primary btn--sm"
                 [disabled]="rosterRoleSaving()"
               >
-                Aggiungi
+                {{ t('common.add') }}
               </button>
             </div>
             @if (rosterRoleError()) {
@@ -2409,7 +2401,7 @@ interface AddEventMemberRequest {
           </form>
 
           <section aria-labelledby="extra-roles-heading">
-            <h2 id="extra-roles-heading" class="label">Ruoli extra attivi</h2>
+            <h2 id="extra-roles-heading" class="label">{{ t('events.detail.extra_roles') }}</h2>
             <div class="mt-2 grid gap-2">
               @for (role of extraRosterRoles(); track role.id) {
                 <div class="surface flex min-h-11 items-center justify-between gap-3 px-3.5 py-2">
@@ -2422,12 +2414,12 @@ interface AddEventMemberRequest {
                     (click)="removeRosterRole(role)"
                     [disabled]="rosterRoleSaving()"
                   >
-                    Rimuovi
+                    {{ t('events.detail.remove_role') }}
                   </button>
                 </div>
               } @empty {
                 <p class="text-xs text-[var(--color-text-secondary)] py-2">
-                  Nessun ruolo extra configurato.
+                  {{ t('events.detail.no_extra_roles') }}
                 </p>
               }
             </div>
@@ -2439,14 +2431,13 @@ interface AddEventMemberRequest {
     <!-- 4b. ROSTER SUGGESTIONS PREVIEW -->
     @if (rosterSuggestionsOpen()) {
       <app-dialog
-        title="Suggerimento assegnazione"
+        [title]="t('events.detail.suggestion_title')"
         size="lg"
         (closed)="closeRosterSuggestions()"
       >
         <div class="grid gap-4">
           <p class="text-xs text-[var(--color-text-secondary)]">
-            Assegnazione ottimale per Item Power e prontezza. Riguarda solo le sedie oggi
-            vuote — nessuno già assegnato viene spostato.
+            {{ t('events.detail.suggestion_body') }}
           </p>
 
           @if (rosterSuggestionRows().length > 0) {
@@ -2454,10 +2445,10 @@ interface AddEventMemberRequest {
               <table class="table text-xs">
                 <thead>
                   <tr>
-                    <th class="text-left">Sedia</th>
-                    <th class="text-left">Membro</th>
+                    <th class="text-left">{{ t('events.detail.seat') }}</th>
+                    <th class="text-left">{{ t('events.detail.member') }}</th>
                     <th class="text-right">IP</th>
-                    <th class="text-right">Prontezza</th>
+                    <th class="text-right">{{ t('events.detail.readiness') }}</th>
                     <th class="text-left">Preferenza</th>
                   </tr>
                 </thead>
@@ -2480,15 +2471,13 @@ interface AddEventMemberRequest {
             </div>
           } @else {
             <p class="text-xs text-disabled italic">
-              Nessuna sedia libera da assegnare, oppure nessun membro in panchina ha una
-              specializzazione utilizzabile.
+              {{ t('events.detail.no_free_seat') }}
             </p>
           }
 
           @if ((rosterSuggestions()?.unplaced_members?.length ?? 0) > 0) {
             <p class="text-[10px] text-warning">
-              ⚠ {{ rosterSuggestions()?.unplaced_members?.length }} membri in panchina non hanno
-              trovato posto.
+              ⚠ {{ t('events.detail.unplaced', { count: rosterSuggestions()?.unplaced_members?.length ?? 0 }) }}
             </p>
           }
           @if ((rosterSuggestions()?.unfilled_seats?.length ?? 0) > 0) {
@@ -2521,7 +2510,7 @@ interface AddEventMemberRequest {
           <div class="surface flex items-center gap-3 p-3">
             <app-avatar [username]="member.title" size="sm" />
             <div class="min-w-0">
-              <p class="label">Membro</p>
+              <p class="label">{{ t('events.detail.member') }}</p>
               <p class="text-sm font-semibold text-[var(--color-text)] truncate">
                 {{ member.title }}
               </p>
@@ -2701,12 +2690,10 @@ interface AddEventMemberRequest {
                     class="flex items-center gap-1.5 mt-1 text-xs text-[var(--color-text-secondary)]"
                   >
                     <app-avatar [username]="p.username" size="xs" />
-                    <span
-                      >Assegnato a: <strong class="text-white">{{ p.username }}</strong></span
-                    >
+                    <span>{{ t('events.detail.assigned_to') }} <strong class="text-white">{{ p.username }}</strong></span>
                   </div>
                 } @else {
-                  <span class="text-xs text-[var(--color-text-tertiary)] italic">Posto libero</span>
+                  <span class="text-xs text-[var(--color-text-tertiary)] italic">{{ t('events.detail.seat_open') }}</span>
                 }
               </div>
             </div>
@@ -2758,7 +2745,7 @@ interface AddEventMemberRequest {
               <p
                 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
               >
-                Abilità & Passive Selezionate
+                {{ t('events.detail.abilities_and_passives') }}
               </p>
 
               @let rows = dialogAbilityRows(seat);
@@ -2809,7 +2796,7 @@ interface AddEventMemberRequest {
                 <p
                   class="text-xs text-[var(--color-text-secondary)] p-4 rounded-lg bg-[var(--color-surface-2)] text-center"
                 >
-                  Nessuna abilità configurata per questa selezione.
+                  {{ t('events.detail.no_abilities_selection') }}
                 </p>
               }
             </div>
@@ -2858,7 +2845,7 @@ interface AddEventMemberRequest {
             <p
               class="text-[9px] uppercase font-bold tracking-wider text-[var(--color-text-tertiary)]"
             >
-              Abilità selezionate
+              {{ t('events.detail.abilities_selected') }}
             </p>
             @for (spell of tip.spells; track spell.key + spell.name) {
               <div
@@ -2882,7 +2869,7 @@ interface AddEventMemberRequest {
           </div>
         } @else {
           <p class="text-xs text-[var(--color-text-secondary)] italic">
-            Nessuna abilità per questa selezione
+            {{ t('events.detail.no_abilities_short') }}
           </p>
         }
       </div>
@@ -3241,7 +3228,7 @@ export class EventDetailPage {
     const item = this.specializationCatalog().find(
       (entry) => this.specializationKey(entry) === key,
     );
-    return item ? normalizeAlbionEquipmentName(item.identifier ?? '', item.name) : 'Nessuna';
+    return item ? normalizeAlbionEquipmentName(item.identifier ?? '', item.name) : this.t('events.detail.none');
   });
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
@@ -4055,7 +4042,8 @@ export class EventDetailPage {
     this.benchSearch.set((event.target as HTMLInputElement).value);
   }
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     this.route.paramMap.subscribe((params) => {
@@ -4291,7 +4279,7 @@ export class EventDetailPage {
     const roster = this.rosterSnapshot();
     if (!target || !roster) return;
 
-    await this.runServerRosterCommand('Membro assegnato al posto.', () =>
+    await this.runServerRosterCommand(this.t('events.detail.member_assigned'), () =>
       firstValueFrom(
         this.api.put<EventRosterView>(
           `api/events/${this.eventId}/roster/seats/${encodeURIComponent(target.key)}`,
@@ -4475,7 +4463,7 @@ export class EventDetailPage {
     const targetKey = this.rosterSeatKey(target);
     if (!roster) return;
 
-    await this.runServerRosterCommand('Membro assegnato al posto.', () =>
+    await this.runServerRosterCommand(this.t('events.detail.member_assigned'), () =>
       firstValueFrom(
         this.api.put<EventRosterView>(
           `api/events/${this.eventId}/roster/seats/${encodeURIComponent(targetKey)}`,
@@ -4524,7 +4512,7 @@ export class EventDetailPage {
     const roster = this.rosterSnapshot();
     if (!roster) return;
 
-    await this.runServerRosterCommand('Assegnazione ottimale applicata.', () =>
+    await this.runServerRosterCommand(this.t('events.detail.suggestion_applied'), () =>
       firstValueFrom(
         this.api.post<EventRosterView>(`api/events/${this.eventId}/roster/auto-fill`, {
           expected_roster_version: roster.roster_version,
@@ -5847,10 +5835,14 @@ export class EventDetailPage {
     const ownSeat = this.ownRosterSeat();
     this.rosterAnnouncement.set(
       ownSeat
-        ? `Roster aggiornato. Il tuo ruolo è ${this.rosterSeatRoleLabel(ownSeat)}, Party ${this.rosterSeatPartyNumber(ownSeat)}, posizione ${ownSeat.position}.`
+        ? this.t('events.detail.roster_updated_seat', {
+            role: this.rosterSeatRoleLabel(ownSeat),
+            party: this.rosterSeatPartyNumber(ownSeat),
+            position: ownSeat.position,
+          })
         : this.isCurrentUserOnRosterBench()
-          ? 'Roster aggiornato. Sei in bench, senza un posto assegnato.'
-          : 'Roster aggiornato.',
+          ? this.t('events.detail.roster_updated_bench')
+          : this.t('events.detail.roster_updated'),
     );
   }
 

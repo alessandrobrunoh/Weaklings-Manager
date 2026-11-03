@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
@@ -130,5 +130,66 @@ describe('RegisterTenant', () => {
     compiled.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     fixture.detectChanges();
     expect(compiled.querySelector('#albion-guild-search')).toBeTruthy();
+  });
+
+  it('drops a picked guild when the region changes and ignores a stale search', async () => {
+    vi.useFakeTimers();
+    try {
+    const first = new Subject<{ guilds: { id: string; name: string }[] }>();
+    const second = new Subject<{ guilds: { id: string; name: string }[] }>();
+    api.get.mockImplementation((url: string, params?: { q?: string }) => {
+      if (url === 'api/tenants/albion-search' && params?.q === 'old') {
+        return first.asObservable();
+      }
+      if (url === 'api/tenants/albion-search' && params?.q === 'new') {
+        return second.asObservable();
+      }
+      if (url === 'api/tenants/attachable-guilds') {
+        return of(attachable);
+      }
+      return of({ id: 'g1', registered: false, register_url: null, name: null, status: null });
+    });
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const name = compiled.querySelector('#tenant-display-name') as HTMLInputElement;
+    name.value = 'My Guild';
+    name.dispatchEvent(new Event('input'));
+    compiled.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    fixture.detectChanges();
+
+    const search = compiled.querySelector('#albion-guild-search') as HTMLInputElement;
+    search.value = 'old';
+    search.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(250);
+
+    search.value = 'new';
+    search.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(250);
+
+    first.next({ guilds: [{ id: 'stale', name: 'Stale Guild' }] });
+    first.complete();
+    second.next({ guilds: [{ id: 'fresh', name: 'Fresh Guild' }] });
+    second.complete();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('Fresh Guild');
+    expect(compiled.textContent).not.toContain('Stale Guild');
+
+    const hit = [...compiled.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Fresh Guild'),
+    ) as HTMLButtonElement;
+    hit.click();
+    fixture.detectChanges();
+    expect(compiled.textContent).toContain('Fresh Guild');
+
+    const americas = compiled.querySelector('#region-americas') as HTMLInputElement;
+    americas.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    const next = compiled.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1798,3 +1798,431 @@ test("scheduled and manual calendar refreshes serialize without duplicating mess
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("a failed checkpoint seed does not persist empty cursors", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const sent: string[] = [];
+    const { api, settings, client } = backlogHarness(sent);
+    const failing = {
+      ...api,
+      get: async (path: string) => {
+        if (path === "api/battles") throw new Error("database unavailable");
+        return api.get(path);
+      },
+    } as unknown as ApiClient;
+    const poller = new Poller(client, failing, settings, 60_000, directory);
+    await poller.pollNow();
+    assert.equal(
+      existsSync(join(directory, "poller-state-100000000000000002.json")),
+      false,
+      "a partial seed must not be written",
+    );
+    assert.deepEqual(sent, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an event page that is not the oldest does not skip older unannounced ids", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 0,
+        lastBattleId: 0,
+        lastGiveawayId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        initialized: true,
+        applicationsOpen: true,
+      }),
+      "utf-8",
+    );
+    const older = calendarEvent(1, "Older mass");
+    const newer = calendarEvent(2, "Newer mass");
+    const announced: string[] = [];
+    const thread = {
+      id: "thread",
+      isThread: () => true,
+      send: async () => ({ id: "signup" }),
+    };
+    const channel = {
+      id: "events-channel",
+      isTextBased: () => true,
+      isDMBased: () => false,
+      threads: { create: async () => { throw new Error("private thread must not be used"); } },
+      send: async (payload: { content?: string }) => {
+        announced.push(String(payload.content));
+        return { id: `msg-${announced.length}`, startThread: async () => thread, edit: async () => undefined };
+      },
+    };
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string, _discordId?: string, params?: Record<string, string | number>) => {
+        if (path === "api/events") {
+          const page = Number(params?.page ?? 1);
+          const items = page === 1 ? [newer] : page === 2 ? [older] : [];
+          return { items, total_items: 2, total_pages: 2, current_page: page, limit: 1 };
+        }
+        if (path === "api/events/calendar") return [older, newer];
+        if (path === "api/events/revisions") return [];
+        if (path === "api/events/1") return { ...older, participants: [], comp_builds: [] };
+        if (path === "api/events/2") return { ...newer, participants: [], comp_builds: [] };
+        if (path === "api/battles" || path === "api/giveaways") return emptyPage();
+        if (path === "api/splits/discord-sync") return { items: [], has_more: false };
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+    const client = {
+      channels: { fetch: async () => channel },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+    const olderAt = announced.findIndex((content) => content.includes("Older mass"));
+    const newerAt = announced.findIndex((content) => content.includes("Newer mass"));
+    assert.ok(olderAt >= 0 && newerAt > olderAt, "older ids must be announced, not skipped by page 1");
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { lastEventId: number };
+    assert.equal(saved.lastEventId, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a failed signup card is retried without a second parent announcement", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 0,
+        lastBattleId: 0,
+        lastGiveawayId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        eventParentMessageIds: {},
+        eventSignupMessageIds: {},
+        pendingAnnounces: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        initialized: true,
+        applicationsOpen: true,
+      }),
+      "utf-8",
+    );
+    const event = calendarEvent(7, "Retry mass");
+    let parentSends = 0;
+    let signupAttempts = 0;
+    const thread = {
+      id: "thread-7",
+      isThread: () => true,
+      send: async () => {
+        signupAttempts++;
+        if (signupAttempts === 1) throw new Error("discord unavailable");
+        return { id: "signup-7" };
+      },
+    };
+    const parent = {
+      id: "parent-7",
+      startThread: async () => thread,
+    };
+    const channel = {
+      id: "events-channel",
+      isTextBased: () => true,
+      isDMBased: () => false,
+      messages: { fetch: async (id: string) => (id === "parent-7" ? parent : Promise.reject(new Error(id))) },
+      send: async () => {
+        parentSends++;
+        return parent;
+      },
+    };
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        if (path === "api/events") {
+          return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+        }
+        if (path === "api/events/calendar") return [event];
+        if (path === "api/events/revisions") return [eventRevision(7, "scheduled")];
+        if (path === "api/events/7") return { ...event, participants: [], comp_builds: [] };
+        if (path === "api/battles" || path === "api/giveaways") return emptyPage();
+        if (path === "api/splits/discord-sync") return { items: [], has_more: false };
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "thread-7") return thread;
+          if (id === "events-channel") return channel;
+          throw new Error(`unexpected channel ${id}`);
+        },
+      },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+    assert.equal(parentSends, 1);
+    assert.equal(signupAttempts, 1);
+    let saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { pendingAnnounces: Record<string, { status?: string }>; eventThreadIds: Record<string, string> };
+    assert.equal(saved.pendingAnnounces["7"]?.status, "failed");
+    assert.equal(saved.eventThreadIds["7"], "thread-7");
+
+    await poller.pollNow();
+    assert.equal(parentSends, 1, "retry must reuse the parent announcement");
+    assert.equal(signupAttempts, 2);
+    saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as typeof saved;
+    assert.equal(saved.pendingAnnounces["7"], undefined);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("checkpoint seed uses the highest id on every page, not page 1", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const sent: string[] = [];
+    const { settings, client } = backlogHarness(sent);
+    const api = {
+      guildId: "100000000000000002",
+      get: async (path: string, _discordId?: string, params?: Record<string, string | number>) => {
+        const page = Number(params?.page ?? 1);
+        if (path === "api/events") {
+          const items = page === 1 ? [{ id: 2 }] : page === 2 ? [{ id: 10 }] : [];
+          return { items, total_items: 2, total_pages: 2, current_page: page, limit: 50 };
+        }
+        if (path === "api/battles") {
+          const items = page === 1 ? [{ battle_id: 3 }] : [{ battle_id: 8 }];
+          return { items, total_items: 2, total_pages: 2, current_page: page, limit: 10 };
+        }
+        if (path === "api/giveaways") {
+          const items = page === 1 ? [{ id: 1 }] : [{ id: 4 }];
+          return { items, total_items: 2, total_pages: 2, current_page: page, limit: 50 };
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+    assert.deepEqual(sent, []);
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000002.json"), "utf-8"),
+    ) as { lastEventId: number; lastBattleId: number; lastGiveawayId: number; initialized: boolean };
+    assert.equal(saved.initialized, true);
+    assert.equal(saved.lastEventId, 10);
+    assert.equal(saved.lastBattleId, 8);
+    assert.equal(saved.lastGiveawayId, 4);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("battle announcements do not skip a higher id that is sorted onto a later page", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 0,
+        lastBattleId: 0,
+        lastGiveawayId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        initialized: true,
+        applicationsOpen: true,
+      }),
+      "utf-8",
+    );
+    const battle = (battleId: number, start: string) => ({
+      battle_id: battleId,
+      start_time: start,
+      end_time: start,
+      total_players: 0,
+      total_kills: 0,
+      total_fame: 0,
+      guilds: [],
+    });
+    const announced: number[] = [];
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string, _discordId?: string, params?: Record<string, string | number>) => {
+        const page = Number(params?.page ?? 1);
+        if (path === "api/events" || path === "api/giveaways") return emptyPage();
+        if (path === "api/events/calendar" || path === "api/events/revisions") return [];
+        if (path === "api/battles") {
+          const items = page === 1
+            ? [battle(2, "2030-01-02T00:00:00Z")]
+            : [battle(9, "2020-01-01T00:00:00Z")];
+          return { items, total_items: 2, total_pages: 2, current_page: page, limit: 10 };
+        }
+        if (path === "api/splits/discord-sync") return { items: [], has_more: false };
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => null,
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => "battles-channel",
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+    const channel = {
+      id: "battles-channel",
+      isTextBased: () => true,
+      isDMBased: () => false,
+      send: async (payload: { embeds?: Array<{ data?: { footer?: { text?: string } } }> }) => {
+        const footer = payload.embeds?.[0]?.data?.footer?.text ?? "";
+        const match = /Battle #(\d+)/.exec(footer);
+        if (match) announced.push(Number(match[1]));
+        return { id: "battle-msg" };
+      },
+    };
+    const client = {
+      channels: { fetch: async () => channel },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+    assert.deepEqual(announced.sort((a, b) => a - b), [2, 9]);
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { lastBattleId: number };
+    assert.equal(saved.lastBattleId, 9);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a transient thread fetch keeps the mapping and does not call startThread again", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 7,
+        lastBattleId: 0,
+        lastGiveawayId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: { "7": "thread-7" },
+        eventParentMessageIds: { "7": "parent-7" },
+        eventSignupMessageIds: {},
+        pendingAnnounces: {
+          "7": { attempts: 1, lastError: "signup", since: "2026-01-01T00:00:00Z", status: "failed" },
+        },
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        initialized: true,
+        applicationsOpen: true,
+      }),
+      "utf-8",
+    );
+    const event = calendarEvent(7, "Retry mass");
+    let threadFetches = 0;
+    let startThreadCalls = 0;
+    const thread = {
+      id: "thread-7",
+      isThread: () => true,
+      send: async () => ({ id: "signup-7" }),
+    };
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        if (path === "api/events") {
+          return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+        }
+        if (path === "api/events/calendar") return [event];
+        if (path === "api/events/revisions") return [eventRevision(7, "scheduled")];
+        if (path === "api/events/7") return { ...event, participants: [], comp_builds: [] };
+        if (path === "api/battles" || path === "api/giveaways") return emptyPage();
+        if (path === "api/splits/discord-sync") return { items: [], has_more: false };
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "thread-7") {
+            threadFetches++;
+            if (threadFetches === 1) throw new Error("discord timeout");
+            return thread;
+          }
+          if (id === "events-channel") {
+            return {
+              id,
+              isTextBased: () => true,
+              isDMBased: () => false,
+              messages: { fetch: async () => ({ id: "parent-7", startThread: async () => { startThreadCalls++; return thread; } }) },
+              send: async () => {
+                throw new Error("parent must not be sent again");
+              },
+            };
+          }
+          throw new Error(`unexpected channel ${id}`);
+        },
+      },
+    } as unknown as Client;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+    let saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { eventThreadIds: Record<string, string>; pendingAnnounces: Record<string, unknown> };
+    assert.equal(saved.eventThreadIds["7"], "thread-7");
+    assert.equal(startThreadCalls, 0);
+    assert.ok(saved.pendingAnnounces["7"]);
+
+    await poller.pollNow();
+    assert.equal(startThreadCalls, 0);
+    saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as typeof saved;
+    assert.equal(saved.pendingAnnounces["7"], undefined);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

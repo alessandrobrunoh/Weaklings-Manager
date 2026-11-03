@@ -9,6 +9,11 @@ services:
       - "127.0.0.1:${POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
     networks:
       - default
@@ -23,8 +28,8 @@ services:
       # `Secure` don't stop a plain-HTTP request from reaching it directly.
       - "127.0.0.1:8001:3000"
     environment:
-      - RUST_LOG=${RUST_LOG}
-      - BACKEND_PORT=${BACKEND_PORT}
+      - RUST_LOG=${RUST_LOG:-info}
+      - BACKEND_PORT=3000
       - DATABASE_URL=${DOCKER_DATABASE_URL}
       - FRONTEND_URL=${FRONTEND_URL}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
@@ -35,13 +40,16 @@ services:
       - SUPER_ADMIN_DISCORD_ID=${SUPER_ADMIN_DISCORD_ID}
       - SESSION_SECRET=${SESSION_SECRET}
       - ALBION_GUILD_ID=${ALBION_GUILD_ID}
+      - ALBION_ALLIED_GUILD_IDS=${ALBION_ALLIED_GUILD_IDS:-}
+      - ALBION_ALLIED_GUILD_NAMES=${ALBION_ALLIED_GUILD_NAMES:-}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - ALBION_API_REGION=${ALBION_API_REGION}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-albion-guild-manager-backend}
       - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
-      - database
+      database:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - default
@@ -51,7 +59,7 @@ services:
     ports:
       - "5000:3000"
     environment:
-      - PORT=${PORT}
+      - PORT=3000
       - API_REWRITE_URL=http://backend:3000
     depends_on:
       - backend

@@ -134,12 +134,14 @@ pub fn router() -> Router {
 ///
 /// Guild identity is always configuration-driven; no guild name is ever
 /// hardcoded in this module.
-fn guild_context(cfg: &Config) -> BattleLinkingContext {
-    BattleLinkingContext::new(
-        &cfg.albion_guild_id,
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-    )
+async fn guild_context(
+    _cfg: &Config,
+    control: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+) -> Result<BattleLinkingContext, AppError> {
+    Ok(crate::albion_scope::load_albion_scope(control, tenant_id)
+        .await?
+        .linking_context())
 }
 
 /// Paginated list of scouted enemy compositions.
@@ -304,6 +306,8 @@ pub async fn scout_battle(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(battle_id): Path<i64>,
     Query(query): Query<ScoutBattleQuery>,
 ) -> Result<Json<ApiResponse<Vec<ScoutOutcome>>>, AppError> {
@@ -311,7 +315,7 @@ pub async fn scout_battle(
     let outcomes = IntelService::new()
         .scout_battle(
             &db,
-            &guild_context(&cfg),
+            &guild_context(&cfg, &control.0, &tenant.0).await?,
             battle_id,
             query.dry_run.unwrap_or(false),
             Some(user.user_id),
@@ -357,12 +361,14 @@ pub async fn scout_snapshots_backfill(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Query(query): Query<ScoutBackfillQuery>,
 ) -> Result<Json<ApiResponse<BackfillOutcome>>, AppError> {
     user.require(&perms, Permission::IntelCreate).await?;
     let before = query.before.unwrap_or_else(Utc::now);
     let limit = query.limit.unwrap_or(DEFAULT_BACKFILL_LIMIT);
-    let outcome = scout_snapshots_before(&db, &guild_context(&cfg), before, limit).await?;
+    let outcome = scout_snapshots_before(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, before, limit).await?;
     Ok(Json(ApiResponse::new(outcome)))
 }
 
@@ -533,6 +539,7 @@ pub async fn guild_report(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(cache): Extension<ReportCache>,
     Extension(tenant): Extension<CurrentTenantId>,
     Query(params): Query<ReportParams>,
@@ -543,7 +550,7 @@ pub async fn guild_report(
     if let Some(cached) = cache.get(&tenant.0, range, granularity) {
         return Ok(Json(ApiResponse::new(cached)));
     }
-    let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
+    let report = build_guild_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, range, granularity).await?;
     cache.put(&tenant.0, range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
@@ -573,6 +580,7 @@ pub async fn refresh_guild_report(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(cache): Extension<ReportCache>,
     Extension(tenant): Extension<CurrentTenantId>,
     Query(params): Query<ReportParams>,
@@ -581,7 +589,7 @@ pub async fn refresh_guild_report(
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     let granularity = params.granularity.as_deref().unwrap_or("week");
     cache.invalidate(&tenant.0);
-    let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
+    let report = build_guild_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, range, granularity).await?;
     cache.put(&tenant.0, range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
@@ -625,6 +633,7 @@ pub async fn leaderboards(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(cache): Extension<ReportCache>,
     Extension(tenant): Extension<CurrentTenantId>,
     Query(params): Query<ReportParams>,
@@ -643,7 +652,7 @@ pub async fn leaderboards(
     let mut leaderboards = if let Some(cached) = cache.get(&tenant.0, range, granularity) {
         cached.leaderboards
     } else {
-        let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
+        let report = build_guild_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, range, granularity).await?;
         cache.put(&tenant.0, range, granularity, &report);
         report.leaderboards
     };
@@ -687,12 +696,14 @@ pub async fn player_report(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<crate::tenant::ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(user_id): Path<i64>,
     Query(params): Query<ReportParams>,
 ) -> Result<Json<ApiResponse<PlayerReport>>, AppError> {
     user.require(&perms, Permission::IntelReportView).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
-    let report = build_player_report(&db, &guild_context(&cfg), user_id, range)
+    let report = build_player_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, user_id, range)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
     Ok(Json(ApiResponse::new(report)))
