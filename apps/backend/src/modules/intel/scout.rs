@@ -172,10 +172,10 @@ pub fn scout_from_snapshot(
     // Only scout battles we were actually part of. Without our guild in the
     // line-up there is no "us versus them" to record, and downstream matchup
     // tallies would read the absence as a loss.
-    let we_were_present = guilds.iter().any(|guild| guild.id == guild_ctx.guild_id())
+    let we_were_present = guilds.iter().any(|guild| guild_ctx.is_own_guild(&guild.id))
         || players
             .iter()
-            .any(|player| player.guild_id == guild_ctx.guild_id());
+            .any(|player| guild_ctx.is_own_guild(&player.guild_id));
     if !we_were_present {
         return Ok(Vec::new());
     }

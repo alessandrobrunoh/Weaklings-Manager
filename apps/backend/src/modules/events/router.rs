@@ -471,7 +471,7 @@ async fn get_event(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
-    let context = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+    let context = crate::albion_scope::load_event_read_scope(&control.0, &tenant_id)
         .await?
         .linking_context();
     let event = service
@@ -1718,7 +1718,7 @@ async fn list_event_battles(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
-    let context = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
+    let context = crate::albion_scope::load_event_read_scope(&control.0, &tenant_id)
         .await?
         .linking_context();
     let detail = service

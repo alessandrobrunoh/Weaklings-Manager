@@ -804,7 +804,7 @@ fn decode_fights(
     let mut fights = Vec::new();
     for row in snapshots {
         let guilds: Vec<BattleGuildSummary> = parse(&row.guilds_json, "guilds_json")?;
-        let Some(ours) = guilds.iter().find(|g| g.id == guild_ctx.guild_id()) else {
+        let Some(ours) = guilds.iter().find(|g| guild_ctx.is_own_guild(&g.id)) else {
             continue;
         };
         let players: Vec<BattlePlayer> = parse(&row.players_json, "players_json")?;

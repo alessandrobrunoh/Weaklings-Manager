@@ -611,7 +611,7 @@ async fn opponent_rollups_for_battles(
 /// ```
 #[derive(Debug, Clone)]
 pub struct BattleLinkingContext {
-    guild_id: String,
+    guild_id: Option<String>,
     allied_guild_ids: HashSet<String>,
     allied_guild_names: HashSet<String>,
     server: Option<String>,
@@ -632,12 +632,28 @@ impl BattleLinkingContext {
     #[must_use]
     pub fn new(guild_id: &str, allied_guild_ids: &[String], allied_guild_names: &[String]) -> Self {
         Self {
-            guild_id: guild_id.to_string(),
+            guild_id: Some(guild_id.to_string()),
             allied_guild_ids: allied_guild_ids.iter().cloned().collect(),
             allied_guild_names: allied_guild_names
                 .iter()
                 .map(|name| name.to_ascii_lowercase())
                 .collect(),
+            server: None,
+        }
+    }
+
+    /// Alliance-side classifier: no own guild, every member guild is friendly.
+    ///
+    /// Alliance tenants have no `albion_guild_id`; their Albion identity is the
+    /// alliance, whose friendly side is the set of its active member guild IDs.
+    /// `guild_id` stays `None` so no battle row is ever treated as "our own
+    /// guild" — an unknown or blank guild ID classifies as not ours.
+    #[must_use]
+    pub fn for_alliance(member_guild_ids: &[String]) -> Self {
+        Self {
+            guild_id: None,
+            allied_guild_ids: member_guild_ids.iter().cloned().collect(),
+            allied_guild_names: HashSet::new(),
             server: None,
         }
     }
@@ -667,7 +683,7 @@ impl BattleLinkingContext {
     /// ```
     #[must_use]
     pub fn is_friendly_guild(&self, guild_id: &str, guild_name: &str) -> bool {
-        if guild_id == self.guild_id || self.allied_guild_ids.contains(guild_id) {
+        if self.is_own_guild(guild_id) || self.allied_guild_ids.contains(guild_id) {
             return true;
         }
         if guild_name.trim().is_empty() {
@@ -677,10 +693,19 @@ impl BattleLinkingContext {
             .contains(&guild_name.to_ascii_lowercase())
     }
 
-    /// Configured Albion guild ID used to query AlbionBB and identify our own guild row.
+    /// True when this guild ID is the configured own guild. Alliance-side
+    /// contexts own no guild, so this is always `false` for them.
     #[must_use]
-    pub fn guild_id(&self) -> &str {
-        &self.guild_id
+    pub fn is_own_guild(&self, guild_id: &str) -> bool {
+        self.guild_id.as_deref() == Some(guild_id)
+    }
+
+    /// Configured Albion guild ID used to query AlbionBB and identify our own
+    /// guild row. `None` for alliance-side contexts, which have no guild of
+    /// their own.
+    #[must_use]
+    pub fn guild_id(&self) -> Option<&str> {
+        self.guild_id.as_deref()
     }
 
     /// Allied guild IDs, in the shape `battles::outcome::FriendlySide` expects.
@@ -4184,6 +4209,16 @@ impl EventService {
         context: &BattleLinkingContext,
         event_id: i64,
     ) -> Result<usize, AppError> {
+        // Alliance tenants have no Albion guild of their own, so there is no
+        // guild to query AlbionBB with. Mirrors never link battles; the
+        // originating guild's event owns linking. Fail closed rather than
+        // querying with a blank guild filter.
+        let Some(context_guild_id) = context.guild_id() else {
+            return Err(AppError::Validation(
+                "alliance tenants have no Albion guild configuration; battles are linked on the originating guild event"
+                    .to_owned(),
+            ));
+        };
         let model = event::Entity::find_by_id(event_id)
             .one(db)
             .await
@@ -4207,7 +4242,7 @@ impl EventService {
         let mut seen_battle_ids = HashSet::new();
         for page in 1..=MAX_BATTLE_PAGES {
             let filters = AlbionBbBattlesFilters {
-                guild_id: Some(context.guild_id().to_string()),
+                guild_id: Some(context_guild_id.to_string()),
                 page: Some(page),
                 ..Default::default()
             };
