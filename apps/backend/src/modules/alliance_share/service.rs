@@ -666,7 +666,23 @@ async fn ensure_build_published(
     )
     .await?
     {
-        return Ok(existing.published_id);
+        // A mapping can outlive its published build: the alliance side may
+        // remove the copy directly, without knowing about the control-plane
+        // share row. Reusing a dead id here makes the comp share below insert
+        // `comp_builds` rows that reference a missing build (foreign-key
+        // violation), so verify the copy still exists before reusing it.
+        let alliance_tenant_id =
+            active_alliance_tenant_id(control, params.source_tenant_id).await?;
+        let alliance = registry.get_or_load(&alliance_tenant_id).await?;
+        let published_still_exists = build::Entity::find_by_id(existing.published_id)
+            .one(&alliance.db)
+            .await?
+            .is_some();
+        if published_still_exists {
+            return Ok(existing.published_id);
+        }
+        // Fall through and re-publish: `share_build` inserts a fresh copy and
+        // `upsert_share_row` repoints this stale mapping at the new id.
     }
     let published = AllianceShareService::share_build(
         control,
@@ -2175,6 +2191,189 @@ mod tests {
             .expect("drop alliance");
         drop_schema(&admin, &schema).await.expect("drop");
     }
+    #[tokio::test]
+    async fn share_comp_republishes_builds_removed_directly_in_the_alliance_schema() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_shstale");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        ControlMigrator::up(&control, None).await.expect("migrate");
+        let registry = TenantRegistry::new(url, control.clone());
+        let guild_id = unique_schema("gid");
+        let alliance_id = unique_schema("aid");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Member Guild"),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("guild");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![guild_id.clone()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("alliance");
+
+        let guild_ctx = registry.get_or_load(&guild_id).await.expect("guild ctx");
+        let alliance_ctx = registry.get_or_load(&alliance_id).await.expect("alliance ctx");
+        let comps = CompService::new();
+        let src_user = user_entities::ActiveModel {
+            username: Set("officer".to_owned()),
+            email: Set("officer-1@example.com".to_owned()),
+            role: Set("Admin".to_owned()),
+            discord_id: Set(Some("officer-1".to_owned())),
+            ..Default::default()
+        }
+        .insert(&guild_ctx.db)
+        .await
+        .expect("user")
+        .id;
+        let build_cat = comps
+            .create_build_category(
+                &guild_ctx.db,
+                crate::modules::comps::models::CreateBuildCategoryRequest {
+                    name: "Crystal".to_owned(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("build cat");
+        let mace = comps
+            .create_build(
+                &guild_ctx.db,
+                src_user,
+                crate::modules::comps::models::CreateBuildRequest {
+                    name: "Heavy Mace".to_owned(),
+                    description: None,
+                    role: BuildRole::Dps,
+                    category_id: build_cat.id,
+                    items: None,
+                },
+            )
+            .await
+            .expect("mace");
+        let comp_cat = comps
+            .create_comp_category(
+                &guild_ctx.db,
+                crate::modules::comps::models::CreateCompCategoryRequest {
+                    name: "ZvZ".to_owned(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("comp cat");
+        let created = comps
+            .create_comp(
+                &guild_ctx.db,
+                src_user,
+                CreateCompRequest {
+                    name: "Main ZvZ".to_owned(),
+                    description: None,
+                    category_id: comp_cat.id,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: mace.summary.id,
+                        quantity: 12,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("comp");
+
+        let officer = actor("officer-1");
+        let params = ShareParams {
+            source_tenant_id: guild_id.as_str(),
+            source_kind: "guild",
+            actor: &officer,
+            authorized: true,
+        };
+        let first = AllianceShareService::share_comp(
+            &control,
+            &registry,
+            &guild_ctx.db,
+            ShareParams {
+                source_tenant_id: params.source_tenant_id,
+                source_kind: params.source_kind,
+                actor: params.actor,
+                authorized: params.authorized,
+            },
+            share_comp_req(created.summary.id),
+        )
+        .await
+        .expect("share comp");
+        let mace_share = find_share(&control, &guild_id, ARTIFACT_BUILD, mace.summary.id)
+            .await
+            .expect("mace mapping")
+            .expect("mapping exists");
+
+        // The alliance side removes the copies directly — an admin deleting
+        // them in the gestionale. That path cannot clean control-plane
+        // mappings, so both the comp and the build mappings go stale.
+        comp_build::Entity::delete_many()
+            .filter(CompBuildColumn::CompId.eq(first.published_id))
+            .exec(&alliance_ctx.db)
+            .await
+            .expect("remove comp_build");
+        comp::Entity::delete_by_id(first.published_id)
+            .exec(&alliance_ctx.db)
+            .await
+            .expect("remove comp");
+        build::Entity::delete_by_id(mace_share.published_id)
+            .exec(&alliance_ctx.db)
+            .await
+            .expect("remove build");
+
+        // Before the fix this failed with a foreign-key violation: the stale
+        // build mapping made comp_build rows reference a missing build.
+        let second = AllianceShareService::share_comp(
+            &control,
+            &registry,
+            &guild_ctx.db,
+            ShareParams {
+                source_tenant_id: params.source_tenant_id,
+                source_kind: params.source_kind,
+                actor: params.actor,
+                authorized: params.authorized,
+            },
+            share_comp_req(created.summary.id),
+        )
+        .await
+        .expect("reshare after removal");
+        assert_ne!(second.published_id, first.published_id);
+        let remapped = find_share(&control, &guild_id, ARTIFACT_BUILD, mace.summary.id)
+            .await
+            .expect("mace mapping")
+            .expect("mapping exists");
+        assert_ne!(
+            remapped.published_id, mace_share.published_id,
+            "the stale build mapping must be repointed at the fresh copy"
+        );
+        let published = comps
+            .get_comp(&alliance_ctx.db, second.published_id)
+            .await
+            .expect("republished comp");
+        assert_eq!(published.builds.len(), 1);
+        assert_eq!(published.builds[0].build_id, remapped.published_id);
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop alliance");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
     fn split_share_req(id: i64) -> CreateAllianceShareRequest {
         CreateAllianceShareRequest {
             artifact_type: ArtifactType::Split,

@@ -44,8 +44,10 @@ import {
 } from "./event-channels.js";
 import {
   buildEventThreadName,
+  addEventThreadMember,
   closeEventAnnouncementThread,
   createEventAnnouncementThread,
+  createPrivateEventThread,
   deleteEventAnnouncement,
   refreshEventSignupCard,
   sendEventSignupMessage,
@@ -337,6 +339,20 @@ function saveState(stateDirectory: string, fileName: string, state: PollerState)
  * that header and rejects an unscoped one with a 400, because no tenant
  * database is bound to it.
  */
+/**
+ * Best-effort Discord id of the event organizer, for private-thread invites.
+ *
+ * The event detail carries no organizer Discord field; the roster does. When the
+ * organizer has not signed up there is nothing to invite and `null` is fine —
+ * the private thread still works, it just starts without an invite.
+ */
+function eventOrganizerDiscordId(event: EventDetailView): string | null {
+  return (
+    event.participants?.find((participant) => participant.user_id === event.created_by)
+      ?.discord_id ?? null
+  );
+}
+
 export class Poller {
   /** Guild this poller announces for, taken from the scoped `api`. */
   readonly guildId: string;
@@ -925,11 +941,6 @@ export class Poller {
       // announcement cannot be sent.
       const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
       const delivery = await this.settings.eventDelivery();
-      if (delivery === "calendar") {
-        delete this.state.pendingAnnounces[eventKey];
-        this.save();
-        return;
-      }
       if (delivery === "forum") {
         const posted = await this.postEventForum(eventDetail);
         if (!posted) {
@@ -940,7 +951,16 @@ export class Poller {
         this.save();
         return;
       }
-      await this.postAllianceAnnouncement(eventDetail);
+      // Calendar delivery keeps organized events off the public channel: the
+      // persistent calendar panel links to a private discussion thread that
+      // only invited members can read, and no alliance ping is sent. Flash
+      // masses stay on the public message flow even in calendar mode — a flash
+      // call is time-critical and must reach everyone.
+      const privateThreadDelivery =
+        delivery === "calendar" && event.event_kind !== "flash";
+      if (!privateThreadDelivery) {
+        await this.postAllianceAnnouncement(eventDetail);
+      }
 
       const label = destinationChannelLabel(event);
       const channelId = destinationChannel(event, routes);
@@ -959,10 +979,10 @@ export class Poller {
         return;
       }
 
-      // Every event kind posts a public parent message, then a public thread.
+      // Message delivery posts a public parent message, then a public thread.
       // Reuse the saved parent on retry so a failed thread or signup card never
-      // repeats the role-wide ping. Private threads are not used: members who
-      // were not invited would never see the call.
+      // repeats the role-wide ping. Calendar delivery instead opens a private
+      // thread straight from the channel (no parent message to recover).
       const existingThreadId = this.state.eventThreadIds[eventKey];
       let thread: ThreadChannel | null = null;
       if (existingThreadId) {
@@ -987,30 +1007,39 @@ export class Poller {
         }
       }
       if (!thread) {
-        let parent: Message | null = null;
-        const savedParentId = this.state.eventParentMessageIds[eventKey];
-        if (savedParentId) {
-          try {
-            parent = await channel.messages.fetch(savedParentId);
-          } catch (error) {
-            if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) {
-              fail("parent_fetch", `could not fetch saved announcement ${savedParentId}`);
-              return;
+        if (privateThreadDelivery) {
+          thread = await createPrivateEventThread(
+            channel,
+            eventDetail,
+            eventOrganizerDiscordId(eventDetail),
+            "Poller",
+          );
+        } else {
+          let parent: Message | null = null;
+          const savedParentId = this.state.eventParentMessageIds[eventKey];
+          if (savedParentId) {
+            try {
+              parent = await channel.messages.fetch(savedParentId);
+            } catch (error) {
+              if (discordErrorCode(error) !== DISCORD_UNKNOWN_MESSAGE) {
+                fail("parent_fetch", `could not fetch saved announcement ${savedParentId}`);
+                return;
+              }
+              delete this.state.eventParentMessageIds[eventKey];
             }
-            delete this.state.eventParentMessageIds[eventKey];
           }
-        }
-        if (!parent) {
-          parent = await channel.send(buildEventAnnouncementMessage(eventDetail));
-          this.state.eventParentMessageIds[eventKey] = parent.id;
-          this.save();
-        }
-        thread = await createEventAnnouncementThread(parent, eventDetail, "Poller");
-        if (!thread) {
-          // Threads opened from a message use that message id. Recover it
-          // instead of calling startThread again on every poll.
-          const recovered = await this.client.channels.fetch(parent.id).catch(() => null);
-          if (recovered?.isThread()) thread = recovered;
+          if (!parent) {
+            parent = await channel.send(buildEventAnnouncementMessage(eventDetail));
+            this.state.eventParentMessageIds[eventKey] = parent.id;
+            this.save();
+          }
+          thread = await createEventAnnouncementThread(parent, eventDetail, "Poller");
+          if (!thread) {
+            // Threads opened from a message use that message id. Recover it
+            // instead of calling startThread again on every poll.
+            const recovered = await this.client.channels.fetch(parent.id).catch(() => null);
+            if (recovered?.isThread()) thread = recovered;
+          }
         }
       }
       if (!thread) {
@@ -1317,6 +1346,26 @@ export class Poller {
       this.state.eventSignupRevisions[String(eventId)] = revision;
     }
     this.save();
+  }
+
+  /**
+   * Resolves a discussion thread id back to its event, so slash commands
+   * typed inside an event thread can act on that event. Distinct events never
+   * share a thread, but the first match wins defensively anyway.
+   */
+  findEventIdForThread(threadId: string): number | null {
+    for (const [eventKey, knownThreadId] of Object.entries(this.state.eventThreadIds)) {
+      if (knownThreadId === threadId) {
+        const eventId = Number(eventKey);
+        return Number.isSafeInteger(eventId) ? eventId : null;
+      }
+    }
+    return null;
+  }
+
+  /** The signup-card message id remembered for an event thread, if any. */
+  eventSignupMessageIdFor(eventId: number): string | null {
+    return this.state.eventSignupMessageIds[String(eventId)] ?? null;
   }
 
   private async finishEventThread(
@@ -1702,6 +1751,20 @@ export class Poller {
   private forgetLiveVoiceWatch(eventId: number): void {
     delete this.state.emptyLiveChecks[String(eventId)];
     this.state.occupiedLiveEvents = this.state.occupiedLiveEvents.filter((id) => id !== eventId);
+  }
+
+  /**
+   * Adds a joining member to the event's stored private discussion thread.
+   *
+   * Only calendar-delivery organized events have one; public threads (message
+   * delivery, flash masses) and forum posts are already visible, so the helper
+   * below is a no-op there. Leaving an event deliberately keeps the membership:
+   * the thread history stays readable for everyone who took part.
+   */
+  async addMemberToEventThread(eventId: number, userId: string): Promise<void> {
+    const thread = await this.getEventThread(eventId);
+    if (!thread) return;
+    await addEventThreadMember(thread, userId, eventId, "Poller");
   }
 
   private async getEventThread(eventId: number): Promise<import("discord.js").ThreadChannel | null> {

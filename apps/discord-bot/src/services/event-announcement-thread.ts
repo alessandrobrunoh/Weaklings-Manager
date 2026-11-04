@@ -1,4 +1,10 @@
-import { Message, ThreadAutoArchiveDuration, type TextChannel, type ThreadChannel } from "discord.js";
+import {
+  ChannelType,
+  Message,
+  ThreadAutoArchiveDuration,
+  type TextChannel,
+  type ThreadChannel,
+} from "discord.js";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
   buildEventEmbed,
@@ -69,8 +75,10 @@ export async function createEventAnnouncementThread(
 /**
  * Posts a public announcement, then opens a public discussion thread on that message.
  *
- * Private threads are invisible unless every member is invited. Event calls have to be
- * readable by anyone who can see the parent channel, so this never uses `PrivateThread`.
+ * Used by `message` delivery (and flash masses, whatever the guild setting):
+ * those calls must be readable by anyone who can see the parent channel, so this
+ * never uses `PrivateThread` — calendar delivery's private thread is created
+ * directly from the channel by `createPrivateEventThread` instead.
  */
 export async function createStandaloneEventThread(
   channel: TextChannel,
@@ -91,6 +99,72 @@ export async function createStandaloneEventThread(
   } catch (error: unknown) {
     console.warn(`[${sourceLabel}] Failed to create standalone thread for event #${event.id}:`, error);
     return null;
+  }
+}
+
+/**
+ * Creates the private discussion thread used by calendar delivery for organized events.
+ *
+ * Calendar delivery keeps the events channel down to the single persistent panel:
+ * the discussion (and the signup card) live in a `GuildPrivateThread` that only
+ * invited members can read, and the calendar panel links to it. The organizer is
+ * added at creation so the thread is usable immediately.
+ */
+export async function createPrivateEventThread(
+  channel: TextChannel,
+  event: EventView,
+  organizerDiscordId: string | null,
+  sourceLabel: string,
+): Promise<EventAnnouncementThread | null> {
+  try {
+    const thread = await channel.threads.create({
+      name: buildEventThreadName(event.title),
+      autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+      type: ChannelType.GuildPrivateThread,
+      reason: `Event #${event.id} ${sourceLabel} private discussion`,
+    });
+    console.log(
+      `[${sourceLabel}] Created private thread for event #${event.id} in channel ${channel.id}`,
+    );
+    if (organizerDiscordId) {
+      await addEventThreadMember(thread, organizerDiscordId, event.id, sourceLabel);
+    }
+    return thread;
+  } catch (error: unknown) {
+    console.warn(
+      `[${sourceLabel}] Failed to create private thread for event #${event.id}:`,
+      error,
+    );
+    return null;
+  }
+}
+
+/**
+ * Adds a member to an event's private discussion thread.
+ *
+ * Public threads are visible to everyone who can see the parent channel, so the
+ * call is skipped for them. Failures are logged, never fatal: the website signup
+ * already succeeded and must not be rolled back because Discord membership lagged.
+ */
+export async function addEventThreadMember(
+  thread: ThreadChannel,
+  userId: string,
+  eventId: number,
+  sourceLabel: string,
+): Promise<boolean> {
+  if (thread.type !== ChannelType.GuildPrivateThread) return false;
+  try {
+    await thread.members.add(userId);
+    console.log(
+      `[${sourceLabel}] Added member ${userId} to private thread for event #${eventId}`,
+    );
+    return true;
+  } catch (error: unknown) {
+    console.warn(
+      `[${sourceLabel}] Could not add member ${userId} to private thread for event #${eventId}:`,
+      error,
+    );
+    return false;
   }
 }
 

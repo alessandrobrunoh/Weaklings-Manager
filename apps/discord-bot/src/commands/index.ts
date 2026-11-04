@@ -47,6 +47,7 @@ import * as warns from './warns.js';
 import * as unwarn from './unwarn.js';
 import * as applicationsPanel from './applications-panel.js';
 import * as build from './build.js';
+import { threadActionCommands } from './event-thread-actions.js';
 
 /**
  * All registered bot commands.
@@ -80,6 +81,10 @@ export const commands = new Map<string, BotCommand>([
   ['unwarn', unwarn],
   ['applications-panel', applicationsPanel],
   ['build', build],
+  ...threadActionCommands.map((command) => [
+    command.data.name,
+    command,
+  ] as const),
 ]);
 
 /** Message context-menu commands share registration but use a separate interaction dispatcher. */

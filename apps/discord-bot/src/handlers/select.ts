@@ -2,6 +2,7 @@ import { StringSelectMenuInteraction } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventSignupOptionsView } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
+import { getPoller } from "../services/poller.js";
 import {
   buildsForSignupRole,
   FILL_SIGNUP_VALUE,
@@ -35,6 +36,12 @@ export async function handleSelectMenu(
         await api.post(
           `api/events/${eventId}/participate`,
           { primary_build_id: null },
+          interaction.user.id,
+        );
+        // Calendar delivery keeps the discussion in a private thread; the new
+        // member has to be invited to it. No-op for public threads, never fatal.
+        await getPoller(api.guildId)?.addMemberToEventThread(
+          eventId,
           interaction.user.id,
         );
 
@@ -144,6 +151,12 @@ export async function handleSelectMenu(
       await api.post(
         `api/events/${eventId}/participate`,
         { primary_build_id: buildId },
+        interaction.user.id,
+      );
+      // Calendar delivery keeps the discussion in a private thread; the new
+      // member has to be invited to it. No-op for public threads, never fatal.
+      await getPoller(api.guildId)?.addMemberToEventThread(
+        eventId,
         interaction.user.id,
       );
 

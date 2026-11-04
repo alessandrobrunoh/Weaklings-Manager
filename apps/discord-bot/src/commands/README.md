@@ -17,6 +17,7 @@ This directory defines the bot's slash-command interface plus registered message
 - Command executors commonly include the invoking Discord user ID on user-scoped API requests.
 - Only `applications-panel` sets `ManageGuild` as builder-level default permission in this directory. Descriptions such as “Officer+” are not themselves permission enforcement; additional authorization may occur outside this module.
 - `event-join` displays signup controls; participation is submitted later by the interaction handler.
+- `/join`, `/leave`, `/ping`, `/start`, `/stop`, `/reopen`, and `/cancel` (see `event-thread-actions.ts`) are button twins: they only work inside an event's discussion thread or forum post, where the poller's thread mapping resolves the event. They reuse the button handlers' gates and responses — including `ensureEventManagementAllowed` for officer actions — and `/join` accepts an optional `build` argument for organized events.
 - `event-create` creates the backend event and delegates announcement work to the poller rather than posting its own announcement or thread.
 - `/flash` creates a comp-less binary event. Backend `events.create` permission controls launch access; the poller is still the sole announcement owner, gives the author 30 seconds to undo before the role ping, and retries delivery failures from its checkpoint.
 

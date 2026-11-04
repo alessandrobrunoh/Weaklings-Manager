@@ -20,6 +20,11 @@ import {
   executeMessageContextCommand,
   executeSlashCommand,
 } from "./services/command-gate.js";
+import {
+  BANG_MODAL_BUTTON_ID,
+  handleBangCommand,
+  takePendingBangModal,
+} from "./services/bang-command.js";
 import { fetchTenantStatus, isRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -139,6 +144,27 @@ async function main(): Promise<void> {
     // Button interactions
     if (interaction.isButton()) {
       if (!interaction.guildId) return;
+      // Bang commands cannot open a modal directly (no interaction token), so
+      // their `showModal` fallback parks the modal behind this button.
+      if (interaction.customId === BANG_MODAL_BUTTON_ID) {
+        const modal = takePendingBangModal(interaction.message.id);
+        if (modal) {
+          await interaction.showModal(modal);
+        } else {
+          await interaction.reply({
+            embeds: [
+              createResponseEmbed(
+                "warning",
+                "Form expired",
+                "That form request is no longer available — run the `!` command again.",
+                "BOT SYSTEM",
+              ),
+            ],
+            flags: ["Ephemeral"],
+          });
+        }
+        return;
+      }
       const actorApi = api
         .withGuild(interaction.guildId)
         .withDiscordActor(
@@ -220,6 +246,15 @@ async function main(): Promise<void> {
       .catch((err: unknown) => {
         console.error("[Bot] Member join sync failed:", err);
       });
+  });
+
+  // ── Bang commands (`!flash`, `!balance`, …) ───────────────────────────────
+  // Same handlers and gates as slash commands; see services/bang-command.ts.
+  client.on(Events.MessageCreate, (message) => {
+    if (!message.content.startsWith("!")) return;
+    void handleBangCommand(message, api, commands).catch((err: unknown) => {
+      console.error("[Bot] Bang command failed:", err);
+    });
   });
 
   // ── Message XP (fire-and-forget; never reply in-channel) ─────────────────
