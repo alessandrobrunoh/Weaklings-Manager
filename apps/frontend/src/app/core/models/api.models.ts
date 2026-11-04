@@ -631,7 +631,7 @@ export interface EventView {
   alliance_discord_message_id?: string | null;
   vod_forum_post_enabled?: boolean;
   discord_delivery?: 'calendar' | 'message' | 'forum';
-  vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created';
+  vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created' | 'deleted';
   vod_forum_thread_id?: string | null;
   alliance_discord_channel_id?: string | null;
   alliance_discord_role_ids?: string[];

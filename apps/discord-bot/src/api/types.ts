@@ -293,7 +293,7 @@ export interface EventView {
   alliance_discord_role_ids?: string[];
   origin_guild_id?: string | null;
   vod_forum_post_enabled?: boolean;
-  vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created';
+  vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created' | 'deleted';
   vod_forum_thread_id?: string | null;
 }
 
