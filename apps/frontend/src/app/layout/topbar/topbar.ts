@@ -18,6 +18,7 @@ import { TranslateService, type Language } from '../../core/services/translate.s
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { Select, type SelectOption } from '../../shared/components/select/select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { NotificationsPanel } from './notifications-panel';
 
@@ -31,7 +32,7 @@ import type { NavSection } from '../sidebar/sidebar';
 @Component({
   selector: 'app-topbar',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, Icon, NotificationsPanel, RouterLink, TooltipDirective],
+  imports: [Avatar, Icon, NotificationsPanel, RouterLink, Select, TooltipDirective],
   styles: `
     :host {
       display: block;
@@ -121,18 +122,16 @@ import type { NavSection } from '../sidebar/sidebar';
       <div class="topbar__utilities">
         <!-- Language selector -->
         <div class="relative hidden items-center sm:flex">
-          <select
-            class="select select--sm cursor-pointer w-auto"
+          <app-select
+            class="w-auto"
+            size="sm"
             [value]="translate.language()"
-            (change)="onLanguageChange($event)"
+            [options]="languageOptions()"
+            [ariaLabel]="t('language.label')"
             [appTooltip]="t('language.label')"
             tooltipPosition="bottom"
-            [attr.aria-label]="t('language.label')"
-          >
-            @for (lang of translate.supportedLanguages; track lang) {
-              <option [value]="lang">{{ translate.languageLabels[lang] }}</option>
-            }
-          </select>
+            (valueChange)="onLanguageChange($event)"
+          />
         </div>
 
         <!-- Theme toggle -->
@@ -311,9 +310,15 @@ export class Topbar {
     return 'bg-[var(--color-info-container)] text-[var(--color-info)]';
   }
 
-  protected onLanguageChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as Language;
-    this.translate.use(value);
+  protected languageOptions(): SelectOption[] {
+    return this.translate.supportedLanguages.map((lang) => ({
+      value: lang,
+      label: this.translate.languageLabels[lang],
+    }));
+  }
+
+  protected onLanguageChange(value: string): void {
+    this.translate.use(value as Language);
   }
 
   protected async onLogout(): Promise<void> {

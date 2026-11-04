@@ -72,6 +72,8 @@ pub mod event {
         pub vod_forum_post_status: String,
         /// Discord forum thread created for this event, when recorded.
         pub vod_forum_thread_id: Option<String>,
+        /// Discord publication: `calendar`, `message`, or `forum`.
+        pub discord_delivery: String,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

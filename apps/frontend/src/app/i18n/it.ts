@@ -418,6 +418,10 @@ export const it: TranslationDict = {
   'events.title': 'Eventi',
   'events.subtitle': 'Pianifica e gestisci le attività della gilda.',
   'events.call_to_arms': 'Chiamata alle armi',
+  'events.discordDelivery.label': 'Pubblicazione Discord',
+  'events.discordDelivery.calendar': 'Calendario (un solo messaggio)',
+  'events.discordDelivery.message': 'Messaggio nel canale',
+  'events.discordDelivery.forum': 'Post nel forum, con i tag',
   'events.regear': 'Regear',
   'events.pingAlliance': 'Sincronizza anche con il server dell\'alleanza',
   'events.pingAllianceHint':

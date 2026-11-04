@@ -276,8 +276,12 @@ export function discordGuildIconUrl(
   if (!iconHash) {
     return null;
   }
-  const ext = iconHash.startsWith('a_') ? 'gif' : 'png';
-  return `https://cdn.discordapp.com/icons/${guildId}/${iconHash}.${ext}`;
+  const hash = iconHash.trim();
+  if (hash.startsWith('https://') || hash.startsWith('http://')) {
+    return hash;
+  }
+  const ext = hash.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/icons/${guildId}/${hash}.${ext}?size=128`;
 }
 
 /* ----------------------------- Users -------------------------------- */
@@ -624,6 +628,7 @@ export interface EventView {
   ping_alliance?: boolean;
   alliance_discord_message_id?: string | null;
   vod_forum_post_enabled?: boolean;
+  discord_delivery?: 'calendar' | 'message' | 'forum';
   vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created';
   vod_forum_thread_id?: string | null;
   alliance_discord_channel_id?: string | null;
@@ -1048,6 +1053,7 @@ export interface CreateEventRequest {
   ping_alliance?: boolean;
   /** Create a VOD forum post for members to reply to with video links. Defaults on. */
   vod_forum_post_enabled?: boolean;
+  discord_delivery?: 'calendar' | 'message' | 'forum';
 }
 
 export interface UpdateEventRequest {
@@ -2816,6 +2822,11 @@ export interface GuildSettingsView {
   discord_battles_channel_id: string | null;
   discord_battles_cta_channel_id: string | null;
   discord_flash_mass_channel_id: string | null;
+  discord_events_forum_channel_id?: string | null;
+  discord_event_scheduled_tag_id?: string | null;
+  discord_event_live_tag_id?: string | null;
+  discord_event_cta_tag_id?: string | null;
+  discord_event_flash_tag_id?: string | null;
   discord_event_timezone: string;
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;

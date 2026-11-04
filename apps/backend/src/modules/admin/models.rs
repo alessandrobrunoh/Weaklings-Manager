@@ -136,6 +136,12 @@ pub struct GuildSettingsView {
     pub discord_event_voice_category_id: Option<String>,
     /// Channel where the bot announces flash masses (binary, no comp).
     pub discord_flash_mass_channel_id: Option<String>,
+    /// Forum where events with delivery `forum` are posted.
+    pub discord_events_forum_channel_id: Option<String>,
+    pub discord_event_scheduled_tag_id: Option<String>,
+    pub discord_event_live_tag_id: Option<String>,
+    pub discord_event_cta_tag_id: Option<String>,
+    pub discord_event_flash_tag_id: Option<String>,
     /// IANA timezone used to interpret wall-clock times from Discord (for example `Europe/Rome`).
     pub discord_event_timezone: String,
     /// Channel where the application panel is published.
@@ -231,6 +237,11 @@ impl GuildSettingsView {
             discord_split_lost_tag_id: model.discord_split_lost_tag_id,
             discord_event_voice_category_id: model.discord_event_voice_category_id,
             discord_flash_mass_channel_id: model.discord_flash_mass_channel_id,
+            discord_events_forum_channel_id: model.discord_events_forum_channel_id,
+            discord_event_scheduled_tag_id: model.discord_event_scheduled_tag_id,
+            discord_event_live_tag_id: model.discord_event_live_tag_id,
+            discord_event_cta_tag_id: model.discord_event_cta_tag_id,
+            discord_event_flash_tag_id: model.discord_event_flash_tag_id,
             discord_event_timezone: model.discord_event_timezone,
             discord_applications_channel_id: model.discord_applications_channel_id,
             discord_applications_category_id: model.discord_applications_category_id,
@@ -398,6 +409,11 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_event_voice_category_id: Option<String>,
     /// Flash mass announcement channel. Omit to leave unchanged; send `""` to clear.
     pub discord_flash_mass_channel_id: Option<String>,
+    pub discord_events_forum_channel_id: Option<String>,
+    pub discord_event_scheduled_tag_id: Option<String>,
+    pub discord_event_live_tag_id: Option<String>,
+    pub discord_event_cta_tag_id: Option<String>,
+    pub discord_event_flash_tag_id: Option<String>,
     /// IANA timezone used for wall-clock event times; cannot be cleared.
     pub discord_event_timezone: Option<String>,
     /// Giveaway announcement channel. Omit to leave unchanged; send `""` to clear.

@@ -31,6 +31,7 @@ import {
   SearchDialog,
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
+import { Select, type SelectOption } from '../../shared/components/select/select';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 const STATUSES: readonly TransactionStatus[] = [
@@ -65,6 +66,7 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
     Dialog,
     Icon,
     PageHeader,
+    Select,
     PageStack,
     RouterLink,
     SearchDialog,
@@ -225,11 +227,11 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
               <span class="label">{{ t('common.status') }}</span>
-              <select class="select" [value]="newStatus()" (change)="onNewStatus($event)">
-                @for (status of statuses; track status) {
-                  <option [value]="status">{{ statusLabel(status) }}</option>
-                }
-              </select>
+              <app-select
+                [value]="newStatus()"
+                [options]="statusOptions()"
+                (valueChange)="onNewStatus($event)"
+              />
             </label>
             <label class="block">
               <span class="label">{{ t('admin.transactions.fields.type') }}</span>
@@ -343,11 +345,11 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
               <span class="label">{{ t('common.status') }}</span>
-              <select class="select" [value]="editStatus()" (change)="onEditStatus($event)">
-                @for (status of statuses; track status) {
-                  <option [value]="status">{{ statusLabel(status) }}</option>
-                }
-              </select>
+              <app-select
+                [value]="editStatus()"
+                [options]="statusOptions()"
+                (valueChange)="onEditStatus($event)"
+              />
             </label>
             <label class="block">
               <span class="label">{{ t('admin.transactions.fields.type') }}</span>
@@ -601,8 +603,15 @@ export class AdminTransactions {
     const value = Number((event.target as HTMLInputElement).value);
     this.newAmount.set(Number.isFinite(value) ? value : null);
   }
-  protected onNewStatus(event: Event): void {
-    this.newStatus.set((event.target as HTMLSelectElement).value as TransactionStatus);
+  protected statusOptions(): SelectOption[] {
+    return this.statuses.map((status) => ({
+      value: status,
+      label: this.statusLabel(status),
+    }));
+  }
+
+  protected onNewStatus(value: string): void {
+    this.newStatus.set(value as TransactionStatus);
   }
   protected onNewType(event: Event): void {
     this.newType.set((event.target as HTMLInputElement).value);
@@ -677,8 +686,8 @@ export class AdminTransactions {
     const value = Number((event.target as HTMLInputElement).value);
     this.editAmount.set(Number.isFinite(value) ? value : null);
   }
-  protected onEditStatus(event: Event): void {
-    this.editStatus.set((event.target as HTMLSelectElement).value as TransactionStatus);
+  protected onEditStatus(value: string): void {
+    this.editStatus.set(value as TransactionStatus);
   }
   protected onEditType(event: Event): void {
     this.editType.set((event.target as HTMLInputElement).value);

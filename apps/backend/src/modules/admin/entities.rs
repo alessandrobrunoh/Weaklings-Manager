@@ -22,6 +22,16 @@ pub struct Model {
     pub discord_battles_cta_channel_id: Option<String>,
     /// Channel where the bot announces flash masses (binary, no comp).
     pub discord_flash_mass_channel_id: Option<String>,
+    /// Forum where events with delivery `forum` are posted.
+    pub discord_events_forum_channel_id: Option<String>,
+    /// Forum tag for a scheduled event post.
+    pub discord_event_scheduled_tag_id: Option<String>,
+    /// Forum tag for a live event post.
+    pub discord_event_live_tag_id: Option<String>,
+    /// Forum tag added when the event is a Call to Arms.
+    pub discord_event_cta_tag_id: Option<String>,
+    /// Forum tag added when the event is a flash mass.
+    pub discord_event_flash_tag_id: Option<String>,
     /// IANA timezone used to interpret guild wall-clock event times.
     pub discord_event_timezone: String,
     /// Channel that receives a copy of every audit log entry.

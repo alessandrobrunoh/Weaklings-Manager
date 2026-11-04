@@ -31,6 +31,11 @@ interface DiscordSettingsDraft {
   discord_battles_channel_id: string;
   discord_battles_cta_channel_id: string;
   discord_flash_mass_channel_id: string;
+  discord_events_forum_channel_id: string;
+  discord_event_scheduled_tag_id: string;
+  discord_event_live_tag_id: string;
+  discord_event_cta_tag_id: string;
+  discord_event_flash_tag_id: string;
   discord_audit_log_channel_id: string;
   discord_transaction_spam_channel_id: string;
   discord_splits_forum_channel_id: string;
@@ -48,6 +53,11 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_battles_channel_id: '',
   discord_battles_cta_channel_id: '',
   discord_flash_mass_channel_id: '',
+  discord_events_forum_channel_id: '',
+  discord_event_scheduled_tag_id: '',
+  discord_event_live_tag_id: '',
+  discord_event_cta_tag_id: '',
+  discord_event_flash_tag_id: '',
   discord_audit_log_channel_id: '',
   discord_transaction_spam_channel_id: '',
   discord_splits_forum_channel_id: '',
@@ -59,6 +69,13 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_event_timezone: 'Europe/Rome',
   default_split_fee: '20',
 };
+
+const EVENT_TAG_FIELDS = [
+  { key: 'discord_event_scheduled_tag_id', label: 'events.status.scheduled' },
+  { key: 'discord_event_live_tag_id', label: 'events.status.live' },
+  { key: 'discord_event_cta_tag_id', label: 'events.call_to_arms' },
+  { key: 'discord_event_flash_tag_id', label: 'events.flashMass' },
+] as const;
 
 const SPLIT_TAG_FIELDS = [
   'discord_split_pending_tag_id',
@@ -141,6 +158,38 @@ const SPLIT_TAG_FIELDS = [
                   {{ t('admin.discord.flashMassChannelHint') }}
                 </span>
               </label>
+              <label class="sm:col-span-2">
+                <span class="label">{{ t('events.discordDelivery.forum') }}</span>
+                <app-searchable-select
+                  class="mt-1 block"
+                  [options]="channelOptions(['forum'], guildSettingsDraft().discord_events_forum_channel_id)"
+                  [value]="guildSettingsDraft().discord_events_forum_channel_id"
+                  [emptyLabel]="t('admin.discord.placeholder')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [loading]="catalogLoading()"
+                  [ariaLabel]="t('events.discordDelivery.forum')"
+                  (valueChange)="setDraftValue('discord_events_forum_channel_id', $event)"
+                />
+              </label>
+              @for (tagField of eventTagFields; track tagField) {
+                <label>
+                  <span class="label">{{ t(tagField.label) }}</span>
+                  <app-searchable-select
+                    class="mt-1 block"
+                    [options]="tagOptions(guildSettingsDraft()[tagField.key])"
+                    [value]="guildSettingsDraft()[tagField.key]"
+                    [emptyLabel]="t('admin.discord.placeholder')"
+                    [searchPlaceholder]="t('common.search')"
+                    [noMatchesLabel]="t('picker.noMatches')"
+                    [emptyOptionsLabel]="t('picker.empty')"
+                    [loading]="catalogLoading()"
+                    [ariaLabel]="t(tagField.label)"
+                    (valueChange)="setDraftValue(tagField.key, $event)"
+                  />
+                </label>
+              }
               <label class="sm:col-span-2">
                 <span class="label">{{ t('admin.discord.eventTimezone') }}</span>
                 <input
@@ -478,6 +527,8 @@ export class AdminDiscord {
     );
   }
 
+  protected readonly eventTagFields = EVENT_TAG_FIELDS;
+
   protected setDraftValue(field: keyof DiscordSettingsDraft, value: string): void {
     this.guildSettingsDraft.update((draft) => ({ ...draft, [field]: value }));
     if (field === 'discord_splits_forum_channel_id') {
@@ -575,6 +626,11 @@ export class AdminDiscord {
       discord_battles_channel_id: draft.discord_battles_channel_id.trim(),
       discord_battles_cta_channel_id: draft.discord_battles_cta_channel_id.trim(),
       discord_flash_mass_channel_id: draft.discord_flash_mass_channel_id.trim(),
+      discord_events_forum_channel_id: draft.discord_events_forum_channel_id.trim(),
+      discord_event_scheduled_tag_id: draft.discord_event_scheduled_tag_id.trim(),
+      discord_event_live_tag_id: draft.discord_event_live_tag_id.trim(),
+      discord_event_cta_tag_id: draft.discord_event_cta_tag_id.trim(),
+      discord_event_flash_tag_id: draft.discord_event_flash_tag_id.trim(),
       discord_event_timezone: draft.discord_event_timezone.trim(),
       discord_audit_log_channel_id: draft.discord_audit_log_channel_id.trim(),
       discord_transaction_spam_channel_id: draft.discord_transaction_spam_channel_id.trim(),
@@ -637,6 +693,11 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_battles_channel_id: settings.discord_battles_channel_id ?? '',
     discord_battles_cta_channel_id: settings.discord_battles_cta_channel_id ?? '',
     discord_flash_mass_channel_id: settings.discord_flash_mass_channel_id ?? '',
+    discord_events_forum_channel_id: settings.discord_events_forum_channel_id ?? '',
+    discord_event_scheduled_tag_id: settings.discord_event_scheduled_tag_id ?? '',
+    discord_event_live_tag_id: settings.discord_event_live_tag_id ?? '',
+    discord_event_cta_tag_id: settings.discord_event_cta_tag_id ?? '',
+    discord_event_flash_tag_id: settings.discord_event_flash_tag_id ?? '',
     discord_audit_log_channel_id: settings.discord_audit_log_channel_id ?? '',
     discord_transaction_spam_channel_id: settings.discord_transaction_spam_channel_id ?? '',
     discord_splits_forum_channel_id: settings.discord_splits_forum_channel_id ?? '',

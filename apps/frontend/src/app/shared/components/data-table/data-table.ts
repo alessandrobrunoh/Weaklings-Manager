@@ -22,6 +22,7 @@ import type { TranslationKey } from '../../../i18n/en';
 import { EmptyState } from '../empty-state/empty-state';
 import { ErrorState } from '../error-state/error-state';
 import { Icon, type IconName } from '../icon/icon';
+import { Select, type SelectOption } from '../select/select';
 import { Loading } from '../loading/loading';
 import { TooltipDirective } from '../../directives/tooltip.directive';
 import { DataTableCell } from './data-table-cell';
@@ -76,7 +77,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 @Component({
   selector: 'app-data-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Icon, Loading, NgTemplateOutlet, TooltipDirective],
+  imports: [EmptyState, ErrorState, Icon, Loading, NgTemplateOutlet, Select, TooltipDirective],
   templateUrl: './data-table.html',
   styleUrl: './data-table.css',
 })
@@ -395,8 +396,24 @@ export class DataTable<T> {
     this.emitChange();
   }
 
-  protected onColumnFilter(columnKey: string, event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
+  protected columnFilterOptions(column: DataTableColumn<T>): SelectOption[] {
+    return [
+      { value: '', label: `${this.t(column.label)}: ${this.t('common.all')}` },
+      ...(column.filterOptions ?? []).map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+    ];
+  }
+
+  protected pageSizeSelectOptions(): SelectOption[] {
+    return this.pageSizeOptions().map((size) => ({
+      value: String(size),
+      label: `${size} per page`,
+    }));
+  }
+
+  protected onColumnFilter(columnKey: string, value: string): void {
     this.columnFilters.update((filters) => {
       if (!value) {
         const next = { ...filters };
@@ -409,9 +426,9 @@ export class DataTable<T> {
     this.emitChange();
   }
 
-  protected onPageSize(event: Event): void {
-    const value = Number((event.target as HTMLSelectElement).value);
-    this.currentPageSize.set(value);
+  protected onPageSize(value: string): void {
+    const size = Number(value);
+    this.currentPageSize.set(size);
     this.page.set(1);
     this.emitChange();
   }

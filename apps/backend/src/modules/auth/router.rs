@@ -370,18 +370,41 @@ pub async fn list_session_tenants(
     headers: HeaderMap,
     Extension(control): Extension<ControlDb>,
     Extension(admins): Extension<PlatformAdmins>,
+    Extension(cfg): Extension<Config>,
     Extension(key): Extension<Key>,
 ) -> Result<Json<ApiResponse<Vec<TenantChoice>>>, AppError> {
     let profile = read_session_profile(&headers, key)?;
     let all = admins.contains(&profile.id);
-    Ok(Json(ApiResponse::new(
-        crate::modules::platform::service::PlatformService::list_memberships(
-            &control.0,
-            &profile.id,
-            all,
-        )
-        .await?,
-    )))
+    let mut tenants = crate::modules::platform::service::PlatformService::list_memberships(
+        &control.0,
+        &profile.id,
+        all,
+    )
+    .await?;
+    // A platform admin lists every tenant; don't fan out a Discord call per guild.
+    if !all {
+        for tenant in &mut tenants {
+            let Some(icon) = crate::modules::platform::public::fetch_discord_guild_icon(
+                cfg.discord_bot_token.as_deref(),
+                &tenant.id,
+            )
+            .await
+            else {
+                continue;
+            };
+            if tenant.icon_hash.as_deref() == Some(icon.as_str()) {
+                continue;
+            }
+            crate::modules::platform::service::PlatformService::set_discord_icon_hash(
+                &control.0,
+                &tenant.id,
+                &icon,
+            )
+            .await?;
+            tenant.icon_hash = Some(icon);
+        }
+    }
+    Ok(Json(ApiResponse::new(tenants)))
 }
 
 /// Switch the session to another tenant the user already belongs to.

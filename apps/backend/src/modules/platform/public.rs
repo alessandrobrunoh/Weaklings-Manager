@@ -681,7 +681,10 @@ fn compute_can_manage(
     bits & (PERMISSION_MANAGE_GUILD | PERMISSION_ADMINISTRATOR) != 0
 }
 
-async fn fetch_discord_guild_icon(bot_token: Option<&str>, guild_id: &str) -> Option<String> {
+pub(crate) async fn fetch_discord_guild_icon(
+    bot_token: Option<&str>,
+    guild_id: &str,
+) -> Option<String> {
     let token = bot_token?;
     let url = format!("https://discord.com/api/v10/guilds/{guild_id}");
     let response = crate::http_client::shared()

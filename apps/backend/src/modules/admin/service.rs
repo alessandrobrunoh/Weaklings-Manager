@@ -122,6 +122,21 @@ impl AdminService {
         if let Some(value) = &req.discord_flash_mass_channel_id {
             active.discord_flash_mass_channel_id = Set(normalize(value));
         }
+        if let Some(value) = &req.discord_events_forum_channel_id {
+            active.discord_events_forum_channel_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_event_scheduled_tag_id {
+            active.discord_event_scheduled_tag_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_event_live_tag_id {
+            active.discord_event_live_tag_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_event_cta_tag_id {
+            active.discord_event_cta_tag_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_event_flash_tag_id {
+            active.discord_event_flash_tag_id = Set(normalize(value));
+        }
         if let Some(value) = &req.discord_event_timezone {
             let timezone = value.trim();
             if timezone.is_empty() || timezone.len() > 64 {

@@ -2248,8 +2248,10 @@ mod tests {
             ping_alliance: false,
             alliance_discord_message_id: None,
             vod_forum_post_enabled: false,
+            discord_delivery: "message".to_string(),
             vod_forum_post_status: "not_requested".to_string(),
             vod_forum_thread_id: None,
+            discord_delivery: "message".to_string(),
         });
         raw.participations.push(event_participation::Model {
             id: 1,

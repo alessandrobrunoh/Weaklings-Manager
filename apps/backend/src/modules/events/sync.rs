@@ -157,6 +157,7 @@ pub async fn create_mirror(
                 island_tab_id: None,
                 ping_alliance: false,
                 vod_forum_post_enabled: source_event.vod_forum_post_enabled,
+                discord_delivery: source_event.discord_delivery.clone(),
             },
         )
         .await?;

@@ -69,6 +69,10 @@ export class SettingsService {
     return (await this.get()).discord_flash_mass_channel_id ?? null;
   }
 
+  async eventsForumChannelId(): Promise<string | null> {
+    return (await this.get()).discord_events_forum_channel_id ?? null;
+  }
+
   /** Default guild event role used for flash-mass mentions. */
   async eventRoleId(): Promise<string | null> {
     return (await this.get()).discord_event_role_id ?? null;

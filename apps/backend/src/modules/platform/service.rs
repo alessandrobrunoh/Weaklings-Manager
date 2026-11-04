@@ -361,7 +361,7 @@ impl PlatformService {
         let row = control
             .query_one(Statement::from_sql_and_values(
                 control.get_database_backend(),
-                "SELECT 1 FROM alliance_memberships WHERE guild_tenant_id = $1",
+                "SELECT 1 FROM alliance_memberships WHERE guild_tenant_id = $1 AND status IN ('active', 'pending')",
                 [guild_tenant_id.into()],
             ))
             .await?;
@@ -385,9 +385,9 @@ impl PlatformService {
                 .execute(Statement::from_sql_and_values(
                     txn.get_database_backend(),
                     "UPDATE alliance_memberships \
-                     SET status = $3, invited_by = $4, \
-                         accepted_at = CASE WHEN $3 = 'active' THEN COALESCE(accepted_at, now()) ELSE accepted_at END \
-                     WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'left'",
+                     SET alliance_tenant_id = $1, status = $3, invited_by = $4, \
+                         accepted_at = CASE WHEN $3 = 'active' THEN now() ELSE NULL END \
+                     WHERE guild_tenant_id = $2 AND status = 'left'",
                     [
                         alliance_tenant_id.into(),
                         member.id.clone().into(),
@@ -418,38 +418,40 @@ impl PlatformService {
         Ok(())
     }
 
-    /// Guild tenants the caller can attach to a new alliance.
+    /// Active guild tenants that are not in an alliance right now.
+    ///
+    /// A `left` membership does not count: that guild is free to join again.
+    /// `pending` still counts, so an open invite is not offered twice.
+    /// The caller does not have to own the guild; attaching one they do not own
+    /// stays a pending invite.
     ///
     /// # Errors
     ///
     /// Returns a database error if the query fails.
     pub async fn list_attachable_guilds(
         control: &DatabaseConnection,
-        actor: &str,
-        managed_ids: &[String],
+        _actor: &str,
+        _managed_ids: &[String],
     ) -> Result<Vec<AttachableGuildView>, AppError> {
         let rows = control
             .query_all(Statement::from_string(
                 control.get_database_backend(),
-                "SELECT t.id, t.name, t.owner_discord_id FROM tenants t \
+                "SELECT t.id, t.name FROM tenants t \
                  WHERE t.kind = 'guild' AND t.status = 'active' \
                  AND NOT EXISTS (\
                      SELECT 1 FROM alliance_memberships m \
-                     WHERE m.guild_tenant_id = t.id\
+                     WHERE m.guild_tenant_id = t.id \
+                       AND m.status IN ('active', 'pending')\
                  ) \
                  ORDER BY t.name",
             ))
             .await?;
-        let managed: std::collections::HashSet<&str> =
-            managed_ids.iter().map(String::as_str).collect();
         let mut out = Vec::new();
         for row in rows {
-            let id: String = row.try_get_by_index(0)?;
-            let name: String = row.try_get_by_index(1)?;
-            let owner: Option<String> = row.try_get_by_index(2).ok();
-            if owner.as_deref() == Some(actor) || managed.contains(id.as_str()) {
-                out.push(AttachableGuildView { id, name });
-            }
+            out.push(AttachableGuildView {
+                id: row.try_get_by_index(0)?,
+                name: row.try_get_by_index(1)?,
+            });
         }
         Ok(out)
     }
@@ -1063,6 +1065,30 @@ impl PlatformService {
             });
         }
         Ok(out)
+    }
+
+    /// Stores the current Discord guild icon hash. Empty input is ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the update fails.
+    pub async fn set_discord_icon_hash(
+        control: &DatabaseConnection,
+        tenant_id: &str,
+        icon_hash: &str,
+    ) -> Result<(), AppError> {
+        let icon_hash = icon_hash.trim();
+        if icon_hash.is_empty() {
+            return Ok(());
+        }
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE tenants SET discord_icon_hash = $2 WHERE id = $1",
+                [tenant_id.into(), icon_hash.into()],
+            ))
+            .await?;
+        Ok(())
     }
 
     /// True when `discord_id` is recorded as a member of `tenant_id`.

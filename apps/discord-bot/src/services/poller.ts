@@ -890,6 +890,22 @@ export class Poller {
       // delivery target and should still receive the event when the guild
       // announcement cannot be sent.
       const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
+      const delivery = eventDetail.discord_delivery ?? (eventDetail.event_kind === "flash" ? "message" : "calendar");
+      if (delivery === "calendar") {
+        delete this.state.pendingAnnounces[eventKey];
+        this.save();
+        return;
+      }
+      if (delivery === "forum") {
+        const posted = await this.postEventForum(eventDetail);
+        if (!posted) {
+          fail("forum", "event forum post was not created");
+          return;
+        }
+        delete this.state.pendingAnnounces[eventKey];
+        this.save();
+        return;
+      }
       await this.postAllianceAnnouncement(eventDetail);
 
       const label = destinationChannelLabel(event);
@@ -988,6 +1004,39 @@ export class Poller {
     }
   }
 
+  /** Opens one forum post for an event that chose forum delivery. */
+  private async postEventForum(event: EventDetailView): Promise<boolean> {
+    const forumId = await this.settings.eventsForumChannelId();
+    if (!forumId) {
+      console.warn(`[Poller] Event #${event.id} asked for a forum post, but no events forum is configured`);
+      return false;
+    }
+    const channel = await this.client.channels.fetch(forumId);
+    if (!channel || channel.type !== ChannelType.GuildForum) {
+      console.warn(`[Poller] Events forum ${forumId} is missing or is not a forum channel`);
+      return false;
+    }
+    const forum = channel as ForumChannel;
+    const settings = await this.settings.get();
+    const tags = [
+      event.event_kind === "flash" ? settings.discord_event_flash_tag_id : null,
+      event.call_to_arms ? settings.discord_event_cta_tag_id : null,
+      event.status === "live" ? settings.discord_event_live_tag_id : settings.discord_event_scheduled_tag_id,
+    ].filter((tag): tag is string => Boolean(tag));
+    if (forum.flags.has("RequireTag") && tags.length === 0) {
+      console.warn(`[Poller] Events forum ${forum.id} requires a tag, and none is configured`);
+      return false;
+    }
+    const announcement = buildEventAnnouncementMessage(event);
+    const thread = await forum.threads.create({
+      name: event.title.slice(0, 100),
+      message: { content: announcement.content, allowedMentions: announcement.allowedMentions },
+      appliedTags: tags.length > 0 ? tags.slice(0, 5) : undefined,
+    });
+    this.state.eventThreadIds[String(event.id)] = thread.id;
+    return true;
+  }
+
   /** Keeps editable event calendar pages in each configured announcement channel. */
   private async updateEventCalendars(): Promise<void> {
     try {
@@ -1052,6 +1101,9 @@ export class Poller {
     let unroutedCallToArms = 0;
     for (const event of events) {
       if (flashUndoTimeRemaining(event) > 0) continue;
+      if ((event.discord_delivery ?? (event.event_kind === "flash" ? "message" : "calendar")) !== "calendar") {
+        continue;
+      }
       const channelId = destinationChannel(event, routes);
       if (!channelId) {
         if (event.event_kind === 'flash') {

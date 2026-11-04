@@ -258,6 +258,8 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  /** `calendar` stays on the single message. `message` posts in the channel. `forum` opens a forum post. */
+  discord_delivery?: 'calendar' | 'message' | 'forum';
   /** `'flash'` (binary participation, no comp) or `'organized'`. */
   /** Missing only when talking to a pre-migration backend; treat it as organized. */
   event_kind?: 'flash' | 'organized';
@@ -487,6 +489,11 @@ export interface GuildSettingsView {
   /** Flash masses announce here; until set, flash announcements retry loudly. */
   /** Missing only when talking to a backend before the flash-channel migration. */
   discord_flash_mass_channel_id?: string | null;
+  discord_events_forum_channel_id?: string | null;
+  discord_event_scheduled_tag_id?: string | null;
+  discord_event_live_tag_id?: string | null;
+  discord_event_cta_tag_id?: string | null;
+  discord_event_flash_tag_id?: string | null;
   /** IANA timezone for wall-clock event inputs; older backends omit it. */
   discord_event_timezone?: string;
   discord_audit_log_channel_id: string | null;

@@ -308,6 +308,7 @@ fn event_view_from_parts(
         vod_forum_post_enabled: model.vod_forum_post_enabled,
         vod_forum_post_status: model.vod_forum_post_status,
         vod_forum_thread_id: model.vod_forum_thread_id,
+        discord_delivery: model.discord_delivery,
         alliance_discord_channel_id: None,
         alliance_discord_role_ids: Vec::new(),
         origin_guild_id: None,
@@ -3402,6 +3403,11 @@ impl EventService {
             mass_time_utc: Set(Some(mass.into())),
             start_time_utc: Set(Some(start.into())),
             ping_alliance: Set(req.ping_alliance),
+            discord_delivery: Set(
+                crate::modules::events::models::normalize_discord_delivery(&req.discord_delivery)
+                    .map_err(AppError::Validation)?
+                    .to_string(),
+            ),
             vod_forum_post_enabled: Set(req.vod_forum_post_enabled),
             vod_forum_post_status: Set(if req.vod_forum_post_enabled {
                 "pending".to_string()
@@ -5509,6 +5515,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -5593,6 +5600,7 @@ mod tests {
             island_tab_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: true,
+            discord_delivery: "message".to_string(),
         };
 
         let mut flash_with_comp = base("flash with comp");
@@ -7307,6 +7315,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7427,6 +7436,7 @@ mod tests {
         event::ActiveModel {
             id: Set(event.id),
             vod_forum_post_enabled: Set(false),
+            discord_delivery: "message".to_string(),
             vod_forum_post_status: Set("pending".to_string()),
             ..Default::default()
         }
@@ -7471,6 +7481,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: true,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7542,6 +7553,7 @@ mod tests {
                 ping_alliance: false,
                 alliance_discord_message_id: None,
                 vod_forum_post_enabled: false,
+                discord_delivery: "message".to_string(),
                 vod_forum_post_status: "not_requested".to_string(),
                 vod_forum_thread_id: None,
             },
@@ -7700,6 +7712,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7744,6 +7757,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7832,6 +7846,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7878,6 +7893,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7923,6 +7939,7 @@ mod tests {
                     island_tab_id: Some(tab_id),
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -7996,6 +8013,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8090,6 +8108,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8204,6 +8223,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8257,6 +8277,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8322,6 +8343,7 @@ mod tests {
             island_tab_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: true,
+            discord_delivery: "message".to_string(),
         };
         let cancelled = service
             .create_event(&db, creator, req.clone())
@@ -8396,6 +8418,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8458,6 +8481,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8527,6 +8551,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8551,6 +8576,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await
@@ -8758,6 +8784,7 @@ mod tests {
                     island_tab_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
                 },
             )
             .await

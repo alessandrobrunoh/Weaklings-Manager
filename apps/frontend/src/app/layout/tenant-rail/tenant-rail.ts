@@ -139,7 +139,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
               (click)="select(tenant)"
             >
               @if (iconUrl(tenant); as src) {
-                <img [src]="src" [alt]="" />
+                <img [src]="src" [alt]="" (error)="markIconBroken(tenant.id)" />
               } @else {
                 <span>{{ initial(tenant.name) }}</span>
               }
@@ -191,6 +191,7 @@ export class TenantRail {
 
   protected readonly tenants = signal<TenantChoice[]>([]);
   protected readonly busy = signal(false);
+  private readonly brokenIcons = signal<ReadonlySet<string>>(new Set());
   protected readonly activeId = computed(() => this.auth.profile()?.tenant_id ?? '');
   private readonly currentUrl = signal(this.router.url);
   protected readonly isOnAddServer = computed(() =>
@@ -210,7 +211,18 @@ export class TenantRail {
   }
 
   protected iconUrl(tenant: TenantChoice): string | null {
+    if (this.brokenIcons().has(tenant.id)) {
+      return null;
+    }
     return discordGuildIconUrl(tenant.id, tenant.icon_hash);
+  }
+
+  protected markIconBroken(tenantId: string): void {
+    this.brokenIcons.update((current) => {
+      const next = new Set(current);
+      next.add(tenantId);
+      return next;
+    });
   }
 
   protected initial(name: string): string {

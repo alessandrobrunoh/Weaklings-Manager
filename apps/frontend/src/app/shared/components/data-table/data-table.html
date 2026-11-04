@@ -50,24 +50,14 @@
           @if (hasColumnFilters()) {
             @for (column of columns(); track column.key) {
               @if (column.filterOptions && column.filterOptions.length > 0) {
-                <select
-                  class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--color-text)] cursor-pointer outline-none transition-all"
-                  [attr.aria-label]="t(column.label) + ': ' + t('common.all')"
-                  (change)="onColumnFilter(column.key, $event)"
-                >
-                  <option value="" [selected]="!columnFilterValue(column.key)">
-                    {{ t(column.label) }}: {{ t('common.all') }}
-                  </option>
-                  @for (option of column.filterOptions; track option.value) {
-                    <option
-                      [value]="option.value"
-                      [selected]="option.value === columnFilterValue(column.key)"
-                      class="bg-[var(--color-surface)] text-[var(--color-text)]"
-                    >
-                      {{ option.label }}
-                    </option>
-                  }
-                </select>
+                <app-select
+                  class="min-w-36 text-xs"
+                  size="sm"
+                  [ariaLabel]="t(column.label) + ': ' + t('common.all')"
+                  [value]="columnFilterValue(column.key)"
+                  [options]="columnFilterOptions(column)"
+                  (valueChange)="onColumnFilter(column.key, $event)"
+                />
               }
             }
           }
@@ -214,18 +204,14 @@
 
         @if (!hidePageSize()) {
           <div class="flex items-center gap-2 self-end sm:self-auto">
-            <select
-              class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-md px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-pointer outline-none transition-all"
-              [attr.aria-label]="t('table.itemsPerPage')"
-              [value]="currentPageSize()"
-              (change)="onPageSize($event)"
-            >
-              @for (size of pageSizeOptions(); track size) {
-                <option [value]="size" class="bg-[var(--color-surface)] text-[var(--color-text)]">
-                  {{ size }} per page
-                </option>
-              }
-            </select>
+            <app-select
+              class="w-auto text-xs"
+              size="sm"
+              [ariaLabel]="t('table.itemsPerPage')"
+              [value]="'' + currentPageSize()"
+              [options]="pageSizeSelectOptions()"
+              (valueChange)="onPageSize($event)"
+            />
           </div>
         }
       </div>

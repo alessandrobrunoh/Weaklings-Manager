@@ -10,6 +10,7 @@ import { TranslateService, type Language } from '../../core/services/translate.s
 import { ToastService } from '../../core/services/toast.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon } from '../../shared/components/icon/icon';
+import { Select, type SelectOption } from '../../shared/components/select/select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
 
@@ -26,23 +27,19 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
   selector: 'app-login',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [Icon, TooltipDirective, WeaklingsLogo],
+  imports: [Icon, Select, TooltipDirective, WeaklingsLogo],
   template: `
     <div class="auth-shell">
       <div class="absolute top-4 right-4 flex items-center gap-2">
-        <select
-          class="select text-xs"
-          style="width: auto; padding: 0.4rem 0.6rem"
+        <app-select
+          class="w-auto text-xs"
           [value]="translate.language()"
-          (change)="onLanguageChange($event)"
+          [options]="languageOptions()"
+          [ariaLabel]="t('language.label')"
           [appTooltip]="t('language.label')"
           tooltipPosition="bottom"
-          [attr.aria-label]="t('language.label')"
-        >
-          @for (lang of translate.supportedLanguages; track lang) {
-            <option [value]="lang">{{ translate.languageLabels[lang] }}</option>
-          }
-        </select>
+          (valueChange)="onLanguageChange($event)"
+        />
         <button
           type="button"
           class="btn btn--ghost btn--icon"
@@ -130,9 +127,16 @@ export class Login {
     await this.router.navigateByUrl(next && next.startsWith('/') ? next : fallback);
   }
 
-  protected onLanguageChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as Language;
-    this.translate.use(value);
-    this.toasts.info(this.translate.languageLabels[value]);
+  protected languageOptions(): SelectOption[] {
+    return this.translate.supportedLanguages.map((lang) => ({
+      value: lang,
+      label: this.translate.languageLabels[lang],
+    }));
+  }
+
+  protected onLanguageChange(value: string): void {
+    const language = value as Language;
+    this.translate.use(language);
+    this.toasts.info(this.translate.languageLabels[language]);
   }
 }

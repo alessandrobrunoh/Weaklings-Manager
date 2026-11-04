@@ -215,6 +215,8 @@ pub struct EventView {
     pub description: Option<String>,
     /// Whether this event is a priority call-to-arms announcement.
     pub call_to_arms: bool,
+    /// Discord publication: `calendar`, `message`, or `forum`.
+    pub discord_delivery: String,
     /// Event kind: `organized` or `flash` (binary participation, no comp).
     pub event_kind: String,
     /// Discord role IDs mentioned by this event's announcement, in stable order.
@@ -619,10 +621,30 @@ pub struct CreateEventRequest {
     /// Create a VOD forum post for members to reply to with video links (default: true).
     #[serde(default = "default_vod_forum_post_enabled")]
     pub vod_forum_post_enabled: bool,
+    /// `calendar`, `message`, or `forum`. Missing values keep the channel-message path.
+    #[serde(default = "default_discord_delivery")]
+    pub discord_delivery: String,
 }
 
 fn default_vod_forum_post_enabled() -> bool {
     true
+}
+
+fn default_discord_delivery() -> String {
+    "message".to_string()
+}
+
+/// `calendar` updates the single channel calendar. `message` posts one channel
+/// message and thread. `forum` opens a forum post and applies the configured tags.
+pub fn normalize_discord_delivery(value: &str) -> Result<&'static str, String> {
+    match value {
+        "calendar" => Ok("calendar"),
+        "message" => Ok("message"),
+        "forum" => Ok("forum"),
+        other => Err(format!(
+            "discord_delivery must be calendar, message, or forum, got '{other}'"
+        )),
+    }
 }
 
 /// Discord voice channel created by the bot for a live event.

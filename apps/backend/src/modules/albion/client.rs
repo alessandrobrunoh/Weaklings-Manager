@@ -145,6 +145,9 @@ pub struct AlbionGuild {
     #[serde(alias = "MemberCount", default)]
     #[schema(example = 3)]
     pub member_count: Option<i64>,
+    /// Albion alliance id. Absent when the guild is not in an alliance.
+    #[serde(alias = "AllianceId", default)]
+    pub alliance_id: Option<String>,
 }
 
 /// Player profile as returned by `GET /albion/players/{id}`.

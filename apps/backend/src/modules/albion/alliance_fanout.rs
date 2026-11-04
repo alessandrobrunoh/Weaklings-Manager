@@ -153,6 +153,7 @@ pub async fn after_successful_link(
                 record_assigned_alliance_roles(
                     control,
                     assign_alliance_roles_on_tenant(
+                        control,
                         cfg,
                         &ctx.db,
                         other_id,
@@ -178,6 +179,7 @@ pub async fn after_successful_link(
         record_assigned_alliance_roles(
             control,
             assign_alliance_roles_on_tenant(
+                control,
                 cfg,
                 &ctx.db,
                 current_tenant_id,
@@ -375,7 +377,53 @@ struct GrantedAllianceRole {
     role_id: String,
 }
 
+/// Both guilds must be in the same non-empty Albion alliance.
+#[must_use]
+pub fn shares_albion_alliance(home_alliance_id: Option<&str>, player_alliance_id: Option<&str>) -> bool {
+    let home = home_alliance_id.map(str::trim).filter(|id| !id.is_empty());
+    let player = player_alliance_id.map(str::trim).filter(|id| !id.is_empty());
+    matches!((home, player), (Some(home), Some(player)) if home == player)
+}
+
+async fn albion_guild_alliance_id(region: &str, guild_id: &str) -> Option<String> {
+    let client = super::client::AlbionApiClient::new(super::client::AlbionRegion::from_env_str(region));
+    client
+        .get_guild(guild_id)
+        .await
+        .ok()
+        .and_then(|guild| guild.alliance_id)
+        .map(|id| id.trim().to_owned())
+        .filter(|id| !id.is_empty())
+}
+
+/// The Ally role on a guild Discord is only for a registered player whose Albion
+/// guild sits in the same Albion alliance as that Discord's configured guild.
+async fn player_in_discord_albion_alliance(
+    control: &DatabaseConnection,
+    discord_tenant_id: &str,
+    player_albion_guild_id: Option<&str>,
+) -> bool {
+    let Some(player_guild) = player_albion_guild_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return false;
+    };
+    let scope = match crate::albion_scope::load_albion_scope(control, discord_tenant_id).await {
+        Ok(scope) => scope,
+        Err(_) => return false,
+    };
+    let Some(home_alliance) = albion_guild_alliance_id(&scope.region, &scope.guild_id).await else {
+        return false;
+    };
+    if player_guild == scope.guild_id.trim() {
+        return true;
+    }
+    let Some(player_alliance) = albion_guild_alliance_id(&scope.region, player_guild).await else {
+        return false;
+    };
+    shares_albion_alliance(Some(&home_alliance), Some(&player_alliance))
+}
+
 async fn assign_alliance_roles_on_tenant(
+    control: &DatabaseConnection,
     cfg: &Config,
     db: &DatabaseConnection,
     tenant_id: &str,
@@ -417,6 +465,9 @@ async fn assign_alliance_roles_on_tenant(
     let Some(role_id) = discord_guild_role::configured_alliance_role_id(db).await else {
         return Vec::new();
     };
+    if !player_in_discord_albion_alliance(control, tenant_id, player_albion_guild_id).await {
+        return Vec::new();
+    }
     if !assign_discord_role(cfg, tenant_id, discord_user_id, &role_id).await {
         return Vec::new();
     }
@@ -516,6 +567,16 @@ mod tests {
             guild_albion_id: Some(albion.to_owned()),
             discord_role_id: Some(role.to_owned()),
         }
+    }
+
+    #[test]
+    fn ally_role_requires_the_same_albion_alliance() {
+        assert!(shares_albion_alliance(Some("north"), Some("north")));
+        assert!(shares_albion_alliance(Some(" north "), Some("north")));
+        assert!(!shares_albion_alliance(Some("north"), Some("south")));
+        assert!(!shares_albion_alliance(None, Some("north")));
+        assert!(!shares_albion_alliance(Some(""), Some("north")));
+        assert!(!shares_albion_alliance(Some("north"), None));
     }
 
     #[test]

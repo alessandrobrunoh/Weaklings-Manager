@@ -425,6 +425,10 @@ export const en = {
   'events.title': 'Events',
   'events.subtitle': 'Schedule and run guild activities.',
   'events.call_to_arms': 'Call to arms',
+  'events.discordDelivery.label': 'Discord publication',
+  'events.discordDelivery.calendar': 'Calendar (one message)',
+  'events.discordDelivery.message': 'Channel message',
+  'events.discordDelivery.forum': 'Forum post with tags',
   'events.regear': 'Regear',
   'events.pingAlliance': 'Also sync with the alliance server',
   'events.pingAllianceHint':
