@@ -1567,7 +1567,11 @@ export class CompBuildDetailPage {
   }
 
   private shareErrorMessage(error: unknown): string {
-    if (error instanceof ApiError && error.status === 409) {
+    if (
+      error instanceof ApiError &&
+      error.status === 409 &&
+      error.message === 'guild is not an active member of an alliance'
+    ) {
       return this.t('comps.shareNoAlliance');
     }
     return error instanceof Error ? error.message : this.t('common.error');

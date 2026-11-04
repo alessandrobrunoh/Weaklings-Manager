@@ -5,7 +5,7 @@ import { Subject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BuildSummary, CompDetail, CompReadiness } from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -498,6 +498,30 @@ describe('CompDetailPage alliance share', () => {
     await page.shareWithAlliance();
     expect(apiPost).toHaveBeenCalledWith('api/alliance/shares', { type: 'comp', id: comp.id });
     expect(toasts.success).toHaveBeenCalled();
+  });
+
+  it('shows the actual conflict instead of claiming every conflict means no alliance', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+    apiPost.mockReturnValue(throwError(() => new ApiError(409, 'That value is already in use.')));
+
+    const page = fixture.componentInstance as unknown as { shareWithAlliance: () => Promise<void> };
+    await page.shareWithAlliance();
+
+    expect(toasts.error).toHaveBeenCalledWith('That value is already in use.');
+  });
+
+  it('still translates the specific missing active membership conflict', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+    apiPost.mockReturnValue(throwError(() =>
+      new ApiError(409, 'guild is not an active member of an alliance'),
+    ));
+
+    const page = fixture.componentInstance as unknown as { shareWithAlliance: () => Promise<void> };
+    await page.shareWithAlliance();
+
+    expect(toasts.error).toHaveBeenCalledWith(TestBed.inject(TranslateService).t('comps.shareNoAlliance'));
   });
 
   it('unshares the composition without touching build endpoints', async () => {
