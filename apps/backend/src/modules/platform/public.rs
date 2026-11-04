@@ -34,6 +34,7 @@ pub fn router() -> Router {
         .route("/{id}/status", get(tenant_status))
         .route("/register", post(register_tenant))
         .route("/albion-search", get(albion_search))
+        .route("/albion-alliances", get(albion_alliances))
         .route("/attachable-guilds", get(attachable_guilds))
 }
 
@@ -62,6 +63,8 @@ pub fn alliance_router() -> Router {
             "/{alliance_id}/members/{guild_id}/leave",
             post(leave_alliance_member),
         )
+        .route("/{id}/reset-setup", post(reset_alliance_setup))
+        .route("/{id}/setup", post(configure_alliance_setup))
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,11 +126,75 @@ pub async fn attachable_guilds(
     headers: HeaderMap,
     Extension(key): Extension<Key>,
     Extension(control): Extension<ControlDb>,
+    Query(query): Query<AttachableGuildQuery>,
 ) -> Result<Json<ApiResponse<Vec<AttachableGuildView>>>, AppError> {
     let managed = managed_guild_ids_from_cookie(&headers, key);
+    if let Some(alliance_id) = query.albion_alliance_id.as_deref().map(str::trim).filter(|id| !id.is_empty()) {
+        let region = query.region.as_deref().unwrap_or("europe");
+        return Ok(Json(ApiResponse::new(
+            PlatformService::list_attachable_guilds_in_alliance(&control.0, alliance_id, region).await?,
+        )));
+    }
     Ok(Json(ApiResponse::new(
         PlatformService::list_attachable_guilds(&control.0, &session.profile.id, &managed).await?,
     )))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttachableGuildQuery {
+    pub albion_alliance_id: Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AllianceSetupBody {
+    pub albion_alliance_id: String,
+    pub albion_api_region: String,
+    pub member_guild_ids: Vec<String>,
+}
+
+pub async fn albion_alliances(
+    _profile: SessionUser,
+    Query(query): Query<AlbionSearchQuery>,
+) -> Result<Json<ApiResponse<Vec<super::models::AlbionAllianceChoice>>>, AppError> {
+    let q = query.q.trim();
+    if q.is_empty() {
+        return Err(AppError::Validation("q is required".to_owned()));
+    }
+    let region = AlbionRegion::from_env_str(query.region.as_deref().unwrap_or("europe"));
+    let hits = AlbionService::new(region, String::new()).search_alliances(q).await?;
+    Ok(Json(ApiResponse::new(
+        hits.into_iter()
+            .map(|(id, name)| super::models::AlbionAllianceChoice { id, name })
+            .collect(),
+    )))
+}
+
+pub async fn reset_alliance_setup(
+    session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    PlatformService::reset_alliance_setup(&control.0, &id, &session.profile.id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn configure_alliance_setup(
+    session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+    Path(id): Path<String>,
+    Json(body): Json<AllianceSetupBody>,
+) -> Result<StatusCode, AppError> {
+    PlatformService::configure_alliance_setup(
+        &control.0,
+        &id,
+        &session.profile.id,
+        body.albion_alliance_id.trim(),
+        body.albion_api_region.trim(),
+        &body.member_guild_ids,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Alliance membership and names for the session's current tenant.

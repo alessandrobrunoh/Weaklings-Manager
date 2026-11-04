@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  AlbionAllianceChoice,
   AlbionGuild,
   AlbionSearchResult,
   AttachableGuild,
@@ -113,31 +114,49 @@ const REGIONS = [
                   <span>{{ t('register.kind.alliance') }}</span>
                 </label>
               </fieldset>
-              @if (kind() === 'alliance' && attachableGuilds().length === 0) {
-                <p class="text-sm" role="status">{{ t('register.allianceNeedsGuilds') }}</p>
-              } @else if (kind() === 'alliance') {
-                <p class="text-sm">{{ t('register.memberGuildsHint') }}</p>
+              @if (kind() === 'alliance') {
+                <p class="text-sm">{{ t('register.memberGuildsAfterAlliance') }}</p>
               }
-              <button
-                type="submit"
-                class="btn btn--primary"
-                [disabled]="kind() === 'alliance' && attachableGuilds().length === 0"
-              >
+              <button type="submit" class="btn btn--primary">
                 {{ t('common.next') }}
               </button>
             </form>
           } @else if (step() === 2 && kind() === 'alliance') {
-            <form class="grid gap-4" (submit)="nextFromMembers($event)">
-              <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
-              <fieldset class="grid gap-2" aria-describedby="member-guilds-hint">
-                <legend class="label">{{ t('register.memberGuilds') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></legend>
-                <p id="member-guilds-hint" class="text-sm">{{ t('register.memberGuildsHint') }}</p>
-                @for (guild of attachableGuilds(); track guild.id) {
-                  <app-checkbox [inputId]="'member-' + guild.id" [label]="guild.name"
-                    [checked]="selectedMemberIds().includes(guild.id)"
-                    (checkedChange)="toggleMember(guild.id)" />
+            <form class="grid gap-4" ngNativeValidate (submit)="nextFromAlliance($event)">
+              <fieldset class="grid gap-2">
+                <legend class="label">{{ t('register.region') }}</legend>
+                @for (region of regions; track region.id) {
+                  <label class="flex items-center gap-2" [attr.for]="'alliance-region-' + region.id">
+                    <input class="radio" type="radio" name="alliance-region" [id]="'alliance-region-' + region.id"
+                      [checked]="regionId() === region.id" (change)="selectRegion(region.id)" />
+                    <span>{{ t(region.labelKey) }}</span>
+                  </label>
                 }
               </fieldset>
+              <label class="block" for="albion-alliance-search">
+                <span class="label">{{ t('register.albionAlliance') }}</span>
+                <input id="albion-alliance-search" class="input" type="search" autocomplete="off"
+                  [value]="searchQ()" (input)="onAllianceSearch($event)"
+                  [attr.placeholder]="t('register.albionAllianceHint')" />
+              </label>
+              @if (searching()) {
+                <p class="text-sm">{{ t('common.loading') }}</p>
+              }
+              @for (alliance of allianceHits(); track alliance.id) {
+                <button type="button" class="btn btn--tonal w-full justify-start"
+                  [class.ring-1]="pickedAlliance()?.id === alliance.id"
+                  (click)="pickAlliance(alliance)">
+                  {{ alliance.name }} <span class="font-mono text-xs opacity-70">{{ alliance.id }}</span>
+                </button>
+              }
+              @if (pickedAlliance() && attachableGuilds().length === 0 && !searching()) {
+                <p class="text-sm" role="status">{{ t('register.allianceNeedsGuilds') }}</p>
+              }
+              @for (guild of attachableGuilds(); track guild.id) {
+                <app-checkbox [inputId]="'member-' + guild.id" [label]="guild.name"
+                  [checked]="selectedMemberIds().includes(guild.id)"
+                  (checkedChange)="toggleMember(guild.id)" />
+              }
               <div class="flex gap-2">
                 <button type="button" class="btn btn--ghost" (click)="step.set(1)">
                   {{ t('common.prev') }}
@@ -232,6 +251,10 @@ const REGIONS = [
                   </div>
                 } @else {
                   <div>
+                    <dt class="label">{{ t('register.albionAlliance') }}</dt>
+                    <dd>{{ pickedAlliance()?.name }} ({{ pickedAlliance()?.id }})</dd>
+                  </div>
+                  <div>
                     <dt class="label">{{ t('register.memberGuilds') }}</dt>
                     <dd>{{ selectedMemberNames() }}</dd>
                   </div>
@@ -278,6 +301,8 @@ export class RegisterTenant implements OnInit {
   protected readonly searching = signal(false);
   protected readonly guildHits = signal<AlbionGuild[]>([]);
   protected readonly pickedGuild = signal<AlbionGuild | null>(null);
+  protected readonly allianceHits = signal<AlbionAllianceChoice[]>([]);
+  protected readonly pickedAlliance = signal<AlbionAllianceChoice | null>(null);
   protected readonly alreadyRegistered = signal(false);
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -319,13 +344,6 @@ export class RegisterTenant implements OnInit {
     if (!this.displayName().trim()) {
       return;
     }
-    if (this.kind() === 'alliance') {
-      if (this.attachableGuilds().length === 0) {
-        return;
-      }
-      this.step.set(2);
-      return;
-    }
     this.step.set(2);
   }
 
@@ -335,12 +353,34 @@ export class RegisterTenant implements OnInit {
     );
   }
 
-  protected nextFromMembers(event: SubmitEvent): void {
+  protected nextFromAlliance(event: SubmitEvent): void {
     event.preventDefault();
-    if (this.selectedMemberIds().length === 0) {
+    if (!this.pickedAlliance() || this.selectedMemberIds().length === 0) {
       return;
     }
     this.step.set(3);
+  }
+
+  protected onAllianceSearch(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.searchQ.set(value);
+    this.searchAlliances(value);
+  }
+
+  protected async pickAlliance(alliance: AlbionAllianceChoice): Promise<void> {
+    this.pickedAlliance.set(alliance);
+    this.selectedMemberIds.set([]);
+    try {
+      const guilds = await firstValueFrom(
+        this.api.get<AttachableGuild[]>('api/tenants/attachable-guilds', {
+          albion_alliance_id: alliance.id,
+          region: this.regionId(),
+        }),
+      );
+      this.attachableGuilds.set(guilds ?? []);
+    } catch {
+      this.attachableGuilds.set([]);
+    }
   }
 
   protected selectedMemberNames(): string {
@@ -364,8 +404,16 @@ export class RegisterTenant implements OnInit {
     }
     this.regionId.set(id);
     this.pickedGuild.set(null);
+    this.pickedAlliance.set(null);
     this.guildHits.set([]);
-    this.searchGuilds(this.searchQ());
+    this.allianceHits.set([]);
+    this.attachableGuilds.set([]);
+    this.selectedMemberIds.set([]);
+    if (this.kind() === 'alliance') {
+      this.searchAlliances(this.searchQ());
+    } else {
+      this.searchGuilds(this.searchQ());
+    }
   }
 
   protected nextFromAlbion(event: SubmitEvent): void {
@@ -408,11 +456,17 @@ export class RegisterTenant implements OnInit {
       if (memberGuildIds.length === 0) {
         return null;
       }
+      const alliance = this.pickedAlliance();
+      if (!alliance) {
+        return null;
+      }
       return {
         id: this.guildId,
         name,
         kind: 'alliance',
         member_guild_ids: memberGuildIds,
+        albion_alliance_id: alliance.id,
+        albion_api_region: this.regionId(),
       };
     }
     const guild = this.pickedGuild();
@@ -442,6 +496,48 @@ export class RegisterTenant implements OnInit {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Bumped on every keystroke and region change so a late response cannot win. */
   private searchGeneration = 0;
+
+  private searchAlliances(raw: string): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    const generation = ++this.searchGeneration;
+    const region = this.regionId();
+    const q = raw.trim();
+    if (q.length < 2) {
+      this.allianceHits.set([]);
+      this.searching.set(false);
+      return;
+    }
+    this.searchTimer = setTimeout(() => {
+      void this.runAllianceSearch(q, region, generation);
+    }, 250);
+  }
+
+  private async runAllianceSearch(
+    q: string,
+    region: 'europe' | 'americas' | 'asia',
+    generation: number,
+  ): Promise<void> {
+    this.searching.set(true);
+    try {
+      const result = await firstValueFrom(
+        this.api.get<AlbionAllianceChoice[]>('api/tenants/albion-alliances', { q, region }),
+      );
+      if (generation !== this.searchGeneration) {
+        return;
+      }
+      this.allianceHits.set(result ?? []);
+    } catch {
+      if (generation === this.searchGeneration) {
+        this.allianceHits.set([]);
+      }
+    } finally {
+      if (generation === this.searchGeneration) {
+        this.searching.set(false);
+      }
+    }
+  }
 
   private searchGuilds(raw: string): void {
     if (this.searchTimer) {

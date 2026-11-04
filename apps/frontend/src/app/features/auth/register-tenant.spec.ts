@@ -94,14 +94,14 @@ describe('RegisterTenant', () => {
     alliance.click();
     fixture.detectChanges();
 
-    expect(compiled.textContent).toContain('register.allianceNeedsGuilds');
+    expect(compiled.textContent).toContain('register.memberGuildsAfterAlliance');
     expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
 
     compiled.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     fixture.detectChanges();
-    expect(compiled.querySelector('#albion-guild-search')).toBeNull();
+    expect(compiled.querySelector('#albion-alliance-search')).toBeTruthy();
     expect(compiled.querySelector('#member-guild-a')).toBeNull();
   });
 
@@ -120,24 +120,11 @@ describe('RegisterTenant', () => {
     alliance.click();
     fixture.detectChanges();
 
-    expect(compiled.textContent).not.toContain('register.allianceNeedsGuilds');
-    expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
-      false,
-    );
-
     compiled.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     fixture.detectChanges();
-    expect(compiled.querySelector('#albion-guild-search')).toBeNull();
-    expect(compiled.querySelector('#member-guild-a')).toBeTruthy();
-    expect(compiled.textContent).toContain('Alpha Guild');
-    const checkbox = compiled.querySelector('#member-guild-a') as HTMLInputElement;
-    expect(checkbox.closest('app-checkbox')).toBeTruthy();
-    expect(checkbox.required).toBe(false);
-    expect(compiled.querySelector('fieldset[aria-describedby="member-guilds-hint"] legend')?.textContent).toContain('*');
+    expect(compiled.querySelector('#albion-alliance-search')).toBeTruthy();
+    expect(compiled.querySelector('#member-guild-a')).toBeNull();
     expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
-    checkbox.click();
-    fixture.detectChanges();
-    expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('continues to albion setup when guild is selected', () => {

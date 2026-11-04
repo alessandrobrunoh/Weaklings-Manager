@@ -49,6 +49,9 @@ pub struct TenantView {
     /// to more than one tenant. At most one tenant can be default.
     #[serde(default)]
     pub is_default: bool,
+    /// Albion alliance id when this tenant is an alliance hub.
+    #[serde(default)]
+    pub albion_alliance_id: Option<String>,
 }
 
 fn default_tenant_kind() -> String {
@@ -95,6 +98,9 @@ pub struct RegisterTenantRequest {
     /// Guild tenant ids to invite when registering an alliance.
     #[serde(default)]
     pub member_guild_ids: Vec<String>,
+    /// Albion alliance id. Required when `kind` is `alliance`.
+    #[serde(default)]
+    pub albion_alliance_id: Option<String>,
 }
 
 /// A guild tenant the caller may attach to an alliance they are registering.
@@ -144,6 +150,16 @@ pub struct AllianceContextView {
     pub membership_status: Option<String>,
     /// Member guilds of the alliance, empty when none.
     pub members: Vec<AllianceMemberView>,
+    /// Linked Albion alliance id, when this hub has finished setup.
+    #[serde(default)]
+    pub albion_alliance_id: Option<String>,
+}
+
+/// Albion alliance the setup wizard can attach to a Discord.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct AlbionAllianceChoice {
+    pub id: String,
+    pub name: String,
 }
 
 /// Public status of a Discord guild against the tenant registry.

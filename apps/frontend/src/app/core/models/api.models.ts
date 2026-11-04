@@ -243,6 +243,7 @@ export interface RegisterTenantRequest {
   albion_allied_guild_ids?: string;
   albion_allied_guild_names?: string;
   member_guild_ids?: string[];
+  albion_alliance_id?: string;
 }
 
 export interface AttachableGuild {
@@ -267,6 +268,7 @@ export interface AllianceContext {
   alliance_name: string | null;
   membership_status: 'pending' | 'active' | string | null;
   members: AllianceMember[];
+  albion_alliance_id?: string | null;
 }
 
 export function discordGuildIconUrl(
@@ -1208,6 +1210,11 @@ export interface AlbionGuild {
 export interface AlbionSearchResult {
   guilds: AlbionGuild[];
   players: AlbionPlayer[];
+}
+
+export interface AlbionAllianceChoice {
+  id: string;
+  name: string;
 }
 
 export interface AlbionLinkStatus {

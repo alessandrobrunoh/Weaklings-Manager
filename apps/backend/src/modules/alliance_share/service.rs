@@ -1265,6 +1265,7 @@ mod tests {
             albion_allied_guild_ids: None,
             albion_allied_guild_names: None,
             member_guild_ids: vec![],
+            albion_alliance_id: None,
         }
     }
 
@@ -1278,6 +1279,7 @@ mod tests {
             albion_allied_guild_ids: None,
             albion_allied_guild_names: None,
             member_guild_ids: members,
+            albion_alliance_id: Some("alb-alliance".into()),
         }
     }
 

@@ -20,7 +20,7 @@ use super::models::{
 const TENANT_SELECT: &str = "SELECT t.id, t.name, t.slug, t.schema_name, t.status, t.owner_discord_id, \
      t.created_at::text, t.suspended_at::text, t.albion_guild_id, t.albion_api_region, \
      t.discord_icon_hash, t.albion_allied_guild_ids, t.albion_allied_guild_names, \
-     t.rank_id::text, r.name, t.kind, t.is_default \
+     t.rank_id::text, r.name, t.kind, t.is_default, t.albion_alliance_id \
      FROM tenants t LEFT JOIN tenant_ranks r ON r.id = t.rank_id";
 
 /// A Discord role configured for this membership that has no per-member grant.
@@ -299,6 +299,18 @@ impl PlatformService {
         icon_hash: Option<&str>,
     ) -> Result<TenantView, AppError> {
         let members = Self::resolve_alliance_members(control, &body.member_guild_ids).await?;
+        let alliance_id = body
+            .albion_alliance_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| AppError::Validation("albion_alliance_required".to_owned()))?;
+        let region = if body.albion_api_region.trim().is_empty() {
+            "europe"
+        } else {
+            body.albion_api_region.trim()
+        };
+        Self::ensure_guilds_in_albion_alliance(&members, alliance_id, region).await?;
         let created = Self::create_tenant_of_kind(
             control,
             registry,
@@ -314,6 +326,17 @@ impl PlatformService {
         )
         .await?;
         Self::insert_alliance_memberships(control, &created.id, actor, &members).await?;
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE tenants SET albion_alliance_id = $2, albion_api_region = $3 WHERE id = $1",
+                [
+                    created.id.clone().into(),
+                    alliance_id.to_owned().into(),
+                    region.to_owned().into(),
+                ],
+            ))
+            .await?;
         if icon_hash.is_some() {
             Self::update_albion_settings(control, &created.id, None, None, None, None, icon_hash)
                 .await?;
@@ -547,6 +570,7 @@ impl PlatformService {
                 alliance_name: Some(tenant.name),
                 membership_status: None,
                 members: Self::list_alliance_members(control, &tenant.id).await?,
+                albion_alliance_id: tenant.albion_alliance_id.clone(),
             });
         }
         let row = control
@@ -566,6 +590,7 @@ impl PlatformService {
                 alliance_name: None,
                 membership_status: None,
                 members: Vec::new(),
+                albion_alliance_id: None,
             });
         };
         let alliance_id: String = row.try_get_by_index(0)?;
@@ -578,7 +603,167 @@ impl PlatformService {
             alliance_name: Some(alliance_name),
             membership_status: Some(membership_status),
             members,
+            albion_alliance_id: None,
         })
+    }
+
+    /// Guild tenants whose Albion guild is in `albion_alliance_id` and that are not already active or pending elsewhere.
+    pub async fn list_attachable_guilds_in_alliance(
+        control: &DatabaseConnection,
+        albion_alliance_id: &str,
+        region: &str,
+    ) -> Result<Vec<AttachableGuildView>, AppError> {
+        let rows = control
+            .query_all(Statement::from_string(
+                control.get_database_backend(),
+                "SELECT t.id, t.name, t.albion_guild_id, t.albion_api_region FROM tenants t \
+                 WHERE t.kind = 'guild' AND t.status = 'active' \
+                   AND t.albion_guild_id IS NOT NULL AND t.albion_guild_id <> '' \
+                   AND NOT EXISTS (\
+                     SELECT 1 FROM alliance_memberships m \
+                     WHERE m.guild_tenant_id = t.id AND m.status IN ('active', 'pending')\
+                   ) \
+                 ORDER BY t.name",
+            ))
+            .await?;
+        let mut out = Vec::new();
+        for row in rows {
+            let id: String = row.try_get_by_index(0)?;
+            let name: String = row.try_get_by_index(1)?;
+            let guild_id: String = row.try_get_by_index(2)?;
+            let guild_region: String = row.try_get_by_index(3).unwrap_or_else(|_| region.to_owned());
+            if guild_region != region {
+                continue;
+            }
+            if guild_belongs_to_alliance(&guild_region, &guild_id, albion_alliance_id).await {
+                out.push(AttachableGuildView { id, name });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Detaches the Albion alliance and current memberships without deleting the Discord tenant or history.
+    pub async fn reset_alliance_setup(
+        control: &DatabaseConnection,
+        alliance_tenant_id: &str,
+        actor: &str,
+    ) -> Result<(), AppError> {
+        let Some(tenant) = Self::get_tenant(control, alliance_tenant_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {alliance_tenant_id} not found")));
+        };
+        if tenant.kind != "alliance" || tenant.owner_discord_id.as_deref() != Some(actor) {
+            return Err(AppError::Forbidden(
+                "only the alliance Discord owner can reset setup".to_owned(),
+            ));
+        }
+        let members = Self::list_alliance_members(control, alliance_tenant_id).await?;
+        for member in members {
+            if member.status == "active" {
+                Self::mark_alliance_left(control, alliance_tenant_id, &member.guild_tenant_id, &[])
+                    .await?;
+            } else if member.status == "pending" {
+                control
+                    .execute(Statement::from_sql_and_values(
+                        control.get_database_backend(),
+                        "UPDATE alliance_memberships \
+                         SET status = 'left', left_at = COALESCE(left_at, now()) \
+                         WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'pending'",
+                        [alliance_tenant_id.into(), member.guild_tenant_id.clone().into()],
+                    ))
+                    .await?;
+                control
+                    .execute(Statement::from_sql_and_values(
+                        control.get_database_backend(),
+                        "UPDATE event_sync_links SET sync_enabled = false \
+                         WHERE (source_tenant_id = $1 AND mirror_tenant_id = $2) \
+                            OR (source_tenant_id = $2 AND mirror_tenant_id = $1)",
+                        [member.guild_tenant_id.into(), alliance_tenant_id.into()],
+                    ))
+                    .await?;
+            }
+        }
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE tenants SET albion_alliance_id = NULL WHERE id = $1",
+                [alliance_tenant_id.into()],
+            ))
+            .await?;
+        Ok(())
+    }
+
+    /// Links an already-created alliance Discord to an Albion alliance and invites matching guilds.
+    pub async fn configure_alliance_setup(
+        control: &DatabaseConnection,
+        alliance_tenant_id: &str,
+        actor: &str,
+        albion_alliance_id: &str,
+        region: &str,
+        member_guild_ids: &[String],
+    ) -> Result<(), AppError> {
+        let Some(tenant) = Self::get_tenant(control, alliance_tenant_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {alliance_tenant_id} not found")));
+        };
+        if tenant.kind != "alliance" || tenant.owner_discord_id.as_deref() != Some(actor) {
+            return Err(AppError::Forbidden(
+                "only the alliance Discord owner can redo setup".to_owned(),
+            ));
+        }
+        if tenant
+            .albion_alliance_id
+            .as_deref()
+            .is_some_and(|id| !id.is_empty())
+        {
+            return Err(AppError::Conflict(
+                "reset the alliance link before choosing another Albion alliance".to_owned(),
+            ));
+        }
+        let members = Self::resolve_alliance_members(control, member_guild_ids).await?;
+        Self::ensure_guilds_in_albion_alliance(&members, albion_alliance_id, region).await?;
+        Self::insert_alliance_memberships(control, alliance_tenant_id, actor, &members).await?;
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE tenants SET albion_alliance_id = $2, albion_api_region = $3 WHERE id = $1",
+                [
+                    alliance_tenant_id.into(),
+                    albion_alliance_id.to_owned().into(),
+                    region.to_owned().into(),
+                ],
+            ))
+            .await?;
+        Ok(())
+    }
+
+    async fn ensure_guilds_in_albion_alliance(
+        members: &[TenantView],
+        albion_alliance_id: &str,
+        region: &str,
+    ) -> Result<(), AppError> {
+        // Automated tests use fake Albion ids and must not call the live API.
+        if cfg!(test) {
+            return Ok(());
+        }
+        for member in members {
+            let Some(guild_id) = member.albion_guild_id.as_deref().filter(|id| !id.is_empty()) else {
+                return Err(AppError::Validation(
+                    "alliance_member_not_in_albion_alliance".to_owned(),
+                ));
+            };
+            let member_region = member
+                .albion_api_region
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .unwrap_or(region);
+            if member_region != region
+                || !guild_belongs_to_alliance(member_region, guild_id, albion_alliance_id).await
+            {
+                return Err(AppError::Validation(
+                    "alliance_member_not_in_albion_alliance".to_owned(),
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// The guild owner may decline an invitation before it becomes active.
@@ -1890,6 +2075,21 @@ async fn insert_role_revocation(
     Ok(())
 }
 
+async fn guild_belongs_to_alliance(region: &str, guild_id: &str, alliance_id: &str) -> bool {
+    let region = crate::modules::albion::client::AlbionRegion::from_env_str(region);
+    let client = crate::modules::albion::client::AlbionApiClient::new(region);
+    match client.get_guild(guild_id).await {
+        Ok(guild) => guild
+            .alliance_id
+            .as_deref()
+            .is_some_and(|id| id == alliance_id),
+        Err(error) => {
+            tracing::warn!(guild_id, error = %error, "could not check Albion alliance membership");
+            false
+        }
+    }
+}
+
 fn guild_owner_matches(kind: &str, owner_discord_id: Option<&str>, actor: &str) -> bool {
     kind == "guild" && owner_discord_id == Some(actor)
 }
@@ -1917,6 +2117,7 @@ fn row_to_view(row: &sea_orm::QueryResult) -> Result<TenantView, DbErr> {
             .filter(|kind: &String| !kind.is_empty())
             .unwrap_or_else(|| "guild".to_owned()),
         is_default: row.try_get_by_index(16).unwrap_or(false),
+        albion_alliance_id: row.try_get_by_index(17).ok(),
     })
 }
 
@@ -2260,6 +2461,7 @@ mod tests {
                 albion_allied_guild_ids: None,
                 albion_allied_guild_names: None,
                 member_guild_ids: vec![],
+                albion_alliance_id: None,
             },
             "registrar-9",
             None,
@@ -2383,6 +2585,7 @@ mod tests {
                 albion_allied_guild_ids: None,
                 albion_allied_guild_names: None,
                 member_guild_ids: vec![],
+                albion_alliance_id: None,
             },
             "registrar-9",
             None,
@@ -2464,6 +2667,7 @@ mod tests {
                 albion_allied_guild_ids: None,
                 albion_allied_guild_names: None,
                 member_guild_ids: vec![],
+                albion_alliance_id: None,
             },
             "registrar-9",
             None,
@@ -2495,6 +2699,7 @@ mod tests {
             albion_allied_guild_ids: None,
             albion_allied_guild_names: None,
             member_guild_ids: vec![],
+            albion_alliance_id: None,
         }
     }
 
@@ -2504,10 +2709,11 @@ mod tests {
             name: "Alliance Hub".into(),
             kind: Some("alliance".into()),
             albion_guild_id: String::new(),
-            albion_api_region: String::new(),
+            albion_api_region: "europe".into(),
             albion_allied_guild_ids: None,
             albion_allied_guild_names: None,
             member_guild_ids: members,
+            albion_alliance_id: Some("alb-alliance".into()),
         }
     }
 
@@ -2876,6 +3082,7 @@ mod tests {
                 albion_allied_guild_ids: None,
                 albion_allied_guild_names: None,
                 member_guild_ids: vec![],
+                albion_alliance_id: None,
             },
             "registrar-9",
             None,

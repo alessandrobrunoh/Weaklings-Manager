@@ -86,6 +86,10 @@ pub struct AlbionGuildSummary {
     #[serde(alias = "DeathFame", default)]
     #[schema(example = 8467981.0)]
     pub death_fame: Option<f64>,
+    #[serde(alias = "AllianceId", default)]
+    pub alliance_id: Option<String>,
+    #[serde(alias = "AllianceName", default)]
+    pub alliance_name: Option<String>,
 }
 
 /// Combined result of `GET /albion/search`: every matching guild and every matching player,

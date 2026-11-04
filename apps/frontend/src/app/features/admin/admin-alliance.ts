@@ -3,8 +3,10 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  AlbionAllianceChoice,
   AllianceContext,
   AllianceMember,
+  AttachableGuild,
   DiscordRoleView,
   GuildSettingsView,
   UpdateGuildSettingsRequest,
@@ -54,6 +56,38 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
                 {{ t('admin.alliance.leave') }}
               </button>
             </div>
+          }
+          @if (isAlliance()) {
+            <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('admin.alliance.resetHint') }}</p>
+            <div>
+              <button type="button" class="btn btn--outline btn--sm" (click)="resetSetup()" [disabled]="saving()">
+                {{ t('admin.alliance.reset') }}
+              </button>
+            </div>
+            @if (!context()?.albion_alliance_id) {
+              <form class="grid gap-3" (submit)="saveSetup($event)">
+                <label class="block">
+                  <span class="label">{{ t('register.albionAlliance') }}</span>
+                  <input class="input" type="search" [value]="setupQuery()" (input)="onSetupSearch($event)"
+                    [attr.placeholder]="t('register.albionAllianceHint')" />
+                </label>
+                @for (alliance of setupHits(); track alliance.id) {
+                  <button type="button" class="btn btn--tonal w-full justify-start"
+                    [class.ring-1]="setupAlliance()?.id === alliance.id" (click)="pickSetupAlliance(alliance)">
+                    {{ alliance.name }}
+                  </button>
+                }
+                @for (guild of setupGuilds(); track guild.id) {
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" [checked]="setupMembers().includes(guild.id)" (change)="toggleSetupMember(guild.id)" />
+                    <span>{{ guild.name }}</span>
+                  </label>
+                }
+                <button type="submit" class="btn btn--primary btn--sm" [disabled]="saving() || !setupAlliance() || setupMembers().length === 0">
+                  {{ t('admin.alliance.setup') }}
+                </button>
+              </form>
+            }
           }
         </section>
 
@@ -197,6 +231,11 @@ export class AdminAlliance {
   protected readonly allianceRoleDraft = signal('');
   protected readonly eventRoleDraft = signal('');
   protected readonly memberRoleDrafts = signal<Record<string, string>>({});
+  protected readonly setupQuery = signal('');
+  protected readonly setupHits = signal<AlbionAllianceChoice[]>([]);
+  protected readonly setupAlliance = signal<AlbionAllianceChoice | null>(null);
+  protected readonly setupGuilds = signal<AttachableGuild[]>([]);
+  protected readonly setupMembers = signal<string[]>([]);
 
   protected readonly isAlliance = computed(() => this.context()?.kind === 'alliance');
   protected readonly canAccept = computed(
@@ -319,6 +358,75 @@ export class AdminAlliance {
       this.toasts.success(
         this.t(invited.status === 'active' ? 'admin.alliance.rejoined' : 'admin.alliance.reinvited'),
       );
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected onSetupSearch(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.setupQuery.set(value);
+    const q = value.trim();
+    if (q.length < 2) {
+      this.setupHits.set([]);
+      return;
+    }
+    void firstValueFrom(this.api.get<AlbionAllianceChoice[]>('api/tenants/albion-alliances', {
+      q,
+      region: 'europe',
+    })).then((hits) => this.setupHits.set(hits ?? [])).catch(() => this.setupHits.set([]));
+  }
+
+  protected async pickSetupAlliance(alliance: AlbionAllianceChoice): Promise<void> {
+    this.setupAlliance.set(alliance);
+    this.setupMembers.set([]);
+    try {
+      const guilds = await firstValueFrom(this.api.get<AttachableGuild[]>('api/tenants/attachable-guilds', {
+        albion_alliance_id: alliance.id,
+        region: 'europe',
+      }));
+      this.setupGuilds.set(guilds ?? []);
+    } catch {
+      this.setupGuilds.set([]);
+    }
+  }
+
+  protected toggleSetupMember(id: string): void {
+    this.setupMembers.update((ids) => ids.includes(id) ? ids.filter((current) => current !== id) : [...ids, id]);
+  }
+
+  protected async resetSetup(): Promise<void> {
+    const allianceId = this.context()?.alliance_id;
+    if (!allianceId) return;
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/alliances/${allianceId}/reset-setup`, {}));
+      this.setupAlliance.set(null);
+      this.setupGuilds.set([]);
+      this.setupMembers.set([]);
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveSetup(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const allianceId = this.context()?.alliance_id;
+    const picked = this.setupAlliance();
+    if (!allianceId || !picked) return;
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/alliances/${allianceId}/setup`, {
+        albion_alliance_id: picked.id,
+        albion_api_region: 'europe',
+        member_guild_ids: this.setupMembers(),
+      }));
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
