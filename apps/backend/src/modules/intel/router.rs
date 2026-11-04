@@ -368,7 +368,13 @@ pub async fn scout_snapshots_backfill(
     user.require(&perms, Permission::IntelCreate).await?;
     let before = query.before.unwrap_or_else(Utc::now);
     let limit = query.limit.unwrap_or(DEFAULT_BACKFILL_LIMIT);
-    let outcome = scout_snapshots_before(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, before, limit).await?;
+    let outcome = scout_snapshots_before(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        before,
+        limit,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(outcome)))
 }
 
@@ -550,7 +556,13 @@ pub async fn guild_report(
     if let Some(cached) = cache.get(&tenant.0, range, granularity) {
         return Ok(Json(ApiResponse::new(cached)));
     }
-    let report = build_guild_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, range, granularity).await?;
+    let report = build_guild_report(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        range,
+        granularity,
+    )
+    .await?;
     cache.put(&tenant.0, range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
@@ -589,7 +601,13 @@ pub async fn refresh_guild_report(
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     let granularity = params.granularity.as_deref().unwrap_or("week");
     cache.invalidate(&tenant.0);
-    let report = build_guild_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, range, granularity).await?;
+    let report = build_guild_report(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        range,
+        granularity,
+    )
+    .await?;
     cache.put(&tenant.0, range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
@@ -652,7 +670,13 @@ pub async fn leaderboards(
     let mut leaderboards = if let Some(cached) = cache.get(&tenant.0, range, granularity) {
         cached.leaderboards
     } else {
-        let report = build_guild_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, range, granularity).await?;
+        let report = build_guild_report(
+            &db,
+            &guild_context(&cfg, &control.0, &tenant.0).await?,
+            range,
+            granularity,
+        )
+        .await?;
         cache.put(&tenant.0, range, granularity, &report);
         report.leaderboards
     };
@@ -703,8 +727,13 @@ pub async fn player_report(
 ) -> Result<Json<ApiResponse<PlayerReport>>, AppError> {
     user.require(&perms, Permission::IntelReportView).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
-    let report = build_player_report(&db, &guild_context(&cfg, &control.0, &tenant.0).await?, user_id, range)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
+    let report = build_player_report(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        user_id,
+        range,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
     Ok(Json(ApiResponse::new(report)))
 }

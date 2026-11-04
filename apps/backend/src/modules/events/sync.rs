@@ -156,6 +156,7 @@ pub async fn create_mirror(
                 create_split: false,
                 island_tab_id: None,
                 ping_alliance: false,
+                vod_forum_post_enabled: source_event.vod_forum_post_enabled,
             },
         )
         .await?;
@@ -219,7 +220,9 @@ pub async fn create_mirror(
     Ok(Some(mirror.id))
 }
 
-/// Resolve the event's peer, regardless of which tenant contains the event.
+/// Resolve the event's peer while sync is still enabled.
+///
+/// Links kept after a guild leaves stay in `event_sync_links` but are not returned.
 pub async fn peer_event(
     control: &DatabaseConnection,
     tenant_id: &str,
@@ -230,8 +233,9 @@ pub async fn peer_event(
             control.get_database_backend(),
             "SELECT source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id
              FROM event_sync_links
-             WHERE (source_tenant_id = $1 AND source_event_id = $2)
-                OR (mirror_tenant_id = $1 AND mirror_event_id = $2)",
+             WHERE sync_enabled
+               AND ((source_tenant_id = $1 AND source_event_id = $2)
+                OR (mirror_tenant_id = $1 AND mirror_event_id = $2))",
             [tenant_id.into(), event_id.into()],
         ))
         .await?;
@@ -247,6 +251,23 @@ pub async fn peer_event(
     } else {
         Ok(Some((source_tenant, source_event)))
     }
+}
+
+/// Returns whether this tenant-local event is the alliance-side mirror.
+pub async fn is_mirror_event(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+    event_id: i64,
+) -> Result<bool, AppError> {
+    let row = control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT 1 FROM event_sync_links
+             WHERE mirror_tenant_id = $1 AND mirror_event_id = $2",
+            [tenant_id.into(), event_id.into()],
+        ))
+        .await?;
+    Ok(row.is_some())
 }
 
 async fn upsert_user(db: &DatabaseConnection, actor: &ShareActor) -> Result<i64, AppError> {

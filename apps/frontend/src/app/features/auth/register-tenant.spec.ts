@@ -65,6 +65,18 @@ describe('RegisterTenant', () => {
     expect(compiled.querySelector('#tenant-display-name')).toBeTruthy();
   });
 
+  it('marks the required name and enforces native validation', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const form = compiled.querySelector('form') as HTMLFormElement;
+    const name = compiled.querySelector('#tenant-display-name') as HTMLInputElement;
+    expect(compiled.textContent).toContain('validation.requiredLegend');
+    expect(name.required).toBe(true);
+    expect(name.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
+    expect(form.checkValidity()).toBe(false);
+    name.value = 'Guild';
+    expect(form.checkValidity()).toBe(true);
+  });
+
   it('lets the officer pick guild or alliance on step 1', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('#kind-guild')).toBeTruthy();
@@ -118,6 +130,14 @@ describe('RegisterTenant', () => {
     expect(compiled.querySelector('#albion-guild-search')).toBeNull();
     expect(compiled.querySelector('#member-guild-a')).toBeTruthy();
     expect(compiled.textContent).toContain('Alpha Guild');
+    const checkbox = compiled.querySelector('#member-guild-a') as HTMLInputElement;
+    expect(checkbox.closest('app-checkbox')).toBeTruthy();
+    expect(checkbox.required).toBe(false);
+    expect(compiled.querySelector('fieldset[aria-describedby="member-guilds-hint"] legend')?.textContent).toContain('*');
+    expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
+    checkbox.click();
+    fixture.detectChanges();
+    expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('continues to albion setup when guild is selected', () => {

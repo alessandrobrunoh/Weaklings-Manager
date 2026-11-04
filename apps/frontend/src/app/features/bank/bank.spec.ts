@@ -145,9 +145,14 @@ describe('Bank withdrawal credit selection', () => {
 
     expect(smallerCredits.every((credit) => credit.disabled)).toBe(true);
 
-    const confirmButton = [...fixture.nativeElement.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Confirm',
+    const confirmButton = [...fixture.nativeElement.querySelectorAll('app-dialog button')].find(
+      (button) => button.textContent?.trim() === 'Request withdrawal',
     ) as HTMLButtonElement;
+    const selectedSummary = fixture.nativeElement.querySelector(
+      '[aria-live="polite"][aria-atomic="true"]',
+    ) as HTMLElement;
+    expect(selectedSummary.textContent).toContain('2,906,418');
+    expect(confirmButton.textContent).toContain('Request withdrawal');
     confirmButton.click();
     await fixture.whenStable();
 
@@ -207,8 +212,8 @@ describe('Bank withdrawal credit selection', () => {
     selectAllButton.click();
     fixture.detectChanges();
 
-    const confirmButton = [...fixture.nativeElement.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Confirm',
+    const confirmButton = [...fixture.nativeElement.querySelectorAll('app-dialog button')].find(
+      (button) => button.textContent?.trim() === 'Request withdrawal',
     ) as HTMLButtonElement;
     confirmButton.click();
     await fixture.whenStable();

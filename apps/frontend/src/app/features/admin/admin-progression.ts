@@ -4,6 +4,8 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   DiscordChannelView,
+  DiscordRoleView,
+  GuildRankView,
   ProgressionSeasonView,
   ProgressionSettingsView,
   UpdateProgressionSettingsRequest,
@@ -82,63 +84,99 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
       <app-page-stack>
       <section class="card p-5">
         <form class="grid gap-4 sm:grid-cols-3" (submit)="saveProgressionSettings($event)">
+          <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
+            {{ t('validation.requiredLegend') }}
+          </p>
           <p class="sm:col-span-3 eyebrow">{{ t('admin.progression.curve') }}</p>
           <label>
-            <span class="label">{{ t('admin.progression.xpBase') }}</span>
-            <input class="input mono" type="number" min="1" [value]="progressionDraft().xp_base"
+            <span class="label">
+              {{ t('admin.progression.xpBase') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="1" required [value]="progressionDraft().xp_base"
               (input)="updateProgressionNumber('xp_base', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.xpExponent') }}</span>
-            <input class="input mono" type="number" min="1" step="0.1"
+            <span class="label">
+              {{ t('admin.progression.xpExponent') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="1" step="0.1" required
               [value]="progressionDraft().xp_exponent"
               (input)="updateProgressionNumber('xp_exponent', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.maxLevel') }}</span>
-            <input class="input mono" type="number" min="1" [value]="progressionDraft().max_level"
+            <span class="label">
+              {{ t('admin.progression.maxLevel') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="1" required [value]="progressionDraft().max_level"
               (input)="updateProgressionNumber('max_level', $event)" />
           </label>
 
           <p class="sm:col-span-3 eyebrow mt-2">{{ t('admin.progression.rates') }}</p>
           <label>
-            <span class="label">{{ t('admin.progression.xpMessage') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().xp_message"
+            <span class="label">
+              {{ t('admin.progression.xpMessage') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_message"
               (input)="updateProgressionNumber('xp_message', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.xpEventCreate') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().xp_event_create"
+            <span class="label">
+              {{ t('admin.progression.xpEventCreate') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_event_create"
               (input)="updateProgressionNumber('xp_event_create', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.xpEventJoin') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().xp_event_join"
+            <span class="label">
+              {{ t('admin.progression.xpEventJoin') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_event_join"
               (input)="updateProgressionNumber('xp_event_join', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.xpEventComplete') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().xp_event_complete"
+            <span class="label">
+              {{ t('admin.progression.xpEventComplete') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_event_complete"
               (input)="updateProgressionNumber('xp_event_complete', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.xpVod') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().xp_vod"
+            <span class="label">
+              {{ t('admin.progression.xpVod') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_vod"
               (input)="updateProgressionNumber('xp_vod', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.warnThreshold') }}</span>
-            <input class="input mono" type="number" min="1" [value]="progressionDraft().warn_threshold"
+            <span class="label">
+              {{ t('admin.progression.warnThreshold') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="1" required [value]="progressionDraft().warn_threshold"
               (input)="updateProgressionNumber('warn_threshold', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.cooldown') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().message_cooldown_secs"
+            <span class="label">
+              {{ t('admin.progression.cooldown') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().message_cooldown_secs"
               (input)="updateProgressionNumber('message_cooldown_secs', $event)" />
           </label>
           <label>
-            <span class="label">{{ t('admin.progression.minChars') }}</span>
-            <input class="input mono" type="number" min="0" [value]="progressionDraft().message_min_chars"
+            <span class="label">
+              {{ t('admin.progression.minChars') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input mono" type="number" min="0" required [value]="progressionDraft().message_min_chars"
               (input)="updateProgressionNumber('message_min_chars', $event)" />
           </label>
           <label class="sm:col-span-3">
@@ -158,6 +196,71 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
           <div class="sm:col-span-3">
             <button type="submit" class="btn btn--primary" [disabled]="progressionSaving()">
               {{ t('admin.progression.save') }}
+            </button>
+          </div>
+        </form>
+
+        <form class="mt-8 border-t pt-6" style="border-color: var(--color-border)"
+          (submit)="saveGuildRanks($event)">
+          <h3 class="eyebrow mb-2">{{ t('admin.progression.ranksTitle') }}</h3>
+          <p class="mb-4 text-sm" style="color: var(--color-text-secondary)">
+            {{ t('admin.progression.ranksHint') }}
+          </p>
+          <p class="mb-4 text-xs" style="color: var(--color-text-secondary)">
+            {{ t('validation.requiredLegend') }}
+          </p>
+          <ul class="grid gap-3" role="list">
+            @for (rank of guildRanks(); track $index; let i = $index) {
+              <li class="grid gap-3 sm:grid-cols-3">
+                <label>
+                  <span class="label">
+                    {{ t('admin.progression.rankName') }}
+                    <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                  </span>
+                  <input class="input" [id]="'guild-rank-name-' + i" [value]="rank.name"
+                    maxlength="40" required
+                    (input)="updateGuildRank(i, 'name', $event)" />
+                </label>
+                <label>
+                  <span class="label">
+                    {{ t('admin.progression.rankMinXp') }}
+                    <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                  </span>
+                  <input class="input mono" type="number" min="0" [value]="rank.min_xp"
+                    [readonly]="i === 0" required
+                    (input)="updateGuildRank(i, 'min_xp', $event)" />
+                </label>
+                <label>
+                  <span class="label">{{ t('admin.progression.rankDiscordRole') }}</span>
+                  <select class="input" [value]="rank.discord_role_id ?? ''"
+                    (change)="updateGuildRole(i, $event)">
+                    <option value="">{{ t('admin.progression.rankUnmapped') }}</option>
+                    @for (role of discordRoles(); track role.id) {
+                      <option [value]="role.id">{{ role.name }} ({{ role.id }})</option>
+                    }
+                    @if (rank.discord_role_id && !hasDiscordRole(rank.discord_role_id)) {
+                      <option [value]="rank.discord_role_id">
+                        {{ rank.discord_role_id }} ({{ t('admin.progression.rankUnavailable') }})
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (i > 0) {
+                  <button type="button" class="btn btn--outline btn--sm sm:col-span-3 justify-self-start"
+                    (click)="removeGuildRank(i)">
+                    {{ t('admin.progression.rankRemove', { name: rank.name }) }}
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <button type="button" class="btn btn--outline" [disabled]="guildRanks().length >= 20"
+              (click)="addGuildRank()">
+              {{ t('admin.progression.rankAdd') }}
+            </button>
+            <button type="submit" class="btn btn--primary" [disabled]="rankSaving()">
+              {{ t('admin.progression.rankSave') }}
             </button>
           </div>
         </form>
@@ -200,46 +303,73 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
                     </button>
                   }
                 </div>
-                <div class="grid gap-3 sm:grid-cols-3">
+                <form class="grid gap-3 sm:grid-cols-3" (submit)="saveSeason($event, season.id)">
+                  <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
+                    {{ t('validation.requiredLegend') }}
+                  </p>
                   <label>
-                    <span class="label">{{ t('admin.progression.seasonName') }}</span>
+                    <span class="label">
+                      {{ t('admin.progression.seasonName') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
                     <input class="input" type="text" [value]="seasonEdits()[season.id]?.name ?? season.name"
-                      (input)="updateSeasonEdit(season.id, 'name', $event)" />
+                      required (input)="updateSeasonEdit(season.id, 'name', $event)" />
                   </label>
                   <label>
-                    <span class="label">{{ t('admin.progression.startsAt') }}</span>
+                    <span class="label">
+                      {{ t('admin.progression.startsAt') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
                     <input class="input mono" type="datetime-local"
+                      required
                       [value]="seasonEdits()[season.id]?.starts_at ?? toLocalInput(season.starts_at)"
                       (input)="updateSeasonEdit(season.id, 'starts_at', $event)" />
                   </label>
                   <label>
-                    <span class="label">{{ t('admin.progression.endsAt') }}</span>
+                    <span class="label">
+                      {{ t('admin.progression.endsAt') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
                     <input class="input mono" type="datetime-local"
+                      required
                       [value]="seasonEdits()[season.id]?.ends_at ?? toLocalInput(season.ends_at)"
                       (input)="updateSeasonEdit(season.id, 'ends_at', $event)" />
                   </label>
-                </div>
-                <button type="button" class="btn btn--outline btn--sm mt-3"
-                  (click)="saveSeason(season.id)">
-                  {{ t('common.save') }}
-                </button>
+                  <div class="sm:col-span-3">
+                    <button type="submit" class="btn btn--outline btn--sm">
+                      {{ t('common.save') }}
+                    </button>
+                  </div>
+                </form>
               </li>
             }
           </ul>
 
           <form class="mt-4 grid gap-3 sm:grid-cols-3" (submit)="createSeason($event)">
+            <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
+              {{ t('validation.requiredLegend') }}
+            </p>
             <label>
-              <span class="label">{{ t('admin.progression.seasonName') }}</span>
+              <span class="label">
+                {{ t('admin.progression.seasonName') }}
+                <span style="color: var(--color-error)" aria-hidden="true">*</span>
+              </span>
               <input class="input" type="text" [value]="newSeason().name"
                 (input)="updateNewSeason('name', $event)" required />
             </label>
             <label>
-              <span class="label">{{ t('admin.progression.startsAt') }}</span>
+              <span class="label">
+                {{ t('admin.progression.startsAt') }}
+                <span style="color: var(--color-error)" aria-hidden="true">*</span>
+              </span>
               <input class="input mono" type="datetime-local" [value]="newSeason().starts_at"
                 (input)="updateNewSeason('starts_at', $event)" required />
             </label>
             <label>
-              <span class="label">{{ t('admin.progression.endsAt') }}</span>
+              <span class="label">
+                {{ t('admin.progression.endsAt') }}
+                <span style="color: var(--color-error)" aria-hidden="true">*</span>
+              </span>
               <input class="input mono" type="datetime-local" [value]="newSeason().ends_at"
                 (input)="updateNewSeason('ends_at', $event)" required />
             </label>
@@ -277,6 +407,9 @@ export class AdminProgression {
   protected readonly progressionDraft = signal<ProgressionDraft>({ ...EMPTY_PROGRESSION_DRAFT });
   protected readonly progressionSeasons = signal<ProgressionSeasonView[]>([]);
   protected readonly discordChannels = signal<DiscordChannelView[]>([]);
+  protected readonly discordRoles = signal<DiscordRoleView[]>([]);
+  protected readonly guildRanks = signal<GuildRankView[]>([]);
+  protected readonly rankSaving = signal(false);
   protected readonly seasonEdits = signal<Record<number, SeasonEdit>>({});
   protected readonly newSeason = signal<NewSeasonDraft>({
     name: '',
@@ -285,7 +418,8 @@ export class AdminProgression {
     activate: true,
   });
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.loadProgression();
@@ -300,8 +434,10 @@ export class AdminProgression {
       ]);
       this.progressionSettings.set(settings);
       this.progressionDraft.set(toProgressionDraft(settings));
+      this.guildRanks.set(settings.guild_ranks);
       this.progressionSeasons.set(seasons);
       void this.loadDiscordChannels();
+      void this.loadDiscordRoles();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -334,6 +470,71 @@ export class AdminProgression {
       this.discordChannels.set(channels);
     } catch {
       // The VOD picker stays empty until Discord listing is available.
+    }
+  }
+
+  private async loadDiscordRoles(): Promise<void> {
+    try {
+      this.discordRoles.set(await firstValueFrom(
+        this.api.get<DiscordRoleView[]>('api/admin/discord/roles'),
+      ));
+    } catch {
+      // Existing mappings remain visible as unavailable options.
+    }
+  }
+
+  protected hasDiscordRole(roleId: string): boolean {
+    return this.discordRoles().some((role) => role.id === roleId);
+  }
+
+  protected updateGuildRank(index: number, field: 'name' | 'min_xp', event: Event): void {
+    const value = field === 'name'
+      ? (event.target as HTMLInputElement).value
+      : Number((event.target as HTMLInputElement).value);
+    this.guildRanks.update((ranks) => ranks.map((rank, i) =>
+      i === index ? { ...rank, [field]: value } : rank,
+    ));
+  }
+
+  protected updateGuildRole(index: number, event: Event): void {
+    const roleId = (event.target as HTMLSelectElement).value;
+    this.guildRanks.update((ranks) => ranks.map((rank, i) =>
+      i === index ? { ...rank, discord_role_id: roleId || null } : rank,
+    ));
+  }
+
+  protected addGuildRank(): void {
+    this.guildRanks.update((ranks) => ranks.length >= 20
+      ? ranks
+      : [...ranks, {
+          name: this.t('admin.progression.rankNewName'),
+          min_xp: (ranks.at(-1)?.min_xp ?? -1) + 1,
+          discord_role_id: null,
+        }]);
+  }
+
+  protected removeGuildRank(index: number): void {
+    if (index === 0) {
+      return;
+    }
+    this.guildRanks.update((ranks) => ranks.filter((_, i) => i !== index));
+  }
+
+  protected async saveGuildRanks(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    this.rankSaving.set(true);
+    try {
+      const updated = await firstValueFrom(this.api.put<ProgressionSettingsView>(
+        'api/progression/settings',
+        { guild_ranks: this.guildRanks() },
+      ));
+      this.guildRanks.set(updated.guild_ranks);
+      this.progressionSettings.set(updated);
+      this.toasts.success(this.t('admin.progression.saved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.rankSaving.set(false);
     }
   }
 
@@ -390,7 +591,8 @@ export class AdminProgression {
     };
   }
 
-  protected async saveSeason(id: number): Promise<void> {
+  protected async saveSeason(submit: SubmitEvent, id: number): Promise<void> {
+    submit.preventDefault();
     const edit = this.seasonEdits()[id] ?? this.seedSeasonEdit(id);
     try {
       const updated = await firstValueFrom(

@@ -39,6 +39,8 @@ pub mod progression_setting {
         pub vod_forum_channel_id: Option<String>,
         /// JSON array of Discord channel ids that never grant message XP.
         pub message_channel_deny_list_json: String,
+        /// Ordered, tenant-local guild rank definitions.
+        pub guild_ranks_json: String,
         /// Last admin edit.
         pub updated_at: DateTimeWithTimeZone,
         /// Last admin editor.

@@ -118,6 +118,28 @@ describe('DataTable', () => {
     expect(body).not.toContain('Alpha');
   });
 
+  it('exposes sortable column headers as buttons and updates the sort state', async () => {
+    fixture.componentRef.setInput('columns', [
+      { ...columns()[0], sortable: true },
+      columns()[1],
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const header = fixture.nativeElement.querySelector('th') as HTMLTableCellElement;
+    const button = header.querySelector('button') as HTMLButtonElement;
+    expect(button.type).toBe('button');
+    expect(button.textContent).toContain('Name');
+    button.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(header.getAttribute('aria-sort')).toBe('ascending');
+    button.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(header.getAttribute('aria-sort')).toBe('descending');
+  });
+
   it('emits rowClick when the row body is activated, not when a nested button is clicked', async () => {
     fixture.componentRef.setInput('rowClickable', true);
     fixture.detectChanges();

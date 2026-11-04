@@ -1,8 +1,8 @@
 import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { of, throwError } from 'rxjs';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -113,7 +113,9 @@ async function render(
     isAllianceTenant: () => boolean;
   };
   page.reload();
+  fixture.detectChanges();
   await fixture.whenStable();
+  fixture.detectChanges();
   return fixture;
 }
 
@@ -143,6 +145,100 @@ describe('SplitDetailPage alliance share', () => {
     expect(page.canShare()).toBe(false);
     expect(page.canAct()).toBe(false);
     fixture.destroy();
+  });
+});
+
+describe('split completion wording', () => {
+  it('shows the bank-credit lifecycle instead of calling pending credits paid', async () => {
+    const fixture = await render('guild');
+    TestBed.inject(TranslateService).use('en');
+    const page = fixture.componentInstance as unknown as {
+      payoutLifecycleLabel: (split: { status: string }) => string;
+      splitTransactions: { set: (transactions: unknown[]) => void };
+      transactionsComplete: { set: (complete: boolean) => void };
+    };
+    const completed = { ...pendingSplit, status: 'completed' };
+    page.transactionsComplete.set(true);
+    page.splitTransactions.set([{ status: 'pending' }]);
+    expect(page.payoutLifecycleLabel(completed)).toBe('Pending');
+    page.splitTransactions.set([{ status: 'requested' }]);
+    expect(page.payoutLifecycleLabel(completed)).toBe('Awaiting payout');
+    page.splitTransactions.set([{ status: 'withdrawn' }]);
+    expect(page.payoutLifecycleLabel(completed)).toBe('Paid out');
+    fixture.destroy();
+  });
+
+  it('does not claim all credits are paid when a page omits rows or a refresh fails', async () => {
+    const fixture = await render('guild');
+    TestBed.inject(TranslateService).use('en');
+    const api = TestBed.inject(ApiService);
+    const page = fixture.componentInstance as unknown as {
+      loadTransactions: (id: number) => Promise<void>;
+      payoutLifecycleLabel: (split: { status: string }) => string;
+      splitPayoutComplete: () => boolean;
+      splitTransactions: () => unknown[];
+      transactionsComplete: () => boolean;
+      transactionsLoadFailed: () => boolean;
+    };
+    const completed = { ...pendingSplit, status: 'completed' };
+    const allWithdrawn = Array.from({ length: 100 }, (_, id) => ({ id, status: 'withdrawn' }));
+
+    vi.spyOn(api, 'get').mockReturnValue(
+      of({ items: allWithdrawn, total_items: 101, total_pages: 2, current_page: 1, limit: 100 }) as never,
+    );
+    await page.loadTransactions(7);
+    expect(page.transactionsComplete()).toBe(false);
+    expect(page.payoutLifecycleLabel(completed)).toBe('Completed');
+    expect(page.splitPayoutComplete()).toBe(false);
+
+    vi.mocked(api.get).mockReturnValue(
+      of({
+        items: [{ id: 1, status: 'withdrawn' }, { id: 2, status: 'pending' }],
+        total_items: 2,
+        total_pages: 1,
+        current_page: 1,
+        limit: 100,
+      }) as never,
+    );
+    await page.loadTransactions(7);
+    expect(page.transactionsComplete()).toBe(true);
+    expect(page.payoutLifecycleLabel(completed)).toBe('Pending');
+    expect(page.splitPayoutComplete()).toBe(false);
+
+    vi.mocked(api.get).mockReturnValue(throwError(() => new Error('offline')) as never);
+    await page.loadTransactions(7);
+    expect(page.transactionsLoadFailed()).toBe(true);
+    expect(page.transactionsComplete()).toBe(false);
+    expect(page.splitTransactions()).toHaveLength(0);
+    expect(page.payoutLifecycleLabel(completed)).toBe('Completed');
+    expect(page.splitPayoutComplete()).toBe(false);
+    fixture.destroy();
+  });
+
+  it('explains that completion creates pending credits rather than paying members', async () => {
+    const showModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) { this.open = true; },
+    });
+    try {
+    const fixture = await render('guild');
+    TestBed.inject(TranslateService).use('en');
+    const page = fixture.componentInstance as unknown as {
+      showCompleteConfirmDialog: { set: (open: boolean) => void };
+    };
+    page.showCompleteConfirmDialog.set(true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('creates pending Guild Bank credits');
+    expect(fixture.nativeElement.textContent).toContain('request withdrawal before an officer pays them');
+    fixture.destroy();
+    } finally {
+      if (showModal) {
+        Object.defineProperty(HTMLDialogElement.prototype, 'showModal', showModal);
+      } else {
+        Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+      }
+    }
   });
 });
 

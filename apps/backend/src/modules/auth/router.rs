@@ -685,6 +685,8 @@ async fn finalize_session(
     profile.tenant_kind = Some(ctx.kind.clone());
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
+    profile.is_tenant_owner =
+        PlatformService::is_guild_owner(control, &tenant.id, &profile.id).await?;
     if profile.is_superadmin {
         profile.roles = vec!["SuperAdmin".to_string()];
         profile.highest_role = "SuperAdmin".to_string();
@@ -704,7 +706,10 @@ async fn finalize_session(
     }
     profile.permissions = ctx
         .permissions
-        .granted_permissions(profile.is_superadmin, &profile.roles)
+        .granted_permissions(
+            profile.is_superadmin || profile.is_tenant_owner,
+            &profile.roles,
+        )
         .await;
     // Modules are per-tenant, so they must be re-resolved here rather than
     // inherited. `profile` is the *previous* session on a tenant switch, and
@@ -810,12 +815,15 @@ pub async fn get_me(
     // requiring a fresh login.
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
+    profile.is_tenant_owner = false;
 
     if session_needs_a_tenant(&profile) {
         adopt_matching_tenant(&jar, &cfg, &registry, &admins, &control.0, &mut profile).await?;
     }
 
     if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
+        profile.is_tenant_owner =
+            PlatformService::is_guild_owner(&control.0, tenant_id, &profile.id).await?;
         match registry.get_or_load(tenant_id).await {
             Ok(ctx) => {
                 profile.tenant_kind = Some(ctx.kind.clone());
@@ -830,6 +838,7 @@ pub async fn get_me(
                 profile.tenant_id = None;
                 profile.tenant_name = None;
                 profile.tenant_kind = None;
+                profile.is_tenant_owner = false;
                 profile.permissions.clear();
                 profile.features.clear();
                 profile.brand = None;
@@ -894,7 +903,10 @@ pub async fn get_me(
     }
 
     profile.permissions = perms
-        .granted_permissions(profile.is_superadmin, &profile.roles)
+        .granted_permissions(
+            profile.is_superadmin || profile.is_tenant_owner,
+            &profile.roles,
+        )
         .await;
 
     let profile_json = serde_json::to_string(&profile)

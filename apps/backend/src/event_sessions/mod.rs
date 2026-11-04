@@ -11,8 +11,8 @@
 pub mod auto_stop;
 pub mod battle_linker;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
@@ -56,6 +56,12 @@ pub fn spawn(
                 tracing::info!(tenant_id, "event-sessions worker stopped");
                 break;
             }
+            if let Err(error) = EventService::new()
+                .retry_pending_event_completion_xp(&db)
+                .await
+            {
+                tracing::warn!(tenant_id, error = %error, "event completion XP retry cycle failed");
+            }
             match prepare_cycle(&control, &tenant_id).await {
                 Ok(None) => {}
                 Ok(Some(scope)) if stop.load(Ordering::Relaxed) => {
@@ -64,7 +70,9 @@ pub fn spawn(
                 }
                 Ok(Some(scope)) => {
                     let albiondata = albiondata.with_default_server(scope.region.clone());
-                    if let Err(e) = run_cycle(&db, &albionbb, &albiondata, &scope).await {
+                    if let Err(e) =
+                        run_cycle(&db, &control, &tenant_id, &albionbb, &albiondata, &scope).await
+                    {
                         tracing::error!(tenant_id, error = %e, "event-sessions worker cycle failed");
                     }
                 }
@@ -110,11 +118,14 @@ async fn prepare_cycle(
 /// and each logs its own errors so the cycle keeps running.
 async fn run_cycle(
     db: &DatabaseConnection,
+    control: &DatabaseConnection,
+    tenant_id: &str,
     albionbb: &AlbionBbService,
     albiondata: &AlbionDataService,
     scope: &AlbionScope,
 ) -> Result<(), AppError> {
-    auto_stop_expired_sessions(db, &EventService::new()).await?;
+    let events = EventService::new();
+    auto_stop_expired_sessions(db, &events, control, tenant_id).await?;
     if let Err(error) = GiveawayService::new().draw_due(db).await {
         tracing::warn!(error = %error, "giveaway auto-draw cycle failed");
     }

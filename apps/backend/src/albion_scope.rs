@@ -138,9 +138,9 @@ impl From<AlbionScopeError> for crate::errors::AppError {
     fn from(err: AlbionScopeError) -> Self {
         match err {
             AlbionScopeError::Database(err) => Self::Database(err),
-            AlbionScopeError::NotConfigured => Self::Validation(
-                "tenant has no Albion guild configuration".to_owned(),
-            ),
+            AlbionScopeError::NotConfigured => {
+                Self::Validation("tenant has no Albion guild configuration".to_owned())
+            }
         }
     }
 }
@@ -151,13 +151,8 @@ mod tests {
 
     #[test]
     fn configured_tenant_does_not_inherit_env_allies() {
-        let scope = AlbionScope::from_tenant_columns(
-            Some("guild-1"),
-            Some("asia"),
-            Some(""),
-            None,
-        )
-        .expect("configured");
+        let scope = AlbionScope::from_tenant_columns(Some("guild-1"), Some("asia"), Some(""), None)
+            .expect("configured");
         assert_eq!(scope.guild_id, "guild-1");
         assert_eq!(scope.region, "asia");
         assert!(scope.allied_guild_ids.is_empty());

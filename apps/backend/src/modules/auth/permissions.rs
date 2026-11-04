@@ -303,6 +303,9 @@ pub enum Permission {
     /// Publish a guild artifact snapshot into the alliance tenant. Officer+.
     #[strum(serialize = "alliance.share")]
     AllianceShare,
+    /// Leave the guild's active alliance membership. Grantable independently of sharing.
+    #[strum(serialize = "alliance.leave")]
+    AllianceLeave,
 }
 
 impl Permission {

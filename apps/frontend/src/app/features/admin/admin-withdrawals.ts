@@ -371,7 +371,11 @@ const GROUPING_FETCH_LIMIT = 500;
             </div>
           </div>
 
-          <p class="text-xs" style="color: var(--color-text-secondary)">
+          <p
+            class="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-container)] p-3 text-sm font-medium"
+            style="color: var(--color-text)"
+            role="note"
+          >
             {{ t('bank.withdraw.confirmWarning') }}
           </p>
         </div>

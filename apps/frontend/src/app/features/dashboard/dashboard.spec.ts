@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
@@ -143,6 +143,52 @@ describe('Dashboard', () => {
     expect(text).toContain('Season 8');
     expect(text).toContain('Level 12');
     expect(text).toContain('Rank #8');
+  });
+
+  it('keeps the DOM order aligned with the visual dashboard order', () => {
+    const page = fixture.nativeElement.querySelector('.dashboard-page') as HTMLElement;
+    const sections = Array.from(page.querySelectorAll(':scope > section'));
+    expect(sections[0].querySelector('h2')?.textContent).toContain('Requires your attention');
+    expect(sections[1].classList).toContain('identity-card');
+    expect(sections[2].getAttribute('aria-label')).toBe('Your snapshot');
+  });
+
+  it('renders progression details when the response has no active season', async () => {
+    const original = mockApiService.get.getMockImplementation()!;
+    mockApiService.get.mockImplementation((path: string) =>
+      path === 'api/progression/me'
+        ? of({ ...mockProgression, season: null })
+        : original(path),
+    );
+    await (component as Dashboard & { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('No active season');
+    expect(text).toContain('Level 12');
+    mockApiService.get.mockImplementation(original);
+  });
+
+  it('shows progression loading and failure states', async () => {
+    const original = mockApiService.get.getMockImplementation()!;
+    const pending = new Subject<ProgressionMeView>();
+    mockApiService.get.mockImplementation((path: string) =>
+      path === 'api/progression/me' ? pending : original(path),
+    );
+    const refresh = (component as Dashboard & { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Loading…');
+    pending.next(mockProgression);
+    pending.complete();
+    await refresh;
+
+    mockApiService.get.mockImplementation((path: string) =>
+      path === 'api/progression/me' ? throwError(() => new Error('offline')) : original(path),
+    );
+    await (component as Dashboard & { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Something went wrong.');
+    expect(fixture.nativeElement.textContent).not.toContain('No active season');
+    mockApiService.get.mockImplementation(original);
   });
 
   it('renders personal KPI cards instead of guild totals', () => {
@@ -301,6 +347,46 @@ describe('Dashboard', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain("You're all caught up");
     expect(text).not.toContain('silver available to request');
+  });
+
+  it('does not show zeros or a caught-up state while refreshing', async () => {
+    const original = mockApiService.get.getMockImplementation()!;
+    const pending = new Subject<BalanceSummary>();
+    mockApiService.get.mockImplementation((path: string) =>
+      path === 'api/bank/balance' ? pending : original(path),
+    );
+    const refresh = (component as Dashboard & { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Loading…');
+    expect(text).not.toContain("You're all caught up");
+    expect(text).not.toContain('No mass scheduled');
+    expect(text).not.toContain('0 credits');
+    pending.next(mockBalance);
+    pending.complete();
+    await refresh;
+    mockApiService.get.mockImplementation(original);
+  });
+
+  it('reports partial event failure without claiming an empty schedule or caught-up state', async () => {
+    const original = mockApiService.get.getMockImplementation()!;
+    mockApiService.get.mockImplementation((path: string, params?: { status?: string }) => {
+      if (path === 'api/events' && params?.status === 'live') {
+        return throwError(() => new Error('offline'));
+      }
+      if (path === 'api/bank/balance') {
+        return of({ ...mockBalance, pending_total: 0, pending_count: 0, requested_total: 0, requested_count: 0 });
+      }
+      if (path === 'api/users/me/metrics') return of({ ...mockMetrics, regears_pending: 0 });
+      return original(path);
+    });
+    await (component as Dashboard & { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Something went wrong.');
+    expect(text).not.toContain("You're all caught up");
+    expect(text).not.toContain('No mass scheduled');
+    mockApiService.get.mockImplementation(original);
   });
 });
 

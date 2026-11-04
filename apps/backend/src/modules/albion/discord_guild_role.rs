@@ -34,20 +34,23 @@ pub async fn assign_guild_role(
 }
 
 /// Assigns `role_id` on `guild_id` (best-effort, never fails the caller).
+///
+/// Returns whether Discord confirmed the assignment. Only a confirmed assignment
+/// may be recorded as a membership grant.
 pub async fn assign_discord_role(
     cfg: &Config,
     guild_id: &str,
     discord_user_id: &str,
     role_id: &str,
-) {
+) -> bool {
     let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
         tracing::debug!("skipping Discord role assignment: bot token is not configured");
-        return;
+        return false;
     };
     let guild_id = guild_id.trim();
     let role_id = role_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() || role_id.is_empty() {
-        return;
+        return false;
     }
 
     let url = format!(
@@ -66,6 +69,7 @@ pub async fn assign_discord_role(
                 role_id,
                 "assigned configured Discord guild role after Albion link"
             );
+            return true;
         }
         Ok(response) => {
             let status = response.status();
@@ -87,6 +91,7 @@ pub async fn assign_discord_role(
             );
         }
     }
+    false
 }
 
 /// Revokes the configured Guild base role from a Discord member of `guild_id`.
@@ -105,6 +110,44 @@ pub async fn revoke_guild_role(
         return;
     };
     revoke_discord_role(cfg, guild_id, discord_user_id, &role_id).await;
+}
+
+/// Revokes `role_id` and reports whether Discord confirmed it.
+///
+/// Missing bot token and any non-success response (other than 404, which means
+/// the member no longer has the role) are errors so the caller can retry.
+pub async fn revoke_discord_role_verified(
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+    role_id: &str,
+) -> Result<(), String> {
+    let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
+        return Err("discord bot token is not configured".to_owned());
+    };
+    let guild_id = guild_id.trim();
+    let role_id = role_id.trim();
+    let discord_user_id = discord_user_id.trim();
+    if guild_id.is_empty() || discord_user_id.is_empty() || role_id.is_empty() {
+        return Err("discord role revocation is missing guild, user, or role".to_owned());
+    }
+    let url = format!(
+        "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}/roles/{role_id}"
+    );
+    let response = discord_client()
+        .delete(&url)
+        .header("Authorization", format!("Bot {token}"))
+        .header("User-Agent", "WeaklingsBackend (0.0.3)")
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
+        Ok(())
+    } else {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Err(format!("discord role revocation failed: {status} {body}"))
+    }
 }
 
 /// Revokes `role_id` on `guild_id` (best-effort).

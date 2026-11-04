@@ -119,25 +119,78 @@ const PAGE_LIMIT = 25;
           <div class="flex flex-wrap items-end gap-2">
             <label class="flex flex-col gap-1">
               <span class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('intel.opponents.guildFilter.label') }}
+                {{ t('intel.opponents.guildFilter.searchLabel') }}
               </span>
               <input
                 class="input input--sm"
-                type="text"
-                inputmode="numeric"
-                [value]="guildIdFilter()"
+                type="search"
+                [value]="guildFilterSearch()"
+                [disabled]="guildFilterLoading()"
                 [placeholder]="t('intel.opponents.guildFilter.placeholder')"
-                (input)="onGuildIdFilterInput($event)"
-                (keyup.enter)="applyGuildIdFilter()"
+                (input)="onGuildFilterSearchInput($event)"
+                (keyup.enter)="searchGuildFilter()"
               />
             </label>
-            <button type="button" class="btn btn--outline btn--sm" (click)="applyGuildIdFilter()">
-              {{ t('common.filter') }}
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              [disabled]="guildFilterLoading()"
+              (click)="searchGuildFilter()"
+            >
+              {{ t('common.search') }}
             </button>
-            @if (guildIdFilter()) {
-              <button type="button" class="btn btn--ghost btn--sm" (click)="clearGuildIdFilter()">
-                {{ t('common.clear') }}
+            <label class="flex flex-col gap-1">
+              <span class="text-xs" style="color: var(--color-text-secondary)">
+                {{ t('intel.opponents.guildFilter.label') }}
+              </span>
+              <select
+                class="select"
+                [value]="guildIdFilter()"
+                [disabled]="guildFilterLoading() || guildFilterFailed()"
+                (change)="onGuildFilterChange($event)"
+              >
+                <option value="">{{ t('common.all') }}</option>
+                @if (selectedGuild() && !selectedGuildOnCurrentPage()) {
+                  <option [value]="selectedGuild()!.id">{{ selectedGuild()!.name }}</option>
+                }
+                @for (guild of guildFilterOptions(); track guild.id) {
+                  <option [value]="guild.id">{{ guild.name }}</option>
+                }
+              </select>
+            </label>
+            @if (guildFilterLoading()) {
+              <span role="status" class="text-sm">{{ t('common.loading') }}</span>
+            } @else if (guildFilterFailed()) {
+              <span role="alert" class="text-sm">{{ t('common.error') }}</span>
+              <button type="button" class="btn btn--outline btn--sm" (click)="retryGuildFilterOptions()">
+                {{ t('common.retry') }}
               </button>
+            } @else if (guildFilterOptions().length === 0) {
+              <span class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('picker.noMatches') }}
+              </span>
+            } @else if (guildFilterTotalPages() > 1) {
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  [disabled]="guildFilterPage() <= 1"
+                  (click)="changeGuildFilterPage(guildFilterPage() - 1)"
+                >
+                  {{ t('common.prev') }}
+                </button>
+                <span class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('intel.opponents.guildFilter.page', { page: guildFilterPage(), pages: guildFilterTotalPages() }) }}
+                </span>
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  [disabled]="guildFilterPage() >= guildFilterTotalPages()"
+                  (click)="changeGuildFilterPage(guildFilterPage() + 1)"
+                >
+                  {{ t('common.next') }}
+                </button>
+              </div>
             }
           </div>
 
@@ -236,7 +289,18 @@ export class Opponents {
   protected readonly playersFailed = signal(false);
   private playersLoaded = false;
 
+  protected readonly guildFilterOptions = signal<EnemyGuildSummary[]>([]);
+  protected readonly guildFilterLoading = signal(false);
+  protected readonly guildFilterFailed = signal(false);
+  protected readonly guildFilterSearch = signal('');
+  protected readonly guildFilterPage = signal(1);
+  protected readonly guildFilterTotalPages = signal(1);
   protected readonly guildIdFilter = signal('');
+  protected readonly selectedGuild = signal<EnemyGuildSummary | null>(null);
+  protected readonly selectedGuildOnCurrentPage = computed(() =>
+    this.guildFilterOptions().some((guild) => guild.id === this.selectedGuild()?.id),
+  );
+  private guildFilterAppliedSearch = '';
 
   private guildsParams: DataTablePageChange = parseDataTableQuery(this.route.snapshot.queryParamMap, {
     defaultPageSize: PAGE_LIMIT,
@@ -251,7 +315,8 @@ export class Opponents {
     { id: 'players', label: this.t('intel.opponents.tab.players') },
   ]);
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   protected readonly guildColumns = computed<readonly DataTableColumn<EnemyGuildSummary>[]>(() => [
     {
@@ -355,6 +420,7 @@ export class Opponents {
   protected onTabChange(tab: string): void {
     this.tab.set(tab === 'players' ? 'players' : 'guilds');
     if (tab === 'players' && !this.playersLoaded) {
+      void this.loadGuildFilterOptions(1);
       void this.loadPlayers();
     }
   }
@@ -385,16 +451,44 @@ export class Opponents {
     void this.loadPlayers();
   }
 
-  protected onGuildIdFilterInput(event: Event): void {
-    this.guildIdFilter.set((event.target as HTMLInputElement).value);
+  protected onGuildFilterSearchInput(event: Event): void {
+    this.guildFilterSearch.set((event.target as HTMLInputElement).value);
   }
 
-  protected applyGuildIdFilter(): void {
-    void this.loadPlayers();
+  protected searchGuildFilter(): void {
+    this.guildFilterAppliedSearch = this.guildFilterSearch().trim();
+    void this.loadGuildFilterOptions(1);
   }
 
-  protected clearGuildIdFilter(): void {
-    this.guildIdFilter.set('');
+  protected changeGuildFilterPage(page: number): void {
+    if (page < 1 || page > this.guildFilterTotalPages() || page === this.guildFilterPage()) {
+      return;
+    }
+    void this.loadGuildFilterOptions(page);
+  }
+
+  protected retryGuildFilterOptions(): void {
+    void this.loadGuildFilterOptions(this.guildFilterPage());
+  }
+
+  protected onGuildFilterChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    const id = Number(value);
+    const guild = this.guildFilterOptions().find((option) => option.id === id);
+    const isRetainedGuild = this.selectedGuild()?.id === id;
+    const filter =
+      value !== '' && Number.isSafeInteger(id) && id > 0 && (guild || isRetainedGuild) ? value : '';
+    if (filter === this.guildIdFilter()) {
+      return;
+    }
+    this.guildIdFilter.set(filter);
+    this.selectedGuild.set(filter ? (guild ?? this.selectedGuild()) : null);
+    this.playersParams = { ...this.playersParams, page: 1 };
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { page: 1 },
+      queryParamsHandling: 'merge',
+    });
     void this.loadPlayers();
   }
 
@@ -439,6 +533,30 @@ export class Opponents {
     }
   }
 
+  private async loadGuildFilterOptions(page: number): Promise<void> {
+    this.guildFilterLoading.set(true);
+    this.guildFilterFailed.set(false);
+    try {
+      const data = await firstValueFrom(
+        this.enemies.listGuilds({
+          page,
+          limit: PAGE_LIMIT,
+          search: this.guildFilterAppliedSearch || undefined,
+          sort: 'name',
+          order: 'asc',
+        }),
+      );
+      this.guildFilterOptions.set(data.items);
+      this.guildFilterPage.set(data.current_page);
+      this.guildFilterTotalPages.set(data.total_pages);
+    } catch (error) {
+      this.guildFilterFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.guildFilterLoading.set(false);
+    }
+  }
+
   private async loadPlayers(): Promise<void> {
     this.playersLoading.set(true);
     this.playersFailed.set(false);
@@ -446,14 +564,17 @@ export class Opponents {
       const event = this.playersParams;
       const sort: ListEnemyPlayersParams['sort'] =
         event.sort?.columnKey === 'name' ? 'name' : 'last_seen_at';
-      const rawGuildId = this.guildIdFilter().trim();
+      const rawGuildId = this.guildIdFilter();
       const guildId = rawGuildId === '' ? undefined : Number(rawGuildId);
       const data = await firstValueFrom(
         this.enemies.listPlayers({
           page: event.page,
           limit: event.pageSize,
           search: event.search.trim() || undefined,
-          guild_id: guildId !== undefined && Number.isFinite(guildId) ? guildId : undefined,
+          guild_id:
+            guildId !== undefined && Number.isSafeInteger(guildId) && guildId > 0
+              ? guildId
+              : undefined,
           sort,
           order: event.sort?.direction,
         }),

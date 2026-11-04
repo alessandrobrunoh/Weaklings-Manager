@@ -25,8 +25,14 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 
     <app-page-stack>
       <form class="card p-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" (submit)="onCreate($event)">
+        <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
+          {{ t('validation.requiredLegend') }}
+        </p>
         <label class="block" for="rank-name">
-          <span class="label">{{ t('platform.ranks.name') }}</span>
+          <span class="label">
+            {{ t('platform.ranks.name') }}
+            <span style="color: var(--color-error)" aria-hidden="true">*</span>
+          </span>
           <input
             id="rank-name"
             class="input"

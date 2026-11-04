@@ -16,6 +16,7 @@ describe('Events', () => {
   let component: Events;
   let currentUserId: number | undefined;
   let currentPermissions: Set<string>;
+  let showModalDescriptor: PropertyDescriptor | undefined;
 
   const mockEvents = [
     {
@@ -87,6 +88,7 @@ describe('Events', () => {
   };
 
   beforeEach(async () => {
+    showModalDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
     currentUserId = 100;
     currentPermissions = new Set(['events.create', 'events.edit', 'events.delete']);
     await TestBed.configureTestingModule({
@@ -111,6 +113,68 @@ describe('Events', () => {
 
   afterEach(() => {
     fixture.destroy();
+    if (showModalDescriptor) {
+      Object.defineProperty(HTMLDialogElement.prototype, 'showModal', showModalDescriptor);
+    } else {
+      Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+    }
+  });
+
+  it('updates create options and reveals split settings when selected', () => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) { this.open = true; },
+    });
+    (component as any).openCreate();
+    fixture.detectChanges();
+    const split: HTMLInputElement = fixture.nativeElement.querySelector('#event-create-split');
+    const cta: HTMLInputElement = fixture.nativeElement.querySelector('#event-call-to-arms');
+    const vodForumPost: HTMLInputElement = fixture.nativeElement.querySelector('#event-vod-forum-post');
+    expect(split.checked).toBe(false);
+    expect(vodForumPost.checked).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Select island');
+    split.click();
+    cta.click();
+    fixture.detectChanges();
+    expect((component as any).draftCreateSplit()).toBe(true);
+    expect((component as any).draftCallToArms()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Select island');
+    split.click();
+    fixture.detectChanges();
+    expect((component as any).draftCreateSplit()).toBe(false);
+    expect(fixture.nativeElement.textContent).not.toContain('Select island');
+  });
+
+  it('marks required event fields and conditional split fields', () => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) { this.open = true; },
+    });
+    (component as any).openCreate();
+    fixture.detectChanges();
+    const form: HTMLFormElement = fixture.nativeElement.querySelector('#create-event-form');
+    expect(form.textContent).toContain('* indicates a required field.');
+    const required = Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[required], select[required]'));
+    expect(required).toHaveLength(5);
+    for (const control of required) {
+      const marker = control.labels?.[0]?.querySelector<HTMLElement>('[aria-hidden="true"]');
+      expect(marker?.textContent).toBe('*');
+      expect(marker?.getAttribute('style')).toContain('var(--color-error)');
+    }
+    expect(form.querySelector<HTMLTextAreaElement>('textarea')?.required).toBe(false);
+    expect(form.querySelector<HTMLInputElement>('#event-player-cap')?.required).toBe(false);
+
+    form.querySelector<HTMLInputElement>('#event-create-split')!.click();
+    fixture.detectChanges();
+    const selects = Array.from(form.querySelectorAll<HTMLSelectElement>('select[required]'));
+    expect(selects).toHaveLength(3);
+    for (const control of selects) {
+      expect(control.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
+    }
+    expect((selects[2] as HTMLSelectElement).disabled).toBe(true);
+    form.querySelector<HTMLInputElement>('#event-create-split')!.click();
+    fixture.detectChanges();
+    expect(form.querySelectorAll('select[required]')).toHaveLength(1);
   });
 
   it('renders the 4 KPI stat cards with correct titles', () => {

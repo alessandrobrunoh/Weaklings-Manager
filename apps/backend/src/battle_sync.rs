@@ -7,11 +7,13 @@
 //! that gap by mirroring what the Discord poller sees (`/api/battles`, page 1)
 //! and backfilling any battle not yet persisted.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Statement};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Statement,
+};
 use tokio::time::interval;
 
 use crate::albion_scope::{self, AlbionScope};

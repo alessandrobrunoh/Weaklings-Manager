@@ -5,15 +5,15 @@ use std::str::FromStr;
 
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
 use super::entities::{
-    event, event_battle, event_discord_role, event_participation, event_roster_assignment,
-    event_roster_role, fight, fight_battle,
+    event, event_battle, event_completion_xp, event_discord_role, event_participation,
+    event_roster_assignment, event_roster_role, fight, fight_battle,
 };
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats,
@@ -57,6 +57,21 @@ const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 /// Grace period after a session is stopped during which the linker keeps
 /// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
+
+/// Keep flash VOD posts behind the same undo window as Discord announcements.
+fn vod_delivery_eligible() -> Condition {
+    Condition::all()
+        .add(event::Column::ArchivedAt.is_null())
+        .add(event::Column::Status.ne("cancelled"))
+        .add(
+            Condition::any()
+                .add(event::Column::EventKind.ne("flash"))
+                .add(
+                    event::Column::CreatedAt
+                        .lte(Utc::now().fixed_offset() - ChronoDuration::seconds(30)),
+                ),
+        )
+}
 
 /// Returns the roster size at which an expansion becomes visible.
 ///
@@ -290,6 +305,9 @@ fn event_view_from_parts(
         archived_at: model.archived_at.map(|time| time.to_rfc3339()),
         ping_alliance: model.ping_alliance,
         alliance_discord_message_id: model.alliance_discord_message_id,
+        vod_forum_post_enabled: model.vod_forum_post_enabled,
+        vod_forum_post_status: model.vod_forum_post_status,
+        vod_forum_thread_id: model.vod_forum_thread_id,
         alliance_discord_channel_id: None,
         alliance_discord_role_ids: Vec::new(),
         origin_guild_id: None,
@@ -824,8 +842,7 @@ async fn ensure_seed_fights_for_event(
                     active.updated_at = Set(Utc::now().into());
                     active.update(db).await.map_err(AppError::Database)?;
                     let _ = crate::modules::fight_analytics::writer::recompute_fight_analytics(
-                        db,
-                        fight_id,
+                        db, fight_id,
                     )
                     .await;
                     continue;
@@ -852,11 +869,8 @@ async fn ensure_seed_fights_for_event(
         .insert(db)
         .await
         .map_err(AppError::Database)?;
-        let _ = crate::modules::fight_analytics::writer::recompute_fight_analytics(
-            db,
-            created.id,
-        )
-        .await;
+        let _ = crate::modules::fight_analytics::writer::recompute_fight_analytics(db, created.id)
+            .await;
     }
     Ok(())
 }
@@ -1359,6 +1373,84 @@ fn normalize_battle_ids(raw_battle_ids: &[String]) -> Result<Vec<String>, AppErr
 pub struct EventService;
 
 impl EventService {
+    /// Returns only newly requested VOD forum deliveries. Legacy events are not
+    /// selected because their migration state is `not_requested`.
+    pub async fn pending_vod_forum_posts(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<EventView>, AppError> {
+        let models = event::Entity::find()
+            .filter(event::Column::VodForumPostEnabled.eq(true))
+            .filter(event::Column::VodForumPostStatus.eq("pending"))
+            .filter(vod_delivery_eligible())
+            .order_by_asc(event::Column::Id)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut views = Vec::with_capacity(models.len());
+        for model in models {
+            views.push(self.to_event_view(db, model).await?);
+        }
+        Ok(views)
+    }
+
+    /// Claims a pending delivery before making the non-idempotent Discord call.
+    /// A claimed `attempted` delivery is deliberately never automatically retried.
+    pub async fn claim_vod_forum_post(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<bool, AppError> {
+        let result = event::Entity::update_many()
+            .col_expr(event::Column::VodForumPostStatus, Expr::value("attempted"))
+            .filter(event::Column::Id.eq(id))
+            .filter(event::Column::VodForumPostEnabled.eq(true))
+            .filter(event::Column::VodForumPostStatus.eq("pending"))
+            .filter(vod_delivery_eligible())
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(result.rows_affected == 1)
+    }
+
+    /// Records the successful Discord thread id. Failed/ambiguous attempts stay
+    /// `attempted`, preventing a later poll from creating a duplicate post.
+    pub async fn record_vod_forum_post_created(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        thread_id: String,
+    ) -> Result<bool, AppError> {
+        let result = event::Entity::update_many()
+            .col_expr(event::Column::VodForumPostStatus, Expr::value("created"))
+            .col_expr(event::Column::VodForumThreadId, Expr::value(thread_id))
+            .filter(event::Column::Id.eq(id))
+            .filter(event::Column::VodForumPostStatus.eq("attempted"))
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(result.rows_affected == 1)
+    }
+
+    /// Requeues an ambiguous delivery after an operator verifies no post exists.
+    /// The caller must stop bot workers before reconciliation.
+    pub async fn retry_vod_forum_post(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<bool, AppError> {
+        let result = event::Entity::update_many()
+            .col_expr(event::Column::VodForumPostStatus, Expr::value("pending"))
+            .filter(event::Column::Id.eq(id))
+            .filter(event::Column::VodForumPostEnabled.eq(true))
+            .filter(event::Column::VodForumPostStatus.eq("attempted"))
+            .filter(vod_delivery_eligible())
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(result.rows_affected == 1)
+    }
+
     /// Creates a new service instance.
     #[must_use]
     pub fn new() -> Self {
@@ -2384,9 +2476,10 @@ impl EventService {
                 let comp_name = model
                     .comp_id
                     .map(|comp_id| {
-                        comps.get(&comp_id).cloned().ok_or_else(|| {
-                            AppError::NotFound(format!("Comp {comp_id} not found"))
-                        })
+                        comps
+                            .get(&comp_id)
+                            .cloned()
+                            .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))
                     })
                     .transpose()?;
                 let created_by_username = names
@@ -3309,6 +3402,12 @@ impl EventService {
             mass_time_utc: Set(Some(mass.into())),
             start_time_utc: Set(Some(start.into())),
             ping_alliance: Set(req.ping_alliance),
+            vod_forum_post_enabled: Set(req.vod_forum_post_enabled),
+            vod_forum_post_status: Set(if req.vod_forum_post_enabled {
+                "pending".to_string()
+            } else {
+                "not_requested".to_string()
+            }),
             ..Default::default()
         }
         .insert(db)
@@ -3353,15 +3452,6 @@ impl EventService {
                 "title": event_view.title,
                 "comp_id": comp_id
             })),
-        )
-        .await;
-
-        try_award_event_xp(
-            db,
-            creator_id,
-            event_id,
-            crate::modules::progression::status::XpSource::EventCreate,
-            format!("event_create:{event_id}"),
         )
         .await;
 
@@ -3422,8 +3512,7 @@ impl EventService {
             // → organized) is a dedicated flow, not an update.
             if event_model.is_flash() {
                 return Err(AppError::Conflict(
-                    "flash masses cannot receive a comp; promote the event instead"
-                        .to_string(),
+                    "flash masses cannot receive a comp; promote the event instead".to_string(),
                 ));
             }
             // Validate comp exists
@@ -3804,8 +3893,25 @@ impl EventService {
         id: i64,
         auto: bool,
     ) -> Result<EventView, AppError> {
+        self.stop_event_with_xp_policy(db, id, auto, true).await
+    }
+
+    /// Stops an event and atomically snapshots completion XP recipients.
+    ///
+    /// `award_xp` is false for alliance mirrors: only the original guild event
+    /// is authoritative for progression. The durable outbox pins its season
+    /// and configured rates at the stop timestamp, so retries cannot drift.
+    pub async fn stop_event_with_xp_policy(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        auto: bool,
+        award_xp: bool,
+    ) -> Result<EventView, AppError> {
+        let txn = db.begin().await.map_err(AppError::Database)?;
         let model = event::Entity::find_by_id(id)
-            .one(db)
+            .lock_exclusive()
+            .one(&txn)
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
@@ -3813,6 +3919,8 @@ impl EventService {
 
         // Idempotent: already stopped.
         if model.status == "stopped" || model.status == "auto_stopped" {
+            txn.commit().await.map_err(AppError::Database)?;
+            self.retry_event_completion_xp(db, id).await?;
             return self.to_event_view(db, model).await;
         }
         if model.status != "live" {
@@ -3830,28 +3938,196 @@ impl EventService {
         active.stopped_at = Set(Some(now.into()));
         active.updated_at = Set(now.into());
 
-        let updated = active.update(db).await.map_err(AppError::Database)?;
+        let updated = active.update(&txn).await.map_err(AppError::Database)?;
+
+        if award_xp {
+            self.snapshot_event_completion_xp(&txn, id, updated.created_by, now.into())
+                .await?;
+        }
+        txn.commit().await.map_err(AppError::Database)?;
 
         // Keep linked splits' roster and lifecycle condition current as soon as the event ends.
         SplitService::new().sync_event_participants(db, id).await?;
 
-        let roster = event_participation::Entity::find()
-            .filter(event_participation::Column::EventId.eq(id))
+        self.retry_event_completion_xp(db, id).await?;
+
+        self.to_event_view(db, updated).await
+    }
+
+    async fn snapshot_event_completion_xp(
+        &self,
+        txn: &sea_orm::DatabaseTransaction,
+        event_id: i64,
+        creator_id: i64,
+        completed_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<(), AppError> {
+        use crate::modules::progression::entities::{progression_season, progression_setting};
+
+        let season = progression_season::Entity::find()
+            .filter(progression_season::Column::IsActive.eq(true))
+            .filter(progression_season::Column::StartsAt.lte(completed_at))
+            .filter(progression_season::Column::EndsAt.gt(completed_at))
+            .one(txn)
+            .await
+            .map_err(AppError::Database)?;
+        let settings = progression_setting::Entity::find_by_id(1)
+            .one(txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::Internal("progression_settings singleton missing".into()))?;
+        let participants = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .all(txn)
+            .await
+            .map_err(AppError::Database)?;
+
+        let season_id = season.map(|row| row.id);
+        let mut recipients = Vec::with_capacity(participants.len() + 1);
+        recipients.push((
+            creator_id,
+            crate::modules::progression::status::XpSource::EventCreate,
+            i64::from(settings.xp_event_create),
+        ));
+        recipients.extend(participants.into_iter().map(|participant| {
+            (
+                participant.user_id,
+                crate::modules::progression::status::XpSource::EventComplete,
+                i64::from(settings.xp_event_complete),
+            )
+        }));
+
+        for (user_id, source, base_amount) in recipients {
+            let status = match (season_id, base_amount > 0) {
+                (Some(_), true) => "pending",
+                (Some(_), false) => "skipped_rate",
+                (None, _) => "no_season",
+            };
+            event_completion_xp::ActiveModel {
+                event_id: Set(event_id),
+                user_id: Set(user_id),
+                source: Set(source.as_str().to_string()),
+                season_id: Set(season_id),
+                base_amount: Set(base_amount),
+                idempotency_key: Set(format!(
+                    "event_completion:{event_id}:{}:{user_id}",
+                    source.as_str()
+                )),
+                status: Set(status.to_string()),
+                ..Default::default()
+            }
+            .insert(txn)
+            .await
+            .map_err(AppError::Database)?;
+        }
+        Ok(())
+    }
+
+    /// Retries only completion rows whose season, recipient, and amount were
+    /// captured at stop. Ledger idempotency handles simultaneous worker retries.
+    pub async fn retry_event_completion_xp(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+    ) -> Result<(), AppError> {
+        let pending = event_completion_xp::Entity::find()
+            .filter(event_completion_xp::Column::EventId.eq(event_id))
+            .filter(event_completion_xp::Column::Status.eq("pending"))
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        for participant in roster {
-            try_award_event_xp(
-                db,
-                participant.user_id,
-                id,
-                crate::modules::progression::status::XpSource::EventComplete,
-                format!("event_complete:{id}:{}", participant.user_id),
-            )
-            .await;
+        for row in pending {
+            let Some(season_id) = row.season_id else {
+                continue;
+            };
+            let source = crate::modules::progression::status::XpSource::from_str(&row.source)
+                .map_err(AppError::Internal)?;
+            let spec = crate::modules::progression::models::AwardSpec {
+                user_id: row.user_id,
+                source,
+                base_amount: Some(row.base_amount),
+                idempotency_key: row.idempotency_key.clone(),
+                actor_user_id: None,
+            };
+            let outcome = crate::modules::progression::service::ProgressionService::new()
+                .award_in_season(db, spec, season_id)
+                .await;
+            match outcome {
+                Ok(crate::modules::progression::models::AwardOutcome::Applied { .. }) => {
+                    event_completion_xp::Entity::update_many()
+                        .col_expr(event_completion_xp::Column::Status, Expr::value("awarded"))
+                        .filter(event_completion_xp::Column::Id.eq(row.id))
+                        .filter(event_completion_xp::Column::Status.eq("pending"))
+                        .exec(db)
+                        .await
+                        .map_err(AppError::Database)?;
+                }
+                Ok(crate::modules::progression::models::AwardOutcome::Duplicate) => {
+                    event_completion_xp::Entity::update_many()
+                        .col_expr(
+                            event_completion_xp::Column::Status,
+                            Expr::value("duplicate"),
+                        )
+                        .filter(event_completion_xp::Column::Id.eq(row.id))
+                        .filter(event_completion_xp::Column::Status.eq("pending"))
+                        .exec(db)
+                        .await
+                        .map_err(AppError::Database)?;
+                }
+                Ok(crate::modules::progression::models::AwardOutcome::SkippedRate) => {
+                    event_completion_xp::Entity::update_many()
+                        .col_expr(
+                            event_completion_xp::Column::Status,
+                            Expr::value("skipped_rate"),
+                        )
+                        .filter(event_completion_xp::Column::Id.eq(row.id))
+                        .filter(event_completion_xp::Column::Status.eq("pending"))
+                        .exec(db)
+                        .await
+                        .map_err(AppError::Database)?;
+                }
+                Ok(crate::modules::progression::models::AwardOutcome::NoActiveSeason) => {
+                    // A pinned season may be inactive now; award_in_season still
+                    // accepts it. This branch only occurs if the season row vanished.
+                    event_completion_xp::Entity::update_many()
+                        .col_expr(
+                            event_completion_xp::Column::Status,
+                            Expr::value("no_season"),
+                        )
+                        .filter(event_completion_xp::Column::Id.eq(row.id))
+                        .filter(event_completion_xp::Column::Status.eq("pending"))
+                        .exec(db)
+                        .await
+                        .map_err(AppError::Database)?;
+                }
+                Err(error) => tracing::warn!(
+                    event_id,
+                    user_id = row.user_id,
+                    error = %error,
+                    "event completion XP remains pending for retry"
+                ),
+            }
         }
+        Ok(())
+    }
 
-        self.to_event_view(db, updated).await
+    /// Retries every durable pending event award in this tenant.
+    pub async fn retry_pending_event_completion_xp(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<(), AppError> {
+        let event_ids = event_completion_xp::Entity::find()
+            .select_only()
+            .column(event_completion_xp::Column::EventId)
+            .filter(event_completion_xp::Column::Status.eq("pending"))
+            .distinct()
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        for event_id in event_ids {
+            self.retry_event_completion_xp(db, event_id).await?;
+        }
+        Ok(())
     }
 
     // --- Battle linker -----------------------------------------------------
@@ -4338,9 +4614,7 @@ impl EventService {
         // Flash masses have binary participation: no build choices, no comp
         // machinery. A build id on a flash signup is a client contract
         // violation, not a silent default.
-        if event_model.is_flash()
-            && (primary_build_id.is_some() || secondary_build_id.is_some())
-        {
+        if event_model.is_flash() && (primary_build_id.is_some() || secondary_build_id.is_some()) {
             return Err(AppError::Validation(
                 "flash masses have binary participation; build choices are not accepted"
                     .to_string(),
@@ -4381,7 +4655,10 @@ impl EventService {
             if primary_slot_limit == 0 {
                 return Err(AppError::Validation(format!(
                     "Primary build {primary_build_id} is not allowed in comp {} or its extra roster roles",
-                    active_comp.as_ref().map(|comp| comp.name.clone()).unwrap_or_default()
+                    active_comp
+                        .as_ref()
+                        .map(|comp| comp.name.clone())
+                        .unwrap_or_default()
                 )));
             }
 
@@ -4427,7 +4704,10 @@ impl EventService {
             if !in_active_comp && !extra_roster_build_ids.contains(&sec_id) {
                 return Err(AppError::Validation(format!(
                     "Secondary build {sec_id} is not allowed in comp {} or its extra roster roles",
-                    active_comp.as_ref().map(|comp| comp.name.clone()).unwrap_or_default()
+                    active_comp
+                        .as_ref()
+                        .map(|comp| comp.name.clone())
+                        .unwrap_or_default()
                 )));
             }
         }
@@ -4522,17 +4802,6 @@ impl EventService {
             .sync_event_participants(db, event_id)
             .await?;
 
-        if is_new {
-            try_award_event_xp(
-                db,
-                user_id,
-                event_id,
-                crate::modules::progression::status::XpSource::EventJoin,
-                format!("event_join:{event_id}:{user_id}"),
-            )
-            .await;
-        }
-
         Ok((self.get_event_detail(db, event_id).await?, roster_version))
     }
 
@@ -4603,35 +4872,6 @@ impl EventService {
 impl Default for EventService {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Best-effort XP grant. Failures are logged and never fail the event mutation.
-async fn try_award_event_xp(
-    db: &DatabaseConnection,
-    user_id: i64,
-    event_id: i64,
-    source: crate::modules::progression::status::XpSource,
-    idempotency_key: String,
-) {
-    let spec = crate::modules::progression::models::AwardSpec {
-        user_id,
-        source,
-        base_amount: None,
-        idempotency_key,
-        actor_user_id: None,
-    };
-    if let Err(error) = crate::modules::progression::service::ProgressionService::new()
-        .award(db, spec)
-        .await
-    {
-        tracing::warn!(
-            event_id,
-            user_id,
-            source = source.as_str(),
-            error = %error,
-            "failed to award event XP"
-        );
     }
 }
 
@@ -5243,8 +5483,7 @@ mod tests {
         let db = seed_db().await;
         let author = insert_user(&db, "flash-author", "flash-author@example.com").await;
         let member = insert_user(&db, "flash-member", "flash-member@example.com").await;
-        let second_member =
-            insert_user(&db, "flash-second", "flash-second@example.com").await;
+        let second_member = insert_user(&db, "flash-second", "flash-second@example.com").await;
         let build_category = create_build_category(&db, "Flash builds").await;
         let build = create_build(&db, "Great Fire Staff", build_category).await;
         let service = EventService::new();
@@ -5269,6 +5508,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -5280,7 +5520,9 @@ mod tests {
         // Comp-shaped routes refuse flash masses explicitly (409), they do
         // not silently degrade.
         assert!(matches!(
-            service.get_event_signup_options(&db, flash.id, member).await,
+            service
+                .get_event_signup_options(&db, flash.id, member)
+                .await,
             Err(AppError::Conflict(_))
         ));
         assert!(matches!(
@@ -5350,6 +5592,7 @@ mod tests {
             create_split: false,
             island_tab_id: None,
             ping_alliance: false,
+            vod_forum_post_enabled: true,
         };
 
         let mut flash_with_comp = base("flash with comp");
@@ -7063,6 +7306,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7082,9 +7326,121 @@ mod tests {
             ]
         );
         assert!(!event.ping_alliance);
+        assert!(event.vod_forum_post_enabled);
+        assert_eq!(event.vod_forum_post_status, "pending");
         assert_eq!(event.alliance_discord_message_id, None);
         assert_eq!(event.alliance_discord_channel_id, None);
         assert!(event.alliance_discord_role_ids.is_empty());
+
+        let pending = service.pending_vod_forum_posts(&db).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        event::ActiveModel {
+            id: Set(event.id),
+            status: Set("cancelled".to_string()),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        assert!(
+            service
+                .pending_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!service.claim_vod_forum_post(&db, event.id).await.unwrap());
+
+        event::ActiveModel {
+            id: Set(event.id),
+            status: Set("scheduled".to_string()),
+            event_kind: Set("flash".to_string()),
+            comp_id: Set(None),
+            created_at: Set(Utc::now().fixed_offset()),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        assert!(
+            service
+                .pending_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!service.claim_vod_forum_post(&db, event.id).await.unwrap());
+
+        event::ActiveModel {
+            id: Set(event.id),
+            created_at: Set(Utc::now().fixed_offset() - ChronoDuration::seconds(31)),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        assert_eq!(service.pending_vod_forum_posts(&db).await.unwrap().len(), 1);
+        event::ActiveModel {
+            id: Set(event.id),
+            event_kind: Set("organized".to_string()),
+            comp_id: Set(Some(comp_id)),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        assert!(service.claim_vod_forum_post(&db, event.id).await.unwrap());
+        assert!(!service.claim_vod_forum_post(&db, event.id).await.unwrap());
+        assert!(
+            service
+                .pending_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(service.retry_vod_forum_post(&db, event.id).await.unwrap());
+        assert!(!service.retry_vod_forum_post(&db, event.id).await.unwrap());
+        assert!(service.claim_vod_forum_post(&db, event.id).await.unwrap());
+        assert!(
+            service
+                .record_vod_forum_post_created(&db, event.id, "123456789012345678".to_string())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !service
+                .record_vod_forum_post_created(&db, event.id, "987654321098765432".to_string())
+                .await
+                .unwrap()
+        );
+        let recorded = event::Entity::find_by_id(event.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(recorded.vod_forum_post_status, "created");
+        assert!(!service.retry_vod_forum_post(&db, event.id).await.unwrap());
+        assert_eq!(
+            recorded.vod_forum_thread_id.as_deref(),
+            Some("123456789012345678")
+        );
+        event::ActiveModel {
+            id: Set(event.id),
+            vod_forum_post_enabled: Set(false),
+            vod_forum_post_status: Set("pending".to_string()),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        assert!(
+            service
+                .pending_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!service.claim_vod_forum_post(&db, event.id).await.unwrap());
         assert_eq!(event.origin_guild_id, None);
     }
 
@@ -7114,6 +7470,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: true,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7184,6 +7541,9 @@ mod tests {
                 archived_at: None,
                 ping_alliance: false,
                 alliance_discord_message_id: None,
+                vod_forum_post_enabled: false,
+                vod_forum_post_status: "not_requested".to_string(),
+                vod_forum_thread_id: None,
             },
             Some("comp".to_string()),
             "admin".to_string(),
@@ -7339,6 +7699,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7382,6 +7743,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7469,6 +7831,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7514,6 +7877,7 @@ mod tests {
                     create_split: true,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7558,6 +7922,7 @@ mod tests {
                     create_split: true,
                     island_tab_id: Some(tab_id),
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7630,6 +7995,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7723,6 +8089,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7807,7 +8174,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn event_join_xp_is_idempotent_on_resign() {
+    async fn creation_and_join_do_not_award_xp_before_completion() {
         let db = seed_db().await;
         insert_covering_season(&db).await;
         let creator = insert_user(&db, "admin", "admin@example.com").await;
@@ -7836,6 +8203,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7854,10 +8222,8 @@ mod tests {
             .await
             .unwrap();
 
-        let joins = ledger_keys(&db, "event_join").await;
-        assert_eq!(joins, vec![format!("event_join:{}:{player}", event.id)]);
-        let creates = ledger_keys(&db, "event_create").await;
-        assert_eq!(creates, vec![format!("event_create:{}", event.id)]);
+        assert!(ledger_keys(&db, "event_join").await.is_empty());
+        assert!(ledger_keys(&db, "event_create").await.is_empty());
     }
 
     #[tokio::test]
@@ -7890,6 +8256,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7913,8 +8280,223 @@ mod tests {
         let completes = ledger_keys(&db, "event_complete").await;
         assert_eq!(
             completes,
-            vec![format!("event_complete:{}:{player}", event.id)]
+            vec![format!(
+                "event_completion:{}:event_complete:{player}",
+                event.id
+            )]
         );
+        assert_eq!(
+            ledger_keys(&db, "event_create").await,
+            vec![format!(
+                "event_completion:{}:event_create:{creator}",
+                event.id
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn completion_xp_excludes_leavers_and_cancelled_events() {
+        let db = seed_db().await;
+        insert_covering_season(&db).await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let staying = insert_user(&db, "staying", "stay@example.com").await;
+        let leaving = insert_user(&db, "leaving", "leave@example.com").await;
+        let build_cat = create_build_category(&db, "Weapons").await;
+        let b1 = create_build(&db, "Tank", build_cat).await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Comp", cat, None, vec![(b1, 3)]).await;
+        let service = EventService::new();
+        let req = CreateEventRequest {
+            title: "Leave XP".to_string(),
+            description: None,
+            call_to_arms: false,
+            regear: false,
+            event_kind: None,
+            comp_id: Some(comp_id),
+            player_cap: None,
+            event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+            mass_time_utc: None,
+            start_time_utc: None,
+            discord_role_ids: vec![],
+            create_split: false,
+            island_tab_id: None,
+            ping_alliance: false,
+            vod_forum_post_enabled: true,
+        };
+        let cancelled = service
+            .create_event(&db, creator, req.clone())
+            .await
+            .unwrap();
+        service.start_event(&db, cancelled.id).await.unwrap();
+        service.cancel_event(&db, cancelled.id).await.unwrap();
+        assert!(ledger_keys(&db, "event_create").await.is_empty());
+
+        let event = service.create_event(&db, creator, req).await.unwrap();
+        let signup = ParticipateEventRequest {
+            primary_build_id: Some(b1),
+            secondary_build_id: None,
+        };
+        service
+            .participate(&db, event.id, staying, signup.clone())
+            .await
+            .unwrap();
+        service
+            .participate(&db, event.id, leaving, signup)
+            .await
+            .unwrap();
+        service
+            .cancel_participation(&db, event.id, leaving)
+            .await
+            .unwrap();
+        service.start_event(&db, event.id).await.unwrap();
+        service.stop_event(&db, event.id, true).await.unwrap();
+
+        let completes = ledger_keys(&db, "event_complete").await;
+        assert_eq!(
+            completes,
+            vec![format!(
+                "event_completion:{}:event_complete:{staying}",
+                event.id
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn completion_retry_uses_pinned_season_and_preserves_history() {
+        use crate::modules::progression::entities::{
+            ProgressionSeasonActiveModel, ProgressionXpLedgerActiveModel,
+        };
+
+        let db = seed_db().await;
+        insert_covering_season(&db).await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let player = insert_user(&db, "player1", "p1@example.com").await;
+        let build_cat = create_build_category(&db, "Weapons").await;
+        let b1 = create_build(&db, "Tank", build_cat).await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Comp", cat, None, vec![(b1, 2)]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                creator,
+                CreateEventRequest {
+                    title: "Retry XP".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
+                    player_cap: None,
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                    ping_alliance: false,
+                    vod_forum_post_enabled: true,
+                },
+            )
+            .await
+            .unwrap();
+        let historic = format!("event_create:{}", event.id);
+        ProgressionXpLedgerActiveModel {
+            user_id: Set(creator),
+            season_id: Set(1),
+            source: Set("event_create".to_string()),
+            base_amount: Set(25),
+            applied_amount: Set(25),
+            multiplier_at_time: Set(sea_orm::prelude::Decimal::ONE),
+            idempotency_key: Set(historic.clone()),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        service
+            .participate(
+                &db,
+                event.id,
+                player,
+                ParticipateEventRequest {
+                    primary_build_id: Some(b1),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        service.start_event(&db, event.id).await.unwrap();
+        service
+            .stop_event_with_xp_policy(&db, event.id, false, false)
+            .await
+            .unwrap();
+        assert_eq!(
+            ledger_keys(&db, "event_create").await,
+            vec![historic.clone()]
+        );
+
+        service.start_event(&db, event.id).await.unwrap_err();
+        let second = service
+            .create_event(
+                &db,
+                creator,
+                CreateEventRequest {
+                    title: "Award XP".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
+                    player_cap: None,
+                    event_date_utc: Some("2026-07-21T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                    ping_alliance: false,
+                    vod_forum_post_enabled: true,
+                },
+            )
+            .await
+            .unwrap();
+        service.start_event(&db, second.id).await.unwrap();
+        event_completion_xp::Entity::delete_many()
+            .exec(&db)
+            .await
+            .unwrap();
+        service.stop_event(&db, second.id, false).await.unwrap();
+        event_completion_xp::Entity::update_many()
+            .col_expr(event_completion_xp::Column::Status, Expr::value("pending"))
+            .exec(&db)
+            .await
+            .unwrap();
+        ProgressionSeasonActiveModel {
+            id: Set(1),
+            is_active: Set(false),
+            ends_at: Set((Utc::now() - ChronoDuration::hours(1)).into()),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        service
+            .retry_event_completion_xp(&db, second.id)
+            .await
+            .unwrap();
+        service
+            .retry_event_completion_xp(&db, second.id)
+            .await
+            .unwrap();
+        let creates = ledger_keys(&db, "event_create").await;
+        assert!(creates.contains(&historic));
+        assert!(creates.contains(&format!(
+            "event_completion:{}:event_create:{creator}",
+            second.id
+        )));
+        assert_eq!(creates.len(), 2);
     }
 
     #[tokio::test]
@@ -7944,6 +8526,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -7967,6 +8550,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await
@@ -8173,6 +8757,7 @@ mod tests {
                     create_split: false,
                     island_tab_id: None,
                     ping_alliance: false,
+                    vod_forum_post_enabled: true,
                 },
             )
             .await

@@ -247,8 +247,7 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
         .all(db)
         .await?;
 
-    let mut rows_by_user: HashMap<i64, Vec<crate::modules::bank::entities::Model>> =
-        HashMap::new();
+    let mut rows_by_user: HashMap<i64, Vec<crate::modules::bank::entities::Model>> = HashMap::new();
     for tx in transactions {
         rows_by_user.entry(tx.to_user_id).or_default().push(tx);
     }
@@ -269,7 +268,8 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
         let mut existing_clawbacks = Vec::new();
 
         for row in user_rows {
-            let status = TransactionStatus::from_str(&row.status).unwrap_or(TransactionStatus::Pending);
+            let status =
+                TransactionStatus::from_str(&row.status).unwrap_or(TransactionStatus::Pending);
             match status {
                 TransactionStatus::Pending
                 | TransactionStatus::Rejected
@@ -332,13 +332,11 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
 
             // If desired_unsettled < 0, the user has already settled (Withdrawn/Donated) more than
             // their new target share, so we need a net clawback equal to `desired_unsettled`.
-            let current_clawback_sum: Decimal =
-                existing_clawbacks.iter().map(|r| r.amount).sum();
+            let current_clawback_sum: Decimal = existing_clawbacks.iter().map(|r| r.amount).sum();
             let clawback_delta = (desired_unsettled - current_clawback_sum).round_dp(2);
             if clawback_delta != Decimal::ZERO {
                 if desired_unsettled == Decimal::ZERO && !existing_clawbacks.is_empty() {
-                    let clawback_ids: Vec<i64> =
-                        existing_clawbacks.iter().map(|r| r.id).collect();
+                    let clawback_ids: Vec<i64> = existing_clawbacks.iter().map(|r| r.id).collect();
                     TransactionEntity::delete_many()
                         .filter(TransactionColumn::Id.is_in(clawback_ids))
                         .exec(db)
@@ -609,6 +607,7 @@ fn assemble_summary(
     Ok(SplitSummary {
         id: split.id,
         created_by_username,
+        created_by_id: split.created_by,
         status: parse_status(&split)?,
         estimated_market_value: split.estimated_market_value,
         fee: split.fee,
@@ -2994,7 +2993,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_a_completed_split_participant_removes_unpaid_row_or_posts_clawback_if_withdrawn() {
+    async fn removing_a_completed_split_participant_removes_unpaid_row_or_posts_clawback_if_withdrawn()
+     {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
@@ -3350,6 +3350,11 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(split.summary.created_by_id, admin);
+        assert_eq!(
+            serde_json::to_value(&split.summary).unwrap()["created_by_id"],
+            admin
+        );
         assert_eq!(split.summary.island_tab_id, Some(tab_id));
         assert_eq!(split.summary.island_name.as_deref(), Some("x"));
         assert_eq!(split.summary.island_city.as_deref(), Some("lymhurst"));
@@ -3877,10 +3882,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(split.participants.len(), 2);
-        assert!(split
-            .participants
-            .iter()
-            .all(|participant| participant.weight == Decimal::new(100, 0)));
+        assert!(
+            split
+                .participants
+                .iter()
+                .all(|participant| participant.weight == Decimal::new(100, 0))
+        );
         service
             .remove_participant(&db, split.summary.id, extra)
             .await

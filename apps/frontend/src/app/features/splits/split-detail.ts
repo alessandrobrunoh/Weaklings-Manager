@@ -47,6 +47,7 @@ import {
   redistributeWeights,
   upgradeLegacyUnitShares,
 } from './splits';
+import { canActOnSplit } from './split-access';
 
 type DetailMode = 'view' | 'edit';
 
@@ -633,16 +634,10 @@ function parsePercentageInput(raw: string): number | null {
                 <span
                   class="font-mono text-xs"
                   [class.text-[var(--color-warning)]]="detail.status === 'pending'"
-                  [class.text-[var(--color-success)]]="detail.status === 'completed'"
+                  [class.text-[var(--color-success)]]="detail.status === 'completed' && splitPayoutComplete()"
                   [class.text-[var(--color-warning)]]="detail.status === 'awaiting_event'"
                 >
-                  @if (detail.status === 'pending') {
-                    {{ t('splits.pending_payout') }}
-                  } @else if (detail.status === 'awaiting_event') {
-                    {{ t('splits.awaiting_event.label') }}
-                  } @else {
-                    {{ t('splits.paid_out') }}
-                  }
+                  {{ payoutLifecycleLabel(detail) }}
                 </span>
               </header>
               <app-data-table
@@ -955,6 +950,8 @@ export class SplitDetailPage {
 
   protected readonly splitTransactions = signal<TransactionView[]>([]);
   protected readonly transactionsLoading = signal(false);
+  protected readonly transactionsLoadFailed = signal(false);
+  protected readonly transactionsComplete = signal(false);
   protected readonly editTransactionTarget = signal<TransactionView | null>(null);
   protected readonly editTransactionAmount = signal<number | null>(null);
   protected readonly editTransactionStatus = signal<TransactionStatus>('pending');
@@ -996,6 +993,48 @@ export class SplitDetailPage {
     return this.t(`splits.status.${status}` as TranslationKey);
   }
 
+  protected payoutLifecycleLabel(split: SplitDetail): string {
+    if (split.status === 'pending') {
+      return this.t('splits.pending_payout');
+    }
+    if (split.status === 'awaiting_event') {
+      return this.t('splits.awaiting_event.label');
+    }
+    if (
+      split.status !== 'completed' ||
+      !this.canViewSplitTransactions() ||
+      this.transactionsLoading() ||
+      this.transactionsLoadFailed() ||
+      !this.transactionsComplete()
+    ) {
+      return this.statusLabel(split.status);
+    }
+
+    const transactions = this.splitTransactions();
+    if (transactions.some((transaction) => transaction.status === 'requested')) {
+      return this.t('bank.status.requested');
+    }
+    if (transactions.some((transaction) => transaction.status === 'pending' || transaction.status === 'rejected')) {
+      return this.t('bank.status.pending');
+    }
+    if (transactions.length > 0 && transactions.every((transaction) => transaction.status === 'withdrawn')) {
+      return this.t('bank.status.withdrawn');
+    }
+    if (transactions.length > 0 && transactions.every((transaction) => transaction.status === 'donated')) {
+      return this.t('bank.status.donated');
+    }
+    return this.statusLabel(split.status);
+  }
+
+  protected splitPayoutComplete(): boolean {
+    const transactions = this.splitTransactions();
+    return this.transactionsComplete() &&
+      !this.transactionsLoading() &&
+      !this.transactionsLoadFailed() &&
+      transactions.length > 0 &&
+      transactions.every((transaction) => transaction.status === 'withdrawn' || transaction.status === 'donated');
+  }
+
   protected statusTone(status: SplitDetail['status']): 'warning' | 'success' | 'neutral' | 'error' {
     switch (status) {
       case 'pending':
@@ -1021,15 +1060,30 @@ export class SplitDetailPage {
   );
   protected readonly shareStatus = signal<AllianceShareStatus | null>(null);
   protected readonly canAct = computed(
-    () => this.auth.hasPermission('splits.edit') && !this.isReadOnly(),
+    () =>
+      !this.isReadOnly() &&
+      this.split() !== null &&
+      canActOnSplit(
+        this.split()!,
+        this.auth.profile()?.user_id,
+        this.auth.hasPermission('splits.edit'),
+      ),
   );
   protected readonly canDelete = computed(
-    () => this.auth.hasPermission('splits.delete') && !this.isReadOnly(),
+    () =>
+      !this.isReadOnly() &&
+      this.split() !== null &&
+      canActOnSplit(
+        this.split()!,
+        this.auth.profile()?.user_id,
+        this.auth.hasPermission('splits.delete'),
+      ),
   );
   protected readonly isCompletedSplit = computed(() => this.split()?.status === 'completed');
   protected readonly canEdit = computed(
     () =>
-      this.canAct() &&
+      !this.isReadOnly() &&
+      this.auth.hasPermission('splits.edit') &&
       !this.split()?.archived_at &&
       ['pending', 'awaiting_event', 'completed'].includes(this.split()?.status ?? ''),
   );
@@ -1632,6 +1686,9 @@ export class SplitDetailPage {
   }
 
   protected async loadTransactions(id: number): Promise<void> {
+    this.splitTransactions.set([]);
+    this.transactionsComplete.set(false);
+    this.transactionsLoadFailed.set(false);
     this.transactionsLoading.set(true);
     try {
       const data = await firstValueFrom(
@@ -1641,7 +1698,10 @@ export class SplitDetailPage {
         }),
       );
       this.splitTransactions.set(data.items);
+      this.transactionsComplete.set(data.total_items === data.items.length);
     } catch (error) {
+      this.splitTransactions.set([]);
+      this.transactionsLoadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.transactionsLoading.set(false);

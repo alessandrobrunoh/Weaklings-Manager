@@ -125,6 +125,8 @@ export interface DiscordUserProfile {
   highest_role: Role;
   is_superadmin: boolean;
   is_platform_admin: boolean;
+  /** Owner of the selected guild tenant; distinct from platform administration. */
+  is_tenant_owner?: boolean;
   permissions: string[];
   tenant_id?: string | null;
   tenant_name?: string | null;
@@ -251,7 +253,7 @@ export interface AttachableGuild {
 export interface AllianceMember {
   guild_tenant_id: string;
   name: string;
-  status: 'pending' | 'active';
+  status: 'pending' | 'active' | 'left';
   invited_by?: string | null;
   accepted_at?: string | null;
   /** Discord role on the alliance hub for this guild's members. */
@@ -465,6 +467,8 @@ export interface SplitParticipant {
 
 export interface SplitSummary {
   id: number;
+  /** Stable owner identifier; older API responses may omit it. */
+  created_by_id?: number;
   created_by_username: string;
   status: SplitStatus;
   estimated_market_value: number;
@@ -619,6 +623,9 @@ export interface EventView {
   archived_at?: string | null;
   ping_alliance?: boolean;
   alliance_discord_message_id?: string | null;
+  vod_forum_post_enabled?: boolean;
+  vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created';
+  vod_forum_thread_id?: string | null;
   alliance_discord_channel_id?: string | null;
   alliance_discord_role_ids?: string[];
   origin_guild_id?: string | null;
@@ -1039,6 +1046,8 @@ export interface CreateEventRequest {
   create_split?: boolean;
   island_tab_id?: number;
   ping_alliance?: boolean;
+  /** Create a VOD forum post for members to reply to with video links. Defaults on. */
+  vod_forum_post_enabled?: boolean;
 }
 
 export interface UpdateEventRequest {
@@ -1914,6 +1923,15 @@ export interface SiphonedBatchSummary {
   batch_id: string;
   ingested_at: string;
   row_count: number;
+}
+
+export interface SiphonedSettlementQuote {
+  quote_id: string;
+  player_name: string;
+  debt: number;
+  unit_price: number;
+  total: number;
+  expires_at: string;
 }
 
 export interface DeletedCount {
@@ -2958,6 +2976,13 @@ export interface ProgressionSettingsView {
   vod_forum_channel_id: string | null;
   message_channel_deny_list: string[];
   level_preview: LevelThresholdView[];
+  guild_ranks: GuildRankView[];
+}
+
+export interface GuildRankView {
+  name: string;
+  min_xp: number;
+  discord_role_id: string | null;
 }
 
 /** Partial update of progression settings. */
@@ -2975,6 +3000,7 @@ export type UpdateProgressionSettingsRequest = Partial<{
   warn_threshold: number;
   vod_forum_channel_id: string;
   message_channel_deny_list: string[];
+  guild_ranks: GuildRankView[];
 }>;
 
 /** One Albion-aligned, admin-modellable XP season. */
@@ -2996,6 +3022,7 @@ export interface ProgressionMeView {
   rank: number | null;
   multiplier: string | number;
   lifetime_xp: number;
+  guild_rank: GuildRankView | null;
 }
 
 /** One ranked row on the season XP leaderboard. */

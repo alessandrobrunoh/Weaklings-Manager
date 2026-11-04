@@ -61,6 +61,9 @@ pub struct SplitSummary {
     /// The username of the user who created the split.
     #[schema(example = "raid_leader")]
     pub created_by_username: String,
+    /// Internal user id of the creator, used by clients to identify owner-only lifecycle actions.
+    #[schema(example = 7)]
+    pub created_by_id: i64,
     /// The lifecycle status of the split.
     pub status: SplitStatus,
     /// The estimated market value of the loot before deductions.

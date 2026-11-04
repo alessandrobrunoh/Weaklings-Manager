@@ -237,6 +237,20 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
         @switch (tab()) {
           @case ('overview') {
+            <section class="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" aria-labelledby="intel-fights-heading">
+              <div>
+                <h2 id="intel-fights-heading" class="font-semibold text-sm" style="color: var(--color-text)">
+                  {{ t('intel.reviewFightTitle') }}
+                </h2>
+                <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('intel.reviewFightHint') }}
+                </p>
+              </div>
+              <a routerLink="/battles" class="btn btn--primary btn--sm inline-flex shrink-0 items-center justify-center gap-1.5">
+                <app-icon name="swords" size="0.875rem" />
+                {{ t('intel.browseBattles') }}
+              </a>
+            </section>
             @if (canViewOpponents()) {
               <a
                 class="card flex items-center justify-between gap-3 p-4 no-underline transition-colors hover:opacity-90"

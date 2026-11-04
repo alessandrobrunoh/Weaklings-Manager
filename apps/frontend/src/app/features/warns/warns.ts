@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -70,6 +70,7 @@ function isWarnsTab(value: string): value is WarnsTab {
     Icon,
     PageHeader,
     PageStack,
+    RouterLink,
     TooltipDirective,
     ViewToggle,
   ],
@@ -178,7 +179,8 @@ function isWarnsTab(value: string): value is WarnsTab {
       @if (!canIssue()) {
         <p class="warns-permission-note" role="status">{{ t('warns.missingManagePermission') }}</p>
       }
-      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
+      @if (tab() === 'register' && !loading() && !loadFailed()) {
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('common.currentPage')">
         <!-- Card 1: Active Warns -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
@@ -191,7 +193,7 @@ function isWarnsTab(value: string): value is WarnsTab {
               </p>
               <p class="text-xs text-warning/90 mt-1 truncate flex items-center gap-1.5">
                 <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                Disciplinary records
+                {{ t('common.currentPage') }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
@@ -211,7 +213,7 @@ function isWarnsTab(value: string): value is WarnsTab {
                 {{ strikesCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Major infractions
+                {{ t('common.currentPage') }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-border)]">
@@ -231,7 +233,7 @@ function isWarnsTab(value: string): value is WarnsTab {
                 {{ notesCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Informal warnings
+                {{ t('common.currentPage') }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
@@ -240,26 +242,8 @@ function isWarnsTab(value: string): value is WarnsTab {
           </div>
         </article>
 
-        <!-- Card 4: Escalations -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('warns.stat.escalations') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-info)] mt-1">
-                {{ escalationTotal() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Threshold triggers
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
-              <app-icon name="sparkles" size="1.25rem" />
-            </div>
-          </div>
-        </article>
       </section>
+      }
 
       @if (tab() === 'register') {
         <app-data-table
@@ -276,7 +260,7 @@ function isWarnsTab(value: string): value is WarnsTab {
           (pageChange)="onWarnsChange($event)"
         >
           <ng-template dataTableCell="user" let-row>
-            <span class="font-medium text-[var(--color-text)]">{{ displayName(row.user_id, row.username) }}</span>
+            <a class="font-medium text-[var(--color-text)] hover:underline" [routerLink]="['/users', row.user_id]">{{ displayName(row.user_id, row.username) }}</a>
           </ng-template>
           <ng-template dataTableCell="severity" let-row>
             <span class="chip" [class]="severityChip(row.severity)">{{
@@ -331,7 +315,7 @@ function isWarnsTab(value: string): value is WarnsTab {
           (pageChange)="onEscalationsChange($event)"
         >
           <ng-template dataTableCell="user" let-row>
-            <span class="font-medium text-[var(--color-text)]">{{ displayName(row.user_id, row.username) }}</span>
+            <a class="font-medium text-[var(--color-text)] hover:underline" [routerLink]="['/users', row.user_id]">{{ displayName(row.user_id, row.username) }}</a>
           </ng-template>
           <ng-template dataTableCell="opened_at" let-row>
             <span class="text-xs text-[var(--color-text-secondary)]">{{
@@ -373,11 +357,13 @@ function isWarnsTab(value: string): value is WarnsTab {
 
     @if (showIssueForm()) {
       <app-dialog [title]="t('warns.issue')" (closed)="closeIssueForm()">
-        <form id="warn-issue-form" class="grid gap-4 sm:grid-cols-2" (submit)="onIssueSubmit($event)">
+        <form id="warn-issue-form" class="grid gap-3 sm:grid-cols-2" (submit)="onIssueSubmit($event)">
+          <p class="text-xs sm:col-span-2" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
-            <span class="label">{{ t('warns.user') }}</span>
+            <span class="label">{{ t('warns.user') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <select
               class="select"
+              name="user_id"
               [value]="issueDraft().userId"
               (change)="updateIssue('userId', $event)"
               required
@@ -392,6 +378,7 @@ function isWarnsTab(value: string): value is WarnsTab {
             <span class="label">{{ t('warns.severity') }}</span>
             <select
               class="select"
+              name="severity"
               [value]="issueDraft().severity"
               (change)="updateIssue('severity', $event)"
             >
@@ -401,9 +388,10 @@ function isWarnsTab(value: string): value is WarnsTab {
             </select>
           </label>
           <label class="sm:col-span-2">
-            <span class="label">{{ t('warns.reason') }}</span>
+            <span class="label">{{ t('warns.reason') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <input
               class="input"
+              name="reason"
               required
               [value]="issueDraft().reason"
               (input)="updateIssue('reason', $event)"
@@ -422,9 +410,10 @@ function isWarnsTab(value: string): value is WarnsTab {
             />
           </label>
           <label>
-            <span class="label">{{ t('warns.expires') }}</span>
+            <span class="label">{{ t('warns.expires') }} ({{ t('common.optional') }})</span>
             <input
               class="input"
+              name="multiplier_expires_at"
               type="datetime-local"
               [value]="issueDraft().expiresAt"
               (input)="updateIssue('expiresAt', $event)"

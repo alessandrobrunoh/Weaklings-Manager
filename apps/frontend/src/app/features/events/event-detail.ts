@@ -68,6 +68,7 @@ import type { TranslationKey } from '../../i18n/en';
 import { battleOutcomeLabel } from '../battles/battle-outcome';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { Avatar } from '../../shared/components/avatar/avatar';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -187,6 +188,7 @@ interface AddEventMemberRequest {
     DataTable,
     DataTableCell,
     Dialog,
+    Checkbox,
     EmptyState,
     EquipmentGrid,
     ErrorState,
@@ -1940,8 +1942,9 @@ interface AddEventMemberRequest {
     @if (showEditForm()) {
       <app-dialog [title]="t('common.edit')" size="lg" (closed)="toggleEditForm()">
         <form class="grid gap-4" (submit)="onUpdateSubmit($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
-            <span class="label">{{ t('common.name') }} *</span>
+            <span class="label">{{ t('common.name') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"
@@ -1993,7 +1996,7 @@ interface AddEventMemberRequest {
             </div>
 
             <label>
-              <span class="label">{{ t('common.date') }} *</span>
+              <span class="label">{{ t('common.date') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
               <input
                 class="input"
                 type="date"
@@ -2004,7 +2007,7 @@ interface AddEventMemberRequest {
             </label>
 
             <label>
-              <span class="label">Mass *</span>
+              <span class="label">Mass <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
               <input
                 class="input"
                 type="time"
@@ -2015,7 +2018,7 @@ interface AddEventMemberRequest {
             </label>
 
             <label>
-              <span class="label">Start *</span>
+              <span class="label">Start <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
               <input
                 class="input"
                 type="time"
@@ -2027,34 +2030,13 @@ interface AddEventMemberRequest {
           </div>
 
           <div class="flex flex-wrap items-center gap-6 pt-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                class="checkbox"
-                type="checkbox"
-                [checked]="draftCallToArms()"
-                (change)="onCallToArmsChange($event)"
-              />
-              <span class="text-xs font-semibold">{{ t('events.call_to_arms') }}</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                class="checkbox"
-                type="checkbox"
-                [checked]="draftRegear()"
-                (change)="onRegearChange($event)"
-              />
-              <span class="text-xs font-semibold">{{ t('events.regear') }}</span>
-            </label>
+            <app-checkbox inputId="edit-event-call-to-arms" [label]="t('events.call_to_arms')"
+              [checked]="draftCallToArms()" (checkedChange)="draftCallToArms.set($event)" />
+            <app-checkbox inputId="edit-event-regear" [label]="t('events.regear')"
+              [checked]="draftRegear()" (checkedChange)="draftRegear.set($event)" />
             @if (canPingAlliance()) {
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  class="checkbox"
-                  type="checkbox"
-                  [checked]="draftPingAlliance()"
-                  (change)="onPingAllianceChange($event)"
-                />
-                <span class="text-xs font-semibold">{{ t('events.pingAlliance') }}</span>
-              </label>
+              <app-checkbox inputId="edit-event-ping-alliance" [label]="t('events.pingAlliance')"
+                [checked]="draftPingAlliance()" (checkedChange)="draftPingAlliance.set($event)" />
             }
           </div>
 
@@ -5276,18 +5258,6 @@ export class EventDetailPage {
 
   protected onCompChange(event: Event): void {
     this.draftCompId.set((event.target as HTMLSelectElement).value);
-  }
-
-  protected onCallToArmsChange(event: Event): void {
-    this.draftCallToArms.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onRegearChange(event: Event): void {
-    this.draftRegear.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onPingAllianceChange(event: Event): void {
-    this.draftPingAlliance.set((event.target as HTMLInputElement).checked);
   }
 
   private async loadAllianceContext(): Promise<void> {

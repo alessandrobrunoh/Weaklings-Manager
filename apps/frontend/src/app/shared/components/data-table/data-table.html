@@ -109,15 +109,14 @@
                   class="py-3 px-4 font-bold"
                   [class.text-right]="column.align === 'right'"
                   [class.text-center]="column.align === 'center'"
-                  [class.cursor-pointer]="column.sortable"
-                  [class.select-none]="column.sortable"
                   [attr.aria-sort]="column.sortable ? sortAria(column.key) : null"
-                  (click)="column.sortable ? toggleSort(column) : null"
                 >
                   @if (column.sortable) {
-                    <div
-                      class="inline-flex items-center gap-1 hover:text-[var(--color-text)] transition-colors"
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 hover:text-[var(--color-text)] transition-colors cursor-pointer"
                       [class.justify-end]="column.align === 'right'"
+                      (click)="toggleSort(column)"
                     >
                       <span>{{ t(column.label) }}</span>
                       @if (sort()?.columnKey === column.key) {
@@ -129,7 +128,7 @@
                       } @else {
                         <span class="text-xs text-[var(--color-text-disabled)]">⇅</span>
                       }
-                    </div>
+                    </button>
                   } @else {
                     <span>{{ t(column.label) }}</span>
                   }

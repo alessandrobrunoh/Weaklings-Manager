@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TenantFeaturesView } from '../../core/models/api.models';
@@ -88,5 +88,38 @@ describe('PlatformFeatureFlags', () => {
       ],
     });
     expect(toasts.success).toHaveBeenCalledWith('platform.features.saved');
+  });
+
+  it('shows loading until the catalog arrives', async () => {
+    fixture.destroy();
+    const request = new Subject<TenantFeaturesView>();
+    api.get.mockReturnValue(request);
+    fixture = TestBed.createComponent(PlatformFeatureFlags);
+    fixture.detectChanges();
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.querySelector('[role="status"]')?.textContent).toContain('common.loading');
+    expect(page.querySelector('form')).toBeNull();
+    request.next(mockView);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(page.textContent).toContain('Rules');
+  });
+
+  it('prevents edits during save and keeps changes after failure', async () => {
+    const request = new Subject<TenantFeaturesView>();
+    api.put.mockReturnValue(request);
+    const page = fixture.nativeElement as HTMLElement;
+    (page.querySelector('#flag-regolamento') as HTMLInputElement).click();
+    (page.querySelector('form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    expect((page.querySelector('fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+    request.error(new Error('offline'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect((page.querySelector('fieldset') as HTMLFieldSetElement).disabled).toBe(false);
+    expect((page.querySelector('#flag-regolamento') as HTMLInputElement).checked).toBe(false);
+    expect(toasts.error).toHaveBeenCalled();
   });
 });

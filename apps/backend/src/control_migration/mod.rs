@@ -23,6 +23,7 @@ mod m20260921_000001_repair_alliance_share_artifact_types;
 mod m20260922_000001_sidebar_feature;
 mod m20260922_000002_default_tenant;
 mod m20260922_000003_tenant_rail_feature;
+mod m20261028_000001_alliance_departure;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -44,7 +45,7 @@ pub const PERM_FEATURE_FLAGS_MANAGE: &str = "feature_flags.manage";
 /// Registered control-plane migrations. The unit test and the PostgreSQL
 /// bookkeeping test both compare against this so a new migration cannot leave
 /// the applied-count assertion behind.
-const CONTROL_MIGRATION_COUNT: usize = 17;
+const CONTROL_MIGRATION_COUNT: usize = 18;
 
 /// Control-plane migrator.
 pub struct Migrator;
@@ -70,6 +71,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260922_000001_sidebar_feature::Migration),
             Box::new(m20260922_000002_default_tenant::Migration),
             Box::new(m20260922_000003_tenant_rail_feature::Migration),
+            Box::new(m20261028_000001_alliance_departure::Migration),
         ]
     }
 }
@@ -162,6 +164,8 @@ mod tests {
             "alliance_memberships",
             "alliance_shares",
             "event_sync_links",
+            "alliance_role_grants",
+            "alliance_role_revocations",
             "seaql_migrations",
         ] {
             assert!(
@@ -182,6 +186,8 @@ mod tests {
             "alliance_memberships",
             "alliance_shares",
             "event_sync_links",
+            "alliance_role_grants",
+            "alliance_role_revocations",
         ] {
             assert!(
                 !tenant_tables.iter().any(|t| t == control_only),

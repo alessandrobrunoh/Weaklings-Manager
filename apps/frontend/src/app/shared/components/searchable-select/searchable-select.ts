@@ -141,10 +141,12 @@ let nextSelectId = 0;
     <button
       type="button"
       class="input ss__trigger"
+      role="combobox"
       [id]="triggerId"
       [disabled]="disabled()"
       [attr.aria-busy]="loading() ? 'true' : null"
       [attr.aria-label]="ariaLabel() || null"
+      [attr.aria-required]="required() ? 'true' : null"
       [attr.aria-expanded]="open()"
       [attr.aria-controls]="listboxId"
       [attr.aria-haspopup]="'listbox'"
@@ -243,6 +245,7 @@ export class SearchableSelect {
   readonly emptyOptionsLabel = input('Nothing to choose');
   readonly clearLabel = input('Clear');
   readonly disabled = input(false);
+  readonly required = input(false);
   readonly loading = input(false);
   readonly ariaLabel = input('');
 

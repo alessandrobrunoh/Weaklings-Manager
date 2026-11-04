@@ -115,9 +115,15 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
           <section class="card p-5">
             <form class="grid gap-4" (submit)="createGiveaway($event)">
               <h2 class="eyebrow">{{ t('giveaways.create') }}</h2>
+              <p class="text-xs" style="color: var(--color-text-secondary)">
+                {{ t('validation.requiredLegend') }}
+              </p>
               <label>
-                <span class="label">{{ t('giveaways.field.title') }}</span>
-                <input class="input mt-1" [value]="title()" (input)="title.set(inputValue($event))" />
+                <span class="label">
+                  {{ t('giveaways.field.title') }}
+                  <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                </span>
+                <input class="input mt-1" required [value]="title()" (input)="title.set(inputValue($event))" />
               </label>
               <label>
                 <span class="label">{{ t('giveaways.field.description') }}</span>
@@ -129,14 +135,30 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
               </label>
               <div class="grid gap-4 sm:grid-cols-2">
                 <label>
-                  <span class="label">{{ t('giveaways.field.endsAt') }}</span>
+                  <span class="label">
+                    {{ t('giveaways.field.endsAt') }}
+                    <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                  </span>
                   <input
                     class="input mt-1"
                     type="datetime-local"
+                    required
                     [value]="endsAt()"
                     (input)="endsAt.set(inputValue($event))"
                   />
                 </label>
+              </div>
+              <fieldset
+                class="grid gap-4 sm:grid-cols-2"
+                aria-describedby="giveaway-prize-requirement"
+              >
+                <legend class="label sm:col-span-2">
+                  {{ t('giveaways.prizes') }}
+                  <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                </legend>
+                <p id="giveaway-prize-requirement" class="sm:col-span-2 text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('giveaways.needPrize') }}
+                </p>
                 <label>
                   <span class="label">{{ t('giveaways.field.silver') }}</span>
                   <input
@@ -149,8 +171,6 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
                     {{ t('giveaways.field.silverHint') }}
                   </span>
                 </label>
-              </div>
-
               <label>
                 <span class="label">{{ t('giveaways.field.regearBonus') }}</span>
                 <input
@@ -166,8 +186,7 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
                 </span>
               </label>
 
-              <div class="grid gap-3">
-                <span class="label">{{ t('giveaways.prizes') }}</span>
+              <div class="grid gap-3 sm:col-span-2">
                 <div class="grid gap-2 sm:grid-cols-4">
                   <label class="sm:col-span-2">
                     <span class="label">{{ t('giveaways.searchItem') }}</span>
@@ -226,6 +245,7 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
                   </ul>
                 }
               </div>
+              </fieldset>
               <div>
                 <button type="submit" class="btn btn--primary" [disabled]="creating()">
                   {{ t('giveaways.create') }}

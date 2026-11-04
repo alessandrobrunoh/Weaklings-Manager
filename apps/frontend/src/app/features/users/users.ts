@@ -152,6 +152,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     </app-page-header>
 
     <app-page-stack class="workbench-page">
+      @if (!loading() && !loadFailed()) {
       <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
         <!-- Card 1: Total -->
         <article class="kpi-card">
@@ -184,7 +185,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
                 {{ adminCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                System administrators
+                {{ t('common.currentPage') }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-border)]">
@@ -204,7 +205,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
                 {{ officerCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Guild officers
+                {{ t('common.currentPage') }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
@@ -224,7 +225,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
                 {{ memberCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Active roster members
+                {{ t('common.currentPage') }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-border)]">
@@ -233,6 +234,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
           </div>
         </article>
       </section>
+      }
 
       <app-data-table
         [columns]="columns"
@@ -296,7 +298,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
             (click)="$event.stopPropagation()"
           >
             <app-icon name="users" size="0.75rem" />
-            Gestisci / collega
+            {{ t('common.view') }}
           </a>
         </ng-template>
       </app-data-table>
@@ -309,9 +311,10 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         icon="users"
         (closed)="closeCreate()"
       >
-        <form id="create-member-form" class="grid gap-4" (submit)="createMember($event)">
+        <form id="create-member-form" class="grid gap-3" (submit)="createMember($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
-            <span class="label">{{ t('users.create.discord') }}</span>
+            <span class="label">{{ t('users.create.discord') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <app-searchable-select
               [options]="discordOptions()"
               [value]="selectedDiscordId()"
@@ -321,11 +324,12 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               [noMatchesLabel]="t('picker.noMatches')"
               [emptyOptionsLabel]="t('users.create.discordEmpty')"
               [ariaLabel]="t('users.create.discord')"
+              [required]="true"
               (valueChange)="selectedDiscordId.set($event)"
             />
           </label>
           <label>
-            <span class="label">{{ t('users.create.albion') }}</span>
+            <span class="label">{{ t('users.create.albion') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <app-searchable-select
               [options]="albionOptions()"
               [value]="selectedAlbionId()"
@@ -335,6 +339,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               [noMatchesLabel]="t('picker.noMatches')"
               [emptyOptionsLabel]="t('users.create.albionEmpty')"
               [ariaLabel]="t('users.create.albion')"
+              [required]="true"
               (valueChange)="selectedAlbionId.set($event)"
             />
           </label>
@@ -347,7 +352,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
             type="submit"
             class="btn btn--primary"
             form="create-member-form"
-            [disabled]="creating() || !selectedDiscordId() || !selectedAlbionId()"
+            [disabled]="creating()"
           >
             {{ t('users.create.submit') }}
           </button>
@@ -499,7 +504,11 @@ export class Users {
     event.preventDefault();
     const discordId = this.selectedDiscordId();
     const albionId = this.selectedAlbionId();
-    if (!discordId || !albionId || this.creating()) {
+    if (this.creating()) {
+      return;
+    }
+    if (!discordId || !albionId) {
+      this.toasts.error(this.t('validation.required'));
       return;
     }
     const albion = this.albionMembers().find((member) => member.id === albionId);

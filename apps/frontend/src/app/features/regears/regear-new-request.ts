@@ -135,23 +135,27 @@ const SLOT_ORDER: readonly BuildSlot[] = [
           <!-- Step 1: event picker -->
           <div class="lg:col-span-4 space-y-2.5">
             <h2 class="text-sm font-bold text-(--color-text)">
-              {{ t('regears.newRequest.selectEvent') }}
+              {{ t('regears.newRequest.selectEvent') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span>
             </h2>
-            @for (event of events(); track event.event_id) {
-              <button
-                type="button"
-                class="event-card"
-                [class.event-card--active]="event.event_id === selectedEventId()"
-                (click)="selectEvent(event.event_id)"
-              >
-                <span class="block text-sm font-bold text-(--color-text)">{{ event.event_title }}</span>
-                @if (event.primary_build_name) {
-                  <span class="block text-xs text-[var(--color-text-secondary)] mt-0.5">
-                    {{ event.primary_build_name }}
-                  </span>
-                }
-              </button>
-            }
+            <p id="regear-required-legend" class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+            <div role="group" [attr.aria-label]="t('regears.newRequest.selectEvent')" aria-describedby="regear-required-legend" class="grid gap-2">
+              @for (event of events(); track event.event_id) {
+                <button
+                  type="button"
+                  class="event-card"
+                  [class.event-card--active]="event.event_id === selectedEventId()"
+                  [attr.aria-pressed]="event.event_id === selectedEventId()"
+                  (click)="selectEvent(event.event_id)"
+                >
+                  <span class="block text-sm font-bold text-(--color-text)">{{ event.event_title }}</span>
+                  @if (event.primary_build_name) {
+                    <span class="block text-xs text-[var(--color-text-secondary)] mt-0.5">
+                      {{ event.primary_build_name }}
+                    </span>
+                  }
+                </button>
+              }
+            </div>
           </div>
 
           <!-- Step 2 & 3: build swap + slot overrides -->
@@ -160,14 +164,15 @@ const SLOT_ORDER: readonly BuildSlot[] = [
               @if (event.comp_builds.length > 1) {
                 <div class="space-y-2">
                   <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
-                    {{ t('regears.newRequest.selectBuild') }}
+                    {{ t('regears.newRequest.selectBuild') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span>
                   </h3>
-                  <div class="flex flex-wrap gap-2">
+                  <div role="group" [attr.aria-label]="t('regears.newRequest.selectBuild')" aria-describedby="regear-required-legend" class="flex flex-wrap gap-2">
                     @for (option of event.comp_builds; track option.build_id) {
                       <button
                         type="button"
                         class="build-chip"
                         [class.build-chip--active]="option.build_id === selectedBuildId()"
+                        [attr.aria-pressed]="option.build_id === selectedBuildId()"
                         (click)="selectBuild(option.build_id)"
                       >
                         {{ option.build_name }}

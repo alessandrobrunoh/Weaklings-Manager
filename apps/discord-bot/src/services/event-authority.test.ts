@@ -25,11 +25,22 @@ function stubApi(result: EventManagementAuthorityView | ApiError): ApiClient {
 }
 
 describe("ensureEventManagementAllowed", () => {
-  it("lets the organizer or an events-manage role through", async () => {
+  it("lets the owner through when the endpoint confirms ownership", async () => {
     const interaction = stubInteraction();
     const allowed = await ensureEventManagementAllowed(
       interaction,
       stubApi({ is_organizer: true, can_manage: true, required_permission: "events.edit" }),
+      7,
+    );
+    assert.equal(allowed, true);
+    assert.equal(interaction.replies.length, 0);
+  });
+
+  it("lets a manager through when the endpoint confirms permission", async () => {
+    const interaction = stubInteraction();
+    const allowed = await ensureEventManagementAllowed(
+      interaction,
+      stubApi({ is_organizer: false, can_manage: true, required_permission: "events.edit" }),
       7,
     );
     assert.equal(allowed, true);
@@ -68,14 +79,47 @@ describe("ensureEventManagementAllowed", () => {
     assert.match(payload.embeds[0].data.title ?? "", /Website Account Required/);
   });
 
-  it("falls through when the backend has no authority endpoint yet", async () => {
+  it("fails closed with a clear error when the authority endpoint is missing", async () => {
     const interaction = stubInteraction();
     const allowed = await ensureEventManagementAllowed(
       interaction,
       stubApi(new ApiError(404, "Not Found")),
       7,
     );
-    assert.equal(allowed, true);
-    assert.equal(interaction.replies.length, 0);
+    assert.equal(allowed, false);
+    const payload = interaction.replies[0] as {
+      embeds: Array<{ data: { title?: string; description?: string } }>;
+    };
+    assert.match(payload.embeds[0].data.title ?? "", /Unable to Verify/);
+    assert.match(payload.embeds[0].data.description ?? "", /no event changes were made/i);
+  });
+
+  it("fails closed when the authority endpoint forbids the request", async () => {
+    const interaction = stubInteraction();
+    const allowed = await ensureEventManagementAllowed(
+      interaction,
+      stubApi(new ApiError(403, "Forbidden")),
+      7,
+    );
+    assert.equal(allowed, false);
+    const payload = interaction.replies[0] as {
+      embeds: Array<{ data: { title?: string } }>;
+    };
+    assert.match(payload.embeds[0].data.title ?? "", /Unable to Verify/);
+  });
+
+  it("fails closed on an unverifiable authority response", async () => {
+    const interaction = stubInteraction();
+    const allowed = await ensureEventManagementAllowed(
+      interaction,
+      stubApi({
+        is_organizer: false,
+        can_manage: "yes",
+        required_permission: "events.edit",
+      } as unknown as EventManagementAuthorityView),
+      7,
+    );
+    assert.equal(allowed, false);
+    assert.equal(interaction.replies.length, 1);
   });
 });

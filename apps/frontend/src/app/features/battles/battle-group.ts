@@ -43,13 +43,17 @@ interface AggregatedGuildStats {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
       <app-page-header
-        [title]="t('battles.group_title')"
-        [subtitle]="'Aggregated analytics across ' + battleDetails().length + ' ' + t('battles.visible_battles')"
+        [title]="t('battles.group.personalTitle')"
+        [subtitle]="t('battles.group.personalSubtitle', { count: battleDetails().length })"
       >
         <button type="button" class="btn btn--ghost btn--sm" (click)="backToBattles()">
           ← {{ t('nav.battles') }}
         </button>
       </app-page-header>
+
+      <p class="mb-4 max-w-3xl text-sm text-[var(--color-text-secondary)]">
+        {{ t('battles.group.personalDescription') }}
+      </p>
 
       <div class="mb-5 flex flex-wrap gap-1">
         @for (id of battleIds(); track id) {
@@ -213,6 +217,24 @@ interface AggregatedGuildStats {
         grid-template-columns: minmax(8rem, 1.3fr) minmax(6rem, 2fr) auto;
         margin-top: 0.75rem;
       }
+      @media (max-width: 640px) {
+        .battle-group__bar-row {
+          gap: 0.35rem 0.6rem;
+          grid-template-columns: minmax(0, 1fr) auto;
+        }
+        .battle-group__bar-row > span {
+          grid-column: 1;
+        }
+        .battle-group__bar-row > .battle-group__bar {
+          grid-column: 1 / -1;
+          grid-row: 2;
+        }
+        .battle-group__bar-row > strong {
+          grid-column: 2;
+          grid-row: 1;
+          font-size: 0.75rem;
+        }
+      }
       .battle-group__bar {
         background: var(--color-surface-2);
         border-radius: var(--radius-full);
@@ -339,7 +361,8 @@ export class BattleGroupPage {
     },
   ];
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.load();

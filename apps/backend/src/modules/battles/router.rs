@@ -23,9 +23,9 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::tenant::{ControlDb, CurrentTenantId};
 use crate::pagination::{PaginatedBattleSummary, PaginationParams, SortOrder};
 use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
+use crate::tenant::{ControlDb, CurrentTenantId};
 
 /// Creates the router for the `battles` module.
 ///

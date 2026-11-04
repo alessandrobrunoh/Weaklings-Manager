@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BuildSummary, CompDetail, CompReadiness } from '../../core/models/api.models';
@@ -143,9 +143,45 @@ describe('CompDetailPage roster', () => {
     editRoster!.click();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Done editing');
+    expect(fixture.nativeElement.textContent).toContain('Quantity changes are saved individually');
+    expect(fixture.nativeElement.querySelector('input[type="number"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[aria-label="Edit Quantity to add: Great Hammer"]')).not.toBeNull();
   });
 
-  it('shows each build and its main equipment and selected abilities without inspecting', async () => {
+  it('requires a category when editing composition details and does not offer an uncategorized value', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+    const original = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) { this.setAttribute('open', ''); },
+    });
+    try {
+      const root = fixture.nativeElement as HTMLElement;
+      const editDetails = Array.from(root.querySelectorAll('button'))
+        .find((button) => button.textContent?.trim() === 'Edit composition details');
+      editDetails!.click();
+      fixture.detectChanges();
+
+      const categorySelect = Array.from(root.querySelectorAll('select'))
+        .find((select) => select.closest('label')?.textContent?.includes('Category'));
+      expect(categorySelect?.required).toBe(true);
+      expect(categorySelect?.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
+      expect(Array.from(categorySelect?.options ?? []).some((option) => option.value === '')).toBe(false);
+      expect(root.textContent).toContain(
+        'A category is required. Builds and compositions cannot be uncategorized.',
+      );
+    } finally {
+      fixture.destroy();
+      if (original) {
+        Object.defineProperty(HTMLDialogElement.prototype, 'showModal', original);
+      } else {
+        Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+      }
+    }
+  });
+
+  it('shows main and configured swap equipment and selected abilities without inspecting', async () => {
     apiGet.mockImplementation((path: string) => {
       if (path === `api/comps/${comp.id}`) return of(comp);
       if (path === `api/comps/${comp.id}/performance`) return of(null);
@@ -156,7 +192,7 @@ describe('CompDetailPage roster', () => {
             openalbion_item_name: 'Polehammer', openalbion_item_icon: '/T8_MAIN_HAMMER.png',
             spells: { active: { '1': 'SPELL_ONE' }, passive: {} } },
           { loadout: 'swap', slot: 'weapon', openalbion_item_type: 'weapon', openalbion_item_id: 2,
-            openalbion_item_name: 'Swap weapon' },
+            openalbion_item_name: 'Swap weapon', spells: { active: { '1': 'SWAP_SPELL' }, passive: {} } },
         ],
       });
       if (path === 'api/comps/builds/2') return throwError(() => new Error('unavailable'));
@@ -171,7 +207,8 @@ describe('CompDetailPage roster', () => {
     expect(section.querySelectorAll('article')).toHaveLength(2);
     expect(section.textContent).toContain('Polehammer');
     expect(section.textContent).toContain('SPELL_ONE');
-    expect(section.textContent).not.toContain('Swap weapon');
+    expect(section.textContent).toContain('Swap weapon');
+    expect(section.textContent).toContain('SWAP_SPELL');
     expect(section.textContent).toContain('Build details unavailable');
     expect(fixture.nativeElement.querySelector('app-dialog')).toBeNull();
     const translations = TestBed.inject(TranslateService);
@@ -199,7 +236,45 @@ describe('CompDetailPage roster', () => {
     expect(page.overviewBuilds().get(1)).toBe(model);
     expect(section.textContent).toContain('Chosen spell');
     expect(section.textContent).not.toContain('Unchosen spell');
-    expect(section.querySelectorAll('app-ability-bar .ability-bar__slot')).toHaveLength(1);
+    expect(section.querySelectorAll('app-ability-bar .ability-bar__slot')).toHaveLength(2);
+  });
+
+  it('ignores older detail responses and keeps the latest roster loading', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+    const older = new Subject<unknown>();
+    const newer = new Subject<unknown>();
+    apiGet.mockReset().mockReturnValueOnce(older).mockReturnValueOnce(newer);
+    const page = fixture.componentInstance as unknown as {
+      loadBuildDetails: (value: CompDetail) => Promise<void>;
+      buildDetails: () => ReadonlyMap<number, unknown>;
+      buildDetailsLoading: () => boolean;
+    };
+    const oldRequest = page.loadBuildDetails({ ...comp, builds: [comp.builds[0]] });
+    const newRequest = page.loadBuildDetails({ ...comp, builds: [comp.builds[1]] });
+    older.next({ ...tank, items: [] });
+    older.complete();
+    await oldRequest;
+    expect(page.buildDetailsLoading()).toBe(true);
+    newer.next({ ...healer, items: [] });
+    newer.complete();
+    await newRequest;
+    expect([...page.buildDetails().keys()]).toEqual([2]);
+    expect(page.buildDetailsLoading()).toBe(false);
+
+    const stale = new Subject<unknown>();
+    const latest = new Subject<unknown>();
+    apiGet.mockReturnValueOnce(stale).mockReturnValueOnce(latest);
+    const staleRequest = page.loadBuildDetails({ ...comp, builds: [comp.builds[0]] });
+    const latestRequest = page.loadBuildDetails({ ...comp, builds: [comp.builds[1]] });
+    latest.next({ ...healer, items: [] });
+    latest.complete();
+    await latestRequest;
+    stale.next({ ...tank, items: [] });
+    stale.complete();
+    await staleRequest;
+    expect([...page.buildDetails().keys()]).toEqual([2]);
+    expect(page.buildDetailsLoading()).toBe(false);
   });
 
   it('loads available builds when opening the add-build dialog', async () => {

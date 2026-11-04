@@ -15,6 +15,7 @@ use crate::modules::platform::service::PlatformService;
 use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
+use sea_orm::EntityTrait;
 
 use super::models::{
     CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateIslandRequest,
@@ -26,6 +27,43 @@ use super::service::SplitService;
 
 fn split_service(kind: &CurrentTenantKind) -> SplitService {
     SplitService::for_tenant(&kind.0)
+}
+
+fn authorize_split_owner_or_global(
+    created_by: Option<i64>,
+    user_id: i64,
+    split_id: i64,
+    has_global_permission: bool,
+    global_permission: Permission,
+) -> Result<(), AppError> {
+    let created_by =
+        created_by.ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+    if created_by == user_id || has_global_permission {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(format!(
+        "must own split {split_id} or have {}",
+        global_permission.as_str()
+    )))
+}
+
+async fn authorize_split_lifecycle(
+    db: &sea_orm::DatabaseConnection,
+    user: &UserContext,
+    perms: &Permissions,
+    split_id: i64,
+    global_permission: Permission,
+) -> Result<(), AppError> {
+    let split = super::entities::split::Entity::find_by_id(split_id)
+        .one(db)
+        .await?;
+    authorize_split_owner_or_global(
+        split.map(|row| row.created_by),
+        user.user_id,
+        split_id,
+        user.has_permission(perms, global_permission).await,
+        global_permission,
+    )
 }
 
 /// Router query parameters for listing splits, combining pagination and filtering.
@@ -279,7 +317,7 @@ async fn update_split(
     tag = "splits",
     summary = "Archive a split (Officer/Admin only)",
     description = "Archives a split so it disappears from default lists. Participants and Guild Bank credits are kept. Requires `splits.delete`.",
-    security(("session_cookie" = ["splits.manage"])),
+    security(("session_cookie" = ["splits.delete"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
         (status = 204, description = "Split archived successfully"),
@@ -294,7 +332,7 @@ async fn delete_split(
     Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, AppError> {
-    user.require(&perms, Permission::SplitsDelete).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
     split_service(&kind).delete_split(&db, id).await?;
     Ok(axum::response::Response::builder()
         .status(axum::http::StatusCode::NO_CONTENT)
@@ -323,7 +361,7 @@ async fn archive_split(
     Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsDelete).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
     let split = split_service(&kind).archive_split(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -349,7 +387,7 @@ async fn unarchive_split(
     Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsDelete).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
     let split = split_service(&kind).unarchive_split(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -463,7 +501,7 @@ async fn remove_participant(
         this split. No request body. One-way door: only callable while `pending`; fails with `400` if \
         there are no participants or if it's already `completed`/`not_completed`/`lost`. Requires the \
         Admin or Officer role.",
-    security(("session_cookie" = ["splits.manage"])),
+    security(("session_cookie" = ["splits.edit"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
         (status = 200, description = "Split completed; status is now \"completed\", net_value and every participant's share_amount are set, and Guild Bank transactions were created", body = ApiResponseSplitDetail),
@@ -479,7 +517,7 @@ async fn complete_split(
     Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind)
         .complete_split(&db, id, user.user_id)
         .await?;
@@ -534,7 +572,7 @@ pub async fn donate_split_share(
         straight to `SplitStatus::NotCompleted` with no Guild Bank transactions generated, and cannot \
         be reopened via this API afterward — every other closing/editing endpoint will then 400 on \
         this split. No request body. Requires the Admin or Officer role.",
-    security(("session_cookie" = ["splits.manage"])),
+    security(("session_cookie" = ["splits.edit"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
         (status = 200, description = "Split marked not completed; status is now \"not_completed\" (terminal)", body = ApiResponseSplitDetail),
@@ -550,7 +588,7 @@ async fn not_completed_split(
     Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind).mark_not_completed(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -573,7 +611,7 @@ async fn not_completed_split(
         obtained (e.g. died before looting, got sniped). Terminal: moves straight to \
         `SplitStatus::Lost` with no Guild Bank transactions generated, and cannot be reopened via \
         this API afterward. No request body. Requires the Admin or Officer role.",
-    security(("session_cookie" = ["splits.manage"])),
+    security(("session_cookie" = ["splits.edit"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
         (status = 200, description = "Split marked lost; status is now \"lost\" (terminal)", body = ApiResponseSplitDetail),
@@ -589,7 +627,7 @@ async fn lost_split(
     Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind).mark_lost(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -633,23 +671,22 @@ async fn match_participants(
 ///
 /// # Errors
 ///
-/// Returns `403 Forbidden` without `splits.manage`, or `400` if no ids were
-/// supplied.
+/// Returns `400` if no ids were supplied. Unauthorized or missing split IDs are
+/// reported individually in the batch result.
 #[utoipa::path(
     post,
     path = "/api/splits/complete-batch",
     tag = "splits",
     summary = "Complete several splits at once",
-    description = "Pays out each listed split and credits its participants. Splits are \
-        processed independently: one that cannot be completed — already paid out, no \
-        participants — is reported in `failed` while the rest still go through, so settling a \
-        night's splits is not lost to a single bad entry.",
-    security(("session_cookie" = ["splits.manage"])),
+    description = "Pays out each listed split and credits its participants. The creator of a \
+        split or a caller with `splits.edit` may complete it. Splits are processed \
+        independently: unauthorized, missing, or otherwise uncompletable entries are reported \
+        in `failed` while authorized entries still go through.",
+    security(("session_cookie" = ["splits.edit"])),
     request_body = CompleteSplitsBatchRequest,
     responses(
         (status = 200, description = "Batch processed", body = CompleteSplitsBatchResult),
-        (status = 400, description = "No split ids supplied", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks splits.manage", body = ProblemDetails)
+        (status = 400, description = "No split ids supplied", body = ProblemDetails)
     )
 )]
 pub async fn complete_splits_batch(
@@ -659,10 +696,39 @@ pub async fn complete_splits_batch(
     Extension(kind): Extension<CurrentTenantKind>,
     Json(body): Json<CompleteSplitsBatchRequest>,
 ) -> Result<Json<ApiResponse<CompleteSplitsBatchResult>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
-    let result = split_service(&kind)
-        .complete_splits_batch(&db, &body.split_ids, user.user_id)
-        .await?;
+    if body.split_ids.is_empty() {
+        return Err(AppError::Validation(
+            "must provide at least one split id".to_string(),
+        ));
+    }
+    let service = split_service(&kind);
+    let mut authorized_ids = Vec::new();
+    let mut failed = Vec::new();
+    for split_id in &body.split_ids {
+        match authorize_split_lifecycle(&db, &user, &perms, *split_id, Permission::SplitsEdit).await
+        {
+            Ok(()) => authorized_ids.push(*split_id),
+            Err(err) => failed.push(super::models::BatchFailure {
+                split_id: *split_id,
+                reason: err.to_string(),
+            }),
+        }
+    }
+    // Only authorized IDs are passed to the payout service. This keeps the documented
+    // per-split partial-failure behavior while ensuring a denied entry cannot be paid out.
+    let mut result = if authorized_ids.is_empty() {
+        CompleteSplitsBatchResult {
+            completed: Vec::new(),
+            failed: Vec::new(),
+            total_distributed: sea_orm::prelude::Decimal::ZERO,
+        }
+    } else {
+        service
+            .complete_splits_batch(&db, &authorized_ids, user.user_id)
+            .await?
+    };
+    failed.append(&mut result.failed);
+    result.failed = failed;
     Ok(Json(ApiResponse::new(result)))
 }
 
@@ -900,7 +966,9 @@ async fn delete_island_tab(
 
 #[cfg(test)]
 mod tests {
-    use super::ListSplitsQuery;
+    use super::{ListSplitsQuery, authorize_split_owner_or_global};
+    use crate::errors::AppError;
+    use crate::modules::auth::Permission;
 
     #[test]
     fn list_splits_query_accepts_archived_true_from_query_string() {
@@ -908,5 +976,73 @@ mod tests {
             serde_urlencoded::from_str("page=1&limit=10&archived=true").unwrap();
         assert_eq!(query.page, Some(1));
         assert_eq!(query.filters.archived, Some(true));
+    }
+
+    #[test]
+    fn lifecycle_authorization_allows_creator_or_global_permission_only() {
+        assert!(
+            authorize_split_owner_or_global(Some(17), 17, 1, false, Permission::SplitsEdit).is_ok()
+        );
+        assert!(matches!(
+            authorize_split_owner_or_global(Some(17), 18, 1, false, Permission::SplitsEdit),
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(
+            authorize_split_owner_or_global(Some(17), 18, 1, true, Permission::SplitsEdit).is_ok()
+        );
+    }
+
+    #[test]
+    fn bot_user_context_uses_the_same_internal_creator_id() {
+        // Bot-authenticated UserContext is populated with the same internal users.id
+        // as a browser session, so ownership does not rely on the Discord snowflake.
+        let bot_context_user_id = 17;
+        assert!(
+            authorize_split_owner_or_global(
+                Some(17),
+                bot_context_user_id,
+                1,
+                false,
+                Permission::SplitsEdit
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn mixed_batch_authorization_selects_only_creator_or_global_authorized_records() {
+        let split_creators = [(1, 10), (2, 20), (3, 30)];
+        let caller_id = 20;
+        let mut authorized = Vec::new();
+        let mut denied = Vec::new();
+        for (id, creator) in split_creators {
+            if authorize_split_owner_or_global(
+                Some(creator),
+                caller_id,
+                id,
+                false,
+                Permission::SplitsEdit,
+            )
+            .is_ok()
+            {
+                authorized.push(id);
+            } else {
+                denied.push(id);
+            }
+        }
+        assert_eq!(authorized, vec![2]);
+        assert_eq!(denied, vec![1, 3]);
+        assert!(
+            authorize_split_owner_or_global(Some(30), caller_id, 3, true, Permission::SplitsEdit)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn missing_split_is_not_found_instead_of_owner_authorized() {
+        assert!(matches!(
+            authorize_split_owner_or_global(None, 17, 404, true, Permission::SplitsEdit),
+            Err(AppError::NotFound(_))
+        ));
     }
 }

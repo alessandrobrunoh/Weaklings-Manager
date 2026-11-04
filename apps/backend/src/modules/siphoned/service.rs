@@ -8,10 +8,11 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::prelude::Decimal;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, Statement, TransactionTrait, sea_query::Expr,
+    QueryOrder, Statement, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -24,6 +25,10 @@ use super::entities::{
 use super::models::{
     BalanceSort, BatchSummary, DeletedCount, EntryFilters, EntryMutationRequest, EntryView,
     IngestRequest, IngestResponse, IngestRow, PlayerBalance, PlayerBalanceDetail,
+    SettlementQuoteView, SettlementResult,
+};
+use super::quote_entities::{
+    ActiveModel as QuoteActiveModel, Column as QuoteColumn, Entity as QuoteEntity,
 };
 
 /// Hard cap on a single ingest payload size. Defends against a giant paste; the Albion export is
@@ -44,6 +49,225 @@ impl SiphonedService {
     #[must_use]
     pub fn new() -> Self {
         Self
+    }
+
+    /// Creates a persisted quote using the same market valuation rule as the previous UI flow:
+    /// sell-price minimum, then buy-price maximum, then the agreed 11,000 silver fallback.
+    pub async fn quote_settlement(
+        &self,
+        db: &DatabaseConnection,
+        market: &crate::modules::albiondata::service::AlbionDataService,
+        player_name: &str,
+        actor_user_id: i64,
+    ) -> Result<SettlementQuoteView, AppError> {
+        let player_name = player_name.trim();
+        if player_name.is_empty() || player_name.len() > 64 {
+            return Err(AppError::Validation(
+                "player_name must be 1..=64 characters".into(),
+            ));
+        }
+
+        let net = siphoned_net(db, player_name).await?;
+        if net >= Decimal::ZERO {
+            return Err(AppError::Conflict(
+                "player has no siphoned debt to settle".into(),
+            ));
+        }
+        let debt = -net;
+
+        let links = crate::modules::albion::entities::albion_link::Entity::find()
+            .filter(
+                Expr::expr(sea_orm::sea_query::Func::lower(Expr::col(
+                    crate::modules::albion::entities::albion_link::Column::AlbionPlayerName,
+                )))
+                .eq(player_name.to_lowercase()),
+            )
+            .all(db)
+            .await?;
+        if links.len() != 1 {
+            return Err(AppError::Conflict(format!(
+                "expected exactly one linked guild account for '{player_name}'"
+            )));
+        }
+        let linked_discord_ids = links
+            .iter()
+            .map(|link| link.discord_id.clone())
+            .collect::<Vec<_>>();
+        let users = crate::modules::users::entities::Entity::find()
+            .filter(crate::modules::users::entities::Column::DiscordId.is_in(linked_discord_ids))
+            .all(db)
+            .await?;
+        if users.len() != 1 {
+            return Err(AppError::NotFound(format!(
+                "no linked guild account for '{player_name}'"
+            )));
+        }
+        let user = users
+            .into_iter()
+            .next()
+            .expect("exactly one linked account");
+
+        let prices = market.prices(None, "SIPHONED_ENERGY", None, None).await?;
+        let unit_price = siphoned_unit_price(&prices);
+        let total = debt * unit_price;
+        let now = Utc::now();
+        let expires_at = now + chrono::Duration::minutes(2);
+        let quote_id = Uuid::new_v4().to_string();
+        QuoteActiveModel {
+            id: Set(quote_id.clone()),
+            player_name: Set(player_name.to_string()),
+            user_id: Set(user.id),
+            actor_user_id: Set(actor_user_id),
+            debt: Set(debt),
+            unit_price: Set(unit_price),
+            total: Set(total),
+            expires_at: Set(expires_at.into()),
+            created_at: Set(now.into()),
+            consumed_at: Set(None),
+            siphoned_entry_id: Set(None),
+            transaction_id: Set(None),
+        }
+        .insert(db)
+        .await?;
+
+        Ok(SettlementQuoteView {
+            quote_id,
+            player_name: player_name.to_string(),
+            debt,
+            unit_price,
+            total,
+            expires_at: expires_at.to_rfc3339(),
+        })
+    }
+
+    /// Confirms a server-issued quote. The quote claim, both ledger writes, the audit record, and
+    /// the stored idempotent result commit together; failed validation rolls the entire operation
+    /// back and the same quote can safely be retried.
+    pub async fn confirm_settlement(
+        &self,
+        db: &DatabaseConnection,
+        quote_id: &str,
+        actor_user_id: i64,
+    ) -> Result<SettlementResult, AppError> {
+        let txn = db.begin().await?;
+        let quote = QuoteEntity::find_by_id(quote_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound("settlement quote not found".into()))?;
+        if quote.actor_user_id != actor_user_id {
+            return Err(AppError::Forbidden(
+                "settlement quote belongs to another officer".into(),
+            ));
+        }
+        if let (Some(siphoned_entry_id), Some(transaction_id)) =
+            (quote.siphoned_entry_id, quote.transaction_id)
+        {
+            txn.commit().await?;
+            return Ok(settlement_result(
+                &quote,
+                siphoned_entry_id,
+                transaction_id,
+                true,
+            ));
+        }
+
+        let now: chrono::DateTime<chrono::Utc> = Utc::now();
+        if quote.expires_at <= now {
+            return Err(AppError::Conflict(
+                "settlement quote has expired; request a new quote".into(),
+            ));
+        }
+        let claim = QuoteEntity::update_many()
+            .col_expr(QuoteColumn::ConsumedAt, Expr::value(now))
+            .filter(QuoteColumn::Id.eq(quote_id))
+            .filter(QuoteColumn::ConsumedAt.is_null())
+            .filter(QuoteColumn::ExpiresAt.gt(now))
+            .exec(&txn)
+            .await?;
+        if claim.rows_affected == 0 {
+            // A concurrent retry may have completed while this request waited on the quote row.
+            let latest = QuoteEntity::find_by_id(quote_id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| AppError::NotFound("settlement quote not found".into()))?;
+            if let (Some(entry_id), Some(transaction_id)) =
+                (latest.siphoned_entry_id, latest.transaction_id)
+            {
+                txn.commit().await?;
+                return Ok(settlement_result(&latest, entry_id, transaction_id, true));
+            }
+            return Err(AppError::Conflict(
+                "settlement quote is expired or already being confirmed".into(),
+            ));
+        }
+
+        lock_player_names(&txn, &[quote.player_name.clone()]).await?;
+        let current_net = siphoned_net(&txn, &quote.player_name).await?;
+        if current_net != -quote.debt {
+            return Err(AppError::Conflict(
+                "siphoned debt changed since this quote was issued".into(),
+            ));
+        }
+        let entry = ActiveModel {
+            occurred_at: Set(now.into()),
+            player_name: Set(quote.player_name.clone()),
+            reason: Set("Siphoned debt settlement".to_string()),
+            amount: Set(quote.debt),
+            source: Set("manual".to_string()),
+            ingest_batch: Set(None),
+            ingested_at: Set(now.into()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        let bank = crate::modules::bank::entities::ActiveModel {
+            from_user_id: Set(None),
+            to_user_id: Set(quote.user_id),
+            to_guild_bank: Set(false),
+            amount: Set(quote.total),
+            status: Set("donated".to_string()),
+            r#type: Set("siphoned_settlement".to_string()),
+            split_id: Set(None),
+            created_at: Set(now.into()),
+            requested_at: Set(None),
+            withdrawn_at: Set(None),
+            updated_at: Set(now.into()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        let audit = crate::modules::audit::entities::ActiveModel {
+            action: Set("SIPHONED_SETTLEMENT_CONFIRMED".into()),
+            entity_type: Set(Some("SIPHONED_SETTLEMENT".into())),
+            entity_id: Set(Some(entry.id)),
+            user_id: Set(Some(actor_user_id)),
+            details: Set(Some(
+                serde_json::json!({
+                    "quote_id": quote.id,
+                    "player_name": quote.player_name,
+                    "user_id": quote.user_id,
+                    "debt": quote.debt,
+                    "unit_price": quote.unit_price,
+                    "total": quote.total,
+                    "transaction_id": bank.id,
+                })
+                .into(),
+            )),
+            ..Default::default()
+        };
+        audit.insert(&txn).await?;
+
+        QuoteEntity::update_many()
+            .col_expr(QuoteColumn::SiphonedEntryId, Expr::value(entry.id))
+            .col_expr(QuoteColumn::TransactionId, Expr::value(bank.id))
+            .filter(QuoteColumn::Id.eq(quote_id))
+            .exec(&txn)
+            .await?;
+        txn.commit().await?;
+
+        Ok(settlement_result(&quote, entry.id, bank.id, false))
     }
 
     /// Bulk-imports an Albion export as immutable ledger rows.
@@ -88,6 +312,14 @@ impl SiphonedService {
         let ingested_at: DateTime<FixedOffset> = now.into();
 
         let txn = db.begin().await?;
+        lock_player_names(
+            &txn,
+            &req.rows
+                .iter()
+                .map(|row| row.player_name.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?;
         let mut seen_entry_keys = existing_entry_keys(&txn, &req.rows).await?;
         let mut ingested_count = 0;
 
@@ -142,6 +374,8 @@ impl SiphonedService {
     ) -> Result<EntryView, AppError> {
         validate_row(0, req)?;
         let ingested_at: DateTime<FixedOffset> = Utc::now().into();
+        let txn = db.begin().await?;
+        lock_player_names(&txn, &[req.player_name.clone()]).await?;
         let active = ActiveModel {
             occurred_at: Set(req.occurred_at),
             player_name: Set(req.player_name.trim().to_string()),
@@ -152,7 +386,8 @@ impl SiphonedService {
             ingested_at: Set(ingested_at),
             ..Default::default()
         };
-        let model = active.insert(db).await?;
+        let model = active.insert(&txn).await?;
+        txn.commit().await?;
         Ok(EntryView::from_model(model))
     }
 
@@ -177,16 +412,31 @@ impl SiphonedService {
         req: &EntryMutationRequest,
     ) -> Result<EntryView, AppError> {
         validate_row(0, req)?;
-        let model = SiphonedEntryEntity::find_by_id(entry_id)
-            .one(db)
+        let txn = db.begin().await?;
+        let mut model = SiphonedEntryEntity::find_by_id(entry_id)
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("no siphoned entry with id '{entry_id}'")))?;
+        loop {
+            let observed_name = model.player_name.clone();
+            lock_player_names(&txn, &[observed_name.clone(), req.player_name.clone()]).await?;
+            model = SiphonedEntryEntity::find_by_id(entry_id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("no siphoned entry with id '{entry_id}'"))
+                })?;
+            if model.player_name == observed_name {
+                break;
+            }
+        }
         let mut active = model.into_active_model();
         active.occurred_at = Set(req.occurred_at);
         active.player_name = Set(req.player_name.trim().to_string());
         active.reason = Set(req.reason.trim().to_string());
         active.amount = Set(req.amount);
-        let updated = active.update(db).await?;
+        let updated = active.update(&txn).await?;
+        txn.commit().await?;
         Ok(EntryView::from_model(updated))
     }
 
@@ -209,12 +459,27 @@ impl SiphonedService {
         db: &DatabaseConnection,
         entry_id: i64,
     ) -> Result<DeletedCount, AppError> {
-        let result = SiphonedEntryEntity::delete_by_id(entry_id).exec(db).await?;
+        let txn = db.begin().await?;
+        let mut entry = SiphonedEntryEntity::find_by_id(entry_id).one(&txn).await?;
+        while let Some(observed) = entry {
+            lock_player_names(&txn, &[observed.player_name.clone()]).await?;
+            entry = SiphonedEntryEntity::find_by_id(entry_id).one(&txn).await?;
+            if entry
+                .as_ref()
+                .is_some_and(|current| current.player_name == observed.player_name)
+            {
+                break;
+            }
+        }
+        let result = SiphonedEntryEntity::delete_by_id(entry_id)
+            .exec(&txn)
+            .await?;
         if result.rows_affected == 0 {
             return Err(AppError::NotFound(format!(
                 "no siphoned entry with id '{entry_id}'"
             )));
         }
+        txn.commit().await?;
         Ok(DeletedCount {
             deleted_count: result.rows_affected,
         })
@@ -497,9 +762,36 @@ impl SiphonedService {
         db: &DatabaseConnection,
         batch_id: &str,
     ) -> Result<DeletedCount, AppError> {
+        let txn = db.begin().await?;
+        let mut entries = SiphonedEntryEntity::find()
+            .filter(Column::IngestBatch.eq(batch_id))
+            .all(&txn)
+            .await?;
+        loop {
+            let names = entries
+                .iter()
+                .map(|entry| entry.player_name.clone())
+                .collect::<Vec<_>>();
+            lock_player_names(&txn, &names).await?;
+            let refreshed = SiphonedEntryEntity::find()
+                .filter(Column::IngestBatch.eq(batch_id))
+                .all(&txn)
+                .await?;
+            let locked_names = names
+                .iter()
+                .map(|name| name.to_lowercase())
+                .collect::<HashSet<_>>();
+            if refreshed
+                .iter()
+                .all(|entry| locked_names.contains(&entry.player_name.to_lowercase()))
+            {
+                break;
+            }
+            entries = refreshed;
+        }
         let result = SiphonedEntryEntity::delete_many()
             .filter(Column::IngestBatch.eq(batch_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         let deleted = result.rows_affected;
@@ -507,10 +799,86 @@ impl SiphonedService {
             return Err(AppError::NotFound(format!("no batch with id '{batch_id}'")));
         }
 
+        txn.commit().await?;
         Ok(DeletedCount {
             deleted_count: deleted,
         })
     }
+}
+
+async fn siphoned_net<C: ConnectionTrait>(db: &C, player_name: &str) -> Result<Decimal, AppError> {
+    let rows = SiphonedEntryEntity::find()
+        .filter(
+            Expr::expr(sea_orm::sea_query::Func::lower(Expr::col(
+                Column::PlayerName,
+            )))
+            .eq(player_name.to_lowercase()),
+        )
+        .all(db)
+        .await?;
+    let mut seen = HashSet::new();
+    Ok(rows
+        .into_iter()
+        .filter(|row| seen.insert(SiphonedEntryKey::from_model(row)))
+        .map(|row| row.amount)
+        .sum())
+}
+
+async fn lock_player_names<C: ConnectionTrait>(db: &C, names: &[String]) -> Result<(), AppError> {
+    if db.get_database_backend() != DatabaseBackend::Postgres {
+        return Ok(());
+    }
+    let mut normalized = names
+        .iter()
+        .map(|name| name.trim().to_lowercase())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    for name in normalized {
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || ':' || $1, 0))",
+            [name.into()],
+        ))
+        .await?;
+    }
+    Ok(())
+}
+
+fn settlement_result(
+    quote: &super::quote_entities::Model,
+    siphoned_entry_id: i64,
+    transaction_id: i64,
+    replayed: bool,
+) -> SettlementResult {
+    SettlementResult {
+        quote_id: quote.id.clone(),
+        siphoned_entry_id,
+        transaction_id,
+        player_name: quote.player_name.clone(),
+        debt: quote.debt,
+        unit_price: quote.unit_price,
+        total: quote.total,
+        replayed,
+    }
+}
+
+fn siphoned_unit_price(
+    prices: &[crate::modules::albiondata::client::AlbionDataMarketPrice],
+) -> Decimal {
+    Decimal::from(
+        prices
+            .iter()
+            .find(|price| price.sell_price_min > 0)
+            .map(|price| price.sell_price_min)
+            .or_else(|| {
+                prices
+                    .iter()
+                    .find(|price| price.buy_price_max > 0)
+                    .map(|price| price.buy_price_max)
+            })
+            .unwrap_or(11_000),
+    )
 }
 
 impl Default for SiphonedService {
@@ -599,7 +967,7 @@ struct SiphonedEntryKey {
     player_name_lower: String,
     reason: String,
     amount: Decimal,
-    source: &'static str,
+    source: String,
 }
 
 impl SiphonedEntryKey {
@@ -610,7 +978,7 @@ impl SiphonedEntryKey {
             player_name_lower: row.player_name.trim().to_lowercase(),
             reason: row.reason.trim().to_string(),
             amount: row.amount,
-            source: SOURCE_ALBION_EXPORT,
+            source: SOURCE_ALBION_EXPORT.to_string(),
         }
     }
 
@@ -621,7 +989,7 @@ impl SiphonedEntryKey {
             player_name_lower: model.player_name.trim().to_lowercase(),
             reason: model.reason.trim().to_string(),
             amount: model.amount,
-            source: SOURCE_ALBION_EXPORT,
+            source: model.source.clone(),
         }
     }
 }
@@ -838,6 +1206,46 @@ mod tests {
             .expect("Failed to insert siphoned entry");
     }
 
+    async fn insert_settlement_user(db: &DatabaseConnection) -> i64 {
+        let user = crate::modules::users::entities::ActiveModel {
+            username: Set("settlement-user".into()),
+            email: Set("settlement@example.test".into()),
+            role: Set("User".into()),
+            discord_id: Set(Some("discord-123".into())),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert settlement user");
+        user.id
+    }
+
+    async fn insert_settlement_quote(
+        db: &DatabaseConnection,
+        quote_id: &str,
+        user_id: i64,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        QuoteActiveModel {
+            id: Set(quote_id.into()),
+            player_name: Set("Galvdon".into()),
+            user_id: Set(user_id),
+            actor_user_id: Set(900),
+            debt: Set(Decimal::from(10)),
+            unit_price: Set(Decimal::from(11_000)),
+            total: Set(Decimal::from(110_000)),
+            expires_at: Set(expires_at.into()),
+            created_at: Set(Utc::now().into()),
+            consumed_at: Set(None),
+            siphoned_entry_id: Set(None),
+            transaction_id: Set(None),
+        }
+        .insert(db)
+        .await
+        .expect("insert settlement quote");
+    }
+
     fn ingest_row(occurred_at: &str, player_name: &str, reason: &str, amount: &str) -> IngestRow {
         IngestRow {
             occurred_at: DateTime::parse_from_rfc3339(occurred_at).expect("occurred_at"),
@@ -851,6 +1259,25 @@ mod tests {
         PaginationParams {
             page: None,
             limit: None,
+        }
+    }
+
+    fn market_price(
+        sell_price_min: i64,
+        buy_price_max: i64,
+    ) -> crate::modules::albiondata::client::AlbionDataMarketPrice {
+        crate::modules::albiondata::client::AlbionDataMarketPrice {
+            item_id: "SIPHONED_ENERGY".into(),
+            city: "Bridgewatch".into(),
+            quality: 1,
+            sell_price_min,
+            sell_price_min_date: None,
+            sell_price_max: 0,
+            sell_price_max_date: None,
+            buy_price_min: 0,
+            buy_price_min_date: None,
+            buy_price_max,
+            buy_price_max_date: None,
         }
     }
 
@@ -1213,6 +1640,118 @@ mod tests {
 
         let b1 = batches.iter().find(|b| b.batch_id == "b1").expect("b1");
         assert_eq!(b1.row_count, 2);
+    }
+
+    #[tokio::test]
+    async fn settlement_confirmation_is_atomic_and_idempotent() {
+        let db = seed_db().await;
+        let user_id = insert_settlement_user(&db).await;
+        insert_entry(&db, ts(1), "Galvdon", "Withdrawal", "-10", None).await;
+        insert_settlement_quote(
+            &db,
+            "quote-settlement-ok",
+            user_id,
+            Utc::now() + chrono::Duration::minutes(1),
+        )
+        .await;
+
+        let service = SiphonedService::new();
+        let first = service
+            .confirm_settlement(&db, "quote-settlement-ok", 900)
+            .await
+            .expect("confirm");
+        assert!(!first.replayed);
+        assert_eq!(first.total, Decimal::from(110_000));
+        let replay = service
+            .confirm_settlement(&db, "quote-settlement-ok", 900)
+            .await
+            .expect("retry");
+        assert!(replay.replayed);
+        assert_eq!(replay.siphoned_entry_id, first.siphoned_entry_id);
+        assert_eq!(replay.transaction_id, first.transaction_id);
+
+        let entry_count = SiphonedEntryEntity::find()
+            .count(&db)
+            .await
+            .expect("entry count");
+        let bank_count = crate::modules::bank::entities::Entity::find()
+            .count(&db)
+            .await
+            .expect("bank count");
+        let audit_count = crate::modules::audit::entities::Entity::find()
+            .count(&db)
+            .await
+            .expect("audit count");
+        assert_eq!(entry_count, 2);
+        assert_eq!(bank_count, 1);
+        assert_eq!(audit_count, 1);
+        assert_eq!(
+            siphoned_net(&db, "GALVDON").await.expect("net"),
+            Decimal::ZERO
+        );
+    }
+
+    #[tokio::test]
+    async fn settlement_confirmation_rejects_expired_or_changed_debt_without_writes() {
+        let db = seed_db().await;
+        let user_id = insert_settlement_user(&db).await;
+        insert_entry(&db, ts(1), "Galvdon", "Withdrawal", "-10", None).await;
+        insert_settlement_quote(
+            &db,
+            "quote-expired",
+            user_id,
+            Utc::now() - chrono::Duration::seconds(1),
+        )
+        .await;
+        insert_settlement_quote(
+            &db,
+            "quote-stale",
+            user_id,
+            Utc::now() + chrono::Duration::minutes(1),
+        )
+        .await;
+        insert_entry(&db, ts(2), "Galvdon", "Withdrawal", "-1", None).await;
+
+        let service = SiphonedService::new();
+        assert!(matches!(
+            service.confirm_settlement(&db, "quote-expired", 900).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            service.confirm_settlement(&db, "quote-stale", 900).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert_eq!(
+            crate::modules::bank::entities::Entity::find()
+                .count(&db)
+                .await
+                .expect("bank count"),
+            0
+        );
+        assert_eq!(
+            siphoned_net(&db, "Galvdon").await.expect("net"),
+            Decimal::from(-11)
+        );
+    }
+
+    #[test]
+    fn settlement_price_uses_sell_then_buy_then_agreed_fallback() {
+        assert_eq!(
+            siphoned_unit_price(&[market_price(12_000, 15_000)]),
+            Decimal::from(12_000)
+        );
+        assert_eq!(
+            siphoned_unit_price(&[market_price(0, 10_500)]),
+            Decimal::from(10_500)
+        );
+        assert_eq!(
+            siphoned_unit_price(&[market_price(0, 0)]),
+            Decimal::from(11_000)
+        );
+        assert_eq!(
+            siphoned_unit_price(&[market_price(0, 0), market_price(13_000, 1)]),
+            Decimal::from(13_000)
+        );
     }
 
     // Suppress unused helper warning in tests where `Utc` is not directly referenced.

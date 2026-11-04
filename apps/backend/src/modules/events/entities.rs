@@ -66,6 +66,12 @@ pub mod event {
         pub ping_alliance: bool,
         /// Alliance Discord announcement message id, when this event pinged alliance Discord.
         pub alliance_discord_message_id: Option<String>,
+        /// Whether creating this event should request a VOD forum post.
+        pub vod_forum_post_enabled: bool,
+        /// Durable VOD post delivery state: not_requested, pending, attempted, or created.
+        pub vod_forum_post_status: String,
+        /// Discord forum thread created for this event, when recorded.
+        pub vod_forum_thread_id: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
@@ -379,6 +385,36 @@ pub mod event_participation {
             Relation::User.def()
         }
     }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// Per-recipient, immutable completion snapshot and retryable XP outbox.
+pub mod event_completion_xp {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "event_completion_xp")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub event_id: i64,
+        pub user_id: i64,
+        /// Stable progression source string (`event_create` or `event_complete`).
+        pub source: String,
+        /// Season chosen at completion time; null means no eligible season existed.
+        pub season_id: Option<i64>,
+        /// Rate captured at completion so edits cannot change a pending retry.
+        pub base_amount: i64,
+        pub idempotency_key: String,
+        /// `pending`, `awarded`, `duplicate`, `skipped_rate`, or `no_season`.
+        pub status: String,
+        pub created_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }

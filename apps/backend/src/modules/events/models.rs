@@ -269,6 +269,12 @@ pub struct EventView {
     pub ping_alliance: bool,
     /// Alliance Discord announcement message id, if posted.
     pub alliance_discord_message_id: Option<String>,
+    /// Whether this event requests a post in the configured VOD forum.
+    pub vod_forum_post_enabled: bool,
+    /// Durable delivery state for the VOD forum post.
+    pub vod_forum_post_status: String,
+    /// Discord thread ID when the VOD forum post was recorded as created.
+    pub vod_forum_thread_id: Option<String>,
     /// Alliance Discord events channel, filled when `ping_alliance` is true.
     pub alliance_discord_channel_id: Option<String>,
     /// Alliance Discord roles to ping, filled from the alliance tenant settings.
@@ -610,6 +616,13 @@ pub struct CreateEventRequest {
     /// Also ping the alliance Discord events channel (guild events only; default off).
     #[serde(default)]
     pub ping_alliance: bool,
+    /// Create a VOD forum post for members to reply to with video links (default: true).
+    #[serde(default = "default_vod_forum_post_enabled")]
+    pub vod_forum_post_enabled: bool,
+}
+
+fn default_vod_forum_post_enabled() -> bool {
+    true
 }
 
 /// Discord voice channel created by the bot for a live event.

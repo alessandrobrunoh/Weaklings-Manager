@@ -155,8 +155,27 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
     @if (createOpen()) {
       <app-dialog [title]="t('admin.transactions.create')" (closed)="closeCreate()">
         <form id="create-transaction-form" class="grid gap-4" (submit)="onCreate($event)">
-          <label class="block">
-            <span class="label">{{ t('admin.transactions.fields.to') }}</span>
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-container)] p-3 text-sm text-[var(--color-text)]">
+            {{ t('admin.transactions.fields.amountHint') }}
+          </p>
+          <div class="block">
+            <span id="create-transaction-recipient-label" class="label">
+              {{ t('admin.transactions.fields.to') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <div
+              class="mt-1"
+              role="group"
+              aria-labelledby="create-transaction-recipient-label"
+              [attr.aria-invalid]="createRecipientError() ? 'true' : null"
+              [attr.aria-describedby]="createRecipientError()
+                ? 'create-transaction-recipient-required create-transaction-recipient-error'
+                : 'create-transaction-recipient-required'"
+            >
+              <span id="create-transaction-recipient-required" class="sr-only">
+                {{ t('validation.required') }}
+              </span>
             <div class="flex items-center gap-2">
               <div class="input flex flex-1 items-center bg-[var(--color-surface-1)] truncate">
                 <span class="truncate">{{ newToUserName() || t('admin.transactions.fields.pickUser') }}</span>
@@ -165,7 +184,13 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
                 {{ t('admin.transactions.fields.pick') }}
               </button>
             </div>
-          </label>
+              @if (createRecipientError()) {
+                <span id="create-transaction-recipient-error" class="mt-1 block text-xs text-error" role="alert">
+                  {{ t('admin.transactions.fields.pickUser') }}
+                </span>
+              }
+            </div>
+          </div>
 
           <label class="block">
             <span class="label">{{ t('admin.transactions.fields.from') }}</span>
@@ -185,7 +210,7 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           </label>
 
           <label class="block">
-            <span class="label">{{ t('common.amount') }}</span>
+            <span class="label">{{ t('common.amount') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="number"
@@ -195,7 +220,6 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
               [value]="newAmount() ?? ''"
               (input)="onNewAmount($event)"
             />
-            <span class="text-xs text-secondary">{{ t('admin.transactions.fields.amountHint') }}</span>
           </label>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -249,8 +273,27 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
     @if (editTarget(); as target) {
       <app-dialog [title]="t('admin.transactions.editTitle')" (closed)="closeEdit()">
         <form id="edit-transaction-form" class="grid gap-4" (submit)="onEditSubmit($event)">
-          <label class="block">
-            <span class="label">{{ t('admin.transactions.fields.to') }}</span>
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-container)] p-3 text-sm text-[var(--color-text)]">
+            {{ t('admin.transactions.fields.amountHint') }}
+          </p>
+          <div class="block">
+            <span id="edit-transaction-recipient-label" class="label">
+              {{ t('admin.transactions.fields.to') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <div
+              class="mt-1"
+              role="group"
+              aria-labelledby="edit-transaction-recipient-label"
+              [attr.aria-invalid]="editRecipientError() ? 'true' : null"
+              [attr.aria-describedby]="editRecipientError()
+                ? 'edit-transaction-recipient-required edit-transaction-recipient-error'
+                : 'edit-transaction-recipient-required'"
+            >
+              <span id="edit-transaction-recipient-required" class="sr-only">
+                {{ t('validation.required') }}
+              </span>
             <div class="flex items-center gap-2">
               <div class="input flex flex-1 items-center bg-[var(--color-surface-1)] truncate">
                 <span class="truncate">{{ editToUserName() }}</span>
@@ -259,7 +302,13 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
                 {{ t('admin.transactions.fields.pick') }}
               </button>
             </div>
-          </label>
+              @if (editRecipientError()) {
+                <span id="edit-transaction-recipient-error" class="mt-1 block text-xs text-error" role="alert">
+                  {{ t('admin.transactions.fields.pickUser') }}
+                </span>
+              }
+            </div>
+          </div>
 
           <label class="block">
             <span class="label">{{ t('admin.transactions.fields.from') }}</span>
@@ -279,7 +328,7 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           </label>
 
           <label class="block">
-            <span class="label">{{ t('common.amount') }}</span>
+            <span class="label">{{ t('common.amount') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="number"
@@ -384,6 +433,8 @@ export class AdminTransactions {
   protected readonly createOpen = signal(false);
   protected readonly editTarget = signal<TransactionView | null>(null);
   protected readonly deleteTarget = signal<TransactionView | null>(null);
+  protected readonly createRecipientError = signal(false);
+  protected readonly editRecipientError = signal(false);
 
   protected readonly newToUserId = signal<number | null>(null);
   protected readonly newToUserName = signal('');
@@ -526,6 +577,7 @@ export class AdminTransactions {
   protected openCreate(): void {
     this.newToUserId.set(null);
     this.newToUserName.set('');
+    this.createRecipientError.set(false);
     this.newFromUserId.set(null);
     this.newFromUserName.set('');
     this.newAmount.set(null);
@@ -567,9 +619,11 @@ export class AdminTransactions {
     const toUserId = this.newToUserId();
     const amount = this.newAmount();
     if (!toUserId) {
+      this.createRecipientError.set(true);
       this.toasts.error(this.t('admin.transactions.fields.pickUser'));
       return;
     }
+    this.createRecipientError.set(false);
     if (amount === null || amount === 0) {
       this.toasts.error(this.t('validation.nonZero'));
       return;
@@ -598,6 +652,7 @@ export class AdminTransactions {
 
   protected openEdit(row: TransactionView): void {
     this.editTarget.set(row);
+    this.editRecipientError.set(false);
     this.editToUserId.set(row.to_user_id);
     this.editToUserName.set(row.to_username);
     this.editFromUserId.set(row.from_user_id);
@@ -640,9 +695,14 @@ export class AdminTransactions {
     const target = this.editTarget();
     const toUserId = this.editToUserId();
     const amount = this.editAmount();
-    if (!target || !toUserId) {
+    if (!target) {
       return;
     }
+    if (!toUserId) {
+      this.editRecipientError.set(true);
+      return;
+    }
+    this.editRecipientError.set(false);
     if (amount === null || amount === 0) {
       this.toasts.error(this.t('validation.nonZero'));
       return;
@@ -745,6 +805,7 @@ export class AdminTransactions {
       case 'create-to':
         this.newToUserId.set(id);
         this.newToUserName.set(opt.title);
+        this.createRecipientError.set(false);
         break;
       case 'create-from':
         this.newFromUserId.set(id);
@@ -753,6 +814,7 @@ export class AdminTransactions {
       case 'edit-to':
         this.editToUserId.set(id);
         this.editToUserName.set(opt.title);
+        this.editRecipientError.set(false);
         break;
       case 'edit-from':
         this.editFromUserId.set(id);

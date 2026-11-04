@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ChannelType } from "discord.js";
-import type { Client, Message, TextChannel, ThreadChannel } from "discord.js";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
+import type { Client, ForumChannel, Message, TextChannel, ThreadChannel } from "discord.js";
 import { ApiError, type ApiClient } from "../api/client.js";
 import type {
   PaginatedData,
@@ -465,6 +465,7 @@ export class Poller {
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
+      await this.checkVodForumPosts();
       const revisions = await this.loadEventRevisions();
       await this.checkClosedEvents(revisions);
       await this.checkEventRosterSync(revisions);
@@ -480,6 +481,91 @@ export class Poller {
       ]);
     } finally {
       this.polling = false;
+    }
+  }
+
+  /**
+   * Delivers only events whose create-time preference is pending. The database
+   * claim is committed before Discord's non-idempotent create call; a process
+   * crash or lost response therefore leaves `attempted`, never an auto-retry.
+   */
+  private async checkVodForumPosts(): Promise<void> {
+    try {
+      const settings = this.settings as SettingsService & {
+        vodForumChannelId?: () => Promise<string | null>;
+      };
+      if (!settings.vodForumChannelId) return;
+      const forumId = await settings.vodForumChannelId();
+      if (!forumId) return;
+      const channel = await this.client.channels.fetch(forumId);
+      if (!channel || channel.type !== ChannelType.GuildForum) {
+        console.warn(`[Poller] VOD forum ${forumId} is missing or not a forum channel`);
+        return;
+      }
+      const forum = channel as ForumChannel;
+      const bot = this.client.user;
+      const permissions = bot ? forum.permissionsFor(bot) : null;
+      if (
+        !permissions ||
+        [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.SendMessagesInThreads,
+          PermissionFlagsBits.ReadMessageHistory,
+        ].some((permission) => !permissions.has(permission))
+      ) {
+        console.warn(`[Poller] Bot lacks permissions required to post in VOD forum ${forumId}`);
+        return;
+      }
+      let appliedTags: string[] | undefined;
+      if (forum.flags.has("RequireTag")) {
+        const tag = forum.availableTags.find(
+          (candidate) =>
+            !candidate.moderated || permissions.has(PermissionFlagsBits.ManageThreads),
+        );
+        if (!tag) {
+          console.warn(`[Poller] VOD forum ${forumId} requires a tag, but none is available`);
+          return;
+        }
+        appliedTags = [tag.id];
+      }
+      const pending = await this.api.get<EventView[]>("api/events/vod-forum-posts/pending");
+      for (const event of pending) {
+        const claimed = await this.api.post<boolean>(
+          `api/events/${event.id}/vod-forum-post/claim`,
+          {},
+        );
+        if (!claimed) continue;
+        try {
+          const thread = await forum.threads.create({
+            name: `VOD: ${event.title}`.slice(0, 100),
+            message: {
+              content: `Share video links from **${event.title}** in the replies below.`,
+              allowedMentions: { parse: [] },
+            },
+            ...(appliedTags ? { appliedTags } : {}),
+            reason: `VOD forum post for event ${event.id}`,
+          });
+          const recorded = await this.api.post<boolean>(
+            `api/events/${event.id}/vod-forum-post/created`,
+            { thread_id: thread.id },
+          );
+          if (!recorded) {
+            throw new Error(`VOD forum thread ${thread.id} was not recorded by the backend`);
+          }
+          console.info(
+            `[Poller] vod_forum_result=created guild=${this.guildId} event=${event.id} thread=${thread.id}`,
+          );
+        } catch (error) {
+          // Discord may have created the thread before the local request failed.
+          // Keep `attempted` durable and suppress automatic duplicate retries.
+          console.error(
+            `[Poller] vod_forum_result=ambiguous guild=${this.guildId} event=${event.id}; automatic retry suppressed: ${String(error)}`,
+          );
+        }
+      }
+    } catch (error) {
+      console.warn(`[Poller] Failed to process VOD forum posts: ${String(error)}`);
     }
   }
 

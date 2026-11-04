@@ -1,6 +1,6 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TenantFeaturesView } from '../../core/models/api.models';
@@ -71,5 +71,50 @@ describe('AdminFeatures', () => {
         { key: 'events', enabled: false },
       ],
     });
+  });
+
+  it('shows loading instead of an empty form, including on retry', async () => {
+    fixture.destroy();
+    const request = new Subject<TenantFeaturesView>();
+    api.get.mockReturnValue(request);
+    fixture = TestBed.createComponent(AdminFeatures);
+    fixture.detectChanges();
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.querySelector('[role="status"]')?.textContent).toContain('common.loading');
+    expect(page.querySelector('form')).toBeNull();
+    request.error(new Error('offline'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(page.textContent).toContain('common.error');
+
+    const retry = new Subject<TenantFeaturesView>();
+    api.get.mockReturnValue(retry);
+    page.querySelector('button')?.click();
+    fixture.detectChanges();
+    expect(page.querySelector('[role="status"]')?.textContent).toContain('common.loading');
+    retry.next(mockView);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(page.textContent).toContain('Splits');
+    expect(page.textContent).not.toContain('Intel');
+  });
+
+  it('locks edits during save and retains them when saving fails', async () => {
+    const request = new Subject<TenantFeaturesView>();
+    api.put.mockReturnValue(request);
+    const page = fixture.nativeElement as HTMLElement;
+    const checkbox = page.querySelector('#tenant-flag-events') as HTMLInputElement;
+    checkbox.click();
+    (page.querySelector('form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    expect((page.querySelector('fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+    expect(page.textContent).toContain('common.loading');
+    request.error(new Error('offline'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect((page.querySelector('fieldset') as HTMLFieldSetElement).disabled).toBe(false);
+    expect((page.querySelector('#tenant-flag-events') as HTMLInputElement).checked).toBe(false);
   });
 });

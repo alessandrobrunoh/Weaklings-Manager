@@ -60,7 +60,10 @@ describe('AdminAlliance', () => {
         { provide: ApiService, useValue: api },
         {
           provide: AuthService,
-          useValue: { profile: () => ({ tenant_id: 'g1', tenant_kind: 'guild' }) },
+          useValue: {
+            profile: () => ({ tenant_id: 'g1', tenant_kind: 'guild' }),
+            hasPermission: (permission: string) => permission === 'alliance.leave',
+          },
         },
         { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
         { provide: TranslateService, useValue: { t: (key: string) => key } },
@@ -74,6 +77,17 @@ describe('AdminAlliance', () => {
 
   afterEach(() => {
     fixture?.destroy();
+  });
+
+  it('leaves the active alliance after confirmation', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((node) =>
+      (node as HTMLButtonElement).textContent?.includes('admin.alliance.leave'),
+    ) as HTMLButtonElement;
+    button.click();
+    await fixture.whenStable();
+    expect(api.post).toHaveBeenCalledWith('api/alliances/ally-1/members/g1/leave', {});
+    vi.unstubAllGlobals();
   });
 
   it('shows alliance membership and the role picker', () => {

@@ -68,6 +68,11 @@ pub struct DiscordUserProfile {
     #[schema(example = true)]
     #[serde(default)]
     pub is_platform_admin: bool,
+    /// True only for the original owner of the currently selected guild tenant.
+    /// Distinct from platform administration and recomputed on `/auth/me`.
+    #[schema(example = true)]
+    #[serde(default)]
+    pub is_tenant_owner: bool,
     /// Stable permission keys granted to this session.
     ///
     /// The frontend should render privileged actions from this list instead of duplicating role
@@ -590,7 +595,9 @@ pub fn roles_after_member_lookup(
 }
 
 fn cached_member_lookup(key: &(String, String)) -> Option<GuildMemberLookup> {
-    let cache = member_lookup_cache().lock().unwrap_or_else(|err| err.into_inner());
+    let cache = member_lookup_cache()
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
     let entry = cache.get(key)?;
     if entry.at.elapsed() > std::time::Duration::from_secs(60) {
         return None;
@@ -619,9 +626,8 @@ struct CachedMemberLookup {
     at: std::time::Instant,
 }
 
-fn member_lookup_cache() -> &'static std::sync::Mutex<
-    std::collections::HashMap<(String, String), CachedMemberLookup>,
-> {
+fn member_lookup_cache()
+-> &'static std::sync::Mutex<std::collections::HashMap<(String, String), CachedMemberLookup>> {
     static CACHE: std::sync::OnceLock<
         std::sync::Mutex<std::collections::HashMap<(String, String), CachedMemberLookup>>,
     > = std::sync::OnceLock::new();
@@ -850,10 +856,7 @@ mod tests {
 
     #[test]
     fn member_status_404_is_absence_not_an_outage() {
-        assert_eq!(
-            classify_member_status(404),
-            Some(GuildMemberLookup::Absent)
-        );
+        assert_eq!(classify_member_status(404), Some(GuildMemberLookup::Absent));
         assert!(matches!(
             classify_member_status(500),
             Some(GuildMemberLookup::Unavailable)
@@ -968,6 +971,7 @@ mod tests {
             user_id: 0,
             is_superadmin: false,
             is_platform_admin: false,
+            is_tenant_owner: false,
             permissions: vec![],
             tenant_id: None,
             tenant_name: None,

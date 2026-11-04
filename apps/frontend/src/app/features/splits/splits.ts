@@ -40,6 +40,7 @@ import {
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { actionablePendingSplits, canActOnSplit } from './split-access';
 
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
@@ -323,7 +324,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
       </section>
 
       <!-- Row 3: Batch Selection Command Bar -->
-      @if (canAct() && pendingSplits().length > 0) {
+      @if (actionablePendingSplits().length > 0) {
         <section
           class="batch-bar p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3"
           [class.batch-bar--active]="selectedCount() > 0"
@@ -413,7 +414,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
         emptySubtitle="There are no splits matching the selected filters."
       >
         <ng-template dataTableCell="select" let-row>
-          @if (canAct() && row.status === 'pending' && !row.archived_at) {
+          @if (canActOn(row) && row.status === 'pending' && !row.archived_at) {
             <input
               class="checkbox"
               type="checkbox"
@@ -507,7 +508,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
 
         <ng-template dataTableCell="actions" let-row>
           <div class="flex items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
-            @if (canAct() && row.status === 'pending' && !row.archived_at) {
+            @if (canActOn(row) && row.status === 'pending' && !row.archived_at) {
               <button
                 type="button"
                 class="btn btn--primary btn--sm py-1 px-2.5 text-xs flex items-center gap-1"
@@ -527,7 +528,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
               <span>{{ t('common.open') }}</span>
               <app-icon name="arrow-right" size="0.75rem" />
             </button>
-            @if (canDelete()) {
+            @if (canDeleteOn(row)) {
               @if (row.archived_at) {
                 <button
                   type="button"
@@ -560,11 +561,11 @@ function newSplitBag(amount = 0): SplitBagDraft {
             {{ t('splits.create_hint') }}
           </p>
 
-          <div class="grid gap-4 lg:grid-cols-2">
+          <div class="grid gap-3 lg:grid-cols-2">
             <!-- LEFT COLUMN: CONFIGURATION & FINANCIALS -->
             <div class="space-y-4">
               <!-- Card 1: Note & Location -->
-              <section class="card p-4 space-y-3">
+              <section class="card p-3 space-y-2.5">
                 <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.location') }} &middot; {{ t('splits.note') }}
                 </h3>
@@ -648,7 +649,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
               </section>
 
               <!-- Card 2: Silver & Live Net Calculation -->
-              <section class="card p-4 space-y-3">
+              <section class="card p-3 space-y-2.5">
                 <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.net_value') }}
                 </h3>
@@ -672,10 +673,17 @@ function newSplitBag(amount = 0): SplitBagDraft {
                         type="text"
                         inputmode="decimal"
                         [value]="draftFeeInput()"
+                        [attr.aria-invalid]="!draftFeeValid()"
+                        [attr.aria-describedby]="!draftFeeValid() ? 'split-fee-error' : null"
                         (input)="onFeeChange($event)"
                       />
                       <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
                     </div>
+                    @if (!draftFeeValid()) {
+                      <span id="split-fee-error" class="mt-1 block text-xs text-error" role="alert">
+                        {{ t('splits.fee_invalid') }}
+                      </span>
+                    }
                   </label>
                   <label class="block">
                     <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
@@ -735,9 +743,10 @@ function newSplitBag(amount = 0): SplitBagDraft {
                       {{ t('splits.net_value') }} ({{ t('splits.net_preview') }})
                     </span>
                     <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
-                      {{ t('splits.net_formula') }}
+                      {{ t('splits.estimated') }} − {{ t('splits.repair_cost') }} + {{ t('splits.bags_value') }}
+                      − {{ t('splits.fee') }} ({{ formatAmount(draftFeeAmount()) }})
                     </p>
-                    @if (participants().length > 0) {
+                    @if (participants().length > 0 && draftFeeValid()) {
                       <p class="text-[0.6875rem] font-mono text-[var(--color-text-secondary)] mt-1">
                         ~{{ formatAmount(perParticipantShare()) }} / player
                       </p>
@@ -745,7 +754,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                   </div>
                   <div class="text-right">
                     <span class="font-mono text-xl font-medium text-[var(--color-success)]">
-                      {{ formatAmount(draftNetPreview()) }}
+                      {{ draftFeeValid() ? formatAmount(draftNetPreview()) : '—' }}
                     </span>
                     <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
                       silver
@@ -758,7 +767,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
             <!-- RIGHT COLUMN: ROSTER & OCR PARSING -->
             <div class="space-y-4">
               <!-- Card 3: Smart OCR / Raw Names Import -->
-              <section class="card p-4 space-y-3">
+              <section class="card p-3 space-y-2.5">
                 <div class="flex items-center justify-between">
                   <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                     {{ t('splits.match_ocr') }}
@@ -813,7 +822,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
               </section>
 
               <!-- Card 4: Active Roster & Weights -->
-              <section class="card p-4 space-y-3">
+              <section class="card p-3 space-y-2.5">
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2">
                     <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
@@ -859,6 +868,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                             </p>
                             <p class="truncate text-[0.625rem] text-[var(--color-text-secondary)]">
                               {{ participant.username }} &middot;
+                              @if (draftFeeValid()) {
                               <span class="font-mono text-[var(--color-success)]">
                                 ~{{
                                   formatAmount(
@@ -870,6 +880,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                                   )
                                 }}
                               </span>
+                              }
                             </p>
                           </div>
                         </div>
@@ -917,6 +928,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
               participants().length === 0 ||
               !draftTitle().trim() ||
               !draftTabId() ||
+              !draftFeeValid() ||
               !draftWeightsAreValid()
             "
           >
@@ -1122,7 +1134,8 @@ export class Splits {
   protected readonly draftEventId = signal('');
   protected readonly draftEventTitle = signal('');
   protected readonly draftEstimated = signal(0);
-  protected readonly draftFeeInput = signal(String(DEFAULT_SPLIT_FEE));
+  protected readonly draftFeeInput = signal('');
+  private feeEdited = false;
   protected readonly draftRepair = signal(0);
   protected readonly draftBagRows = signal<SplitBagDraft[]>([]);
   protected readonly draftBags = computed(() =>
@@ -1156,12 +1169,24 @@ export class Splits {
       (split) => isSplitBatchSelectable(split.status) && !split.archived_at,
     ),
   );
+  protected readonly actionablePendingSplits = computed(() =>
+    actionablePendingSplits(
+      this.splits(),
+      this.auth.profile()?.user_id,
+      this.auth.hasPermission('splits.edit'),
+      this.isAllianceTenant(),
+    ),
+  );
   protected readonly awaitingEventSplits = computed(() =>
     this.splits().filter((split) => isSplitAwaitingEvent(split.status)),
   );
   protected readonly selectedSplits = computed(() =>
     this.splits().filter(
-      (split) => split.status === 'pending' && !split.archived_at && this.selectedIds().has(split.id),
+      (split) =>
+        split.status === 'pending' &&
+        !split.archived_at &&
+        this.canActOn(split) &&
+        this.selectedIds().has(split.id),
     ),
   );
   protected readonly selectedCount = computed(() => this.selectedSplits().length);
@@ -1172,10 +1197,18 @@ export class Splits {
     this.selectedSplits().reduce((sum, split) => sum + split.participant_count, 0),
   );
   protected readonly allPendingSelected = computed(() => {
-    const pending = this.pendingSplits();
+    const pending = this.actionablePendingSplits();
     return pending.length > 0 && pending.every((split) => this.selectedIds().has(split.id));
   });
   protected readonly draftFee = computed(() => parsePercentageInput(this.draftFeeInput()) ?? 0);
+  protected readonly draftFeeAmount = computed(() =>
+    Math.max(0, this.draftEstimated() - this.draftRepair() + this.draftBags()) *
+    this.draftFee() / 100,
+  );
+  protected readonly draftFeeValid = computed(() => {
+    const fee = parsePercentageInput(this.draftFeeInput());
+    return fee !== null && fee >= 0 && fee <= 100;
+  });
   protected readonly draftNetPreview = computed(() =>
     Math.max(
       0,
@@ -1197,9 +1230,23 @@ export class Splits {
   protected readonly canAct = computed(
     () => this.auth.hasPermission('splits.edit') && !this.isAllianceTenant(),
   );
+  protected canActOn(split: SplitSummary): boolean {
+    return (
+      !this.isAllianceTenant() &&
+      !split.origin_read_only &&
+      canActOnSplit(split, this.auth.profile()?.user_id, this.auth.hasPermission('splits.edit'))
+    );
+  }
   protected readonly canDelete = computed(
     () => this.auth.hasPermission('splits.delete') && !this.isAllianceTenant(),
   );
+  protected canDeleteOn(split: SplitSummary): boolean {
+    return (
+      !this.isAllianceTenant() &&
+      !split.origin_read_only &&
+      canActOnSplit(split, this.auth.profile()?.user_id, this.auth.hasPermission('splits.delete'))
+    );
+  }
   protected readonly canCreate = computed(
     () => this.auth.hasPermission('splits.create') && !this.isAllianceTenant(),
   );
@@ -1214,7 +1261,7 @@ export class Splits {
   protected readonly columns = computed<readonly DataTableColumn<SplitSummary>[]>(() => {
     this.translate.dict();
     const cols: DataTableColumn<SplitSummary>[] = [];
-    if (this.canAct()) {
+    if (this.canAct() || this.actionablePendingSplits().length > 0) {
       cols.push({ key: 'select', label: '', accessor: () => null });
     }
     cols.push(
@@ -1427,6 +1474,7 @@ export class Splits {
     this.draftEstimated.set(Number((event.target as HTMLInputElement).value) || 0);
   }
   protected onFeeChange(event: Event): void {
+    this.feeEdited = true;
     this.draftFeeInput.set((event.target as HTMLInputElement).value);
   }
   protected onRepairChange(event: Event): void {
@@ -1651,6 +1699,10 @@ export class Splits {
   }
 
   protected toggleSelected(id: number, event: Event): void {
+    const split = this.splits().find((item) => item.id === id);
+    if (!split || !this.canActOn(split) || split.status !== 'pending' || split.archived_at) {
+      return;
+    }
     const checked = (event.target as HTMLInputElement).checked;
     this.selectedIds.update((current) => {
       const next = new Set(current);
@@ -1666,7 +1718,9 @@ export class Splits {
   protected toggleAllPending(event: Event): void {
     const checked = (event.target as HTMLInputElement).checked;
     this.selectedIds.set(
-      checked ? new Set(this.pendingSplits().map((split) => split.id)) : new Set<number>(),
+      checked
+        ? new Set(this.actionablePendingSplits().map((split) => split.id))
+        : new Set<number>(),
     );
   }
 
@@ -1678,6 +1732,9 @@ export class Splits {
   }
 
   protected openSingleAccept(row: SplitSummary): void {
+    if (!this.canActOn(row) || row.status !== 'pending' || row.archived_at) {
+      return;
+    }
     this.selectedIds.set(new Set([row.id]));
     this.showBatchConfirmDialog.set(true);
   }
@@ -1742,6 +1799,9 @@ export class Splits {
     try {
       const summary = await firstValueFrom(this.api.get<SplitKpiSummary>('api/splits/summary'));
       this.kpi.set(summary);
+      if (!this.feeEdited && summary.default_split_fee != null) {
+        this.draftFeeInput.set(String(summary.default_split_fee));
+      }
     } catch {
       this.kpi.set(null);
     }
@@ -1835,7 +1895,9 @@ export class Splits {
     this.draftEventId.set('');
     this.draftEventTitle.set('');
     this.draftEstimated.set(0);
-    this.draftFeeInput.set(String(this.kpi()?.default_split_fee ?? DEFAULT_SPLIT_FEE));
+    this.feeEdited = false;
+    const defaultFee = this.kpi()?.default_split_fee;
+    this.draftFeeInput.set(defaultFee != null ? String(defaultFee) : '');
     this.draftRepair.set(0);
     this.draftBagRows.set([]);
     this.draftIslandId.set('');

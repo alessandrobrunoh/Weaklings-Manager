@@ -18,6 +18,7 @@ import {
   redistributeWeights,
   upgradeLegacyUnitShares,
 } from './splits';
+import { actionablePendingSplits, canActOnSplit } from './split-access';
 
 describe('split creation participants', () => {
   it('adds the authenticated user and redistributes everyone to a full share each', () => {
@@ -111,6 +112,33 @@ describe('linked event split actions', () => {
   it('identifies the state that must show the event-waiting message', () => {
     expect(isSplitAwaitingEvent('awaiting_event')).toBe(true);
     expect(isSplitAwaitingEvent('pending')).toBe(false);
+  });
+});
+
+describe('split action ownership', () => {
+  const owned = { created_by_id: 7 };
+  const stranger = { created_by_id: 8 };
+
+  it('allows the creator without a global edit permission and denies a stranger', () => {
+    expect(canActOnSplit(owned, 7, false)).toBe(true);
+    expect(canActOnSplit(stranger, 7, false)).toBe(false);
+  });
+
+  it('allows users with the global edit permission regardless of creator', () => {
+    expect(canActOnSplit(stranger, 7, true)).toBe(true);
+  });
+
+  it('selects only actionable rows in mixed batches and preserves alliance read-only behavior', () => {
+    const splits = [
+      { id: 1, created_by_id: 7, status: 'pending' as const, origin_read_only: false },
+      { id: 2, created_by_id: 8, status: 'pending' as const, origin_read_only: false },
+      { id: 3, created_by_id: 7, status: 'awaiting_event' as const, origin_read_only: false },
+      { id: 4, created_by_id: 7, status: 'pending' as const, origin_read_only: true },
+    ];
+
+    expect(actionablePendingSplits(splits, 7, false, false).map((split) => split.id)).toEqual([1]);
+    expect(actionablePendingSplits(splits, 7, true, false).map((split) => split.id)).toEqual([1, 2]);
+    expect(actionablePendingSplits(splits, 7, true, true)).toEqual([]);
   });
 });
 
@@ -215,6 +243,82 @@ describe('Splits Component', () => {
     expect(text).toContain('32.00M');
     expect(text).toContain('Participants');
     expect(text).toContain('28');
+  });
+
+  it('uses the configured default fee and preserves a manually edited fee on refresh', async () => {
+    const page = fixture.componentInstance as unknown as {
+      draftFeeInput: () => string;
+      onFeeChange: (event: Event) => void;
+      refreshNow: () => Promise<void>;
+    };
+    const original = mockApiService.get.getMockImplementation()!;
+    mockApiService.get.mockImplementation((url: string) =>
+      url.includes('summary')
+        ? of({ default_split_fee: '15.00' })
+        : original(url),
+    );
+    try {
+      await page.refreshNow();
+      expect(page.draftFeeInput()).toBe('15.00');
+      page.onFeeChange({ target: { value: '20' } } as unknown as Event);
+      await page.refreshNow();
+      expect(page.draftFeeInput()).toBe('20');
+    } finally {
+      mockApiService.get.mockImplementation(original);
+    }
+  });
+
+  it('submits the fee shown in the creation form', async () => {
+    const page = fixture.componentInstance as unknown as {
+      draftTitle: { set: (value: string) => void };
+      draftTabId: { set: (value: string) => void };
+      participants: { set: (value: Array<{ raw_name: string; user_id: number; username: string; weight: number }>) => void };
+      onFeeChange: (event: Event) => void;
+      createSplit: () => Promise<void>;
+    };
+    page.draftTitle.set('Test split');
+    page.draftTabId.set('2');
+    page.participants.set([{ raw_name: 'Galvdon', user_id: 123, username: 'Galvdon', weight: 100 }]);
+    page.onFeeChange({ target: { value: '20' } } as unknown as Event);
+    mockApiService.post.mockClear();
+
+    await page.createSplit();
+
+    expect(mockApiService.post).toHaveBeenCalledWith(
+      'api/splits',
+      expect.objectContaining({ fee: 20 }),
+    );
+  });
+
+  it('shows and associates an inline fee error when the fee is invalid', () => {
+    const showModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) { this.open = true; },
+    });
+    const page = fixture.componentInstance as unknown as {
+      openCreateDialog: () => void;
+      onFeeChange: (event: Event) => void;
+    };
+    try {
+      page.openCreateDialog();
+      page.onFeeChange({ target: { value: '101' } } as unknown as Event);
+      fixture.detectChanges();
+
+      const feeInput = fixture.nativeElement.querySelector(
+        '[aria-describedby="split-fee-error"]',
+      ) as HTMLInputElement;
+      expect(feeInput.getAttribute('aria-invalid')).toBe('true');
+      expect(fixture.nativeElement.querySelector('#split-fee-error')?.textContent).toContain(
+        'Fee must be between 0 and 100%.',
+      );
+    } finally {
+      if (showModal) {
+        Object.defineProperty(HTMLDialogElement.prototype, 'showModal', showModal);
+      } else {
+        Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+      }
+    }
   });
 
   it('renders the status column filter and quick actions', () => {

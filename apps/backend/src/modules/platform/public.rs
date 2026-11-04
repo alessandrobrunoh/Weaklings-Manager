@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     routing::{get, patch, post},
 };
 use axum_extra::extract::cookie::{Key, PrivateCookieJar};
@@ -49,6 +49,18 @@ pub fn alliance_router() -> Router {
         .route(
             "/{alliance_id}/members/{guild_id}/accept",
             post(accept_alliance_member),
+        )
+        .route(
+            "/{alliance_id}/members/{guild_id}/invite",
+            post(invite_alliance_member),
+        )
+        .route(
+            "/{alliance_id}/members/{guild_id}/decline",
+            post(decline_alliance_member),
+        )
+        .route(
+            "/{alliance_id}/members/{guild_id}/leave",
+            post(leave_alliance_member),
         )
 }
 
@@ -210,6 +222,144 @@ pub fn alliance_members_visible(
         return true;
     }
     session_guild_membership.is_some_and(|status| !status.is_empty())
+}
+
+/// Guild owner declines a pending alliance invite.
+pub async fn decline_alliance_member(
+    session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+    Path((alliance_id, guild_id)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    PlatformService::decline_alliance_membership(
+        &control.0,
+        &alliance_id,
+        &guild_id,
+        &session.profile.id,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Member guild leaves its active alliance membership.
+#[utoipa::path(
+    post,
+    path = "/api/alliances/{alliance_id}/members/{guild_id}/leave",
+    tag = "platform",
+    params(
+        ("alliance_id" = String, Path, description = "Alliance tenant id"),
+        ("guild_id" = String, Path, description = "Guild tenant id")
+    ),
+    responses(
+        (status = 200, description = "Membership left; historical rows kept"),
+        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 403, description = "Caller cannot leave for this guild", body = ProblemDetails),
+        (status = 404, description = "Active membership not found", body = ProblemDetails),
+        (status = 409, description = "Invite is still pending", body = ProblemDetails)
+    )
+)]
+pub async fn leave_alliance_member(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(control): Extension<ControlDb>,
+    Extension(cfg): Extension<Config>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Path((alliance_id, guild_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<AllianceMemberView>>, AppError> {
+    if kind.0 != "guild" || tenant.0 != guild_id {
+        return Err(AppError::Forbidden(
+            "alliance leave is only available in the member guild".to_owned(),
+        ));
+    }
+    let granted = user
+        .has_permission(&perms, crate::modules::auth::Permission::AllianceLeave)
+        .await;
+    let mut untracked = Vec::new();
+    if let Ok(guild) = registry.get_or_load(&guild_id).await {
+        if let Some(role_id) =
+            crate::modules::albion::discord_guild_role::configured_alliance_role_id(&guild.db).await
+        {
+            untracked.push(super::service::UntrackedAllianceRole {
+                discord_guild_id: guild_id.clone(),
+                role_id,
+            });
+        }
+    } else {
+        tracing::warn!(
+            "alliance leave: guild tenant could not be loaded; alliance role recipients were not guessed"
+        );
+    }
+    if let Some(member) = PlatformService::list_alliance_members(&control.0, &alliance_id)
+        .await?
+        .into_iter()
+        .find(|row| row.guild_tenant_id == guild_id)
+    {
+        if let Some(role_id) = member.discord_role_id {
+            untracked.push(super::service::UntrackedAllianceRole {
+                discord_guild_id: alliance_id.clone(),
+                role_id,
+            });
+        }
+    }
+    Ok(Json(ApiResponse::new(
+        PlatformService::leave_active_alliance(
+            &control.0,
+            &alliance_id,
+            &guild_id,
+            &user.id,
+            granted,
+            &untracked,
+            |discord_guild_id: &str, discord_user_id: &str, role_id: &str| {
+                let cfg = cfg.clone();
+                let discord_guild_id = discord_guild_id.to_owned();
+                let discord_user_id = discord_user_id.to_owned();
+                let role_id = role_id.to_owned();
+                async move {
+                    crate::modules::albion::discord_guild_role::revoke_discord_role_verified(
+                        &cfg,
+                        &discord_guild_id,
+                        &discord_user_id,
+                        &role_id,
+                    )
+                    .await
+                }
+            },
+        )
+        .await?,
+    )))
+}
+
+/// Alliance owner invites a guild, including one that previously left.
+#[utoipa::path(
+    post,
+    path = "/api/alliances/{alliance_id}/members/{guild_id}/invite",
+    tag = "platform",
+    params(
+        ("alliance_id" = String, Path, description = "Alliance tenant id"),
+        ("guild_id" = String, Path, description = "Guild tenant id")
+    ),
+    responses(
+        (status = 200, description = "Invite recorded on the existing membership row"),
+        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 403, description = "Caller does not own this alliance", body = ProblemDetails),
+        (status = 409, description = "Guild already has a live membership", body = ProblemDetails)
+    )
+)]
+pub async fn invite_alliance_member(
+    session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+    Path((alliance_id, guild_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<AllianceMemberView>>, AppError> {
+    Ok(Json(ApiResponse::new(
+        PlatformService::invite_alliance_membership(
+            &control.0,
+            &alliance_id,
+            &guild_id,
+            &session.profile.id,
+        )
+        .await?,
+    )))
 }
 
 /// Guild owner accepts a pending alliance invite.

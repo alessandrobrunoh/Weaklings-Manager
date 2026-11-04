@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -47,7 +48,7 @@ interface NextMassCard {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, EmptyState, Icon, RouterLink, TooltipDirective],
+  imports: [Avatar, EmptyState, Icon, NgTemplateOutlet, RouterLink, TooltipDirective],
   styles: `
     :host {
       display: block;
@@ -184,6 +185,9 @@ interface NextMassCard {
         </div>
       </header>
 
+      <!-- Keep the action panels first in both the rendered DOM and visual order. -->
+      <ng-container [ngTemplateOutlet]="actionPanels"></ng-container>
+
       <section class="identity-card p-3 sm:p-4" [attr.aria-label]="t('dashboard.identity')">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="flex items-center gap-4 min-w-0">
@@ -207,7 +211,7 @@ interface NextMassCard {
                 <span
                   class="h-2 w-2 rounded-full shrink-0"
                   [class.bg-[var(--color-success)]]="albionLinked()"
-                  [class.bg-[var(--color-warning)]]="!albionLinked()"
+                  [class.bg-[var(--color-warning)]]="albionLink() && !albionLinked()"
                 ></span>
                 <span class="truncate">
                   {{ albionLabel() }}
@@ -238,6 +242,10 @@ interface NextMassCard {
                 <div class="xp-track__fill" [style.width.%]="xpPercent()"></div>
               </div>
             </a>
+          } @else if (progressionLoading()) {
+            <p class="m-0" role="status">{{ t('common.loading') }}</p>
+          } @else if (progressionFailed()) {
+            <p class="m-0" role="status">{{ t('common.error') }}</p>
           }
         </div>
       </section>
@@ -263,7 +271,7 @@ interface NextMassCard {
             {{ pendingValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('bank.creditsAvailable', { count: bankBalance()?.pending_count ?? 0 }) }}
+            {{ bankBalance() ? t('bank.creditsAvailable', { count: bankBalance()!.pending_count }) : '—' }}
           </div>
         </a>
 
@@ -287,7 +295,7 @@ interface NextMassCard {
             {{ requestedValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('bank.withdrawalsInReview', { count: bankBalance()?.requested_count ?? 0 }) }}
+            {{ bankBalance() ? t('bank.withdrawalsInReview', { count: bankBalance()!.requested_count }) : '—' }}
           </div>
         </a>
 
@@ -311,7 +319,7 @@ interface NextMassCard {
             {{ earningsValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('dashboard.stat.earnings_sub', { count: metrics()?.splits_joined ?? 0 }) }}
+            {{ metrics() ? t('dashboard.stat.earnings_sub', { count: metrics()!.splits_joined }) : '—' }}
           </div>
         </a>
 
@@ -335,11 +343,12 @@ interface NextMassCard {
             {{ attendanceValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('dashboard.stat.attendance_sub', { attended: metrics()?.events_attended ?? 0, total: metrics()?.events_total ?? 0 }) }}
+            {{ metrics() ? t('dashboard.stat.attendance_sub', { attended: metrics()!.events_attended, total: metrics()!.events_total }) : '—' }}
           </div>
         </a>
       </section>
 
+      <ng-template #actionPanels>
       <section class="grid grid-cols-1 lg:grid-cols-2 gap-px bg-[var(--color-border)] items-stretch">
         <div class="action-panel p-3 sm:p-4 flex flex-col justify-between">
           <div>
@@ -377,7 +386,12 @@ interface NextMassCard {
                   </li>
                 }
               </ul>
-            } @else {
+            }
+            @if (loading()) {
+              <p role="status">{{ t('common.loading') }}</p>
+            } @else if (attentionIncomplete()) {
+              <p role="status">{{ t('common.error') }}</p>
+            } @else if (attentionItems().length === 0) {
               <div class="caught-up-banner p-3 flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-[var(--color-success-container)] text-[var(--color-success)] flex items-center justify-center shrink-0">
                   <app-icon name="check" size="1rem" />
@@ -392,6 +406,11 @@ interface NextMassCard {
         </div>
 
         <div class="action-panel p-3 sm:p-4 flex flex-col justify-between">
+          @if (loading()) {
+            <p role="status">{{ t('common.loading') }}</p>
+          } @else if (eventsIncomplete()) {
+            <p role="status">{{ t('common.error') }}</p>
+          }
           @if (nextMassCard(); as mass) {
             <div>
               <div class="flex items-center gap-2 mb-5">
@@ -454,7 +473,7 @@ interface NextMassCard {
                 <app-icon name="arrow-right" size="0.875rem" />
               </a>
             </div>
-          } @else {
+          } @else if (!loading() && !eventsIncomplete()) {
             <div class="flex flex-col h-full">
               <h2 class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider m-0 mb-4">
                 {{ t('dashboard.next_mass') }}
@@ -474,6 +493,7 @@ interface NextMassCard {
           }
         </div>
       </section>
+      </ng-template>
     </div>
   `,
 })
@@ -485,9 +505,13 @@ export class Dashboard {
   protected readonly bankBalance = signal<BalanceSummary | null>(null);
   protected readonly metrics = signal<UserMetrics | null>(null);
   protected readonly progression = signal<ProgressionMeView | null>(null);
+  protected readonly progressionLoading = signal(true);
+  protected readonly progressionFailed = signal(false);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
   protected readonly recentEvents = signal<ReadonlyArray<EventView>>([]);
-  protected readonly loading = signal(false);
+  protected readonly loading = signal(true);
+  protected readonly attentionIncomplete = signal(false);
+  protected readonly eventsIncomplete = signal(false);
 
   protected readonly profile = this.auth.profile;
   protected readonly username = computed(() => this.auth.profile()?.username ?? '');
@@ -507,6 +531,7 @@ export class Dashboard {
 
   protected readonly albionLabel = computed(() => {
     const link = this.albionLink();
+    if (!link) return this.loading() ? this.t('common.loading') : this.t('common.error');
     if (link?.linked && link.albion_player_name) {
       return this.t('dashboard.albion.linked', { name: link.albion_player_name });
     }
@@ -659,11 +684,18 @@ export class Dashboard {
   });
 
   constructor() {
-    void this.loadSnapshot();
+    void this.refreshNow();
   }
 
   protected async refreshNow(): Promise<void> {
     this.loading.set(true);
+    this.bankBalance.set(null);
+    this.metrics.set(null);
+    this.progression.set(null);
+    this.progressionLoading.set(true);
+    this.progressionFailed.set(false);
+    this.albionLink.set(null);
+    this.recentEvents.set([]);
     try {
       await this.loadSnapshot();
     } finally {
@@ -700,8 +732,15 @@ export class Dashboard {
 
     if (balance.status === 'fulfilled') this.bankBalance.set(balance.value);
     if (metrics.status === 'fulfilled') this.metrics.set(metrics.value);
+    this.progressionLoading.set(false);
+    this.progressionFailed.set(progression.status === 'rejected');
     if (progression.status === 'fulfilled') this.progression.set(progression.value);
     if (albion.status === 'fulfilled') this.albionLink.set(albion.value);
+    this.eventsIncomplete.set(scheduledEvents.status === 'rejected' || liveEvents.status === 'rejected');
+    this.attentionIncomplete.set(
+      balance.status === 'rejected' || metrics.status === 'rejected' ||
+      albion.status === 'rejected' || this.eventsIncomplete(),
+    );
 
     const upcoming: EventView[] = [];
     if (liveEvents.status === 'fulfilled') upcoming.push(...liveEvents.value.items);

@@ -111,11 +111,7 @@ impl MigrationTrait for Migration {
                     // sea-query keeps the original NOT NULL constraint (see
                     // the Fill-participations postmortem in
                     // m20260902_000009).
-                    .modify_column(
-                        ColumnDef::new(Alias::new("comp_id"))
-                            .big_integer()
-                            .null(),
-                    )
+                    .modify_column(ColumnDef::new(Alias::new("comp_id")).big_integer().null())
                     .to_owned(),
             )
             .await

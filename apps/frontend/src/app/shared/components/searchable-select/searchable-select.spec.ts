@@ -35,6 +35,13 @@ describe('SearchableSelect', () => {
     expect(trigger.textContent).not.toContain('Disabled');
   });
 
+  it('exposes required state on the keyboard-operable trigger', () => {
+    fixture.componentRef.setInput('required', true);
+    fixture.detectChanges();
+    const trigger = fixture.nativeElement.querySelector('.ss__trigger') as HTMLButtonElement;
+    expect(trigger.getAttribute('aria-required')).toBe('true');
+  });
+
   it('keeps a saved value while the option list is still loading', () => {
     fixture.componentRef.setInput('value', 'role-99');
     fixture.componentRef.setInput('options', []);

@@ -14,6 +14,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { Icon } from '../../shared/components/icon/icon';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
 
@@ -31,7 +32,7 @@ const REGIONS = [
   selector: 'app-register-tenant',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [Icon, RouterLink, WeaklingsLogo],
+  imports: [Checkbox, Icon, RouterLink, WeaklingsLogo],
   template: `
     <div class="auth-shell">
       <section class="auth-card auth-card--wide" aria-labelledby="register-title">
@@ -67,11 +68,12 @@ const REGIONS = [
           </ol>
 
           @if (step() === 1) {
-            <form class="grid gap-4" (submit)="nextFromWelcome($event)">
+            <form class="grid gap-4" ngNativeValidate (submit)="nextFromWelcome($event)">
               <p class="text-sm">{{ t('register.welcome') }}</p>
               <p class="font-mono text-sm">{{ guildId }}</p>
+              <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
               <label class="block" for="tenant-display-name">
-                <span class="label">{{ t('register.displayName') }}</span>
+                <span class="label">{{ t('register.displayName') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
                 <input
                   id="tenant-display-name"
                   class="input"
@@ -84,7 +86,7 @@ const REGIONS = [
                 />
               </label>
               <fieldset class="grid gap-2">
-                <legend class="label">{{ t('register.kind') }}</legend>
+                <legend class="label">{{ t('register.kind') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></legend>
                 <label class="flex items-center gap-2" for="kind-guild">
                   <input
                     class="radio"
@@ -92,6 +94,7 @@ const REGIONS = [
                     name="kind"
                     id="kind-guild"
                     value="guild"
+                    required
                     [checked]="kind() === 'guild'"
                     (change)="kind.set('guild')"
                   />
@@ -125,19 +128,14 @@ const REGIONS = [
             </form>
           } @else if (step() === 2 && kind() === 'alliance') {
             <form class="grid gap-4" (submit)="nextFromMembers($event)">
-              <fieldset class="grid gap-2">
-                <legend class="label">{{ t('register.memberGuilds') }}</legend>
+              <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+              <fieldset class="grid gap-2" aria-describedby="member-guilds-hint">
+                <legend class="label">{{ t('register.memberGuilds') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></legend>
+                <p id="member-guilds-hint" class="text-sm">{{ t('register.memberGuildsHint') }}</p>
                 @for (guild of attachableGuilds(); track guild.id) {
-                  <label class="flex items-center gap-2" [attr.for]="'member-' + guild.id">
-                    <input
-                      class="checkbox"
-                      type="checkbox"
-                      [id]="'member-' + guild.id"
-                      [checked]="selectedMemberIds().includes(guild.id)"
-                      (change)="toggleMember(guild.id)"
-                    />
-                    <span>{{ guild.name }}</span>
-                  </label>
+                  <app-checkbox [inputId]="'member-' + guild.id" [label]="guild.name"
+                    [checked]="selectedMemberIds().includes(guild.id)"
+                    (checkedChange)="toggleMember(guild.id)" />
                 }
               </fieldset>
               <div class="flex gap-2">
@@ -150,15 +148,17 @@ const REGIONS = [
               </div>
             </form>
           } @else if (step() === 2) {
-            <form class="grid gap-4" (submit)="nextFromAlbion($event)">
+            <form class="grid gap-4" ngNativeValidate (submit)="nextFromAlbion($event)">
+              <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
               <fieldset class="grid gap-2">
-                <legend class="label">{{ t('register.region') }}</legend>
+                <legend class="label">{{ t('register.region') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></legend>
                 @for (region of regions; track region.id) {
                   <label class="flex items-center gap-2" [attr.for]="'region-' + region.id">
                     <input
                       class="radio"
                       type="radio"
                       name="region"
+                      required
                       [id]="'region-' + region.id"
                       [value]="region.id"
                       [checked]="regionId() === region.id"

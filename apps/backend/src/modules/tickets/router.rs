@@ -8,9 +8,9 @@ use crate::{
     responses::ApiResponse,
 };
 use axum::{
+    Extension, Json, Router,
     extract::Path,
     routing::{get, post},
-    Extension, Json, Router,
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};

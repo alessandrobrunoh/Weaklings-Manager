@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { NEVER, of } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EnemyGuildSummary, EnemyPlayerSummary, PaginatedData } from '../../core/models/api.models';
@@ -10,8 +10,13 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { Opponents } from './opponents';
 
-function paginated<T>(items: T[]): PaginatedData<T> {
-  return { items, total_items: items.length, total_pages: 1, current_page: 1, limit: 25 };
+function paginated<T>(
+  items: T[],
+  totalItems = items.length,
+  totalPages = 1,
+  currentPage = 1,
+): PaginatedData<T> {
+  return { items, total_items: totalItems, total_pages: totalPages, current_page: currentPage, limit: 25 };
 }
 
 const guild: EnemyGuildSummary = {
@@ -108,5 +113,102 @@ describe('Opponents list page', () => {
     expect(listPlayers).toHaveBeenCalled();
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Nemesis Prime');
+  });
+
+  it('offers a human-readable guild picker and resets pagination when the filter changes', async () => {
+    fixture = TestBed.createComponent(Opponents);
+    await settle(fixture);
+
+    const page = fixture.componentInstance as unknown as {
+      onTabChange: (tab: string) => void;
+      onPlayersPageChange: (event: { page: number; pageSize: number; search: string; sort: null }) => void;
+    };
+    page.onTabChange('players');
+    await settle(fixture);
+
+    const picker = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    expect(picker.textContent).toContain('Weaklings Nemesis');
+    expect(picker.textContent).toContain('All');
+
+    page.onPlayersPageChange({ page: 4, pageSize: 25, search: '', sort: null });
+    picker.value = '7';
+    picker.dispatchEvent(new Event('change'));
+    await settle(fixture);
+
+    expect(listPlayers).toHaveBeenLastCalledWith(expect.objectContaining({ guild_id: 7, page: 1 }));
+  });
+
+  it('ignores invalid guild filter values rather than sending malformed ids', async () => {
+    fixture = TestBed.createComponent(Opponents);
+    await settle(fixture);
+
+    const page = fixture.componentInstance as unknown as {
+      onTabChange: (tab: string) => void;
+      onGuildFilterChange: (event: Event) => void;
+    };
+    page.onTabChange('players');
+    await settle(fixture);
+
+    page.onGuildFilterChange({ target: { value: 'not-a-guild' } } as unknown as Event);
+    await settle(fixture);
+
+    expect(listPlayers).toHaveBeenLastCalledWith(expect.objectContaining({ guild_id: undefined }));
+  });
+
+  it('searches and paginates guild options beyond the first API page', async () => {
+    fixture = TestBed.createComponent(Opponents);
+    await settle(fixture);
+    listGuilds.mockImplementation((params: { page?: number; search?: string }) => {
+      if (params.search === 'Guild' && params.page === 2) {
+        return of(paginated([{ ...guild, id: 26, name: 'Guild Twenty Six' }], 26, 2, 2));
+      }
+      if (params.search === 'Guild') {
+        return of(paginated([{ ...guild, id: 1, name: 'Guild One' }], 26, 2, 1));
+      }
+      return of(paginated([guild]));
+    });
+
+    const page = fixture.componentInstance as unknown as {
+      onTabChange: (tab: string) => void;
+      onGuildFilterSearchInput: (event: Event) => void;
+      searchGuildFilter: () => void;
+      changeGuildFilterPage: (page: number) => void;
+      onGuildFilterChange: (event: Event) => void;
+    };
+    page.onTabChange('players');
+    await settle(fixture);
+
+    page.onGuildFilterSearchInput({ target: { value: 'Guild' } } as unknown as Event);
+    page.searchGuildFilter();
+    await settle(fixture);
+    expect(fixture.nativeElement.textContent).toContain('Page 1 of 2');
+
+    page.changeGuildFilterPage(2);
+    await settle(fixture);
+    expect(fixture.nativeElement.textContent).toContain('Guild Twenty Six');
+    expect(listGuilds).toHaveBeenCalledWith(expect.objectContaining({ page: 2, limit: 25, search: 'Guild' }));
+
+    page.onGuildFilterChange({ target: { value: '26' } } as unknown as Event);
+    await settle(fixture);
+    expect(listPlayers).toHaveBeenLastCalledWith(expect.objectContaining({ guild_id: 26, page: 1 }));
+  });
+
+  it('shows a guild-options error and retries the failed request', async () => {
+    fixture = TestBed.createComponent(Opponents);
+    await settle(fixture);
+    listGuilds.mockReturnValueOnce(throwError(() => new Error('offline')));
+
+    const page = fixture.componentInstance as unknown as {
+      onTabChange: (tab: string) => void;
+      retryGuildFilterOptions: () => void;
+    };
+    page.onTabChange('players');
+    await settle(fixture);
+    expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain('Something went wrong.');
+
+    page.retryGuildFilterOptions();
+    await settle(fixture);
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Weaklings Nemesis');
   });
 });

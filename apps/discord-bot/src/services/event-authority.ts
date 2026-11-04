@@ -27,8 +27,8 @@ interface ManagementReply {
  * or holds a role that grants `events.edit` (including the legacy
  * `events.manage` permission, which implies it).
  *
- * Returns true when the caller may proceed. A 404 means this backend predates
- * the authority endpoint; the mutation itself still enforces the same rule.
+ * Returns true only when the caller-scoped authority endpoint explicitly
+ * authorizes the caller. Older backends cannot safely authorize Discord actions.
  */
 export async function ensureEventManagementAllowed(
   interaction: ManagementReply,
@@ -46,13 +46,28 @@ export async function ensureEventManagementAllowed(
       await interaction.editReply(buildWebsiteAccountRequiredReply());
       return false;
     }
-    if (error instanceof ApiError && error.status === 404) {
-      return true;
-    }
-    throw error;
+    await interaction.editReply({
+      embeds: [
+        createResponseEmbed(
+          "warning",
+          "Unable to Verify Event Authority",
+          error instanceof ApiError && error.status === 404
+            ? "This server cannot verify event management authority right now. Ask an administrator to update the bot backend; no event changes were made."
+            : "Event management authority could not be verified right now. Please try again later; no event changes were made.",
+          "GUILD EVENT",
+        ),
+      ],
+    });
+    return false;
   }
 
-  if (authority.can_manage) {
+  if (
+    authority &&
+    typeof authority.is_organizer === "boolean" &&
+    typeof authority.can_manage === "boolean" &&
+    typeof authority.required_permission === "string" &&
+    authority.can_manage
+  ) {
     return true;
   }
 

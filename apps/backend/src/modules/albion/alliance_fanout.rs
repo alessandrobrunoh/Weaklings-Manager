@@ -150,15 +150,19 @@ pub async fn after_successful_link(
                 {
                     tracing::warn!(tenant_id = %other_id, error = %error, "alliance fan-out: link copy failed");
                 }
-                assign_alliance_roles_on_tenant(
-                    cfg,
-                    &ctx.db,
-                    other_id,
-                    &user.id,
-                    &members,
-                    current_kind,
-                    current_tenant_id,
-                    player_albion_guild_id,
+                record_assigned_alliance_roles(
+                    control,
+                    assign_alliance_roles_on_tenant(
+                        cfg,
+                        &ctx.db,
+                        other_id,
+                        &user.id,
+                        &members,
+                        current_kind,
+                        current_tenant_id,
+                        player_albion_guild_id,
+                    )
+                    .await,
                 )
                 .await;
             }
@@ -171,15 +175,19 @@ pub async fn after_successful_link(
     // Alliance role on the current Discord too.
     // Caller already has current tenant db via request; we re-load to read settings.
     if let Ok(ctx) = registry.get_or_load(current_tenant_id).await {
-        assign_alliance_roles_on_tenant(
-            cfg,
-            &ctx.db,
-            current_tenant_id,
-            &user.id,
-            &members,
-            current_kind,
-            current_tenant_id,
-            player_albion_guild_id,
+        record_assigned_alliance_roles(
+            control,
+            assign_alliance_roles_on_tenant(
+                cfg,
+                &ctx.db,
+                current_tenant_id,
+                &user.id,
+                &members,
+                current_kind,
+                current_tenant_id,
+                player_albion_guild_id,
+            )
+            .await,
         )
         .await;
     }
@@ -359,6 +367,14 @@ fn home_guild_tenant_id(
     }
 }
 
+struct GrantedAllianceRole {
+    alliance_tenant_id: String,
+    guild_tenant_id: String,
+    discord_guild_id: String,
+    discord_user_id: String,
+    role_id: String,
+}
+
 async fn assign_alliance_roles_on_tenant(
     cfg: &Config,
     db: &DatabaseConnection,
@@ -368,25 +384,68 @@ async fn assign_alliance_roles_on_tenant(
     current_kind: &str,
     current_tenant_id: &str,
     player_albion_guild_id: Option<&str>,
-) {
+) -> Vec<GrantedAllianceRole> {
+    let Some(guild_id) = home_guild_tenant_id(
+        current_tenant_id,
+        current_kind,
+        player_albion_guild_id,
+        members,
+    ) else {
+        return Vec::new();
+    };
+    let Some(membership) = members.iter().find(|row| row.guild_tenant_id == guild_id) else {
+        return Vec::new();
+    };
     if members
         .iter()
         .any(|row| row.alliance_tenant_id == tenant_id)
     {
-        if let Some(guild_id) = home_guild_tenant_id(
-            current_tenant_id,
-            current_kind,
-            player_albion_guild_id,
-            members,
-        ) {
-            if let Some(role_id) = alliance_hub_role_for_guild(members, tenant_id, &guild_id) {
-                assign_discord_role(cfg, tenant_id, discord_user_id, &role_id).await;
-            }
+        let Some(role_id) = alliance_hub_role_for_guild(members, tenant_id, &guild_id) else {
+            return Vec::new();
+        };
+        if !assign_discord_role(cfg, tenant_id, discord_user_id, &role_id).await {
+            return Vec::new();
         }
-        return;
+        return vec![GrantedAllianceRole {
+            alliance_tenant_id: membership.alliance_tenant_id.clone(),
+            guild_tenant_id: guild_id,
+            discord_guild_id: tenant_id.to_owned(),
+            discord_user_id: discord_user_id.to_owned(),
+            role_id,
+        }];
     }
-    if let Some(role_id) = discord_guild_role::configured_alliance_role_id(db).await {
-        assign_discord_role(cfg, tenant_id, discord_user_id, &role_id).await;
+    let Some(role_id) = discord_guild_role::configured_alliance_role_id(db).await else {
+        return Vec::new();
+    };
+    if !assign_discord_role(cfg, tenant_id, discord_user_id, &role_id).await {
+        return Vec::new();
+    }
+    vec![GrantedAllianceRole {
+        alliance_tenant_id: membership.alliance_tenant_id.clone(),
+        guild_tenant_id: guild_id,
+        discord_guild_id: tenant_id.to_owned(),
+        discord_user_id: discord_user_id.to_owned(),
+        role_id,
+    }]
+}
+
+async fn record_assigned_alliance_roles(
+    control: &DatabaseConnection,
+    grants: Vec<GrantedAllianceRole>,
+) {
+    for grant in grants {
+        if let Err(error) = PlatformService::record_alliance_role_grant(
+            control,
+            &grant.alliance_tenant_id,
+            &grant.guild_tenant_id,
+            &grant.discord_guild_id,
+            &grant.discord_user_id,
+            &grant.role_id,
+        )
+        .await
+        {
+            tracing::warn!(error = %error, "alliance fan-out: could not record role grant");
+        }
     }
 }
 

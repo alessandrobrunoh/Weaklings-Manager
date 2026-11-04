@@ -361,7 +361,7 @@ export interface WithdrawalSelectableGroup {
         size="md"
         (closed)="confirmWithdrawalOpen.set(false)"
       >
-        <div class="space-y-4">
+        <div class="space-y-3">
           @if (isAlliance() && pendingGuilds().length > 1) {
             <label class="block space-y-1.5">
               <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
@@ -382,7 +382,7 @@ export interface WithdrawalSelectableGroup {
           }
 
           <!-- Net balance available for selected guild -->
-          <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4 flex items-center justify-between gap-4">
+          <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3 flex items-center justify-between gap-4">
             <div>
               <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
                 {{ t('bank.withdraw.netAvailable') }}
@@ -401,7 +401,7 @@ export interface WithdrawalSelectableGroup {
             </div>
           </div>
 
-          <fieldset class="space-y-2.5">
+          <fieldset class="space-y-2">
             <div class="flex items-center justify-between gap-2">
               <legend class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
                 {{ t('bank.withdraw.selectCredits') }}
@@ -440,11 +440,11 @@ export interface WithdrawalSelectableGroup {
                 {{ t('bank.withdraw.noCredits') }}
               </p>
             } @else {
-              <div class="max-h-64 space-y-2 overflow-y-auto pr-0.5">
+              <div class="max-h-56 space-y-1.5 overflow-y-auto pr-0.5">
                 @for (group of groupedRequestableCredits(); track group.key) {
                   <label
                     [attr.for]="'withdrawal-credit-' + group.primaryId"
-                    class="flex min-h-14 cursor-pointer select-none items-center gap-3 rounded-xl border p-3 transition-colors"
+                    class="flex min-h-12 cursor-pointer select-none items-center gap-2.5 rounded-lg border p-2.5 transition-colors"
                     [class.border-[var(--color-primary)]]="isWithdrawalGroupSelected(group)"
                     [class.bg-[var(--color-surface-2)]]="isWithdrawalGroupSelected(group)"
                     [class.border-[var(--color-border)]]="!isWithdrawalGroupSelected(group)"
@@ -504,6 +504,7 @@ export interface WithdrawalSelectableGroup {
           <div
             class="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5"
             aria-live="polite"
+            aria-atomic="true"
           >
             <span class="text-sm font-medium text-[var(--color-text)]">
               {{ t('bank.withdraw.selectedTotal') }}
@@ -546,7 +547,7 @@ export interface WithdrawalSelectableGroup {
             (click)="executeWithdrawal()"
           >
             <app-icon name="check" size="0.875rem" />
-            {{ withdrawing() ? t('common.loading') : t('common.confirm') }}
+            {{ withdrawing() ? t('common.loading') : t('bank.withdraw.request') }}
           </button>
         </div>
       </app-dialog>

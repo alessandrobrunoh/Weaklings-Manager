@@ -86,6 +86,21 @@ describe('Users new member', () => {
     expect(compiled.textContent).toContain('users.create');
   });
 
+  it('labels role counts as current-page counts and provides a localized member link', async () => {
+    fixture.destroy();
+    apiGet.mockReturnValue(of({
+      items: [{ id: 9, username: 'Kay', email: 'kay@example.com', role: 'Member' }],
+      total_items: 50, total_pages: 5, current_page: 1, limit: 10,
+    }));
+    fixture = TestBed.createComponent(Users);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent?.match(/common.currentPage/g)).toHaveLength(3);
+    const link = element.querySelector('a[href="/users/9"]');
+    expect(link?.textContent).toContain('common.view');
+  });
+
   it('hides the new member action without users.create', async () => {
     fixture.destroy();
     hasPermission.mockReturnValue(false);
@@ -113,5 +128,21 @@ describe('Users new member', () => {
       albion_player_id: 'p1',
       albion_player_name: 'Kay',
     });
+  });
+
+  it('marks both identity selectors as required and blocks an incomplete submission', async () => {
+    const cmp = fixture.componentInstance as unknown as {
+      openCreate: () => void;
+      createMember: (event: Event) => Promise<void>;
+    };
+    cmp.openCreate();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('validation.requiredLegend');
+    expect(element.querySelectorAll('app-searchable-select button[aria-required="true"]')).toHaveLength(2);
+    await cmp.createMember(new Event('submit'));
+    expect(apiPost).not.toHaveBeenCalled();
   });
 });

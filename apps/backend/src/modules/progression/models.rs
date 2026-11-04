@@ -41,6 +41,16 @@ pub struct ProgressionMeView {
     pub multiplier: Decimal,
     /// Sum of XP across every season this user has an account in.
     pub lifetime_xp: i64,
+    /// Configured progression tier for the current season XP (never a permission).
+    pub guild_rank: Option<GuildRankView>,
+}
+
+/// A configured progression tier; the optional Discord ID is display-only metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct GuildRankView {
+    pub name: String,
+    pub min_xp: i64,
+    pub discord_role_id: Option<String>,
 }
 
 /// Input to [`super::service::ProgressionService::award`].
@@ -119,6 +129,8 @@ pub struct ProgressionSettingsView {
     pub message_channel_deny_list: Vec<String>,
     /// First 20 (or `max_level`) thresholds for the admin preview table.
     pub level_preview: Vec<LevelThresholdView>,
+    /// Ordered progression tiers. Discord mappings never trigger role mutations.
+    pub guild_ranks: Vec<GuildRankView>,
 }
 
 /// Partial update of [`ProgressionSettingsView`]. Absent fields are left unchanged.
@@ -150,6 +162,8 @@ pub struct UpdateProgressionSettingsRequest {
     pub vod_forum_channel_id: Option<String>,
     /// Replacement deny-list of channel ids.
     pub message_channel_deny_list: Option<Vec<String>>,
+    /// Replace the ordered guild rank configuration.
+    pub guild_ranks: Option<Vec<GuildRankView>>,
 }
 
 /// Body to open a new season.

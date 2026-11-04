@@ -4,12 +4,12 @@
 
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
+use sea_orm::Condition;
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set, TransactionTrait,
 };
-use sea_orm::sea_query::{Expr, Func};
-use sea_orm::Condition;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
@@ -566,9 +566,8 @@ impl UserService {
                 .map(|link| link.discord_id)
                 .collect::<Vec<_>>();
 
-            let mut name_filter = Condition::any().add(
-                Expr::expr(Func::lower(Expr::col(UserColumn::Username))).like(pattern),
-            );
+            let mut name_filter = Condition::any()
+                .add(Expr::expr(Func::lower(Expr::col(UserColumn::Username))).like(pattern));
             if !linked_discord_ids.is_empty() {
                 name_filter = name_filter.add(UserColumn::DiscordId.is_in(linked_discord_ids));
             }
@@ -1058,9 +1057,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_linked_member_inserts_user_and_albion_link() {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect");
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
         crate::migration::Migrator::up(&db, None)
             .await
             .expect("migrate");
@@ -1118,9 +1115,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_linked_member_rejects_claimed_albion_character() {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect");
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
         crate::migration::Migrator::up(&db, None)
             .await
             .expect("migrate");

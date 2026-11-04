@@ -127,6 +127,14 @@ export class SettingsService {
     return (await this.get()).discord_splits_forum_channel_id;
   }
 
+  /** VOD forum is configured in progression settings, separately from Discord integration. */
+  async vodForumChannelId(): Promise<string | null> {
+    const settings = await this.api.get<{ vod_forum_channel_id: string | null }>(
+      'api/progression/settings',
+    );
+    return settings.vod_forum_channel_id;
+  }
+
   async splitTagId(status: 'pending' | 'awaiting_event' | 'completed' | 'not_completed' | 'lost'): Promise<string | null> {
     const settings = await this.get();
     return {

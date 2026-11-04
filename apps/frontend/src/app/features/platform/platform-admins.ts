@@ -26,8 +26,14 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 
     <app-page-stack>
       <form class="card p-4 flex flex-wrap items-end gap-3" (submit)="onAssign($event)">
+        <p class="w-full text-xs" style="color: var(--color-text-secondary)">
+          {{ t('validation.requiredLegend') }}
+        </p>
         <label class="block min-w-[16rem] flex-1" for="assign-discord-id">
-          <span class="label">{{ t('platform.admins.discordId') }}</span>
+          <span class="label">
+            {{ t('platform.admins.discordId') }}
+            <span style="color: var(--color-error)" aria-hidden="true">*</span>
+          </span>
           <input
             id="assign-discord-id"
             class="input"

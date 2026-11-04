@@ -41,6 +41,10 @@ pub struct UserContext {
     /// time; never serialized into the session cookie.
     #[serde(skip)]
     pub super_admin_id: Option<String>,
+    /// True only when the authenticated Discord user owns the current guild tenant.
+    /// Resolved from the control database for each request, never trusted from a cookie.
+    #[serde(skip)]
+    pub is_tenant_owner: bool,
 }
 
 impl UserContext {
@@ -57,7 +61,13 @@ impl UserContext {
     ///
     /// Async because the shared permission cache sits behind an `RwLock`.
     pub async fn has_permission(&self, perms: &Permissions, perm: Permission) -> bool {
-        perms.check(self.is_superadmin(), &self.roles, perm).await
+        perms
+            .check(
+                self.is_superadmin() || self.is_tenant_owner,
+                &self.roles,
+                perm,
+            )
+            .await
     }
 
     /// Like [`Self::has_permission`] but returns `AppError::Forbidden` when denied.
@@ -66,7 +76,13 @@ impl UserContext {
     ///
     /// Returns `AppError::Forbidden` when the user lacks `perm`.
     pub async fn require(&self, perms: &Permissions, perm: Permission) -> Result<(), AppError> {
-        perms.require(self.is_superadmin(), &self.roles, perm).await
+        perms
+            .require(
+                self.is_superadmin() || self.is_tenant_owner,
+                &self.roles,
+                perm,
+            )
+            .await
     }
 }
 
@@ -122,6 +138,7 @@ async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         profile.user_id
     };
 
+    let is_tenant_owner = tenant_owner_for_request(parts, &profile.id).await;
     let mut ctx = UserContext {
         id: profile.id,
         username: profile.username,
@@ -131,9 +148,24 @@ async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         highest_role: profile.highest_role,
         user_id,
         super_admin_id,
+        is_tenant_owner,
     };
     apply_live_guild_roles(parts, &mut ctx).await;
     Some(ctx)
+}
+
+async fn tenant_owner_for_request(parts: &Parts, discord_id: &str) -> bool {
+    let Some(tenant) = parts.extensions.get::<crate::tenant::CurrentTenantId>() else {
+        return false;
+    };
+    let Some(control) = parts.extensions.get::<crate::tenant::ControlDb>() else {
+        return false;
+    };
+    crate::modules::platform::service::PlatformService::is_guild_owner(
+        &control.0, &tenant.0, discord_id,
+    )
+    .await
+    .unwrap_or(false)
 }
 
 /// Re-reads Discord guild roles for the request tenant when a bot token is
@@ -268,6 +300,7 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
             // Background bot requests are trusted through BOT_API_SECRET and must not
             // depend on the role-permission cache being seeded on this deployment.
             super_admin_id: Some("bot_system".to_string()),
+            is_tenant_owner: false,
         }));
     };
 
@@ -332,6 +365,7 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         "bot request authenticated"
     );
 
+    let is_tenant_owner = tenant_owner_for_request(parts, &discord_id).await;
     Ok(Some(UserContext {
         id: discord_id,
         username: user.username,
@@ -341,6 +375,7 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         highest_role,
         user_id: user.id,
         super_admin_id,
+        is_tenant_owner,
     }))
 }
 
@@ -486,6 +521,41 @@ mod tests {
     use super::*;
     use axum::http::Request;
     use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn tenant_owner_bypasses_grantable_permissions_without_becoming_platform_admin() {
+        let permissions = Permissions::new_empty();
+        let owner = UserContext {
+            id: "guild-owner".to_string(),
+            username: "Guild owner".to_string(),
+            email: None,
+            avatar: None,
+            roles: vec![],
+            highest_role: "Member".to_string(),
+            user_id: 1,
+            super_admin_id: None,
+            is_tenant_owner: true,
+        };
+        assert!(!owner.is_superadmin());
+        assert!(owner.super_admin_id.is_none());
+        assert!(
+            owner
+                .has_permission(&permissions, Permission::AllianceLeave)
+                .await
+        );
+        assert!(
+            !permissions
+                .check(false, &owner.roles, Permission::AllianceLeave)
+                .await
+        );
+        let mut member = owner.clone();
+        member.is_tenant_owner = false;
+        assert!(
+            !member
+                .has_permission(&permissions, Permission::AllianceLeave)
+                .await
+        );
+    }
 
     /// Encrypts `profile_json` into a `session_user` cookie the way `discord_callback`/`get_me`
     /// do, and returns just the `name=value` pair as a browser would send it back on `Cookie`.

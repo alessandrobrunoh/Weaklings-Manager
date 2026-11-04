@@ -159,6 +159,9 @@ type PendingFightMutation =
       <app-page-stack>
         <!-- ================= STATUS BADGES BAR ================= -->
         <div class="flex flex-wrap items-center gap-2">
+          <span class="chip chip--info text-xs">
+            {{ t('fights.groupedFightSegments', { count: detail.battle_ids.length }) }}
+          </span>
           <span
             class="chip font-semibold"
             [class.chip--success]="fightVerdict().type === 'victory'"
@@ -1023,7 +1026,7 @@ type PendingFightMutation =
             <button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">
               {{ t('common.cancel') }}
             </button>
-            <button type="submit" class="btn btn--primary btn--sm" form="fight-merge-form">
+            <button type="submit" class="btn btn--primary btn--sm" form="fight-split-form">
               {{ t('fights.reviewSplit') }}
             </button>
           </div>

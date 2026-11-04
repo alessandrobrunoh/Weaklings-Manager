@@ -8,6 +8,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 
@@ -18,7 +19,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
   selector: 'app-platform-feature-flags',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [PageHeader, PageStack, RouterLink],
+  imports: [Checkbox, PageHeader, PageStack, RouterLink],
   template: `
     <app-page-header
       [title]="t('platform.features.title')"
@@ -34,39 +35,31 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
     </app-page-header>
 
     <app-page-stack>
-      @if (loadFailed()) {
+      @if (loading()) {
+        <p class="text-sm" role="status">{{ t('common.loading') }}</p>
+      } @else if (loadFailed()) {
         <p class="text-sm" style="color: var(--color-danger)">{{ t('common.error') }}</p>
         <button type="button" class="btn btn--outline btn--sm" (click)="load()">
           {{ t('common.retry') }}
         </button>
-      } @else if (rows().length === 0 && !loading()) {
+      } @else if (rows().length === 0) {
         <p class="text-sm" style="color: var(--color-text-secondary)">
           {{ t('platform.features.empty') }}
         </p>
       } @else {
         <form class="card p-4 grid gap-3" (submit)="onSave($event)">
-          <fieldset class="grid gap-3">
-            <legend class="sr-only">{{ t('platform.features.title') }}</legend>
+          <fieldset class="grid gap-3" [disabled]="saving()">
+            <legend class="text-base font-bold">{{ t('platform.features.title') }}</legend>
             @for (item of rows(); track item.key) {
-              <label class="flex items-start gap-3" [attr.for]="'flag-' + item.key">
-                <input
-                  class="checkbox mt-1"
-                  type="checkbox"
-                  [id]="'flag-' + item.key"
-                  [name]="item.key"
-                  [checked]="item.enabled"
-                  (change)="onToggle(item.key, $event)"
-                />
-                <span>
-                  <span class="block font-medium text-sm">{{ item.display_name }}</span>
-                  <span class="block font-mono text-xs text-[var(--color-text-tertiary)]">{{ item.key }}</span>
-                  @if (item.description) {
-                    <span class="block text-xs mt-0.5" style="color: var(--color-text-secondary)">
-                      {{ item.description }}
-                    </span>
-                  }
-                </span>
-              </label>
+              <app-checkbox
+                [inputId]="'flag-' + item.key"
+                [name]="item.key"
+                [label]="item.display_name"
+                [hint]="item.description ? item.key + ' · ' + item.description : item.key"
+                [checked]="item.enabled"
+                [disabled]="saving()"
+                (checkedChange)="onToggle(item.key, $event)"
+              />
             }
           </fieldset>
           <div>
@@ -111,8 +104,7 @@ export class PlatformFeatureFlags {
     void this.load();
   }
 
-  protected onToggle(key: string, event: Event): void {
-    const enabled = (event.target as HTMLInputElement).checked;
+  protected onToggle(key: string, enabled: boolean): void {
     this.overrides.update((current) => ({ ...current, [key]: enabled }));
   }
 

@@ -10,6 +10,7 @@ use axum::{
 };
 
 use crate::errors::{AppError, ProblemDetails};
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{
     PaginatedEntryView, PaginatedPlayerBalance, PaginationParams, paginate_vec,
@@ -22,6 +23,7 @@ use crate::responses::{
 
 use super::models::{
     BalanceQuery, EntryFilters, EntryMutationRequest, IngestRequest, PlayerBalanceDetail,
+    SettlementQuoteRequest,
 };
 use super::service::{DEFAULT_RECENT_ENTRIES, SiphonedService};
 
@@ -70,6 +72,75 @@ pub fn router() -> Router {
         .route("/balances/{player_name}", get(get_balance))
         .route("/batches", get(list_batches))
         .route("/batches/{batch_id}", delete(delete_batch))
+        .route("/settlement-quotes", post(create_settlement_quote))
+        .route(
+            "/settlement-quotes/{quote_id}/confirm",
+            post(confirm_settlement_quote),
+        )
+}
+
+/// Creates a short-lived server-priced siphoned debt settlement quote.
+#[utoipa::path(
+    post,
+    path = "/api/siphoned/settlement-quotes",
+    tag = "siphoned",
+    summary = "Quote a siphoned debt settlement",
+    description = "Resolves the linked guild account, current debt, and Albion market price on the server. Requires both siphoned.ingest and bank.transactions.create.",
+    security(("session_cookie" = ["siphoned.ingest", "bank.transactions.create"])),
+    request_body(content = SettlementQuoteRequest),
+    responses(
+        (status = 200, description = "Quote ready for confirmation"),
+        (status = 400, description = "Invalid player name", body = ProblemDetails),
+        (status = 403, description = "Missing settlement permission", body = ProblemDetails),
+        (status = 404, description = "No linked guild account", body = ProblemDetails),
+        (status = 409, description = "No current debt to settle", body = ProblemDetails)
+    )
+)]
+pub async fn create_settlement_quote(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(market): Extension<AlbionDataService>,
+    Json(req): Json<SettlementQuoteRequest>,
+) -> Result<Json<ApiResponse<super::models::SettlementQuoteView>>, AppError> {
+    user.require(&perms, Permission::SiphonedIngest).await?;
+    user.require(&perms, Permission::BankTransactionsCreate)
+        .await?;
+    let quote = SiphonedService::new()
+        .quote_settlement(&db, &market, &req.player_name, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(quote)))
+}
+
+/// Confirms a quote without accepting any client-supplied amount or price.
+#[utoipa::path(
+    post,
+    path = "/api/siphoned/settlement-quotes/{quote_id}/confirm",
+    tag = "siphoned",
+    summary = "Confirm an approved siphoned settlement quote",
+    description = "Atomically writes the siphoned deposit, donated bank transaction, and audit row. The quote can be retried idempotently by its creating officer.",
+    security(("session_cookie" = ["siphoned.ingest", "bank.transactions.create"])),
+    params(("quote_id" = String, Path, description = "The server-issued quote id.")),
+    responses(
+        (status = 200, description = "Settlement confirmed (or idempotent replay)"),
+        (status = 403, description = "Missing permission or quote belongs to another officer", body = ProblemDetails),
+        (status = 404, description = "Quote not found", body = ProblemDetails),
+        (status = 409, description = "Quote expired or debt changed", body = ProblemDetails)
+    )
+)]
+pub async fn confirm_settlement_quote(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(quote_id): Path<String>,
+) -> Result<Json<ApiResponse<super::models::SettlementResult>>, AppError> {
+    user.require(&perms, Permission::SiphonedIngest).await?;
+    user.require(&perms, Permission::BankTransactionsCreate)
+        .await?;
+    let result = SiphonedService::new()
+        .confirm_settlement(&db, &quote_id, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(result)))
 }
 
 /// Bulk-import an Albion export as ledger rows.

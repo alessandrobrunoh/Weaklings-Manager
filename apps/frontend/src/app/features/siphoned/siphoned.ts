@@ -10,8 +10,7 @@ import type {
   SiphonedIngestRequest,
   SiphonedIngestResponse,
   SiphonedPlayerBalance,
-  CreateTransactionRequest,
-  TransactionView,
+  SiphonedSettlementQuote,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -276,7 +275,7 @@ const STATS_FETCH_LIMIT = 1000;
             {{ formatDate(row.last_seen) }}
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
-            @if (toNumber(row.net) < 0) {
+            @if (toNumber(row.net) < 0 && canSettle()) {
               <button type="button" class="btn btn--primary btn--sm" (click)="openDebtSettlement(row)">
                 <app-icon name="bank" size="0.75rem" />
                 Salda debito
@@ -347,12 +346,15 @@ const STATS_FETCH_LIMIT = 1000;
 
     @if (showIngestForm()) {
       <app-dialog [title]="t('siphoned.ingest')" (closed)="showIngestForm.set(false)">
-        <form id="siphoned-ingest-form" class="grid gap-4" (submit)="onIngestSubmit($event)">
+        <form id="siphoned-ingest-form" class="grid gap-3" (submit)="onIngestSubmit($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
-            <span class="label">{{ t('siphoned.exportRows') }}</span>
+            <span class="label">{{ t('siphoned.exportRows') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <textarea
               class="textarea font-mono text-xs"
+              name="export_rows"
               rows="8"
+              required
               [value]="rawExport()"
               (input)="onRawExportChange($event)"
               placeholder='"Date"&#9;"Player"&#9;"Reason"&#9;"Amount"&#10;"2026-08-10 20:37:41"&#9;"Galvdon"&#9;"Withdrawal"&#9;"-10"'
@@ -380,43 +382,52 @@ const STATS_FETCH_LIMIT = 1000;
 
     @if (showEntryForm()) {
       <app-dialog [title]="entryDialogTitle()" (closed)="closeEntryForm()">
-        <form id="siphoned-entry-form" class="grid gap-4" (submit)="onEntrySubmit($event)">
+        <form id="siphoned-entry-form" class="grid gap-3" (submit)="onEntrySubmit($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
-            <span class="label">{{ t('common.date') }}</span>
+            <span class="label">{{ t('common.date') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <input
               class="input"
+              name="occurred_at"
               type="datetime-local"
               step="1"
+              required
               [value]="entryDraft().occurred_at"
               (input)="updateEntryDraft('occurred_at', $event)"
             />
           </label>
           <label>
-            <span class="label">{{ t('common.player') }}</span>
+            <span class="label">{{ t('common.player') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <input
               class="input"
+              name="player_name"
               type="text"
+              required
               [value]="entryDraft().player_name"
               (input)="updateEntryDraft('player_name', $event)"
               placeholder="Galvdon"
             />
           </label>
           <label>
-            <span class="label">{{ t('siphoned.reason') }}</span>
+            <span class="label">{{ t('siphoned.reason') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <input
               class="input"
+              name="reason"
               type="text"
+              required
               [value]="entryDraft().reason"
               (input)="updateEntryDraft('reason', $event)"
               placeholder="Deposit or Withdrawal"
             />
           </label>
           <label>
-            <span class="label">{{ t('common.amount') }}</span>
+            <span class="label">{{ t('common.amount') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <input
               class="input"
+              name="amount"
               type="number"
               step="1"
+              required
               [value]="entryDraft().amount"
               (input)="updateEntryDraft('amount', $event)"
               placeholder="-10"
@@ -461,10 +472,11 @@ const STATS_FETCH_LIMIT = 1000;
     @if (settlement(); as quote) {
       <app-dialog [title]="t('siphoned.settle.title')" (closed)="settlement.set(null)">
         <p>
-          {{ t('siphoned.settle.debt', { player: quote.player, amount: formatAmount(quote.debt) }) }}
-          {{ t('siphoned.settle.price', { price: formatAmount(quote.unitPrice) }) }}
+          {{ t('siphoned.settle.debt', { player: quote.player_name, amount: formatAmount(quote.debt) }) }}
+          {{ t('siphoned.settle.price', { price: formatAmount(quote.unit_price) }) }}
         </p>
         <p class="font-mono text-lg font-bold">{{ formatAmount(quote.total) }} silver</p>
+        <p class="text-xs text-secondary">{{ t('siphoned.settle.expires', { time: quote.expiresAt }) }}</p>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="settlement.set(null)">{{ t('common.cancel') }}</button>
           <button type="button" class="btn btn--primary" [disabled]="saving()" (click)="confirmSettlement()">
@@ -491,13 +503,7 @@ export class Siphoned {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
-  protected readonly settlement = signal<{
-    player: string;
-    userId: number;
-    debt: number;
-    unitPrice: number;
-    total: number;
-  } | null>(null);
+  protected readonly settlement = signal<(SiphonedSettlementQuote & { expiresAt: string }) | null>(null);
   protected readonly showIngestForm = signal(false);
   protected readonly showEntryForm = signal(false);
   protected readonly rawExport = signal('');
@@ -546,37 +552,17 @@ export class Siphoned {
   );
 
   protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
+  protected readonly canSettle = computed(() =>
+    this.auth.hasPermission('siphoned.ingest') && this.auth.hasPermission('bank.transactions.create'),
+  );
 
   protected async openDebtSettlement(row: SiphonedPlayerBalance): Promise<void> {
-    const debt = Math.abs(this.toNumber(row.net));
     try {
-      const users = await firstValueFrom(this.api.get<PaginatedData<{ id: number; username: string }>>('api/users', {
-        page: 1, limit: 1000,
-      }));
-      const candidates = await Promise.all(
-        users.items.map(async (user) => {
-          const link = await firstValueFrom(this.api.get<{ linked: boolean; albion_player_name?: string | null }>(
-            `api/albion/link/users/${user.id}`,
-          ));
-          return link.linked && link.albion_player_name?.toLowerCase() === row.player_name.toLowerCase()
-            ? user.id
-            : null;
-        }),
-      );
-      const userId = candidates.find((id): id is number => id !== null);
-      if (userId === undefined) {
-        this.toasts.error(this.t('siphoned.settle.noAccount', { player: row.player_name }));
-        return;
-      }
-      const response = await firstValueFrom(this.api.get<Array<{ sell_price_min: number; buy_price_max: number }>>(
-        'api/albiondata/prices?items=SIPHONED_ENERGY',
+      const quote = await firstValueFrom(this.api.post<SiphonedSettlementQuote>(
+        'api/siphoned/settlement-quotes',
+        { player_name: row.player_name },
       ));
-      // Albion Market may temporarily return no listing for Siphoned Energy.
-      // Use the agreed fixed valuation in that case so settlement remains possible.
-      const price = response.find((item) => item.sell_price_min > 0)?.sell_price_min
-        ?? response.find((item) => item.buy_price_max > 0)?.buy_price_max
-        ?? 11_000;
-      this.settlement.set({ player: row.player_name, userId, debt, unitPrice: price, total: debt * price });
+      this.settlement.set({ ...quote, expiresAt: new Date(quote.expires_at).toLocaleTimeString() });
     } catch {
       this.toasts.error(this.t('siphoned.settle.loadFailed'));
     }
@@ -587,18 +573,10 @@ export class Siphoned {
     if (!quote) return;
     this.saving.set(true);
     try {
-      await firstValueFrom(this.api.post<SiphonedEntryView>('api/siphoned/entries', {
-        occurred_at: new Date().toISOString(),
-        player_name: quote.player,
-        reason: 'Siphoned debt settlement',
-        amount: quote.debt,
-      } satisfies SiphonedEntryMutationRequest));
-      await firstValueFrom(this.api.post<TransactionView>('api/bank/transactions', {
-        to_user_id: quote.userId,
-        amount: quote.total,
-        status: 'donated',
-        type: 'siphoned_settlement',
-      } satisfies CreateTransactionRequest));
+      await firstValueFrom(this.api.post(
+        `api/siphoned/settlement-quotes/${encodeURIComponent(quote.quote_id)}/confirm`,
+        {},
+      ));
       this.settlement.set(null);
       this.toasts.success(this.t('siphoned.settle.success'));
       await Promise.all([this.load(), this.loadStats()]);

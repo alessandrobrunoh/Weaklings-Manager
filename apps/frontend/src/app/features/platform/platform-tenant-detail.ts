@@ -76,8 +76,14 @@ const REGIONS = [
         </section>
 
         <form class="card p-4 grid gap-4 max-w-lg" (submit)="onSave($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            {{ t('validation.requiredLegend') }}
+          </p>
           <label class="block" for="tenant-name">
-            <span class="label">{{ t('platform.tenant.rename') }}</span>
+            <span class="label">
+              {{ t('platform.tenant.rename') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
             <input
               id="tenant-name"
               class="input"
@@ -121,7 +127,10 @@ const REGIONS = [
             </span>
           </label>
           <label class="block" for="tenant-owner">
-            <span class="label">{{ t('platform.tenants.superadmin') }}</span>
+            <span class="label">
+              {{ t('platform.tenants.superadmin') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
             <input
               id="tenant-owner"
               class="input"

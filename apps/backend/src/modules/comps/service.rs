@@ -94,8 +94,7 @@ fn validate_catalog_item(
     let identifier = item.identifier.as_deref().unwrap_or_default();
     let compatible = match slot {
         BuildSlot::Weapon => {
-            (identifier.starts_with('T')
-                && identifier.contains("_MAIN_"))
+            (identifier.starts_with('T') && identifier.contains("_MAIN_"))
                 || (identifier.starts_with('T') && identifier.contains("_2H_"))
         }
         BuildSlot::OffHand => identifier.contains("_OFF_"),
@@ -579,10 +578,7 @@ impl CompService {
                     .unwrap_or(0)
                     + 1;
 
-            match self
-                .insert_comp_version(db, &source, next_version)
-                .await
-            {
+            match self.insert_comp_version(db, &source, next_version).await {
                 Ok(detail) => return Ok(detail),
                 Err(AppError::Database(_)) if attempt < ATTEMPTS => continue,
                 Err(error) => return Err(error),
@@ -1235,10 +1231,7 @@ impl CompService {
                     .unwrap_or(0)
                     + 1;
 
-            match self
-                .insert_build_version(db, &source, next_version)
-                .await
-            {
+            match self.insert_build_version(db, &source, next_version).await {
                 Ok(detail) => return Ok(detail),
                 // Another request claimed this number first; recompute and try again.
                 Err(AppError::Database(_)) if attempt < ATTEMPTS => continue,

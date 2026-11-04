@@ -178,15 +178,19 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
                 </div>
                 @if (canMutateCatalog()) {
                   <form class="flex flex-wrap gap-2" (submit)="onAddTab($event, row.id)">
-                    <input
-                      class="input"
-                      style="max-width: 12rem"
-                      type="text"
-                      [value]="newTabNameByIsland()[row.id] ?? ''"
-                      (input)="onNewTabName(row.id, $event)"
-                      [attr.placeholder]="t('admin.islands.newTab')"
-                      [attr.aria-label]="t('admin.islands.newTab')"
-                    />
+                    <label>
+                      <span class="label">{{ t('admin.islands.newTab') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
+                      <input
+                        class="input"
+                        style="max-width: 12rem"
+                        type="text"
+                        required
+                        [value]="newTabNameByIsland()[row.id] ?? ''"
+                        (input)="onNewTabName(row.id, $event)"
+                        [attr.placeholder]="t('admin.islands.newTab')"
+                      />
+                    </label>
+                    <p class="text-xs w-full" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
                     <button
                       type="submit"
                       class="btn btn--outline btn--sm"
@@ -235,6 +239,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
     @if (createOpen()) {
       <app-dialog [title]="t('admin.islands.create')" (closed)="closeCreate()">
         <form id="create-island-form" class="grid gap-4" (submit)="onCreateIsland($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
             <span class="label">{{ t('admin.islands.location') }}</span>
             <select class="select" [value]="newIslandCity()" (change)="onNewIslandCity($event)">
@@ -244,7 +249,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             </select>
           </label>
           <label>
-            <span class="label">{{ t('admin.islands.island') }}</span>
+            <span class="label">{{ t('admin.islands.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"
@@ -255,7 +260,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             />
           </label>
           <label>
-            <span class="label">{{ t('admin.islands.tabs') }}</span>
+            <span class="label">{{ t('admin.islands.tabs') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"
@@ -288,6 +293,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
     @if (editTarget(); as island) {
       <app-dialog [title]="t('admin.islands.editTitle')" size="sm" (closed)="closeEdit()">
         <form id="edit-island-form" class="grid gap-4" (submit)="onEditIsland($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
             <span class="label">{{ t('admin.islands.location') }}</span>
             <select
@@ -301,7 +307,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             </select>
           </label>
           <label class="block">
-            <span class="label">{{ t('admin.islands.island') }}</span>
+            <span class="label">{{ t('admin.islands.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"

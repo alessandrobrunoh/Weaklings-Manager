@@ -98,8 +98,14 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
         (closed)="createOpen.set(false)"
       >
         <form id="create-tenant-form" class="grid gap-4" (submit)="onCreate($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            {{ t('validation.requiredLegend') }}
+          </p>
           <label class="block" for="tenant-id">
-            <span class="label">{{ t('platform.tenants.id') }}</span>
+            <span class="label">
+              {{ t('platform.tenants.id') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
             <input
               id="tenant-id"
               class="input"
@@ -114,7 +120,10 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
             />
           </label>
           <label class="block" for="tenant-name">
-            <span class="label">{{ t('platform.tenants.name') }}</span>
+            <span class="label">
+              {{ t('platform.tenants.name') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
             <input
               id="tenant-name"
               class="input"

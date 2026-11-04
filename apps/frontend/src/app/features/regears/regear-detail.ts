@@ -15,6 +15,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
@@ -40,7 +41,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
 @Component({
   selector: 'app-regear-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack, Icon, TooltipDirective],
+  imports: [RouterLink, Dialog, Checkbox, EmptyState, ErrorState, Loading, PageHeader, PageStack, Icon, TooltipDirective],
   styles: `
     .workbench-page {
       --page-gap: 0.75rem;
@@ -52,6 +53,12 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
     }
     .workbench-page .card {
       border-radius: 0.5rem;
+      padding: clamp(0.875rem, 3vw, 1.25rem);
+    }
+    .detail-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
   `,
   template: `
@@ -63,25 +70,27 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
       <app-empty-state icon="shield" [message]="t('regears.detail.notFound')" />
     } @else if (death(); as current) {
       <app-page-header [title]="current.player_name" [subtitle]="current.event_title">
-        <a class="btn btn--ghost" routerLink="/regears">← {{ t('regears.detail.back') }}</a>
-        @if (canRequest()) {
-          <button
-            type="button"
-            class="btn btn--primary"
-            (click)="requestRegear()"
-            [disabled]="acting()"
-          >
-            {{ t('regears.request') }}
-          </button>
-        }
-        @if (canAdjudicatePending()) {
-          <button type="button" class="btn btn--outline" (click)="openAcceptDialog()" [disabled]="acting()">
-            {{ t('regears.accept') }}
-          </button>
-          <button type="button" class="btn btn--danger" (click)="openRejectDialog()" [disabled]="acting()">
-            {{ t('regears.reject') }}
-          </button>
-        }
+        <div pageActions class="detail-actions">
+          <a class="btn btn--ghost" routerLink="/regears">← {{ t('regears.detail.back') }}</a>
+          @if (canRequest()) {
+            <button
+              type="button"
+              class="btn btn--primary"
+              (click)="requestRegear()"
+              [disabled]="acting()"
+            >
+              {{ t('regears.request') }}
+            </button>
+          }
+          @if (canAdjudicatePending()) {
+            <button type="button" class="btn btn--outline" (click)="openAcceptDialog()" [disabled]="acting()">
+              {{ t('regears.reviewRequest') }}
+            </button>
+            <button type="button" class="btn btn--danger" (click)="openRejectDialog()" [disabled]="acting()">
+              {{ t('regears.reject') }}
+            </button>
+          }
+        </div>
       </app-page-header>
 
       <app-page-stack class="workbench-page">
@@ -237,11 +246,11 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
                     />
                   </td>
                   <td class="text-center">
-                    <input
-                      type="checkbox"
-                      class="checkbox"
+                    <app-checkbox
+                      [inputId]="'regear-row-' + i"
+                      [label]="t('regears.included') + ' · ' + row.item_id"
                       [checked]="row.included"
-                      (change)="toggleEditableIncluded(i, $event)"
+                      (checkedChange)="setEditableIncluded(i, $event)"
                     />
                   </td>
                 </tr>
@@ -283,23 +292,28 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
         <p class="mb-2 text-sm" style="color: var(--color-error)">
           {{ t('regears.rejectWarning') }}
         </p>
-        <label class="mb-1 block">
-          <span class="label">{{ t('regears.rejectReason') }}</span>
-          <textarea
-            class="textarea"
-            rows="3"
-            [value]="rejectNote()"
-            (input)="onRejectNote($event)"
-          ></textarea>
-        </label>
+        <form id="regear-reject-form" class="grid gap-2" (submit)="confirmReject($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <label class="block">
+            <span class="label">{{ t('regears.rejectReason') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
+            <textarea
+              class="textarea"
+              name="reject_reason"
+              rows="3"
+              required
+              [value]="rejectNote()"
+              (input)="onRejectNote($event)"
+            ></textarea>
+          </label>
+        </form>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="closeRejectDialog()">
             {{ t('common.cancel') }}
           </button>
           <button
-            type="button"
+            type="submit"
+            form="regear-reject-form"
             class="btn btn--danger"
-            (click)="confirmReject()"
             [disabled]="acting() || !rejectNote().trim()"
           >
             {{ t('regears.reject') }}
@@ -437,8 +451,7 @@ export class RegearDetailPage {
     );
   }
 
-  protected toggleEditableIncluded(index: number, event: Event): void {
-    const included = (event.target as HTMLInputElement).checked;
+  protected setEditableIncluded(index: number, included: boolean): void {
     this.acceptRows.update((rows) =>
       rows.map((row, i) => (i === index ? { ...row, included } : row)),
     );
@@ -491,7 +504,8 @@ export class RegearDetailPage {
     this.rejectNote.set((event.target as HTMLTextAreaElement).value);
   }
 
-  protected async confirmReject(): Promise<void> {
+  protected async confirmReject(event: Event): Promise<void> {
+    event.preventDefault();
     const death = this.death();
     const note = this.rejectNote().trim();
     if (!death || !note || this.acting()) {

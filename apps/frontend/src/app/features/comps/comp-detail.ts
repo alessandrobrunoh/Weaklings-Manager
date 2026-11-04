@@ -330,6 +330,32 @@ interface BuildOptionGroup {
                         </ul>
                       }
                     }
+                    @if (detail.swapItems.length > 0) {
+                      <h4 class="text-sm font-semibold">{{ t('comps.swapLoadout') }}</h4>
+                      <app-equipment-grid
+                        [items]="detail.swapItems"
+                        [canManage]="false"
+                        [editingSlot]="null"
+                        [draftTier]="'T8'"
+                        [draftSearch]="''"
+                        [draftItemId]="''"
+                        [searchResults]="[]"
+                        [searchLoading]="false"
+                        [tiers]="[]"
+                        [draftAbilitySlots]="[]"
+                      />
+                      @if (detail.swapRows.length > 0) {
+                        <h4 class="text-sm font-semibold">{{ t('comps.selectedAbilities') }}</h4>
+                        <ul class="space-y-2">
+                          @for (row of detail.swapRows; track row.slot) {
+                            <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
+                              <span>{{ row.itemName }}</span>
+                              <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
+                            </li>
+                          }
+                        </ul>
+                      }
+                    }
                     <button type="button" class="btn btn--ghost btn--sm" [attr.aria-label]="t('comps.inspectBuild', { name: entry.build.name })" (click)="inspectedBuildId.set(entry.build_id)">
                       {{ t('comps.inspectSets') }}
                     </button>
@@ -383,7 +409,7 @@ interface BuildOptionGroup {
           <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2 text-warning">
               <app-icon name="edit" size="1rem" />
-              <span>{{ t('comps.editRosterHint') }}</span>
+              <span>{{ t('comps.editRosterHint') }} {{ t('comps.rosterSaveHint') }}</span>
             </div>
             <button type="button" class="btn btn--sm btn--primary" (click)="toggleEditMode()" [disabled]="saving()">
               {{ t('comps.doneEditing') }}
@@ -610,6 +636,7 @@ interface BuildOptionGroup {
                                 class="input text-center w-14"
                                 type="number"
                                 min="1"
+                                [attr.aria-label]="t('comps.addBuildQuantity') + ': ' + entry.build.name"
                                 [value]="editingBuildQty()"
                                 (input)="onEditingBuildQtyChange($event)"
                               />
@@ -618,6 +645,7 @@ interface BuildOptionGroup {
                                 class="btn btn--primary btn--xs"
                                 (click)="saveBuildQty(entry.build_id)"
                                 [disabled]="saving()"
+                                [attr.aria-label]="t('common.save')"
                               >
                                 ✓
                               </button>
@@ -625,6 +653,7 @@ interface BuildOptionGroup {
                                 type="button"
                                 class="btn btn--ghost btn--xs"
                                 (click)="cancelEditBuild()"
+                                [attr.aria-label]="t('common.cancel')"
                               >
                                 ✕
                               </button>
@@ -639,6 +668,7 @@ interface BuildOptionGroup {
                                   type="button"
                                   class="btn btn--ghost btn--xs"
                                   (click)="startEditBuild(entry.build_id, entry.quantity)"
+                                  [attr.aria-label]="t('common.edit') + ' ' + t('comps.addBuildQuantity') + ': ' + entry.build.name"
                                 >
                                   <app-icon name="edit" size="0.75rem" />
                                 </button>
@@ -647,6 +677,7 @@ interface BuildOptionGroup {
                                   class="btn btn--ghost btn--xs text-error"
                                   (click)="removeBuild(entry.build_id)"
                                   [disabled]="saving()"
+                                  [attr.aria-label]="t('common.delete') + ': ' + entry.build.name"
                                 >
                                   <app-icon name="close" size="0.75rem" />
                                 </button>
@@ -1180,31 +1211,33 @@ interface BuildOptionGroup {
       @if (editMetaOpen()) {
         <app-dialog [title]="t('comps.editComp')" size="md" (closed)="closeEditMeta()">
           <form class="grid gap-4" (submit)="saveEdit($event)">
+            <p class="text-xs text-secondary">{{ t('validation.requiredLegend') }}</p>
             <div class="grid gap-4 md:grid-cols-2">
               <label>
-                <span class="label">{{ t('common.name') }}</span>
+                <span class="label">{{ t('common.name') }} <span class="text-error" aria-hidden="true">*</span></span>
                 <input
                   class="input"
                   type="text"
+                  required
                   [value]="editName()"
                   (input)="onEditNameChange($event)"
                 />
               </label>
               <label>
-                <span class="label">{{ t('common.category') }}</span>
-                <select class="select" (change)="onEditCategoryChange($event)">
-                  <option value="" [selected]="!editCategoryId()">
-                    {{ t('comps.noCategory') }}
-                  </option>
+                <span class="label">{{ t('common.category') }} <span class="text-error" aria-hidden="true">*</span></span>
+                <select
+                  class="select"
+                  required
+                  [value]="editCategoryId()"
+                  (change)="onEditCategoryChange($event)"
+                >
                   @for (category of editCategoryOptions(); track category.id) {
-                    <option
-                      [value]="category.id"
-                      [selected]="isSelectedId(editCategoryId(), category.id)"
-                    >
+                    <option [value]="category.id">
                       {{ category.name }}
                     </option>
                   }
                 </select>
+                <span class="text-xs text-secondary">{{ t('comps.categoryRequired') }}</span>
               </label>
             </div>
             <label>
@@ -1399,6 +1432,7 @@ export class CompDetailPage {
   protected readonly buildOptions = signal<BuildSummary[]>([]);
   protected readonly compSummaries = signal<CompSummary[]>([]);
   private readonly buildDetails = signal<ReadonlyMap<number, BuildDetail>>(new Map());
+  private buildDetailsRequest = 0;
   private readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
   protected readonly comparing = signal(false);
   protected readonly compareWithId = signal('');
@@ -1455,13 +1489,14 @@ export class CompDetailPage {
   });
 
   protected readonly overviewBuilds = computed(() => {
-    const result = new Map<number, { items: BuildItemSlot[]; rows: ReturnType<CompDetailPage['abilityRows']> }>();
+    const result = new Map<number, { items: BuildItemSlot[]; rows: ReturnType<CompDetailPage['abilityRows']>; swapItems: BuildItemSlot[]; swapRows: ReturnType<CompDetailPage['abilityRows']> }>();
     for (const [id, build] of this.buildDetails()) {
       const items = itemsForLoadout(build.items, 'main');
-      const rows = this.abilityRows(items)
+      const swapItems = itemsForLoadout(build.items, 'swap');
+      const selectedRows = (loadoutItems: BuildItemSlot[]) => this.abilityRows(loadoutItems)
         .map((row) => ({ ...row, slots: row.slots.filter((slot) => slot.selected !== null) }))
         .filter((row) => row.slots.length > 0);
-      result.set(id, { items, rows });
+      result.set(id, { items, rows: selectedRows(items), swapItems, swapRows: selectedRows(swapItems) });
     }
     return result;
   });
@@ -1542,7 +1577,7 @@ export class CompDetailPage {
     return [
       {
         id: current.category_id,
-        name: current.category_name ?? this.t('comps.noCategory'),
+        name: current.category_name ?? `${this.t('common.category')} #${current.category_id}`,
       },
       ...categories,
     ];
@@ -1702,6 +1737,7 @@ export class CompDetailPage {
     if (this.mode() === 'view') {
       this.cancelEditBuild();
     } else {
+      this.viewMode.set('roles');
       void this.loadEditOptions();
     }
   }
@@ -2477,6 +2513,7 @@ export class CompDetailPage {
   }
 
   private async loadBuildDetails(comp: CompDetail): Promise<void> {
+    const request = ++this.buildDetailsRequest;
     this.buildDetailsLoading.set(true);
     try {
       const details = await Promise.all(
@@ -2486,8 +2523,8 @@ export class CompDetailPage {
           ),
         ),
       );
-      // Discard if the page has since switched to a different version.
-      if (comp.id !== this.compId()) return;
+      // A newer roster for the same composition supersedes this request too.
+      if (request !== this.buildDetailsRequest || comp.id !== this.compId()) return;
       this.buildDetails.set(
         new Map(
           details
@@ -2496,7 +2533,7 @@ export class CompDetailPage {
         ),
       );
     } finally {
-      if (comp.id === this.compId()) {
+      if (request === this.buildDetailsRequest && comp.id === this.compId()) {
         this.buildDetailsLoading.set(false);
       }
     }

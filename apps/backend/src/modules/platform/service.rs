@@ -1,5 +1,7 @@
 //! Control-plane tenant, feature-flag, and admin assignment operations.
 
+use std::future::Future;
+
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, TransactionTrait, Value};
 
 use crate::control_migration::{FEATURE_SIDEBAR, SUPERADMIN_ROLE_ID};
@@ -21,10 +23,39 @@ const TENANT_SELECT: &str = "SELECT t.id, t.name, t.slug, t.schema_name, t.statu
      t.rank_id::text, r.name, t.kind, t.is_default \
      FROM tenants t LEFT JOIN tenant_ranks r ON r.id = t.rank_id";
 
+/// A Discord role configured for this membership that has no per-member grant.
+///
+/// Departure records these instead of removing the role from everyone who has it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UntrackedAllianceRole {
+    /// Discord server the role lives on.
+    pub discord_guild_id: String,
+    /// Role snowflake.
+    pub role_id: String,
+}
+
 /// Control-plane operations.
 pub struct PlatformService;
 
 impl PlatformService {
+    /// Whether `discord_id` is the original owner recorded for this guild tenant.
+    ///
+    /// Owner status is intentionally tenant-scoped and never grants platform access.
+    pub async fn is_guild_owner(
+        control: &DatabaseConnection,
+        tenant_id: &str,
+        discord_id: &str,
+    ) -> Result<bool, AppError> {
+        let Some(tenant) = Self::get_tenant(control, tenant_id).await? else {
+            return Ok(false);
+        };
+        Ok(guild_owner_matches(
+            &tenant.kind,
+            tenant.owner_discord_id.as_deref(),
+            discord_id,
+        ))
+    }
+
     /// List every tenant, including suspended ones.
     ///
     /// # Errors
@@ -350,6 +381,24 @@ impl PlatformService {
             } else {
                 "pending"
             };
+            let revived = txn
+                .execute(Statement::from_sql_and_values(
+                    txn.get_database_backend(),
+                    "UPDATE alliance_memberships \
+                     SET status = $3, invited_by = $4, \
+                         accepted_at = CASE WHEN $3 = 'active' THEN COALESCE(accepted_at, now()) ELSE accepted_at END \
+                     WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'left'",
+                    [
+                        alliance_tenant_id.into(),
+                        member.id.clone().into(),
+                        status.into(),
+                        actor.into(),
+                    ],
+                ))
+                .await?;
+            if revived.rows_affected() > 0 {
+                continue;
+            }
             txn.execute(Statement::from_sql_and_values(
                 txn.get_database_backend(),
                 "INSERT INTO alliance_memberships \
@@ -530,7 +579,94 @@ impl PlatformService {
         })
     }
 
+    /// The guild owner may decline an invitation before it becomes active.
+    ///
+    /// Active memberships require a separate departure workflow that handles
+    /// shared resources and Discord access; this operation must not remove them.
+    ///
+    /// # Errors
+    ///
+    /// Returns forbidden for anyone other than the guild owner, or not-found
+    /// when the pending invitation does not exist.
+    pub async fn decline_alliance_membership(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        actor: &str,
+    ) -> Result<(), AppError> {
+        let Some(guild) = Self::get_tenant(control, guild_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {guild_id} not found")));
+        };
+        if guild.kind != "guild" || guild.owner_discord_id.as_deref() != Some(actor) {
+            return Err(AppError::Forbidden(
+                "only the guild owner can decline an alliance invite".to_owned(),
+            ));
+        }
+        let result = control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "DELETE FROM alliance_memberships \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'pending'",
+                [alliance_id.into(), guild_id.into()],
+            ))
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(
+                "pending alliance invite not found".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Alliance tenant owner invites one guild, reviving a `left` row when one exists.
+    ///
+    /// This is the same insert used at alliance registration. A departed guild is not
+    /// given a second membership. `left_at`, shares, event mirrors, and role-revocation
+    /// rows stay. Old event links are not turned back on. `alliance.leave` is not consulted.
+    ///
+    /// # Errors
+    ///
+    /// Forbidden unless `actor` owns this alliance tenant. Conflict when the guild already
+    /// has a pending or active membership, including one in another alliance.
+    pub async fn invite_alliance_membership(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        actor: &str,
+    ) -> Result<AllianceMemberView, AppError> {
+        let Some(alliance) = Self::get_tenant(control, alliance_id).await? else {
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_id} not found"
+            )));
+        };
+        if alliance.kind != "alliance" || alliance.owner_discord_id.as_deref() != Some(actor) {
+            return Err(AppError::Forbidden(
+                "only the alliance owner can invite a guild".to_owned(),
+            ));
+        }
+        let Some(guild) = Self::get_tenant(control, guild_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {guild_id} not found")));
+        };
+        if guild.kind != "guild" || guild.status != "active" {
+            return Err(AppError::Validation("alliance_member_invalid".to_owned()));
+        }
+        Self::insert_alliance_memberships(
+            control,
+            alliance_id,
+            actor,
+            std::slice::from_ref(&guild),
+        )
+        .await?;
+        Self::list_alliance_members(control, alliance_id)
+            .await?
+            .into_iter()
+            .find(|row| row.guild_tenant_id == guild_id)
+            .ok_or_else(|| AppError::Internal("membership vanished after invite".to_owned()))
+    }
+
     /// Owner of `guild_id` accepts a pending invite into `alliance_id`.
+    ///
+    /// A `left` membership is not reactivated here. The alliance owner must invite again first.
     ///
     /// # Errors
     ///
@@ -544,7 +680,7 @@ impl PlatformService {
         let Some(guild) = Self::get_tenant(control, guild_id).await? else {
             return Err(AppError::NotFound(format!("tenant {guild_id} not found")));
         };
-        if guild.owner_discord_id.as_deref() != Some(actor) {
+        if guild.kind != "guild" || guild.owner_discord_id.as_deref() != Some(actor) {
             return Err(AppError::Forbidden(
                 "only the guild owner can accept an alliance invite".to_owned(),
             ));
@@ -554,7 +690,7 @@ impl PlatformService {
                 control.get_database_backend(),
                 "UPDATE alliance_memberships \
                  SET status = 'active', accepted_at = COALESCE(accepted_at, now()) \
-                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2",
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'pending'",
                 [alliance_id.into(), guild_id.into()],
             ))
             .await?;
@@ -609,6 +745,253 @@ impl PlatformService {
             .into_iter()
             .find(|row| row.guild_tenant_id == guild_id)
             .ok_or_else(|| AppError::Internal("membership vanished after role update".to_owned()))
+    }
+
+    /// Records that this membership's link flow granted `role_id` to one Discord user.
+    ///
+    /// Departure only removes roles listed here. People who merely have the same
+    /// role are not guessed at.
+    pub async fn record_alliance_role_grant(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        discord_guild_id: &str,
+        discord_user_id: &str,
+        role_id: &str,
+    ) -> Result<(), AppError> {
+        let discord_guild_id = discord_guild_id.trim();
+        let discord_user_id = discord_user_id.trim();
+        let role_id = role_id.trim();
+        if discord_guild_id.is_empty() || discord_user_id.is_empty() || role_id.is_empty() {
+            return Ok(());
+        }
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "INSERT INTO alliance_role_grants \
+                 (alliance_tenant_id, guild_tenant_id, discord_guild_id, discord_user_id, role_id) \
+                 VALUES ($1, $2, $3, $4, $5) \
+                 ON CONFLICT DO NOTHING",
+                [
+                    alliance_id.into(),
+                    guild_id.into(),
+                    discord_guild_id.into(),
+                    discord_user_id.into(),
+                    role_id.into(),
+                ],
+            ))
+            .await?;
+        Ok(())
+    }
+
+    /// Guild-initiated departure from an active alliance membership.
+    ///
+    /// The caller must hold `alliance.leave` (`granted_leave`) or be the owner of
+    /// this guild tenant. Pending invites are not declined here. History (the
+    /// membership row, published shares, and event-sync links) is kept; future
+    /// sync is disabled before Discord is contacted.
+    ///
+    /// # Errors
+    ///
+    /// Forbidden when the actor is neither granted nor the guild owner, conflict
+    /// when the invite is still pending, not-found when the membership is missing.
+    pub async fn leave_active_alliance<R, Fut>(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        actor: &str,
+        granted_leave: bool,
+        untracked_roles: &[UntrackedAllianceRole],
+        revoker: R,
+    ) -> Result<AllianceMemberView, AppError>
+    where
+        R: Fn(&str, &str, &str) -> Fut + Sync,
+        Fut: Future<Output = Result<(), String>> + Send,
+    {
+        if !granted_leave && !Self::is_guild_owner(control, guild_id, actor).await? {
+            return Err(AppError::Forbidden(
+                "missing permission alliance.leave".to_owned(),
+            ));
+        }
+        let Some(guild) = Self::get_tenant(control, guild_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {guild_id} not found")));
+        };
+        if guild.kind != "guild" {
+            return Err(AppError::Forbidden(
+                "only the member guild can leave an alliance".to_owned(),
+            ));
+        }
+        let status = Self::alliance_membership_status(control, alliance_id, guild_id).await?;
+        match status.as_deref() {
+            Some("pending") => {
+                return Err(AppError::Conflict(
+                    "pending alliance invite must be declined, not left".to_owned(),
+                ));
+            }
+            Some("active") => {
+                Self::mark_alliance_left(control, alliance_id, guild_id, untracked_roles).await?;
+            }
+            Some("left") => {}
+            Some(_) | None => {
+                return Err(AppError::NotFound(
+                    "active alliance membership not found".to_owned(),
+                ));
+            }
+        }
+        Self::retry_alliance_role_revocations(control, alliance_id, guild_id, &revoker).await?;
+        Self::list_alliance_members(control, alliance_id)
+            .await?
+            .into_iter()
+            .find(|row| row.guild_tenant_id == guild_id)
+            .ok_or_else(|| AppError::Internal("membership vanished after leave".to_owned()))
+    }
+
+    async fn mark_alliance_left(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        untracked_roles: &[UntrackedAllianceRole],
+    ) -> Result<(), AppError> {
+        let txn = control.begin().await?;
+        let updated = txn
+            .execute(Statement::from_sql_and_values(
+                txn.get_database_backend(),
+                "UPDATE alliance_memberships \
+                 SET status = 'left', left_at = COALESCE(left_at, now()) \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'active'",
+                [alliance_id.into(), guild_id.into()],
+            ))
+            .await?;
+        if updated.rows_affected() == 0 {
+            return Err(AppError::Conflict(
+                "alliance membership is no longer active".to_owned(),
+            ));
+        }
+        txn.execute(Statement::from_sql_and_values(
+            txn.get_database_backend(),
+            "UPDATE event_sync_links SET sync_enabled = false \
+             WHERE (source_tenant_id = $1 AND mirror_tenant_id = $2) \
+                OR (source_tenant_id = $2 AND mirror_tenant_id = $1)",
+            [guild_id.into(), alliance_id.into()],
+        ))
+        .await?;
+        let grants = txn
+            .query_all(Statement::from_sql_and_values(
+                txn.get_database_backend(),
+                "SELECT discord_guild_id, discord_user_id, role_id \
+                 FROM alliance_role_grants \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2",
+                [alliance_id.into(), guild_id.into()],
+            ))
+            .await?;
+        for row in &grants {
+            let discord_guild_id: String = row.try_get_by_index(0)?;
+            let discord_user_id: String = row.try_get_by_index(1)?;
+            let role_id: String = row.try_get_by_index(2)?;
+            insert_role_revocation(
+                &txn,
+                alliance_id,
+                guild_id,
+                &discord_guild_id,
+                &discord_user_id,
+                &role_id,
+                "pending",
+                None,
+            )
+            .await?;
+        }
+        for role in untracked_roles {
+            let discord_guild_id = role.discord_guild_id.trim();
+            let role_id = role.role_id.trim();
+            if discord_guild_id.is_empty() || role_id.is_empty() {
+                continue;
+            }
+            let known = txn
+                .query_one(Statement::from_sql_and_values(
+                    txn.get_database_backend(),
+                    "SELECT 1 FROM alliance_role_grants \
+                     WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 \
+                       AND discord_guild_id = $3 AND role_id = $4",
+                    [
+                        alliance_id.into(),
+                        guild_id.into(),
+                        discord_guild_id.into(),
+                        role_id.into(),
+                    ],
+                ))
+                .await?;
+            if known.is_some() {
+                continue;
+            }
+            insert_role_revocation(
+                &txn,
+                alliance_id,
+                guild_id,
+                discord_guild_id,
+                "",
+                role_id,
+                "ambiguous",
+                Some(
+                    "no membership grant identifies who received this alliance role; role was not removed",
+                ),
+            )
+            .await?;
+        }
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn retry_alliance_role_revocations<R, Fut>(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        revoker: &R,
+    ) -> Result<(), AppError>
+    where
+        R: Fn(&str, &str, &str) -> Fut + Sync,
+        Fut: Future<Output = Result<(), String>> + Send,
+    {
+        let pending = control
+            .query_all(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT id::text, discord_guild_id, discord_user_id, role_id \
+                 FROM alliance_role_revocations \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 \
+                   AND status = 'pending' AND discord_user_id <> ''",
+                [alliance_id.into(), guild_id.into()],
+            ))
+            .await?;
+        for row in pending {
+            let id: String = row.try_get_by_index(0)?;
+            let discord_guild_id: String = row.try_get_by_index(1)?;
+            let discord_user_id: String = row.try_get_by_index(2)?;
+            let role_id: String = row.try_get_by_index(3)?;
+            match revoker(&discord_guild_id, &discord_user_id, &role_id).await {
+                Ok(()) => {
+                    control
+                        .execute(Statement::from_sql_and_values(
+                            control.get_database_backend(),
+                            "UPDATE alliance_role_revocations \
+                             SET status = 'verified', verified_at = now(), detail = NULL \
+                             WHERE id = $1::uuid AND status = 'pending'",
+                            [id.into()],
+                        ))
+                        .await?;
+                }
+                Err(error) => {
+                    control
+                        .execute(Statement::from_sql_and_values(
+                            control.get_database_backend(),
+                            "UPDATE alliance_role_revocations \
+                             SET detail = $2 \
+                             WHERE id = $1::uuid AND status = 'pending'",
+                            [id.into(), error.into()],
+                        ))
+                        .await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Record that `discord_id` may enter `tenant_id`.
@@ -1449,6 +1832,42 @@ impl PlatformService {
     }
 }
 
+async fn insert_role_revocation(
+    conn: &impl ConnectionTrait,
+    alliance_id: &str,
+    guild_id: &str,
+    discord_guild_id: &str,
+    discord_user_id: &str,
+    role_id: &str,
+    status: &str,
+    detail: Option<&str>,
+) -> Result<(), AppError> {
+    conn.execute(Statement::from_sql_and_values(
+        conn.get_database_backend(),
+        "INSERT INTO alliance_role_revocations \
+         (id, alliance_tenant_id, guild_tenant_id, discord_guild_id, discord_user_id, role_id, status, detail) \
+         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) \
+         ON CONFLICT (alliance_tenant_id, guild_tenant_id, discord_guild_id, discord_user_id, role_id) \
+         DO NOTHING",
+        [
+            uuid::Uuid::new_v4().to_string().into(),
+            alliance_id.into(),
+            guild_id.into(),
+            discord_guild_id.into(),
+            discord_user_id.into(),
+            role_id.into(),
+            status.into(),
+            detail.map(ToOwned::to_owned).into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
+fn guild_owner_matches(kind: &str, owner_discord_id: Option<&str>, actor: &str) -> bool {
+    kind == "guild" && owner_discord_id == Some(actor)
+}
+
 fn row_to_view(row: &sea_orm::QueryResult) -> Result<TenantView, DbErr> {
     Ok(TenantView {
         id: row.try_get_by_index(0)?,
@@ -1526,6 +1945,17 @@ mod tests {
         test_support::{try_admin_db, unique_schema},
     };
     use sea_orm_migration::MigratorTrait;
+
+    #[test]
+    fn owner_identity_is_limited_to_the_selected_guild_tenant() {
+        assert!(guild_owner_matches("guild", Some("owner-1"), "owner-1"));
+        assert!(!guild_owner_matches("guild", Some("owner-1"), "owner-2"));
+        // Switching to a different guild evaluates that tenant's owner row;
+        // ownership in the previous tenant does not carry across the session.
+        assert!(!guild_owner_matches("guild", Some("owner-2"), "owner-1"));
+        assert!(!guild_owner_matches("alliance", Some("owner-1"), "owner-1"));
+        assert!(!guild_owner_matches("guild", None, "owner-1"));
+    }
 
     #[test]
     fn region_aliases() {
@@ -2254,6 +2684,38 @@ mod tests {
         assert_eq!(members[0].status, "pending");
         assert!(members[0].accepted_at.is_none());
 
+        let refused = PlatformService::decline_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "other-user",
+        )
+        .await;
+        assert!(matches!(refused, Err(AppError::Forbidden(_))));
+
+        PlatformService::decline_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await
+        .expect("decline pending invitation");
+        assert!(
+            PlatformService::alliance_membership_status(&control, &alliance_id, &guild_id)
+                .await
+                .expect("membership status")
+                .is_none()
+        );
+        PlatformService::insert_alliance_memberships(
+            &control,
+            &alliance_id,
+            "alliance-officer",
+            std::slice::from_ref(&guild),
+        )
+        .await
+        .expect("reinvite");
+
         let accepted = PlatformService::accept_alliance_membership(
             &control,
             &alliance_id,
@@ -2264,6 +2726,15 @@ mod tests {
         .expect("accept");
         assert_eq!(accepted.status, "active");
         assert!(accepted.accepted_at.is_some());
+
+        let active_decline = PlatformService::decline_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await;
+        assert!(matches!(active_decline, Err(AppError::NotFound(_))));
 
         drop_schema(&admin, &guild.schema_name)
             .await
@@ -2395,6 +2866,524 @@ mod tests {
         drop_schema(&admin, &created.schema_name)
             .await
             .expect("drop tenant schema");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn leave_keeps_history_stops_sync_and_retries_discord() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_leave");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+        let registry = TenantRegistry::new(url, control.clone());
+
+        let guild_id = unique_schema("gid");
+        let alliance_id = unique_schema("aid");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Leaving Guild"),
+            "guild-owner",
+            None,
+        )
+        .await
+        .expect("guild");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![guild_id.clone()]),
+            "alliance-officer",
+            None,
+        )
+        .await
+        .expect("alliance");
+        PlatformService::accept_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await
+        .expect("accept");
+
+        let pending_guild_id = unique_schema("pgid");
+        let pending_alliance_id = unique_schema("paid");
+        let pending_guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&pending_guild_id, "Invited Guild"),
+            "guild-owner",
+            None,
+        )
+        .await
+        .expect("pending guild");
+        let pending_alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&pending_alliance_id, vec![pending_guild_id.clone()]),
+            "alliance-officer",
+            None,
+        )
+        .await
+        .expect("pending alliance");
+
+        control
+            .execute_unprepared(&format!(
+                "INSERT INTO alliance_shares \
+                 (id, alliance_tenant_id, source_tenant_id, artifact_type, source_id, published_id, shared_by) \
+                 VALUES ('{}', '{alliance_id}', '{guild_id}', 'build', 7, 8, 'guild-owner')",
+                uuid::Uuid::new_v4()
+            ))
+            .await
+            .expect("share");
+        control
+            .execute_unprepared(&format!(
+                "INSERT INTO event_sync_links \
+                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
+                 VALUES ('{}', '{guild_id}', 3, '{alliance_id}', 4)",
+                uuid::Uuid::new_v4()
+            ))
+            .await
+            .expect("link");
+        PlatformService::record_alliance_role_grant(
+            &control,
+            &alliance_id,
+            &guild_id,
+            &alliance_id,
+            "discord-user",
+            "12345678901234567",
+        )
+        .await
+        .expect("grant");
+
+        let denied = PlatformService::leave_active_alliance(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "stranger",
+            false,
+            &[],
+            |_: &str, _: &str, _: &str| std::future::ready(Ok(())),
+        )
+        .await;
+        assert!(matches!(denied, Err(AppError::Forbidden(_))));
+        assert_eq!(
+            PlatformService::alliance_membership_status(&control, &alliance_id, &guild_id)
+                .await
+                .expect("status")
+                .as_deref(),
+            Some("active")
+        );
+
+        let pending_leave = PlatformService::leave_active_alliance(
+            &control,
+            &pending_alliance_id,
+            &pending_guild_id,
+            "guild-owner",
+            false,
+            &[],
+            |_: &str, _: &str, _: &str| std::future::ready(Ok(())),
+        )
+        .await;
+        assert!(matches!(pending_leave, Err(AppError::Conflict(_))));
+        assert_eq!(
+            PlatformService::alliance_membership_status(
+                &control,
+                &pending_alliance_id,
+                &pending_guild_id
+            )
+            .await
+            .expect("pending status")
+            .as_deref(),
+            Some("pending")
+        );
+        PlatformService::decline_alliance_membership(
+            &control,
+            &pending_alliance_id,
+            &pending_guild_id,
+            "guild-owner",
+        )
+        .await
+        .expect("decline still removes only the pending invite");
+        assert!(
+            PlatformService::alliance_membership_status(
+                &control,
+                &pending_alliance_id,
+                &pending_guild_id
+            )
+            .await
+            .expect("declined")
+            .is_none()
+        );
+
+        let left = PlatformService::leave_active_alliance(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+            false,
+            &[UntrackedAllianceRole {
+                discord_guild_id: guild_id.clone(),
+                role_id: "22345678901234567".into(),
+            }],
+            |_: &str, _: &str, _: &str| std::future::ready(Err("discord unavailable".to_owned())),
+        )
+        .await
+        .expect("owner leave");
+        assert_eq!(left.status, "left");
+
+        let share_count: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM alliance_shares WHERE source_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("shares")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(share_count, 1);
+        let sync_enabled: bool = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT sync_enabled FROM event_sync_links WHERE source_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("link")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("flag");
+        assert!(!sync_enabled);
+        let link_count: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM event_sync_links WHERE source_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("links")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(link_count, 1);
+
+        crate::modules::events::sync::sync_participation(
+            &control,
+            &registry,
+            &guild_id,
+            3,
+            &crate::modules::alliance_share::ShareActor {
+                discord_id: "discord-user".into(),
+                username: "user".into(),
+                email: None,
+            },
+            None,
+        )
+        .await
+        .expect("disabled sync link does not fan out");
+
+        let revocations = control
+            .query_all(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT status, discord_user_id, detail FROM alliance_role_revocations \
+                 WHERE guild_tenant_id = $1 ORDER BY status",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("revocations");
+        assert_eq!(revocations.len(), 2);
+        let mut saw_pending = false;
+        let mut saw_ambiguous = false;
+        for row in &revocations {
+            let status: String = row.try_get_by_index(0).expect("status");
+            let user: String = row.try_get_by_index(1).expect("user");
+            if status == "pending" {
+                saw_pending = true;
+                assert_eq!(user, "discord-user");
+                let detail: String = row.try_get_by_index(2).expect("detail");
+                assert!(detail.contains("discord unavailable"));
+            } else if status == "ambiguous" {
+                saw_ambiguous = true;
+                assert!(user.is_empty());
+            }
+        }
+        assert!(saw_pending);
+        assert!(saw_ambiguous);
+
+        PlatformService::leave_active_alliance(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+            false,
+            &[],
+            |_: &str, _: &str, _: &str| std::future::ready(Ok(())),
+        )
+        .await
+        .expect("retry");
+        let pending_left: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM alliance_role_revocations \
+                 WHERE guild_tenant_id = $1 AND status = 'pending'",
+                [guild_id.into()],
+            ))
+            .await
+            .expect("pending")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(pending_left, 0);
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop alliance");
+        drop_schema(&admin, &pending_guild.schema_name)
+            .await
+            .expect("drop pending guild");
+        drop_schema(&admin, &pending_alliance.schema_name)
+            .await
+            .expect("drop pending alliance");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn rejoin_from_left_reuses_the_row_and_leaves_history_unsynced() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_rejoin");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+        let registry = TenantRegistry::new(url, control.clone());
+
+        let guild_id = unique_schema("gid");
+        let alliance_id = unique_schema("aid");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Returning Guild"),
+            "guild-owner",
+            None,
+        )
+        .await
+        .expect("guild");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![guild_id.clone()]),
+            "alliance-owner",
+            None,
+        )
+        .await
+        .expect("alliance");
+        PlatformService::accept_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await
+        .expect("accept");
+
+        control
+            .execute_unprepared(&format!(
+                "INSERT INTO alliance_shares \
+                 (id, alliance_tenant_id, source_tenant_id, artifact_type, source_id, published_id, shared_by) \
+                 VALUES ('{}', '{alliance_id}', '{guild_id}', 'build', 7, 8, 'guild-owner')",
+                uuid::Uuid::new_v4()
+            ))
+            .await
+            .expect("share");
+        control
+            .execute_unprepared(&format!(
+                "INSERT INTO event_sync_links \
+                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
+                 VALUES ('{}', '{guild_id}', 3, '{alliance_id}', 4)",
+                uuid::Uuid::new_v4()
+            ))
+            .await
+            .expect("link");
+
+        PlatformService::leave_active_alliance(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+            false,
+            &[UntrackedAllianceRole {
+                discord_guild_id: guild_id.clone(),
+                role_id: "32345678901234567".into(),
+            }],
+            |_: &str, _: &str, _: &str| std::future::ready(Ok(())),
+        )
+        .await
+        .expect("leave");
+
+        let left_at: String = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT left_at::text FROM alliance_memberships WHERE guild_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("left_at")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("left_at");
+
+        let skipped = PlatformService::accept_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await;
+        assert!(matches!(skipped, Err(AppError::NotFound(_))));
+
+        let stranger = PlatformService::invite_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await;
+        assert!(matches!(stranger, Err(AppError::Forbidden(_))));
+
+        let invited = PlatformService::invite_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "alliance-owner",
+        )
+        .await
+        .expect("reinvite");
+        assert_eq!(invited.status, "pending");
+        assert_eq!(invited.guild_tenant_id, guild_id);
+
+        let memberships: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM alliance_memberships WHERE guild_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("count")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(memberships, 1);
+        let left_at_after: String = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT left_at::text FROM alliance_memberships WHERE guild_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("left_at")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("left_at");
+        assert_eq!(left_at_after, left_at);
+
+        let rejoined = PlatformService::accept_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await
+        .expect("accept rejoin");
+        assert_eq!(rejoined.status, "active");
+
+        let share_count: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM alliance_shares WHERE source_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("shares")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(share_count, 1);
+        let sync_enabled: bool = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT sync_enabled FROM event_sync_links WHERE source_tenant_id = $1",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("link")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("flag");
+        assert!(!sync_enabled);
+
+        crate::modules::events::sync::sync_participation(
+            &control,
+            &registry,
+            &guild_id,
+            3,
+            &crate::modules::alliance_share::ShareActor {
+                discord_id: "discord-user".into(),
+                username: "user".into(),
+                email: None,
+            },
+            None,
+        )
+        .await
+        .expect("old link stays unsynced after rejoin");
+
+        let ambiguous: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM alliance_role_revocations \
+                 WHERE guild_tenant_id = $1 AND status = 'ambiguous' AND discord_user_id = ''",
+                [guild_id.clone().into()],
+            ))
+            .await
+            .expect("ambiguous")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(ambiguous, 1);
+        let stripped: i64 = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT COUNT(*) FROM alliance_role_revocations \
+                 WHERE guild_tenant_id = $1 AND status = 'verified'",
+                [guild_id.into()],
+            ))
+            .await
+            .expect("verified")
+            .expect("row")
+            .try_get_by_index(0)
+            .expect("count");
+        assert_eq!(stripped, 0);
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop alliance");
         drop_schema(&admin, &schema).await.expect("drop");
     }
 }

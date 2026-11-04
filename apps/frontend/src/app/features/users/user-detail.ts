@@ -105,6 +105,24 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     }
     .workbench-page .card {
       border-radius: 0.5rem;
+      padding: clamp(0.875rem, 3vw, 1.5rem);
+    }
+    .member-hero {
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .member-identity {
+      min-width: 0;
+      flex: 1 1 15rem;
+    }
+    .member-identity > div {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .albion-link-card {
+      min-width: 0;
+      max-width: 100%;
+      flex-wrap: wrap;
     }
   `,
   template: `
@@ -145,8 +163,8 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
       <app-page-stack class="workbench-page">
         <!-- User Profile Hero -->
         <section class="card p-6">
-          <div class="flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center gap-4">
+          <div class="member-hero flex items-center justify-between gap-4">
+            <div class="member-identity flex items-center gap-4">
               <app-avatar
                 [userId]="user.id"
                 [username]="user.username"
@@ -168,7 +186,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
             <!-- Albion Character Link Badge -->
             <div
-              class="flex items-center gap-3 rounded-[var(--radius-cards)] p-3 border"
+              class="albion-link-card flex items-center gap-3 rounded-[var(--radius-cards)] p-3 border"
               style="background: var(--color-surface-2); border-color: var(--color-border)"
             >
               <div class="flex items-center gap-2">
@@ -442,7 +460,8 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
         <!-- Adjust Progression Form (if active) -->
         @if (editing()) {
-          <form class="card grid gap-4 p-6 border-primary" (submit)="onAdjustSubmit($event)">
+          <form class="card grid gap-3 p-4 sm:p-5 border-primary" (submit)="onAdjustSubmit($event)">
+            <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
             <div>
               <h2 class="text-base font-semibold" style="color: var(--color-text)">
                 {{ t('users.adjust.title') }}
@@ -499,7 +518,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
             </div>
 
             <label class="block">
-              <span class="label text-xs mb-1 block">{{ t('users.adjust.reason') }} *</span>
+              <span class="label text-xs mb-1 block">{{ t('users.adjust.reason') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
               <input
                 class="input w-full"
                 required

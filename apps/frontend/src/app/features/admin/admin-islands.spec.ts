@@ -105,6 +105,24 @@ describe('AdminIslands', () => {
     TestBed.resetTestingModule();
   });
 
+  it('marks and validates the inline tab name and create fields', async () => {
+    const { fixture } = await createComponent(guildIslands, 'guild');
+    const compiled = fixture.nativeElement as HTMLElement;
+    const inline = compiled.querySelector('form input') as HTMLInputElement;
+    expect(inline.required).toBe(true);
+    expect(inline.checkValidity()).toBe(false);
+    expect(inline.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
+    const create = [...compiled.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('admin.islands.create'));
+    create?.click();
+    fixture.detectChanges();
+    const form = compiled.querySelector('#create-island-form') as HTMLFormElement;
+    expect(form.textContent).toContain('validation.requiredLegend');
+    expect(form.querySelectorAll('input[required]')).toHaveLength(2);
+    expect(form.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(2);
+    expect(form.checkValidity()).toBe(false);
+  });
+
   it('keeps create, add-tab, edit, and delete available for a guild tenant', async () => {
     const { fixture, api } = await createComponent(guildIslands, 'guild');
     const compiled = fixture.nativeElement as HTMLElement;

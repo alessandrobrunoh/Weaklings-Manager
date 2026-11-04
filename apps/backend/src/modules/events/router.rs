@@ -1,21 +1,21 @@
 //! REST API routes and OpenAPI paths for the events module.
 
 use axum::{
+    Extension, Json, Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode},
     response::Response,
     routing::{delete, get, post, put},
-    Extension, Json, Router,
 };
 
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::errors::ProblemDetails;
 use crate::modules::audit::service::AuditService;
-use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::modules::auth::{BotSecret, Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
 use serde::Deserialize;
 
@@ -37,8 +37,8 @@ use super::models::{
     SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
-use super::service::{apply_alliance_ping_targets, load_alliance_ping_targets, EventService};
-use super::sync::{assert_active_alliance, create_mirror, sync_participation};
+use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
+use super::sync::{assert_active_alliance, create_mirror, is_mirror_event, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::service::AlbionBbService;
@@ -107,6 +107,19 @@ pub fn router() -> Router {
         .route("/calendar", get(list_event_calendar))
         .route("/revisions", get(list_event_revisions))
         .route(
+            "/vod-forum-posts/pending",
+            get(list_pending_vod_forum_posts),
+        )
+        .route("/{id}/vod-forum-post/claim", post(claim_vod_forum_post))
+        .route(
+            "/{id}/vod-forum-post/created",
+            post(record_vod_forum_post_created),
+        )
+        .route(
+            "/{id}/vod-forum-post/retry-after-verification",
+            post(retry_vod_forum_post),
+        )
+        .route(
             "/{id}",
             get(get_event).patch(update_event).delete(delete_event),
         )
@@ -157,6 +170,110 @@ pub fn router() -> Router {
             "/{id}/battles",
             get(list_event_battles).put(replace_event_battles),
         )
+}
+
+/// Fetches the durable queue of newly requested VOD forum posts for the bot.
+#[utoipa::path(
+    get,
+    path = "/api/events/vod-forum-posts/pending",
+    tag = "events",
+    summary = "List pending VOD forum post deliveries",
+    description = "Requires the configured X-Bot-Secret.",
+    responses((status = 200, description = "Pending event posts", body = [EventView]))
+)]
+async fn list_pending_vod_forum_posts(
+    _bot: BotSecret,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<EventView>>>, AppError> {
+    let items = EventService::new().pending_vod_forum_posts(&db).await?;
+    Ok(Json(ApiResponse::new(items)))
+}
+
+/// Atomically marks a pending delivery attempted before the bot calls Discord.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/vod-forum-post/claim",
+    tag = "events",
+    summary = "Claim a VOD forum post delivery",
+    params(("id" = i64, Path, description = "Event ID")),
+    description = "Requires the configured X-Bot-Secret.",
+    responses((status = 200, description = "Whether the pending delivery was claimed", body = bool))
+)]
+async fn claim_vod_forum_post(
+    _bot: BotSecret,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<bool>>, AppError> {
+    Ok(Json(ApiResponse::new(
+        EventService::new().claim_vod_forum_post(&db, id).await?,
+    )))
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct RecordVodForumPostRequest {
+    /// Discord thread snowflake created for the VOD post.
+    thread_id: String,
+}
+
+/// Records a successful creation. An attempted row not confirmed here is never retried.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/vod-forum-post/created",
+    tag = "events",
+    summary = "Record a created VOD forum post",
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body = RecordVodForumPostRequest,
+    description = "Requires the configured X-Bot-Secret.",
+    responses((status = 200, description = "Whether the created thread was recorded", body = bool))
+)]
+async fn record_vod_forum_post_created(
+    _bot: BotSecret,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<RecordVodForumPostRequest>,
+) -> Result<Json<ApiResponse<bool>>, AppError> {
+    let thread_id = req.thread_id.trim();
+    if thread_id.is_empty() {
+        return Err(AppError::Validation("thread_id is required".to_string()));
+    }
+    Ok(Json(ApiResponse::new(
+        EventService::new()
+            .record_vod_forum_post_created(&db, id, thread_id.to_string())
+            .await?,
+    )))
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct RetryVodForumPostRequest {
+    /// Operator confirmed that all bot workers are stopped and no post exists.
+    confirm_no_post: bool,
+}
+
+/// Requeues an ambiguous delivery only after an operator has verified Discord.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/vod-forum-post/retry-after-verification",
+    tag = "events",
+    summary = "Requeue a verified missing VOD forum post",
+    description = "Requires X-Bot-Secret. Stop all bot workers and verify that no post exists before calling; otherwise a duplicate can be created.",
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body = RetryVodForumPostRequest,
+    responses((status = 200, description = "Whether an attempted delivery was requeued", body = bool))
+)]
+async fn retry_vod_forum_post(
+    _bot: BotSecret,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<RetryVodForumPostRequest>,
+) -> Result<Json<ApiResponse<bool>>, AppError> {
+    if !req.confirm_no_post {
+        return Err(AppError::Validation(
+            "confirmation that no post exists is required".to_string(),
+        ));
+    }
+    Ok(Json(ApiResponse::new(
+        EventService::new().retry_vod_forum_post(&db, id).await?,
+    )))
 }
 
 /// Returns all live and upcoming events used by the Discord calendar.
@@ -1094,10 +1211,7 @@ async fn require_event_management_authority(
     event_id: i64,
     permission: Permission,
 ) -> Result<(), AppError> {
-    if perms
-        .check(user.is_superadmin(), &user.roles, permission)
-        .await
-    {
+    if user.has_permission(perms, permission).await {
         return Ok(());
     }
 
@@ -1320,10 +1434,7 @@ async fn get_event_management_authority(
 ) -> Result<Json<ApiResponse<EventManagementAuthorityView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
     let is_organizer = event_creator_id(&db, id).await? == user.user_id;
-    let can_manage = is_organizer
-        || perms
-            .check(user.is_superadmin(), &user.roles, Permission::EventsEdit)
-            .await;
+    let can_manage = is_organizer || user.has_permission(&perms, Permission::EventsEdit).await;
     Ok(Json(ApiResponse::new(EventManagementAuthorityView {
         is_organizer,
         can_manage,
@@ -1531,11 +1642,16 @@ async fn stop_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     let service = EventService::new();
-    let event = service.stop_event(&db, id, false).await?;
+    let award_xp = !is_mirror_event(&control.0, &tenant_id, id).await?;
+    let event = service
+        .stop_event_with_xp_policy(&db, id, false, award_xp)
+        .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1632,8 +1748,8 @@ mod tests {
     };
     use crate::errors::AppError;
     use crate::modules::auth::{
-        entities::{role, role_permission},
         Permission, Permissions, UserContext,
+        entities::{role, role_permission},
     };
     use crate::modules::comps::entities::{comp, comp_category};
     use crate::modules::events::entities::event;
@@ -1737,6 +1853,7 @@ mod tests {
             highest_role: role.to_string(),
             user_id,
             super_admin_id: None,
+            is_tenant_owner: false,
         }
     }
 
@@ -1765,6 +1882,7 @@ mod tests {
             highest_role: "User".to_string(),
             user_id: 1,
             super_admin_id: None,
+            is_tenant_owner: false,
         };
 
         let result =
@@ -1795,24 +1913,28 @@ mod tests {
             .expect("test permissions should load");
 
         let owner = authorization_test_user(owner_id, "User");
-        assert!(require_event_management_authority(
-            &owner,
-            &permissions,
-            &db,
-            first_event,
-            Permission::EventsEdit
-        )
-        .await
-        .is_ok());
-        assert!(require_event_management_authority(
-            &owner,
-            &permissions,
-            &db,
-            first_event,
-            Permission::EventsDelete
-        )
-        .await
-        .is_ok());
+        assert!(
+            require_event_management_authority(
+                &owner,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsEdit
+            )
+            .await
+            .is_ok()
+        );
+        assert!(
+            require_event_management_authority(
+                &owner,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsDelete
+            )
+            .await
+            .is_ok()
+        );
         assert!(matches!(
             require_event_management_authority(
                 &owner,
@@ -1826,15 +1948,17 @@ mod tests {
         ));
 
         let editor = authorization_test_user(editor_id, "Test test-events-editor");
-        assert!(require_event_management_authority(
-            &editor,
-            &permissions,
-            &db,
-            first_event,
-            Permission::EventsEdit
-        )
-        .await
-        .is_ok());
+        assert!(
+            require_event_management_authority(
+                &editor,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsEdit
+            )
+            .await
+            .is_ok()
+        );
         assert!(matches!(
             require_event_management_authority(
                 &editor,
@@ -1848,15 +1972,17 @@ mod tests {
         ));
 
         let deleter = authorization_test_user(deleter_id, "Test test-events-deleter");
-        assert!(require_event_management_authority(
-            &deleter,
-            &permissions,
-            &db,
-            first_event,
-            Permission::EventsDelete
-        )
-        .await
-        .is_ok());
+        assert!(
+            require_event_management_authority(
+                &deleter,
+                &permissions,
+                &db,
+                first_event,
+                Permission::EventsDelete
+            )
+            .await
+            .is_ok()
+        );
         assert!(matches!(
             require_event_management_authority(
                 &deleter,

@@ -76,16 +76,16 @@ import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const SLOT_LABELS: Record<BuildSlot, string> = {
-  weapon: 'Weapon',
-  off_hand: 'Off-hand',
-  head: 'Head',
-  armor: 'Armor',
-  shoes: 'Shoes',
-  cape: 'Cape',
-  bag: 'Bag',
-  potion: 'Potion',
-  food: 'Food',
-  mount: 'Mount',
+  weapon: 'equipment.slot.weapon',
+  off_hand: 'equipment.slot.offHand',
+  head: 'equipment.slot.head',
+  armor: 'equipment.slot.armor',
+  shoes: 'equipment.slot.shoes',
+  cape: 'equipment.slot.cape',
+  bag: 'equipment.slot.bag',
+  potion: 'equipment.slot.potion',
+  food: 'equipment.slot.food',
+  mount: 'equipment.slot.mount',
 };
 
 interface AllianceShareStatus {
@@ -192,7 +192,7 @@ const ITEM_TIERS = [
               [disabled]="saving()"
             >
               <app-icon [name]="mode() === 'edit' ? 'check' : 'edit'" size="0.75rem" />
-              {{ mode() === 'edit' ? 'Termina Modifiche' : 'Modifica Equip' }}
+              {{ mode() === 'edit' ? t('comps.doneEditing') : t('comps.editEquipment') }}
             </button>
             <button
               type="button"
@@ -200,7 +200,7 @@ const ITEM_TIERS = [
               (click)="openEditMeta()"
               [disabled]="saving()"
             >
-              Info Build
+              {{ t('comps.editBuildDetails') }}
             </button>
           }
           @if (isGuildTenant() && shareStatus()?.shared) {
@@ -256,10 +256,10 @@ const ITEM_TIERS = [
           <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2 text-warning">
               <app-icon name="edit" size="1rem" />
-              <span><strong>Modalità Modifica Attiva:</strong> Clicca su uno slot dell'equipaggiamento per cambiare pezzo o livello, oppure cambia gli incantesimi direttamente nella lista sottostante.</span>
+              <span>{{ t('comps.equipmentSaveHint') }}</span>
             </div>
-            <button type="button" class="btn btn--sm btn--primary" (click)="mode.set('view')">
-              Fatto
+            <button type="button" class="btn btn--sm btn--primary" (click)="toggleEditMode()" [disabled]="saving()">
+              {{ t('comps.doneEditing') }}
             </button>
           </div>
         }
@@ -320,7 +320,7 @@ const ITEM_TIERS = [
               <!-- Equipment Paperdoll Grid -->
               <app-equipment-grid
                 [items]="activeItems()"
-                [canManage]="canManage() && mode() === 'edit'"
+                [canManage]="canManage() && mode() === 'edit' && !saving()"
                 [editingSlot]="editingSlotFor(activeLoadout())"
                 [draftTier]="draftTier()"
                 [draftQuality]="draftQuality()"
@@ -377,7 +377,7 @@ const ITEM_TIERS = [
                       <div class="shrink-0">
                         <app-ability-bar
                           [slots]="row.slots"
-                          [canManage]="canManage() && mode() === 'edit'"
+                          [canManage]="canManage() && mode() === 'edit' && !saving()"
                           [emptyLabel]="t('comps.noAbility')"
                           (choiceChange)="onAbilityChange(activeLoadout(), row.slot, $event)"
                         />
@@ -548,30 +548,33 @@ const ITEM_TIERS = [
 
       <!-- Edit Metadata Modal Dialog -->
       @if (editMetaOpen()) {
-        <app-dialog [title]="'Modifica Informazioni Build'" size="md" (closed)="closeEditMeta()">
+        <app-dialog [title]="t('comps.editBuildDetails')" size="md" (closed)="closeEditMeta()">
           <form class="grid gap-4" (submit)="saveEdit($event)">
+            <p class="text-xs text-secondary">{{ t('validation.requiredLegend') }}</p>
             <div class="grid gap-4 md:grid-cols-2">
               <label>
-                <span class="label">{{ t('common.name') }}</span>
+                <span class="label">{{ t('common.name') }} <span class="text-error" aria-hidden="true">*</span></span>
                 <input
                   class="input"
                   type="text"
+                  required
                   [value]="editName()"
                   (input)="onEditNameChange($event)"
                 />
               </label>
               <label>
-                <span class="label">{{ t('common.category') }}</span>
+                <span class="label">{{ t('common.category') }} <span class="text-error" aria-hidden="true">*</span></span>
                 <select
                   class="select"
+                  required
                   [value]="editCategoryId()"
                   (change)="onEditCategoryChange($event)"
                 >
-                  <option value="">{{ t('comps.noCategory') }}</option>
                   @for (category of editCategoryOptions(); track category.id) {
                     <option [value]="category.id">{{ category.name }}</option>
                   }
                 </select>
+                <span class="text-xs text-secondary">{{ t('comps.categoryRequired') }}</span>
               </label>
             </div>
             <label>
@@ -750,7 +753,7 @@ export class CompBuildDetailPage {
     return [
       {
         id: current.category_id,
-        name: current.category_name ?? this.t('comps.noCategory'),
+        name: current.category_name ?? `${this.t('common.category')} #${current.category_id}`,
       },
       ...categories,
     ];
@@ -911,7 +914,7 @@ export class CompBuildDetailPage {
   }
 
   protected slotLabel(slot: BuildSlot): string {
-    return SLOT_LABELS[slot] ?? slot;
+    return this.t(SLOT_LABELS[slot] as TranslationKey);
   }
 
   /**
@@ -1135,7 +1138,7 @@ export class CompBuildDetailPage {
 
   protected async saveSlot(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
     const build = this.build();
-    if (!build || !this.draftItemId()) {
+    if (!build || !this.draftItemId() || this.saving()) {
       return;
     }
     this.saving.set(true);
@@ -1180,7 +1183,7 @@ export class CompBuildDetailPage {
 
   protected async removeItem(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
     const build = this.build();
-    if (!build) {
+    if (!build || this.saving()) {
       return;
     }
     this.saving.set(true);
@@ -1338,7 +1341,7 @@ export class CompBuildDetailPage {
   ): Promise<void> {
     const build = this.build();
     const item = this.itemForSlot(loadout, slot);
-    if (!build || !item) {
+    if (!build || !item || this.saving()) {
       return;
     }
 

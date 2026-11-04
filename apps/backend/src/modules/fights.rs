@@ -1494,7 +1494,10 @@ async fn get_fight_trends(
             .all(&db)
             .await?
     };
-    let comp_ids = events.iter().filter_map(|row| row.comp_id).collect::<Vec<_>>();
+    let comp_ids = events
+        .iter()
+        .filter_map(|row| row.comp_id)
+        .collect::<Vec<_>>();
     let comps = if comp_ids.is_empty() {
         Vec::new()
     } else {
@@ -2325,6 +2328,7 @@ mod tests {
             highest_role: "Admin".to_string(),
             user_id: 1,
             super_admin_id: Some("test-admin".to_string()),
+            is_tenant_owner: false,
         }
     }
 

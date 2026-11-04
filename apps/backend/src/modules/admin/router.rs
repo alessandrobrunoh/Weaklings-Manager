@@ -395,7 +395,7 @@ async fn require_discord_catalog(user: &UserContext, perms: &Permissions) -> Res
         Permission::EventsEdit,
     ];
     for perm in allowed {
-        if perms.check(user.is_superadmin(), &user.roles, perm).await {
+        if user.has_permission(perms, perm).await {
             return Ok(());
         }
     }

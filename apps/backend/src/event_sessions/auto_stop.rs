@@ -24,6 +24,8 @@ use crate::modules::events::service::EventService;
 pub async fn auto_stop_expired_sessions(
     db: &DatabaseConnection,
     service: &EventService,
+    control: &DatabaseConnection,
+    tenant_id: &str,
 ) -> Result<(), AppError> {
     let now = Utc::now();
 
@@ -42,7 +44,24 @@ pub async fn auto_stop_expired_sessions(
             continue;
         }
         tracing::info!(event_id = session.id, "auto-stopping expired event session");
-        if let Err(e) = service.stop_event(db, session.id, true).await {
+        let award_xp =
+            match crate::modules::events::sync::is_mirror_event(control, tenant_id, session.id)
+                .await
+            {
+                Ok(is_mirror) => !is_mirror,
+                Err(error) => {
+                    tracing::warn!(
+                        event_id = session.id,
+                        error = %error,
+                        "could not resolve event mirror authority; leaving session live"
+                    );
+                    continue;
+                }
+            };
+        if let Err(e) = service
+            .stop_event_with_xp_policy(db, session.id, true, award_xp)
+            .await
+        {
             tracing::warn!(event_id = session.id, error = %e, "auto-stop failed");
         }
     }

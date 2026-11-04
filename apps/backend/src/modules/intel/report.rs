@@ -1443,13 +1443,9 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
                     .count(),
             )
             .unwrap_or(i64::MAX);
-            let losses = i64::try_from(
-                comp_fights
-                    .iter()
-                    .filter(|f| f.outcome == "defeat")
-                    .count(),
-            )
-            .unwrap_or(i64::MAX);
+            let losses =
+                i64::try_from(comp_fights.iter().filter(|f| f.outcome == "defeat").count())
+                    .unwrap_or(i64::MAX);
             let total = i64::try_from(comp_fights.len()).unwrap_or(i64::MAX);
             // A fight never (re)computed by `fight_analytics` has no
             // `fight_stat` row yet; its kills/deaths contribution is 0, not
@@ -2251,6 +2247,9 @@ mod tests {
             archived_at: None,
             ping_alliance: false,
             alliance_discord_message_id: None,
+            vod_forum_post_enabled: false,
+            vod_forum_post_status: "not_requested".to_string(),
+            vod_forum_thread_id: None,
         });
         raw.participations.push(event_participation::Model {
             id: 1,

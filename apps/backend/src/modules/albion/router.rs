@@ -302,7 +302,8 @@ pub async fn link_player(
     Extension(registry): Extension<TenantRegistry>,
     Json(body): Json<LinkPlayerRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
-    let player = build_service(&cfg, &control.0, &tenant.0).await?
+    let player = build_service(&cfg, &control.0, &tenant.0)
+        .await?
         .get_player(&body.albion_player_id)
         .await?;
 
@@ -548,7 +549,8 @@ pub async fn admin_link_user_handler(
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
 
-    let player = build_service(&cfg, &control.0, &tenant.0).await?
+    let player = build_service(&cfg, &control.0, &tenant.0)
+        .await?
         .get_player(&body.albion_player_id)
         .await?;
 

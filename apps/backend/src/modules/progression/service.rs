@@ -24,9 +24,9 @@ use super::entities::{
 };
 use super::models::{
     AdjustProgressionRequest, AwardMessageRequest, AwardMessageView, AwardOutcome, AwardSpec,
-    CreateSeasonRequest, LeaderboardEntryView, LevelThresholdView, ProgressionMeView,
-    ProgressionSettingsView, SeasonView, UpdateProgressionSettingsRequest, UpdateSeasonRequest,
-    XpLedgerEntryView,
+    CreateSeasonRequest, GuildRankView, LeaderboardEntryView, LevelThresholdView,
+    ProgressionMeView, ProgressionSettingsView, SeasonView, UpdateProgressionSettingsRequest,
+    UpdateSeasonRequest, XpLedgerEntryView,
 };
 use super::status::XpSource;
 
@@ -93,6 +93,7 @@ impl ProgressionService {
             rank: Some(rank),
             multiplier,
             lifetime_xp,
+            guild_rank: rank_tier_for_xp(&settings.guild_ranks_json, xp),
         })
     }
 
@@ -109,6 +110,28 @@ impl ProgressionService {
         db: &DatabaseConnection,
         spec: AwardSpec,
     ) -> Result<AwardOutcome, AppError> {
+        self.award_inner(db, spec, None).await
+    }
+
+    /// Awards against a season already resolved by a durable source record.
+    ///
+    /// Unlike `award`, this does not choose a season based on retry time and
+    /// remains valid after the season is no longer active.
+    pub async fn award_in_season(
+        &self,
+        db: &DatabaseConnection,
+        spec: AwardSpec,
+        season_id: i64,
+    ) -> Result<AwardOutcome, AppError> {
+        self.award_inner(db, spec, Some(season_id)).await
+    }
+
+    async fn award_inner(
+        &self,
+        db: &DatabaseConnection,
+        spec: AwardSpec,
+        pinned_season_id: Option<i64>,
+    ) -> Result<AwardOutcome, AppError> {
         let settings = load_settings(db).await?;
         let base_amount = spec
             .base_amount
@@ -118,7 +141,15 @@ impl ProgressionService {
         }
 
         let now: DateTime<FixedOffset> = Utc::now().into();
-        let Some(season) = find_covering_season(db, now).await? else {
+        let season = match pinned_season_id {
+            Some(season_id) => {
+                ProgressionSeasonEntity::find_by_id(season_id)
+                    .one(db)
+                    .await?
+            }
+            None => find_covering_season(db, now).await?,
+        };
+        let Some(season) = season else {
             return Ok(AwardOutcome::NoActiveSeason);
         };
 
@@ -277,6 +308,11 @@ impl ProgressionService {
             let json = serde_json::to_string(list)
                 .map_err(|err| AppError::Internal(format!("serialize deny list: {err}")))?;
             active.message_channel_deny_list_json = Set(json);
+        }
+        if let Some(ranks) = &req.guild_ranks {
+            validate_guild_ranks(ranks)?;
+            active.guild_ranks_json = Set(serde_json::to_string(ranks)
+                .map_err(|err| AppError::Internal(format!("serialize guild ranks: {err}")))?);
         }
         active.updated_at = Set(Utc::now().into());
         active.updated_by_user_id = Set(Some(editor_user_id));
@@ -895,6 +931,7 @@ fn empty_me(lifetime_xp: i64) -> ProgressionMeView {
         rank: None,
         multiplier: Decimal::ONE,
         lifetime_xp,
+        guild_rank: None,
     }
 }
 
@@ -1106,7 +1143,65 @@ fn settings_view(settings: &ProgressionSettingModel) -> ProgressionSettingsView 
         vod_forum_channel_id: settings.vod_forum_channel_id.clone(),
         message_channel_deny_list: deny_list,
         level_preview,
+        guild_ranks: serde_json::from_str(&settings.guild_ranks_json)
+            .unwrap_or_else(|_| default_guild_ranks()),
     }
+}
+
+fn default_guild_ranks() -> Vec<GuildRankView> {
+    [
+        ("Recruit", 0),
+        ("Active", 400),
+        ("Reliable", 900),
+        ("Veteran", 1_500),
+        ("Core Member", 2_200),
+    ]
+    .into_iter()
+    .map(|(name, min_xp)| GuildRankView {
+        name: name.to_owned(),
+        min_xp,
+        discord_role_id: None,
+    })
+    .collect()
+}
+
+fn validate_guild_ranks(ranks: &[GuildRankView]) -> Result<(), AppError> {
+    if ranks.is_empty() || ranks.len() > 20 || ranks[0].min_xp != 0 {
+        return Err(AppError::Validation(
+            "guild_ranks must contain 1-20 ranks and start at 0 XP".into(),
+        ));
+    }
+    let mut role_ids = std::collections::HashSet::new();
+    for (index, rank) in ranks.iter().enumerate() {
+        if rank.name.trim().is_empty()
+            || rank.name.trim().len() > 40
+            || rank.min_xp < 0
+            || (index > 0 && rank.min_xp <= ranks[index - 1].min_xp)
+        {
+            return Err(AppError::Validation(
+                "rank names must be 1-40 characters and minimum XP must increase from zero".into(),
+            ));
+        }
+        if let Some(role_id) = &rank.discord_role_id {
+            if !role_id.bytes().all(|byte| byte.is_ascii_digit())
+                || !(17..=20).contains(&role_id.len())
+                || !role_ids.insert(role_id)
+            {
+                return Err(AppError::Validation(
+                    "Discord role IDs must be unique 17-20 digit IDs".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rank_tier_for_xp(json: &str, xp: i64) -> Option<GuildRankView> {
+    serde_json::from_str::<Vec<GuildRankView>>(json)
+        .ok()?
+        .into_iter()
+        .take_while(|rank| rank.min_xp <= xp)
+        .last()
 }
 
 async fn deactivate_all_seasons(txn: &sea_orm::DatabaseTransaction) -> Result<(), AppError> {
@@ -1153,6 +1248,41 @@ mod tests {
     use crate::migration::MigratorTrait;
     use chrono::Duration;
     use sea_orm::Database;
+
+    #[test]
+    fn guild_rank_validation_requires_ordered_thresholds_and_unique_roles() {
+        let valid = vec![
+            GuildRankView {
+                name: "Recruit".into(),
+                min_xp: 0,
+                discord_role_id: Some("12345678901234567".into()),
+            },
+            GuildRankView {
+                name: "Veteran".into(),
+                min_xp: 100,
+                discord_role_id: None,
+            },
+        ];
+        assert!(validate_guild_ranks(&valid).is_ok());
+        let mut unordered = valid.clone();
+        unordered[1].min_xp = 0;
+        assert!(validate_guild_ranks(&unordered).is_err());
+        let mut duplicate_role = valid.clone();
+        duplicate_role[1].discord_role_id = valid[0].discord_role_id.clone();
+        assert!(validate_guild_ranks(&duplicate_role).is_err());
+        let mut missing_zero = valid;
+        missing_zero[0].min_xp = 1;
+        assert!(validate_guild_ranks(&missing_zero).is_err());
+    }
+
+    #[test]
+    fn rank_for_xp_selects_highest_reached_threshold() {
+        let json = serde_json::to_string(&default_guild_ranks()).unwrap();
+        assert_eq!(rank_tier_for_xp(&json, 399).unwrap().name, "Recruit");
+        assert_eq!(rank_tier_for_xp(&json, 400).unwrap().name, "Active");
+        assert_eq!(rank_tier_for_xp(&json, 9_000).unwrap().name, "Core Member");
+        assert!(rank_tier_for_xp("invalid", 100).is_none());
+    }
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:").await.expect("connect");

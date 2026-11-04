@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -247,7 +248,7 @@ const STATS_FETCH_LIMIT = 1000;
                   {{ approvedMineCount() }}
                 </p>
                 <p class="text-xs text-success mt-1 truncate">
-                  Approved & paid
+                  {{ t('regears.stat.approved') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
@@ -286,7 +287,7 @@ const STATS_FETCH_LIMIT = 1000;
                   {{ approvedMineCount() }}
                 </p>
                 <p class="text-xs text-success mt-1 truncate">
-                  Reimbursed deaths
+                  {{ t('regears.stat.approved') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
@@ -321,10 +322,10 @@ const STATS_FETCH_LIMIT = 1000;
                   {{ t('regears.stat.totalReimbursed') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
-                  {{ formatSilver(totalEstimatedValue()) }}
+                  {{ formatSilver(approvedTotal()) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Total silver estimated
+                  {{ t('regears.stat.approvedAmount') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
@@ -417,10 +418,19 @@ const STATS_FETCH_LIMIT = 1000;
               {{ t('regears.request') }}
             </button>
           } @else {
-            <span class="btn btn--ghost btn--sm text-xs inline-flex items-center gap-1">
-              <span>{{ t('common.open') }}</span>
+            <a
+              class="btn btn--ghost btn--sm text-xs inline-flex items-center gap-1"
+              [routerLink]="['/regears', row.id]"
+              [attr.aria-label]="(row.status === 'pending' && canAdjudicate() ? t('regears.reviewRequest') : t('regears.viewDetails')) + ': ' + row.player_name"
+              (click)="$event.stopPropagation()"
+            >
+              <span>{{
+                row.status === 'pending' && canAdjudicate()
+                  ? t('regears.reviewRequest')
+                  : t('regears.viewDetails')
+              }}</span>
               &rarr;
-            </span>
+            </a>
           }
         </ng-template>
       </app-data-table>
@@ -461,7 +471,7 @@ export class Regears {
     () => this.statsDeaths().filter((d) => d.status === 'rejected').length,
   );
   /** Sums `final_amount` (the officer-approved payout), not the pre-adjudication estimate. */
-  protected readonly totalEstimatedValue = computed(() =>
+  protected readonly approvedTotal = computed(() =>
     this.statsDeaths().reduce((sum, d) => sum + (Number(d.final_amount) || 0), 0),
   );
 
@@ -538,7 +548,17 @@ export class Regears {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    void this.load();
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const requested = params.get('tab') ?? 'mine';
+      const tab = isRegearTab(requested) && (requested === 'mine' || this.canAdjudicate())
+        ? requested
+        : 'mine';
+      if (tab !== this.tab()) {
+        this.switchTab(tab);
+      } else {
+        void this.load();
+      }
+    });
   }
 
   protected switchTab(next: string): void {

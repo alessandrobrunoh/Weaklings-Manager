@@ -19,6 +19,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { Icon } from '../../shared/components/icon/icon';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
 import {
@@ -61,6 +62,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     DataTable,
     DataTableCell,
     Dialog,
+    Checkbox,
     Icon,
     PageHeader,
     PageStack,
@@ -284,9 +286,10 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 
     @if (createOpen()) {
       <app-dialog [title]="t('events.new')" size="lg" (closed)="closeCreate()">
-        <form id="create-event-form" class="grid gap-4" (submit)="onCreateSubmit($event)">
+        <form id="create-event-form" class="grid gap-3" (submit)="onCreateSubmit($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label>
-            <span class="label">{{ t('common.name') }}</span>
+            <span class="label">{{ t('common.name') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"
@@ -301,21 +304,23 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             <span class="label">{{ t('common.description') }}</span>
             <textarea
               class="textarea"
-              rows="3"
+              rows="2"
               [value]="draftDescription()"
               (input)="onDescriptionChange($event)"
             ></textarea>
           </label>
 
-          <div class="grid gap-4 sm:grid-cols-5">
+          <div class="grid gap-3 sm:grid-cols-2">
             <div class="grid gap-2">
-              <span class="label">{{ t('events.detail.comp') }}</span>
+              <label class="label" for="event-comp">{{ t('events.detail.comp') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></label>
               <app-ownership-scope-toggle
                 [scope]="compScope()"
                 (scopeChange)="setCompScope($event)"
               />
               <select
+                id="event-comp"
                 class="select"
+                required
                 [value]="draftCompId()"
                 [disabled]="compsLoading()"
                 (change)="onCompChange($event)"
@@ -349,17 +354,17 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             </label>
 
             <label>
-              <span class="label">{{ t('common.date') }}</span>
+              <span class="label">{{ t('common.date') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
               <input class="input" type="date" required [attr.min]="minEventDate" [value]="draftEventDate()" (input)="onEventDateChange($event)" />
             </label>
 
             <label>
-              <span class="label">Mass</span>
+              <span class="label">Mass <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
               <input class="input" type="time" required [value]="draftMassTime()" (input)="onMassTimeChange($event)" />
             </label>
 
             <label>
-              <span class="label">Start</span>
+              <span class="label">Start <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
               <input class="input" type="time" required [value]="draftStartTime()" (input)="onStartTimeChange($event)" />
             </label>
           </div>
@@ -388,62 +393,30 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           </fieldset>
 
           <div class="grid gap-3 sm:grid-cols-2">
-            <label class="flex items-center gap-2">
-              <input
-                class="checkbox"
-                type="checkbox"
-                [checked]="draftCallToArms()"
-                (change)="onCallToArmsChange($event)"
-              />
-              <span>{{ t('events.call_to_arms') }}</span>
-            </label>
-            <label class="flex items-center gap-2">
-              <input
-                class="checkbox"
-                type="checkbox"
-                [checked]="draftRegear()"
-                (change)="onRegearChange($event)"
-              />
-              <span>{{ t('events.regear') }}</span>
-            </label>
+            <app-checkbox inputId="event-call-to-arms" [label]="t('events.call_to_arms')"
+              [checked]="draftCallToArms()" (checkedChange)="draftCallToArms.set($event)" />
+            <app-checkbox inputId="event-regear" [label]="t('events.regear')"
+              [checked]="draftRegear()" (checkedChange)="draftRegear.set($event)" />
+            <app-checkbox class="sm:col-span-2" inputId="event-vod-forum-post"
+              [label]="t('events.vodForumPost')"
+              [hint]="t('events.vodForumPostHint')"
+              [checked]="draftVodForumPost()" (checkedChange)="draftVodForumPost.set($event)" />
             @if (canPingAlliance()) {
-              <label class="flex items-start gap-2 sm:col-span-2">
-                <input
-                  class="checkbox mt-0.5"
-                  type="checkbox"
-                  [checked]="draftPingAlliance()"
-                  (change)="onPingAllianceChange($event)"
-                />
-                <span>
-                  {{ t('events.pingAlliance') }}
-                  <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('events.pingAllianceHint') }}
-                  </span>
-                </span>
-              </label>
+              <app-checkbox class="sm:col-span-2" inputId="event-ping-alliance"
+                [label]="t('events.pingAlliance')" [hint]="t('events.pingAllianceHint')"
+                [checked]="draftPingAlliance()" (checkedChange)="draftPingAlliance.set($event)" />
             }
           </div>
 
-          <label class="flex items-start gap-2">
-            <input
-              class="checkbox mt-0.5"
-              type="checkbox"
-              [checked]="draftCreateSplit()"
-              (change)="onCreateSplitChange($event)"
-            />
-            <span>
-              {{ t('events.createSplit') }}
-              <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
-                {{ t('events.createSplitHint') }}
-              </span>
-            </span>
-          </label>
+          <app-checkbox inputId="event-create-split" [label]="t('events.createSplit')"
+            [hint]="t('events.createSplitHint')" [checked]="draftCreateSplit()"
+            (checkedChange)="draftCreateSplit.set($event)" />
 
           @if (draftCreateSplit()) {
             <div class="grid gap-3 sm:grid-cols-2">
               <label>
-                <span class="label">{{ t('splits.island') }}</span>
-                <select class="select" [value]="draftIslandId()" (change)="onIslandChange($event)">
+                <span class="label">{{ t('splits.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
+                <select class="select" required [value]="draftIslandId()" (change)="onIslandChange($event)">
                   <option value="">{{ t('splits.pick_island') }}</option>
                   @for (island of islands(); track island.id) {
                     <option [value]="island.id">{{ cityLabel(island.city) }} · {{ island.name }}</option>
@@ -451,9 +424,10 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                 </select>
               </label>
               <label>
-                <span class="label">{{ t('splits.tab') }}</span>
+                <span class="label">{{ t('splits.tab') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
                 <select
                   class="select"
+                  required
                   [value]="draftTabId()"
                   [disabled]="!draftIslandId()"
                   (change)="onTabChange($event)"
@@ -618,6 +592,7 @@ export class Events {
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
   protected readonly draftPingAlliance = signal(false);
+  protected readonly draftVodForumPost = signal(true);
   protected readonly allianceId = signal<string | null>(null);
   protected readonly allianceMembershipStatus = signal<string | null>(null);
   protected readonly canPingAlliance = computed(
@@ -875,22 +850,6 @@ export class Events {
     this.compError.set(null);
   }
 
-  protected onCreateSplitChange(event: Event): void {
-    this.draftCreateSplit.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onCallToArmsChange(event: Event): void {
-    this.draftCallToArms.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onRegearChange(event: Event): void {
-    this.draftRegear.set((event.target as HTMLInputElement).checked);
-  }
-
-  protected onPingAllianceChange(event: Event): void {
-    this.draftPingAlliance.set((event.target as HTMLInputElement).checked);
-  }
-
   protected eventRoleOptions() {
     return roleSelectOptionsMany(this.discordRoles(), this.draftDiscordRoleIds());
   }
@@ -953,6 +912,7 @@ export class Events {
       call_to_arms: this.draftCallToArms(),
       regear: this.draftRegear(),
       ping_alliance: this.canPingAlliance() && this.draftPingAlliance(),
+      vod_forum_post_enabled: this.draftVodForumPost(),
       discord_role_ids: this.draftDiscordRoleIds(),
       create_split: this.draftCreateSplit(),
       island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
@@ -1014,6 +974,7 @@ export class Events {
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);
     this.draftPingAlliance.set(false);
+    this.draftVodForumPost.set(true);
     this.draftDiscordRoleIds.set([]);
     this.roleError.set(null);
     this.draftCreateSplit.set(false);

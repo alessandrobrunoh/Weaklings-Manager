@@ -296,6 +296,12 @@ const PODIUM_SIZE = 3;
                     </span>
                   </div>
                   <p class="season-standing__hint">
+                    @if (progressionMe()?.guild_rank; as guildRank) {
+                      <span class="font-semibold">
+                        {{ t('season.hero.guildRank', { rank: guildRank.name }) }}
+                      </span>
+                      <span> · </span>
+                    }
                     @if (standing.xpToNext > 0) {
                       {{ t('season.hero.myNextLevel', { xp: formatValue(standing.xpToNext), next: standing.level + 1 }) }}
                     } @else {

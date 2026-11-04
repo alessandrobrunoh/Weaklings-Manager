@@ -224,3 +224,39 @@ pub struct DeletedCount {
     #[schema(example = 32)]
     pub deleted_count: u64,
 }
+
+/// Request to obtain an officer-approved settlement quote for one debtor.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SettlementQuoteRequest {
+    pub player_name: String,
+}
+
+/// Server-calculated price and debt to show before the officer confirms.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SettlementQuoteView {
+    pub quote_id: String,
+    pub player_name: String,
+    #[schema(value_type = String)]
+    pub debt: Decimal,
+    #[schema(value_type = String)]
+    pub unit_price: Decimal,
+    #[schema(value_type = String)]
+    pub total: Decimal,
+    pub expires_at: String,
+}
+
+/// Result of an idempotent quote confirmation.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SettlementResult {
+    pub quote_id: String,
+    pub siphoned_entry_id: i64,
+    pub transaction_id: i64,
+    pub player_name: String,
+    #[schema(value_type = String)]
+    pub debt: Decimal,
+    #[schema(value_type = String)]
+    pub unit_price: Decimal,
+    #[schema(value_type = String)]
+    pub total: Decimal,
+    pub replayed: bool,
+}

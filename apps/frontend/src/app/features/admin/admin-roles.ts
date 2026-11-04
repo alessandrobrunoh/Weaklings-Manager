@@ -185,8 +185,14 @@ interface NewRoleDraft {
     @if (createOpen()) {
       <app-dialog [title]="t('admin.roles.create')" (closed)="closeCreate()">
         <form id="create-role-form" class="grid gap-4" (submit)="createRole($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            {{ t('validation.requiredLegend') }}
+          </p>
           <label>
-            <span class="label">{{ t('admin.roles.newName') }}</span>
+            <span class="label">
+              {{ t('admin.roles.newName') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
             <input
               class="input"
               type="text"

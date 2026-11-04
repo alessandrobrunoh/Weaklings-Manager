@@ -137,6 +137,25 @@ describe('AdminIslandDetail', () => {
     expect(compiled.textContent).toContain('Silver Stash');
   });
 
+  it('marks required island and tab names without marking sort order', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const overview = compiled.querySelector('form') as HTMLFormElement;
+    const name = overview.querySelector('input') as HTMLInputElement;
+    expect(overview.textContent).toContain('validation.requiredLegend');
+    expect(name.required).toBe(true);
+    expect(name.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
+    name.value = '';
+    expect(overview.checkValidity()).toBe(false);
+
+    fixture.componentInstance['openEditTab'](mockIsland.tabs[0]);
+    fixture.detectChanges();
+    const edit = compiled.querySelector('#edit-tab-form') as HTMLFormElement;
+    expect(edit.textContent).toContain('validation.requiredLegend');
+    expect(edit.querySelectorAll('input[required]')).toHaveLength(1);
+    expect(edit.querySelector('input[type="number"]')?.hasAttribute('required')).toBe(false);
+    expect(edit.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(1);
+  });
+
   it('saves island name and city changes via PATCH', async () => {
     const updatedIsland: SplitIsland = {
       ...mockIsland,

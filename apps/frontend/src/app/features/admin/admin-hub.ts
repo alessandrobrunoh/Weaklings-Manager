@@ -251,6 +251,7 @@ import type { AuditLog } from '../audit/audit';
               </p>
               <a
                 routerLink="/regears"
+                [queryParams]="{ tab: 'queue' }"
                 class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
               >
                 <span>{{ t('admin.hub.goToQueue') }}</span>

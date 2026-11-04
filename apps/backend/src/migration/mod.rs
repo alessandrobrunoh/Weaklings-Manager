@@ -131,6 +131,10 @@ mod m20260922_000005_add_discord_ticket_settings;
 mod m20261026_000001_add_event_kind_to_events;
 mod m20261026_000002_add_flash_mass_channel_setting;
 mod m20261026_000003_add_event_timezone_setting;
+mod m20261027_000001_add_event_vod_forum_posts;
+mod m20261027_000002_add_progression_guild_ranks;
+mod m20261028_000001_create_siphoned_settlement_quotes;
+mod m20261028_000002_create_event_completion_xp_outbox;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -266,6 +270,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261026_000001_add_event_kind_to_events::Migration),
             Box::new(m20261026_000002_add_flash_mass_channel_setting::Migration),
             Box::new(m20261026_000003_add_event_timezone_setting::Migration),
+            Box::new(m20261027_000001_add_event_vod_forum_posts::Migration),
+            Box::new(m20261027_000002_add_progression_guild_ranks::Migration),
+            Box::new(m20261028_000001_create_siphoned_settlement_quotes::Migration),
+            Box::new(m20261028_000002_create_event_completion_xp_outbox::Migration),
         ]
     }
 }

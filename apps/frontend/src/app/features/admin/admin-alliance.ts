@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   AllianceContext,
+  AllianceMember,
   DiscordRoleView,
   GuildSettingsView,
   UpdateGuildSettingsRequest,
@@ -47,6 +48,13 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
               </button>
             </div>
           }
+          @if (canLeave()) {
+            <div>
+              <button type="button" class="btn btn--outline btn--sm" (click)="leaveAlliance()" [disabled]="saving()">
+                {{ t('admin.alliance.leave') }}
+              </button>
+            </div>
+          }
         </section>
 
         <form class="grid gap-4" (submit)="save($event)">
@@ -75,6 +83,16 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
                     <td class="py-2">{{ member.name }}</td>
                     <td class="py-2">
                       <span class="chip text-xs">{{ member.status }}</span>
+                      @if (isAlliance() && member.status === 'left') {
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm ml-2"
+                          (click)="reinvite(member.guild_tenant_id, member.name)"
+                          [disabled]="saving()"
+                        >
+                          {{ t('admin.alliance.reinvite') }}
+                        </button>
+                      }
                     </td>
                     @if (isAlliance()) {
                       <td class="py-2 min-w-56">
@@ -184,6 +202,12 @@ export class AdminAlliance {
   protected readonly canAccept = computed(
     () => this.context()?.kind === 'guild' && this.context()?.membership_status === 'pending',
   );
+  protected readonly canLeave = computed(
+    () =>
+      this.context()?.kind === 'guild' &&
+      this.context()?.membership_status === 'active' &&
+      this.auth.hasPermission('alliance.leave'),
+  );
   protected readonly allianceRoleHint = computed(() =>
     this.t(
       this.isAlliance() ? 'admin.allianceRole.hintAlliance' : 'admin.allianceRole.hintGuild',
@@ -222,6 +246,9 @@ export class AdminAlliance {
     }
     if (ctx.membership_status === 'active' && ctx.alliance_name) {
       return this.t('admin.alliance.activeNamed', { name: ctx.alliance_name });
+    }
+    if (ctx.membership_status === 'left' && ctx.alliance_name) {
+      return this.t('admin.alliance.leftNamed', { name: ctx.alliance_name });
     }
     return this.t('admin.alliance.none');
   }
@@ -265,6 +292,56 @@ export class AdminAlliance {
         this.api.post(`api/alliances/${ctx.alliance_id}/members/${guildId}/accept`, {}),
       );
       this.toasts.success(this.t('admin.alliance.accepted'));
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async reinvite(guildId: string, name: string): Promise<void> {
+    const ctx = this.context();
+    if (!ctx?.alliance_id) {
+      return;
+    }
+    if (!globalThis.confirm(this.t('admin.alliance.reinviteConfirm', { name }))) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const invited = await firstValueFrom(
+        this.api.post<AllianceMember>(
+          `api/alliances/${ctx.alliance_id}/members/${guildId}/invite`,
+          {},
+        ),
+      );
+      this.toasts.success(
+        this.t(invited.status === 'active' ? 'admin.alliance.rejoined' : 'admin.alliance.reinvited'),
+      );
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async leaveAlliance(): Promise<void> {
+    const ctx = this.context();
+    const guildId = this.auth.profile()?.tenant_id;
+    if (!ctx?.alliance_id || !ctx.alliance_name || !guildId) {
+      return;
+    }
+    if (!globalThis.confirm(this.t('admin.alliance.leaveConfirm', { name: ctx.alliance_name }))) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(
+        this.api.post(`api/alliances/${ctx.alliance_id}/members/${guildId}/leave`, {}),
+      );
+      this.toasts.success(this.t('admin.alliance.leftDone'));
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

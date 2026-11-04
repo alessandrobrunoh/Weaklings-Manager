@@ -189,7 +189,8 @@ impl TenantRegistry {
         let status_after = self.tenant_status(tenant_id).await.unwrap_or_default();
         if !albion_scope::worker_start_allowed(&status_before, &status_after) {
             stop.store(true, Ordering::Relaxed);
-            self.running_sync.remove_if(tenant_id, |_, current| Arc::ptr_eq(current, &stop));
+            self.running_sync
+                .remove_if(tenant_id, |_, current| Arc::ptr_eq(current, &stop));
             tracing::info!(tenant_id, "sync workers not started; tenant is not active");
             return;
         }
@@ -208,7 +209,9 @@ impl TenantRegistry {
             .await
             .map_err(AppError::Database)?;
         let Some(row) = row else {
-            return Err(AppError::NotFound(format!("tenant {tenant_id} is not registered")));
+            return Err(AppError::NotFound(format!(
+                "tenant {tenant_id} is not registered"
+            )));
         };
         row.try_get_by_index(0).map_err(AppError::Database)
     }
@@ -320,7 +323,8 @@ impl TenantRegistry {
             );
         } else {
             let kind = lookup_tenant_kind(&self.control_db, tenant_id).await?;
-            self.ensure_sync_workers(ctx.db.clone(), tenant_id, &kind).await;
+            self.ensure_sync_workers(ctx.db.clone(), tenant_id, &kind)
+                .await;
         }
         Ok(ctx)
     }

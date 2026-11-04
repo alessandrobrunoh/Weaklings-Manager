@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 
 import type { BuildItemSlot, BuildSlot, OpenAlbionItem } from '../../../core/models/api.models';
 import type { AbilitySlotView } from '../../data/albion-abilities';
@@ -16,6 +16,7 @@ import {
 import { albionItemSupportsQuality } from '../../data/albion-equipment-catalog';
 import { AbilityBar, type AbilityChoiceChange } from '../ability-bar/ability-bar';
 import { Dialog } from '../dialog/dialog';
+import { TranslateService } from '../../../core/services/translate.service';
 
 /**
  * Canonical character-sheet slot order.
@@ -38,16 +39,16 @@ const SLOT_ORDER: readonly BuildSlot[] = [
 ];
 
 const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
-  bag: 'Bag',
-  head: 'Helmet',
-  cape: 'Cape',
-  weapon: 'Weapon',
-  armor: 'Armor',
-  off_hand: 'Off-hand',
-  potion: 'Potion',
-  shoes: 'Boots',
-  food: 'Food',
-  mount: 'Mount',
+  bag: 'equipment.slot.bag',
+  head: 'equipment.slot.head',
+  cape: 'equipment.slot.cape',
+  weapon: 'equipment.slot.weapon',
+  armor: 'equipment.slot.armor',
+  off_hand: 'equipment.slot.offHand',
+  potion: 'equipment.slot.potion',
+  shoes: 'equipment.slot.shoes',
+  food: 'equipment.slot.food',
+  mount: 'equipment.slot.mount',
 };
 
 /**
@@ -176,7 +177,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
     }
   `,
   template: `
-    <div class="equipment-grid equipment-grid--paperdoll" role="group" aria-label="Equipment">
+    <div class="equipment-grid equipment-grid--paperdoll" role="group" [attr.aria-label]="t('equipment.title')">
       @for (slot of slots; track slot) {
         @let entry = entryForSlot(slot);
         <div
@@ -222,8 +223,8 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
               <button
                 type="button"
                 class="equipment-slot__clear"
-                [attr.aria-label]="'Remove ' + slotLabel(slot)"
-                [title]="'Clear ' + slotLabel(slot)"
+                [attr.aria-label]="t('equipment.removeSlot', { slot: slotLabel(slot) })"
+                [title]="t('equipment.clearSlot', { slot: slotLabel(slot) })"
                 (click)="onClearClick($event, slot)"
               >
                 ×
@@ -232,33 +233,33 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
             <button
               type="button"
               class="equipment-slot__trigger"
-              [attr.aria-label]="'Edit ' + slotLabel(slot)"
+              [attr.aria-label]="t('equipment.editSlot', { slot: slotLabel(slot) })"
               (click)="slotToggle.emit(slot)"
             ></button>
           }
 
           @if (editingSlot() === slot) {
             <app-dialog
-              [title]="slotLabel(slot) + ' — scegli equipaggiamento'"
-              subtitle="Cerca per nome e scegli direttamente l'icona dell'oggetto."
+              [title]="t('equipment.pickerTitle', { slot: slotLabel(slot) })"
+              [subtitle]="t('equipment.pickerSubtitle')"
               size="xl"
               (closed)="cancelEdit.emit()"
             >
               <div class="grid gap-4">
                 <div class="equipment-picker__toolbar">
                   <label class="equipment-picker__search text-left">
-                    <span class="label">Cerca oggetto</span>
+                    <span class="label">{{ t('equipment.searchLabel') }}</span>
                     <input
                       class="input"
                       type="search"
-                      placeholder="Nome oggetto…"
+                      [placeholder]="t('equipment.searchPlaceholder')"
                       [value]="draftSearch()"
                       (input)="onSearchInput($event)"
                     />
                   </label>
 
                 <label class="text-left">
-                  <span class="label">Tier</span>
+                  <span class="label">{{ t('equipment.tier') }}</span>
                   <select class="select" [value]="draftTier()" (change)="onTierChange($event)">
                     @for (tier of tiers(); track tier) {
                       <option [value]="tier">{{ tier }}</option>
@@ -268,14 +269,14 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
 
                 @if (supportsEnchantmentForSlot(slot)) {
                   <label class="text-left">
-                    <span class="label">Enchantment</span>
+                    <span class="label">{{ t('equipment.enchantment') }}</span>
                     <select
                       class="select"
                       [value]="draftEnchantment()"
                       (change)="onEnchantmentChange($event)"
                     >
                       @for (level of enchantments; track level) {
-                        <option [value]="level">{{ level === 0 ? 'Plain' : '.' + level }}</option>
+                        <option [value]="level">{{ level === 0 ? t('equipment.plain') : '.' + level }}</option>
                       }
                     </select>
                   </label>
@@ -283,7 +284,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
 
                 @if (supportsQualityForSlot(slot)) {
                   <label class="text-left">
-                    <span class="label">Quality</span>
+                    <span class="label">{{ t('equipment.quality') }}</span>
                     <select class="select" [value]="draftQuality()" (change)="onQualityChange($event)">
                       @for (grade of qualities; track grade.id) {
                         <option [value]="grade.id">{{ grade.label }}</option>
@@ -296,19 +297,19 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
 
                 <div class="text-left">
                   <div class="flex items-center justify-between gap-3">
-                    <span class="label">Oggetti disponibili</span>
+                    <span class="label">{{ t('equipment.availableItems') }}</span>
                     <span class="chip">{{ searchResults().length }}</span>
                   </div>
                   <div
                     class="equipment-picker__results"
                     role="listbox"
-                    aria-label="Oggetti disponibili"
+                    [attr.aria-label]="t('equipment.availableItems')"
                     [attr.aria-busy]="searchLoading()"
                   >
                     @if (searchLoading()) {
-                      <p class="equipment-picker__empty" role="status">Ricerca in corso…</p>
+                      <p class="equipment-picker__empty" role="status">{{ t('equipment.searching') }}</p>
                     } @else if (searchResults().length === 0) {
-                      <p class="equipment-picker__empty">Nessun oggetto disponibile per questo slot.</p>
+                      <p class="equipment-picker__empty">{{ t('equipment.noItems') }}</p>
                     } @else {
                       @for (item of searchResults(); track item.id) {
                         <button
@@ -333,7 +334,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                             <small>{{ item.tier }} · {{ item.identifier ?? '' }}</small>
                           </span>
                           @if (isSelected(item)) {
-                            <span class="equipment-picker__check" aria-hidden="true">✓ Selezionato</span>
+                            <span class="equipment-picker__check" aria-hidden="true">✓ {{ t('equipment.selected') }}</span>
                           }
                         </button>
                       }
@@ -343,7 +344,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
 
                 @if (draftAbilitySlots().length > 0) {
                   <div class="text-left">
-                    <span class="label">Abilities</span>
+                    <span class="label">{{ t('equipment.abilities') }}</span>
                     <app-ability-bar
                       [slots]="draftAbilitySlots()"
                       [canManage]="true"
@@ -354,7 +355,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
               </div>
               <div class="flex justify-between gap-2 mt-4">
                 <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEdit.emit()">
-                  Cancel
+                  {{ t('common.cancel') }}
                 </button>
                 <button
                   type="button"
@@ -362,7 +363,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   [disabled]="!draftItemId()"
                   (click)="saveSlot.emit(slot)"
                 >
-                  Save
+                  {{ t('common.save') }}
                 </button>
               </div>
             </app-dialog>
@@ -373,6 +374,10 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
   `,
 })
 export class EquipmentGrid {
+  private readonly translate = inject(TranslateService);
+  protected readonly t = (key: Parameters<TranslateService['t']>[0], params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
+
   /** All slots currently configured for the build (draft or persisted). */
   readonly items = input<readonly BuildItemSlot[]>([]);
 
@@ -462,7 +467,7 @@ export class EquipmentGrid {
   }
 
   protected slotLabel(slot: BuildSlot): string {
-    return SLOT_LABELS[slot] ?? slot;
+    return this.t(SLOT_LABELS[slot] as Parameters<TranslateService['t']>[0]);
   }
 
   protected isSelected(item: OpenAlbionItem): boolean {

@@ -152,6 +152,9 @@ interface BattleScopeStats {
       font-variant-numeric: tabular-nums;
       font-family: var(--font-mono);
     }
+    .battle-list__scope {
+      border-inline-start: 3px solid var(--color-primary);
+    }
   `,
   template: `
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
@@ -322,6 +325,29 @@ interface BattleScopeStats {
         </section>
       }
 
+      <section class="battle-list__scope surface flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" aria-live="polite">
+        <div class="min-w-0">
+          <h2 class="font-semibold text-sm text-[var(--color-text)]">
+            {{ t(tab() === 'guild' ? 'battles.scope.guildTitle' : 'battles.scope.personalTitle') }}
+          </h2>
+          <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+            @if (tab() === 'guild') {
+              {{ t('battles.scope.guildDescription') }}
+            } @else {
+              {{ t('battles.scope.personalDescription') }}
+            }
+          </p>
+        </div>
+        @if (tab() === 'me') {
+          <span class="chip chip--neutral shrink-0 text-xs">{{ t('battles.scope.selectHint') }}</span>
+        } @else {
+          <a routerLink="/fights/trends" class="btn btn--outline btn--sm shrink-0">
+            <app-icon name="chart" size="0.875rem" />
+            {{ t('battles.scope.reviewTrends') }}
+          </a>
+        }
+      </section>
+
       @for (_ of [tab()]; track _) {
         <app-data-table
           [columns]="columns()"
@@ -418,7 +444,7 @@ interface BattleScopeStats {
       }
 
       @if (tab() === 'me' && selectedBattleIds().length > 0) {
-        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl backdrop-blur">
+        <div class="fixed inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-2xl backdrop-blur sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:justify-center sm:gap-3 sm:px-5">
           <span class="font-mono text-xs font-bold text-[var(--color-text)] bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)] px-2 py-0.5 rounded-full">
             {{ selectedBattleIds().length }} {{ t('battles.selected') }}
           </span>

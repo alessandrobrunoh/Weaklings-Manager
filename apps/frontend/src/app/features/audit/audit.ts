@@ -1,6 +1,6 @@
 import { DatePipe, JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { PaginatedData } from '../../core/models/api.models';
@@ -102,6 +102,7 @@ const ENTITY_FILTERS = [
     JsonPipe,
     Icon,
     StatCard,
+    RouterLink,
     TooltipDirective,
   ],
   template: `
@@ -124,6 +125,7 @@ const ENTITY_FILTERS = [
       </app-page-header>
 
       <app-page-stack>
+        @if (!loading() && !loadFailed()) {
         <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Audit summary">
         <app-stat-card
           [label]="t('audit.stat.total')"
@@ -133,27 +135,21 @@ const ENTITY_FILTERS = [
           tone="primary"
         />
         <app-stat-card
-          [label]="t('audit.stat.today')"
-          [value]="todayCount()"
-          [sub]="'Pagina corrente'"
-          icon="calendar"
-          tone="neutral"
-        />
-        <app-stat-card
           [label]="t('audit.stat.system')"
           [value]="systemCount()"
-          [sub]="'Pagina corrente'"
+          [sub]="t('common.currentPage')"
           icon="shield"
           tone="warning"
         />
         <app-stat-card
           [label]="t('audit.stat.user')"
           [value]="userCount()"
-          [sub]="'Pagina corrente'"
+          [sub]="t('common.currentPage')"
           icon="users"
           tone="success"
         />
         </section>
+        }
 
         <app-data-table
           [columns]="columns"
@@ -182,8 +178,8 @@ const ENTITY_FILTERS = [
         </ng-template>
         <ng-template dataTableCell="user" let-row>
           @if (row.user_id) {
-            <span class="chip chip--info" style="font-size: 0.8rem; padding: 2px 6px"
-              >User #{{ row.user_id }}</span
+            <a class="chip chip--info" style="font-size: 0.8rem; padding: 2px 6px" [routerLink]="['/users', row.user_id]"
+              >{{ t('audit.user') }} #{{ row.user_id }}</a
             >
           } @else {
             <span style="color: var(--color-text-secondary); font-size: 0.8rem;">{{
@@ -220,10 +216,6 @@ export class Audit {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
 
-  protected readonly todayCount = computed(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return this.logs().filter((l) => l.created_at.startsWith(today)).length;
-  });
   protected readonly systemCount = computed(() =>
     this.logs().filter((l) => !l.user_id).length,
   );
@@ -292,7 +284,7 @@ export class Audit {
   }
 
   protected async load(): Promise<void> {
-    this.loading.set(this.logs().length === 0);
+    this.loading.set(true);
     this.loadFailed.set(false);
     try {
       const query = this.tableQuery();

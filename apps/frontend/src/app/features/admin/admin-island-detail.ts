@@ -86,6 +86,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 
             @if (canMutateCatalog()) {
               <form class="grid gap-4" (submit)="onSaveIsland($event)">
+                <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
                 <div class="grid gap-4 sm:grid-cols-2">
                   <label class="block">
                     <span class="label font-medium">{{ t('admin.islands.location') }}</span>
@@ -101,7 +102,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
                   </label>
 
                   <label class="block">
-                    <span class="label font-medium">{{ t('admin.islands.island') }}</span>
+                    <span class="label font-medium">{{ t('admin.islands.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
                     <input
                       class="input"
                       type="text"
@@ -233,8 +234,9 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
     @if (addTabOpen()) {
       <app-dialog [title]="t('admin.islands.addTab')" size="sm" (closed)="addTabOpen.set(false)">
         <form id="add-tab-form" class="grid gap-3" (submit)="onAddTabSubmit($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
-            <span class="label">{{ t('admin.islands.detail.tabName') }}</span>
+            <span class="label">{{ t('admin.islands.detail.tabName') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"
@@ -269,8 +271,9 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         (closed)="editingTab.set(null)"
       >
         <form id="edit-tab-form" class="grid gap-3" (submit)="onEditTabSubmit($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
-            <span class="label">{{ t('admin.islands.detail.tabName') }}</span>
+            <span class="label">{{ t('admin.islands.detail.tabName') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
               class="input"
               type="text"
