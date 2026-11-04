@@ -24,6 +24,8 @@ pub struct Model {
     pub discord_flash_mass_channel_id: Option<String>,
     /// Forum where events with delivery `forum` are posted.
     pub discord_events_forum_channel_id: Option<String>,
+    /// How events are published: `calendar`, `message`, or `forum`.
+    pub discord_event_delivery: String,
     /// Forum tag for a scheduled event post.
     pub discord_event_scheduled_tag_id: Option<String>,
     /// Forum tag for a live event post.

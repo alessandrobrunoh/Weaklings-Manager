@@ -7436,7 +7436,6 @@ mod tests {
         event::ActiveModel {
             id: Set(event.id),
             vod_forum_post_enabled: Set(false),
-            discord_delivery: "message".to_string(),
             vod_forum_post_status: Set("pending".to_string()),
             ..Default::default()
         }

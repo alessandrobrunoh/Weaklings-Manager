@@ -2830,6 +2830,7 @@ export interface GuildSettingsView {
   discord_battles_cta_channel_id: string | null;
   discord_flash_mass_channel_id: string | null;
   discord_events_forum_channel_id?: string | null;
+  discord_event_delivery?: 'calendar' | 'message' | 'forum';
   discord_event_scheduled_tag_id?: string | null;
   discord_event_live_tag_id?: string | null;
   discord_event_cta_tag_id?: string | null;

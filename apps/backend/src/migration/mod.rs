@@ -136,6 +136,7 @@ mod m20261027_000002_add_progression_guild_ranks;
 mod m20261028_000001_create_siphoned_settlement_quotes;
 mod m20261028_000002_create_event_completion_xp_outbox;
 mod m20261028_000003_add_event_discord_delivery;
+mod m20261028_000004_guild_event_delivery;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -276,6 +277,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261028_000001_create_siphoned_settlement_quotes::Migration),
             Box::new(m20261028_000002_create_event_completion_xp_outbox::Migration),
             Box::new(m20261028_000003_add_event_discord_delivery::Migration),
+            Box::new(m20261028_000004_guild_event_delivery::Migration),
         ]
     }
 }

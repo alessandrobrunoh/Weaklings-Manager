@@ -22,7 +22,6 @@ import { Dialog } from '../../shared/components/dialog/dialog';
 import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { Icon } from '../../shared/components/icon/icon';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
-import { Select } from '../../shared/components/select/select';
 import {
   DataTable,
   type DataTableColumn,
@@ -69,7 +68,6 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     PageStack,
     RouterLink,
     SearchableSelect,
-    Select,
     StatCard,
     TooltipDirective,
     OwnershipScopeToggle,
@@ -394,13 +392,6 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             }
           </fieldset>
 
-          <label>
-            <span class="label">{{ t('events.discordDelivery.label') }}</span>
-            <app-select class="mt-1" [options]="discordDeliveryOptions()" [value]="draftDiscordDelivery()"
-              [ariaLabel]="t('events.discordDelivery.label')"
-              (valueChange)="draftDiscordDelivery.set($any($event))" />
-          </label>
-
           <div class="grid gap-3 sm:grid-cols-2">
             <app-checkbox inputId="event-call-to-arms" [label]="t('events.call_to_arms')"
               [checked]="draftCallToArms()" (checkedChange)="draftCallToArms.set($event)" />
@@ -598,12 +589,6 @@ export class Events {
   protected readonly draftMassTime = signal(defaultMassTime());
   protected readonly draftStartTime = signal(defaultStartTime());
   protected readonly minEventDate = defaultEventDate();
-  protected readonly draftDiscordDelivery = signal<'calendar' | 'message' | 'forum'>('calendar');
-  protected readonly discordDeliveryOptions = computed(() => [
-    { value: 'calendar', label: this.t('events.discordDelivery.calendar') },
-    { value: 'message', label: this.t('events.discordDelivery.message') },
-    { value: 'forum', label: this.t('events.discordDelivery.forum') },
-  ]);
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
   protected readonly draftPingAlliance = signal(false);
@@ -925,7 +910,6 @@ export class Events {
       mass_time_utc: massAt.toISOString(),
       start_time_utc: startAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
-      discord_delivery: this.draftDiscordDelivery(),
       regear: this.draftRegear(),
       ping_alliance: this.canPingAlliance() && this.draftPingAlliance(),
       vod_forum_post_enabled: this.draftVodForumPost(),

@@ -890,7 +890,7 @@ export class Poller {
       // delivery target and should still receive the event when the guild
       // announcement cannot be sent.
       const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
-      const delivery = eventDetail.discord_delivery ?? (eventDetail.event_kind === "flash" ? "message" : "calendar");
+      const delivery = await this.settings.eventDelivery();
       if (delivery === "calendar") {
         delete this.state.pendingAnnounces[eventKey];
         this.save();
@@ -1101,7 +1101,7 @@ export class Poller {
     let unroutedCallToArms = 0;
     for (const event of events) {
       if (flashUndoTimeRemaining(event) > 0) continue;
-      if ((event.discord_delivery ?? (event.event_kind === "flash" ? "message" : "calendar")) !== "calendar") {
+      if ((await this.settings.eventDelivery()) !== "calendar") {
         continue;
       }
       const channelId = destinationChannel(event, routes);

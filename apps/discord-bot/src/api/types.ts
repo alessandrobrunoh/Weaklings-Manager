@@ -490,6 +490,7 @@ export interface GuildSettingsView {
   /** Missing only when talking to a backend before the flash-channel migration. */
   discord_flash_mass_channel_id?: string | null;
   discord_events_forum_channel_id?: string | null;
+  discord_event_delivery?: 'calendar' | 'message' | 'forum';
   discord_event_scheduled_tag_id?: string | null;
   discord_event_live_tag_id?: string | null;
   discord_event_cta_tag_id?: string | null;

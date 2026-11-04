@@ -14,6 +14,8 @@
 - Creation XP is awarded once to the original creator **only after** the event is successfully completed. Awards are idempotent and must not be duplicated by event mirrors, restarts, retries, or multiple characters.
 - Only the original guild event awards progression XP; an alliance mirror must not award it again.
 - Resolve the season at the event's completion time using `[start, end)` boundaries. Persist that season with the completion record so retries cannot move the award to a later season.
+- For events originating in the alliance and distributed to guilds, award participants XP once in their own guild at completion. The organizer also receives creation XP in their own guild. This extends, rather than changes, the rule that a guild-origin event must not award again in its alliance mirror.
+- Allow an event XP multiplier such as 1×, 1.5×, or 2×. It applies to both participation and organizer XP, each against the applicable guild's configured base rate. Persist the multiplier and completion-time award inputs for idempotent retries; do not recalculate historical XP.
 - XP and thresholds are configurable; the proposed values are starting points for simulation, not validated balance. Rank alone does not guarantee economic or operational benefits when recent-activity rules are not satisfied.
 - Do not land changes, push to a shared branch, or enable economic benefits solely because this document exists.
 

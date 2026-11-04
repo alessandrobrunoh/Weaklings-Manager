@@ -73,6 +73,11 @@ export class SettingsService {
     return (await this.get()).discord_events_forum_channel_id ?? null;
   }
 
+  /** Guild-wide event publication: calendar, channel message, or forum post. */
+  async eventDelivery(): Promise<'calendar' | 'message' | 'forum'> {
+    return (await this.get()).discord_event_delivery ?? 'calendar';
+  }
+
   /** Default guild event role used for flash-mass mentions. */
   async eventRoleId(): Promise<string | null> {
     return (await this.get()).discord_event_role_id ?? null;

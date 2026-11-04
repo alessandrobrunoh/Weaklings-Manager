@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+fn default_event_delivery() -> String {
+    "calendar".to_string()
+}
+
 /// One role and the permissions currently granted to it.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RolePermissionsView {
@@ -138,6 +142,9 @@ pub struct GuildSettingsView {
     pub discord_flash_mass_channel_id: Option<String>,
     /// Forum where events with delivery `forum` are posted.
     pub discord_events_forum_channel_id: Option<String>,
+    /// `calendar`, `message`, or `forum`.
+    #[serde(default = "default_event_delivery")]
+    pub discord_event_delivery: String,
     pub discord_event_scheduled_tag_id: Option<String>,
     pub discord_event_live_tag_id: Option<String>,
     pub discord_event_cta_tag_id: Option<String>,
@@ -238,6 +245,7 @@ impl GuildSettingsView {
             discord_event_voice_category_id: model.discord_event_voice_category_id,
             discord_flash_mass_channel_id: model.discord_flash_mass_channel_id,
             discord_events_forum_channel_id: model.discord_events_forum_channel_id,
+            discord_event_delivery: model.discord_event_delivery,
             discord_event_scheduled_tag_id: model.discord_event_scheduled_tag_id,
             discord_event_live_tag_id: model.discord_event_live_tag_id,
             discord_event_cta_tag_id: model.discord_event_cta_tag_id,
@@ -410,6 +418,8 @@ pub struct UpdateGuildSettingsRequest {
     /// Flash mass announcement channel. Omit to leave unchanged; send `""` to clear.
     pub discord_flash_mass_channel_id: Option<String>,
     pub discord_events_forum_channel_id: Option<String>,
+    /// `calendar`, `message`, or `forum`. Omit to leave unchanged.
+    pub discord_event_delivery: Option<String>,
     pub discord_event_scheduled_tag_id: Option<String>,
     pub discord_event_live_tag_id: Option<String>,
     pub discord_event_cta_tag_id: Option<String>,

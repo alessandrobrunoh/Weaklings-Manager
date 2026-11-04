@@ -110,7 +110,7 @@ impl ProgressionService {
         db: &DatabaseConnection,
         spec: AwardSpec,
     ) -> Result<AwardOutcome, AppError> {
-        self.award_inner(db, spec, None).await
+        self.award_inner(db, spec, None, Decimal::ONE).await
     }
 
     /// Awards against a season already resolved by a durable source record.
@@ -123,7 +123,28 @@ impl ProgressionService {
         spec: AwardSpec,
         season_id: i64,
     ) -> Result<AwardOutcome, AppError> {
-        self.award_inner(db, spec, Some(season_id)).await
+        self.award_inner(db, spec, Some(season_id), Decimal::ONE)
+            .await
+    }
+
+    /// Awards a completion using its persisted event multiplier and pinned season.
+    ///
+    /// The event multiplier compounds with the recipient's personal multiplier;
+    /// it does not modify that personal setting.
+    pub async fn award_event_in_season(
+        &self,
+        db: &DatabaseConnection,
+        spec: AwardSpec,
+        season_id: i64,
+        event_multiplier: Decimal,
+    ) -> Result<AwardOutcome, AppError> {
+        if event_multiplier <= Decimal::ZERO {
+            return Err(AppError::Validation(
+                "event XP multiplier must be positive".to_string(),
+            ));
+        }
+        self.award_inner(db, spec, Some(season_id), event_multiplier)
+            .await
     }
 
     async fn award_inner(
@@ -131,6 +152,7 @@ impl ProgressionService {
         db: &DatabaseConnection,
         spec: AwardSpec,
         pinned_season_id: Option<i64>,
+        event_multiplier: Decimal,
     ) -> Result<AwardOutcome, AppError> {
         let settings = load_settings(db).await?;
         let base_amount = spec
@@ -195,7 +217,13 @@ impl ProgressionService {
             account.multiplier_expires_at
         };
 
-        let multiplier = multiplier_decimal.to_f64().unwrap_or(1.0);
+        let combined_multiplier = multiplier_decimal
+            .checked_mul(event_multiplier)
+            .filter(|value| *value < Decimal::from(10_000))
+            .ok_or_else(|| AppError::Validation("combined XP multiplier is too large".into()))?;
+        let multiplier = combined_multiplier.to_f64().ok_or_else(|| {
+            AppError::Validation("combined XP multiplier cannot be represented".into())
+        })?;
         let remainder = account.xp_remainder.to_f64().unwrap_or(0.0);
         let (applied, new_remainder) = apply_multiplier(base_amount, multiplier, remainder);
         let new_xp = account.xp.saturating_add(applied).max(0);
@@ -207,7 +235,7 @@ impl ProgressionService {
             source: Set(spec.source.as_str().to_string()),
             base_amount: Set(base_amount),
             applied_amount: Set(applied),
-            multiplier_at_time: Set(multiplier_decimal),
+            multiplier_at_time: Set(combined_multiplier),
             idempotency_key: Set(spec.idempotency_key),
             actor_user_id: Set(spec.actor_user_id),
             created_at: Set(now),
@@ -1429,6 +1457,56 @@ mod tests {
                 xp: 1
             }
         );
+    }
+
+    #[tokio::test]
+    async fn event_multiplier_compounds_without_changing_personal_multiplier() {
+        let db = seed_db().await;
+        let user_id = insert_user(&db, "alice", "alice@example.com").await;
+        let season_id = insert_season(&db, "s25", true, -1, 30).await;
+        let now: DateTime<FixedOffset> = Utc::now().into();
+        ProgressionAccountActiveModel {
+            user_id: Set(user_id),
+            season_id: Set(season_id),
+            xp: Set(0),
+            level: Set(1),
+            xp_multiplier: Set(Decimal::new(15, 1)),
+            xp_remainder: Set(Decimal::ZERO),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let service = ProgressionService::new();
+        let result = service
+            .award_event_in_season(&db, spec(user_id, "event:1", 100), season_id, Decimal::from(2))
+            .await
+            .unwrap();
+        assert!(matches!(result, AwardOutcome::Applied { applied: 300, .. }));
+        let retry = service
+            .award_event_in_season(&db, spec(user_id, "event:1", 100), season_id, Decimal::from(2))
+            .await
+            .unwrap();
+        assert_eq!(retry, AwardOutcome::Duplicate);
+        let account = ProgressionAccountEntity::find()
+            .filter(ProgressionAccountColumn::UserId.eq(user_id))
+            .filter(ProgressionAccountColumn::SeasonId.eq(season_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(account.xp, 300);
+        assert_eq!(account.xp_multiplier, Decimal::new(15, 1));
+        let ledger = ProgressionXpLedgerEntity::find()
+            .filter(ProgressionXpLedgerColumn::IdempotencyKey.eq("event:1"))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ledger.multiplier_at_time, Decimal::from(3));
     }
 
     #[tokio::test]

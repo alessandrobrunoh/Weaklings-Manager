@@ -20,6 +20,7 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { Select } from '../../shared/components/select/select';
 import {
   channelSelectOptions,
   roleSelectOptions,
@@ -32,6 +33,7 @@ interface DiscordSettingsDraft {
   discord_battles_cta_channel_id: string;
   discord_flash_mass_channel_id: string;
   discord_events_forum_channel_id: string;
+  discord_event_delivery: 'calendar' | 'message' | 'forum';
   discord_event_scheduled_tag_id: string;
   discord_event_live_tag_id: string;
   discord_event_cta_tag_id: string;
@@ -54,6 +56,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_battles_cta_channel_id: '',
   discord_flash_mass_channel_id: '',
   discord_events_forum_channel_id: '',
+  discord_event_delivery: 'calendar',
   discord_event_scheduled_tag_id: '',
   discord_event_live_tag_id: '',
   discord_event_cta_tag_id: '',
@@ -91,7 +94,7 @@ const SPLIT_TAG_FIELDS = [
   selector: 'app-admin-discord',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [Loading, PageHeader, PageStack, SearchableSelect],
+  imports: [Loading, PageHeader, PageStack, SearchableSelect, Select],
   template: `
     <app-page-header [title]="t('admin.discord.title')" [subtitle]="t('admin.discord.hint')" />
 
@@ -157,6 +160,13 @@ const SPLIT_TAG_FIELDS = [
                 <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                   {{ t('admin.discord.flashMassChannelHint') }}
                 </span>
+              </label>
+              <label class="sm:col-span-2">
+                <span class="label">{{ t('events.discordDelivery.label') }}</span>
+                <app-select class="mt-1" [options]="eventDeliveryOptions()"
+                  [value]="guildSettingsDraft().discord_event_delivery"
+                  [ariaLabel]="t('events.discordDelivery.label')"
+                  (valueChange)="setEventDelivery($event)" />
               </label>
               <label class="sm:col-span-2">
                 <span class="label">{{ t('events.discordDelivery.forum') }}</span>
@@ -528,6 +538,16 @@ export class AdminDiscord {
   }
 
   protected readonly eventTagFields = EVENT_TAG_FIELDS;
+  protected readonly eventDeliveryOptions = computed(() => [
+    { value: 'calendar', label: this.t('events.discordDelivery.calendar') },
+    { value: 'message', label: this.t('events.discordDelivery.message') },
+    { value: 'forum', label: this.t('events.discordDelivery.forum') },
+  ]);
+
+  protected setEventDelivery(value: string): void {
+    if (value !== 'calendar' && value !== 'message' && value !== 'forum') return;
+    this.guildSettingsDraft.update((draft) => ({ ...draft, discord_event_delivery: value }));
+  }
 
   protected setDraftValue(field: keyof DiscordSettingsDraft, value: string): void {
     this.guildSettingsDraft.update((draft) => ({ ...draft, [field]: value }));
@@ -627,6 +647,7 @@ export class AdminDiscord {
       discord_battles_cta_channel_id: draft.discord_battles_cta_channel_id.trim(),
       discord_flash_mass_channel_id: draft.discord_flash_mass_channel_id.trim(),
       discord_events_forum_channel_id: draft.discord_events_forum_channel_id.trim(),
+      discord_event_delivery: draft.discord_event_delivery,
       discord_event_scheduled_tag_id: draft.discord_event_scheduled_tag_id.trim(),
       discord_event_live_tag_id: draft.discord_event_live_tag_id.trim(),
       discord_event_cta_tag_id: draft.discord_event_cta_tag_id.trim(),
@@ -694,6 +715,7 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_battles_cta_channel_id: settings.discord_battles_cta_channel_id ?? '',
     discord_flash_mass_channel_id: settings.discord_flash_mass_channel_id ?? '',
     discord_events_forum_channel_id: settings.discord_events_forum_channel_id ?? '',
+    discord_event_delivery: settings.discord_event_delivery ?? 'calendar',
     discord_event_scheduled_tag_id: settings.discord_event_scheduled_tag_id ?? '',
     discord_event_live_tag_id: settings.discord_event_live_tag_id ?? '',
     discord_event_cta_tag_id: settings.discord_event_cta_tag_id ?? '',
