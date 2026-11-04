@@ -7319,6 +7319,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn failed_event_role_insert_rolls_back_event_and_vod_request() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        db.execute_unprepared(
+            "CREATE TRIGGER reject_event_role BEFORE INSERT ON event_discord_roles \
+             BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+        )
+        .await
+        .unwrap();
+
+        let service = EventService::new();
+        let result = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Failed flash".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    event_kind: Some("flash".to_string()),
+                    comp_id: None,
+                    player_cap: None,
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec!["111111111111111111".to_string()],
+                    create_split: false,
+                    island_tab_id: None,
+                    ping_alliance: false,
+                    vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
+                },
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(event::Entity::find().count(&db).await.unwrap(), 0);
+        assert!(service.pending_vod_forum_posts(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn test_create_event_success() {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
@@ -7468,6 +7510,38 @@ mod tests {
             recorded.vod_forum_thread_id.as_deref(),
             Some("123456789012345678")
         );
+        assert!(
+            service
+                .archived_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        service.archive_event(&db, event.id).await.unwrap();
+        assert_eq!(
+            service.archived_vod_forum_posts(&db).await.unwrap().len(),
+            1
+        );
+        assert!(
+            !service
+                .record_vod_forum_post_deleted(&db, event.id, "wrong-thread")
+                .await
+                .unwrap()
+        );
+        assert!(
+            service
+                .record_vod_forum_post_deleted(&db, event.id, "123456789012345678")
+                .await
+                .unwrap()
+        );
+        assert!(
+            service
+                .archived_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        service.unarchive_event(&db, event.id).await.unwrap();
         event::ActiveModel {
             id: Set(event.id),
             vod_forum_post_enabled: Set(false),
