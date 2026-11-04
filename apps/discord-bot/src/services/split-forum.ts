@@ -30,15 +30,22 @@ export class SplitForumAdapter {
   ) {}
 
   async sync(item: SplitDiscordSync): Promise<boolean> {
-    let thread = item.thread_id ? await this.fetchThread(item.thread_id) : null;
+    let thread: ThreadChannel | null;
+    try {
+      thread = item.thread_id ? await this.fetchThread(item.thread_id) : null;
+    } catch (error) {
+      console.warn(`[SplitForum] Could not verify Forum post for split #${item.split_id}; will retry:`, error);
+      return false;
+    }
     let summaryMessageId = item.summary_message_id;
     const archived = Boolean(item.detail.archived_at);
     const terminal = ["completed", "not_completed", "lost"].includes(item.detail.status);
 
-    // Archiving hides a still-pending split. Delete the Forum post so it does not stay in the
-    // active list as an open loot thread. Completed/lost history is closed below, not deleted.
-    if (archived && !terminal) {
-      if (thread && !await this.deleteForumPost(thread, item.split_id)) return false;
+    // Event-linked splits must disappear from Discord when archived, even if
+    // they were already completed. Standalone finalized splits retain history.
+    const eventLinked = item.detail.event_id != null;
+    if (archived && (!terminal || eventLinked)) {
+      if (thread && !await this.deleteForumPost(thread, item.split_id, eventLinked)) return false;
       return this.saveState(item.split_id, {
         last_audit_id: item.next_audit_cursor,
         last_transaction_id: item.next_transaction_cursor,
@@ -138,13 +145,12 @@ export class SplitForumAdapter {
     try {
       const channel = await this.client.channels.fetch(threadId);
       if (!channel?.isThread() || channel.parentId !== this.forumChannelId) {
-        console.warn(`[SplitForum] ${threadId} is not a post in configured Forum Channel ${this.forumChannelId}`);
-        return null;
+        throw new Error(`${threadId} is not a post in configured Forum Channel ${this.forumChannelId}`);
       }
       return channel;
     } catch (error) {
-      console.warn(`[SplitForum] Could not fetch Forum post ${threadId}:`, error);
-      return null;
+      if (isUnknownDiscordChannel(error)) return null;
+      throw error;
     }
   }
 
@@ -217,13 +223,21 @@ export class SplitForumAdapter {
     }
   }
 
-  /** Removes an archived pending split from the Forum. Falls back to lock+archive if delete fails. */
-  private async deleteForumPost(thread: ThreadChannel, splitId: number): Promise<boolean> {
+  /** Event-linked posts must be deleted; retry instead of silently treating archive as deletion. */
+  private async deleteForumPost(
+    thread: ThreadChannel,
+    splitId: number,
+    requireDeletion: boolean,
+  ): Promise<boolean> {
     try {
       await thread.delete(`Split #${splitId} archived`);
       return true;
     } catch (error) {
       if (isUnknownDiscordChannel(error)) return true;
+      if (requireDeletion) {
+        console.warn(`[SplitForum] Could not delete event-linked split post #${splitId}; will retry:`, error);
+        return false;
+      }
       console.warn(
         `[SplitForum] Could not delete Forum post for split #${splitId}; closing instead:`,
         error,

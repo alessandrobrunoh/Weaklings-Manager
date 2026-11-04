@@ -110,10 +110,18 @@ pub fn router() -> Router {
             "/vod-forum-posts/pending",
             get(list_pending_vod_forum_posts),
         )
+        .route(
+            "/vod-forum-posts/archived",
+            get(list_archived_vod_forum_posts),
+        )
         .route("/{id}/vod-forum-post/claim", post(claim_vod_forum_post))
         .route(
             "/{id}/vod-forum-post/created",
             post(record_vod_forum_post_created),
+        )
+        .route(
+            "/{id}/vod-forum-post/deleted",
+            post(record_vod_forum_post_deleted),
         )
         .route(
             "/{id}/vod-forum-post/retry-after-verification",
@@ -187,6 +195,31 @@ async fn list_pending_vod_forum_posts(
 ) -> Result<Json<ApiResponse<Vec<EventView>>>, AppError> {
     let items = EventService::new().pending_vod_forum_posts(&db).await?;
     Ok(Json(ApiResponse::new(items)))
+}
+
+async fn list_archived_vod_forum_posts(
+    _bot: BotSecret,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<EventView>>>, AppError> {
+    let items = EventService::new().archived_vod_forum_posts(&db).await?;
+    Ok(Json(ApiResponse::new(items)))
+}
+
+async fn record_vod_forum_post_deleted(
+    _bot: BotSecret,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<RecordVodForumPostRequest>,
+) -> Result<Json<ApiResponse<bool>>, AppError> {
+    let thread_id = req.thread_id.trim();
+    if thread_id.is_empty() {
+        return Err(AppError::Validation("thread_id is required".to_string()));
+    }
+    Ok(Json(ApiResponse::new(
+        EventService::new()
+            .record_vod_forum_post_deleted(&db, id, thread_id)
+            .await?,
+    )))
 }
 
 /// Atomically marks a pending delivery attempted before the bot calls Discord.

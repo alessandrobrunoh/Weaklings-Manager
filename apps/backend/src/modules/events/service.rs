@@ -1395,6 +1395,45 @@ impl EventService {
         Ok(views)
     }
 
+    /// Archived events with a recorded VOD post that still needs deletion.
+    pub async fn archived_vod_forum_posts(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<EventView>, AppError> {
+        let models = event::Entity::find()
+            .filter(event::Column::ArchivedAt.is_not_null())
+            .filter(event::Column::VodForumPostStatus.eq("created"))
+            .filter(event::Column::VodForumThreadId.is_not_null())
+            .order_by_asc(event::Column::Id)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut views = Vec::with_capacity(models.len());
+        for model in models {
+            views.push(self.to_event_view(db, model).await?);
+        }
+        Ok(views)
+    }
+
+    /// Acknowledge deletion only for the exact recorded thread of an archived event.
+    pub async fn record_vod_forum_post_deleted(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        thread_id: &str,
+    ) -> Result<bool, AppError> {
+        let result = event::Entity::update_many()
+            .col_expr(event::Column::VodForumPostStatus, Expr::value("deleted"))
+            .filter(event::Column::Id.eq(id))
+            .filter(event::Column::ArchivedAt.is_not_null())
+            .filter(event::Column::VodForumPostStatus.eq("created"))
+            .filter(event::Column::VodForumThreadId.eq(thread_id))
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(result.rows_affected == 1)
+    }
+
     /// Claims a pending delivery before making the non-idempotent Discord call.
     /// A claimed `attempted` delivery is deliberately never automatically retried.
     pub async fn claim_vod_forum_post(
@@ -3390,6 +3429,9 @@ impl EventService {
             .unwrap_or(start - ChronoDuration::minutes(30));
         validate_event_times(mass, start)?;
 
+        // Keep the event invisible to delivery workers until its dependencies
+        // (including the requested split) have been created successfully.
+        let txn = db.begin().await.map_err(AppError::Database)?;
         let event_model = event::ActiveModel {
             title: Set(req.title),
             description: Set(req.description),
@@ -3416,7 +3458,7 @@ impl EventService {
             }),
             ..Default::default()
         }
-        .insert(db)
+        .insert(&txn)
         .await
         .map_err(AppError::Database)?;
 
@@ -3429,24 +3471,17 @@ impl EventService {
                     AppError::Validation("too many Discord roles selected".to_string())
                 })?),
             }
-            .insert(db)
+            .insert(&txn)
             .await
             .map_err(AppError::Database)?;
         }
 
-        let event_view = self.to_event_view(db, event_model).await?;
-
         if let Some(island_tab_id) = linked_split_tab {
-            // Best-effort: an event is still perfectly usable without its
-            // split, so a failure here is logged rather than rolling back a
-            // successfully created event.
-            if let Err(e) =
-                create_linked_split(db, creator_id, event_id, &event_view.title, island_tab_id)
-                    .await
-            {
-                tracing::warn!(event_id, error = %e, "failed to create the correlated split");
-            }
+            create_linked_split(&txn, creator_id, event_id, &event_model.title, island_tab_id)
+                .await?;
         }
+        txn.commit().await.map_err(AppError::Database)?;
+        let event_view = self.to_event_view(db, event_model).await?;
 
         let _ = AuditService::log(
             db,
@@ -9053,7 +9088,7 @@ mod tests {
 /// Participants are seeded from the event's sign-ups the first time the split
 /// is updated, which is later than creation time and therefore more accurate.
 async fn create_linked_split(
-    db: &DatabaseConnection,
+    db: &impl sea_orm::ConnectionTrait,
     creator_id: i64,
     event_id: i64,
     event_title: &str,

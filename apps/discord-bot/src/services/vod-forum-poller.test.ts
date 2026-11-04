@@ -16,6 +16,7 @@ test("VOD delivery claims before creating, records success, and does not repost"
     const api = {
       guildId: "100000000000000001",
       get: async (path: string) => {
+        if (path === "api/events/vod-forum-posts/archived") return [];
         assert.equal(path, "api/events/vod-forum-posts/pending");
         return state === "pending" ? [{ id: 7, title: "Castle" }] : [];
       },
@@ -66,7 +67,10 @@ test("an ambiguous Discord failure stays attempted across poller restarts", asyn
     let creates = 0;
     const api = {
       guildId: "100000000000000001",
-      get: async () => state === "pending" ? [{ id: 8, title: "Mass" }] : [],
+      get: async (path: string) =>
+        path === "api/events/vod-forum-posts/archived"
+          ? []
+          : state === "pending" ? [{ id: 8, title: "Mass" }] : [],
       post: async () => { state = "attempted"; return true; },
     } as unknown as ApiClient;
     const forum = {
@@ -86,6 +90,52 @@ test("an ambiguous Discord failure stays attempted across poller restarts", asyn
     await run();
     assert.equal(state, "attempted");
     assert.equal(creates, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("archived VOD deletion is retried until Discord confirms it", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "vod-poller-"));
+  try {
+    let deleted = false;
+    let attempts = 0;
+    let acknowledgements = 0;
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) =>
+        path === "api/events/vod-forum-posts/archived" && !deleted
+          ? [{ id: 7, vod_forum_thread_id: "thread-7" }]
+          : [],
+      post: async (path: string, body: unknown) => {
+        assert.equal(path, "api/events/7/vod-forum-post/deleted");
+        assert.deepEqual(body, { thread_id: "thread-7" });
+        acknowledgements++;
+        deleted = true;
+        return true;
+      },
+    } as unknown as ApiClient;
+    const client = {
+      channels: {
+        fetch: async () => ({
+          isThread: () => true,
+          delete: async () => {
+            attempts++;
+            if (attempts === 1) throw new Error("Discord unavailable");
+          },
+        }),
+      },
+    } as unknown as Client;
+    const settings = { vodForumChannelId: async () => null } as unknown as SettingsService;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    const deliver = () => (poller as unknown as { checkVodForumPosts(): Promise<void> }).checkVodForumPosts();
+
+    await deliver();
+    assert.equal(acknowledgements, 0);
+    await deliver();
+    await deliver();
+    assert.equal(attempts, 2);
+    assert.equal(acknowledgements, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -490,6 +490,7 @@ export class Poller {
    * crash or lost response therefore leaves `attempted`, never an auto-retry.
    */
   private async checkVodForumPosts(): Promise<void> {
+    await this.deleteArchivedVodForumPosts();
     try {
       const settings = this.settings as SettingsService & {
         vodForumChannelId?: () => Promise<string | null>;
@@ -566,6 +567,39 @@ export class Poller {
       }
     } catch (error) {
       console.warn(`[Poller] Failed to process VOD forum posts: ${String(error)}`);
+    }
+  }
+
+  /** Retry deletion of recorded VOD threads without acknowledging uncertain failures. */
+  private async deleteArchivedVodForumPosts(): Promise<void> {
+    try {
+      const archived = await this.api.get<EventView[]>("api/events/vod-forum-posts/archived");
+      for (const event of archived) {
+        const threadId = event.vod_forum_thread_id;
+        if (!threadId) continue;
+        try {
+          try {
+            const thread = await this.client.channels.fetch(threadId);
+            if (!thread || !thread.isThread()) {
+              throw new Error(`VOD thread ${threadId} could not be verified`);
+            }
+            await thread.delete(`Archived event #${event.id}`);
+          } catch (error) {
+            if (!isUnknownDiscordChannel(error)) throw error;
+          }
+          const acknowledged = await this.api.post<boolean>(
+            `api/events/${event.id}/vod-forum-post/deleted`,
+            { thread_id: threadId },
+          );
+          if (!acknowledged) {
+            console.warn(`[Poller] VOD deletion for event #${event.id} was not acknowledged`);
+          }
+        } catch (error) {
+          console.warn(`[Poller] Could not delete archived VOD post for event #${event.id}; will retry:`, error);
+        }
+      }
+    } catch (error) {
+      console.warn(`[Poller] Could not list archived VOD posts: ${String(error)}`);
     }
   }
 
