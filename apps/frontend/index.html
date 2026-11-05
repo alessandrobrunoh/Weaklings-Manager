@@ -5,6 +5,27 @@
   <title>Weaklings</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Pre-boot theme: ThemeService only sets the html class after Angular boots,
+    so without this the first paint uses the light :root defaults and flips to
+    dark. Mirrors ThemeService (storage key "alm.theme", dark when unset).
+  -->
+  <script>
+    (function () {
+      var dark = true;
+      try {
+        var saved = localStorage.getItem('alm.theme');
+        if (saved === 'light') {
+          dark = false;
+        } else if (saved === 'system') {
+          dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        }
+      } catch (e) {}
+      var root = document.documentElement;
+      root.classList.add(dark ? 'dark' : 'light');
+      root.style.colorScheme = dark ? 'dark' : 'light';
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <!--
     Type system (DESIGN.md): Nunito 800 stands in for ABC Ginto Nord and carries
