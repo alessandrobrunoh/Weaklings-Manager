@@ -17,6 +17,12 @@ pub(crate) mod postgres;
 )]
 pub(crate) mod runtime;
 pub(crate) mod tenant;
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "fixture surface is extended and consumed by later slices"
+)]
+pub(crate) mod testkit;
 
 pub mod config;
 pub(crate) mod errors;
