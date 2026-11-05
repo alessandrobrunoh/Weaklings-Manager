@@ -73,6 +73,9 @@ describe('Events', () => {
           limit: 10,
         });
       }
+      if (path === 'api/events/summary') {
+        return of({ total: 130, live: 3, scheduled: 127, call_to_arms: 13 });
+      }
       return of([]);
     }),
     delete: vi.fn().mockReturnValue(of({})),
@@ -274,6 +277,15 @@ describe('Events', () => {
     currentPermissions = new Set(['events.edit']);
     expect(page.canEdit(mockEvents[2] as EventView)).toBe(true);
     expect(page.canDelete(mockEvents[2] as EventView)).toBe(false);
+  });
+
+  it('takes the stat tiles from the backend summary, not from one page of events', () => {
+    const page = component as any;
+    expect(mockApiService.get).toHaveBeenCalledWith('api/events/summary');
+    expect(page.totalEventsCount()).toBe(130);
+    expect(page.liveEventsCount()).toBe(3);
+    expect(page.scheduledEventsCount()).toBe(127);
+    expect(page.ctaEventsCount()).toBe(13);
   });
 
   it('renders the pagination footer with correct item counts and page buttons', () => {
