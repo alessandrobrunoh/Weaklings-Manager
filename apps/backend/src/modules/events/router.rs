@@ -25,7 +25,7 @@ use crate::responses::{
     ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventView,
     ApiResponseParticipationGuildList,
 };
-use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
+use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 
 use sea_orm::{ConnectionTrait, DbBackend, EntityTrait, Statement, Value};
 use std::collections::HashSet;
@@ -194,6 +194,7 @@ pub fn router() -> Router {
         .route("/", get(list_events).post(create_event))
         .route("/{id}/fanout-status", get(get_event_fanout_status))
         .route("/{id}/mirror-status", get(get_event_mirror_status))
+        .route("/{id}/mirror-retry", post(retry_event_mirror))
         .route("/calendar", get(list_event_calendar))
         .route("/revisions", get(list_event_revisions))
         .route(
@@ -1192,6 +1193,49 @@ async fn get_event_mirror_status(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<super::mirror_retry::MirrorRequestStatus>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    let status = super::mirror_retry::status_for_event(&control.0, &tenant_id, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("event mirror request not found".to_owned()))?;
+    Ok(Json(ApiResponse::new(status)))
+}
+
+/// Re-arms an exhausted, failed, or inactive guild-to-alliance mirror request.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/mirror-retry",
+    tag = "events",
+    summary = "Retry a failed alliance event mirror",
+    description = "Re-arms a failed or inactive guild-owned event mirror and immediately tries it once. \
+        Requires event management authority and an active alliance membership.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Guild-owned source event ID")),
+    responses(
+        (status = 200, description = "Current mirror retry state", body = super::mirror_retry::MirrorRequestStatus),
+        (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
+        (status = 404, description = "No mirror request exists", body = ProblemDetails),
+        (status = 409, description = "Mirror request is not failed or no active alliance exists", body = ProblemDetails)
+    )
+)]
+async fn retry_event_mirror(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<super::mirror_retry::MirrorRequestStatus>>, AppError> {
+    if kind.0 != "guild" {
+        return Err(AppError::NotFound(
+            "alliance mirror retries are available only in guild tenants".to_owned(),
+        ));
+    }
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    super::lifecycle::assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    super::sync::assert_active_alliance(&control.0, &tenant_id).await?;
+    super::mirror_retry::requeue(&control.0, &tenant_id, id).await?;
+    super::mirror_retry::process_due(&control.0, &registry).await?;
     let status = super::mirror_retry::status_for_event(&control.0, &tenant_id, id)
         .await?
         .ok_or_else(|| AppError::NotFound("event mirror request not found".to_owned()))?;

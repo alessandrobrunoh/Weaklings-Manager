@@ -27,7 +27,7 @@ const MAX_REQUESTS_PER_TICK: i64 = 8;
 /// Operator-visible state of a guild event's alliance mirror request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct MirrorRequestStatus {
-    /// `pending`, `processing`, `complete`, or `failed`.
+    /// `pending`, `processing`, `complete`, `failed`, or `inactive`.
     pub state: String,
     /// Number of mirror attempts so far.
     pub attempts: i32,
@@ -114,6 +114,29 @@ pub async fn status_for_event(
     }))
 }
 
+/// Re-arms an exhausted, failed, or inactive request after an operator fixes its cause.
+pub async fn requeue(
+    control: &DatabaseConnection,
+    source_tenant_id: &str,
+    source_event_id: i64,
+) -> Result<(), AppError> {
+    let result = control
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE event_mirror_requests SET state='pending', attempts=0, last_error=NULL, \
+               next_attempt_at=NOW(), lease_until=NULL, lease_token=NULL, updated_at=NOW() \
+             WHERE source_tenant_id=$1 AND source_event_id=$2 AND state IN ('failed','inactive')",
+            [source_tenant_id.into(), source_event_id.into()],
+        ))
+        .await?;
+    if result.rows_affected() != 1 {
+        return Err(AppError::Conflict(
+            "mirror request is not failed/inactive or does not exist".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 async fn claim_due(control: &DatabaseConnection) -> Result<Vec<Claimed>, AppError> {
     let lease_token = Uuid::new_v4();
     let rows = control
@@ -166,8 +189,19 @@ pub async fn process_due(
     let count = claimed.len();
     for request in claimed {
         match attempt(control, registry, &request).await {
-            Ok(mirror_event_id) => {
-                finish(control, &request, "complete", None, mirror_event_id, 0).await?;
+            Ok(Some(mirror_event_id)) => {
+                finish(
+                    control,
+                    &request,
+                    "complete",
+                    None,
+                    Some(mirror_event_id),
+                    0,
+                )
+                .await?;
+            }
+            Ok(None) => {
+                finish(control, &request, "inactive", None, None, 0).await?;
             }
             Err(error) => {
                 let message = error.to_string();
@@ -207,6 +241,9 @@ async fn attempt(
                 request.source_event_id
             ))
         })?;
+    if model.archived_at.is_some() || model.status == "cancelled" {
+        return Ok(None);
+    }
     let view = EventService::new().to_event_view(&source.db, model).await?;
     create_mirror(
         control,

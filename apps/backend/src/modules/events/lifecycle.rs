@@ -1568,7 +1568,9 @@ mod tests {
             .expect("create mirror before simulated crash");
         let orphan_mirror_id = orphan_mirror.id;
 
-        force_due().await.expect("make due again");
+        super::super::mirror_retry::requeue(&world.control, "guild-a", event.id)
+            .await
+            .expect("manually re-arm failed mirror");
         super::super::mirror_retry::process_due(&world.control, &world.registry)
             .await
             .expect("second retry cycle");
@@ -1601,6 +1603,53 @@ mod tests {
                 .count(&world.tenant_dbs[0])
                 .await
                 .expect("alliance events"),
+            1
+        );
+
+        // A source cancelled before its retry is due must not create a stale
+        // alliance announcement.
+        let mut cancelled_request = flash_event("Cancelled guild event");
+        cancelled_request.event_kind = Some("organized".to_owned());
+        cancelled_request.comp_id = Some(comp.summary.id);
+        let cancelled = EventService::new()
+            .create_event(guild_db, creator_id, cancelled_request)
+            .await
+            .expect("create event to cancel");
+        guild_db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE events SET status='cancelled' WHERE id=$1",
+                [cancelled.id.into()],
+            ))
+            .await
+            .expect("cancel source event");
+        super::super::mirror_retry::enqueue(
+            &world.control,
+            "guild-a",
+            cancelled.id,
+            &actor,
+            "initial mirror attempt failed",
+        )
+        .await
+        .expect("queue cancelled event request");
+        force_due().await.expect("make cancelled request due");
+        assert_eq!(
+            super::super::mirror_retry::process_due(&world.control, &world.registry)
+                .await
+                .expect("ignore cancelled source"),
+            1
+        );
+        let inactive =
+            super::super::mirror_retry::status_for_event(&world.control, "guild-a", cancelled.id)
+                .await
+                .expect("cancelled mirror status")
+                .expect("cancelled request exists");
+        assert_eq!(inactive.state, "inactive");
+        assert_eq!(
+            event::Entity::find()
+                .count(&world.tenant_dbs[0])
+                .await
+                .expect("alliance events after cancelled request"),
             1
         );
         world.close().await;
