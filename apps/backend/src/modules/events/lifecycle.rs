@@ -8,17 +8,487 @@
 //! No cross-tenant write is atomic: each destination converges independently
 //! to the current source state, which makes every retry idempotent.
 
+use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, Set, Statement,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    DbBackend, EntityTrait, QueryFilter, QuerySelect, Set, Statement, sea_query::Expr,
 };
 
-use crate::{errors::AppError, tenant::TenantRegistry};
+use crate::{
+    errors::AppError,
+    modules::splits::{
+        entities::split,
+        service::{SplitService, SplitSyncState},
+    },
+    tenant::TenantRegistry,
+};
 
 use super::{
     entities::event,
     fanout_outbox,
+    models::EventView,
+    service::{EventService, MAX_SESSION_DURATION, reject_if_event_archived},
     sync::{canonical_event_origin, linked_event_peers},
 };
+
+// --- Transition core -------------------------------------------------------
+
+/// Which participants receive completion XP when a session stops.
+///
+/// Replaces the legacy `award_xp: bool`: `true` maps to [`XpFilter::Everyone`] and `false`
+/// (alliance mirrors, where only the originating guild is authoritative for progression) to
+/// [`XpFilter::OwnMembersOnly`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XpFilter {
+    /// Snapshot the creator and every participant of the event.
+    Everyone,
+    /// Snapshot only members that belong to this tenant by attribution. Participant
+    /// attribution does not exist yet, so a copy has no such members and nothing is
+    /// snapshotted, which is exactly the legacy `award_xp = false` behavior.
+    OwnMembersOnly,
+}
+
+impl XpFilter {
+    /// Maps the legacy `award_xp` flag onto a filter.
+    #[must_use]
+    pub const fn from_award_xp(award_xp: bool) -> Self {
+        if award_xp {
+            Self::Everyone
+        } else {
+            Self::OwnMembersOnly
+        }
+    }
+}
+
+/// An event status change handled by [`transition_in_txn`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transition {
+    /// `scheduled -> live`.
+    Start,
+    /// `live -> stopped | auto_stopped`, snapshotting completion XP per `xp`.
+    Stop {
+        /// `true` selects `auto_stopped` (the scheduler hit the session deadline).
+        auto: bool,
+        /// Which participants are snapshotted for completion XP.
+        xp: XpFilter,
+    },
+    /// `scheduled | live -> cancelled`.
+    Cancel,
+    /// `cancelled -> scheduled`.
+    Uncancel,
+    /// Sets `archived_at` on the event and its linked splits.
+    Archive,
+    /// Clears `archived_at` on the event and its linked splits.
+    Unarchive,
+}
+
+/// What triggered a transition. Only labels the outcome (and, later, effect rows); it never
+/// changes which rows are written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cause {
+    /// An authenticated web/API request.
+    Web,
+    /// A Discord interaction forwarded by the bot.
+    Discord,
+    /// The background scheduler (auto-stop).
+    Scheduler,
+    /// The sync engine applying an origin change to a copy.
+    Sync {
+        /// True for backfills (membership backfill, reconcile re-create, legacy import).
+        backfill: bool,
+    },
+    /// A settings change.
+    Settings,
+    /// A reconcile pass.
+    Reconcile,
+    /// A data import.
+    Import,
+    /// Direct service use (tests, tooling) without a request context.
+    Manual,
+}
+
+/// Reference to an effect row written by a transition. Always empty until the Discord
+/// outbox (DO-3a) starts emitting effects from [`transition_in_txn`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectRef {
+    /// Outbox row id.
+    pub id: i64,
+    /// Effect kind (`discord_delivery::kinds`).
+    pub kind: String,
+}
+
+/// Background loops a committed transition should kick. Empty until the runtime module
+/// (F3) and the queues it wakes exist.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WakeSet {
+    /// The sync relay has a new outbox row to pick up.
+    pub sync_relay: bool,
+    /// The Discord delivery loop has a new effect to pick up.
+    pub discord_outbox: bool,
+}
+
+impl WakeSet {
+    /// True when no loop needs to be woken.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        !self.sync_relay && !self.discord_outbox
+    }
+}
+
+/// Result of [`transition_in_txn`]; valid only once the caller commits the transaction.
+#[derive(Debug, Clone)]
+pub struct TransitionOutcome {
+    /// The event row as written by the transition (or as found, for a no-op).
+    pub model: event::Model,
+    /// The transition that was applied.
+    pub transition: Transition,
+    /// What triggered it.
+    pub cause: Cause,
+    /// False when the event already was in the target state and its row was left untouched.
+    pub changed: bool,
+    /// State of the local-split roster sync; `None` for transitions that do not run it.
+    pub splits: Option<SplitSyncState>,
+    /// Effects written in the transaction (none yet).
+    pub effects: Vec<EffectRef>,
+    /// Sync outbox row written in the transaction (none yet).
+    pub sync_outbox_id: Option<i64>,
+    /// Loops to wake after commit (none yet).
+    pub wake: WakeSet,
+}
+
+/// An outcome together with the hydrated view, returned by [`EventService::transition`].
+#[derive(Debug, Clone)]
+pub struct Transitioned {
+    /// The committed outcome.
+    pub outcome: TransitionOutcome,
+    /// The event as the API renders it, hydrated after commit.
+    pub view: EventView,
+}
+
+/// Everything [`TransitionOutcome::after_commit`] may need once the transaction committed.
+///
+/// Today that is only the legacy cross-tenant propagation; the runtime wake handle joins it
+/// when the runtime module exists. `AfterCommit::default()` does nothing.
+#[derive(Default)]
+pub struct AfterCommit<'a> {
+    legacy: Option<LegacyPropagation<'a>>,
+}
+
+struct LegacyPropagation<'a> {
+    control: &'a DatabaseConnection,
+    registry: &'a TenantRegistry,
+    tenant_id: &'a str,
+}
+
+impl<'a> AfterCommit<'a> {
+    /// Propagates the committed change to the event's copies through the legacy fanout or
+    /// inline converge path, as the routes did before the core existed.
+    #[must_use]
+    pub fn legacy_propagation(
+        control: &'a DatabaseConnection,
+        registry: &'a TenantRegistry,
+        tenant_id: &'a str,
+    ) -> Self {
+        Self {
+            legacy: Some(LegacyPropagation {
+                control,
+                registry,
+                tenant_id,
+            }),
+        }
+    }
+}
+
+impl TransitionOutcome {
+    /// Post-commit work: legacy propagation to copies (a failure is returned so repeating the
+    /// request retries the copy; the transition itself stays committed).
+    ///
+    /// Runs even for a no-op so a repeated request still retries a copy that failed earlier.
+    pub async fn after_commit(&self, ctx: &AfterCommit<'_>) -> Result<(), AppError> {
+        if let Some(legacy) = &ctx.legacy {
+            propagate_source_change(
+                legacy.control,
+                legacy.registry,
+                legacy.tenant_id,
+                &self.model,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+}
+
+/// Propagates a committed source-event change to its copies.
+///
+/// A cancelled or archived source archives its copies; anything else updates them.
+pub(super) async fn propagate_source_change(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+    tenant_id: &str,
+    model: &event::Model,
+) -> Result<(), AppError> {
+    let operation = if model.archived_at.is_some() || model.status == "cancelled" {
+        fanout_outbox::Operation::Archive
+    } else {
+        fanout_outbox::Operation::Update
+    };
+    sync_owner_change_to_copies(control, registry, tenant_id, model, operation).await
+}
+
+/// The single place that changes an event's status.
+///
+/// Locks the event row, validates the transition against its current state, writes the new
+/// state, and runs the transition's in-transaction side effects (completion-XP snapshot and
+/// local-split roster sync for a stop; linked-split archiving for archive/unarchive). The
+/// caller owns the transaction: commit it, then call [`TransitionOutcome::after_commit`].
+///
+/// Idempotent exactly like the legacy functions: stopping a stopped event and cancelling a
+/// cancelled one write nothing (`changed == false`); starting a live event is a conflict.
+/// The split roster sync of a stop runs in a SAVEPOINT, so its failure never fails the stop.
+///
+/// `actor` is the Discord id of the requester when there is one; it is not stored yet.
+///
+/// # Errors
+///
+/// [`AppError::NotFound`] for an unknown event, [`AppError::Conflict`] when the current state
+/// does not allow the transition or the event is archived, [`AppError::Database`] otherwise.
+pub async fn transition_in_txn(
+    txn: &DatabaseTransaction,
+    event_id: i64,
+    transition: Transition,
+    cause: Cause,
+    actor: Option<&str>,
+) -> Result<TransitionOutcome, AppError> {
+    let _ = actor;
+    let model = event::Entity::find_by_id(event_id)
+        .lock_exclusive()
+        .one(txn)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+
+    let mut splits = None;
+    let (model, changed) = match transition {
+        Transition::Start => (apply_start(txn, model).await?, true),
+        Transition::Stop { auto, xp } => {
+            reject_if_event_archived(&model)?;
+            if model.status == "stopped" || model.status == "auto_stopped" {
+                // Idempotent: no row change. A stop whose split sync failed earlier is the
+                // natural moment to retry it.
+                let split_service = SplitService::new();
+                if split_service.event_has_stale_splits(txn, event_id).await? {
+                    splits = Some(
+                        split_service
+                            .sync_event_participants_isolated(txn, event_id)
+                            .await?,
+                    );
+                }
+                (model, false)
+            } else {
+                let updated = apply_stop(txn, model, auto).await?;
+                splits = Some(finish_session_in_txn(txn, &updated, xp).await?);
+                (updated, true)
+            }
+        }
+        Transition::Cancel => {
+            reject_if_event_archived(&model)?;
+            if model.status == "cancelled" {
+                (model, false)
+            } else {
+                (apply_cancel(txn, model).await?, true)
+            }
+        }
+        Transition::Uncancel => (apply_uncancel(txn, model).await?, true),
+        Transition::Archive => (apply_archive(txn, model).await?, true),
+        Transition::Unarchive => (apply_unarchive(txn, model).await?, true),
+    };
+
+    Ok(TransitionOutcome {
+        model,
+        transition,
+        cause,
+        changed,
+        splits,
+        effects: Vec::new(),
+        sync_outbox_id: None,
+        wake: WakeSet::default(),
+    })
+}
+
+/// What happens after a stop wrote the status: the completion-XP snapshot (per `xp`) and the
+/// local-split roster sync in a SAVEPOINT. Shared by the stop transition and
+/// [`EventService::finish_copy_session`].
+pub(super) async fn finish_session_in_txn(
+    txn: &DatabaseTransaction,
+    stopped: &event::Model,
+    xp: XpFilter,
+) -> Result<SplitSyncState, AppError> {
+    if xp == XpFilter::Everyone {
+        let completed_at = stopped.stopped_at.unwrap_or_else(|| Utc::now().into());
+        EventService::snapshot_event_completion_xp(
+            txn,
+            stopped.id,
+            stopped.created_by,
+            completed_at,
+        )
+        .await?;
+    }
+    // Keep linked splits' roster and lifecycle condition current as soon as the event ends.
+    SplitService::new()
+        .sync_event_participants_isolated(txn, stopped.id)
+        .await
+}
+
+async fn apply_start(
+    txn: &DatabaseTransaction,
+    model: event::Model,
+) -> Result<event::Model, AppError> {
+    let id = model.id;
+    reject_if_event_archived(&model)?;
+    if model.status == "live" {
+        return Err(AppError::Conflict(format!("Event {id} is already live")));
+    }
+    if model.status != "scheduled" {
+        return Err(AppError::Conflict(format!(
+            "Event {id} cannot be started (status={}); re-opening a stopped session is not supported",
+            model.status
+        )));
+    }
+
+    let now = Utc::now();
+    let deadline = now + MAX_SESSION_DURATION;
+    let mut active: event::ActiveModel = model.into();
+    active.status = Set("live".to_string());
+    active.started_at = Set(Some(now.into()));
+    active.stopped_at = Set(None);
+    active.auto_stop_deadline = Set(Some(deadline.into()));
+    active.link_status = Set("in_progress".to_string());
+    active.link_attempts = Set(0);
+    active.link_last_error = Set(None);
+    active.link_battles_completed_at = Set(None);
+    active.updated_at = Set(now.into());
+    active.update(txn).await.map_err(AppError::Database)
+}
+
+async fn apply_stop(
+    txn: &DatabaseTransaction,
+    model: event::Model,
+    auto: bool,
+) -> Result<event::Model, AppError> {
+    if model.status != "live" {
+        return Err(AppError::Conflict(format!(
+            "Event {} is not live (status={})",
+            model.id, model.status
+        )));
+    }
+    let now = Utc::now();
+    let mut active: event::ActiveModel = model.into();
+    active.status = Set(if auto { "auto_stopped" } else { "stopped" }.to_string());
+    active.stopped_at = Set(Some(now.into()));
+    active.updated_at = Set(now.into());
+    active.update(txn).await.map_err(AppError::Database)
+}
+
+async fn apply_cancel(
+    txn: &DatabaseTransaction,
+    model: event::Model,
+) -> Result<event::Model, AppError> {
+    if model.status != "scheduled" && model.status != "live" {
+        return Err(AppError::Conflict(format!(
+            "Event {} cannot be cancelled (status={})",
+            model.id, model.status
+        )));
+    }
+    let now = Utc::now();
+    let mut active: event::ActiveModel = model.into();
+    active.status = Set("cancelled".to_string());
+    active.stopped_at = Set(Some(now.into()));
+    active.auto_stop_deadline = Set(None);
+    active.updated_at = Set(now.into());
+    active.update(txn).await.map_err(AppError::Database)
+}
+
+async fn apply_uncancel(
+    txn: &DatabaseTransaction,
+    model: event::Model,
+) -> Result<event::Model, AppError> {
+    reject_if_event_archived(&model)?;
+    if model.status != "cancelled" {
+        return Err(AppError::Conflict(format!(
+            "Event {} cannot be restored (status={})",
+            model.id, model.status
+        )));
+    }
+    let mut active: event::ActiveModel = model.into();
+    active.status = Set("scheduled".to_string());
+    active.started_at = Set(None);
+    active.stopped_at = Set(None);
+    active.auto_stop_deadline = Set(None);
+    active.link_status = Set("pending".to_string());
+    active.link_attempts = Set(0);
+    active.link_last_error = Set(None);
+    active.link_battles_completed_at = Set(None);
+    active.updated_at = Set(Utc::now().into());
+    active.update(txn).await.map_err(AppError::Database)
+}
+
+async fn apply_archive(
+    txn: &DatabaseTransaction,
+    model: event::Model,
+) -> Result<event::Model, AppError> {
+    let id = model.id;
+    let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
+    let mut active: event::ActiveModel = model.into();
+    active.archived_at = Set(Some(now));
+    active.updated_at = Set(now);
+    let updated = active.update(txn).await.map_err(AppError::Database)?;
+
+    // A deleted/archived event must not leave its loot split in the officer queue.
+    split::Entity::update_many()
+        .filter(split::Column::EventId.eq(id))
+        .filter(split::Column::ArchivedAt.is_null())
+        .col_expr(split::Column::ArchivedAt, Expr::value(now))
+        .col_expr(split::Column::UpdatedAt, Expr::value(now))
+        .exec(txn)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(updated)
+}
+
+async fn apply_unarchive(
+    txn: &DatabaseTransaction,
+    model: event::Model,
+) -> Result<event::Model, AppError> {
+    let id = model.id;
+    let should_requeue_vod =
+        model.vod_forum_post_enabled && model.vod_forum_post_status == "deleted";
+    let now = Utc::now();
+    let mut active: event::ActiveModel = model.into();
+    active.archived_at = Set(None);
+    active.updated_at = Set(now.into());
+    if should_requeue_vod {
+        // A confirmed archive deletion is safe to replace: the next poll will create a
+        // fresh VOD post for the restored event. Ambiguous `attempted` posts deliberately
+        // remain non-retriable.
+        active.vod_forum_post_status = Set("pending".to_string());
+        active.vod_forum_thread_id = Set(None);
+    }
+    let updated = active.update(txn).await.map_err(AppError::Database)?;
+
+    let linked = split::Entity::find()
+        .filter(split::Column::EventId.eq(id))
+        .filter(split::Column::ArchivedAt.is_not_null())
+        .all(txn)
+        .await
+        .map_err(AppError::Database)?;
+    for linked_split in linked {
+        let mut split_active: split::ActiveModel = linked_split.into();
+        split_active.archived_at = Set(None);
+        split_active.updated_at = Set(now.into());
+        split_active.update(txn).await.map_err(AppError::Database)?;
+    }
+    Ok(updated)
+}
 
 /// Rejects management actions on a linked copy of another tenant's event.
 ///
@@ -1653,5 +2123,827 @@ mod tests {
             1
         );
         world.close().await;
+    }
+
+    #[tokio::test]
+    async fn auto_stop_goes_through_the_transition_core_and_skips_xp_for_mirrors() {
+        use super::transition_tests::{fixture, seed_event};
+        use crate::event_sessions::auto_stop::auto_stop_expired_sessions;
+        use crate::modules::events::entities::event_completion_xp;
+
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let db = &world.tenant_dbs[1];
+        let fx = fixture(db).await;
+        // `seed_event` gives a live event whose auto-stop deadline is already due.
+        let (own, own_split) = seed_event(db, &fx, "live", false).await;
+        let (mirror, _) = seed_event(db, &fx, "live", false).await;
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO event_sync_links \
+                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
+                 VALUES ($1,'guild-b',1,'guild-a',$2)",
+                [uuid::Uuid::new_v4().into(), mirror.into()],
+            ))
+            .await
+            .expect("link mirror");
+
+        auto_stop_expired_sessions(db, &EventService::new(), &world.control, "guild-a")
+            .await
+            .expect("auto-stop pass");
+
+        for id in [own, mirror] {
+            let row = event::Entity::find_by_id(id)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(row.status, "auto_stopped");
+        }
+        let xp = |id| {
+            event_completion_xp::Entity::find()
+                .filter(event_completion_xp::Column::EventId.eq(id))
+                .count(db)
+        };
+        assert_eq!(
+            xp(own).await.unwrap(),
+            3,
+            "own event snapshots creator + participants"
+        );
+        assert_eq!(xp(mirror).await.unwrap(), 0, "a mirror never awards XP");
+        let split_row = crate::modules::splits::entities::split::Entity::find_by_id(own_split)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            split_row.status, "pending",
+            "the stop synced the linked split"
+        );
+        world.close().await;
+    }
+}
+
+/// Contract tests of the transition core. They run on in-memory SQLite and, when
+/// `TEST_DATABASE_URL` is set, on Postgres through the same scenario functions.
+#[cfg(test)]
+mod transition_tests {
+    use super::*;
+    use crate::modules::events::entities::{event_completion_xp, event_participation};
+    use crate::modules::splits::entities::{split, split_participant};
+    use crate::modules::users::entities as users;
+    use sea_orm::{Database, TransactionTrait};
+    use sea_orm_migration::MigratorTrait;
+
+    const FAIL_TRIGGER: &str = "fail_split_participants";
+
+    pub(super) async fn sqlite_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("tenant migrations");
+        db
+    }
+
+    async fn insert_user(db: &DatabaseConnection, name: &str) -> i64 {
+        users::ActiveModel {
+            username: Set(name.to_owned()),
+            email: Set(format!("{name}@example.com")),
+            role: Set("User".to_owned()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert user")
+        .id
+    }
+
+    async fn insert_comp(db: &DatabaseConnection, creator: i64) -> i64 {
+        use crate::modules::comps::entities::{comp, comp_category};
+        let category = comp_category::ActiveModel {
+            name: Set("transition".to_owned()),
+            slug: Set("transition".to_owned()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert comp category");
+        comp::ActiveModel {
+            name: Set("transition comp".to_owned()),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert comp")
+        .id
+    }
+
+    /// Fixture shared by every scenario: a creator, two participants and one comp.
+    pub(super) struct Fixture {
+        pub(super) creator: i64,
+        pub(super) first: i64,
+        pub(super) second: i64,
+        comp_id: i64,
+    }
+
+    pub(super) async fn fixture(db: &DatabaseConnection) -> Fixture {
+        let creator = insert_user(db, "creator").await;
+        let first = insert_user(db, "first").await;
+        let second = insert_user(db, "second").await;
+        let comp_id = insert_comp(db, creator).await;
+        Fixture {
+            creator,
+            first,
+            second,
+            comp_id,
+        }
+    }
+
+    /// Inserts an event in `status` with both participants signed up and one linked split.
+    pub(super) async fn seed_event(
+        db: &DatabaseConnection,
+        fx: &Fixture,
+        status: &str,
+        archived: bool,
+    ) -> (i64, i64) {
+        let live_like = status == "live";
+        let now: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
+        let event = event::ActiveModel {
+            title: Set(format!("{status} event")),
+            comp_id: Set(Some(fx.comp_id)),
+            created_by: Set(fx.creator),
+            event_date_utc: Set(now),
+            status: Set(status.to_owned()),
+            started_at: Set((live_like || status == "cancelled").then_some(now)),
+            auto_stop_deadline: Set(live_like.then_some(now)),
+            archived_at: Set(archived.then_some(now)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert event");
+        for user_id in [fx.first, fx.second] {
+            event_participation::ActiveModel {
+                event_id: Set(event.id),
+                user_id: Set(user_id),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert participation");
+        }
+        let linked = split::ActiveModel {
+            created_by: Set(fx.creator),
+            status: Set("awaiting_event".to_owned()),
+            estimated_market_value: Set("100".parse().unwrap()),
+            fee: Set("10".parse().unwrap()),
+            repair_value: Set("0".parse().unwrap()),
+            bags_value: Set("0".parse().unwrap()),
+            event_id: Set(Some(event.id)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert split");
+        (event.id, linked.id)
+    }
+
+    /// Everything a transition may change, minus ids and wall-clock values.
+    #[derive(Debug, PartialEq, Eq)]
+    struct RowEffects {
+        status: String,
+        started: bool,
+        stopped: bool,
+        deadline: bool,
+        archived: bool,
+        link_status: String,
+        link_attempts: i64,
+        link_battles_completed: bool,
+        split_status: String,
+        split_archived: bool,
+        split_needs_resync: bool,
+        split_participants: usize,
+        xp_rows: Vec<(String, String)>,
+    }
+
+    async fn row_effects(db: &DatabaseConnection, event_id: i64, split_id: i64) -> RowEffects {
+        let model = event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let linked = split::Entity::find_by_id(split_id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut xp_rows = event_completion_xp::Entity::find()
+            .filter(event_completion_xp::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.source, row.status))
+            .collect::<Vec<_>>();
+        xp_rows.sort();
+        RowEffects {
+            status: model.status,
+            started: model.started_at.is_some(),
+            stopped: model.stopped_at.is_some(),
+            deadline: model.auto_stop_deadline.is_some(),
+            archived: model.archived_at.is_some(),
+            link_status: model.link_status,
+            link_attempts: model.link_attempts,
+            link_battles_completed: model.link_battles_completed_at.is_some(),
+            split_status: linked.status,
+            split_archived: linked.archived_at.is_some(),
+            split_needs_resync: linked.needs_resync,
+            split_participants: split_participant::Entity::find()
+                .filter(split_participant::Column::SplitId.eq(split_id))
+                .all(db)
+                .await
+                .unwrap()
+                .len(),
+            xp_rows,
+        }
+    }
+
+    async fn run(
+        db: &DatabaseConnection,
+        event_id: i64,
+        transition: Transition,
+        cause: Cause,
+    ) -> Result<TransitionOutcome, AppError> {
+        let txn = db.begin().await?;
+        let outcome = transition_in_txn(&txn, event_id, transition, cause, Some("actor")).await?;
+        txn.commit().await?;
+        Ok(outcome)
+    }
+
+    fn every_cause() -> Vec<Cause> {
+        vec![
+            Cause::Web,
+            Cause::Discord,
+            Cause::Scheduler,
+            Cause::Sync { backfill: false },
+            Cause::Sync { backfill: true },
+            Cause::Settings,
+            Cause::Reconcile,
+            Cause::Import,
+            Cause::Manual,
+        ]
+    }
+
+    /// Each transition with the pre-state it needs and the row effects it must produce.
+    fn transition_cases() -> Vec<(Transition, &'static str, bool, &'static str)> {
+        let stop = |auto| Transition::Stop {
+            auto,
+            xp: XpFilter::Everyone,
+        };
+        vec![
+            (Transition::Start, "scheduled", false, "live"),
+            (stop(false), "live", false, "stopped"),
+            (stop(true), "live", false, "auto_stopped"),
+            (Transition::Cancel, "live", false, "cancelled"),
+            (Transition::Cancel, "scheduled", false, "cancelled"),
+            (Transition::Uncancel, "cancelled", false, "scheduled"),
+            (Transition::Archive, "stopped", false, "stopped"),
+            (Transition::Unarchive, "stopped", true, "stopped"),
+        ]
+    }
+
+    #[tokio::test]
+    async fn every_transition_yields_identical_row_changes_for_every_cause() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        for (transition, from, archived, expected_status) in transition_cases() {
+            let mut baseline: Option<RowEffects> = None;
+            for cause in every_cause() {
+                let (event_id, split_id) = seed_event(&db, &fx, from, archived).await;
+                let outcome = run(&db, event_id, transition, cause)
+                    .await
+                    .unwrap_or_else(|error| {
+                        panic!("{transition:?} from {from} with {cause:?} failed: {error}")
+                    });
+                assert!(
+                    outcome.changed,
+                    "{transition:?} from {from} must change the row"
+                );
+                assert_eq!(outcome.cause, cause);
+                assert_eq!(outcome.model.status, expected_status);
+                assert!(outcome.effects.is_empty());
+                assert!(outcome.wake.is_empty());
+                assert_eq!(outcome.sync_outbox_id, None);
+
+                let effects = row_effects(&db, event_id, split_id).await;
+                assert_eq!(effects.status, expected_status);
+                match &baseline {
+                    None => baseline = Some(effects),
+                    Some(first) => assert_eq!(
+                        &effects, first,
+                        "{transition:?} from {from}: {cause:?} differs from the first cause"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn transitions_write_the_documented_row_changes() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+
+        let (id, split_id) = seed_event(&db, &fx, "scheduled", false).await;
+        run(&db, id, Transition::Start, Cause::Web).await.unwrap();
+        let live = row_effects(&db, id, split_id).await;
+        assert!(live.started && live.deadline && !live.stopped);
+        assert_eq!(live.link_status, "in_progress");
+
+        let stop = Transition::Stop {
+            auto: false,
+            xp: XpFilter::Everyone,
+        };
+        run(&db, id, stop, Cause::Web).await.unwrap();
+        let stopped = row_effects(&db, id, split_id).await;
+        assert_eq!(stopped.status, "stopped");
+        assert!(stopped.stopped);
+        // creator + two participants, snapshotted in the stop transaction
+        assert_eq!(stopped.xp_rows.len(), 3);
+        // the awaiting split followed the event and imported the roster
+        assert_eq!(stopped.split_status, "pending");
+        assert_eq!(stopped.split_participants, 2);
+
+        let (id, _) = seed_event(&db, &fx, "live", false).await;
+        run(&db, id, Transition::Cancel, Cause::Web).await.unwrap();
+        let cancelled = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(cancelled.stopped_at.is_some() && cancelled.auto_stop_deadline.is_none());
+        run(&db, id, Transition::Uncancel, Cause::Web)
+            .await
+            .unwrap();
+        let restored = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.status, "scheduled");
+        assert!(restored.started_at.is_none() && restored.stopped_at.is_none());
+        assert_eq!(restored.link_status, "pending");
+
+        let (id, split_id) = seed_event(&db, &fx, "stopped", false).await;
+        run(&db, id, Transition::Archive, Cause::Web).await.unwrap();
+        let archived = row_effects(&db, id, split_id).await;
+        assert!(archived.archived && archived.split_archived);
+        run(&db, id, Transition::Unarchive, Cause::Web)
+            .await
+            .unwrap();
+        let unarchived = row_effects(&db, id, split_id).await;
+        assert!(!unarchived.archived && !unarchived.split_archived);
+    }
+
+    #[tokio::test]
+    async fn invalid_transitions_conflict_and_write_nothing() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let stop = Transition::Stop {
+            auto: false,
+            xp: XpFilter::Everyone,
+        };
+        let cases = [
+            (Transition::Start, "live", false),
+            (Transition::Start, "stopped", false),
+            (Transition::Start, "scheduled", true),
+            (stop, "scheduled", false),
+            (stop, "cancelled", false),
+            (stop, "live", true),
+            (Transition::Cancel, "stopped", false),
+            (Transition::Cancel, "scheduled", true),
+            (Transition::Uncancel, "scheduled", false),
+            (Transition::Uncancel, "cancelled", true),
+        ];
+        for (transition, from, archived) in cases {
+            let (id, split_id) = seed_event(&db, &fx, from, archived).await;
+            let before = row_effects(&db, id, split_id).await;
+            let error = run(&db, id, transition, Cause::Web).await.unwrap_err();
+            assert!(
+                matches!(error, AppError::Conflict(_)),
+                "{transition:?} from {from} (archived={archived}) gave {error:?}"
+            );
+            assert_eq!(row_effects(&db, id, split_id).await, before);
+        }
+        let missing = run(&db, 9_999, Transition::Start, Cause::Web).await;
+        assert!(matches!(missing, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn cancel_of_a_cancelled_event_is_a_noop() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "cancelled", false).await;
+        let before = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let outcome = run(&db, id, Transition::Cancel, Cause::Web).await.unwrap();
+        assert!(!outcome.changed);
+        let after = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(before, after);
+    }
+
+    /// Scenario shared by SQLite and Postgres: a second stop writes nothing.
+    pub(super) async fn assert_stop_is_idempotent(db: &DatabaseConnection) {
+        let fx = fixture(db).await;
+        let (id, split_id) = seed_event(db, &fx, "live", false).await;
+        let stop = Transition::Stop {
+            auto: false,
+            xp: XpFilter::Everyone,
+        };
+        let first = run(db, id, stop, Cause::Web).await.unwrap();
+        assert!(first.changed);
+        let row_after_first = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let effects_after_first = row_effects(db, id, split_id).await;
+        let split_after_first = split::Entity::find_by_id(split_id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Same transition and the opposite flavor (auto) both leave the stopped event alone.
+        for again in [
+            stop,
+            Transition::Stop {
+                auto: true,
+                xp: XpFilter::Everyone,
+            },
+        ] {
+            let second = run(db, id, again, Cause::Scheduler).await.unwrap();
+            assert!(!second.changed);
+            assert_eq!(second.splits, None);
+            assert_eq!(
+                event::Entity::find_by_id(id)
+                    .one(db)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                row_after_first,
+                "a repeated stop must not touch the event row"
+            );
+            assert_eq!(row_effects(db, id, split_id).await, effects_after_first);
+            assert_eq!(
+                split::Entity::find_by_id(split_id)
+                    .one(db)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                split_after_first,
+                "a repeated stop must not touch the split row"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_is_idempotent_on_sqlite() {
+        assert_stop_is_idempotent(&sqlite_db().await).await;
+    }
+
+    #[tokio::test]
+    async fn xp_filter_maps_the_legacy_flag_and_controls_the_snapshot() {
+        assert_eq!(XpFilter::from_award_xp(true), XpFilter::Everyone);
+        assert_eq!(XpFilter::from_award_xp(false), XpFilter::OwnMembersOnly);
+
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (everyone, _) = seed_event(&db, &fx, "live", false).await;
+        let (own_only, _) = seed_event(&db, &fx, "live", false).await;
+        for (id, xp) in [
+            (everyone, XpFilter::Everyone),
+            (own_only, XpFilter::OwnMembersOnly),
+        ] {
+            run(
+                &db,
+                id,
+                Transition::Stop { auto: true, xp },
+                Cause::Scheduler,
+            )
+            .await
+            .unwrap();
+        }
+        let count = |id| {
+            let db = &db;
+            async move {
+                event_completion_xp::Entity::find()
+                    .filter(event_completion_xp::Column::EventId.eq(id))
+                    .all(db)
+                    .await
+                    .unwrap()
+                    .len()
+            }
+        };
+        assert_eq!(count(everyone).await, 3);
+        assert_eq!(count(own_only).await, 0);
+    }
+
+    // --- split sync isolation ---------------------------------------------
+
+    async fn install_split_sync_failure(db: &DatabaseConnection) {
+        match db.get_database_backend() {
+            DbBackend::Sqlite => {
+                db.execute_unprepared(&format!(
+                    "CREATE TRIGGER {FAIL_TRIGGER} BEFORE INSERT ON split_participants \
+                     BEGIN SELECT RAISE(ABORT, 'injected split sync failure'); END"
+                ))
+                .await
+                .unwrap();
+            }
+            _ => {
+                db.execute_unprepared(&format!(
+                    "CREATE OR REPLACE FUNCTION {FAIL_TRIGGER}() RETURNS trigger \
+                     LANGUAGE plpgsql AS $$ BEGIN \
+                     RAISE EXCEPTION 'injected split sync failure'; END $$"
+                ))
+                .await
+                .unwrap();
+                db.execute_unprepared(&format!(
+                    "CREATE TRIGGER {FAIL_TRIGGER} BEFORE INSERT ON split_participants \
+                     FOR EACH ROW EXECUTE FUNCTION {FAIL_TRIGGER}()"
+                ))
+                .await
+                .unwrap();
+            }
+        }
+    }
+
+    async fn remove_split_sync_failure(db: &DatabaseConnection) {
+        let sql = match db.get_database_backend() {
+            DbBackend::Sqlite => format!("DROP TRIGGER {FAIL_TRIGGER}"),
+            _ => format!("DROP TRIGGER {FAIL_TRIGGER} ON split_participants"),
+        };
+        db.execute_unprepared(&sql).await.unwrap();
+    }
+
+    async fn split_roster(db: &DatabaseConnection, split_id: i64) -> Vec<i64> {
+        let mut ids = split_participant::Entity::find()
+            .filter(split_participant::Column::SplitId.eq(split_id))
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.user_id)
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Scenario shared by SQLite and Postgres: a failing split sync does not fail or undo the
+    /// stop, leaves the split untouched but flagged, and a repeated stop repairs it.
+    pub(super) async fn assert_split_sync_failure_keeps_the_stop(db: &DatabaseConnection) {
+        let fx = fixture(db).await;
+        let (id, split_id) = seed_event(db, &fx, "live", false).await;
+        // The split roster holds `first` and a stale member; the event has `first` and
+        // `second`. Reconciling deletes the stale member and then inserts `second`, so a
+        // failure on the insert proves the delete is rolled back with the savepoint.
+        let stale = insert_user(db, "stale").await;
+        for user_id in [fx.first, stale] {
+            split_participant::ActiveModel {
+                split_id: Set(split_id),
+                user_id: Set(user_id),
+                weight: Set(sea_orm::prelude::Decimal::ONE),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        let mut expected_before = vec![fx.first, stale];
+        expected_before.sort_unstable();
+
+        install_split_sync_failure(db).await;
+        let stop = Transition::Stop {
+            auto: false,
+            xp: XpFilter::Everyone,
+        };
+        let outcome = run(db, id, stop, Cause::Web)
+            .await
+            .expect("a split sync failure must not fail the stop");
+        assert!(outcome.changed);
+        assert_eq!(outcome.splits, Some(SplitSyncState::NeedsResync));
+
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(model.status, "stopped");
+        assert!(model.stopped_at.is_some());
+        let effects = row_effects(db, id, split_id).await;
+        assert!(effects.split_needs_resync, "the split must be flagged");
+        assert_eq!(
+            effects.split_status, "awaiting_event",
+            "split status untouched"
+        );
+        assert_eq!(
+            effects.xp_rows.len(),
+            3,
+            "the XP snapshot is part of the stop"
+        );
+        assert_eq!(
+            split_roster(db, split_id).await,
+            expected_before,
+            "the partial roster sync is rolled back to the savepoint"
+        );
+
+        // The failure persists: a repeated stop retries, stays successful, stays flagged.
+        let retry = run(db, id, stop, Cause::Web).await.unwrap();
+        assert!(!retry.changed);
+        assert_eq!(retry.splits, Some(SplitSyncState::NeedsResync));
+        assert!(row_effects(db, id, split_id).await.split_needs_resync);
+
+        // Once the cause is gone, the next stop repairs the split without touching the event.
+        remove_split_sync_failure(db).await;
+        let stopped_row = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let repair = run(db, id, stop, Cause::Web).await.unwrap();
+        assert!(!repair.changed);
+        assert_eq!(repair.splits, Some(SplitSyncState::Synced));
+        let mut expected_after = vec![fx.first, fx.second];
+        expected_after.sort_unstable();
+        assert_eq!(split_roster(db, split_id).await, expected_after);
+        let fixed = row_effects(db, id, split_id).await;
+        assert!(!fixed.split_needs_resync);
+        assert_eq!(fixed.split_status, "pending");
+        assert_eq!(
+            event::Entity::find_by_id(id)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap(),
+            stopped_row
+        );
+    }
+
+    #[tokio::test]
+    async fn split_sync_failure_keeps_the_stop_on_sqlite() {
+        assert_split_sync_failure_keeps_the_stop(&sqlite_db().await).await;
+    }
+
+    #[tokio::test]
+    async fn event_service_stop_succeeds_when_the_split_sync_fails() {
+        // The legacy wrapper used to run the sync after commit with `?`, failing the request
+        // of an event that was already stopped.
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, split_id) = seed_event(&db, &fx, "live", false).await;
+        install_split_sync_failure(&db).await;
+        let service = EventService::new();
+        let view = service.stop_event(&db, id, false).await.unwrap();
+        assert_eq!(view.status, "stopped");
+        assert!(row_effects(&db, id, split_id).await.split_needs_resync);
+    }
+
+    #[tokio::test]
+    async fn a_failing_xp_snapshot_rolls_the_whole_stop_back() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, split_id) = seed_event(&db, &fx, "live", false).await;
+        db.execute_unprepared(
+            "CREATE TRIGGER fail_xp BEFORE INSERT ON event_completion_xp \
+             BEGIN SELECT RAISE(ABORT, 'injected xp failure'); END",
+        )
+        .await
+        .unwrap();
+        let before = row_effects(&db, id, split_id).await;
+        let stop = Transition::Stop {
+            auto: false,
+            xp: XpFilter::Everyone,
+        };
+        assert!(run(&db, id, stop, Cause::Web).await.is_err());
+        assert_eq!(row_effects(&db, id, split_id).await, before);
+        assert_eq!(before.status, "live");
+    }
+
+    #[tokio::test]
+    async fn finish_copy_session_runs_the_stop_body_for_an_already_stopped_event() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, split_id) = seed_event(&db, &fx, "stopped", false).await;
+        let service = EventService::new();
+
+        let txn = db.begin().await.unwrap();
+        let state = service
+            .finish_copy_session(&txn, id, XpFilter::Everyone)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(state, SplitSyncState::Synced);
+        let effects = row_effects(&db, id, split_id).await;
+        assert_eq!(effects.xp_rows.len(), 3);
+        assert_eq!(effects.split_status, "pending");
+
+        let (live, _) = seed_event(&db, &fx, "live", false).await;
+        let txn = db.begin().await.unwrap();
+        let error = service
+            .finish_copy_session(&txn, live, XpFilter::Everyone)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn wrappers_and_after_commit_without_propagation_are_inert() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        let done = EventService::new()
+            .transition(&db, id, Transition::Start, Cause::Web, None)
+            .await
+            .unwrap();
+        assert_eq!(done.view.status, "live");
+        done.outcome
+            .after_commit(&AfterCommit::default())
+            .await
+            .unwrap();
+    }
+
+    // --- Postgres ---------------------------------------------------------
+
+    /// Runs `scenario` on a fresh Postgres tenant schema; skipped without `TEST_DATABASE_URL`.
+    async fn on_postgres<F, Fut>(prefix: &str, scenario: F)
+    where
+        F: FnOnce(DatabaseConnection) -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        use crate::postgres::{
+            connect_with_search_path, drop_schema, ensure_schema,
+            test_support::{try_admin_db, unique_schema},
+        };
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema(prefix);
+        ensure_schema(&admin, &schema).await.expect("create schema");
+        let db = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect schema");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("tenant migrations");
+        scenario(db.clone()).await;
+        db.close().await.expect("close tenant DB");
+        drop_schema(&admin, &schema).await.expect("drop schema");
+    }
+
+    #[tokio::test]
+    async fn stop_is_idempotent_on_postgres() {
+        on_postgres("tx_idem", |db| async move {
+            assert_stop_is_idempotent(&db).await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn split_sync_failure_keeps_the_stop_on_postgres() {
+        // On Postgres a failed statement aborts the whole transaction unless it ran in a
+        // savepoint, so this is the test that proves the savepoint is doing its job.
+        on_postgres("tx_split", |db| async move {
+            assert_split_sync_failure_keeps_the_stop(&db).await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn transition_table_holds_on_postgres() {
+        on_postgres("tx_table", |db| async move {
+            let fx = fixture(&db).await;
+            for (transition, from, archived, expected_status) in transition_cases() {
+                let (id, split_id) = seed_event(&db, &fx, from, archived).await;
+                let outcome = run(&db, id, transition, Cause::Scheduler).await.unwrap();
+                assert!(outcome.changed);
+                assert_eq!(row_effects(&db, id, split_id).await.status, expected_status);
+            }
+        })
+        .await;
     }
 }

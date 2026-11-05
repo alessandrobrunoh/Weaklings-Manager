@@ -33,7 +33,10 @@ use std::collections::HashSet;
 use super::attribution::{
     ParticipationGuild, eligible_participation_guilds, resolve_join_attribution,
 };
-use super::lifecycle::{assert_manageable_source_event, sync_owner_change_to_copies};
+use super::lifecycle::{
+    AfterCommit, Cause, Transition, XpFilter, assert_manageable_source_event,
+    propagate_source_change,
+};
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
     CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
@@ -1362,12 +1365,31 @@ async fn sync_source_change(
     else {
         return Ok(());
     };
-    let operation = if model.archived_at.is_some() || model.status == "cancelled" {
-        super::fanout_outbox::Operation::Archive
-    } else {
-        super::fanout_outbox::Operation::Update
-    };
-    sync_owner_change_to_copies(&control.0, registry, tenant_id, &model, operation).await
+    propagate_source_change(&control.0, registry, tenant_id, &model).await
+}
+
+/// Applies one lifecycle transition for a web request, then propagates it to copies.
+///
+/// The transition core is shared with the scheduler and the sync engine; the route only adds
+/// the caller's identity and the legacy post-commit propagation.
+async fn run_transition(
+    user: &UserContext,
+    db: &sea_orm::DatabaseConnection,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    tenant_id: &str,
+    id: i64,
+    transition: Transition,
+) -> Result<EventView, AppError> {
+    let done = EventService::new()
+        .transition(db, id, transition, Cause::Web, Some(&user.id))
+        .await?;
+    done.outcome
+        .after_commit(&AfterCommit::legacy_propagation(
+            &control.0, registry, tenant_id,
+        ))
+        .await?;
+    Ok(done.view)
 }
 
 /// Deletes an event.
@@ -1401,9 +1423,16 @@ async fn delete_event(
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let service = EventService::new();
-    service.delete_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Archive,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1433,8 +1462,16 @@ async fn archive_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().archive_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Archive,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1464,8 +1501,16 @@ async fn unarchive_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().unarchive_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Unarchive,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2041,9 +2086,16 @@ async fn start_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let service = EventService::new();
-    let event = service.start_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Start,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2077,8 +2129,16 @@ async fn cancel_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().cancel_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Cancel,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2112,8 +2172,16 @@ async fn uncancel_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().uncancel_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Uncancel,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2148,12 +2216,12 @@ async fn stop_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let service = EventService::new();
     let award_xp = !is_mirror_event(&control.0, &tenant_id, id).await?;
-    let event = service
-        .stop_event_with_xp_policy(&db, id, false, award_xp)
-        .await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    let stop = Transition::Stop {
+        auto: false,
+        xp: XpFilter::from_award_xp(award_xp),
+    };
+    let event = run_transition(&user, &db, &control, &registry, &tenant_id, id, stop).await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
