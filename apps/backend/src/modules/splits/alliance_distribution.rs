@@ -4,6 +4,8 @@ use sea_orm::{
     ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
     QueryFilter, Statement, TransactionTrait,
 };
+use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
@@ -35,6 +37,78 @@ struct Projection {
     guild_tenant_id: String,
     destination_user_id: i64,
     amount: sea_orm::prelude::Decimal,
+}
+
+/// Durable progress for one alliance split projection batch.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DistributionStatus {
+    /// Stable id used to correlate retries and ledger rows.
+    pub batch_id: String,
+    /// `processing`, `failed`, or `complete`.
+    pub state: String,
+    /// Latest batch-level error, when a retry is needed.
+    pub last_error: Option<String>,
+    /// One result per participant projection.
+    pub recipients: Vec<DistributionRecipientStatus>,
+}
+
+/// Progress and audit identifiers for one projected participant credit.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DistributionRecipientStatus {
+    pub guild_tenant_id: String,
+    pub source_user_id: i64,
+    #[schema(value_type = String, example = "50.00")]
+    pub amount: sea_orm::prelude::Decimal,
+    /// `pending` until the guild-local ledger row is confirmed.
+    pub state: String,
+    pub transaction_id: Option<i64>,
+    pub last_error: Option<String>,
+}
+
+/// Returns durable batch state to the split owner/admin.
+pub async fn status(
+    control: &DatabaseConnection,
+    alliance_tenant_id: &str,
+    split_id: i64,
+) -> Result<Option<DistributionStatus>, AppError> {
+    let Some(batch) = control
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT id,state,last_error FROM alliance_split_distribution_batches \
+             WHERE alliance_tenant_id=$1 AND split_id=$2",
+            [alliance_tenant_id.into(), split_id.into()],
+        ))
+        .await?
+    else {
+        return Ok(None);
+    };
+    let batch_id: Uuid = batch.try_get_by_index(0)?;
+    let recipients = control
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT guild_tenant_id,source_user_id,amount,state,transaction_id,last_error \
+             FROM alliance_split_distribution_items WHERE batch_id=$1 ORDER BY guild_tenant_id,source_user_id",
+            [batch_id.into()],
+        ))
+        .await?
+        .into_iter()
+        .map(|row| {
+            Ok(DistributionRecipientStatus {
+                guild_tenant_id: row.try_get_by_index(0)?,
+                source_user_id: row.try_get_by_index(1)?,
+                amount: row.try_get_by_index(2)?,
+                state: row.try_get_by_index(3)?,
+                transaction_id: row.try_get_by_index(4)?,
+                last_error: row.try_get_by_index(5)?,
+            })
+        })
+        .collect::<Result<Vec<_>, sea_orm::DbErr>>()?;
+    Ok(Some(DistributionStatus {
+        batch_id: batch_id.to_string(),
+        state: batch.try_get_by_index(1)?,
+        last_error: batch.try_get_by_index(2)?,
+        recipients,
+    }))
 }
 
 /// Preflight and distribute an alliance-owned split. Invalid membership or
@@ -465,13 +539,22 @@ async fn mark_batch_failed(
     batch_id: Uuid,
     error: &str,
 ) -> Result<(), AppError> {
-    control
+    let txn = control.begin().await?;
+    txn
         .execute(Statement::from_sql_and_values(
             DbBackend::Postgres,
             "UPDATE alliance_split_distribution_batches SET state='failed',last_error=$2,updated_at=NOW() WHERE id=$1",
             [batch_id.into(), error.to_owned().into()],
         ))
         .await?;
+    txn.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "UPDATE alliance_split_distribution_items SET last_error=$2,updated_at=NOW() \
+         WHERE batch_id=$1 AND state='pending'",
+        [batch_id.into(), error.to_owned().into()],
+    ))
+    .await?;
+    txn.commit().await?;
     Ok(())
 }
 

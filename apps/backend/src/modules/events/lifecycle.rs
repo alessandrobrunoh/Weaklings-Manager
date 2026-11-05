@@ -894,4 +894,346 @@ mod tests {
         );
         world.close().await;
     }
+
+    #[tokio::test]
+    async fn alliance_split_preflights_every_guild_and_retries_after_manual_roster_removal() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Split distribution event").await;
+        let alliance_db = &world.tenant_dbs[0];
+        let alice = upsert_discord_user(
+            alliance_db,
+            "distribution-alice",
+            "Alice",
+            "alice@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("alliance Alice");
+        let bob = upsert_discord_user(
+            alliance_db,
+            "distribution-bob",
+            "Bob",
+            "bob@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("alliance Bob");
+        for (discord_id, guild_id) in [
+            ("distribution-alice", "guild-a"),
+            ("distribution-bob", "guild-b"),
+        ] {
+            world.add_user_membership(discord_id, guild_id).await;
+            world
+                .control
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO event_participant_attributions \
+                     (id,source_tenant_id,source_event_id,discord_id,guild_tenant_id) \
+                     VALUES ($1,'alliance',$2,$3,$4)",
+                    [
+                        uuid::Uuid::new_v4().into(),
+                        source.id.into(),
+                        discord_id.into(),
+                        guild_id.into(),
+                    ],
+                ))
+                .await
+                .expect("event attribution");
+        }
+        let alice_guild_id = upsert_discord_user(
+            &world.tenant_dbs[1],
+            "distribution-alice",
+            "Alice",
+            "alice@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("guild Alice");
+        upsert_discord_user(
+            &world.tenant_dbs[2],
+            "distribution-bob",
+            "Bob",
+            "bob@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("guild Bob");
+
+        alliance_db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE events SET status='stopped' WHERE id=$1",
+                [source.id.into()],
+            ))
+            .await
+            .expect("stop event");
+        let split_row = alliance_db
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO splits \
+                 (created_by,status,estimated_market_value,fee,repair_value,bags_value,event_id,updated_at) \
+                 VALUES ($1,'pending',100,0,0,0,$2,NOW()) RETURNING id",
+                [source.created_by.into(), source.id.into()],
+            ))
+            .await
+            .expect("insert split")
+            .expect("split row");
+        let split_id: i64 = split_row.try_get_by_index(0).expect("split id");
+        for user_id in [alice, bob] {
+            alliance_db
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO split_participants (split_id,user_id,weight) VALUES ($1,$2,100)",
+                    [split_id.into(), user_id.into()],
+                ))
+                .await
+                .expect("split participant");
+        }
+
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE alliance_memberships SET status='left' \
+                 WHERE alliance_tenant_id='alliance' AND guild_tenant_id='guild-b'",
+                [],
+            ))
+            .await
+            .expect("depart guild-b");
+        let blocked = crate::modules::splits::alliance_distribution::complete(
+            &world.control,
+            &world.registry,
+            "alliance",
+            alliance_db,
+            split_id,
+            source.created_by,
+        )
+        .await;
+        assert!(matches!(blocked, Err(AppError::Conflict(_))));
+        assert_eq!(
+            crate::modules::bank::entities::Entity::find()
+                .count(&world.tenant_dbs[1])
+                .await
+                .expect("count guild-a transactions"),
+            0,
+            "preflight failure must not write a transaction to another guild"
+        );
+        let batch_count: i64 = world
+            .control
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT COUNT(*) FROM alliance_split_distribution_batches WHERE split_id=$1",
+                [split_id.into()],
+            ))
+            .await
+            .expect("count distribution batches")
+            .expect("count row")
+            .try_get_by_index(0)
+            .expect("batch count");
+        assert_eq!(batch_count, 0, "invalid preflight creates no batch");
+
+        // The agreed recovery is manual: remove the participants from the
+        // departed guild, then retry the same completion request.
+        alliance_db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "DELETE FROM split_participants WHERE split_id=$1 AND user_id=$2",
+                [split_id.into(), bob.into()],
+            ))
+            .await
+            .expect("remove departed guild participant");
+
+        // Simulate a transient failure after the first tenant transaction has
+        // committed. Retrying the same roster must resume without paying Alice
+        // twice.
+        let charlie = upsert_discord_user(
+            alliance_db,
+            "distribution-charlie",
+            "Charlie",
+            "charlie@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("alliance Charlie");
+        world
+            .add_user_membership("distribution-charlie", "guild-a")
+            .await;
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO event_participant_attributions \
+                 (id,source_tenant_id,source_event_id,discord_id,guild_tenant_id) \
+                 VALUES ($1,'alliance',$2,'distribution-charlie','guild-a')",
+                [uuid::Uuid::new_v4().into(), source.id.into()],
+            ))
+            .await
+            .expect("Charlie event attribution");
+        let charlie_guild_id = upsert_discord_user(
+            &world.tenant_dbs[1],
+            "distribution-charlie",
+            "Charlie",
+            "charlie@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("guild-a Charlie");
+        alliance_db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO split_participants (split_id,user_id,weight) VALUES ($1,$2,100)",
+                [split_id.into(), charlie.into()],
+            ))
+            .await
+            .expect("Charlie split participant");
+        world.tenant_dbs[1]
+            .execute_unprepared(&format!(
+                "CREATE FUNCTION fail_one_projection() RETURNS trigger LANGUAGE plpgsql AS $$ \
+                 BEGIN IF NEW.to_user_id = {charlie_guild_id} AND NEW.alliance_distribution_key IS NOT NULL \
+                 THEN RAISE EXCEPTION 'simulated transient projection failure'; END IF; RETURN NEW; END $$; \
+                 CREATE TRIGGER fail_charlie_projection BEFORE INSERT ON transactions \
+                 FOR EACH ROW EXECUTE FUNCTION fail_one_projection();"
+            ))
+            .await
+            .expect("install simulated tenant failure");
+        let partial = crate::modules::splits::alliance_distribution::complete(
+            &world.control,
+            &world.registry,
+            "alliance",
+            alliance_db,
+            split_id,
+            source.created_by,
+        )
+        .await;
+        assert!(
+            partial.is_err(),
+            "transient destination failure is surfaced"
+        );
+        let failed_status = crate::modules::splits::alliance_distribution::status(
+            &world.control,
+            "alliance",
+            split_id,
+        )
+        .await
+        .expect("load failed batch status")
+        .expect("failed batch exists");
+        assert_eq!(failed_status.state, "failed");
+        assert_eq!(
+            failed_status
+                .recipients
+                .iter()
+                .filter(|recipient| recipient.state == "complete")
+                .count(),
+            1,
+            "status records the durable partial result"
+        );
+        assert!(
+            failed_status
+                .recipients
+                .iter()
+                .filter(|recipient| recipient.state == "pending")
+                .all(|recipient| recipient.last_error.is_some()),
+            "status retains the error on incomplete recipients"
+        );
+        assert_eq!(
+            crate::modules::bank::entities::Entity::find()
+                .count(&world.tenant_dbs[1])
+                .await
+                .expect("count partial destination rows"),
+            1,
+            "Alice's earlier idempotent credit is durable"
+        );
+        world.tenant_dbs[1]
+            .execute_unprepared(
+                "DROP TRIGGER fail_charlie_projection ON transactions; \
+                 DROP FUNCTION fail_one_projection();",
+            )
+            .await
+            .expect("remove simulated failure");
+        let detail = crate::modules::splits::alliance_distribution::complete(
+            &world.control,
+            &world.registry,
+            "alliance",
+            alliance_db,
+            split_id,
+            source.created_by,
+        )
+        .await
+        .expect("retry after roster cleanup");
+        let complete_status = crate::modules::splits::alliance_distribution::status(
+            &world.control,
+            "alliance",
+            split_id,
+        )
+        .await
+        .expect("load complete batch status")
+        .expect("completed batch exists");
+        assert_eq!(complete_status.state, "complete");
+        assert!(
+            complete_status
+                .recipients
+                .iter()
+                .all(|recipient| recipient.state == "complete")
+        );
+        assert_eq!(
+            detail.summary.net_value,
+            Some(sea_orm::prelude::Decimal::from(100))
+        );
+        let transactions = crate::modules::bank::entities::Entity::find()
+            .all(&world.tenant_dbs[1])
+            .await
+            .expect("guild-a projected transactions");
+        assert_eq!(transactions.len(), 2);
+        let by_user = transactions
+            .iter()
+            .map(|transaction| (transaction.to_user_id, transaction))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            by_user[&alice_guild_id].amount,
+            sea_orm::prelude::Decimal::from(50)
+        );
+        assert_eq!(
+            by_user[&charlie_guild_id].amount,
+            sea_orm::prelude::Decimal::from(50)
+        );
+        assert!(transactions.iter().all(|transaction| {
+            transaction.source_alliance_tenant_id.as_deref() == Some("alliance")
+                && transaction.source_alliance_split_id == Some(split_id)
+        }));
+        assert!(
+            crate::modules::bank::entities::Entity::find()
+                .all(&world.tenant_dbs[2])
+                .await
+                .expect("guild-b transactions")
+                .is_empty()
+        );
+
+        crate::modules::splits::alliance_distribution::complete(
+            &world.control,
+            &world.registry,
+            "alliance",
+            alliance_db,
+            split_id,
+            source.created_by,
+        )
+        .await
+        .expect("idempotent repeat");
+        assert_eq!(
+            crate::modules::bank::entities::Entity::find()
+                .count(&world.tenant_dbs[1])
+                .await
+                .expect("count after repeated completion"),
+            2,
+            "retries must not duplicate transaction credits"
+        );
+        world.close().await;
+    }
 }

@@ -1,6 +1,6 @@
 # Alliance event distribution
 
-**Status:** Slices 1–5 are implemented and ready for review. Slice 6 (all-or-none alliance split validation and guild-local transaction projections) remains unimplemented.
+**Status:** Slices 1–6 are implemented and ready for review. Cross-tenant settlement is idempotent and retryable, but is not a single atomic transaction across tenant databases.
 **Goal:** Events should behave as one event across guild and alliance servers while each tenant keeps its own Discord delivery settings and financial records.
 
 ## Outcome and non-goals
@@ -95,6 +95,8 @@ For money, keep the source event's split authoritative. For alliance-owned split
 - **Scope:** stable member-to-guild mapping, full-batch preflight, durable idempotent distribution batch, audit details, retry/reconciliation, transaction visibility, and manual removal workflow.
 - **Verification:** exact amount/remainder tests; inactive or ambiguous guild blocks all writes; transient partial failure can resume without duplicates; retries and concurrent confirms are idempotent; per-tenant isolation and audit tests.
 - **Review boundary:** stop before any rank-based economic benefits or historical data conversion.
+- **Status (implemented):** Alliance-owned event splits use the existing durable `event_participant_attributions` and active alliance membership as the only routing authority. Completion preflights every participant's linked Discord identity, stored guild attribution, active membership, destination account, and positive share before creating a batch or writing any tenant ledger. Missing/ambiguous attribution or a departed guild blocks the whole split; staff remove affected participants manually and retry. A control-plane batch and per-recipient rows record source split, guild, amount, state, transaction id, actor, and errors. Guild-local transactions have a unique distribution key and expose their source alliance split id. A repeated completion resumes incomplete recipient credits and does not duplicate already-created rows; only after all credits succeed is the alliance split finalized. Split owners/admins can inspect recipient progress at `GET /api/splits/{id}/distribution-status`. Guild-origin and ordinary guild split completion behavior is unchanged.
+- **Verification evidence:** the control/tenant migration integration test passed; weighted-share remainder test passed; Postgres lifecycle integration test verified inactive-guild all-or-none preflight, manual roster removal, a transient second-recipient failure followed by retry without duplicate credits, guild-ledger isolation, source traceability, and idempotent repeat (1/1). `cargo check -p backend --tests` passed. Cross-database transactions are not atomic: a transient error after some recipient rows are written leaves a durable failed batch; retrying the same completion endpoint resumes using destination idempotency keys. There is no autonomous split-distribution retry worker; an authorized operator retries the completion endpoint after inspecting the status route.
 
 ## Risks and controls
 

@@ -6,7 +6,7 @@ const Env = z.object({
   /** Discord Application Client ID. */
   DISCORD_CLIENT_ID: z.string().min(1),
   /** Public frontend origin, used in unregistered-guild replies. */
-  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
+  FRONTEND_URL: z.string().url().default("https://weaklings.alessandrobrunoh.it"),
   /** Base URL of the Albion Guild Manager backend. */
   BACKEND_URL: z.string().url().default("http://localhost:3000"),
   /**

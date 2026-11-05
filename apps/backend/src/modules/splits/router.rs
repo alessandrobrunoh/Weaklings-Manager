@@ -124,6 +124,10 @@ pub fn router() -> Router {
         .route("/{id}/donate", post(donate_split_share))
         .route("/complete-batch", post(complete_splits_batch))
         .route("/{id}/complete", post(complete_split))
+        .route(
+            "/{id}/distribution-status",
+            get(alliance_distribution_status),
+        )
         .route("/{id}/not-completed", post(not_completed_split))
         .route("/{id}/lost", post(lost_split))
         .route("/match-participants", post(match_participants))
@@ -492,7 +496,14 @@ async fn remove_participant(
     path = "/api/splits/{id}/complete",
     tag = "splits",
     summary = "Close a pending split as completed — this is what actually pays people (Officer/Admin only)",
-    description = "The one split-closing action that has a side effect beyond the split row itself: \
+    description = "For guild tenants, this generates one Guild Bank transaction per participant. \
+        For alliance-owned event splits, the complete participant roster is preflighted against \
+        stored event guild attributions and active alliance memberships before any destination \
+        ledger is written; valid shares are projected into the respective member-guild ledgers. \
+        Cross-tenant writes use a durable idempotent batch, so retry this endpoint after a transient \
+        failure to resume without duplicate credits. If a represented guild has left, the whole \
+        batch is blocked; remove its participants manually from the alliance split and retry. \
+        The one split-closing action that has a side effect beyond the split row itself: \
         computes `net_value = estimated_market_value - repair_value + bags_value` (must be strictly \
         positive), then creates one **new**, `pending`-status Guild Bank transaction per participant \
         (`type = \"split_credit\"`, linked back via `split_id`), splitting `net_value` proportionally \
@@ -537,6 +548,45 @@ async fn complete_split(
             .await?
     };
     Ok(Json(ApiResponse::new(split)))
+}
+
+/// Read the durable state of an alliance-owned split distribution.
+#[utoipa::path(
+    get,
+    path = "/api/splits/{id}/distribution-status",
+    tag = "splits",
+    summary = "Read alliance split distribution progress",
+    description = "Returns per-guild recipient state, transaction ids, and the latest error. \
+        The split creator or a caller with `splits.edit` may read it.",
+    security(("session_cookie" = ["splits.edit"])),
+    params(("id" = i64, Path, description = "Alliance split id")),
+    responses(
+        (status = 200, description = "Distribution batch progress", body = crate::modules::splits::alliance_distribution::DistributionStatus),
+        (status = 404, description = "No distribution batch exists", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails)
+    )
+)]
+pub async fn alliance_distribution_status(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    Path(split_id): Path<i64>,
+) -> Result<Json<ApiResponse<super::alliance_distribution::DistributionStatus>>, AppError> {
+    if kind.0 != "alliance" {
+        return Err(AppError::NotFound(
+            "split distribution status is available only in alliance tenants".to_owned(),
+        ));
+    }
+    authorize_split_lifecycle(&db, &user, &perms, split_id, Permission::SplitsEdit).await?;
+    let status = super::alliance_distribution::status(&control.0, &tenant_id, split_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Distribution for split {split_id} not found"))
+        })?;
+    Ok(Json(ApiResponse::new(status)))
 }
 
 /// Donate the caller's own requestable share from a completed split to the Guild Bank.
