@@ -4,14 +4,23 @@ import type { EventSignupOptionsView } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
 import { getPoller } from "../services/poller.js";
 import {
+  buildSignupRoleOptions,
   buildsForSignupRole,
   FILL_SIGNUP_VALUE,
+  signupRoles,
   type SignupRoleValue,
 } from "../services/event-signup.js";
 import {
   buildWebsiteAccountRequiredReply,
   isWebsiteUserRegistered,
 } from "../services/website-account.js";
+import {
+  buildBuildSelectCustomId,
+  buildRoleSelectCustomId,
+  JOIN_GUILD_PENDING_FLASH,
+  participatePath,
+} from "../services/event-join-guild.js";
+import { flashCopy } from "../services/flash-copy.js";
 
 export async function handleSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -21,9 +30,180 @@ export async function handleSelectMenu(
   const [ns, action, ...rest] = parts;
 
   try {
+    if (ns === "event" && action === "join_guild") {
+      const eventId = Number(rest[0]);
+      const messageId = rest[1] ?? "";
+      const pending = rest[2] ?? "";
+      const guildTenantId = interaction.values[0];
+
+      await interaction.deferUpdate();
+      if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
+        await interaction.editReply(buildWebsiteAccountRequiredReply());
+        return;
+      }
+
+      // A flash-mass signup deferred its only submission until the guild was
+      // known; finish it here so the join is sent exactly once.
+      if (pending === JOIN_GUILD_PENDING_FLASH) {
+        try {
+          const updated = await api.post<any>(
+            participatePath(eventId, guildTenantId),
+            { primary_build_id: null, secondary_build_id: null },
+            interaction.user.id,
+          );
+          await getPoller(api.guildId)?.addMemberToEventThread(
+            eventId,
+            interaction.user.id,
+          );
+          if (messageId && interaction.channel) {
+            try {
+              const { buildEventEmbed } = await import("../embeds/event.embed.js");
+              const originalMsg = await interaction.channel.messages.fetch(messageId);
+              if (originalMsg) {
+                await originalMsg.edit({
+                  embeds: [buildEventEmbed(updated, interaction.guild?.preferredLocale)],
+                });
+              }
+            } catch (error) {
+              console.error("Failed to update original message on flash guild join", error);
+            }
+          }
+          const massTime = updated.mass_time_utc ?? updated.event_date_utc;
+          const massTs = Math.floor(new Date(massTime).getTime() / 1000);
+          const successEmbed = createResponseEmbed(
+            "success",
+            flashCopy(interaction.locale, "joinedTitle"),
+            flashCopy(interaction.locale, "joinedBody", { id: eventId, massTs }),
+            "FLASH MASS",
+          );
+          await interaction.editReply({ embeds: [successEmbed], components: [] });
+        } catch (e) {
+          console.error("Failed to join flash mass after guild choice", e);
+          const errEmbed = createResponseEmbed(
+            "error",
+            flashCopy(interaction.locale, "joinFailedTitle"),
+            flashCopy(interaction.locale, "joinFailed"),
+            "FLASH MASS",
+          );
+          await interaction.editReply({ embeds: [errEmbed], components: [] });
+        }
+        return;
+      }
+
+      // A concrete build id was chosen before the guild: one submission now.
+      const pendingBuildId = Number(pending);
+      if (pending && Number.isSafeInteger(pendingBuildId) && pendingBuildId > 0) {
+        try {
+          await api.post(
+            participatePath(eventId, guildTenantId),
+            { primary_build_id: pendingBuildId },
+            interaction.user.id,
+          );
+          await getPoller(api.guildId)?.addMemberToEventThread(
+            eventId,
+            interaction.user.id,
+          );
+          if (messageId && interaction.channel) {
+            try {
+              const { buildEventEmbed } = await import("../embeds/event.embed.js");
+              const updatedEvent = await api.get<any>(
+                `api/events/${eventId}`,
+                interaction.user.id,
+              );
+              const originalMsg = await interaction.channel.messages.fetch(messageId);
+              if (originalMsg) {
+                await originalMsg.edit({ embeds: [buildEventEmbed(updatedEvent)] });
+              }
+            } catch (error) {
+              console.error("Failed to update original message on guild join", error);
+            }
+          }
+          const successEmbed = createResponseEmbed(
+            "success",
+            "Signed Up For Event",
+            `You have successfully signed up for event **#${eventId}** with build ID **${pendingBuildId}**.`,
+            "GUILD EVENT",
+          );
+          await interaction.editReply({ embeds: [successEmbed], components: [] });
+        } catch (e) {
+          console.error("Failed to join event after guild choice", e);
+          const errEmbed = createResponseEmbed(
+            "error",
+            "Join Failed",
+            "Failed to join the event.",
+            "GUILD EVENT",
+          );
+          await interaction.editReply({ embeds: [errEmbed], components: [] });
+        }
+        return;
+      }
+
+      // Interactive role flow: the chosen guild rides the custom id so the
+      // role/build steps end in a single participate submission.
+      let signupOptions;
+      try {
+        signupOptions = await api.get<EventSignupOptionsView>(
+          `api/events/${eventId}/signup-options`,
+          interaction.user.id,
+        );
+      } catch (err) {
+        const errEmbed = createResponseEmbed(
+          "error",
+          "Fetch Error",
+          "Failed to fetch event signup options.",
+          "GUILD EVENT",
+        );
+        await interaction.editReply({ embeds: [errEmbed], components: [] });
+        return;
+      }
+
+      const availableRoles = signupRoles(signupOptions.builds);
+
+      const {
+        ActionRowBuilder,
+        StringSelectMenuBuilder,
+        StringSelectMenuOptionBuilder,
+      } = await import("discord.js");
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(buildRoleSelectCustomId(eventId, messageId, guildTenantId))
+        .setPlaceholder("Select your Role")
+        .addOptions(
+          buildSignupRoleOptions(availableRoles).map((option) => {
+            const menuOption = new StringSelectMenuOptionBuilder()
+              .setLabel(option.label)
+              .setValue(option.value);
+            if (option.description) {
+              menuOption.setDescription(option.description);
+            }
+            return menuOption;
+          }),
+        );
+
+      const row = new ActionRowBuilder<
+        InstanceType<typeof StringSelectMenuBuilder>
+      >().addComponents(selectMenu);
+
+      const infoEmbed = createResponseEmbed(
+        "info",
+        "Select Role",
+        signupOptions.is_already_registered
+          ? `🎯 You're already signed up — pick a role to change your build for event **#${eventId}**:`
+          : `🎯 Choose your role for event **#${eventId}**:`,
+        "GUILD EVENT",
+      );
+
+      await interaction.editReply({
+        embeds: [infoEmbed],
+        components: [row],
+      });
+      return;
+    }
+
     if (ns === "event" && action === "join_role") {
       const eventId = Number(rest[0]);
       const messageId = rest[1];
+      const guildTenantId = rest[2] || null;
       const role = interaction.values[0] as SignupRoleValue;
 
       await interaction.deferUpdate();
@@ -34,7 +214,7 @@ export async function handleSelectMenu(
 
       if (role === FILL_SIGNUP_VALUE) {
         await api.post(
-          `api/events/${eventId}/participate`,
+          participatePath(eventId, guildTenantId),
           { primary_build_id: null },
           interaction.user.id,
         );
@@ -108,7 +288,7 @@ export async function handleSelectMenu(
       } = await import("discord.js");
 
       const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`event:join_build:${eventId}:${messageId}`)
+        .setCustomId(buildBuildSelectCustomId(eventId, messageId, guildTenantId))
         .setPlaceholder("Select your specific build")
         .addOptions(
           availableBuilds.map((build) =>
@@ -140,6 +320,7 @@ export async function handleSelectMenu(
     if (ns === "event" && action === "join_build") {
       const eventId = Number(rest[0]);
       const messageId = rest[1];
+      const guildTenantId = rest[2] || null;
       const buildId = Number(interaction.values[0]);
 
       await interaction.deferUpdate();
@@ -149,7 +330,7 @@ export async function handleSelectMenu(
       }
 
       await api.post(
-        `api/events/${eventId}/participate`,
+        participatePath(eventId, guildTenantId),
         { primary_build_id: buildId },
         interaction.user.id,
       );

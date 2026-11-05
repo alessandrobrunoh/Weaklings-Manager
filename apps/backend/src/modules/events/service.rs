@@ -3367,6 +3367,20 @@ impl EventService {
         creator_id: i64,
         req: CreateEventRequest,
     ) -> Result<EventView, AppError> {
+        self.create_event_with_source_identity(db, creator_id, req, None)
+            .await
+    }
+
+    /// Create an event copy with its origin identity persisted atomically with
+    /// the event and its dependent records. Callers can query this identity
+    /// before retrying and rely on the unique constraint for concurrent retries.
+    pub(crate) async fn create_event_with_source_identity(
+        &self,
+        db: &DatabaseConnection,
+        creator_id: i64,
+        req: CreateEventRequest,
+        source_identity: Option<(String, i64)>,
+    ) -> Result<EventView, AppError> {
         let discord_role_ids = normalize_discord_role_ids(req.discord_role_ids)?;
         if let Some(player_cap) = req.player_cap
             && player_cap <= 0
@@ -3470,17 +3484,21 @@ impl EventService {
             mass_time_utc: Set(Some(mass.into())),
             start_time_utc: Set(Some(start.into())),
             ping_alliance: Set(req.ping_alliance),
-            discord_delivery: Set(
-                crate::modules::events::models::normalize_discord_delivery(&req.discord_delivery)
-                    .map_err(AppError::Validation)?
-                    .to_string(),
-            ),
+            discord_delivery: Set(crate::modules::events::models::normalize_discord_delivery(
+                &req.discord_delivery,
+            )
+            .map_err(AppError::Validation)?
+            .to_string()),
             vod_forum_post_enabled: Set(req.vod_forum_post_enabled),
             vod_forum_post_status: Set(if req.vod_forum_post_enabled {
                 "pending".to_string()
             } else {
                 "not_requested".to_string()
             }),
+            source_tenant_id: Set(source_identity
+                .as_ref()
+                .map(|(tenant_id, _)| tenant_id.clone())),
+            source_event_id: Set(source_identity.map(|(_, event_id)| event_id)),
             ..Default::default()
         }
         .insert(&txn)
@@ -3502,8 +3520,14 @@ impl EventService {
         }
 
         if let Some(island_tab_id) = linked_split_tab {
-            create_linked_split(&txn, creator_id, event_id, &event_model.title, island_tab_id)
-                .await?;
+            create_linked_split(
+                &txn,
+                creator_id,
+                event_id,
+                &event_model.title,
+                island_tab_id,
+            )
+            .await?;
         }
         txn.commit().await.map_err(AppError::Database)?;
         let event_view = self.to_event_view(db, event_model).await?;
@@ -7392,7 +7416,13 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(event::Entity::find().count(&db).await.unwrap(), 0);
-        assert!(service.pending_vod_forum_posts(&db).await.unwrap().is_empty());
+        assert!(
+            service
+                .pending_vod_forum_posts(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -7452,6 +7482,13 @@ mod tests {
         assert_eq!(event.alliance_discord_message_id, None);
         assert_eq!(event.alliance_discord_channel_id, None);
         assert!(event.alliance_discord_role_ids.is_empty());
+        let persisted = event::Entity::find_by_id(event.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.source_tenant_id, None);
+        assert_eq!(persisted.source_event_id, None);
 
         let pending = service.pending_vod_forum_posts(&db).await.unwrap();
         assert_eq!(pending.len(), 1);
@@ -7699,6 +7736,8 @@ mod tests {
                 discord_delivery: "message".to_string(),
                 vod_forum_post_status: "not_requested".to_string(),
                 vod_forum_thread_id: None,
+                source_tenant_id: None,
+                source_event_id: None,
             },
             Some("comp".to_string()),
             "admin".to_string(),

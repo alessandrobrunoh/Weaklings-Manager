@@ -1482,12 +1482,22 @@ mod tests {
 
         let service = ProgressionService::new();
         let result = service
-            .award_event_in_season(&db, spec(user_id, "event:1", 100), season_id, Decimal::from(2))
+            .award_event_in_season(
+                &db,
+                spec(user_id, "event:1", 100),
+                season_id,
+                Decimal::from(2),
+            )
             .await
             .unwrap();
         assert!(matches!(result, AwardOutcome::Applied { applied: 300, .. }));
         let retry = service
-            .award_event_in_season(&db, spec(user_id, "event:1", 100), season_id, Decimal::from(2))
+            .award_event_in_season(
+                &db,
+                spec(user_id, "event:1", 100),
+                season_id,
+                Decimal::from(2),
+            )
             .await
             .unwrap();
         assert_eq!(retry, AwardOutcome::Duplicate);

@@ -631,7 +631,9 @@ impl PlatformService {
             let id: String = row.try_get_by_index(0)?;
             let name: String = row.try_get_by_index(1)?;
             let guild_id: String = row.try_get_by_index(2)?;
-            let guild_region: String = row.try_get_by_index(3).unwrap_or_else(|_| region.to_owned());
+            let guild_region: String = row
+                .try_get_by_index(3)
+                .unwrap_or_else(|_| region.to_owned());
             if guild_region != region {
                 continue;
             }
@@ -649,7 +651,9 @@ impl PlatformService {
         actor: &str,
     ) -> Result<(), AppError> {
         let Some(tenant) = Self::get_tenant(control, alliance_tenant_id).await? else {
-            return Err(AppError::NotFound(format!("tenant {alliance_tenant_id} not found")));
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_tenant_id} not found"
+            )));
         };
         if tenant.kind != "alliance" || tenant.owner_discord_id.as_deref() != Some(actor) {
             return Err(AppError::Forbidden(
@@ -702,7 +706,9 @@ impl PlatformService {
         member_guild_ids: &[String],
     ) -> Result<(), AppError> {
         let Some(tenant) = Self::get_tenant(control, alliance_tenant_id).await? else {
-            return Err(AppError::NotFound(format!("tenant {alliance_tenant_id} not found")));
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_tenant_id} not found"
+            )));
         };
         if tenant.kind != "alliance" || tenant.owner_discord_id.as_deref() != Some(actor) {
             return Err(AppError::Forbidden(
@@ -745,7 +751,11 @@ impl PlatformService {
             return Ok(());
         }
         for member in members {
-            let Some(guild_id) = member.albion_guild_id.as_deref().filter(|id| !id.is_empty()) else {
+            let Some(guild_id) = member
+                .albion_guild_id
+                .as_deref()
+                .filter(|id| !id.is_empty())
+            else {
                 return Err(AppError::Validation(
                     "alliance_member_not_in_albion_alliance".to_owned(),
                 ));
@@ -3319,6 +3329,7 @@ mod tests {
                 email: None,
             },
             None,
+            None,
         )
         .await
         .expect("disabled sync link does not fan out");
@@ -3579,6 +3590,7 @@ mod tests {
                 username: "user".into(),
                 email: None,
             },
+            None,
             None,
         )
         .await

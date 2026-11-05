@@ -74,6 +74,10 @@ pub mod event {
         pub vod_forum_thread_id: Option<String>,
         /// Discord publication: `calendar`, `message`, or `forum`.
         pub discord_delivery: String,
+        /// Origin tenant for a cross-tenant event copy, when applicable.
+        pub source_tenant_id: Option<String>,
+        /// Origin event ID for a cross-tenant event copy, when applicable.
+        pub source_event_id: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

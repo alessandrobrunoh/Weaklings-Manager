@@ -2251,6 +2251,8 @@ mod tests {
             discord_delivery: "message".to_string(),
             vod_forum_post_status: "not_requested".to_string(),
             vod_forum_thread_id: None,
+            source_tenant_id: None,
+            source_event_id: None,
         });
         raw.participations.push(event_participation::Model {
             id: 1,

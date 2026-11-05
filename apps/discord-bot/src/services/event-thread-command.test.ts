@@ -9,6 +9,11 @@ import {
   resolveSignupBuildByName,
 } from './event-thread-command.js';
 import { registerPoller, unregisterPoller, type Poller } from './poller.js';
+import { forgetTenantStatus } from './tenant-gate.js';
+
+// The thread join flow resolves guild attribution before signing up; these
+// tests run in a plain guild tenant so no guild choice is ever prompted.
+forgetTenantStatus('thread-test-guild');
 
 interface ReplyPayload {
   embeds: Array<{ data: { title?: string; description?: string } }>;
@@ -84,6 +89,9 @@ function makeApi(routes: {
     async get(path: string) {
       calls.push({ method: 'get', path });
       if (path === 'api/users/me') return {};
+      if (path === 'api/tenants/thread-test-guild/status') {
+        return { id: 'thread-test-guild', registered: true, status: 'active', name: 'A Guild', kind: 'guild' };
+      }
       const result = routes.get?.(path);
       if (result === undefined) throw new Error(`Unexpected GET ${path}`);
       return result;

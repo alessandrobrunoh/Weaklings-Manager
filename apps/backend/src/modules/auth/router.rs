@@ -396,9 +396,7 @@ pub async fn list_session_tenants(
                 continue;
             }
             crate::modules::platform::service::PlatformService::set_discord_icon_hash(
-                &control.0,
-                &tenant.id,
-                &icon,
+                &control.0, &tenant.id, &icon,
             )
             .await?;
             tenant.icon_hash = Some(icon);

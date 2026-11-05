@@ -2,8 +2,12 @@
 //!
 //! Handles scheduling events and coordinating player sign-ups / comp scaling.
 
+pub mod attribution;
 pub mod entities;
+pub mod fanout_outbox;
+pub mod fanout_worker;
 pub mod fight_grouping;
+pub mod lifecycle;
 pub mod models;
 pub mod roster_hub;
 pub mod router;

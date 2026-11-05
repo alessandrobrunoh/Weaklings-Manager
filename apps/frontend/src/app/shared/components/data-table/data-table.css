@@ -9,16 +9,16 @@
 :host input,
 :host select,
 :host button {
-  border-radius: var(--radius-inputs, 2px);
+  border-radius: var(--radius-inputs, 8px);
 }
 
 :host .rounded-lg,
 :host .rounded-md {
-  border-radius: var(--radius-inputs, 2px);
+  border-radius: var(--radius-inputs, 8px);
 }
 
 :host .rounded-full {
-  border-radius: var(--radius-badges, 2px);
+  border-radius: var(--radius-pills, 9999px);
 }
 
 :host th {
@@ -44,6 +44,16 @@
 
 :host tr.data-table__row--clickable:hover {
   background: color-mix(in srgb, var(--color-text) 4%, transparent);
+}
+
+:host tr.data-table__row--clickable:hover td:first-child {
+  border-start-start-radius: var(--radius-sm, 4px);
+  border-end-start-radius: var(--radius-sm, 4px);
+}
+
+:host tr.data-table__row--clickable:hover td:last-child {
+  border-start-end-radius: var(--radius-sm, 4px);
+  border-end-end-radius: var(--radius-sm, 4px);
 }
 
 :host tr.data-table__row--clickable:focus-visible {

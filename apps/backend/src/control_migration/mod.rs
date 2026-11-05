@@ -25,6 +25,9 @@ mod m20260922_000002_default_tenant;
 mod m20260922_000003_tenant_rail_feature;
 mod m20261028_000001_alliance_departure;
 mod m20261028_000002_tenant_albion_alliance;
+mod m20261029_000001_allow_event_fanout;
+mod m20261030_000001_event_fanout_outbox;
+mod m20261102_000001_event_participant_attribution;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -46,7 +49,7 @@ pub const PERM_FEATURE_FLAGS_MANAGE: &str = "feature_flags.manage";
 /// Registered control-plane migrations. The unit test and the PostgreSQL
 /// bookkeeping test both compare against this so a new migration cannot leave
 /// the applied-count assertion behind.
-const CONTROL_MIGRATION_COUNT: usize = 19;
+const CONTROL_MIGRATION_COUNT: usize = 22;
 
 /// Control-plane migrator.
 pub struct Migrator;
@@ -74,6 +77,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260922_000003_tenant_rail_feature::Migration),
             Box::new(m20261028_000001_alliance_departure::Migration),
             Box::new(m20261028_000002_tenant_albion_alliance::Migration),
+            Box::new(m20261029_000001_allow_event_fanout::Migration),
+            Box::new(m20261030_000001_event_fanout_outbox::Migration),
+            Box::new(m20261102_000001_event_participant_attribution::Migration),
         ]
     }
 }
@@ -166,6 +172,10 @@ mod tests {
             "alliance_memberships",
             "alliance_shares",
             "event_sync_links",
+            "event_fanout_jobs",
+            "event_fanout_targets",
+            "event_fanout_assets",
+            "event_participant_attributions",
             "alliance_role_grants",
             "alliance_role_revocations",
             "seaql_migrations",
@@ -175,6 +185,33 @@ mod tests {
                 "control schema missing {required}: {control_tables:?}"
             );
         }
+        let source_indexes = admin
+            .query_all(Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT indexdef FROM pg_indexes \
+                 WHERE schemaname = $1 AND tablename = 'event_sync_links'",
+                [control_schema.clone().into()],
+            ))
+            .await
+            .expect("event sync link indexes")
+            .into_iter()
+            .map(|row| row.try_get_by_index::<String>(0).expect("index definition"))
+            .collect::<Vec<_>>();
+        assert!(
+            source_indexes
+                .iter()
+                .any(|index| index.contains("idx_event_sync_links_source")),
+            "control schema is missing the fanout lookup index: {source_indexes:?}"
+        );
+        assert!(
+            !source_indexes.iter().any(|index| {
+                index.contains("UNIQUE")
+                    && index.contains("source_tenant_id")
+                    && index.contains("source_event_id")
+                    && !index.contains("mirror_tenant_id")
+            }),
+            "control schema still enforces one source event per link: {source_indexes:?}"
+        );
         for control_only in [
             "tenants",
             "platform_roles",
@@ -188,6 +225,10 @@ mod tests {
             "alliance_memberships",
             "alliance_shares",
             "event_sync_links",
+            "event_fanout_jobs",
+            "event_fanout_targets",
+            "event_fanout_assets",
+            "event_participant_attributions",
             "alliance_role_grants",
             "alliance_role_revocations",
         ] {

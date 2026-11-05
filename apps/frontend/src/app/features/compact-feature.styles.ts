@@ -7,12 +7,12 @@
  */
 export const COMPACT_FEATURE_STYLES = `
   :host {
-    --radius-cards: 6px;
-    --radius-panels: 6px;
-    --radius-smallcards: 4px;
-    --radius-inputs: 4px;
-    --radius-buttons: 4px;
-    --radius-badges: 3px;
+    --radius-cards: 16px;
+    --radius-panels: 24px;
+    --radius-smallcards: 12px;
+    --radius-inputs: 8px;
+    --radius-buttons: 8px;
+    --radius-badges: 6px;
     --card-padding: 0.875rem;
     --page-gap: 0.875rem;
     display: block;
@@ -70,7 +70,7 @@ export const COMPACT_FEATURE_STYLES = `
   @media (max-width: 640px) {
     :host :where(.card, .auth-card) {
       border-inline: 0;
-      border-radius: 0;
+      border-radius: var(--radius-cards);
     }
   }
 `;

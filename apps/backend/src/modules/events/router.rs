@@ -20,15 +20,20 @@ use crate::pagination::{PaginatedData, PaginationParams};
 use serde::Deserialize;
 
 use crate::responses::{
-    ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail, ApiResponseEventList,
-    ApiResponseEventManagementAuthority, ApiResponseEventRevisionList,
-    ApiResponseEventRosterRoleList, ApiResponseEventView,
+    ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail,
+    ApiResponseEventFanoutStatus, ApiResponseEventList, ApiResponseEventManagementAuthority,
+    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventView,
+    ApiResponseParticipationGuildList,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
-use sea_orm::EntityTrait;
+use sea_orm::{ConnectionTrait, EntityTrait};
 use std::collections::HashSet;
 
+use super::attribution::{
+    ParticipationGuild, eligible_participation_guilds, resolve_join_attribution,
+};
+use super::lifecycle::{assert_manageable_source_event, sync_owner_change_to_copies};
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
     CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
@@ -104,6 +109,7 @@ async fn hydrate_event_list(
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_events).post(create_event))
+        .route("/{id}/fanout-status", get(get_event_fanout_status))
         .route("/calendar", get(list_event_calendar))
         .route("/revisions", get(list_event_revisions))
         .route(
@@ -156,6 +162,7 @@ pub fn router() -> Router {
             "/{id}/participate",
             post(participate).delete(cancel_participation),
         )
+        .route("/{id}/participation-guilds", get(get_participation_guilds))
         .route("/{id}/participants", post(add_event_member))
         .route(
             "/{id}/participants/{user_id}",
@@ -925,23 +932,127 @@ async fn create_event(
         }
     }
 
+    let source_context = registry.get_or_load(&tenant.0).await?;
+    let alliance_origin = source_context.kind == "alliance";
+    if alliance_origin && req.ping_alliance {
+        return Err(AppError::Validation(
+            "alliance-owned events are automatically distributed to active member guilds"
+                .to_owned(),
+        ));
+    }
     let create_mirror_requested = req.ping_alliance;
     if create_mirror_requested {
+        if source_context.kind != "guild" {
+            return Err(AppError::Validation(
+                "only guild events can be shared to the alliance".to_owned(),
+            ));
+        }
         assert_active_alliance(&control.0, &tenant.0).await?;
     }
     let service = EventService::new();
     let event = service.create_event(&db, user.user_id, req).await?;
-    if create_mirror_requested {
+    if alliance_origin {
+        let target_rows = control
+            .0
+            .query_all(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT guild_tenant_id FROM alliance_memberships \
+                 WHERE alliance_tenant_id=$1 AND status='active' \
+                 ORDER BY guild_tenant_id",
+                [tenant.0.clone().into()],
+            ))
+            .await?;
+        let targets = target_rows
+            .into_iter()
+            .map(|row| row.try_get_by_index::<String>(0))
+            .collect::<Result<Vec<_>, _>>()?;
+        let enqueue = super::fanout_outbox::enqueue(
+            &control.0,
+            &tenant.0,
+            event.id,
+            super::fanout_outbox::Operation::Publish,
+            &format!("publish:{}", event.id),
+            &targets,
+        )
+        .await;
+        match enqueue {
+            Ok(_) => {
+                if let Err(error) =
+                    super::fanout_worker::process_due_targets(&control.0, &registry).await
+                {
+                    tracing::error!(
+                        tenant_id = %tenant.0,
+                        event_id = event.id,
+                        error = %error,
+                        "alliance event fanout queued but immediate processing failed"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::error!(
+                    tenant_id = %tenant.0,
+                    event_id = event.id,
+                    error = %error,
+                    "alliance event committed but fanout job could not be enqueued"
+                );
+                return Err(AppError::Conflict(format!(
+                    "event {} was created, but guild distribution could not be queued; do not create it again",
+                    event.id
+                )));
+            }
+        }
+    } else if create_mirror_requested {
         let actor = ShareActor {
             discord_id: user.id.clone(),
             username: user.username.clone(),
             email: user.email.clone(),
         };
-        create_mirror(&control.0, &registry, &db, &tenant.0, &event, &actor).await?;
+        if let Err(error) =
+            create_mirror(&control.0, &registry, &db, &tenant.0, &event, &actor).await
+        {
+            // The source row is already committed. Do not turn a cross-tenant
+            // mirror failure into an HTTP failure that suggests it rolled back.
+            tracing::error!(
+                tenant_id = %tenant.0,
+                event_id = event.id,
+                error = %error,
+                "event mirror creation failed after source event committed"
+            );
+        }
     }
     Ok(Json(ApiResponse::new(
         hydrate_event_view(event, &control, &registry, &tenant.0).await,
     )))
+}
+
+/// Returns per-guild publication state for an alliance-owned event.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/fanout-status",
+    tag = "events",
+    summary = "Get alliance event publication status",
+    description = "Returns per-guild copy status for an alliance-owned event. Requires event management authority.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Alliance-owned source event ID")),
+    responses(
+        (status = 200, description = "Per-guild publication state", body = ApiResponseEventFanoutStatus),
+        (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
+        (status = 404, description = "Event fanout job not found", body = ProblemDetails)
+    )
+)]
+async fn get_event_fanout_status(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<super::fanout_outbox::EventFanoutStatus>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    let status = super::fanout_outbox::status_for_event(&control.0, &tenant_id, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("event fanout status not found".to_owned()))?;
+    Ok(Json(ApiResponse::new(status)))
 }
 
 /// Lists selectable Discord roles for users who can create events.
@@ -1004,6 +1115,7 @@ async fn update_event(
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     if req.ping_alliance == Some(true) {
         assert_active_alliance(&control.0, &tenant_id).await?;
     }
@@ -1018,9 +1130,33 @@ async fn update_event(
         };
         create_mirror(&control.0, &registry, &db, &tenant_id, &event, &actor).await?;
     }
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(
         hydrate_event_view(event, &control, &registry, &tenant_id).await,
     )))
+}
+
+/// Loads the persisted source event and propagates the change to its copies.
+async fn sync_source_change(
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    db: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+    event_id: i64,
+) -> Result<(), AppError> {
+    let Some(model) = super::entities::event::Entity::find_by_id(event_id)
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+    else {
+        return Ok(());
+    };
+    let operation = if model.archived_at.is_some() || model.status == "cancelled" {
+        super::fanout_outbox::Operation::Archive
+    } else {
+        super::fanout_outbox::Operation::Update
+    };
+    sync_owner_change_to_copies(&control.0, registry, tenant_id, &model, operation).await
 }
 
 /// Deletes an event.
@@ -1047,11 +1183,16 @@ async fn delete_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let service = EventService::new();
     service.delete_event(&db, id).await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1074,10 +1215,15 @@ async fn archive_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let event = EventService::new().archive_event(&db, id).await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1100,11 +1246,24 @@ async fn unarchive_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let event = EventService::new().unarchive_event(&db, id).await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(event)))
+}
+
+/// Query parameters accepted by the participate endpoint.
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
+struct ParticipateQuery {
+    /// Explicit guild attribution, required when the caller belongs to more
+    /// than one eligible guild in alliance context.
+    guild_tenant_id: Option<String>,
 }
 
 /// Registers or updates participation for the logged-in user.
@@ -1118,7 +1277,8 @@ async fn unarchive_event(
     description = "Registers the logged-in user for the event or updates their build selection. Automatically scales composition variants if needed. Any authenticated user can call this.",
     security(("session_cookie" = [])),
     params(
-        ("id" = i64, Path, description = "Event ID")
+        ("id" = i64, Path, description = "Event ID"),
+        ("guild_tenant_id" = Option<String>, Query, description = "Explicit guild attribution, required when multiple guilds are eligible")
     ),
     request_body(content = ParticipateEventRequest, description = "Participation build choices"),
     responses(
@@ -1136,10 +1296,21 @@ async fn participate(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
+    Query(query): Query<ParticipateQuery>,
     Json(req): Json<ParticipateEventRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let request_for_sync = req.clone();
+    // Resolve and persist guild attribution before touching any roster so an
+    // invalid or ambiguous choice cannot leave a partial signup behind.
+    let attributed_guild = resolve_join_attribution(
+        &control.0,
+        &tenant.0,
+        id,
+        &user.id,
+        query.guild_tenant_id.as_deref(),
+    )
+    .await?;
     let (detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
@@ -1154,6 +1325,7 @@ async fn participate(
             email: user.email.clone(),
         },
         Some(request_for_sync),
+        Some(&attributed_guild),
     )
     .await?;
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
@@ -1201,6 +1373,7 @@ async fn cancel_participation(
             email: user.email.clone(),
         },
         None,
+        None,
     )
     .await?;
     tracing::info!(
@@ -1217,6 +1390,49 @@ async fn cancel_participation(
         seat_key.into_iter().collect(),
     );
     Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Lists the caller's eligible guild attributions for a linked event.
+///
+/// A guild tenant always returns itself. An alliance tenant returns the
+/// active membership guilds the caller belongs to; more than one entry means
+/// the join request must pass `guild_tenant_id`.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/participation-guilds",
+    tag = "events",
+    summary = "List eligible participation guilds",
+    description = "Returns the caller's eligible active guilds for this event. In a guild tenant the only eligible guild is the tenant itself. In an alliance tenant the eligible guilds are the active member guilds the caller belongs to; pass one as `guild_tenant_id` when joining if more than one is eligible.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Eligible guilds", body = ApiResponseParticipationGuildList),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Conflict - caller belongs to no active guild in this alliance", body = ProblemDetails)
+    )
+)]
+async fn get_participation_guilds(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Extension(control): Extension<ControlDb>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<Vec<ParticipationGuild>>>, AppError> {
+    // Fail closed on unknown events so the endpoint cannot be used to probe
+    // guild membership for arbitrary ids.
+    super::entities::event::Entity::find_by_id(id)
+        .one(&db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+    let guilds = eligible_participation_guilds(&control.0, &tenant.0, &user.id).await?;
+    if guilds.is_empty() {
+        return Err(AppError::Conflict(
+            "you are not a member of any active guild in this alliance; join a member guild server or ask the alliance staff to add you".to_owned(),
+        ));
+    }
+    Ok(Json(ApiResponse::new(guilds)))
 }
 
 /// Resolves the `users.id` that created the event.
@@ -1612,12 +1828,16 @@ async fn cancel_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    Ok(Json(ApiResponse::new(
-        EventService::new().cancel_event(&db, id).await?,
-    )))
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    let event = EventService::new().cancel_event(&db, id).await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    Ok(Json(ApiResponse::new(event)))
 }
 
 /// Restores a cancelled event (status -> scheduled).
@@ -1643,12 +1863,16 @@ async fn uncancel_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    Ok(Json(ApiResponse::new(
-        EventService::new().uncancel_event(&db, id).await?,
-    )))
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    let event = EventService::new().uncancel_event(&db, id).await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    Ok(Json(ApiResponse::new(event)))
 }
 
 /// Stops an event session (status -> stopped).

@@ -379,14 +379,20 @@ struct GrantedAllianceRole {
 
 /// Both guilds must be in the same non-empty Albion alliance.
 #[must_use]
-pub fn shares_albion_alliance(home_alliance_id: Option<&str>, player_alliance_id: Option<&str>) -> bool {
+pub fn shares_albion_alliance(
+    home_alliance_id: Option<&str>,
+    player_alliance_id: Option<&str>,
+) -> bool {
     let home = home_alliance_id.map(str::trim).filter(|id| !id.is_empty());
-    let player = player_alliance_id.map(str::trim).filter(|id| !id.is_empty());
+    let player = player_alliance_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
     matches!((home, player), (Some(home), Some(player)) if home == player)
 }
 
 async fn albion_guild_alliance_id(region: &str, guild_id: &str) -> Option<String> {
-    let client = super::client::AlbionApiClient::new(super::client::AlbionRegion::from_env_str(region));
+    let client =
+        super::client::AlbionApiClient::new(super::client::AlbionRegion::from_env_str(region));
     client
         .get_guild(guild_id)
         .await
@@ -403,7 +409,10 @@ async fn player_in_discord_albion_alliance(
     discord_tenant_id: &str,
     player_albion_guild_id: Option<&str>,
 ) -> bool {
-    let Some(player_guild) = player_albion_guild_id.map(str::trim).filter(|id| !id.is_empty()) else {
+    let Some(player_guild) = player_albion_guild_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    else {
         return false;
     };
     let scope = match crate::albion_scope::load_albion_scope(control, discord_tenant_id).await {

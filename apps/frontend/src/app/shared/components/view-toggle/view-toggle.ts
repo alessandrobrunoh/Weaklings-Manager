@@ -58,7 +58,7 @@ export interface ViewToggleOption {
       white-space: nowrap;
       border: 0;
       border-bottom: 2px solid transparent;
-      border-radius: 0;
+      border-radius: var(--radius-sm);
       margin-bottom: -1px;
       padding: 0.375rem 0.625rem 0.4375rem;
       font-size: 0.75rem;

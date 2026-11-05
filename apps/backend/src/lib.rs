@@ -115,6 +115,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         albionbb_service: albionbb_service.clone(),
         albiondata_service: albiondata_service.clone(),
     });
+    modules::events::fanout_worker::spawn(control_db.clone(), registry.clone());
     for ctx in &tenant_contexts {
         if !tenant::starts_sync_workers(&ctx.kind) {
             tracing::info!(

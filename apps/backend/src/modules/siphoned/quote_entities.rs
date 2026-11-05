@@ -5,7 +5,11 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "siphoned_settlement_quotes")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_type = "String(StringLen::N(36))")]
+    #[sea_orm(
+        primary_key,
+        auto_increment = false,
+        column_type = "String(StringLen::N(36))"
+    )]
     pub id: String,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub player_name: String,

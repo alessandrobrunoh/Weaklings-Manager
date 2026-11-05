@@ -1,8 +1,8 @@
 import { signal, type Signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { NEVER, of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { NEVER, of, throwError } from 'rxjs';
+import { describe, expect, it, vi } from 'vitest';
 
 import type {
   EventDetailView,
@@ -10,6 +10,7 @@ import type {
   EventRosterParticipant,
   EventRosterSeat,
   EventRosterView,
+  ParticipationGuildOption,
   RosterSuggestions,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -653,5 +654,211 @@ describe('EventDetailPage roster suggestions', () => {
       bench: [],
     });
     expect(page.rosterSuggestionRows()).toHaveLength(0);
+  });
+});
+
+interface EventDetailGuildAttributionAccess {
+  readonly event: WritableSignal<EventDetailView | null>;
+  readonly participationGuilds: WritableSignal<ParticipationGuildOption[]>;
+  readonly participationGuildsState: WritableSignal<
+    'idle' | 'loading' | 'ready' | 'error'
+  >;
+  readonly selectedGuildTenantId: WritableSignal<string>;
+  readonly guildChoiceBlocked: Signal<boolean>;
+  readonly requiresGuildChoice: Signal<boolean>;
+  readonly joinError: WritableSignal<string | null>;
+  readonly showJoinConfirm: WritableSignal<boolean>;
+  readonly draftPrimaryBuildId: WritableSignal<string>;
+  toggleJoinForm(): void;
+  loadParticipationGuilds(): Promise<void>;
+  onJoinSubmit(submit: SubmitEvent): Promise<void>;
+  confirmJoin(): Promise<void>;
+}
+
+describe('EventDetailPage guild attribution', () => {
+  const submitEvent = { preventDefault: () => undefined } as SubmitEvent;
+
+  // The join flow opens `<app-dialog>`, whose open-state effect calls the native
+  // `showModal()`; the test DOM lacks it, so stub it the same way `dialog.spec.ts` does.
+  beforeEach(() => {
+    if (typeof HTMLDialogElement === 'undefined') return;
+    HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.removeAttribute('open');
+    };
+  });
+
+  function createPage(options: {
+    tenantKind: string;
+    guilds?: { data: ParticipationGuildOption[] } | Error;
+  }): {
+    page: EventDetailGuildAttributionAccess;
+    fixture: { nativeElement: HTMLElement; detectChanges(): void };
+    get: ReturnType<typeof vi.fn>;
+    post: ReturnType<typeof vi.fn>;
+  } {
+    const get = vi.fn((path: string) => {
+      if (path.endsWith('/participation-guilds')) {
+        return options.guilds instanceof Error ? throwError(() => options.guilds) : of(options.guilds ?? { data: [] });
+      }
+      return of({ items: [] });
+    });
+    const post = vi.fn().mockReturnValue(of({}));
+    const profile = signal({ user_id: 7, tenant_kind: options.tenantKind });
+
+    TestBed.configureTestingModule({
+      imports: [EventDetailPage],
+      providers: [
+        { provide: ApiService, useValue: { get, post, put: () => of({}), delete: () => of({}) } },
+        {
+          provide: AuthService,
+          useValue: {
+            hasPermission: () => false,
+            profile,
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: of(convertToParamMap({ id: '5' })) },
+        },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: { error: () => undefined, success: () => undefined } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve([]) } },
+        {
+          provide: RealtimeRosterService,
+          useValue: {
+            close: () => undefined,
+            connect: () => undefined,
+            messages: NEVER,
+            connectionState: signal('disconnected'),
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(EventDetailPage);
+    const page = fixture.componentInstance as unknown as EventDetailGuildAttributionAccess;
+    page.event.set({ id: 5, participants: [], battles: [], splits: [] } as unknown as EventDetailView);
+    return { page, fixture, get, post };
+  }
+
+  it('in a guild tenant, signs up without a guild prompt or guild_tenant_id', async () => {
+    const { page, get, post } = createPage({ tenantKind: 'guild' });
+
+    page.toggleJoinForm();
+    await Promise.resolve();
+
+    expect(page.participationGuildsState()).toBe('idle');
+    expect(get).not.toHaveBeenCalledWith(expect.stringContaining('participation-guilds'));
+
+    page.draftPrimaryBuildId.set('7');
+    await page.onJoinSubmit(submitEvent);
+    expect(page.showJoinConfirm()).toBe(true);
+    await page.confirmJoin();
+
+    expect(post).toHaveBeenCalledWith('api/events/5/participate', expect.anything());
+  });
+
+  it('in an alliance tenant with zero eligible guilds, blocks signup with an actionable state', async () => {
+    const { page } = createPage({ tenantKind: 'alliance', guilds: { data: [] } });
+
+    page.toggleJoinForm();
+    await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
+
+    expect(page.participationGuilds()).toHaveLength(0);
+    expect(page.guildChoiceBlocked()).toBe(true);
+    expect(page.requiresGuildChoice()).toBe(false);
+  });
+
+  it('in an alliance tenant with one guild, preselects it and submits it automatically', async () => {
+    const { page, post } = createPage({
+      tenantKind: 'alliance',
+      guilds: { data: [{ tenant_id: 'g1', name: 'Alpha' }] },
+    });
+
+    page.toggleJoinForm();
+    await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
+
+    expect(page.selectedGuildTenantId()).toBe('g1');
+    expect(page.requiresGuildChoice()).toBe(false);
+    expect(page.guildChoiceBlocked()).toBe(false);
+
+    page.draftPrimaryBuildId.set('7');
+    await page.onJoinSubmit(submitEvent);
+    await page.confirmJoin();
+
+    expect(post).toHaveBeenCalledWith(
+      'api/events/5/participate?guild_tenant_id=g1',
+      expect.anything(),
+    );
+  });
+
+  it('in an alliance tenant with multiple guilds, requires an explicit choice before signup', async () => {
+    const { page, post } = createPage({
+      tenantKind: 'alliance',
+      guilds: {
+        data: [
+          { tenant_id: 'g1', name: 'Alpha' },
+          { tenant_id: 'g2', name: 'Beta' },
+        ],
+      },
+    });
+
+    page.toggleJoinForm();
+    await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
+
+    expect(page.requiresGuildChoice()).toBe(true);
+    expect(page.selectedGuildTenantId()).toBe('');
+
+    page.draftPrimaryBuildId.set('7');
+    await page.onJoinSubmit(submitEvent);
+    expect(page.showJoinConfirm()).toBe(false);
+    expect(page.joinError()).toBe('events.detail.join_guild_required');
+
+    page.selectedGuildTenantId.set('g2');
+    page.joinError.set(null);
+    await page.onJoinSubmit(submitEvent);
+    expect(page.showJoinConfirm()).toBe(true);
+    await page.confirmJoin();
+
+    expect(post).toHaveBeenCalledWith(
+      'api/events/5/participate?guild_tenant_id=g2',
+      expect.anything(),
+    );
+  });
+
+  it('labels the custom guild picker and associates its help text', async () => {
+    const { page, fixture } = createPage({
+      tenantKind: 'alliance',
+      guilds: {
+        data: [
+          { tenant_id: 'g1', name: 'Alpha' },
+          { tenant_id: 'g2', name: 'Beta' },
+        ],
+      },
+    });
+    page.toggleJoinForm();
+    await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
+    fixture.detectChanges();
+
+    const trigger = fixture.nativeElement.querySelector(
+      'app-select button[role="combobox"]',
+    );
+    expect(trigger?.getAttribute('aria-labelledby')).toBe('join-guild-choice-title');
+    expect(trigger?.getAttribute('aria-describedby')).toBe('join-guild-choice-hint');
+  });
+
+  it('in an alliance tenant, surfaces a guild-list backend failure and stays blocked', async () => {
+    const { page } = createPage({ tenantKind: 'alliance', guilds: new Error('boom') });
+
+    page.toggleJoinForm();
+    await vi.waitFor(() => expect(page.participationGuildsState()).toBe('error'));
+
+    expect(page.participationGuilds()).toHaveLength(0);
+    expect(page.selectedGuildTenantId()).toBe('');
+    expect(page.guildChoiceBlocked()).toBe(true);
   });
 });

@@ -100,6 +100,8 @@ let nextId = 0;
       [id]="triggerId"
       [disabled]="disabled()"
       [attr.aria-label]="ariaLabel() || null"
+      [attr.aria-labelledby]="ariaLabelledBy() || null"
+      [attr.aria-describedby]="ariaDescribedBy() || null"
       [attr.aria-required]="required() ? 'true' : null"
       [attr.aria-expanded]="open()"
       [attr.aria-controls]="listId"
@@ -156,6 +158,8 @@ export class Select {
   readonly required = input(false);
   readonly size = input<'md' | 'sm'>('md');
   readonly ariaLabel = input('');
+  readonly ariaLabelledBy = input('');
+  readonly ariaDescribedBy = input('');
 
   readonly valueChange = output<string>();
 

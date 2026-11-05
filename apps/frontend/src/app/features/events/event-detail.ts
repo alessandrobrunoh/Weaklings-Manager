@@ -37,6 +37,8 @@ import type {
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
+  ParticipationGuildListResponse,
+  ParticipationGuildOption,
   RosterSuggestions,
   SplitSummary,
   AllianceContext,
@@ -85,6 +87,7 @@ import {
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { Select, type SelectOption } from '../../shared/components/select/select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
@@ -199,6 +202,7 @@ interface AddEventMemberRequest {
     SearchDialog,
     StatCard,
     StatusChip,
+    Select,
     TooltipDirective,
     ViewToggle,
     OwnershipScopeToggle,
@@ -2060,9 +2064,59 @@ interface AddEventMemberRequest {
         (closed)="toggleJoinForm()"
       >
         <form class="grid gap-4" (submit)="onJoinSubmit($event)">
-          @if (compLoading()) {
+          @if (compLoading() || participationGuildsState() === 'loading') {
             <app-loading [label]="t('common.loading')" />
           } @else {
+            @if (isAllianceTenant()) {
+              @switch (participationGuildsState()) {
+                @case ('error') {
+                  <div class="surface p-3 border border-[var(--color-danger)]" role="alert">
+                    <p class="text-xs text-[var(--color-danger)] font-semibold">
+                      {{ t('events.detail.join_guild_load_error') }}
+                    </p>
+                    <button
+                      type="button"
+                      class="btn btn--ghost btn--sm mt-2"
+                      (click)="loadParticipationGuilds()"
+                    >
+                      {{ t('events.detail.join_guild_retry') }}
+                    </button>
+                  </div>
+                }
+                @case ('ready') {
+                  @if (participationGuilds().length === 0) {
+                    <div class="surface p-3 border border-[var(--color-danger)]" role="alert">
+                      <p class="text-xs text-[var(--color-danger)] font-semibold">
+                        {{ t('events.detail.join_guild_none') }}
+                      </p>
+                    </div>
+                  } @else if (requiresGuildChoice()) {
+                    <section class="build-choice-panel" aria-labelledby="join-guild-choice-title">
+                      <span id="join-guild-choice-title" class="label">
+                        {{ t('events.detail.join_guild_label') }}
+                        <span aria-hidden="true">*</span>
+                      </span>
+                      <app-select
+                        size="sm"
+                        [options]="participationGuildSelectOptions()"
+                        [value]="selectedGuildTenantId()"
+                        [placeholder]="t('events.detail.join_guild_placeholder')"
+                        [required]="true"
+                        ariaLabelledBy="join-guild-choice-title"
+                        ariaDescribedBy="join-guild-choice-hint"
+                        (valueChange)="onGuildChange($event)"
+                      />
+                      <p
+                        id="join-guild-choice-hint"
+                        class="text-xs text-[var(--color-text-secondary)]"
+                      >
+                        {{ t('events.detail.join_guild_hint') }}
+                      </p>
+                    </section>
+                  }
+                }
+              }
+            }
             @if (availableBuilds().length === 0) {
               <p class="text-xs text-[var(--color-text-secondary)]">
                 {{ t('events.detail.no_builds') }}
@@ -2175,7 +2229,7 @@ interface AddEventMemberRequest {
               <button type="button" class="btn btn--ghost btn--sm" (click)="toggleJoinForm()">
                 {{ t('common.cancel') }}
               </button>
-              <button type="submit" class="btn btn--primary btn--sm" [disabled]="joinSubmitting()">
+              <button type="submit" class="btn btn--primary btn--sm" [disabled]="joinSubmitting() || guildChoiceBlocked()">
                 {{ currentParticipant() ? t('common.save') : t('events.participate') }}
               </button>
             </div>
@@ -2230,6 +2284,13 @@ interface AddEventMemberRequest {
               {{ t('events.detail.join_confirm_secondary') }}
               {{ selectedJoinSecondaryBuild()?.build?.name || t('events.detail.join_confirm_secondary_fallback') }}
             </p>
+          }
+
+          @if (selectedParticipationGuild(); as guild) {
+            <div class="surface p-3">
+              <p class="label">{{ t('events.detail.join_guild_label') }}</p>
+              <p class="text-sm font-semibold text-[var(--color-text)]">{{ guild.name }}</p>
+            </div>
           }
         </div>
         <div dialogFooter>
@@ -3338,6 +3399,32 @@ export class EventDetailPage {
 
   protected readonly showJoinForm = signal(false);
   protected readonly showJoinConfirm = signal(false);
+  /** Eligible guilds for signup attribution; only fetched in an alliance tenant. */
+  protected readonly participationGuilds = signal<ParticipationGuildOption[]>([]);
+  protected readonly participationGuildsState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  protected readonly selectedGuildTenantId = signal('');
+  /** A guild tenant always attributes to itself; only an alliance tenant needs a guild choice. */
+  protected readonly isAllianceTenant = computed(
+    () => this.auth.profile()?.tenant_kind === 'alliance',
+  );
+  protected readonly selectedParticipationGuild = computed(
+    () => this.participationGuilds().find((guild) => guild.tenant_id === this.selectedGuildTenantId()) ?? null,
+  );
+  protected readonly participationGuildSelectOptions = computed<readonly SelectOption[]>(() =>
+    this.participationGuilds().map((guild) => ({
+      value: guild.tenant_id,
+      label: guild.name,
+    })),
+  );
+  /** Multiple eligible guilds require an explicit choice; exactly one is preselected automatically. */
+  protected readonly requiresGuildChoice = computed(
+    () => this.isAllianceTenant() && this.participationGuilds().length > 1,
+  );
+  /** Signup cannot proceed until the guild list resolves with at least one option (alliance only). */
+  protected readonly guildChoiceBlocked = computed(() => {
+    if (!this.isAllianceTenant()) return false;
+    return this.participationGuildsState() !== 'ready' || this.participationGuilds().length === 0;
+  });
   protected readonly joinFormLoading = signal(false);
   protected readonly compLoading = signal(false);
   protected readonly joinSubmitting = signal(false);
@@ -5405,9 +5492,40 @@ export class EventDetailPage {
     );
     this.joinError.set(null);
     this.showJoinForm.set(true);
+    if (this.isAllianceTenant()) {
+      void this.loadParticipationGuilds();
+    }
     if (this.availableBuilds().length === 0) {
       void this.loadActiveComp();
     }
+  }
+
+  /** Resolves the caller's eligible guilds. In an alliance tenant the choice drives the
+   * `guild_tenant_id` sent with the signup; a guild tenant never needs this lookup. */
+  protected async loadParticipationGuilds(): Promise<void> {
+    const detail = this.event();
+    if (!detail) return;
+    this.participationGuildsState.set('loading');
+    try {
+      const response = await firstValueFrom(
+        this.api.get<ParticipationGuildListResponse>(
+          `api/events/${detail.id}/participation-guilds`,
+        ),
+      );
+      const guilds = response.data ?? [];
+      this.participationGuilds.set(guilds);
+      this.selectedGuildTenantId.set(guilds.length === 1 ? guilds[0].tenant_id : '');
+      this.participationGuildsState.set('ready');
+    } catch {
+      this.participationGuilds.set([]);
+      this.selectedGuildTenantId.set('');
+      this.participationGuildsState.set('error');
+    }
+  }
+
+  protected onGuildChange(tenantId: string): void {
+    this.selectedGuildTenantId.set(tenantId);
+    this.joinError.set(null);
   }
 
   protected onPrimaryBuildChange(event: Event): void {
@@ -5452,6 +5570,11 @@ export class EventDetailPage {
   protected async onJoinSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
 
+    if (this.requiresGuildChoice() && !this.selectedGuildTenantId()) {
+      this.joinError.set(this.t('events.detail.join_guild_required'));
+      return;
+    }
+
     // `null` is the virtual Fill role: the backend accepts a participation without a build.
     if (!this.isFillSelected() && Number(this.draftPrimaryBuildId()) <= 0) {
       this.joinError.set(this.t('events.detail.primary_required'));
@@ -5493,8 +5616,12 @@ export class EventDetailPage {
 
     this.joinSubmitting.set(true);
     try {
+      let path = `api/events/${detail.id}/participate`;
+      if (this.isAllianceTenant() && this.selectedGuildTenantId()) {
+        path += `?guild_tenant_id=${encodeURIComponent(this.selectedGuildTenantId())}`;
+      }
       const updated = await firstValueFrom(
-        this.api.post<EventDetailView>(`api/events/${detail.id}/participate`, request),
+        this.api.post<EventDetailView>(path, request),
       );
       this.event.set(updated);
       await this.loadRosterSnapshot();

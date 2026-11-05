@@ -60,7 +60,10 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
-                    .col(ColumnDef::new(SiphonedSettlementQuotes::ConsumedAt).timestamp_with_time_zone())
+                    .col(
+                        ColumnDef::new(SiphonedSettlementQuotes::ConsumedAt)
+                            .timestamp_with_time_zone(),
+                    )
                     .col(ColumnDef::new(SiphonedSettlementQuotes::SiphonedEntryId).big_integer())
                     .col(ColumnDef::new(SiphonedSettlementQuotes::TransactionId).big_integer())
                     .to_owned(),
@@ -79,7 +82,11 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(SiphonedSettlementQuotes::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(SiphonedSettlementQuotes::Table)
+                    .to_owned(),
+            )
             .await
     }
 }

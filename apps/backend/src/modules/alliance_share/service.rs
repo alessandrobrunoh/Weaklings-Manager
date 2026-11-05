@@ -47,6 +47,52 @@ pub struct ShareActor {
     pub email: Option<String>,
 }
 
+/// Copy an alliance comp and its build graph into another tenant schema.
+///
+/// `previous_build_ids` and `previous_comp_id` may be supplied to refresh copies
+/// created by an earlier call, making retries reuse those destination rows.
+pub(crate) async fn copy_alliance_comp_to_tenant(
+    source: &DatabaseConnection,
+    dest: &DatabaseConnection,
+    comp_id: i64,
+    actor: &ShareActor,
+    previous_comp_id: Option<i64>,
+    previous_build_ids: &HashMap<i64, i64>,
+) -> Result<(i64, HashMap<i64, i64>), AppError> {
+    let source_comp = comp::Entity::find_by_id(comp_id)
+        .one(source)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))?;
+    let entries = comp_build::Entity::find()
+        .filter(CompBuildColumn::CompId.eq(comp_id))
+        .all(source)
+        .await?;
+    let creator_id = resolve_created_by(source, dest, source_comp.created_by, actor).await?;
+    let mut source_to_dest_build = HashMap::new();
+    for entry in entries {
+        let existing = previous_build_ids.get(&entry.build_id).copied();
+        let build_source = build::Entity::find_by_id(entry.build_id)
+            .one(source)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {} not found", entry.build_id)))?;
+        let build_creator =
+            resolve_created_by(source, dest, build_source.created_by, actor).await?;
+        let copied =
+            copy_build_graph(source, dest, entry.build_id, build_creator, existing).await?;
+        source_to_dest_build.insert(entry.build_id, copied);
+    }
+    let copied_comp = copy_comp_graph(
+        source,
+        dest,
+        comp_id,
+        creator_id,
+        &source_to_dest_build,
+        previous_comp_id,
+    )
+    .await?;
+    Ok((copied_comp, source_to_dest_build))
+}
+
 impl ShareActor {
     /// Build from the session user.
     #[must_use]
@@ -1851,13 +1897,13 @@ mod tests {
         mapping.insert(src_mace.summary.id, dest_mace.summary.id);
         mapping.insert(src_holy.summary.id, dest_holy.summary.id);
 
-        let published_id = copy_comp_graph(
+        let (published_id, mapping) = copy_alliance_comp_to_tenant(
             &source,
             &dest,
             created.summary.id,
-            dest_user,
-            &mapping,
+            &actor("dest"),
             None,
+            &HashMap::new(),
         )
         .await
         .expect("copy");
@@ -1872,8 +1918,8 @@ mod tests {
             .iter()
             .map(|row| (row.build.name.as_str(), (row.build_id, row.quantity)))
             .collect();
-        assert_eq!(by_name["Heavy Mace"], (dest_mace.summary.id, 12));
-        assert_eq!(by_name["Holy Staff"], (dest_holy.summary.id, 8));
+        assert_eq!(by_name["Heavy Mace"], (mapping[&src_mace.summary.id], 12));
+        assert_eq!(by_name["Holy Staff"], (mapping[&src_holy.summary.id], 8));
 
         comps
             .update_comp_build_quantity(
@@ -1884,17 +1930,18 @@ mod tests {
             )
             .await
             .expect("qty");
-        let again = copy_comp_graph(
+        let (again, refreshed_mapping) = copy_alliance_comp_to_tenant(
             &source,
             &dest,
             created.summary.id,
-            dest_user,
-            &mapping,
+            &actor("dest"),
             Some(published_id),
+            &mapping,
         )
         .await
         .expect("recopy");
         assert_eq!(again, published_id);
+        assert_eq!(refreshed_mapping, mapping);
         let refreshed = comps.get_comp(&dest, published_id).await.expect("refresh");
         let mace_qty = refreshed
             .builds
@@ -2225,7 +2272,10 @@ mod tests {
         .expect("alliance");
 
         let guild_ctx = registry.get_or_load(&guild_id).await.expect("guild ctx");
-        let alliance_ctx = registry.get_or_load(&alliance_id).await.expect("alliance ctx");
+        let alliance_ctx = registry
+            .get_or_load(&alliance_id)
+            .await
+            .expect("alliance ctx");
         let comps = CompService::new();
         let src_user = user_entities::ActiveModel {
             username: Set("officer".to_owned()),

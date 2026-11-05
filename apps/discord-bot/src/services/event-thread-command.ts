@@ -19,6 +19,15 @@ import { ensureEventManagementAllowed } from "./event-authority.js";
 import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "./event-lifecycle.js";
 import { getPoller, type Poller } from "./poller.js";
 import { buildSignupRoleOptions, signupRoles } from "./event-signup.js";
+import {
+  buildGuildSelectRow,
+  buildRoleSelectCustomId,
+  JOIN_GUILD_PENDING_FLASH,
+  participatePath,
+  resolveJoinGuilds,
+  type JoinGuildResolution,
+} from "./event-join-guild.js";
+import { eventJoinCopy } from "./event-join-copy.js";
 import { eventThreadCopy } from "./event-thread-copy.js";
 import { flashCopy } from "./flash-copy.js";
 import {
@@ -315,10 +324,72 @@ async function joinEvent(
     return;
   }
 
+  // Guild attribution: guild tenants are fixed; alliance tenants resolve the
+  // caller's eligible guilds before any participate call is made.
+  let guildResolution: JoinGuildResolution;
+  try {
+    guildResolution = await resolveJoinGuilds(
+      api,
+      interaction.guildId!,
+      eventId,
+      interaction.user.id,
+    );
+  } catch (err) {
+    console.error("Failed to resolve join guild attribution for thread join", err);
+    await interaction.editReply({
+      embeds: [
+        createResponseEmbed(
+          "error",
+          eventJoinCopy(interaction.locale, "guildsFetchFailedTitle"),
+          eventJoinCopy(interaction.locale, "guildsFetchFailed"),
+          "GUILD EVENT",
+        ),
+      ],
+    });
+    return;
+  }
+  if (guildResolution.kind === "none") {
+    await interaction.editReply({
+      embeds: [
+        createResponseEmbed(
+          "warning",
+          eventJoinCopy(interaction.locale, "noGuildTitle"),
+          eventJoinCopy(interaction.locale, "noGuildBody"),
+          "GUILD EVENT",
+        ),
+      ],
+    });
+    return;
+  }
+  const guildTenantId =
+    guildResolution.kind === "resolved" ? guildResolution.guildTenantId : null;
+  const cardMessageId = poller?.eventSignupMessageIdFor(eventId) ?? "";
+
   if (eventDetail.event_kind === "flash") {
+    if (guildResolution.kind === "choice") {
+      const row = buildGuildSelectRow(
+        guildResolution.guilds,
+        eventId,
+        cardMessageId,
+        JOIN_GUILD_PENDING_FLASH,
+        interaction.locale,
+      );
+      await interaction.editReply({
+        embeds: [
+          createResponseEmbed(
+            "info",
+            eventJoinCopy(interaction.locale, "chooseGuildTitle"),
+            eventJoinCopy(interaction.locale, "chooseGuildBody", { id: eventId }),
+            "GUILD EVENT",
+          ),
+        ],
+        components: [row],
+      });
+      return;
+    }
     try {
       const updated = await api.post<EventDetailView>(
-        `api/events/${eventId}/participate`,
+        participatePath(eventId, guildTenantId),
         { primary_build_id: null, secondary_build_id: null },
         interaction.user.id,
       );
@@ -411,8 +482,31 @@ async function joinEvent(
       return;
     }
     try {
+      if (guildResolution.kind === "choice") {
+        // Build already chosen; the guild choice completes it and the select
+        // handler then submits guild + build together, exactly once.
+        const row = buildGuildSelectRow(
+          guildResolution.guilds,
+          eventId,
+          cardMessageId,
+          String(match.build.build_id),
+          interaction.locale,
+        );
+        await interaction.editReply({
+          embeds: [
+            createResponseEmbed(
+              "info",
+              eventJoinCopy(interaction.locale, "chooseGuildTitle"),
+              eventJoinCopy(interaction.locale, "chooseGuildBody", { id: eventId }),
+              "GUILD EVENT",
+            ),
+          ],
+          components: [row],
+        });
+        return;
+      }
       await api.post(
-        `api/events/${eventId}/participate`,
+        participatePath(eventId, guildTenantId),
         { primary_build_id: match.build.build_id },
         interaction.user.id,
       );
@@ -445,10 +539,32 @@ async function joinEvent(
 
   // No build argument: same role-select flow as the Join button. The select
   // handlers refresh the thread's signup card via the message id embedded in
-  // the custom id, so pass the poller's remembered card when available.
+  // the custom id, so pass the poller's remembered card when available. The
+  // chosen guild rides the same custom id so the chain submits once.
+  if (guildResolution.kind === "choice") {
+    const row = buildGuildSelectRow(
+      guildResolution.guilds,
+      eventId,
+      cardMessageId,
+      "",
+      interaction.locale,
+    );
+    await interaction.editReply({
+      embeds: [
+        createResponseEmbed(
+          "info",
+          eventJoinCopy(interaction.locale, "chooseGuildTitle"),
+          eventJoinCopy(interaction.locale, "chooseGuildBody", { id: eventId }),
+          "GUILD EVENT",
+        ),
+      ],
+      components: [row],
+    });
+    return;
+  }
   const availableRoles = signupRoles(signupOptions.builds);
   const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId(`event:join_role:${eventId}:${poller?.eventSignupMessageIdFor(eventId) ?? ""}`)
+    .setCustomId(buildRoleSelectCustomId(eventId, cardMessageId, guildTenantId))
     .setPlaceholder("Select your Role")
     .addOptions(
       buildSignupRoleOptions(availableRoles).map((option) => {

@@ -99,14 +99,18 @@ Zed reads as an open-source engineering notebook rendered on faint blueprint pap
 
 ### Border Radius
 
+The application uses a rounded component scale inspired by Discord. These
+values override the sharp-corner measurements above for the product UI.
+
 | Element | Value |
 |---------|-------|
-| tags | 2px |
-| cards | 2px |
-| inputs | 2px |
-| buttons | 2px |
-| logoTiles | 2px |
-| editorFrame | 6px |
+| compact rows and small controls | 4px |
+| inputs and buttons | 8px |
+| small cards and badges | 12px |
+| cards | 16px |
+| dialogs | 20px |
+| large panels | 24px |
+| pills and avatars | 9999px / 50% |
 
 ### Shadows
 
@@ -192,7 +196,7 @@ Silver Mist canvas continuing from the page, 1px #e5e7eb top border, 48px vertic
 ### Do
 - Set headlines in Plex Serif weight 340 at 48px with -0.96px tracking — the whisper-weight serif is the signature.
 - Use Signal Blue (#2b7fff) fill for the primary Download action; it must be the only saturated fill on the screen.
-- Build all cards, buttons, tags, and inputs with a 2px corner radius — sharp corners are part of the editorial feel.
+- Use the rounded radius scale above for buttons, inputs, cards, dialogs, and interactive items; reserve pill and circular shapes for badges, tags, and avatars.
 - Use 6px gaps as the default element spacing and 64–80px as section gaps to keep the page compact and dense.
 - Pair every action button with a ghost/outline variant sitting 8px to the right — never a single-button row.
 - Express structure with 1px #e5e7eb borders and 2px inset top-lines, not with drop shadows.
@@ -202,7 +206,7 @@ Silver Mist canvas continuing from the page, 1px #e5e7eb top border, 48px vertic
 - Don't use Plex Serif above weight 400 for headlines — the lightness at 340 is the whole point.
 - Don't introduce a second saturated color for buttons, tags, or accents — Hero Violet and Signal Blue are the only chromatic UI colors.
 - Don't apply drop shadows to cards, nav, or text blocks — the only shadow that belongs is under the editor preview card.
-- Don't round corners beyond 6px; 32px or 40px radii on any control breaks the editorial system.
+- Don't flatten interactive controls or cards to square corners; use the shared radius tokens so hover, focus, selected, and resting states keep the same silhouette.
 - Don't use blue or violet for body text — those hues are reserved for headlines, links, and the CTA. Body text is Graphite or Slate.
 - Don't set body text larger than 16px or smaller than 13px in Writer — outside that range the page loses its typographic discipline.
 - Don't add decorative gradients, glassmorphism, or background images to sections — the dotted-grid canvas is the only texture allowed.
@@ -334,18 +338,21 @@ No distinct primary action color was observed; use the extracted neutral button 
   --element-gap: 6px;
 
   /* Border Radius */
-  --radius-sm: 2px;
-  --radius-md: 6px;
-  --radius-3xl: 32px;
-  --radius-3xl-2: 40px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-dialogs: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
 
   /* Named Radii */
-  --radius-tags: 2px;
-  --radius-cards: 2px;
-  --radius-inputs: 2px;
-  --radius-buttons: 2px;
-  --radius-logotiles: 2px;
-  --radius-editorframe: 6px;
+  --radius-tags: 9999px;
+  --radius-cards: 16px;
+  --radius-inputs: 8px;
+  --radius-buttons: 8px;
+  --radius-logotiles: 8px;
+  --radius-editorframe: 16px;
 
   /* Shadows */
   --shadow-subtle: rgba(111, 123, 144, 0.1) 0px -2px 0px 0px inset;
@@ -426,10 +433,13 @@ No distinct primary action color was observed; use the extracted neutral button 
   --spacing-224: 224px;
 
   /* Border Radius */
-  --radius-sm: 2px;
-  --radius-md: 6px;
-  --radius-3xl: 32px;
-  --radius-3xl-2: 40px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-dialogs: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
 
   /* Shadows */
   --shadow-subtle: rgba(111, 123, 144, 0.1) 0px -2px 0px 0px inset;

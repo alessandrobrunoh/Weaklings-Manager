@@ -99,7 +99,8 @@
   --leading-display: 52px;
   --tracking-display: -0.56px;
 
-  /* Border radius (DESIGN.md § Border Radius) */
+  /* Rounded component scale: controls, cards, and large surfaces follow
+     Discord's softer geometry while pills remain reserved for tags. */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -108,10 +109,12 @@
   --radius-full: 9999px;
   --radius-cards: 16px;
   --radius-panels: 24px;
+  --radius-dialogs: 20px;
   --radius-pills: 9999px;
   --radius-inputs: 8px;
-  --radius-buttons: 12px;
+  --radius-buttons: 8px;
   --radius-smallcards: 12px;
+  --radius-checkboxes: 4px;
   --radius-badges: 6px;
 
   /* Elevation — Discord builds depth from contrast, so shadows stay quiet */
@@ -343,6 +346,51 @@ html.light {
   *::before,
   *::after {
     box-sizing: border-box;
+  }
+
+  button {
+    border-radius: var(--radius-buttons);
+  }
+
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    border-radius: var(--radius-inputs);
+  }
+
+  input[type='checkbox'] {
+    width: 1.125rem;
+    height: 1.125rem;
+    appearance: none;
+    margin: 0.125rem 0 0;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-checkboxes);
+    background-color: var(--color-surface);
+    color: var(--color-on-primary);
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  input[type='checkbox']:checked,
+  input[type='checkbox']:indeterminate {
+    border-color: var(--color-primary);
+    background-color: var(--color-primary);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 0.75rem;
+  }
+
+  input[type='checkbox']:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3.2 3.2L13 4.5' fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/%3E%3C/svg%3E");
+  }
+
+  input[type='checkbox']:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8h10' fill='none' stroke='white' stroke-linecap='round' stroke-width='2'/%3E%3C/svg%3E");
+  }
+
+  input[type='checkbox']:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   :focus-visible {
@@ -965,7 +1013,7 @@ html.light {
     margin: auto;
     padding: 0;
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-dialogs);
     background: var(--color-surface);
     color: var(--color-text);
     box-shadow: var(--shadow-xl);
@@ -1599,10 +1647,6 @@ app-shell .card > :where(h2, h3) {
   letter-spacing: -0.01em;
 }
 
-app-shell .card :where(.rounded-xl, .rounded-2xl) {
-  border-radius: var(--radius-inputs);
-}
-
 app-shell .table thead th {
   position: sticky;
   top: 0;
@@ -1621,7 +1665,7 @@ app-shell .table tbody tr:hover {
 app-shell .data-table-card {
   background: transparent;
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius-cards);
 }
 
 app-shell .data-table__toolbar,
@@ -1710,13 +1754,18 @@ html.light {
   --page-max-width: 1200px;
   --page-gap: 12px;
   --element-gap: 6px;
-  --radius-sm: 2px;
-  --radius-md: 2px;
-  --radius-lg: 2px;
-  --radius-cards: 2px;
-  --radius-panels: 2px;
-  --radius-inputs: 2px;
-  --radius-buttons: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-cards: 16px;
+  --radius-panels: 24px;
+  --radius-dialogs: 20px;
+  --radius-inputs: 8px;
+  --radius-buttons: 8px;
+  --radius-checkboxes: 4px;
+  --radius-badges: 6px;
   --shadow-subtle: rgba(111, 123, 144, 0.1) 0 -2px 0 0 inset;
   --shadow-subtle-2: rgba(111, 123, 144, 0.05) 0 -2px 0 0 inset;
   --shadow-xl: 0 1px 3px rgb(40 44 51 / 10%);
@@ -1750,17 +1799,6 @@ html.dark {
   --color-primary: color-mix(in oklab, var(--brand-primary, var(--color-blurple)) 92%, #fff);
   --color-primary-container: color-mix(in oklab, var(--color-primary) 20%, transparent);
   --color-primary-subtle: color-mix(in oklab, var(--color-primary) 12%, transparent);
-}
-
-/* Final geometry guard for legacy utility classes. Feature templates can keep
-   their semantic class names, but no page should reintroduce the old rounded
-   dashboard/card treatment after the Zed workbench tokens are applied. Full
-   pills remain available for statuses and avatars via `rounded-full`. */
-.rounded-lg,
-.rounded-xl,
-.rounded-2xl,
-.rounded-3xl {
-  border-radius: var(--radius-cards, 2px) !important;
 }
 
 .shadow-lg,

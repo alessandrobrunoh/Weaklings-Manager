@@ -1081,6 +1081,17 @@ export interface ParticipateEventRequest {
   secondary_build_id?: number;
 }
 
+/** One guild the current caller may be attributed to when signing up (alliance context). */
+export interface ParticipationGuildOption {
+  tenant_id: string;
+  name: string;
+}
+
+/** Response of `GET /api/events/{id}/participation-guilds`. */
+export interface ParticipationGuildListResponse {
+  data: ParticipationGuildOption[];
+}
+
 /* ----------------------------- Battles ------------------------------ */
 
 export interface BattleGuildSummary {

@@ -430,6 +430,16 @@ pub struct ApiResponseEventList {
     pub data: crate::pagination::PaginatedEventSummary,
 }
 
+/// `OpenAPI` schema wrapper for the eligible participation-guild list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseParticipationGuildList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The caller's eligible active guilds for the event.
+    pub data: Vec<crate::modules::events::attribution::ParticipationGuild>,
+}
+
 /// `OpenAPI` schema wrapper for the complete live/upcoming event calendar feed.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventCalendarList {
@@ -458,6 +468,16 @@ pub struct ApiResponseEventView {
     pub status: String,
     /// The event view data payload.
     pub data: crate::modules::events::models::EventView,
+}
+
+/// `OpenAPI` schema wrapper for a canonical event's fanout results.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventFanoutStatus {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Per-tenant copy state for the alliance-owned event.
+    pub data: crate::modules::events::fanout_outbox::EventFanoutStatus,
 }
 
 /// `OpenAPI` schema wrapper for the event management-authority decision.

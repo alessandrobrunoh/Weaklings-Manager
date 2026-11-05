@@ -538,7 +538,7 @@ function toDateInput(date: Date): string {
     .fin-bar-legend__dot {
       inline-size: 0.5rem;
       block-size: 0.5rem;
-      border-radius: 2px;
+      border-radius: 50%;
     }
 
     .fin-grid {

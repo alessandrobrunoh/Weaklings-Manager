@@ -36,6 +36,14 @@ import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "
 import { FLASH_UNDO_WINDOW_MS, getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 import {
+  buildGuildSelectRow,
+  buildRoleSelectCustomId,
+  JOIN_GUILD_PENDING_FLASH,
+  participatePath,
+  resolveJoinGuilds,
+} from "../services/event-join-guild.js";
+import { eventJoinCopy } from "../services/event-join-copy.js";
+import {
   closeEventAnnouncementThread,
   resolveEventReminderThread,
 } from "../services/event-announcement-thread.js";
@@ -635,10 +643,66 @@ async function handleEventButton(
       return;
     }
 
+    // Resolve guild attribution for the signup: guild tenants are fixed,
+    // alliance tenants need zero/one/many handling before anything is sent.
+    let guildResolution;
+    try {
+      guildResolution = await resolveJoinGuilds(
+        api,
+        interaction.guildId!,
+        eventId,
+        interaction.user.id,
+      );
+    } catch (err) {
+      console.error("Failed to resolve join guild attribution", err);
+      const errEmbed = createResponseEmbed(
+        "error",
+        eventJoinCopy(interaction.locale, "guildsFetchFailedTitle"),
+        eventJoinCopy(interaction.locale, "guildsFetchFailed"),
+        "GUILD EVENT",
+      );
+      await interaction.editReply({ embeds: [errEmbed] });
+      return;
+    }
+    if (guildResolution.kind === "none") {
+      const warnEmbed = createResponseEmbed(
+        "warning",
+        eventJoinCopy(interaction.locale, "noGuildTitle"),
+        eventJoinCopy(interaction.locale, "noGuildBody"),
+        "GUILD EVENT",
+      );
+      await interaction.editReply({ embeds: [warnEmbed] });
+      return;
+    }
+    const guildTenantId =
+      guildResolution.kind === "resolved" ? guildResolution.guildTenantId : null;
+
     if (eventDetail.event_kind === "flash") {
+      // In an alliance Discord the signup still needs a guild attribution;
+      // with several eligible guilds the choice must precede the signup.
+      if (guildResolution.kind === "choice") {
+        const guildRow = buildGuildSelectRow(
+          guildResolution.guilds,
+          eventId,
+          interaction.message.id,
+          JOIN_GUILD_PENDING_FLASH,
+          interaction.locale,
+        );
+        const guildEmbed = createResponseEmbed(
+          "info",
+          eventJoinCopy(interaction.locale, "chooseGuildTitle"),
+          eventJoinCopy(interaction.locale, "chooseGuildBody", { id: eventId }),
+          "GUILD EVENT",
+        );
+        await interaction.editReply({
+          embeds: [guildEmbed],
+          components: [guildRow],
+        });
+        return;
+      }
       try {
         const updated = await api.post<EventDetailView>(
-          `api/events/${eventId}/participate`,
+          participatePath(eventId, guildTenantId),
           { primary_build_id: null, secondary_build_id: null },
           interaction.user.id,
         );
@@ -687,6 +751,29 @@ async function handleEventButton(
       return;
     }
 
+    // Alliance signups with several eligible guilds choose the guild first;
+    // the role/build chain then carries the choice through to one submission.
+    if (guildResolution.kind === "choice") {
+      const guildRow = buildGuildSelectRow(
+        guildResolution.guilds,
+        eventId,
+        interaction.message.id,
+        "",
+        interaction.locale,
+      );
+      const guildEmbed = createResponseEmbed(
+        "info",
+        eventJoinCopy(interaction.locale, "chooseGuildTitle"),
+        eventJoinCopy(interaction.locale, "chooseGuildBody", { id: eventId }),
+        "GUILD EVENT",
+      );
+      await interaction.editReply({
+        embeds: [guildEmbed],
+        components: [guildRow],
+      });
+      return;
+    }
+
     const availableRoles = signupRoles(signupOptions.builds);
 
     const {
@@ -696,7 +783,9 @@ async function handleEventButton(
     } = await import("discord.js");
 
     const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId(`event:join_role:${eventId}:${interaction.message.id}`)
+      .setCustomId(
+        buildRoleSelectCustomId(eventId, interaction.message.id, guildTenantId),
+      )
       .setPlaceholder("Select your Role")
       .addOptions(
         buildSignupRoleOptions(availableRoles).map((option) => {

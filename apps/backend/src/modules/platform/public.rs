@@ -129,10 +129,16 @@ pub async fn attachable_guilds(
     Query(query): Query<AttachableGuildQuery>,
 ) -> Result<Json<ApiResponse<Vec<AttachableGuildView>>>, AppError> {
     let managed = managed_guild_ids_from_cookie(&headers, key);
-    if let Some(alliance_id) = query.albion_alliance_id.as_deref().map(str::trim).filter(|id| !id.is_empty()) {
+    if let Some(alliance_id) = query
+        .albion_alliance_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
         let region = query.region.as_deref().unwrap_or("europe");
         return Ok(Json(ApiResponse::new(
-            PlatformService::list_attachable_guilds_in_alliance(&control.0, alliance_id, region).await?,
+            PlatformService::list_attachable_guilds_in_alliance(&control.0, alliance_id, region)
+                .await?,
         )));
     }
     Ok(Json(ApiResponse::new(
@@ -162,7 +168,9 @@ pub async fn albion_alliances(
         return Err(AppError::Validation("q is required".to_owned()));
     }
     let region = AlbionRegion::from_env_str(query.region.as_deref().unwrap_or("europe"));
-    let hits = AlbionService::new(region, String::new()).search_alliances(q).await?;
+    let hits = AlbionService::new(region, String::new())
+        .search_alliances(q)
+        .await?;
     Ok(Json(ApiResponse::new(
         hits.into_iter()
             .map(|(id, name)| super::models::AlbionAllianceChoice { id, name })

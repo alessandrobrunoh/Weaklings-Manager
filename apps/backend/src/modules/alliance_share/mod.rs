@@ -9,4 +9,5 @@ pub mod router;
 mod service;
 
 pub use router::router;
+pub(crate) use service::copy_alliance_comp_to_tenant;
 pub use service::{AllianceShareService, ShareActor, ShareParams};
