@@ -177,6 +177,13 @@ export interface EventCalendarChannelFailure {
 const EVENT_REVISION_CHUNK = 100;
 /** Page size and bounds for scanning scheduled/live events. */
 const EVENT_SCAN_PAGE_SIZE = 100;
+/**
+ * How far past its start a still-scheduled event may be before the lifecycle
+ * stops acting on it. The scan walks all scheduled events oldest first, so
+ * abandoned or test events that were never started would otherwise be massed
+ * and started on the first tick, pinging roles for events nobody expects.
+ */
+const LIFECYCLE_MAX_OVERDUE_MS = 24 * 60 * 60 * 1000;
 /** Retry schedule for splits whose Forum sync failed. */
 const SPLIT_RETRY_MAX_ATTEMPTS = 8;
 const SPLIT_RETRY_BASE_MS = 60_000;
@@ -1317,7 +1324,10 @@ export class Poller {
   ): Promise<EventCalendarRefreshResult> {
     const routes = await this.loadEventChannelRoutes();
     const configuredChannelIds = calendarChannelIds(routes);
-    if (configuredChannelIds.length === 0 && !discordUserId) {
+    const calendarMode = (await this.eventDelivery()) === "calendar";
+    // Message and forum guilds have no calendar panel. Scheduled ticks must not
+    // touch Discord for them at all; only an explicit refresh command proceeds.
+    if ((configuredChannelIds.length === 0 || !calendarMode) && !discordUserId) {
       return {
         eventCount: 0,
         configuredChannels: 0,
@@ -1334,7 +1344,7 @@ export class Poller {
     let unroutedCallToArms = 0;
     for (const event of events) {
       if (flashUndoTimeRemaining(event) > 0) continue;
-      if ((await this.eventDelivery()) !== "calendar") {
+      if (!calendarMode) {
         continue;
       }
       const channelId = destinationChannel(event, routes);
@@ -1869,13 +1879,40 @@ export class Poller {
     }
   }
 
+  /**
+   * Lists every event with one status, soonest first.
+   *
+   * `api/events` defaults to newest-date-first, so a plain page 1 is filled by
+   * far-future events and hides the ones that are due now. Filtering by status
+   * and sorting ascending, then walking every page, keeps due events visible
+   * however many future ones exist.
+   */
+  private async listEventsByStatus(status: "scheduled" | "live"): Promise<EventView[]> {
+    const listed = await this.listSinceCheckpoint<EventView>(
+      "api/events",
+      0,
+      (event) => event.id,
+      EVENT_SCAN_PAGE_SIZE,
+      { status, sort: "start_time_utc", order: "asc" },
+    );
+    return listed.items;
+  }
+
   /** Executes Mass and Start automatically, then auto-stops live events after occupied voice goes empty. */
   private async checkEventLifecycle(): Promise<void> {
     try {
-      const result = await this.api.get<PaginatedData<EventView>>("api/events", undefined, { page: 1, limit: 50 });
+      const [scheduled, live] = await Promise.all([
+        this.listEventsByStatus("scheduled"),
+        this.listEventsByStatus("live"),
+      ]);
       const now = Date.now();
-      for (const event of result.items) {
+      const seenEventIds = new Set<number>();
+      for (const event of [...scheduled, ...live]) {
+        if (seenEventIds.has(event.id)) continue;
+        seenEventIds.add(event.id);
         if (event.status === "scheduled") {
+          const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
+          if (Number.isFinite(startAt) && now - startAt > LIFECYCLE_MAX_OVERDUE_MS) continue;
           const massAt = new Date(event.mass_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(massAt) && now >= massAt && !this.state.massedEvents.includes(event.id)) {
             try {
@@ -1883,12 +1920,15 @@ export class Poller {
               const massed = await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
               await this.postAllianceLifecycle(massed.event, "mass");
               this.state.massedEvents.push(event.id);
+              // Only ids of still-scheduled events matter; keep the list bounded.
+              if (this.state.massedEvents.length > 500) {
+                this.state.massedEvents = this.state.massedEvents.slice(-500);
+              }
               this.save();
             } catch (error) {
               console.warn(`[Poller] Could not mass event #${event.id}:`, error);
             }
           }
-          const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(startAt) && now >= startAt) {
             try {
               const thread = await this.getEventThread(event.id);
@@ -2102,19 +2142,12 @@ export class Poller {
   /** Checks for scheduled events starting in <= 1 hour and notifies their discussion thread. */
   private async checkUpcomingEvents(): Promise<void> {
     try {
-      const result = await this.api.get<PaginatedData<EventView>>(
-        "api/events",
-        undefined,
-        {
-          page: 1,
-          limit: 20,
-        },
-      );
+      const scheduled = await this.listEventsByStatus("scheduled");
 
       const now = new Date().getTime();
       const oneHourMs = 60 * 60 * 1000;
 
-      const upcomingEvents = result.items.filter((e) => {
+      const upcomingEvents = scheduled.filter((e) => {
         if (e.status !== "scheduled") return false;
         if (this.state.pinged1hEvents.includes(e.id)) return false;
 

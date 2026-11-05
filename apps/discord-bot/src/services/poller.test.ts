@@ -1758,6 +1758,7 @@ test("scheduled and manual calendar refreshes serialize without duplicating mess
     const settings = {
       eventsChannelId: async () => "events-channel",
       callToArmsChannelId: async () => null,
+      eventDelivery: async () => "calendar",
     } as unknown as SettingsService;
     let sendCount = 0;
     let editCount = 0;
@@ -2729,3 +2730,131 @@ test("the final signup card is rendered before the stopped event's thread is arc
   }
 });
 
+test("scheduled events beyond page 1 still get their 1h reminder", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    // 120 overdue "scheduled" events sort before the one starting in 30 minutes
+    // when ordered soonest-first, and after it in the backend's default newest-first order.
+    const overdue: EventView[] = Array.from({ length: 120 }, (_, index) => ({
+      ...calendarEvent(1000 + index, `Overdue ${index}`),
+      event_date_utc: new Date(Date.now() - (200 - index) * 60_000).toISOString(),
+    }));
+    const due: EventView = {
+      ...calendarEvent(3000, "Due soon"),
+      event_date_utc: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    // Far-future events fill what used to be page 1 of the newest-first list.
+    const future: EventView[] = Array.from({ length: 60 }, (_, index) => ({
+      ...calendarEvent(4000 + index, `Future ${index}`),
+      event_date_utc: new Date(Date.now() + (5 + index) * 24 * 3_600_000).toISOString(),
+    }));
+    writeHotfixState(directory, { eventThreadIds: { "3000": "thread-3000" } });
+
+    const calls: ListCall[] = [];
+    const sends: Array<{ id: string; content?: string }> = [];
+    const client = {
+      channels: { fetch: async (id: string) => sendingThread(id, sends) },
+    } as unknown as Client;
+    const poller = new Poller(
+      client,
+      scheduledEventsApi([...overdue, due, ...future], calls),
+      hotfixSettings,
+      60_000,
+      directory,
+    );
+    await (poller as unknown as { checkUpcomingEvents(): Promise<void> }).checkUpcomingEvents();
+
+    assert.deepEqual(sends.map((send) => send.id), ["thread-3000"]);
+    const listCalls = calls.filter((call) => call.path === "api/events");
+    assert.ok(listCalls.length > 1, "the scan walks past page 1");
+    assert.ok(
+      listCalls.every((call) => call.params?.status === "scheduled" && call.params?.order === "asc"),
+      "only scheduled events are listed, soonest first",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("message-delivery guilds never touch the Discord calendar panel on scheduled ticks", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    const gets: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        gets.push(path);
+        return [];
+      },
+    } as unknown as ApiClient;
+    let discordCalls = 0;
+    const client = {
+      channels: {
+        fetch: async () => {
+          discordCalls += 1;
+          return null;
+        },
+      },
+    } as unknown as Client;
+    const settings = {
+      ...hotfixSettings,
+      eventsChannelId: async () => "events-channel",
+      eventDelivery: async () => "message",
+    } as unknown as SettingsService;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await (poller as unknown as { updateEventCalendars(): Promise<void> }).updateEventCalendars();
+
+    assert.equal(discordCalls, 0);
+    assert.deepEqual(gets, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("lifecycle ignores scheduled events long overdue and still reaches a due event beyond page 1", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const hour = 3_600_000;
+    const at = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+    // Abandoned events days or months overdue sort first ascending and must be left alone.
+    const abandoned: EventView[] = Array.from({ length: 3 }, (_, index) => ({
+      ...calendarEvent(100 + index, `Abandoned ${index}`),
+      event_date_utc: at(-(5 + index * 30) * 24 * hour),
+    }));
+    // More than one page of recently due events pushes the last one past page 1.
+    const recent: EventView[] = Array.from({ length: 120 }, (_, index) => ({
+      ...calendarEvent(1000 + index, `Recent ${index}`),
+      event_date_utc: at(-(20 * hour) + index * 60_000),
+    }));
+    const attempted = new Set<number>();
+    const events = [...abandoned, ...recent];
+    const base = scheduledEventsApi(events);
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string, discordId?: string, params?: Record<string, string | number>) => {
+        const match = /^api\/events\/(\d+)$/.exec(path);
+        if (match) {
+          attempted.add(Number(match[1]));
+          throw new Error("stop after recording the attempt");
+        }
+        return base.get(path, discordId, params);
+      },
+    } as unknown as ApiClient;
+    writeHotfixState(directory);
+    const poller = new Poller({} as unknown as Client, api, hotfixSettings, 60_000, directory);
+    await (poller as unknown as { checkEventLifecycle(): Promise<void> }).checkEventLifecycle();
+
+    for (const event of abandoned) {
+      assert.ok(!attempted.has(event.id), `abandoned event #${event.id} must not be massed or started`);
+    }
+    assert.ok(attempted.has(1119), "a due event beyond page 1 is still massed and started");
+    assert.ok(attempted.has(1000));
+  } finally {
+    console.warn = originalWarn;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
