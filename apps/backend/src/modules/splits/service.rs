@@ -9,9 +9,11 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use sea_orm::prelude::Decimal;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait,
 };
 
 use crate::errors::AppError;
@@ -735,6 +737,15 @@ async fn load_island_view(
     Ok(to_island_view(island, tabs))
 }
 
+/// Result of the best-effort split roster sync that runs when an event stops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitSyncState {
+    /// Every split of the event was reconciled with the event roster.
+    Synced,
+    /// The sync failed and was rolled back; the splits carry `needs_resync`.
+    NeedsResync,
+}
+
 /// Service for executing business logic operations related to loot splits.
 pub struct SplitService {
     tenant_kind: String,
@@ -1397,11 +1408,13 @@ impl SplitService {
     }
 
     /// Synchronizes every split linked to an event and aligns its waiting state with the event.
-    pub async fn sync_event_participants(
-        &self,
-        db: &DatabaseConnection,
-        event_id: i64,
-    ) -> Result<(), AppError> {
+    ///
+    /// Generic over the connection so the event transition core can run it on its own
+    /// transaction. A successful pass clears `needs_resync` on every split it visited.
+    pub async fn sync_event_participants<C>(&self, db: &C, event_id: i64) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         let event = EventEntity::find_by_id(event_id)
             .one(db)
             .await?
@@ -1414,16 +1427,87 @@ impl SplitService {
         for split in splits {
             self.sync_participants_from_event(db, split.id, event_id)
                 .await?;
-            if matches!(
+            let waiting = matches!(
                 parse_status(&split)?,
                 SplitStatus::Pending | SplitStatus::AwaitingEvent
-            ) {
-                let mut active: SplitActiveModel = split.into();
+            );
+            if !waiting && !split.needs_resync {
+                continue;
+            }
+            let mut active: SplitActiveModel = split.into();
+            if waiting {
                 active.status = Set(desired_status.to_string());
-                active.updated_at = Set(chrono::Utc::now().into());
-                active.update(db).await?;
+            }
+            active.needs_resync = Set(false);
+            active.updated_at = Set(chrono::Utc::now().into());
+            active.update(db).await?;
+        }
+        Ok(())
+    }
+
+    /// Runs [`Self::sync_event_participants`] inside a SAVEPOINT of the caller's transaction.
+    ///
+    /// The event transition core calls this while stopping an event: a failing split sync is
+    /// rolled back to the savepoint, logged, and recorded as `needs_resync` on the event's
+    /// splits, but never fails (or rolls back) the surrounding transition. On PostgreSQL the
+    /// savepoint is what keeps the outer transaction usable after a failed statement.
+    ///
+    /// # Errors
+    ///
+    /// Only when the savepoint itself cannot be opened or released, which means the outer
+    /// transaction is no longer usable either.
+    pub async fn sync_event_participants_isolated(
+        &self,
+        txn: &DatabaseTransaction,
+        event_id: i64,
+    ) -> Result<SplitSyncState, AppError> {
+        let savepoint = txn.begin().await?;
+        match self.sync_event_participants(&savepoint, event_id).await {
+            Ok(()) => {
+                savepoint.commit().await?;
+                Ok(SplitSyncState::Synced)
+            }
+            Err(error) => {
+                savepoint.rollback().await?;
+                tracing::warn!(
+                    event_id,
+                    error = %error,
+                    "split roster sync failed; the event transition is kept and the splits are marked needs_resync"
+                );
+                if let Err(mark_error) = self.mark_needs_resync(txn, event_id).await {
+                    tracing::error!(
+                        event_id,
+                        error = %mark_error,
+                        "could not record needs_resync on the splits of the event"
+                    );
+                }
+                Ok(SplitSyncState::NeedsResync)
             }
         }
+    }
+
+    /// Whether any split of the event is waiting for a roster resync.
+    pub async fn event_has_stale_splits<C>(&self, db: &C, event_id: i64) -> Result<bool, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(SplitEntity::find()
+            .filter(SplitColumn::EventId.eq(event_id))
+            .filter(SplitColumn::NeedsResync.eq(true))
+            .one(db)
+            .await?
+            .is_some())
+    }
+
+    async fn mark_needs_resync<C>(&self, db: &C, event_id: i64) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        SplitEntity::update_many()
+            .filter(SplitColumn::EventId.eq(event_id))
+            .col_expr(SplitColumn::NeedsResync, Expr::value(true))
+            .exec(db)
+            .await?;
         Ok(())
     }
 
@@ -4004,6 +4088,140 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::Conflict(message) if message.contains("awaiting event")));
+    }
+
+    #[tokio::test]
+    async fn isolated_event_sync_rolls_back_to_a_savepoint_and_flags_the_split() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let kept = insert_user(&db, "kept", "kept@example.com").await;
+        let stale = insert_user(&db, "stale", "stale@example.com").await;
+        let late = insert_user(&db, "late", "late@example.com").await;
+        let category = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set("test".to_string()),
+            slug: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set("test comp".to_string()),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let event = crate::modules::events::entities::event::ActiveModel {
+            title: Set("stopped event".to_string()),
+            comp_id: Set(Some(comp.id)),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            status: Set("stopped".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        for user_id in [kept, late] {
+            crate::modules::events::entities::event_participation::ActiveModel {
+                event_id: Set(event.id),
+                user_id: Set(user_id),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+        }
+        let split = SplitActiveModel {
+            created_by: Set(creator),
+            status: Set(SplitStatus::AwaitingEvent.to_string()),
+            estimated_market_value: Set("100".parse().unwrap()),
+            fee: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            event_id: Set(Some(event.id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        for user_id in [kept, stale] {
+            ParticipantActiveModel {
+                split_id: Set(split.id),
+                user_id: Set(user_id),
+                weight: Set(Decimal::ONE),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+        }
+        let roster = |db: DatabaseConnection| async move {
+            let mut ids: Vec<i64> = ParticipantEntity::find()
+                .filter(ParticipantColumn::SplitId.eq(split.id))
+                .all(&db)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|row| row.user_id)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        let mut before = vec![kept, stale];
+        before.sort_unstable();
+        let mut after = vec![kept, late];
+        after.sort_unstable();
+
+        // Reconciliation deletes `stale` first and fails inserting `late`.
+        db.execute_unprepared(
+            "CREATE TRIGGER fail_insert BEFORE INSERT ON split_participants \
+             BEGIN SELECT RAISE(ABORT, 'injected'); END",
+        )
+        .await
+        .unwrap();
+        let service = SplitService::new();
+        let txn = db.begin().await.unwrap();
+        let state = service
+            .sync_event_participants_isolated(&txn, event.id)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(state, SplitSyncState::NeedsResync);
+        assert_eq!(roster(db.clone()).await, before, "partial sync rolled back");
+        let flagged = SplitEntity::find_by_id(split.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(flagged.needs_resync);
+        assert_eq!(flagged.status, "awaiting_event");
+        assert!(service.event_has_stale_splits(&db, event.id).await.unwrap());
+
+        // A later successful pass reconciles, follows the event, and clears the flag.
+        db.execute_unprepared("DROP TRIGGER fail_insert")
+            .await
+            .unwrap();
+        let txn = db.begin().await.unwrap();
+        let state = service
+            .sync_event_participants_isolated(&txn, event.id)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(state, SplitSyncState::Synced);
+        assert_eq!(roster(db.clone()).await, after);
+        let fixed = SplitEntity::find_by_id(split.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!fixed.needs_resync);
+        assert_eq!(fixed.status, "pending");
+        assert!(!service.event_has_stale_splits(&db, event.id).await.unwrap());
     }
 
     #[tokio::test]

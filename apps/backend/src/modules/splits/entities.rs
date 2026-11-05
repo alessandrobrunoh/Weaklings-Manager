@@ -40,6 +40,8 @@ pub mod split {
         pub archived_at: Option<DateTimeWithTimeZone>,
         /// True when this row is a published alliance snapshot and must not be mutated.
         pub origin_read_only: bool,
+        /// True when the last event-driven roster sync failed; cleared by the next successful sync.
+        pub needs_resync: bool,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
