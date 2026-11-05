@@ -2858,3 +2858,130 @@ test("lifecycle ignores scheduled events long overdue and still reaches a due ev
     rmSync(directory, { recursive: true, force: true });
   }
 });
+test("a split that fails to sync does not block the splits behind it", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    const puts: string[] = [];
+    const archivedItem = (splitId: number) => ({
+      split_id: splitId,
+      detail: { id: splitId, status: "open", archived_at: "2026-01-01T00:00:00Z", event_id: null },
+      transactions: [],
+      audit: [],
+      next_audit_cursor: 0,
+      next_transaction_cursor: 0,
+      thread_id: null,
+      summary_message_id: null,
+    });
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/splits/discord-sync") {
+          return {
+            items: [
+              { id: 1, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:01Z" },
+              { id: 2, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:02Z" },
+            ],
+            has_more: false,
+          };
+        }
+        if (path === "api/splits/1/discord-sync") throw new ApiError(500, "boom");
+        if (path === "api/splits/2/discord-sync") return archivedItem(2);
+        throw new Error(`unexpected GET ${path}`);
+      },
+      put: async (path: string) => {
+        puts.push(path);
+        return {};
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      ...hotfixSettings,
+      splitsForumChannelId: async () => "forum-1",
+    } as unknown as SettingsService;
+
+    const poller = new Poller({} as unknown as Client, api, settings, 60_000, directory);
+    await (poller as unknown as { checkSplitSync(): Promise<void> }).checkSplitSync();
+
+    assert.deepEqual(puts, ["api/splits/2/discord-sync"], "split 2 is synced despite split 1 failing");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      splitAfterId: number;
+      splitRetries: Record<string, { attempts: number }>;
+    };
+    assert.equal(saved.splitAfterId, 2, "the cursor moved past both");
+    assert.equal(saved.splitRetries["1"]?.attempts, 1, "the failed split is queued for retry");
+    assert.equal(saved.splitRetries["2"], undefined);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a giveaway whose backend ack failed is not announced a second time", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    const giveaway = {
+      id: 11,
+      title: "Raffle",
+      description: null,
+      ends_at: "2030-01-01T00:00:00Z",
+      status: "open",
+      created_by: 1,
+      created_by_username: "Officer",
+      created_at: "2029-12-01T00:00:00Z",
+      entry_count: 0,
+      prizes: [],
+      entries: [],
+    };
+    let putFails = true;
+    const puts: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/giveaways") {
+          return { items: [giveaway], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+        }
+        if (path === "api/giveaways/11") return giveaway;
+        throw new Error(`unexpected GET ${path}`);
+      },
+      put: async (path: string) => {
+        puts.push(path);
+        if (putFails) throw new ApiError(502, "bad gateway");
+        return {};
+      },
+    } as unknown as ApiClient;
+    let sent = 0;
+    const channel = {
+      id: "giveaways-channel",
+      isTextBased: () => true,
+      send: async () => {
+        sent += 1;
+        return { id: `message-${sent}` };
+      },
+    };
+    const settings = {
+      ...hotfixSettings,
+      giveawaysChannelId: async () => "giveaways-channel",
+    } as unknown as SettingsService;
+    const client = { channels: { fetch: async () => channel } } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    const run = () => (poller as unknown as { checkNewGiveaways(): Promise<void> }).checkNewGiveaways();
+    await run();
+    await run();
+    assert.equal(sent, 1, "a failed ack must not cause a duplicate announcement");
+
+    putFails = false;
+    await run();
+    assert.equal(sent, 1);
+    assert.equal(puts.length >= 2, true, "the ack is retried until the backend accepts it");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      unackedGiveawayMessages: Record<string, unknown>;
+      lastGiveawayId: number;
+    };
+    assert.deepEqual(saved.unackedGiveawayMessages, {});
+    assert.equal(saved.lastGiveawayId, 11);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+

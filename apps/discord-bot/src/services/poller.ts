@@ -2100,7 +2100,11 @@ export class Poller {
 
   /**
    * Synchronizes split Forum posts from the backend-owned incremental contract.
-   * The `(updated_at, id)` cursor advances after each successfully maintained Discord post.
+   *
+   * The `(updated_at, id)` cursor moves past every split it has attempted, so a
+   * split that cannot be synced (missing tag, locked thread, no permission)
+   * never blocks the ones behind it. Failed splits go to `splitRetries` and are
+   * retried with exponential backoff, then given up on loudly.
    */
   private async checkSplitSync(): Promise<void> {
     try {
@@ -2108,6 +2112,8 @@ export class Poller {
       if (!forumChannelId) return;
 
       const adapter = new SplitForumAdapter(this.client, this.api, forumChannelId);
+      await this.retryFailedSplits(adapter);
+
       let hasMore = true;
       while (hasMore) {
         const params: Record<string, string | number> = { limit: 50 };
@@ -2122,10 +2128,9 @@ export class Poller {
           params,
         );
         for (const split of batch.items) {
-          const item = await this.api.get<SplitDiscordSync>(
-            `api/splits/${split.id}/discord-sync`,
-          );
-          if (!await adapter.sync(item)) return;
+          const synced = await this.syncSplit(adapter, split.id);
+          if (synced === "failed") this.recordSplitFailure(split.id);
+          else delete this.state.splitRetries[String(split.id)];
 
           this.state.splitUpdatedAt = split.updated_at ?? split.created_at;
           this.state.splitAfterId = split.id;
@@ -2136,6 +2141,47 @@ export class Poller {
     } catch (err) {
       // A split sync failure is isolated from event/battle announcements and retried next tick.
       console.error("[Poller] Failed to sync split Forum posts:", err);
+    }
+  }
+
+  /** Syncs one split; `gone` means the backend no longer has it. */
+  private async syncSplit(
+    adapter: SplitForumAdapter,
+    splitId: number,
+  ): Promise<"synced" | "failed" | "gone"> {
+    try {
+      const item = await this.api.get<SplitDiscordSync>(`api/splits/${splitId}/discord-sync`);
+      return (await adapter.sync(item)) ? "synced" : "failed";
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return "gone";
+      console.warn(`[Poller] Could not sync split #${splitId}:`, error);
+      return "failed";
+    }
+  }
+
+  private recordSplitFailure(splitId: number): void {
+    const key = String(splitId);
+    const attempts = (this.state.splitRetries[key]?.attempts ?? 0) + 1;
+    if (attempts >= SPLIT_RETRY_MAX_ATTEMPTS) {
+      console.error(
+        `[Poller] Giving up on split #${splitId} after ${attempts} failed Forum syncs; it will sync again when it next changes`,
+      );
+      delete this.state.splitRetries[key];
+      return;
+    }
+    const delay = Math.min(SPLIT_RETRY_BASE_MS * 2 ** (attempts - 1), SPLIT_RETRY_MAX_MS);
+    this.state.splitRetries[key] = { attempts, nextAt: Date.now() + delay };
+  }
+
+  private async retryFailedSplits(adapter: SplitForumAdapter): Promise<void> {
+    const now = Date.now();
+    for (const [key, retry] of Object.entries(this.state.splitRetries)) {
+      if (retry.nextAt > now) continue;
+      const splitId = Number(key);
+      const result = await this.syncSplit(adapter, splitId);
+      if (result === "failed") this.recordSplitFailure(splitId);
+      else delete this.state.splitRetries[key];
+      this.save();
     }
   }
 
@@ -2236,13 +2282,32 @@ export class Poller {
         return;
       }
 
-      const channel = await this.getTextChannel(await this.settings.battlesChannelId());
+      const battlesChannelId = await this.settings.battlesChannelId();
+      if (!battlesChannelId) {
+        // Nothing is configured to deliver to. Skip these battles instead of
+        // leaving them as a backlog that floods the channel once one is set.
+        if (listedBattles.complete && listedBattles.newestId > this.state.lastBattleId) {
+          console.warn(
+            `[Poller] No battles channel configured for guild ${this.guildId}; skipping ${newBattles.length} battle(s)`,
+          );
+          this.state.lastBattleId = listedBattles.newestId;
+          this.save();
+        }
+        return;
+      }
+      const channel = await this.getTextChannel(battlesChannelId);
       if (!channel) return;
 
       for (const battle of newBattles) {
         const embed = buildBattleEmbed(battle, GUILD_NAME);
         await channel.send({ embeds: [embed] });
         console.log(`[Poller] Announced battle #${battle.battle_id}`);
+        // Advance per item (the list is sorted ascending) so a later failure
+        // cannot make the next tick re-send battles that already reached Discord.
+        if (listedBattles.complete) {
+          this.state.lastBattleId = battle.battle_id;
+          this.save();
+        }
       }
       if (listedBattles.complete && listedBattles.newestId > this.state.lastBattleId) {
         this.state.lastBattleId = listedBattles.newestId;
@@ -2256,6 +2321,7 @@ export class Poller {
   /** Announces newly created giveaways into the configured channel. */
   private async checkNewGiveaways(): Promise<void> {
     try {
+      await this.ackUnackedGiveawayMessages();
       const listedGiveaways = await this.listSinceCheckpoint<GiveawayView>(
         "api/giveaways",
         this.state.lastGiveawayId,
@@ -2286,25 +2352,57 @@ export class Poller {
       const channel = await this.getTextChannel(channelId);
       if (!channel) return;
 
+      // Each giveaway is delivered independently. The cursor only moves past a
+      // contiguous run of delivered ones, and `postedGiveawayIds` (written right
+      // after the Discord send) keeps a retried item from being announced twice.
+      let cursorBlocked = false;
       for (const summary of newGiveaways) {
-        const detail = await this.api.get<GiveawayDetailView>(`api/giveaways/${summary.id}`);
-        const message = await channel.send(buildGiveawayAnnouncementMessage(detail, roleId));
-        await this.api.put(
-          `api/giveaways/${detail.id}/discord-message`,
-          { message_id: message.id, channel_id: channel.id },
-        );
-        if (!this.state.postedGiveawayIds.includes(detail.id)) {
-          this.state.postedGiveawayIds.push(detail.id);
+        try {
+          if (!this.state.postedGiveawayIds.includes(summary.id)) {
+            const detail = await this.api.get<GiveawayDetailView>(`api/giveaways/${summary.id}`);
+            const message = await channel.send(buildGiveawayAnnouncementMessage(detail, roleId));
+            this.state.postedGiveawayIds.push(detail.id);
+            this.state.unackedGiveawayMessages[String(detail.id)] = {
+              message_id: message.id,
+              channel_id: channel.id,
+            };
+            this.save();
+            console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
+            await this.ackUnackedGiveawayMessages();
+          }
+          if (!cursorBlocked && listedGiveaways.complete) {
+            this.state.lastGiveawayId = Math.max(this.state.lastGiveawayId, summary.id);
+            this.save();
+          }
+        } catch (error) {
+          cursorBlocked = true;
+          console.warn(`[Poller] Could not announce giveaway #${summary.id}:`, error);
         }
-        this.save();
-        console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
       }
-      if (listedGiveaways.complete && listedGiveaways.newestId > this.state.lastGiveawayId) {
+      if (!cursorBlocked && listedGiveaways.complete && listedGiveaways.newestId > this.state.lastGiveawayId) {
         this.state.lastGiveawayId = listedGiveaways.newestId;
         this.save();
       }
     } catch (error) {
       console.error("[Poller] Failed to check giveaways:", error);
+    }
+  }
+
+  /** Records sent giveaway messages with the backend; failures stay queued for the next tick. */
+  private async ackUnackedGiveawayMessages(): Promise<void> {
+    for (const [giveawayId, binding] of Object.entries(this.state.unackedGiveawayMessages)) {
+      try {
+        await this.api.put(`api/giveaways/${giveawayId}/discord-message`, binding);
+        delete this.state.unackedGiveawayMessages[giveawayId];
+        this.save();
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          delete this.state.unackedGiveawayMessages[giveawayId];
+          this.save();
+          continue;
+        }
+        console.warn(`[Poller] Could not record Discord message for giveaway #${giveawayId}; will retry:`, error);
+      }
     }
   }
 
@@ -2319,8 +2417,13 @@ export class Poller {
         if (detail.status === "open") continue;
         if (detail.discord_channel_id && detail.discord_message_id) {
           const channel = await this.getTextChannel(detail.discord_channel_id);
+          // Only a message that is really gone counts as "nothing to edit". Any
+          // other failure is transient and must retry, not mark the draw announced.
           const message = channel
-            ? await channel.messages.fetch(detail.discord_message_id).catch(() => null)
+            ? await channel.messages.fetch(detail.discord_message_id).catch((error: unknown) => {
+                if (discordErrorCode(error) === DISCORD_UNKNOWN_MESSAGE) return null;
+                throw error;
+              })
             : null;
           if (message) {
             await message.edit({
@@ -2328,7 +2431,9 @@ export class Poller {
               components: [buildGiveawayActionRow(detail)],
             });
             if (detail.status === "drawn") {
-              await channel?.send(buildGiveawayWinnerMessage(detail)).catch(() => undefined);
+              await channel?.send(buildGiveawayWinnerMessage(detail)).catch((error: unknown) => {
+                console.warn(`[Poller] Could not post winner message for giveaway #${giveawayId}:`, error);
+              });
             }
           }
         }
