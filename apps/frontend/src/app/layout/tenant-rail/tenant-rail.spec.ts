@@ -4,11 +4,13 @@ import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { TenantRail } from './tenant-rail';
 
 describe('TenantRail', () => {
   let fixture: ComponentFixture<TenantRail>;
+  let notifications: { reset: ReturnType<typeof vi.fn> };
   let auth: {
     myTenants: ReturnType<typeof vi.fn>;
     switchTenant: ReturnType<typeof vi.fn>;
@@ -25,12 +27,15 @@ describe('TenantRail', () => {
       profile: vi.fn().mockReturnValue({ tenant_id: '111' }),
     };
 
+    notifications = { reset: vi.fn() };
+
     await TestBed.configureTestingModule({
       imports: [TenantRail],
       providers: [
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: AuthService, useValue: auth },
+        { provide: NotificationService, useValue: notifications },
         { provide: TranslateService, useValue: { t: (key: string) => key } },
       ],
     }).compileComponents();
@@ -54,6 +59,7 @@ describe('TenantRail', () => {
     (buttons[1] as HTMLButtonElement).click();
     await fixture.whenStable();
     expect(auth.switchTenant).toHaveBeenCalledWith('222');
+    expect(notifications.reset).toHaveBeenCalledTimes(1);
   });
 
   it('pins the add-a-server orb under the tenants', () => {

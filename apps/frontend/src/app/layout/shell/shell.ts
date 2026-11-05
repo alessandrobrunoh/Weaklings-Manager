@@ -8,7 +8,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { NavigationEnd, NavigationSkipped, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
 import { AlbionLinkGate } from '../../shared/components/albion-link-gate/albion-link-gate';
@@ -125,7 +125,12 @@ import { Topbar } from '../topbar/topbar';
         />
         <main #main class="workspace-main flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div class="workspace-main__inner w-full min-w-0">
-            <router-outlet />
+            <!-- Keyed on the tenant epoch: when the tenant changes but the URL does not
+                 (switching while on /dashboard), the routed page is destroyed and recreated,
+                 so pages that load once in their constructor never keep the old tenant's data. -->
+            @for (pageKey of pageKeys(); track pageKey) {
+              <router-outlet />
+            }
           </div>
         </main>
       </div>
@@ -151,6 +156,10 @@ export class Shell {
     const profile = this.auth.profile();
     return !profile?.tenant_id || (profile.features ?? []).includes('sidebar');
   });
+  private readonly pageEpoch = signal(0);
+  private pageTenantId = this.auth.profile()?.tenant_id ?? '';
+  /** One-element list; `@for` re-renders the outlet whenever the epoch changes. */
+  protected readonly pageKeys = computed(() => [this.pageEpoch()]);
   protected readonly navSections = computed(() => {
     if (this.inPlatform()) {
       return PLATFORM_NAV_SECTIONS;
@@ -199,6 +208,7 @@ export class Shell {
         takeUntilDestroyed(),
       )
       .subscribe((event) => {
+        this.syncPageWithTenant(false);
         this.inPlatform.set(isPlatformUrl(event.urlAfterRedirects));
         this.inAdmin.set(this.shouldUseAdminNavigation(event.urlAfterRedirects));
         const element = this.main()?.nativeElement;
@@ -206,6 +216,30 @@ export class Shell {
           element.scrollTop = 0;
         }
       });
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof NavigationSkipped),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => this.syncPageWithTenant(true));
+  }
+
+  /**
+   * Recreate the routed page when the tenant changed without a route change.
+   *
+   * The tenant rail switches the profile and then navigates to `/dashboard`. A
+   * navigation to another URL already destroys the old page. Only when the
+   * user is already on `/dashboard` does the router skip the navigation and
+   * keep the page (and its once-loaded data) alive, so just that case bumps
+   * the epoch. Keying on the profile directly would instead recreate the old
+   * route's page under the new tenant before the navigation lands.
+   */
+  private syncPageWithTenant(skipped: boolean): void {
+    const tenantId = this.auth.profile()?.tenant_id ?? '';
+    if (skipped && tenantId !== this.pageTenantId) {
+      this.pageEpoch.update((epoch) => epoch + 1);
+    }
+    this.pageTenantId = tenantId;
   }
 
   protected toggleDrawer(): void {
