@@ -173,6 +173,14 @@ export interface EventCalendarChannelFailure {
   reason: string;
 }
 
+/** Max ids per `api/events/revisions` request; the backend truncates longer lists. */
+const EVENT_REVISION_CHUNK = 100;
+/** Page size and bounds for scanning scheduled/live events. */
+const EVENT_SCAN_PAGE_SIZE = 100;
+/** Retry schedule for splits whose Forum sync failed. */
+const SPLIT_RETRY_MAX_ATTEMPTS = 8;
+const SPLIT_RETRY_BASE_MS = 60_000;
+const SPLIT_RETRY_MAX_MS = 60 * 60_000;
 /** Discord JSON error for a message id that no longer exists. */
 const DISCORD_UNKNOWN_MESSAGE = 10008;
 /** Discord JSON error for an operation the bot's current channel permissions reject. */
@@ -1569,13 +1577,34 @@ export class Poller {
     const ids = Object.keys(this.state.eventThreadIds);
     if (ids.length === 0) return new Map();
     try {
-      const items = await this.api.get<EventRevision[]>("api/events/revisions", undefined, {
-        ids: ids.join(","),
-      });
-      return new Map((items ?? []).map((item) => [String(item.id), item]));
+      // The backend silently truncates the id list at 200 (keeping the lowest
+      // ids), so ask in chunks: anything missing from an answer must really be
+      // missing, not just cut off.
+      const revisions = new Map<string, EventRevision>();
+      for (let offset = 0; offset < ids.length; offset += EVENT_REVISION_CHUNK) {
+        const chunk = ids.slice(offset, offset + EVENT_REVISION_CHUNK);
+        const items = await this.api.get<EventRevision[]>("api/events/revisions", undefined, {
+          ids: chunk.join(","),
+        });
+        for (const item of items ?? []) revisions.set(String(item.id), item);
+      }
+      return revisions;
     } catch (error) {
       console.warn("[Poller] Could not load event revisions:", error);
       return null;
+    }
+  }
+
+  /**
+   * Confirms an event is really gone before its Discord thread is torn down.
+   * A revision list that merely omits an id is not proof of deletion.
+   */
+  private async eventIsDeleted(eventId: string): Promise<boolean> {
+    try {
+      await this.api.get<EventView>(`api/events/${eventId}`);
+      return false;
+    } catch (error) {
+      return error instanceof ApiError && error.status === 404;
     }
   }
 
@@ -1589,6 +1618,9 @@ export class Poller {
       try {
         const event = revisions.get(eventId);
         if (!event) {
+          // Absent from the revision list is only a hint. Confirm the event is
+          // really deleted before closing a thread that may belong to a live event.
+          if (!(await this.eventIsDeleted(eventId))) continue;
           // The backend record is gone (deleted event). Close leftover Discord
           // state once, then drop the mapping so the next poll does not 404 forever.
           console.warn(
@@ -1612,7 +1644,7 @@ export class Poller {
         }
         if (!terminalStatuses.has(event.status)) continue;
 
-        if (threadId) await this.closeEventThread(event.id);
+        if (threadId) await this.finalizeStoppedEventThread(event.id);
       } catch (error) {
         // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
@@ -1653,6 +1685,33 @@ export class Poller {
     } catch (error) {
       console.warn(`[Poller] Could not reconcile restored archived events: ${String(error)}`);
     }
+  }
+
+  /**
+   * Renders the final signup card (stopped status, frozen roster, no live
+   * buttons) and only then locks the thread: once archived, Discord rejects
+   * the edit and the card would stay "LIVE" forever.
+   */
+  async finalizeStoppedEventThread(eventId: number): Promise<boolean> {
+    const key = String(eventId);
+    if (this.state.eventThreadIds[key]) {
+      try {
+        const thread = await this.getEventThread(eventId);
+        if (thread) {
+          const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
+          const messageId = await refreshEventSignupCard(
+            thread,
+            detail,
+            "Poller",
+            this.state.eventSignupMessageIds[key],
+          );
+          if (messageId) this.state.eventSignupMessageIds[key] = messageId;
+        }
+      } catch (error) {
+        console.warn(`[Poller] Could not render the final card for event #${eventId}:`, error);
+      }
+    }
+    return this.closeEventThread(eventId);
   }
 
   /**
@@ -1865,7 +1924,7 @@ export class Poller {
           this.state.emptyLiveChecks[key] = next.emptyTicks;
           if (next.shouldStop) {
             await stopDiscordEvent(this.client, this.api, "", event.id);
-            await this.closeEventThread(event.id);
+            await this.finalizeStoppedEventThread(event.id);
             this.forgetLiveVoiceWatch(event.id);
           }
           this.save();
@@ -2067,49 +2126,51 @@ export class Poller {
       if (upcomingEvents.length === 0) return;
 
       for (const event of upcomingEvents) {
-        const threadId = this.state.eventThreadIds[String(event.id)];
-        let thread = threadId ? await this.client.channels.fetch(threadId) : null;
+        try {
+          const threadId = this.state.eventThreadIds[String(event.id)];
+          let thread = threadId ? await this.client.channels.fetch(threadId) : null;
 
-        // Events announced before thread IDs were persisted can still be recovered
-        // while their discussion thread is active.
-        if (!thread?.isThread()) {
-          const eventsChannel = await this.getTextChannel(await this.settings.eventsChannelId());
-          const activeThreads = eventsChannel ? await eventsChannel.threads.fetchActive() : null;
-          thread = activeThreads?.threads.find(
-            (candidate) => candidate.name === buildEventThreadName(event.title),
-          ) ?? null;
-        }
-        if (!thread?.isThread()) {
-          console.warn(
-            `[Poller] Cannot send 1h warning for event #${event.id}: no active announcement thread was found`,
+          // Events announced before thread IDs were persisted can still be recovered
+          // while their discussion thread is active.
+          if (!thread?.isThread()) {
+            const eventsChannel = await this.getTextChannel(await this.settings.eventsChannelId());
+            const activeThreads = eventsChannel ? await eventsChannel.threads.fetchActive() : null;
+            thread = activeThreads?.threads.find(
+              (candidate) => candidate.name === buildEventThreadName(event.title),
+            ) ?? null;
+          }
+          if (!thread?.isThread()) {
+            console.warn(
+              `[Poller] Cannot send 1h warning for event #${event.id}: no active announcement thread was found`,
+            );
+            continue;
+          }
+
+          this.state.eventThreadIds[String(event.id)] = thread.id;
+          const roleIds = event.discord_role_ids ?? [];
+          const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+          await withUnarchivedThread(
+            thread,
+            `Event #${event.id} 1h warning`,
+            (active) => active.send({
+              content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
+              allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
+            }),
           );
-          continue;
+
+          this.state.pinged1hEvents.push(event.id);
+          this.save();
+          console.log(`[Poller] Posted 1h warning in the thread for event #${event.id}`);
+        } catch (error) {
+          console.warn(`[Poller] Could not send 1h warning for event #${event.id}:`, error);
         }
-
-        this.state.eventThreadIds[String(event.id)] = thread.id;
-        const roleIds = event.discord_role_ids ?? [];
-        const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
-        await withUnarchivedThread(
-          thread,
-          `Event #${event.id} 1h warning`,
-          (active) => active.send({
-            content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
-            allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
-          }),
-        );
-
-        this.state.pinged1hEvents.push(event.id);
-        this.save();
-        console.log(`[Poller] Posted 1h warning in the thread for event #${event.id}`);
       }
 
-      // Cleanup old pinged events (keep last 50)
+      // Cleanup old pinged events (keep last 50). This list is only a "already
+      // warned" memo: thread bindings are NOT derived from it and must never be
+      // pruned here, or every announced event outside the last 50 pings loses its thread.
       if (this.state.pinged1hEvents.length > 50) {
         this.state.pinged1hEvents = this.state.pinged1hEvents.slice(-50);
-        const retainedEventIds = new Set(this.state.pinged1hEvents.map(String));
-        this.state.eventThreadIds = Object.fromEntries(
-          Object.entries(this.state.eventThreadIds).filter(([eventId]) => retainedEventIds.has(eventId)),
-        );
         this.save();
       }
     } catch (err) {

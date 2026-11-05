@@ -109,6 +109,9 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
         apiGets.push(path);
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
         if (path === "api/events/revisions") return [eventRevision(32, "stopped")];
+        // Event 28 is absent from the revisions; the poller must confirm the delete.
+        if (path === "api/events/28") throw new ApiError(404, "Event 28 not found");
+        if (path === "api/events/32") return { ...calendarEvent(32, "Stopped"), status: "stopped", participants: [], roster_version: 1 };
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -141,7 +144,12 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
     assert.equal(apiGets.includes("api/events/revisions"), true);
-    assert.equal(apiGets.some((path) => /^api\/events\/\d+$/.test(path)), false);
+    // Event 28 is confirmed deleted before its thread is touched; event 32 gets
+    // its final card rendered before its thread is closed.
+    assert.deepEqual(
+      apiGets.filter((path) => /^api\/events\/\d+$/.test(path)).sort(),
+      ["api/events/28", "api/events/32"],
+    );
 
     apiGets.length = 0;
     await poller.pollNow();
@@ -1014,6 +1022,7 @@ test("each guild keeps its own checkpoint file", async () => {
           return emptyPage();
         }
         if (path === "api/events/revisions") return [];
+        if (path === "api/events/28") throw new ApiError(404, "Event 28 not found");
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -2534,6 +2543,187 @@ test("a corrupt checkpoint falls back to the last good backup instead of reseedi
     second.rememberEventThread(8, "thread-8");
     const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as { lastEventId: number };
     assert.equal(saved.lastEventId, 77);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function sendingThread(id: string, sends: Array<{ id: string; content?: string }>): ThreadChannel {
+  return {
+    id,
+    isThread: () => true,
+    archived: false,
+    locked: false,
+    send: async (message: { content?: string }) => {
+      sends.push({ id, content: message.content });
+      return { id: "ping" };
+    },
+  } as unknown as ThreadChannel;
+}
+
+test("more than 50 pinged events never drops the thread mappings of other events", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const pinged = Array.from({ length: 51 }, (_, index) => 100 + index);
+    writeHotfixState(directory, {
+      pinged1hEvents: pinged,
+      eventThreadIds: { "7": "thread-7", "2000": "thread-2000" },
+    });
+    const due: EventView = {
+      ...calendarEvent(2000, "Due soon"),
+      event_date_utc: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    const sends: Array<{ id: string; content?: string }> = [];
+    const client = {
+      channels: { fetch: async (id: string) => sendingThread(id, sends) },
+    } as unknown as Client;
+
+    const poller = new Poller(client, scheduledEventsApi([due]), hotfixSettings, 60_000, directory);
+    await (poller as unknown as { checkUpcomingEvents(): Promise<void> }).checkUpcomingEvents();
+
+    assert.equal(sends.length, 1, "the due event gets its 1h warning");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      pinged1hEvents: number[];
+      eventThreadIds: Record<string, string>;
+    };
+    assert.equal(saved.pinged1hEvents.length, 50, "the memo list is still bounded");
+    assert.deepEqual(
+      saved.eventThreadIds,
+      { "7": "thread-7", "2000": "thread-2000" },
+      "thread bindings must not be derived from the pinged list",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an event missing from the revisions answer is only closed after the backend confirms it is gone", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory, { eventThreadIds: { "7": "thread-7", "8": "thread-8" } });
+    const archivedThreads: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/events/revisions") return []; // answer omits both ids
+        if (path === "api/events/7") return { ...calendarEvent(7, "Still alive"), participants: [] };
+        if (path === "api/events/8") throw new ApiError(404, "Event 8 not found");
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const client = {
+      channels: {
+        fetch: async (id: string) => ({
+          id,
+          isThread: () => true,
+          archived: false,
+          locked: false,
+          setLocked: async () => undefined,
+          setArchived: async (value: boolean) => {
+            if (value) archivedThreads.push(id);
+          },
+        }),
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, api, hotfixSettings, 60_000, directory);
+    await (
+      poller as unknown as { checkClosedEvents(r: Map<string, unknown>): Promise<void> }
+    ).checkClosedEvents(new Map());
+
+    assert.deepEqual(archivedThreads, ["thread-8"], "only the really-deleted event is closed");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      eventThreadIds: Record<string, string>;
+    };
+    assert.deepEqual(saved.eventThreadIds, { "7": "thread-7" });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("revisions are requested in chunks so a long mapping list is never truncated", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const threads = Object.fromEntries(
+      Array.from({ length: 250 }, (_, index) => [String(index + 1), `thread-${index + 1}`]),
+    );
+    writeHotfixState(directory, { eventThreadIds: threads });
+    const requested: number[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string, _d?: string, params?: Record<string, string | number>) => {
+        assert.equal(path, "api/events/revisions");
+        const ids = String(params?.ids).split(",");
+        requested.push(ids.length);
+        return ids.map((id) => eventRevision(Number(id), "scheduled"));
+      },
+    } as unknown as ApiClient;
+    const poller = new Poller({} as unknown as Client, api, hotfixSettings, 60_000, directory);
+    const revisions = await (
+      poller as unknown as { loadEventRevisions(): Promise<Map<string, unknown> | null> }
+    ).loadEventRevisions();
+
+    assert.equal(revisions?.size, 250);
+    assert.ok(requested.every((size) => size <= 100), `chunks were ${requested.join(",")}`);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the final signup card is rendered before the stopped event's thread is archived", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory, { eventThreadIds: { "9": "thread-9" } });
+    const log: string[] = [];
+    let archived = false;
+    const card = {
+      id: "card-1",
+      components: [{ components: [{ customId: "event:join:9" }] }],
+      edit: async () => {
+        // Discord rejects edits inside an archived thread.
+        if (archived) throw Object.assign(new Error("Thread is archived"), { code: 50083 });
+        log.push("edit-card");
+      },
+    };
+    const thread = {
+      id: "thread-9",
+      isThread: () => true,
+      get archived() {
+        return archived;
+      },
+      locked: false,
+      guild: { preferredLocale: "en-US" },
+      messages: {
+        fetch: async (query: unknown) => (typeof query === "string" ? card : new Map([[card.id, card]])),
+      },
+      setLocked: async () => {
+        log.push("lock");
+      },
+      setArchived: async (value: boolean) => {
+        archived = value;
+        log.push(value ? "archive" : "unarchive");
+        return thread;
+      },
+    };
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/events/9") {
+          return { ...calendarEvent(9, "Over"), status: "stopped", participants: [], roster_version: 3 };
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const client = { channels: { fetch: async () => thread } } as unknown as Client;
+
+    const poller = new Poller(client, api, hotfixSettings, 60_000, directory);
+    assert.equal(await poller.finalizeStoppedEventThread(9), true);
+
+    assert.deepEqual(log, ["edit-card", "lock", "archive"]);
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      eventThreadIds: Record<string, string>;
+    };
+    assert.deepEqual(saved.eventThreadIds, {});
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

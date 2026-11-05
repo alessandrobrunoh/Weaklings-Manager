@@ -988,7 +988,8 @@ async function handleEventButton(
       interaction.user.id,
       eventId,
     );
-    await getPoller(api.guildId)?.closeEventThread(eventId);
+    // Render the final card before archiving: Discord rejects edits to messages
+    // inside an archived thread, which would leave the card stuck on LIVE.
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event, interaction.guild?.preferredLocale)],
       components: buildEventThreadActionRows(
@@ -996,6 +997,7 @@ async function handleEventButton(
         interaction.guild?.preferredLocale,
       ),
     });
+    await getPoller(api.guildId)?.closeEventThread(eventId);
     const message = result.voiceChannelOccupied
       ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
       : result.voiceChannelDeleted

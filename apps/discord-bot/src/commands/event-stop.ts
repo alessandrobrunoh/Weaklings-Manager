@@ -31,7 +31,7 @@ export async function execute(
   );
   // Close the discussion immediately when the command is issued from Discord. Events stopped from
   // the web app are handled by the poller's terminal-status reconciliation.
-  await getPoller(api.guildId)?.closeEventThread(eventId);
+  await getPoller(api.guildId)?.finalizeStoppedEventThread(eventId);
 
   const message = result.voiceChannelOccupied
     ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
