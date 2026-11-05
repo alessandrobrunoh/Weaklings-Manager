@@ -37,6 +37,18 @@ function columns(): readonly DataTableColumn<Row>[] {
   ];
 }
 
+/** Opens the first column-filter `app-select` and picks the option with the given label. */
+function pickFilterOption(fixture: ComponentFixture<unknown>, label: string): void {
+  const root = fixture.nativeElement as HTMLElement;
+  const trigger = root.querySelector('app-select [role="combobox"]') as HTMLButtonElement;
+  trigger.click();
+  fixture.detectChanges();
+  const option = [...root.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  option?.click();
+}
+
 describe('DataTable', () => {
   let fixture: ComponentFixture<DataTable<Row>>;
 
@@ -107,9 +119,7 @@ describe('DataTable', () => {
   });
 
   it('filters client rows by the column dropdown', async () => {
-    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
-    select.value = 'closed';
-    select.dispatchEvent(new Event('change'));
+    pickFilterOption(fixture, 'Closed');
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -162,9 +172,7 @@ describe('DataTable', () => {
   it('writes column filters into the URL', async () => {
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
-    select.value = 'open';
-    select.dispatchEvent(new Event('change'));
+    pickFilterOption(fixture, 'Open');
     fixture.detectChanges();
     await fixture.whenStable();
 

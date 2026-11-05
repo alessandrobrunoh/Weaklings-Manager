@@ -91,7 +91,7 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
           }
         </section>
 
-        <form class="grid gap-4" (submit)="save($event)">
+        <form class="grid gap-4" data-testid="alliance-settings-form" (submit)="save($event)">
         @if (context()?.members?.length) {
           <section class="card p-5">
             <h2 class="eyebrow mb-3">{{ t('admin.alliance.members') }}</h2>
