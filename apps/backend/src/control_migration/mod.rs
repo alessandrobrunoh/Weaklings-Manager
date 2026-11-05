@@ -30,6 +30,7 @@ mod m20261030_000001_event_fanout_outbox;
 mod m20261102_000001_event_participant_attribution;
 mod m20261103_000001_alliance_split_distribution;
 mod m20261104_000001_event_mirror_requests;
+mod m20261105_000001_unique_event_sync_source_target;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -51,7 +52,7 @@ pub const PERM_FEATURE_FLAGS_MANAGE: &str = "feature_flags.manage";
 /// Registered control-plane migrations. The unit test and the PostgreSQL
 /// bookkeeping test both compare against this so a new migration cannot leave
 /// the applied-count assertion behind.
-const CONTROL_MIGRATION_COUNT: usize = 24;
+const CONTROL_MIGRATION_COUNT: usize = 25;
 
 /// Control-plane migrator.
 pub struct Migrator;
@@ -84,6 +85,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261102_000001_event_participant_attribution::Migration),
             Box::new(m20261103_000001_alliance_split_distribution::Migration),
             Box::new(m20261104_000001_event_mirror_requests::Migration),
+            Box::new(m20261105_000001_unique_event_sync_source_target::Migration),
         ]
     }
 }
@@ -218,6 +220,15 @@ mod tests {
                     && !index.contains("mirror_tenant_id")
             }),
             "control schema still enforces one source event per link: {source_indexes:?}"
+        );
+        assert!(
+            source_indexes.iter().any(|index| {
+                index.contains("UNIQUE")
+                    && index.contains("source_tenant_id")
+                    && index.contains("source_event_id")
+                    && index.contains("mirror_tenant_id")
+            }),
+            "control schema must prevent a duplicate source-to-destination link: {source_indexes:?}"
         );
         for control_only in [
             "tenants",

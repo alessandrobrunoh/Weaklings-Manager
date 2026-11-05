@@ -136,40 +136,62 @@ pub async fn create_mirror(
         mapped_roles.push(build_share.published_id);
     }
 
-    let creator_id = upsert_user(&alliance.db, source_creator).await?;
-    let mirror = EventService::new()
-        .create_event(
-            &alliance.db,
-            creator_id,
-            CreateEventRequest {
-                title: source_event.title.clone(),
-                description: source_event.description.clone(),
-                call_to_arms: source_event.call_to_arms,
-                regear: source_event.regear,
-                event_kind: None,
-                comp_id: Some(comp_share.published_id),
-                player_cap: source_event.player_cap,
-                event_date_utc: Some(source_event.start_time_utc.clone()),
-                mass_time_utc: Some(source_event.mass_time_utc.clone()),
-                start_time_utc: Some(source_event.start_time_utc.clone()),
-                discord_role_ids: Vec::new(),
-                create_split: false,
-                island_tab_id: None,
-                ping_alliance: false,
-                vod_forum_post_enabled: source_event.vod_forum_post_enabled,
-                discord_delivery: source_event.discord_delivery.clone(),
-            },
+    let mirror = crate::modules::events::entities::event::Entity::find()
+        .filter(
+            crate::modules::events::entities::event::Column::SourceTenantId
+                .eq(source_tenant_id.to_owned()),
         )
+        .filter(crate::modules::events::entities::event::Column::SourceEventId.eq(source_event.id))
+        .one(&alliance.db)
         .await?;
+    let mirror_id = if let Some(mirror) = mirror {
+        mirror.id
+    } else {
+        let creator_id = upsert_user(&alliance.db, source_creator).await?;
+        EventService::new()
+            .create_event_with_source_identity(
+                &alliance.db,
+                creator_id,
+                CreateEventRequest {
+                    title: source_event.title.clone(),
+                    description: source_event.description.clone(),
+                    call_to_arms: source_event.call_to_arms,
+                    regear: source_event.regear,
+                    event_kind: None,
+                    comp_id: Some(comp_share.published_id),
+                    player_cap: source_event.player_cap,
+                    event_date_utc: Some(source_event.start_time_utc.clone()),
+                    mass_time_utc: Some(source_event.mass_time_utc.clone()),
+                    start_time_utc: Some(source_event.start_time_utc.clone()),
+                    discord_role_ids: Vec::new(),
+                    create_split: false,
+                    island_tab_id: None,
+                    ping_alliance: false,
+                    vod_forum_post_enabled: source_event.vod_forum_post_enabled,
+                    discord_delivery: source_event.discord_delivery.clone(),
+                },
+                Some((source_tenant_id.to_owned(), source_event.id)),
+            )
+            .await?
+            .id
+    };
 
     for build_id in mapped_roles {
-        crate::modules::events::entities::event_roster_role::ActiveModel {
-            event_id: sea_orm::ActiveValue::Set(mirror.id),
-            build_id: sea_orm::ActiveValue::Set(build_id),
-            ..Default::default()
+        use crate::modules::events::entities::event_roster_role as roster_role;
+        let existing_role = roster_role::Entity::find()
+            .filter(roster_role::Column::EventId.eq(mirror_id))
+            .filter(roster_role::Column::BuildId.eq(build_id))
+            .one(&alliance.db)
+            .await?;
+        if existing_role.is_none() {
+            roster_role::ActiveModel {
+                event_id: sea_orm::ActiveValue::Set(mirror_id),
+                build_id: sea_orm::ActiveValue::Set(build_id),
+                ..Default::default()
+            }
+            .insert(&alliance.db)
+            .await?;
         }
-        .insert(&alliance.db)
-        .await?;
     }
 
     let source_split = split::Entity::find()
@@ -194,10 +216,10 @@ pub async fn create_mirror(
             },
         )
         .await?;
-        AllianceShareService::attach_shared_split_to_event(registry, &split_share, mirror.id)
+        AllianceShareService::attach_shared_split_to_event(registry, &split_share, mirror_id)
             .await?;
         crate::modules::splits::service::SplitService::new()
-            .sync_event_participants(&alliance.db, mirror.id)
+            .sync_event_participants(&alliance.db, mirror_id)
             .await?;
     }
 
@@ -207,18 +229,18 @@ pub async fn create_mirror(
             "INSERT INTO event_sync_links
                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id)
              VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (source_tenant_id, source_event_id) DO NOTHING",
+             ON CONFLICT (source_tenant_id, source_event_id, mirror_tenant_id) DO NOTHING",
             [
                 uuid::Uuid::new_v4().into(),
                 source_tenant_id.into(),
                 source_event.id.into(),
                 alliance_id.into(),
-                mirror.id.into(),
+                mirror_id.into(),
             ],
         ))
         .await?;
 
-    Ok(Some(mirror.id))
+    Ok(Some(mirror_id))
 }
 
 /// Resolve all linked copies while sync is still enabled.

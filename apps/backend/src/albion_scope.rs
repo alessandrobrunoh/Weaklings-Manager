@@ -227,7 +227,9 @@ pub async fn load_event_read_scope(
     // Member guild IDs are only meaningful for an alliance tenant; a guild
     // tenant resolves through its own guild without the extra query.
     let member_guild_ids = if kind == "alliance" {
-        load_active_member_guild_ids(control, alliance_id.as_deref().unwrap_or_default()).await?
+        // Membership rows are keyed by the Discord tenant id, not the Albion
+        // alliance id stored on that tenant.
+        load_active_member_guild_ids(control, tenant_id).await?
     } else {
         Vec::new()
     };
@@ -528,6 +530,7 @@ mod tests {
         assert_eq!(alliance_scope.server(), "eu");
         let context = alliance_scope.linking_context();
         assert_eq!(context.guild_id(), None);
+        assert_eq!(context.allied_guild_ids(), vec!["alb-guild".to_owned()]);
         assert!(context.is_friendly_guild("alb-guild", ""));
         assert!(!context.is_friendly_guild("some-other-guild", "Outsider"));
 

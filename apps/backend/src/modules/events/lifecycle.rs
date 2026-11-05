@@ -1358,6 +1358,10 @@ mod tests {
 
     #[tokio::test]
     async fn failed_guild_mirror_is_retried_without_duplicating_the_alliance_event() {
+        use crate::modules::alliance_share::{
+            AllianceShareService, ShareParams,
+            models::{ArtifactType, CreateAllianceShareRequest},
+        };
         use crate::modules::comps::{
             models::{
                 AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
@@ -1514,6 +1518,56 @@ mod tests {
             ))
             .await
             .expect("restore membership");
+
+        // Simulate a crash after the alliance event commits but before its
+        // control-plane link or retry acknowledgement is written.
+        let shared_comp = AllianceShareService::share_comp(
+            &world.control,
+            &world.registry,
+            guild_db,
+            ShareParams {
+                source_tenant_id: "guild-a",
+                source_kind: "guild",
+                actor: &actor,
+                authorized: true,
+            },
+            CreateAllianceShareRequest {
+                artifact_type: ArtifactType::Comp,
+                id: comp.summary.id,
+            },
+        )
+        .await
+        .expect("share comp before simulated crash");
+        let alliance_creator_id = upsert_discord_user(
+            &world.tenant_dbs[0],
+            "mirror-creator",
+            "Mirror creator",
+            "mirror-creator@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("alliance creator");
+        let mut orphan_request = flash_event("Guild event for the alliance");
+        orphan_request.event_kind = Some(view.event_kind.clone());
+        orphan_request.comp_id = Some(shared_comp.published_id);
+        orphan_request.player_cap = view.player_cap;
+        orphan_request.event_date_utc = Some(view.event_date_utc.clone());
+        orphan_request.mass_time_utc = Some(view.mass_time_utc.clone());
+        orphan_request.start_time_utc = Some(view.start_time_utc.clone());
+        orphan_request.vod_forum_post_enabled = view.vod_forum_post_enabled;
+        orphan_request.discord_delivery = view.discord_delivery.clone();
+        let orphan_mirror = EventService::new()
+            .create_event_with_source_identity(
+                &world.tenant_dbs[0],
+                alliance_creator_id,
+                orphan_request,
+                Some(("guild-a".to_owned(), event.id)),
+            )
+            .await
+            .expect("create mirror before simulated crash");
+        let orphan_mirror_id = orphan_mirror.id;
+
         force_due().await.expect("make due again");
         super::super::mirror_retry::process_due(&world.control, &world.registry)
             .await
@@ -1524,7 +1578,7 @@ mod tests {
                 .expect("status")
                 .expect("request exists");
         assert_eq!(done.state, "complete", "{:?}", done.last_error);
-        assert!(done.mirror_event_id.is_some());
+        assert_eq!(done.mirror_event_id, Some(orphan_mirror_id));
         assert_eq!(
             event::Entity::find()
                 .count(&world.tenant_dbs[0])
