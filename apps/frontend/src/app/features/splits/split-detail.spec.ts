@@ -127,6 +127,19 @@ type DetailApi = {
 };
 
 describe('SplitDetailPage alliance share', () => {
+  it('labels synchronized copies and suppresses owner actions even with permissions', async () => {
+    const fixture = await render('guild', { ...pendingSplit, origin_read_only: true });
+    const page = fixture.componentInstance as unknown as DetailApi;
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(page.isReadOnly()).toBe(true);
+    expect(page.canAct()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Read-only synchronized copy');
+    expect(fixture.nativeElement.textContent).not.toContain('splits.payout_complete');
+    expect(fixture.nativeElement.textContent).not.toContain('common.edit');
+    fixture.destroy();
+  });
+
   it('shows a share button on a guild split', async () => {
     const fixture = await render('guild');
     const page = fixture.componentInstance as unknown as DetailApi;

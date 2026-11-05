@@ -17,13 +17,14 @@ function emptyPage() {
 function eventRevision(
   id: number,
   status: string,
-  extras: { roster_version?: number; archived_at?: string | null } = {},
+  extras: { roster_version?: number; archived_at?: string | null; updated_at?: string } = {},
 ) {
   return {
     id,
     status,
     roster_version: extras.roster_version ?? 0,
     archived_at: extras.archived_at ?? null,
+    updated_at: extras.updated_at ?? "2026-01-01T00:00:00Z",
   };
 }
 
@@ -282,7 +283,7 @@ test("poller keeps a cancelled event thread mapping so it can be reopened", asyn
       readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
     ) as { eventThreadIds: Record<string, string>; eventSignupRevisions: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, { "28": "thread-28" });
-    assert.equal(saved.eventSignupRevisions["28"], "0:cancelled");
+    assert.equal(saved.eventSignupRevisions["28"], "0:cancelled:2026-01-01T00:00:00Z");
     assert.equal(apiGets.includes("api/events/28"), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -300,7 +301,7 @@ test("poller reopens a cancelled event thread when status returns to scheduled",
         pinged1hEvents: [],
         eventThreadIds: { "28": "thread-28" },
         eventSignupMessageIds: { "28": "signup-28" },
-        eventSignupRevisions: { "28": "0:cancelled" },
+        eventSignupRevisions: { "28": "0:cancelled:2026-01-01T00:00:00Z" },
         splitUpdatedAt: null,
         splitAfterId: null,
         massedEvents: [],
@@ -805,7 +806,7 @@ test("poller rewrites the event signup card when the website roster changes", as
         pinged1hEvents: [],
         eventThreadIds: { "41": "thread-41" },
         eventSignupMessageIds: { "41": "signup-41" },
-        eventSignupRevisions: { "41": "1:scheduled" },
+        eventSignupRevisions: { "41": "4:scheduled:2026-09-01T10:00:00Z" },
         splitUpdatedAt: null,
         splitAfterId: null,
         massedEvents: [],
@@ -815,6 +816,7 @@ test("poller rewrites the event signup card when the website roster changes", as
     );
 
     const edits: unknown[] = [];
+    const announcementEdits: unknown[] = [];
     const signup = {
       id: "signup-41",
       components: [{ components: [{ customId: "event:join:41" }] }],
@@ -827,6 +829,11 @@ test("poller rewrites the event signup card when the website roster changes", as
       id: "thread-41",
       isThread: () => true,
       archived: false,
+      name: "Castle Fight",
+      fetchStarterMessage: async () => ({
+        edit: async (payload: unknown) => announcementEdits.push(payload),
+      }),
+      setName: async (name: string) => { thread.name = name; },
       messages: {
         fetch: async (arg: unknown) => {
           if (arg === "signup-41") return signup;
@@ -887,7 +894,10 @@ test("poller rewrites the event signup card when the website roster changes", as
           return emptyPage();
         }
         if (path === "api/events/revisions") {
-          return [eventRevision(41, "scheduled", { roster_version: 4 })];
+          return [eventRevision(41, "scheduled", {
+            roster_version: 4,
+            updated_at: "2026-09-01T11:00:00Z",
+          })];
         }
         if (path === "api/events/41") return eventDetail;
         if (path === "api/splits/9/discord-sync") {
@@ -922,11 +932,12 @@ test("poller rewrites the event signup card when the website roster changes", as
     await poller.pollNow();
 
     assert.equal(edits.length, 1);
+    assert.equal(announcementEdits.length, 1, "content-only updated_at changes refresh the forum/channel announcement");
     assert.equal(splitGets.length, 1);
     const saved = JSON.parse(readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8")) as {
       eventSignupRevisions: Record<string, string>;
     };
-    assert.equal(saved.eventSignupRevisions["41"], "4:scheduled");
+    assert.equal(saved.eventSignupRevisions["41"], "4:scheduled:2026-09-01T11:00:00Z");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -943,7 +954,7 @@ test("poller skips full event detail when the roster fingerprint is unchanged", 
         pinged1hEvents: [],
         eventThreadIds: { "41": "thread-41" },
         eventSignupMessageIds: { "41": "signup-41" },
-        eventSignupRevisions: { "41": "4:scheduled" },
+        eventSignupRevisions: { "41": "4:scheduled:2026-01-01T00:00:00Z" },
         splitUpdatedAt: null,
         splitAfterId: null,
         massedEvents: [],
@@ -961,7 +972,7 @@ test("poller skips full event detail when the roster fingerprint is unchanged", 
           return emptyPage();
         }
         if (path === "api/events/revisions") {
-          return [eventRevision(41, "scheduled", { roster_version: 4 })];
+          return [eventRevision(41, "scheduled", { roster_version: 4, updated_at: "2026-01-01T00:00:00Z" })];
         }
         throw new Error(`unexpected GET ${path}`);
       },
@@ -1604,6 +1615,7 @@ test("manual event calendar refresh routes all events and uses the caller's perm
       },
     } as unknown as ApiClient;
     const settings = {
+      eventDelivery: async () => "calendar" as const,
       eventsChannelId: async () => "events-channel",
       callToArmsChannelId: async () => "cta-channel",
       eventChannelRoutes: async () => ({
@@ -1694,6 +1706,7 @@ test("calendar page messages are stored, edited, and removed as pages disappear"
       },
     } as unknown as ApiClient;
     const settings = {
+      eventDelivery: async () => "calendar" as const,
       eventsChannelId: async () => "events-channel",
       callToArmsChannelId: async () => null,
     } as unknown as SettingsService;
@@ -2222,6 +2235,181 @@ test("a transient thread fetch keeps the mapping and does not call startThread a
       readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
     ) as typeof saved;
     assert.equal(saved.pendingAnnounces["7"], undefined);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("forum delivery posts signup controls and retries a failed card without duplicating the forum post", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-forum-"));
+  try {
+    let creates = 0;
+    let cardAttempts = 0;
+    const starterEdits: unknown[] = [];
+    const cardPayloads: unknown[] = [];
+    const thread = {
+      id: "forum-thread",
+      isThread: () => true,
+      fetchStarterMessage: async () => ({
+        id: "forum-starter",
+        edit: async (payload: unknown) => {
+        cardAttempts++;
+        cardPayloads.push(payload);
+        if (cardAttempts === 1) throw new Error("temporary send failure");
+        starterEdits.push(payload);
+        return { id: "forum-starter" };
+        },
+      }),
+      setName: async () => undefined,
+      setAppliedTags: async () => undefined,
+    };
+    const forum = {
+      type: ChannelType.GuildForum,
+      flags: { has: () => false },
+      availableTags: [],
+      threads: {
+        create: async () => {
+          creates++;
+          return thread;
+        },
+      },
+    };
+    const settings = {
+      eventsForumChannelId: async () => "forum",
+      get: async () => ({}),
+    } as unknown as SettingsService;
+    const client = {
+      channels: {
+        fetch: async (id: string) => id === "forum" ? forum : thread,
+      },
+    } as unknown as Client;
+    const api = { guildId: "100000000000000001" } as unknown as ApiClient;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    const event = {
+      ...calendarEvent(99, "Forum event"),
+      event_kind: "organized",
+      status: "scheduled",
+      roster_version: 3,
+      participants: [],
+      comp_builds: [],
+      splits: [],
+    } as unknown as EventDetailView;
+    const post = () => (poller as unknown as {
+      postEventForum(value: EventDetailView): Promise<boolean>;
+    }).postEventForum(event);
+
+    assert.equal(await post(), false);
+    assert.equal(await post(), true);
+    assert.equal(creates, 1);
+    assert.equal(cardAttempts, 2);
+    assert.ok(cardPayloads.some((payload) => JSON.stringify(payload).includes("event:join:99")));
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as {
+      eventThreadIds: Record<string, string>;
+      eventSignupMessageIds: Record<string, string>;
+      eventSignupRevisions: Record<string, string>;
+    };
+    assert.equal(saved.eventThreadIds["99"], "forum-thread");
+    assert.equal(saved.eventSignupMessageIds["99"], "forum-starter");
+    assert.equal(saved.eventSignupRevisions["99"], "3:scheduled:2029-12-01T10:00:00Z");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("archived event restores reconcile once through each tenant delivery mode", async () => {
+  for (const delivery of ["calendar", "message", "forum"] as const) {
+    const directory = mkdtempSync(join(tmpdir(), `poller-restore-${delivery}-`));
+    try {
+      const event = { ...calendarEvent(88, "Restored event"), archived_at: null };
+      const api = {
+        guildId: "100000000000000001",
+        get: async (path: string) => {
+          assert.equal(path, "api/events/88");
+          return event;
+        },
+      } as unknown as ApiClient;
+      const settings = { eventDelivery: async () => delivery } as unknown as SettingsService;
+      const poller = new Poller({ channels: { fetch: async () => null } } as unknown as Client, api, settings, 60_000, directory);
+      const internals = poller as unknown as {
+        state: {
+          archivedEventIds: number[];
+          eventThreadIds: Record<string, string>;
+          eventSignupMessageIds: Record<string, string>;
+        };
+        announceEvent(value: EventView, routes: unknown): Promise<void>;
+        loadEventChannelRoutes(): Promise<unknown>;
+        checkRestoredEvents(): Promise<void>;
+      };
+      internals.loadEventChannelRoutes = async () => ({ events: null, callToArms: null, flashMass: null });
+      internals.state.archivedEventIds.push(event.id);
+      const deliveries: string[] = [];
+      internals.announceEvent = async (restored) => {
+        deliveries.push(`${delivery}:${restored.id}`);
+        internals.state.eventThreadIds[String(restored.id)] = `thread-${delivery}`;
+        internals.state.eventSignupMessageIds[String(restored.id)] = `signup-${delivery}`;
+      };
+
+      await internals.checkRestoredEvents();
+      await internals.checkRestoredEvents();
+
+      assert.deepEqual(deliveries, [`${delivery}:88`]);
+      assert.deepEqual(internals.state.archivedEventIds, []);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("ambiguous event forum creation remains pending and is not retried automatically", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-forum-ambiguous-"));
+  try {
+    let creates = 0;
+    const event = {
+      ...calendarEvent(89, "Ambiguous forum event"),
+      event_kind: "organized",
+      status: "scheduled",
+      call_to_arms: false,
+      roster_version: 0,
+    };
+    const forum = {
+      type: ChannelType.GuildForum,
+      flags: { has: () => false },
+      availableTags: [],
+      threads: {
+        create: async () => {
+          creates++;
+          throw new Error("connection lost after request");
+        },
+      },
+    };
+    const settings = {
+      eventDelivery: async () => "forum" as const,
+      eventsForumChannelId: async () => "forum",
+      get: async () => ({}),
+    } as unknown as SettingsService;
+    const client = { channels: { fetch: async () => forum } } as unknown as Client;
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        assert.equal(path, "api/events/89");
+        return { ...event, participants: [], comp_builds: [], splits: [] };
+      },
+    } as unknown as ApiClient;
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    const deliver = () => (poller as unknown as {
+      announceEvent(event: EventView, routes: unknown): Promise<void>;
+    }).announceEvent(event as EventView, { events: null, callToArms: null, flashMass: null });
+
+    await deliver();
+    await deliver();
+
+    assert.equal(creates, 1);
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { pendingAnnounces: Record<string, { status?: string }> };
+    assert.equal(saved.pendingAnnounces["89"]?.status, "ambiguous");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

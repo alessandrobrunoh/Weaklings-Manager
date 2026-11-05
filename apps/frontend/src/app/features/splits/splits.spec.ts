@@ -8,6 +8,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
+import type { SplitSummary } from '../../core/models/api.models';
 import {
   Splits,
   addCurrentUserToParticipants,
@@ -322,9 +323,22 @@ describe('Splits Component', () => {
   });
 
   it('renders the status column filter and quick actions', () => {
+    const triggers = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        'app-select button[role="combobox"]',
+      ) as NodeListOf<HTMLButtonElement>,
+    );
+    const statusTrigger = triggers.find((trigger) =>
+      trigger.getAttribute('aria-label')?.toLowerCase().includes('status'),
+    );
+    expect(statusTrigger).toBeTruthy();
+    statusTrigger!.click();
+    fixture.detectChanges();
     const options = Array.from(
-      fixture.nativeElement.querySelectorAll('select option'),
-      (option) => (option as HTMLOptionElement).textContent ?? '',
+      fixture.nativeElement.querySelectorAll(
+        'app-select [role="option"]',
+      ) as NodeListOf<HTMLElement>,
+      (option) => option.textContent ?? '',
     ).join(' ');
     expect(options).toContain('Pending');
     expect(options).toContain('Awaiting event');
@@ -336,6 +350,15 @@ describe('Splits Component', () => {
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('Select all pending');
     expect(text).toContain('Complete selected');
+  });
+
+  it('labels synchronized read-only copies in the split list', () => {
+    const page = fixture.componentInstance as unknown as {
+      splits: { (): SplitSummary[]; set(value: SplitSummary[]): void };
+    };
+    page.splits.set(page.splits().map((split) => ({ ...split, origin_read_only: true })));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Read-only synchronized copy');
   });
 
   it('hides create and batch actions on an alliance tenant', () => {
@@ -355,12 +378,25 @@ describe('Splits Component', () => {
 
   it('requests pending splits when the status filter changes', async () => {
     mockApiService.get.mockClear();
-    const statusSelect = Array.from(
-      fixture.nativeElement.querySelectorAll('select') as NodeListOf<HTMLSelectElement>,
-    ).find((select) => Array.from(select.options).some((option) => option.value === 'pending'));
-    expect(statusSelect).toBeTruthy();
-    statusSelect!.value = 'pending';
-    statusSelect!.dispatchEvent(new Event('change'));
+    const statusTrigger = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        'app-select button[role="combobox"]',
+      ) as NodeListOf<HTMLButtonElement>,
+    ).find((trigger) =>
+      trigger.getAttribute('aria-label')?.toLowerCase().includes('status'),
+    );
+    expect(statusTrigger).toBeTruthy();
+    statusTrigger!.click();
+    fixture.detectChanges();
+    const pendingOption = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        'app-select [role="option"]',
+      ) as NodeListOf<HTMLButtonElement>,
+    ).find((option) => option.textContent?.includes('Pending')) as
+      | HTMLButtonElement
+      | undefined;
+    expect(pendingOption).toBeTruthy();
+    pendingOption!.click();
     fixture.detectChanges();
     await fixture.whenStable();
 

@@ -214,7 +214,7 @@ interface AddEventMemberRequest {
       @if (detail.event_kind === 'flash') {
         <app-page-header
           [title]="detail.title"
-          [badge]="detail.archived_at ? t('events.archived') : t('events.flashMass')"
+          [badge]="(detail.is_synchronized_copy ?? (detail.source_event_id != null)) ? t('events.copyReadOnly') : detail.archived_at ? t('events.archived') : t('events.flashMass')"
         >
           <button
             type="button"
@@ -273,7 +273,7 @@ interface AddEventMemberRequest {
       <!-- ================= PAGE HEADER: title, officer actions, tabs ================= -->
       <app-page-header
         [title]="detail.title"
-        [badge]="detail.archived_at ? t('events.archived') : undefined"
+        [badge]="(detail.is_synchronized_copy ?? (detail.source_event_id != null)) ? t('events.copyReadOnly') : detail.archived_at ? t('events.archived') : undefined"
       >
         <button
           type="button"
@@ -1860,6 +1860,9 @@ interface AddEventMemberRequest {
                           >
                             {{ split.note || t('events.detail.split_number') + split.id }}
                           </a>
+                          @if (split.origin_read_only) {
+                            <span class="chip chip--neutral text-xs">{{ t('splits.readOnlyCopy') }}</span>
+                          }
                           @if (split.island_name) {
                             <span class="chip chip--tonal text-xs font-mono">
                               {{ cityLabel(split.island_city) }} &middot;
@@ -3226,6 +3229,7 @@ export class EventDetailPage {
   protected readonly loadFailed = signal(false);
   protected readonly canEdit = computed(() => {
     const event = this.event();
+    if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
     const userId = this.auth.profile()?.user_id;
     return (
       this.auth.hasPermission('events.edit') ||
@@ -3234,6 +3238,7 @@ export class EventDetailPage {
   });
   protected readonly canDelete = computed(() => {
     const event = this.event();
+    if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
     const userId = this.auth.profile()?.user_id;
     return (
       this.auth.hasPermission('events.delete') ||

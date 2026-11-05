@@ -416,7 +416,7 @@ fn imported_event_participant_weight() -> Decimal {
     Decimal::from(100u32)
 }
 
-fn event_has_ended(status: &str) -> bool {
+pub(crate) fn event_has_ended(status: &str) -> bool {
     matches!(status, "stopped" | "auto_stopped")
 }
 
@@ -441,7 +441,7 @@ fn validate_fee(fee: Decimal) -> Result<(), AppError> {
     Ok(())
 }
 
-fn calculate_net_value(
+pub(crate) fn calculate_net_value(
     estimated_market_value: Decimal,
     fee: Decimal,
     repair_value: Decimal,
@@ -452,7 +452,10 @@ fn calculate_net_value(
 }
 
 /// Weight-proportional shares; the last participant receives the rounding remainder.
-fn participant_shares(net_value: Decimal, weights: &[(i64, Decimal)]) -> Vec<(i64, Decimal)> {
+pub(crate) fn participant_shares(
+    net_value: Decimal,
+    weights: &[(i64, Decimal)],
+) -> Vec<(i64, Decimal)> {
     if weights.is_empty() {
         return Vec::new();
     }
@@ -4145,6 +4148,30 @@ mod tests {
         match bags_err {
             AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
             other => panic!("expected forbidden, got {other:?}"),
+        }
+
+        // The actor is the split creator (and can be granted global split
+        // permissions at the route layer); ownership must not override origin.
+        for result in [
+            service
+                .archive_split(&db, created.summary.id)
+                .await
+                .map(|_| ()),
+            service
+                .unarchive_split(&db, created.summary.id)
+                .await
+                .map(|_| ()),
+            service
+                .remove_participant(&db, created.summary.id, alice)
+                .await
+                .map(|_| ()),
+            service
+                .mark_not_completed(&db, created.summary.id)
+                .await
+                .map(|_| ()),
+            service.mark_lost(&db, created.summary.id).await.map(|_| ()),
+        ] {
+            assert!(matches!(result, Err(AppError::Forbidden(_))));
         }
 
         let detail = service.get_split(&db, created.summary.id).await.unwrap();

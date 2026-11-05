@@ -2,6 +2,7 @@
 //!
 //! Provides the routes, services, and schemas for creating and finalizing loot splits.
 
+pub mod alliance_distribution;
 pub mod city;
 pub mod discord_sync;
 pub mod entities;

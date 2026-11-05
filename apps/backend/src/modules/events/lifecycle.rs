@@ -50,9 +50,9 @@ pub async fn assert_manageable_source_event(
 
 /// Converges one copy's content and lifecycle state to the current source.
 ///
-/// Content fields follow the source unconditionally. Session-local state
-/// (voice channel, linker progress) stays tenant-local. A cancelled or
-/// archived source archives the copy; an unarchived source restores it.
+/// Content and status follow the source unconditionally. Discord voice channels
+/// and battle-linker progress stay tenant-local. A cancelled or archived
+/// source archives the copy; an unarchived source restores it.
 pub async fn converge_copy_to_source(
     target_db: &DatabaseConnection,
     source: &event::Model,
@@ -62,7 +62,8 @@ pub async fn converge_copy_to_source(
         return Ok(());
     };
     let copy_archived = copy.archived_at.is_some();
-    let copy_status = copy.status.clone();
+    let requeue_deleted_vod =
+        source.vod_forum_post_enabled && copy.vod_forum_post_status == "deleted";
     let mut active: event::ActiveModel = copy.into();
     active.title = Set(source.title.clone());
     active.description = Set(source.description.clone());
@@ -80,11 +81,18 @@ pub async fn converge_copy_to_source(
             active.archived_at = Set(Some(chrono::Utc::now().into()));
         }
     } else {
-        // Restore a copy cancelled by a previous convergence; live/stopped
-        // sessions stay untouched because session state is tenant-local.
-        if copy_status == "cancelled" && source.status != "cancelled" {
-            active.status = Set(source.status.clone());
+        active.status = Set(source.status.clone());
+        active.started_at = Set(source.started_at);
+        active.stopped_at = Set(source.stopped_at);
+        active.auto_stop_deadline = Set(source.auto_stop_deadline);
+        if requeue_deleted_vod {
+            // A confirmed archive deletion is safe to replace with a new
+            // tenant-local VOD post after the source event is restored.
+            active.vod_forum_post_status = Set("pending".to_owned());
+            active.vod_forum_thread_id = Set(None);
         }
+        // Source session state is authoritative, but its Discord voice channel
+        // and local battle-link progress remain destination-specific.
         active.archived_at = Set(None);
     }
     active.updated_at = Set(chrono::Utc::now().into());
@@ -424,6 +432,33 @@ mod tests {
             assert!(copy.archived_at.is_none());
         }
 
+        // Starting/stopping is owner state; the copy's Discord voice channel
+        // remains local, but its visible event status and timestamps converge.
+        EventService::new()
+            .start_event(alliance_db, source.id)
+            .await
+            .expect("start source");
+        let live = event::Entity::find_by_id(source.id)
+            .one(alliance_db)
+            .await
+            .expect("reload live")
+            .expect("source row");
+        sync_owner_change_to_copies(
+            &world.control,
+            &world.registry,
+            "alliance",
+            &live,
+            Operation::Update,
+        )
+        .await
+        .expect("sync live");
+        for guild_index in [1, 2] {
+            let copy = world.guild_copy(guild_index, source.id).await;
+            assert_eq!(copy.status, "live");
+            assert_eq!(copy.started_at, live.started_at);
+            assert_eq!(copy.discord_voice_channel_id, None);
+        }
+
         // Cancelling the source cancels and archives every copy.
         EventService::new()
             .cancel_event(alliance_db, source.id)
@@ -471,6 +506,89 @@ mod tests {
         for guild_index in [1, 2] {
             let copy = world.guild_copy(guild_index, source.id).await;
             assert_eq!(copy.status, "scheduled");
+            assert!(copy.archived_at.is_none());
+        }
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn restoring_archived_event_requeues_deleted_vod_posts_per_tenant() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Restore VOD posts").await;
+        let databases = [
+            &world.tenant_dbs[0],
+            &world.tenant_dbs[1],
+            &world.tenant_dbs[2],
+        ];
+        for (index, db) in databases.into_iter().enumerate() {
+            let mut active: event::ActiveModel = event::Entity::find_by_id(source.id)
+                .one(db)
+                .await
+                .expect("load event")
+                .expect("event exists")
+                .into();
+            active.vod_forum_post_enabled = Set(true);
+            active.vod_forum_post_status = Set("created".to_owned());
+            active.vod_forum_thread_id = Set(Some(format!("vod-thread-{index}")));
+            active.update(db).await.expect("seed created VOD post");
+        }
+
+        let alliance_db = &world.tenant_dbs[0];
+        EventService::new()
+            .archive_event(alliance_db, source.id)
+            .await
+            .expect("archive source");
+        let archived = event::Entity::find_by_id(source.id)
+            .one(alliance_db)
+            .await
+            .expect("reload archived source")
+            .expect("source row");
+        sync_owner_change_to_copies(
+            &world.control,
+            &world.registry,
+            "alliance",
+            &archived,
+            Operation::Archive,
+        )
+        .await
+        .expect("archive copies");
+
+        for (index, db) in databases.into_iter().enumerate() {
+            assert!(
+                EventService::new()
+                    .record_vod_forum_post_deleted(db, source.id, &format!("vod-thread-{index}"),)
+                    .await
+                    .expect("record VOD deletion")
+            );
+        }
+
+        let restored = EventService::new()
+            .unarchive_event(alliance_db, source.id)
+            .await
+            .expect("restore source");
+        assert_eq!(restored.vod_forum_post_status, "pending");
+        assert_eq!(restored.vod_forum_thread_id, None);
+        let restored_model = event::Entity::find_by_id(source.id)
+            .one(alliance_db)
+            .await
+            .expect("reload restored source")
+            .expect("source row");
+        sync_owner_change_to_copies(
+            &world.control,
+            &world.registry,
+            "alliance",
+            &restored_model,
+            Operation::Update,
+        )
+        .await
+        .expect("restore copies");
+
+        for guild_index in [1, 2] {
+            let copy = world.guild_copy(guild_index, source.id).await;
+            assert_eq!(copy.vod_forum_post_status, "pending");
+            assert_eq!(copy.vod_forum_thread_id, None);
             assert!(copy.archived_at.is_none());
         }
         world.close().await;

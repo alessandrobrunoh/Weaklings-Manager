@@ -27,7 +27,7 @@ use crate::responses::{
 };
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
-use sea_orm::{ConnectionTrait, EntityTrait};
+use sea_orm::{ConnectionTrait, DbBackend, EntityTrait, Statement, Value};
 use std::collections::HashSet;
 
 use super::attribution::{
@@ -55,6 +55,24 @@ async fn hydrate_event_view(
     registry: &TenantRegistry,
     origin_guild_id: &str,
 ) -> EventView {
+    match super::sync::canonical_event_origin(&control.0, origin_guild_id, view.id).await {
+        Ok((source_tenant_id, source_event_id)) if source_tenant_id != origin_guild_id => {
+            view.source_tenant_id.get_or_insert(source_tenant_id);
+            view.source_event_id.get_or_insert(source_event_id);
+            view.is_synchronized_copy = true;
+        }
+        Ok(_) => view.is_synchronized_copy = false,
+        Err(error) => {
+            tracing::warn!(
+                event_id = view.id,
+                error = %error,
+                "could not resolve synchronized event ownership"
+            );
+            // Hide owner-only controls while the relationship cannot be
+            // verified; backend mutation endpoints also fail closed.
+            view.is_synchronized_copy = view.source_event_id.is_some();
+        }
+    }
     if !view.ping_alliance {
         return view;
     }
@@ -84,6 +102,7 @@ async fn hydrate_event_list(
     registry: &TenantRegistry,
     origin_guild_id: &str,
 ) -> PaginatedData<EventView> {
+    hydrate_event_copy_identities(&mut page, control, origin_guild_id).await;
     if !page.items.iter().any(|event| event.ping_alliance) {
         return page;
     }
@@ -103,6 +122,70 @@ async fn hydrate_event_list(
         }
     }
     page
+}
+
+/// Backfills source identity for older one-to-one mirrors in one control-plane
+/// query. New fanout copies already carry their source identity on the event row.
+async fn hydrate_event_copy_identities(
+    page: &mut PaginatedData<EventView>,
+    control: &ControlDb,
+    tenant_id: &str,
+) {
+    let event_ids = page.items.iter().map(|event| event.id).collect::<Vec<_>>();
+    if event_ids.is_empty() {
+        return;
+    }
+
+    let placeholders = (2..event_ids.len() + 2)
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT mirror_event_id, source_tenant_id, source_event_id \
+         FROM event_sync_links \
+         WHERE mirror_tenant_id = $1 AND sync_enabled \
+           AND mirror_event_id IN ({placeholders})"
+    );
+    let mut values = vec![Value::from(tenant_id.to_owned())];
+    values.extend(event_ids.iter().copied().map(Value::from));
+    let rows = match control
+        .0
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            &sql,
+            values,
+        ))
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(error = %error, "could not resolve event copy identities for list");
+            return;
+        }
+    };
+    for row in rows {
+        let result = (|| {
+            Ok::<_, sea_orm::DbErr>((
+                row.try_get_by_index::<i64>(0)?,
+                row.try_get_by_index::<String>(1)?,
+                row.try_get_by_index::<i64>(2)?,
+            ))
+        })();
+        match result {
+            Ok((mirror_event_id, source_tenant_id, source_event_id)) => {
+                if let Some(event) = page
+                    .items
+                    .iter_mut()
+                    .find(|event| event.id == mirror_event_id)
+                {
+                    event.source_tenant_id = Some(source_tenant_id);
+                    event.source_event_id = Some(source_event_id);
+                    event.is_synchronized_copy = true;
+                }
+            }
+            Err(error) => tracing::warn!(error = %error, "invalid event sync link row"),
+        }
+    }
 }
 
 /// Returns the compiled router containing all event endpoints.
@@ -567,12 +650,14 @@ async fn assign_roster_seat(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let version = EventService::new()
         .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
         .await?;
@@ -593,12 +678,14 @@ async fn clear_roster_seat(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let version = EventService::new()
         .clear_roster_seat(&db, id, &seat_key, request)
         .await?;
@@ -619,12 +706,14 @@ async fn swap_roster_seats(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let keys = vec![
         request.source_seat_key.clone(),
         request.target_seat_key.clone(),
@@ -648,12 +737,14 @@ async fn auto_fill_roster(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let (version, changed) = EventService::new()
         .auto_fill_roster(&db, id, request, user.user_id)
         .await?;
@@ -813,12 +904,14 @@ async fn create_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
@@ -848,11 +941,13 @@ async fn delete_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
@@ -1498,12 +1593,14 @@ async fn add_event_member(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
     tracing::info!(
@@ -1548,12 +1645,14 @@ async fn set_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, target_user_id)): Path<(i64, i64)>,
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
@@ -1588,11 +1687,13 @@ async fn remove_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
@@ -1637,9 +1738,12 @@ async fn remind_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
 
     let _ = AuditService::log(
@@ -1679,11 +1783,19 @@ async fn get_event_management_authority(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventManagementAuthorityView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
-    let is_organizer = event_creator_id(&db, id).await? == user.user_id;
-    let can_manage = is_organizer || user.has_permission(&perms, Permission::EventsEdit).await;
+    let is_copy = match assert_manageable_source_event(&control.0, &tenant_id, id).await {
+        Ok(()) => false,
+        Err(AppError::Forbidden(_)) => true,
+        Err(error) => return Err(error),
+    };
+    let is_organizer = !is_copy && event_creator_id(&db, id).await? == user.user_id;
+    let can_manage =
+        !is_copy && (is_organizer || user.has_permission(&perms, Permission::EventsEdit).await);
     Ok(Json(ApiResponse::new(EventManagementAuthorityView {
         is_organizer,
         can_manage,
@@ -1715,10 +1827,13 @@ async fn set_event_voice_channel(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
         .await?;
@@ -1756,9 +1871,12 @@ async fn clear_event_voice_channel(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
         .await?;
@@ -1797,11 +1915,16 @@ async fn start_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let service = EventService::new();
     let event = service.start_event(&db, id).await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1900,15 +2023,18 @@ async fn stop_event(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let service = EventService::new();
     let award_xp = !is_mirror_event(&control.0, &tenant_id, id).await?;
     let event = service
         .stop_event_with_xp_policy(&db, id, false, award_xp)
         .await?;
+    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1985,6 +2111,7 @@ async fn replace_event_battles(
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
     let service = EventService::new();
     let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
         .await
@@ -2000,8 +2127,8 @@ async fn replace_event_battles(
 #[cfg(test)]
 mod tests {
     use super::{
-        get_event_management_authority, list_event_calendar, parse_event_revision_ids,
-        require_event_management_authority,
+        EventManagementAuthorityView, get_event_management_authority, list_event_calendar,
+        parse_event_revision_ids, require_event_management_authority,
     };
     use crate::errors::AppError;
     use crate::modules::auth::{
@@ -2011,8 +2138,12 @@ mod tests {
     use crate::modules::comps::entities::{comp, comp_category};
     use crate::modules::events::entities::event;
     use crate::modules::users::entities as users;
+    use crate::tenant::{ControlDb, CurrentTenantId};
     use axum::Extension;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database, DatabaseConnection};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, DatabaseConnection,
+        DbBackend, Statement,
+    };
     use sea_orm_migration::MigratorTrait;
 
     async fn authorization_test_db() -> DatabaseConnection {
@@ -2022,7 +2153,38 @@ mod tests {
         crate::migration::Migrator::up(&db, None)
             .await
             .expect("test database migrations should run");
+        db.execute_unprepared(
+            "CREATE TABLE event_sync_links (
+                source_tenant_id TEXT NOT NULL,
+                source_event_id BIGINT NOT NULL,
+                mirror_tenant_id TEXT NOT NULL,
+                mirror_event_id BIGINT NOT NULL,
+                sync_enabled BOOLEAN NOT NULL DEFAULT TRUE
+            )",
+        )
+        .await
+        .expect("test event links should be created");
         db
+    }
+
+    async fn event_authority_view(
+        user: UserContext,
+        permissions: Permissions,
+        db: &DatabaseConnection,
+        event_id: i64,
+    ) -> EventManagementAuthorityView {
+        get_event_management_authority(
+            user,
+            Extension(permissions),
+            Extension(db.clone()),
+            Extension(ControlDb(db.clone())),
+            Extension(CurrentTenantId("authorization-tenant".to_owned())),
+            axum::extract::Path(event_id),
+        )
+        .await
+        .expect("event authority should resolve")
+        .0
+        .data
     }
 
     async fn insert_authorization_test_user(db: &DatabaseConnection, name: &str) -> i64 {
@@ -2282,32 +2444,14 @@ mod tests {
 
         // The organizer may manage their own event without any role permission.
         let owner = authorization_test_user(owner_id, "User");
-        let view = get_event_management_authority(
-            owner,
-            Extension(permissions.clone()),
-            Extension(db.clone()),
-            axum::extract::Path(event_id),
-        )
-        .await
-        .expect("organizer authority should resolve")
-        .0
-        .data;
+        let view = event_authority_view(owner, permissions.clone(), &db, event_id).await;
         assert!(view.is_organizer);
         assert!(view.can_manage);
         assert_eq!(view.required_permission, "events.edit");
 
         // A plain member may neither — ownership belongs to someone else.
         let member = authorization_test_user(member_id, "User");
-        let view = get_event_management_authority(
-            member,
-            Extension(permissions.clone()),
-            Extension(db.clone()),
-            axum::extract::Path(event_id),
-        )
-        .await
-        .expect("member authority should resolve")
-        .0
-        .data;
+        let view = event_authority_view(member, permissions.clone(), &db, event_id).await;
         assert!(!view.is_organizer);
         assert!(!view.can_manage);
 
@@ -2315,47 +2459,37 @@ mod tests {
         // Admin and Officer, but no Officer row is created, so that grant never lands.
         // Admin is the seeded role that can manage an event it did not create.
         let admin = authorization_test_user(member_id, "Admin");
-        let view = get_event_management_authority(
-            admin,
-            Extension(permissions.clone()),
-            Extension(db.clone()),
-            axum::extract::Path(event_id),
-        )
-        .await
-        .expect("admin authority should resolve")
-        .0
-        .data;
+        let view = event_authority_view(admin, permissions.clone(), &db, event_id).await;
         assert!(!view.is_organizer);
         assert!(view.can_manage);
 
         // Moderator is seeded and only receives events.view, not events.edit.
         let moderator = authorization_test_user(member_id, "Moderator");
-        let view = get_event_management_authority(
-            moderator,
-            Extension(permissions.clone()),
-            Extension(db.clone()),
-            axum::extract::Path(event_id),
-        )
-        .await
-        .expect("moderator authority should resolve")
-        .0
-        .data;
+        let view = event_authority_view(moderator, permissions.clone(), &db, event_id).await;
         assert!(!view.is_organizer);
         assert!(!view.can_manage);
 
         // The legacy events.manage permission still implies the granular one.
         let manager = authorization_test_user(member_id, "Test test-events-manager");
-        let view = get_event_management_authority(
-            manager,
-            Extension(permissions),
-            Extension(db),
-            axum::extract::Path(event_id),
-        )
-        .await
-        .expect("manager authority should resolve")
-        .0
-        .data;
+        let view = event_authority_view(manager, permissions.clone(), &db, event_id).await;
         assert!(!view.is_organizer);
         assert!(view.can_manage);
+
+        db.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO event_sync_links \
+             (source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id, sync_enabled) \
+             VALUES ('source-tenant', 123, 'authorization-tenant', $1, TRUE)",
+            [event_id.into()],
+        ))
+        .await
+        .expect("copy link should be inserted");
+        let copied_owner = authorization_test_user(owner_id, "User");
+        let view = event_authority_view(copied_owner, permissions.clone(), &db, event_id).await;
+        assert!(!view.is_organizer);
+        assert!(!view.can_manage);
+        let copied_admin = authorization_test_user(member_id, "Admin");
+        let view = event_authority_view(copied_admin, permissions, &db, event_id).await;
+        assert!(!view.can_manage);
     }
 }

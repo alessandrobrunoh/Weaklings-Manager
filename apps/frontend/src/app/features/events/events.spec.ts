@@ -31,6 +31,8 @@ describe('Events', () => {
       regear: true,
       created_by: 100,
       created_by_username: 'Galvdon',
+      source_tenant_id: 'source-guild',
+      source_event_id: 88,
     },
     {
       id: 2,
@@ -185,18 +187,37 @@ describe('Events', () => {
     expect(text).toContain('CALL TO ARMS');
   });
 
+  it('labels synchronized read-only events in the list', () => {
+    expect(fixture.nativeElement.textContent).toContain('Read-only copy');
+  });
+
   it('renders the search box and status dropdown', () => {
     const searchInput = fixture.nativeElement.querySelector('input[placeholder="Search events..."]');
     expect(searchInput).toBeTruthy();
 
-    const select = fixture.nativeElement.querySelector('select');
+    const select = fixture.nativeElement.querySelector(
+      'app-select button[role="combobox"]',
+    );
     expect(select).toBeTruthy();
   });
 
   it('renders a status column filter instead of status tabs', () => {
+    const triggers = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        'app-select button[role="combobox"]',
+      ) as NodeListOf<HTMLButtonElement>,
+    );
+    const statusTrigger = triggers.find((trigger) =>
+      trigger.getAttribute('aria-label')?.toLowerCase().includes('status'),
+    );
+    expect(statusTrigger).toBeTruthy();
+    statusTrigger!.click();
+    fixture.detectChanges();
     const options = Array.from(
-      fixture.nativeElement.querySelectorAll('select option'),
-      (option) => (option as HTMLOptionElement).textContent ?? '',
+      fixture.nativeElement.querySelectorAll(
+        'app-select [role="option"]',
+      ) as NodeListOf<HTMLElement>,
+      (option) => option.textContent ?? '',
     ).join(' ');
     expect(options).toContain('Live');
     expect(options).toContain('Scheduled');
@@ -236,8 +257,17 @@ describe('Events', () => {
       canDelete: (event?: EventView) => boolean;
     };
 
-    expect(page.canEdit(mockEvents[0] as EventView)).toBe(true);
-    expect(page.canDelete(mockEvents[0] as EventView)).toBe(true);
+    const ownedEvent = { ...mockEvents[0], source_event_id: undefined, source_tenant_id: undefined } as EventView;
+    expect(page.canEdit(ownedEvent)).toBe(true);
+    expect(page.canDelete(ownedEvent)).toBe(true);
+    expect(page.canEdit(mockEvents[0] as EventView)).toBe(false);
+    expect(page.canDelete(mockEvents[0] as EventView)).toBe(false);
+    const detachedCopy = {
+      ...mockEvents[0],
+      is_synchronized_copy: false,
+    } as EventView;
+    expect(page.canEdit(detachedCopy)).toBe(true);
+    expect(page.canDelete(detachedCopy)).toBe(true);
     expect(page.canEdit(mockEvents[2] as EventView)).toBe(false);
     expect(page.canDelete(mockEvents[2] as EventView)).toBe(false);
 

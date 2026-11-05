@@ -25,6 +25,12 @@ pub struct Model {
     pub r#type: String,
     /// The split that generated this transaction, if any.
     pub split_id: Option<i64>,
+    /// Stable cross-tenant idempotency key for alliance-owned split projections.
+    pub alliance_distribution_key: Option<String>,
+    /// Alliance that owns a projected split-credit transaction.
+    pub source_alliance_tenant_id: Option<String>,
+    /// Alliance-local split that generated this guild transaction.
+    pub source_alliance_split_id: Option<i64>,
     /// The timestamp when the transaction was created.
     pub created_at: DateTimeWithTimeZone,
     /// The timestamp when the recipient requested withdrawal, if they have.

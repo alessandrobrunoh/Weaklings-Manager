@@ -129,7 +129,7 @@ function parsePercentageInput(raw: string): number | null {
       @if (split(); as detail) {
         <app-page-header
           [title]="detail.note || t('splits.untitled', { id: detail.id })"
-          [badge]="detail.archived_at ? t('splits.archived') : undefined"
+          [badge]="detail.origin_read_only ? t('splits.readOnlyCopy') : detail.archived_at ? t('splits.archived') : undefined"
         >
           <a routerLink="/splits" class="btn btn--ghost btn--sm">
             <app-icon name="chevron-left" size="0.875rem" />
@@ -139,7 +139,7 @@ function parsePercentageInput(raw: string): number | null {
             <span class="chip text-xs">{{ t('splits.sharedWithAlliance') }}</span>
           }
           @if (isReadOnly()) {
-            <span class="chip text-xs">{{ t('splits.readOnlyAlliance') }}</span>
+            <span class="chip text-xs">{{ detail.origin_read_only ? t('splits.readOnlyCopy') : t('splits.readOnlyAlliance') }}</span>
           }
           @if (canShare()) {
             <button

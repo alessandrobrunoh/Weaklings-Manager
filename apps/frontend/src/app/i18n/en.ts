@@ -578,6 +578,8 @@ export const en = {
   'events.archive': 'Archive',
   'events.unarchive': 'Unarchive',
   'events.archived': 'Archived',
+  'events.copyReadOnly': 'Read-only copy',
+  'splits.readOnlyCopy': 'Read-only synchronized copy',
   'events.showArchived': 'Show archived',
   'events.archiveSuccess': 'Event archived',
   'events.unarchiveSuccess': 'Event restored',

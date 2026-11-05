@@ -43,6 +43,9 @@ pub struct TransactionView {
     /// The split that generated this transaction, if any.
     #[schema(example = 3)]
     pub split_id: Option<i64>,
+    /// Alliance-owned source split when this is a guild-local projection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_alliance_split_id: Option<i64>,
     /// The timestamp when the transaction was created.
     pub created_at: String,
     /// The timestamp when the recipient last requested withdrawal, if the request is active.
@@ -86,6 +89,7 @@ impl TransactionView {
             status,
             r#type: model.r#type,
             split_id: model.split_id,
+            source_alliance_split_id: model.source_alliance_split_id,
             created_at: model.created_at.to_rfc3339(),
             requested_at: model.requested_at.map(|dt| dt.to_rfc3339()),
             withdrawn_at: model.withdrawn_at.map(|dt| dt.to_rfc3339()),

@@ -188,6 +188,9 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             @if (event.archived_at) {
               <span class="chip chip--neutral text-[10px]">{{ t('events.archived') }}</span>
             }
+            @if (event.is_synchronized_copy ?? (event.source_event_id != null)) {
+              <span class="chip chip--neutral text-[10px]">{{ t('events.copyReadOnly') }}</span>
+            }
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
             Mass: {{ formatMassTime(event) }}
@@ -630,6 +633,7 @@ export class Events {
 
   /** True when the current user can archive or restore the given event. */
   protected canDelete(event: EventView): boolean {
+    if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
     return (
       this.auth.hasPermission('events.delete') ||
       event.created_by === this.auth.profile()?.user_id
@@ -638,6 +642,7 @@ export class Events {
 
   /** True when the current user can edit the given event. */
   protected canEdit(event: EventView): boolean {
+    if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
     return (
       this.auth.hasPermission('events.edit') ||
       event.created_by === this.auth.profile()?.user_id

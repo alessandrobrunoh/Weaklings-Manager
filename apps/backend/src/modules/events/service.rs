@@ -312,6 +312,9 @@ fn event_view_from_parts(
         alliance_discord_channel_id: None,
         alliance_discord_role_ids: Vec::new(),
         origin_guild_id: None,
+        source_tenant_id: model.source_tenant_id,
+        source_event_id: model.source_event_id,
+        is_synchronized_copy: false,
     }
 }
 
@@ -2580,6 +2583,7 @@ impl EventService {
             .map(|model| EventRevision {
                 id: model.id,
                 roster_version: model.roster_version,
+                updated_at: model.updated_at.to_rfc3339(),
                 status: model.status,
                 archived_at: model.archived_at.map(|time| time.to_rfc3339()),
             })
@@ -3724,11 +3728,20 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        let should_requeue_vod =
+            model.vod_forum_post_enabled && model.vod_forum_post_status == "deleted";
         let now = chrono::Utc::now();
         let txn = db.begin().await.map_err(AppError::Database)?;
         let mut active: event::ActiveModel = model.into();
         active.archived_at = Set(None);
         active.updated_at = Set(now.into());
+        if should_requeue_vod {
+            // A confirmed archive deletion is safe to replace: the next poll
+            // will create a fresh VOD post for the restored event. Ambiguous
+            // `attempted` posts deliberately remain non-retriable.
+            active.vod_forum_post_status = Set("pending".to_owned());
+            active.vod_forum_thread_id = Set(None);
+        }
         let updated = active.update(&txn).await.map_err(AppError::Database)?;
 
         let linked = crate::modules::splits::entities::split::Entity::find()
@@ -5411,6 +5424,48 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(split.archived_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn restoring_event_requeues_only_confirmed_deleted_vod_posts() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "vod-admin", "vod-admin@example.com").await;
+        let event_id = insert_event(&db, "Restore VOD", author).await;
+        let mut model: event::ActiveModel = event::Entity::find_by_id(event_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        model.vod_forum_post_enabled = Set(true);
+        model.vod_forum_post_status = Set("created".to_owned());
+        model.vod_forum_thread_id = Set(Some("vod-thread".to_owned()));
+        model.update(&db).await.unwrap();
+
+        let service = EventService::new();
+        service.archive_event(&db, event_id).await.unwrap();
+        assert!(
+            service
+                .record_vod_forum_post_deleted(&db, event_id, "vod-thread")
+                .await
+                .unwrap()
+        );
+        let restored = service.unarchive_event(&db, event_id).await.unwrap();
+        assert_eq!(restored.vod_forum_post_status, "pending");
+        assert_eq!(restored.vod_forum_thread_id, None);
+
+        // An ambiguous Discord create must not become a duplicate when restored.
+        let mut attempted: event::ActiveModel = event::Entity::find_by_id(event_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        attempted.archived_at = Set(Some(Utc::now().into()));
+        attempted.vod_forum_post_status = Set("attempted".to_owned());
+        attempted.update(&db).await.unwrap();
+        let restored = service.unarchive_event(&db, event_id).await.unwrap();
+        assert_eq!(restored.vod_forum_post_status, "attempted");
     }
 
     async fn sign_up(db: &DatabaseConnection, event_id: i64, user_id: i64, build_id: i64) {
@@ -8980,6 +9035,7 @@ mod tests {
         assert_eq!(revisions[0].id, created.id);
         assert_eq!(revisions[0].status, created.status);
         assert_eq!(revisions[0].roster_version, created.roster_version);
+        assert_eq!(revisions[0].updated_at, created.updated_at);
         assert_eq!(revisions[0].archived_at, None);
     }
 

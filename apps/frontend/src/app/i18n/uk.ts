@@ -541,6 +541,8 @@ export const uk: TranslationDict = {
   'events.archive': 'Архівувати',
   'events.unarchive': 'Розархівувати',
   'events.archived': 'Заархівовано',
+  'events.copyReadOnly': 'Копія лише для читання',
+  'splits.readOnlyCopy': 'Синхронізована копія лише для читання',
   'events.showArchived': 'Показати архівовані',
   'events.archiveSuccess': 'Подію заархівовано',
   'events.unarchiveSuccess': 'Подію відновлено',

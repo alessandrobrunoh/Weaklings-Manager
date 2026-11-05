@@ -125,6 +125,20 @@ describe('EventDetailPage roster room', () => {
     permissions.set(new Set(['events.edit']));
     expect(page.canEdit()).toBe(true);
     expect(page.canDelete()).toBe(false);
+
+    page.event.set({ created_by: 42, source_event_id: 9, source_tenant_id: 'source' } as EventDetailView);
+    permissions.set(new Set(['events.edit', 'events.delete']));
+    expect(page.canEdit()).toBe(false);
+    expect(page.canDelete()).toBe(false);
+
+    page.event.set({
+      created_by: 42,
+      source_event_id: 9,
+      source_tenant_id: 'source',
+      is_synchronized_copy: false,
+    } as EventDetailView);
+    expect(page.canEdit()).toBe(true);
+    expect(page.canDelete()).toBe(true);
   });
 
   it('uses the snapshot party and seat position for the current member assignment', () => {

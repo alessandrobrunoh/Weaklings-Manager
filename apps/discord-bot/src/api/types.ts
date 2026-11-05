@@ -216,6 +216,7 @@ export interface SplitDiscoveryBatch {
 export interface EventRevision {
   id: number;
   roster_version: number;
+  updated_at: string;
   status: string;
   archived_at: string | null;
 }
@@ -292,6 +293,9 @@ export interface EventView {
   alliance_discord_channel_id?: string | null;
   alliance_discord_role_ids?: string[];
   origin_guild_id?: string | null;
+  source_tenant_id?: string | null;
+  source_event_id?: number | null;
+  is_synchronized_copy?: boolean;
   vod_forum_post_enabled?: boolean;
   vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created' | 'deleted';
   vod_forum_thread_id?: string | null;

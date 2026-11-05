@@ -305,6 +305,31 @@ test("thread action rows expose six state-aware event controls within Discord li
   );
 });
 
+test("synchronized event copies expose participation controls but not owner actions", () => {
+  const components = buildEventThreadActionRows(
+    event({
+      source_tenant_id: "alliance",
+      source_event_id: 8,
+      is_synchronized_copy: true,
+    }),
+  ).flatMap((row) => row.toJSON().components);
+  assert.deepEqual(
+    components.map((component) =>
+      "custom_id" in component ? component.custom_id : undefined,
+    ),
+    ["event:join:42", "event:leave:42"],
+  );
+
+  const detached = buildEventThreadActionRows(
+    event({
+      source_tenant_id: "alliance",
+      source_event_id: 8,
+      is_synchronized_copy: false,
+    }),
+  ).flatMap((row) => row.toJSON().components);
+  assert.equal(detached.length, 6);
+});
+
 test("event embed renders distinct Mass and Start timestamps", () => {
   const embed = buildEventEmbed(event({
     mass_time_utc: "2026-09-01T19:30:00Z",

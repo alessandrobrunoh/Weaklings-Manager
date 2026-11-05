@@ -544,6 +544,8 @@ export const fr: TranslationDict = {
   'events.archive': 'Archiver',
   'events.unarchive': 'Désarchiver',
   'events.archived': 'Archivé',
+  'events.copyReadOnly': 'Copie en lecture seule',
+  'splits.readOnlyCopy': 'Copie synchronisée en lecture seule',
   'events.showArchived': 'Afficher les archivés',
   'events.archiveSuccess': 'Événement archivé',
   'events.unarchiveSuccess': 'Événement restauré',

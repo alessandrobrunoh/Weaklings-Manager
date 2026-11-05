@@ -361,6 +361,8 @@ export interface TransactionView {
   status: TransactionStatus;
   type: string;
   split_id: number | null;
+  /** Alliance-owned split that generated this guild-local transaction, if any. */
+  source_alliance_split_id?: number | null;
   created_at: string;
   requested_at: string | null;
   withdrawn_at: string | null;
@@ -598,6 +600,11 @@ export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped' | 'c
 
 export interface EventView {
   id: number;
+  /** Present for synchronized read-only copies; absent for events owned by this tenant. */
+  source_tenant_id?: string | null;
+  source_event_id?: number | null;
+  /** True only while this tenant's copy is actively linked to its source. */
+  is_synchronized_copy?: boolean;
   title: string;
   description: string | null;
   call_to_arms: boolean;

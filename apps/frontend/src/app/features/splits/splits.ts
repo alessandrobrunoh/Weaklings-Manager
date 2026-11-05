@@ -429,6 +429,9 @@ function newSplitBag(amount = 0): SplitBagDraft {
         <ng-template dataTableCell="note" let-row>
           <span class="flex items-center gap-2 font-semibold text-(--color-text) group-hover:text-error transition-colors">
             <span>{{ row.note || t('splits.untitled', { id: row.id }) }}</span>
+            @if (row.origin_read_only) {
+              <span class="chip chip--neutral text-xs">{{ t('splits.readOnlyCopy') }}</span>
+            }
             @if (row.archived_at) {
               <span class="chip chip--neutral text-xs">{{ t('splits.archived') }}</span>
             }

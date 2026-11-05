@@ -515,12 +515,27 @@ async fn complete_split(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
-    let split = split_service(&kind)
-        .complete_split(&db, id, user.user_id)
-        .await?;
+    let split = if kind.0 == "alliance" {
+        super::alliance_distribution::complete(
+            &control.0,
+            &registry,
+            &tenant_id,
+            &db,
+            id,
+            user.user_id,
+        )
+        .await?
+    } else {
+        split_service(&kind)
+            .complete_split(&db, id, user.user_id)
+            .await?
+    };
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -694,6 +709,9 @@ pub async fn complete_splits_batch(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Json(body): Json<CompleteSplitsBatchRequest>,
 ) -> Result<Json<ApiResponse<CompleteSplitsBatchResult>>, AppError> {
     if body.split_ids.is_empty() {
@@ -722,6 +740,37 @@ pub async fn complete_splits_batch(
             failed: Vec::new(),
             total_distributed: sea_orm::prelude::Decimal::ZERO,
         }
+    } else if kind.0 == "alliance" {
+        let mut result = CompleteSplitsBatchResult {
+            completed: Vec::new(),
+            failed: Vec::new(),
+            total_distributed: sea_orm::prelude::Decimal::ZERO,
+        };
+        for split_id in authorized_ids {
+            match super::alliance_distribution::complete(
+                &control.0,
+                &registry,
+                &tenant_id,
+                &db,
+                split_id,
+                user.user_id,
+            )
+            .await
+            {
+                Ok(detail) => {
+                    result.total_distributed += detail
+                        .summary
+                        .net_value
+                        .unwrap_or(sea_orm::prelude::Decimal::ZERO);
+                    result.completed.push(split_id);
+                }
+                Err(error) => result.failed.push(super::models::BatchFailure {
+                    split_id,
+                    reason: error.to_string(),
+                }),
+            }
+        }
+        result
     } else {
         service
             .complete_splits_batch(&db, &authorized_ids, user.user_id)

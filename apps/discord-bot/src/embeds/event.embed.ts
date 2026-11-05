@@ -711,9 +711,15 @@ export function buildEventThreadActionRows(
           .setDisabled(!(isScheduled || isLive)),
   ];
 
-  // Discord allows at most five buttons in one action row.
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(0, 5)),
-    new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(5)),
-  ];
+  // Synchronized copies are participant-facing, not event-management
+  // authorities. Hide Ping/Start/Stop/Cancel/Reopen here; backend authority
+  // checks still reject those actions if a stale client tries them.
+  const isSynchronizedCopy =
+    event.is_synchronized_copy ?? event.source_event_id != null;
+  const visible = isSynchronizedCopy ? buttons.slice(0, 2) : buttons;
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let index = 0; index < visible.length; index += 5) {
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...visible.slice(index, index + 5)));
+  }
+  return rows;
 }

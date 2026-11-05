@@ -18,6 +18,8 @@ import {
   buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
   buildEventCalendarMessages,
+  buildEventEmbed,
+  buildEventThreadActionRows,
   shouldPingAllianceDiscord,
   withAlliancePingRoles,
   type AllianceLifecycleKind,
@@ -106,12 +108,14 @@ interface PollerState {
    */
   pendingAnnounces: Record<
     string,
-    { attempts: number; lastError: string; since: string; status?: "undo_window" | "failed" }
+    { attempts: number; lastError: string; since: string; status?: "undo_window" | "failed" | "ambiguous" }
   >;
   /** One-release compatibility for checkpoints written before the queue was renamed. */
   failedAnnounces?: PollerState["pendingAnnounces"];
-  /** Last Discord-synced `${roster_version}:${status}` per event. */
+  /** Last Discord-synced roster/status/content revision per event. */
   eventSignupRevisions: Record<string, string>;
+  /** Archived announcements deleted from Discord, retained to safely detect restore. */
+  archivedEventIds: number[];
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
   splitUpdatedAt: string | null;
   splitAfterId: number | null;
@@ -182,6 +186,7 @@ function createDefaultState(): PollerState {
     eventCalendarFingerprints: {},
     pendingAnnounces: {},
     eventSignupRevisions: {},
+    archivedEventIds: [],
     splitUpdatedAt: null,
     splitAfterId: null,
     massedEvents: [],
@@ -282,6 +287,7 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
       eventCalendarFingerprints: parsedState.eventCalendarFingerprints ?? {},
       pendingAnnounces: parsedState.pendingAnnounces ?? parsedState.failedAnnounces ?? {},
       eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
+      archivedEventIds: parsedState.archivedEventIds ?? [],
       splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
       splitAfterId: parsedState.splitAfterId ?? null,
       massedEvents: parsedState.massedEvents ?? [],
@@ -484,6 +490,7 @@ export class Poller {
       await this.checkVodForumPosts();
       const revisions = await this.loadEventRevisions();
       await this.checkClosedEvents(revisions);
+      await this.checkRestoredEvents();
       await this.checkEventRosterSync(revisions);
       await this.updateEventCalendars();
       await this.checkNewGiveaways();
@@ -827,6 +834,7 @@ export class Poller {
       // Pending announcements are retried before the new batch, so a held or
       // stuck event never blocks later ones and never gets silently dropped.
       for (const eventId of Object.keys(this.state.pendingAnnounces)) {
+        if (this.state.pendingAnnounces[eventId]?.status === "ambiguous") continue;
         let eventView: EventView | undefined = announceable.find(
           (event) => String(event.id) === eventId,
         );
@@ -901,6 +909,7 @@ export class Poller {
     flashMass: string | null;
   }): Promise<void> {
     const eventKey = String(event.id);
+    if (this.state.pendingAnnounces[eventKey]?.status === "ambiguous") return;
     const fail = (stage: string, lastError: string) => {
       const previous = this.state.pendingAnnounces[eventKey];
       this.state.pendingAnnounces[eventKey] = {
@@ -940,10 +949,11 @@ export class Poller {
       // delivery target and should still receive the event when the guild
       // announcement cannot be sent.
       const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
-      const delivery = await this.settings.eventDelivery();
+      const delivery = await this.eventDelivery();
       if (delivery === "forum") {
         const posted = await this.postEventForum(eventDetail);
         if (!posted) {
+          if ((this.state.pendingAnnounces[eventKey] as { status?: string } | undefined)?.status === "ambiguous") return;
           fail("forum", "event forum post was not created");
           return;
         }
@@ -1055,7 +1065,7 @@ export class Poller {
         return;
       }
       this.state.eventSignupRevisions[eventKey] =
-        `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
+        `${eventDetail.roster_version ?? 0}:${eventDetail.status}:${eventDetail.updated_at ?? ""}`;
 
       delete this.state.pendingAnnounces[eventKey];
       this.save();
@@ -1065,6 +1075,13 @@ export class Poller {
     } catch (error) {
       fail("unexpected", error instanceof Error ? error.message : String(error));
     }
+  }
+
+  private async eventDelivery(): Promise<"calendar" | "message" | "forum"> {
+    // Real SettingsService instances always implement this. The fallback keeps
+    // older state/test doubles on the historical public-message behavior.
+    const delivery = this.settings.eventDelivery;
+    return typeof delivery === "function" ? delivery.call(this.settings) : "message";
   }
 
   /** Opens one forum post for an event that chose forum delivery. */
@@ -1091,12 +1108,58 @@ export class Poller {
       return false;
     }
     const announcement = buildEventAnnouncementMessage(event);
-    const thread = await forum.threads.create({
-      name: event.title.slice(0, 100),
-      message: { content: announcement.content, allowedMentions: announcement.allowedMentions },
-      appliedTags: tags.length > 0 ? tags.slice(0, 5) : undefined,
-    });
+    const eventKey = String(event.id);
+    let thread: ThreadChannel;
+    const existingId = this.state.eventThreadIds[eventKey];
+    if (existingId) {
+      const existing = await this.client.channels.fetch(existingId).catch(() => null);
+      if (!existing?.isThread()) return false;
+      thread = existing;
+      try {
+        await thread.setName(event.title.slice(0, 100));
+        await thread.setAppliedTags(tags.slice(0, 5));
+      } catch (error) {
+        console.warn(`[Poller] Could not refresh event forum post #${event.id}:`, error);
+      }
+    } else {
+      try {
+        thread = await forum.threads.create({
+          name: event.title.slice(0, 100),
+          message: { content: announcement.content, allowedMentions: announcement.allowedMentions },
+          appliedTags: tags.length > 0 ? tags.slice(0, 5) : undefined,
+        });
+      } catch (error) {
+        this.state.pendingAnnounces[eventKey] = {
+          attempts: 1,
+          lastError: `ambiguous forum create: ${String(error)}`,
+          since: new Date().toISOString(),
+          status: "ambiguous",
+        };
+        this.save();
+        console.warn(`[Poller] Forum create for event #${event.id} may have succeeded; automatic retry suppressed`);
+        return false;
+      }
+    }
     this.state.eventThreadIds[String(event.id)] = thread.id;
+    this.save();
+    let starter: Message | null;
+    try {
+      starter = await thread.fetchStarterMessage();
+      if (!starter) return false;
+      await starter.edit({
+        content: announcement.content,
+        embeds: [buildEventEmbed(event, thread.guild?.preferredLocale)],
+        components: buildEventThreadActionRows(event, thread.guild?.preferredLocale),
+        allowedMentions: announcement.allowedMentions,
+      });
+    } catch (error) {
+      console.warn(`[Poller] Could not add signup controls to event forum post #${event.id}:`, error);
+      return false;
+    }
+    this.state.eventSignupMessageIds[String(event.id)] = starter.id;
+    this.state.eventSignupRevisions[String(event.id)] =
+      `${event.roster_version ?? 0}:${event.status}:${event.updated_at ?? ""}`;
+    this.save();
     return true;
   }
 
@@ -1164,7 +1227,7 @@ export class Poller {
     let unroutedCallToArms = 0;
     for (const event of events) {
       if (flashUndoTimeRemaining(event) > 0) continue;
-      if ((await this.settings.eventDelivery()) !== "calendar") {
+      if ((await this.eventDelivery()) !== "calendar") {
         continue;
       }
       const channelId = destinationChannel(event, routes);
@@ -1437,6 +1500,10 @@ export class Poller {
           continue;
         }
         if (event.archived_at) {
+          if (!this.state.archivedEventIds.includes(event.id)) {
+            this.state.archivedEventIds.push(event.id);
+            this.save();
+          }
           if (threadId) await this.deleteEventThread(event.id);
           continue;
         }
@@ -1451,6 +1518,41 @@ export class Poller {
         // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
       }
+    }
+  }
+
+  /**
+   * Restores only events whose Discord announcement was deliberately removed
+   * during archive, avoiding replay of unrelated old events from the feed.
+   */
+  private async checkRestoredEvents(): Promise<void> {
+    if (this.state.archivedEventIds.length === 0) return;
+    try {
+      for (const eventId of [...this.state.archivedEventIds]) {
+        let event: EventView;
+        try {
+          event = await this.api.get<EventView>(`api/events/${eventId}`);
+        } catch {
+          continue;
+        }
+        const key = String(event.id);
+        if (
+          event.archived_at ||
+          !["scheduled", "live"].includes(event.status) ||
+          this.state.eventThreadIds[key]
+        ) continue;
+        await this.announceEvent(event, await this.loadEventChannelRoutes());
+        if (
+          this.state.eventThreadIds[key] &&
+          this.state.eventSignupMessageIds[key] &&
+          this.state.pendingAnnounces[key]?.status !== "ambiguous"
+        ) {
+          this.state.archivedEventIds = this.state.archivedEventIds.filter((id) => id !== event.id);
+          this.save();
+        }
+      }
+    } catch (error) {
+      console.warn(`[Poller] Could not reconcile restored archived events: ${String(error)}`);
     }
   }
 
@@ -1471,7 +1573,7 @@ export class Poller {
       // Discord cancel already closed it. Stamp cancelled so a later restore is a
       // revision change and roster sync will unarchive the thread.
       this.state.eventSignupRevisions[String(eventId)] =
-        `${event.roster_version}:${event.status}`;
+        `${event.roster_version}:${event.status}:${event.updated_at ?? ""}`;
       this.save();
       return;
     }
@@ -1488,7 +1590,7 @@ export class Poller {
       if (messageId) {
         this.state.eventSignupMessageIds[String(eventId)] = messageId;
         this.state.eventSignupRevisions[String(eventId)] =
-          `${detail.roster_version ?? 0}:${detail.status}`;
+          `${detail.roster_version ?? 0}:${detail.status}:${detail.updated_at ?? ""}`;
         this.save();
       }
     } catch (error) {
@@ -1546,13 +1648,33 @@ export class Poller {
       ) {
         continue;
       }
-      const revision = `${fingerprint.roster_version}:${fingerprint.status}`;
+      const updatedAt = (fingerprint as EventRevision & { updated_at?: string }).updated_at;
+      const revision = `${fingerprint.roster_version}:${fingerprint.status}:${updatedAt ?? ""}`;
       if (this.state.eventSignupRevisions[eventId] === revision) continue;
       try {
         const detail = await this.api.get<EventDetailView>(`api/events/${eventId}`);
 
         const thread = await this.getEventThread(Number(eventId));
         if (!thread) continue;
+
+        const announcement = buildEventAnnouncementMessage(detail);
+        try {
+          const starter = await thread.fetchStarterMessage?.();
+          if (starter) {
+            await starter.edit({
+              content: announcement.content,
+              allowedMentions: announcement.allowedMentions,
+            });
+          }
+          if (thread.name !== detail.title.slice(0, 100) && typeof thread.setName === "function") {
+            await thread.setName(detail.title.slice(0, 100));
+          }
+        } catch (error) {
+          console.warn(
+            `[Poller] Could not refresh announcement for event #${eventId}:`,
+            error,
+          );
+        }
 
         const messageId = await refreshEventSignupCard(
           thread,

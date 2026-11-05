@@ -284,6 +284,11 @@ pub struct EventView {
     pub alliance_discord_role_ids: Vec<String>,
     /// Origin guild tenant id for API calls triggered from alliance Discord.
     pub origin_guild_id: Option<String>,
+    /// Canonical source identity for synchronized copies; both are absent on owned events.
+    pub source_tenant_id: Option<String>,
+    pub source_event_id: Option<i64>,
+    /// Whether the copy is currently linked for synchronization.
+    pub is_synchronized_copy: bool,
 }
 
 /// Cheap fingerprint the Discord poller uses to skip full event-detail hydration.
@@ -293,6 +298,8 @@ pub struct EventRevision {
     pub id: i64,
     /// Monotonic roster revision.
     pub roster_version: i64,
+    /// Timestamp changed when event content or lifecycle fields are updated.
+    pub updated_at: String,
     /// Session status.
     pub status: String,
     /// When this event was archived. `None` means it is listed as active.

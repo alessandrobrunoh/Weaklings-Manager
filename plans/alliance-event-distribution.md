@@ -1,6 +1,6 @@
 # Alliance event distribution
 
-**Status:** Slices 1–4 are implemented and ready for review. Slice 5 (tenant-local Discord publication/VOD/split refresh) and Slice 6 (financial projection) remain unimplemented.
+**Status:** Slices 1–5 are implemented and ready for review. Slice 6 (all-or-none alliance split validation and guild-local transaction projections) remains unimplemented.
 **Goal:** Events should behave as one event across guild and alliance servers while each tenant keeps its own Discord delivery settings and financial records.
 
 ## Outcome and non-goals
@@ -85,6 +85,8 @@ For money, keep the source event's split authoritative. For alliance-owned split
 - **Outcome:** each tenant publishes a linked event using its own configured Calendar/Channel message/Forum mode, VOD destination, and tags; non-owner split copies are clearly read-only.
 - **Scope:** event payload/config separation, poller state keyed by tenant and event identity, forum controls, private calendar threads, VOD lifecycle, and ownership-aware UI.
 - **Verification:** delivery matrix across all three modes; safe retry; VOD archive/restore; forum buttons; calendar privacy/invites; responsive and keyboard checks.
+- **Status (implemented):** the Discord poller uses each tenant's stored delivery mode and configuration. Channel messages keep a plain parent ping with a discussion-thread signup card; calendar events keep private discussion threads linked from the calendar; forum delivery edits the forum starter with signup controls. Content-only changes use `updated_at` in the revision fingerprint. Forum creates with ambiguous results are not automatically retried; known threads are reused after a failed starter edit. Archived announcements are deleted and tracked in a tenant-local restore tombstone; scheduled/live restored events republish once through the configured mode. Confirmed-deleted VOD posts return to pending on restore, while ambiguous VOD creates remain non-retriable. Event/split copies are labeled, event owner controls are hidden in the UI, and server handlers/service guards reject management mutations on active copies. Old mirror event identity is resolved from active control-plane links; a departed guild's inactive link is no longer treated as read-only.
+- **Verification evidence:** bot build and full test suite passed (205/205); frontend focused events/splits tests passed (61/61), and the frontend production build passed. `cargo check -p backend --tests` passed. The focused PostgreSQL lifecycle suite passed (5/5), including event start/status convergence and VOD restore across tenants. The isolated service-level VOD restore test and route-authority test could not be run because the repository's SQLite fixture migration fails with SeaORM's “Sqlite doesn't support multiple alter options”; the Postgres lifecycle coverage passed. No live Discord forum/channel/calendar smoke test or manual keyboard/mobile browser pass was run.
 - **Review boundary:** stop before financial transaction projections.
 
 ### 6. Alliance split validation and guild transaction projections
