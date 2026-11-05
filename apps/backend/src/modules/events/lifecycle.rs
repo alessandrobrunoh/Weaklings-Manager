@@ -1236,4 +1236,319 @@ mod tests {
         );
         world.close().await;
     }
+
+    #[tokio::test]
+    async fn concurrent_alliance_split_confirmations_credit_each_guild_once() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Concurrent split event").await;
+        let alliance_db = &world.tenant_dbs[0];
+        let mut participants = Vec::new();
+        for (discord_id, name, guild_id, guild_index) in [
+            ("concurrent-alice", "Alice", "guild-a", 1usize),
+            ("concurrent-bob", "Bob", "guild-b", 2usize),
+        ] {
+            let email = format!("{discord_id}@example.invalid");
+            let user_id = upsert_discord_user(alliance_db, discord_id, name, &email, "User", false)
+                .await
+                .expect("alliance user");
+            upsert_discord_user(
+                &world.tenant_dbs[guild_index],
+                discord_id,
+                name,
+                &email,
+                "User",
+                false,
+            )
+            .await
+            .expect("guild user");
+            world.add_user_membership(discord_id, guild_id).await;
+            world
+                .control
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO event_participant_attributions \
+                     (id,source_tenant_id,source_event_id,discord_id,guild_tenant_id) \
+                     VALUES ($1,'alliance',$2,$3,$4)",
+                    [
+                        uuid::Uuid::new_v4().into(),
+                        source.id.into(),
+                        discord_id.into(),
+                        guild_id.into(),
+                    ],
+                ))
+                .await
+                .expect("event attribution");
+            participants.push(user_id);
+        }
+        alliance_db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE events SET status='stopped' WHERE id=$1",
+                [source.id.into()],
+            ))
+            .await
+            .expect("stop event");
+        let split_id: i64 = alliance_db
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO splits \
+                 (created_by,status,estimated_market_value,fee,repair_value,bags_value,event_id,updated_at) \
+                 VALUES ($1,'pending',100,0,0,0,$2,NOW()) RETURNING id",
+                [source.created_by.into(), source.id.into()],
+            ))
+            .await
+            .expect("insert split")
+            .expect("split row")
+            .try_get_by_index(0)
+            .expect("split id");
+        for user_id in &participants {
+            alliance_db
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO split_participants (split_id,user_id,weight) VALUES ($1,$2,100)",
+                    [split_id.into(), (*user_id).into()],
+                ))
+                .await
+                .expect("split participant");
+        }
+
+        let confirm = || {
+            crate::modules::splits::alliance_distribution::complete(
+                &world.control,
+                &world.registry,
+                "alliance",
+                alliance_db,
+                split_id,
+                source.created_by,
+            )
+        };
+        let (first, second, third) = tokio::join!(confirm(), confirm(), confirm());
+        assert!(
+            first.is_ok() && second.is_ok() && third.is_ok(),
+            "concurrent confirmations must converge: {:?} {:?} {:?}",
+            first.as_ref().err(),
+            second.as_ref().err(),
+            third.as_ref().err()
+        );
+        for guild_index in [1usize, 2usize] {
+            let transactions = crate::modules::bank::entities::Entity::find()
+                .all(&world.tenant_dbs[guild_index])
+                .await
+                .expect("guild transactions");
+            assert_eq!(
+                transactions.len(),
+                1,
+                "guild {guild_index} is credited exactly once"
+            );
+            assert_eq!(transactions[0].amount, sea_orm::prelude::Decimal::from(50));
+        }
+        let status = crate::modules::splits::alliance_distribution::status(
+            &world.control,
+            "alliance",
+            split_id,
+        )
+        .await
+        .expect("status")
+        .expect("batch exists");
+        assert_eq!(status.state, "complete");
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn failed_guild_mirror_is_retried_without_duplicating_the_alliance_event() {
+        use crate::modules::comps::{
+            models::{
+                AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
+                CreateCompCategoryRequest, CreateCompRequest,
+            },
+            service::CompService,
+            status::BuildRole,
+        };
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let guild_db = &world.tenant_dbs[1];
+        let creator_id = upsert_discord_user(
+            guild_db,
+            "mirror-creator",
+            "Mirror creator",
+            "mirror-creator@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("guild creator");
+        let comps = CompService::new();
+        let build_category = comps
+            .create_build_category(
+                guild_db,
+                CreateBuildCategoryRequest {
+                    name: "Mirror builds".to_owned(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("build category");
+        let comp_category = comps
+            .create_comp_category(
+                guild_db,
+                CreateCompCategoryRequest {
+                    name: "Mirror comps".to_owned(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("comp category");
+        let build = comps
+            .create_build(
+                guild_db,
+                creator_id,
+                CreateBuildRequest {
+                    name: "Mirror healer".to_owned(),
+                    description: None,
+                    role: BuildRole::Healer,
+                    category_id: build_category.id,
+                    items: None,
+                },
+            )
+            .await
+            .expect("build");
+        let comp = comps
+            .create_comp(
+                guild_db,
+                creator_id,
+                CreateCompRequest {
+                    name: "Mirror comp".to_owned(),
+                    description: None,
+                    category_id: comp_category.id,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 1,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("comp");
+        let mut request = flash_event("Guild event for the alliance");
+        request.event_kind = Some("organized".to_owned());
+        request.comp_id = Some(comp.summary.id);
+        let event = EventService::new()
+            .create_event(guild_db, creator_id, request)
+            .await
+            .expect("guild event");
+        let view = EventService::new()
+            .get_event_detail(guild_db, event.id)
+            .await
+            .expect("event view")
+            .event;
+        let actor = ShareActor {
+            discord_id: "mirror-creator".to_owned(),
+            username: "Mirror creator".to_owned(),
+            email: None,
+        };
+
+        // First attempt fails because the guild's membership is not active.
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE alliance_memberships SET status='left' WHERE guild_tenant_id='guild-a'",
+                [],
+            ))
+            .await
+            .expect("suspend membership");
+        let error = super::super::sync::create_mirror(
+            &world.control,
+            &world.registry,
+            guild_db,
+            "guild-a",
+            &view,
+            &actor,
+        )
+        .await
+        .expect_err("inactive membership blocks the mirror");
+        super::super::mirror_retry::enqueue(
+            &world.control,
+            "guild-a",
+            event.id,
+            &actor,
+            &error.to_string(),
+        )
+        .await
+        .expect("queue retry");
+
+        let force_due = || {
+            world.control.execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE event_mirror_requests SET next_attempt_at=NOW()",
+                [],
+            ))
+        };
+        force_due().await.expect("make due");
+        assert_eq!(
+            super::super::mirror_retry::process_due(&world.control, &world.registry)
+                .await
+                .expect("first retry cycle"),
+            1
+        );
+        let failed =
+            super::super::mirror_retry::status_for_event(&world.control, "guild-a", event.id)
+                .await
+                .expect("status")
+                .expect("request exists");
+        assert_eq!(failed.state, "failed");
+        assert_eq!(failed.attempts, 1);
+        assert!(failed.last_error.is_some());
+        assert_eq!(failed.mirror_event_id, None);
+
+        // Membership returns; the next retry creates exactly one mirror.
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE alliance_memberships SET status='active' WHERE guild_tenant_id='guild-a'",
+                [],
+            ))
+            .await
+            .expect("restore membership");
+        force_due().await.expect("make due again");
+        super::super::mirror_retry::process_due(&world.control, &world.registry)
+            .await
+            .expect("second retry cycle");
+        let done =
+            super::super::mirror_retry::status_for_event(&world.control, "guild-a", event.id)
+                .await
+                .expect("status")
+                .expect("request exists");
+        assert_eq!(done.state, "complete", "{:?}", done.last_error);
+        assert!(done.mirror_event_id.is_some());
+        assert_eq!(
+            event::Entity::find()
+                .count(&world.tenant_dbs[0])
+                .await
+                .expect("alliance events"),
+            1,
+            "exactly one alliance mirror exists"
+        );
+
+        // A completed request is never claimed again, so no duplicate appears.
+        force_due().await.expect("make due after completion");
+        assert_eq!(
+            super::super::mirror_retry::process_due(&world.control, &world.registry)
+                .await
+                .expect("idle cycle"),
+            0
+        );
+        assert_eq!(
+            event::Entity::find()
+                .count(&world.tenant_dbs[0])
+                .await
+                .expect("alliance events"),
+            1
+        );
+        world.close().await;
+    }
 }

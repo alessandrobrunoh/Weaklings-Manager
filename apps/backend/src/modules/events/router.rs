@@ -193,6 +193,7 @@ pub fn router() -> Router {
     Router::new()
         .route("/", get(list_events).post(create_event))
         .route("/{id}/fanout-status", get(get_event_fanout_status))
+        .route("/{id}/mirror-status", get(get_event_mirror_status))
         .route("/calendar", get(list_event_calendar))
         .route("/revisions", get(list_event_revisions))
         .route(
@@ -1106,13 +1107,30 @@ async fn create_event(
             create_mirror(&control.0, &registry, &db, &tenant.0, &event, &actor).await
         {
             // The source row is already committed. Do not turn a cross-tenant
-            // mirror failure into an HTTP failure that suggests it rolled back.
+            // mirror failure into an HTTP failure that suggests it rolled back;
+            // queue a durable retry instead.
             tracing::error!(
                 tenant_id = %tenant.0,
                 event_id = event.id,
                 error = %error,
-                "event mirror creation failed after source event committed"
+                "event mirror creation failed after source event committed; queued for retry"
             );
+            if let Err(queue_error) = super::mirror_retry::enqueue(
+                &control.0,
+                &tenant.0,
+                event.id,
+                &actor,
+                &error.to_string(),
+            )
+            .await
+            {
+                tracing::error!(
+                    tenant_id = %tenant.0,
+                    event_id = event.id,
+                    error = %queue_error,
+                    "alliance mirror retry could not be queued"
+                );
+            }
         }
     }
     Ok(Json(ApiResponse::new(
@@ -1147,6 +1165,36 @@ async fn get_event_fanout_status(
     let status = super::fanout_outbox::status_for_event(&control.0, &tenant_id, id)
         .await?
         .ok_or_else(|| AppError::NotFound("event fanout status not found".to_owned()))?;
+    Ok(Json(ApiResponse::new(status)))
+}
+
+/// Returns the alliance mirror retry state for a guild-owned event.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/mirror-status",
+    tag = "events",
+    summary = "Get alliance mirror status",
+    description = "Returns the durable retry state of the alliance mirror requested for a guild event. Requires event management authority.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Guild-owned source event ID")),
+    responses(
+        (status = 200, description = "Mirror request state", body = super::mirror_retry::MirrorRequestStatus),
+        (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
+        (status = 404, description = "No mirror request exists", body = ProblemDetails)
+    )
+)]
+async fn get_event_mirror_status(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<super::mirror_retry::MirrorRequestStatus>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    let status = super::mirror_retry::status_for_event(&control.0, &tenant_id, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("event mirror request not found".to_owned()))?;
     Ok(Json(ApiResponse::new(status)))
 }
 
@@ -1223,7 +1271,21 @@ async fn update_event(
             username: user.username.clone(),
             email: user.email.clone(),
         };
-        create_mirror(&control.0, &registry, &db, &tenant_id, &event, &actor).await?;
+        if let Err(error) =
+            create_mirror(&control.0, &registry, &db, &tenant_id, &event, &actor).await
+        {
+            // The update is already committed: queue a retry. Only surface the
+            // error when the retry itself cannot be recorded.
+            tracing::error!(
+                tenant_id = %tenant_id,
+                event_id = id,
+                error = %error,
+                "event mirror creation failed after update committed; queued for retry"
+            );
+            super::mirror_retry::enqueue(&control.0, &tenant_id, id, &actor, &error.to_string())
+                .await
+                .map_err(|_| error)?;
+        }
     }
     sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(

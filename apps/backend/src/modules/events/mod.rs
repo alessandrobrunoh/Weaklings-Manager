@@ -8,6 +8,7 @@ pub mod fanout_outbox;
 pub mod fanout_worker;
 pub mod fight_grouping;
 pub mod lifecycle;
+pub mod mirror_retry;
 pub mod models;
 pub mod roster_hub;
 pub mod router;

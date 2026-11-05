@@ -209,7 +209,7 @@ pub async fn create_mirror(
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (source_tenant_id, source_event_id) DO NOTHING",
             [
-                uuid::Uuid::new_v4().to_string().into(),
+                uuid::Uuid::new_v4().into(),
                 source_tenant_id.into(),
                 source_event.id.into(),
                 alliance_id.into(),

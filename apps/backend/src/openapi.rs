@@ -600,6 +600,7 @@ use utoipa::OpenApi;
             crate::modules::splits::models::CompleteSplitsBatchResult,
             crate::modules::splits::models::BatchFailure,
             crate::modules::splits::alliance_distribution::DistributionStatus,
+            crate::modules::events::mirror_retry::MirrorRequestStatus,
             crate::modules::splits::alliance_distribution::DistributionRecipientStatus,
             crate::modules::intel::report::GuildReport,
             crate::modules::intel::report::ReportOverview,

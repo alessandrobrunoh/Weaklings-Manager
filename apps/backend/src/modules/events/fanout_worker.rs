@@ -37,6 +37,11 @@ pub fn spawn(control: DatabaseConnection, registry: TenantRegistry) {
             if let Err(error) = process_due_targets(&control, &registry).await {
                 tracing::error!(error = %error, "event fanout retry cycle failed");
             }
+            if let Err(error) =
+                crate::modules::events::mirror_retry::process_due(&control, &registry).await
+            {
+                tracing::error!(error = %error, "alliance event mirror retry cycle failed");
+            }
         }
     });
 }

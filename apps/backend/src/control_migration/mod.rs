@@ -29,6 +29,7 @@ mod m20261029_000001_allow_event_fanout;
 mod m20261030_000001_event_fanout_outbox;
 mod m20261102_000001_event_participant_attribution;
 mod m20261103_000001_alliance_split_distribution;
+mod m20261104_000001_event_mirror_requests;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -50,7 +51,7 @@ pub const PERM_FEATURE_FLAGS_MANAGE: &str = "feature_flags.manage";
 /// Registered control-plane migrations. The unit test and the PostgreSQL
 /// bookkeeping test both compare against this so a new migration cannot leave
 /// the applied-count assertion behind.
-const CONTROL_MIGRATION_COUNT: usize = 23;
+const CONTROL_MIGRATION_COUNT: usize = 24;
 
 /// Control-plane migrator.
 pub struct Migrator;
@@ -82,6 +83,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000001_event_fanout_outbox::Migration),
             Box::new(m20261102_000001_event_participant_attribution::Migration),
             Box::new(m20261103_000001_alliance_split_distribution::Migration),
+            Box::new(m20261104_000001_event_mirror_requests::Migration),
         ]
     }
 }
@@ -180,6 +182,7 @@ mod tests {
             "event_participant_attributions",
             "alliance_split_distribution_batches",
             "alliance_split_distribution_items",
+            "event_mirror_requests",
             "alliance_role_grants",
             "alliance_role_revocations",
             "seaql_migrations",
@@ -235,6 +238,7 @@ mod tests {
             "event_participant_attributions",
             "alliance_split_distribution_batches",
             "alliance_split_distribution_items",
+            "event_mirror_requests",
             "alliance_role_grants",
             "alliance_role_revocations",
         ] {
