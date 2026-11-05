@@ -1094,11 +1094,6 @@ export interface ParticipationGuildOption {
   name: string;
 }
 
-/** Response of `GET /api/events/{id}/participation-guilds`. */
-export interface ParticipationGuildListResponse {
-  data: ParticipationGuildOption[];
-}
-
 /* ----------------------------- Battles ------------------------------ */
 
 export interface BattleGuildSummary {
