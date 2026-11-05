@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 
 /// The role of a build within a composition.
 ///
-/// Stored in the database as its lowercase/snake_case string form (see [`FromStr`]/
+/// Stored in the database as its `lowercase/snake_case` string form (see [`FromStr`]/
 /// [`fmt::Display`]), since the `builds.role` column is a plain string rather than a native
 /// DB enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -112,7 +112,7 @@ impl FromStr for BuildLoadout {
 
 /// The equipment slot of a build item.
 ///
-/// Stored in the database as its lowercase/snake_case string form (see [`FromStr`]/
+/// Stored in the database as its `lowercase/snake_case` string form (see [`FromStr`]/
 /// [`fmt::Display`]), since the `build_items.slot` column is a plain string rather than a native
 /// DB enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

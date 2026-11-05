@@ -2,7 +2,7 @@
 //!
 //! The historical `/api/openalbion/*` endpoints are kept as a compatibility surface, but all
 //! data is read from the curated catalog bundled with the application. This module never contacts
-//! the third-party OpenAlbion API.
+//! the third-party `OpenAlbion` API.
 
 use super::catalog::{
     OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemAbilities, OpenAlbionItemType,
@@ -526,7 +526,7 @@ mod ability_catalog_tests {
         let abilities = ability_catalog();
         let mut missing: Vec<String> = catalog_items()
             .iter()
-            .filter(|item| matches!(item.item_type.as_deref(), Some("weapon") | Some("armor")))
+            .filter(|item| matches!(item.item_type.as_deref(), Some("weapon" | "armor")))
             .filter_map(|item| item.identifier.as_deref())
             .map(base_identifier)
             .filter(|base| !abilities.contains_key(base))

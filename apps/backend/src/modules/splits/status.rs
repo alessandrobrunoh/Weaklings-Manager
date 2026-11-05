@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 /// The lifecycle status of a loot split.
 ///
-/// Stored in the database as its lowercase/snake_case string form (see [`FromStr`]/
+/// Stored in the database as its `lowercase/snake_case` string form (see [`FromStr`]/
 /// [`fmt::Display`]), since the `splits.status` column is a plain string rather than a native
 /// DB enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

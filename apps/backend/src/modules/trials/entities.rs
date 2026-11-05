@@ -1,4 +1,4 @@
-//! SeaORM entity for the `trials` table.
+//! `SeaORM` entity for the `trials` table.
 
 use sea_orm::entity::prelude::*;
 use serde::Serialize;

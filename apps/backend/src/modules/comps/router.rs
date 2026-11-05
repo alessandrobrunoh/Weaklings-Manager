@@ -568,7 +568,7 @@ async fn update_build(
 /// Deletes a build.
 ///
 /// Requires `comps.builds.manage` permission.
-/// Fails with 409 Conflict if any comp_builds reference this build.
+/// Fails with 409 Conflict if any `comp_builds` reference this build.
 #[utoipa::path(
     delete,
     path = "/api/comps/builds/{id}",
@@ -632,8 +632,8 @@ async fn upsert_build_item(
     Json(req): Json<UpsertBuildItemRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
     user.require(&perms, Permission::CompsBuildsEdit).await?;
-    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
-        .map_err(|e| AppError::Validation(e))?;
+    let slot =
+        crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
     let build = service
@@ -671,8 +671,8 @@ async fn remove_build_item(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::CompsBuildsEdit).await?;
-    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
-        .map_err(|e| AppError::Validation(e))?;
+    let slot =
+        crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
     service.remove_build_item(&db, id, loadout, slot).await?;
@@ -715,8 +715,8 @@ async fn set_build_item_spells(
     Json(req): Json<BuildItemSpells>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
     user.require(&perms, Permission::CompsBuildsEdit).await?;
-    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
-        .map_err(|e| AppError::Validation(e))?;
+    let slot =
+        crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
     let build = service
@@ -982,7 +982,7 @@ async fn update_comp(
     Ok(Json(ApiResponse::new(comp)))
 }
 
-/// Deletes a comp (cascades to comp_builds via FK).
+/// Deletes a comp (cascades to `comp_builds` via FK).
 ///
 /// Requires `comps.comps.manage` permission.
 #[utoipa::path(
@@ -1015,7 +1015,7 @@ async fn delete_comp(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Adds a build to a comp (upsert on (comp_id, build_id)).
+/// Adds a build to a comp (upsert on (`comp_id`, `build_id`)).
 ///
 /// Requires `comps.comps.manage` permission.
 /// If the build already exists in the comp, its quantity is updated to the new value.

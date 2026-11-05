@@ -1,4 +1,4 @@
-//! SeaORM entity for Discord applications.
+//! `SeaORM` entity for Discord applications.
 
 use sea_orm::entity::prelude::*;
 use serde::Serialize;

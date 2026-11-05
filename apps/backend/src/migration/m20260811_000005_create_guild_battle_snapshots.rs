@@ -1,6 +1,6 @@
 //! Creates persistent guild battle snapshots.
 //!
-//! AlbionBB is the source of truth, but analytics must be queryable from our DB without repeatedly
+//! `AlbionBB` is the source of truth, but analytics must be queryable from our DB without repeatedly
 //! scraping upstream. This table stores the hydrated battle payload plus derived market loss
 //! estimates as JSON strings so future player/build/comp dashboards can aggregate locally.
 

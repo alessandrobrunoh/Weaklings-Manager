@@ -1,8 +1,8 @@
 //! `AlbionBB` public API client.
 //!
-//! Thin typed HTTP client for the undocumented public AlbionBB REST API
+//! Thin typed HTTP client for the undocumented public `AlbionBB` REST API
 //! (base URL `https://api.albionbb.com`, server segment `/{server}` with `server`
-//! in `eu`/`na`/`asia`). Upstream JSON mixes PascalCase and camelCase keys, so
+//! in `eu`/`na`/`asia`). Upstream JSON mixes `PascalCase` and camelCase keys, so
 //! response structs use `#[serde(alias = ...)]` and `#[serde(default)]` liberally
 //! to absorb shape drift. Unknown fields are silently ignored.
 
@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 use crate::errors::AppError;
 
-/// Default base URL of the public AlbionBB API.
+/// Default base URL of the public `AlbionBB` API.
 const DEFAULT_BASE_URL: &str = "https://api.albionbb.com";
 
 /// Default request timeout if the caller does not specify one.
@@ -21,25 +21,23 @@ const DEFAULT_TIMEOUT_SECS: u64 = 60;
 /// Default server path segment when the caller does not specify one.
 const DEFAULT_SERVER: &str = "eu";
 
-/// Normalizes a server string into a valid AlbionBB path segment.
+/// Normalizes a server string into a valid `AlbionBB` path segment.
 /// Accepts `eu`/`europe`, `na`/`americas`/`us`, `asia`/`sgp`; falls back to `eu`.
 #[must_use]
 pub fn normalize_server(server: Option<&str>) -> String {
     match server.map(str::to_ascii_lowercase).as_deref() {
-        Some("eu") | Some("europe") => "eu".to_string(),
-        Some("na") | Some("americas") | Some("america") | Some("us") => "na".to_string(),
-        Some("asia") | Some("sgp") => "asia".to_string(),
+        Some("eu" | "europe") => "eu".to_string(),
+        Some("na" | "americas" | "america" | "us") => "na".to_string(),
+        Some("asia" | "sgp") => "asia".to_string(),
         _ => DEFAULT_SERVER.to_string(),
     }
 }
 
 /// Pagination metadata returned alongside a list of battles.
 ///
-/// AlbionBB's `/battles` endpoint currently returns a raw array, not a wrapped
+/// `AlbionBB`'s `/battles` endpoint currently returns a raw array, not a wrapped
 /// envelope with totals. We still keep this struct so the service layer can use
 /// a stable return type; the fields are simply `None` for now.
-
-/// Pagination metadata returned alongside a list of battles.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AlbionBbPageMeta {
     /// Total number of results across all pages, if known.
@@ -63,10 +61,10 @@ where
     }))
 }
 
-/// A guild entry nested inside an AlbionBB battle.
+/// A guild entry nested inside an `AlbionBB` battle.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbGuild {
-    /// AlbionBB opaque guild id.
+    /// `AlbionBB` opaque guild id.
     #[serde(
         alias = "AlbionId",
         alias = "albionId",
@@ -133,16 +131,16 @@ pub struct AlbionBbGuild {
     pub average_item_power: f64,
 }
 
-/// A player entry nested inside an AlbionBB battle.
+/// A player entry nested inside an `AlbionBB` battle.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbPlayer {
-    /// AlbionBB opaque player id. Not currently exposed by AlbionBB's battle-detail player list.
+    /// `AlbionBB` opaque player id. Not currently exposed by `AlbionBB`'s battle-detail player list.
     #[serde(alias = "Id", alias = "id", default)]
     pub id: String,
     /// Player display name.
     #[serde(alias = "Name", alias = "name", default)]
     pub name: String,
-    /// Guild id the player belonged to during the battle. Not currently exposed by AlbionBB here.
+    /// Guild id the player belonged to during the battle. Not currently exposed by `AlbionBB` here.
     #[serde(alias = "GuildId", alias = "guildId", default)]
     pub guild_id: String,
     /// Guild name the player belonged to during the battle.
@@ -198,12 +196,12 @@ pub struct AlbionBbPlayer {
     pub item_power: f64,
 }
 
-/// A battle entry as returned by AlbionBB's battle-listing endpoints.
+/// A battle entry as returned by `AlbionBB`'s battle-listing endpoints.
 ///
 /// Only the fields used downstream are modelled; unknown fields are ignored.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbBattleSummary {
-    /// AlbionBB opaque battle id (numeric upstream).
+    /// `AlbionBB` opaque battle id (numeric upstream).
     #[serde(
         alias = "AlbionId",
         alias = "albionId",
@@ -265,7 +263,7 @@ pub struct AlbionBbBattleDetail {
 /// A kill participant (killer or victim) inside a kill event.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbKillParticipant {
-    /// AlbionBB opaque player id.
+    /// `AlbionBB` opaque player id.
     #[serde(alias = "Id", alias = "id", default)]
     pub id: String,
     /// Player display name.
@@ -330,10 +328,10 @@ pub struct AlbionBbKillParticipant {
 /// A kill event inside a battle, as returned by `/battles/kills?ids=`.
 ///
 /// `raw` captures the entire upstream JSON object verbatim, so the frontend can
-/// render any AlbionBB field we did not model explicitly.
+/// render any `AlbionBB` field we did not model explicitly.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbKillEvent {
-    /// AlbionBB kill event id.
+    /// `AlbionBB` kill event id.
     #[serde(
         alias = "EventId",
         alias = "eventId",
@@ -394,7 +392,7 @@ pub struct AlbionBbKillEvent {
 /// Generic guild info as returned by `/guilds/{id}`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbGuildInfo {
-    /// AlbionBB opaque guild id.
+    /// `AlbionBB` opaque guild id.
     #[serde(
         alias = "AlbionId",
         alias = "albionId",
@@ -426,7 +424,7 @@ pub struct AlbionBbBattlesFilters {
     pub page: Option<u64>,
 }
 
-/// Thin typed HTTP client for the public AlbionBB API.
+/// Thin typed HTTP client for the public `AlbionBB` API.
 #[derive(Clone)]
 pub struct AlbionBbApiClient {
     http: reqwest::Client,
@@ -493,7 +491,7 @@ impl AlbionBbApiClient {
         })
     }
 
-    /// Fetches battles matching the given filters. AlbionBB currently returns a
+    /// Fetches battles matching the given filters. `AlbionBB` currently returns a
     /// raw array for this endpoint, so page metadata is unavailable.
     pub async fn get_battles(
         &self,

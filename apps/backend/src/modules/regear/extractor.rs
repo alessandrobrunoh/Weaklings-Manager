@@ -22,20 +22,18 @@ use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as Snap
 use crate::modules::events::entities::{event, event_battle, event_participation};
 use crate::modules::users::entities as user_entities;
 
-use super::entities::{
-    RegearDeathActiveModel, RegearDeathColumn, RegearDeathEntity, RegearSettingEntity,
-};
+use super::entities::{RegearDeathActiveModel, RegearDeathEntity, RegearSettingEntity};
 use super::models::ExtractionReport;
 use super::pricing;
 
 /// The configured-guild context the extractor needs to scope victim matching.
 ///
-/// AlbionBB exposes every guild in the kill feed; we only reimburse our own members.
+/// `AlbionBB` exposes every guild in the kill feed; we only reimburse our own members.
 #[derive(Clone)]
 pub struct ExtractionGuildContext {
-    /// AlbionBB guild id of the configured guild.
+    /// `AlbionBB` guild id of the configured guild.
     pub guild_id: String,
-    /// AlbionBB server region (e.g. `"europe"`), or `None` to use the service default.
+    /// `AlbionBB` server region (e.g. `"europe"`), or `None` to use the service default.
     pub server: Option<String>,
 }
 
@@ -269,14 +267,14 @@ fn parse_kills(kills_json: &Value) -> Vec<ParsedKill> {
     array.into_iter().map(parse_single_kill).collect()
 }
 
-/// Reads one kill event's relevant fields, tolerant of camelCase / PascalCase variants.
+/// Reads one kill event's relevant fields, tolerant of camelCase / `PascalCase` variants.
 fn parse_single_kill(raw: Value) -> ParsedKill {
     let event_id = raw
         .get("EventId")
         .or_else(|| raw.get("eventId"))
         .or_else(|| raw.get("id"))
         .or_else(|| raw.get("Id"))
-        .map(|v| value_to_id_string(v))
+        .map(value_to_id_string)
         .unwrap_or_default();
     let time = raw
         .get("TimeStamp")
@@ -335,13 +333,12 @@ fn read_victim_equipment(raw: &Value) -> Value {
         .unwrap_or(Value::Object(serde_json::Map::new()))
 }
 
-/// Parses the kill timestamp leniently. AlbionBB emits RFC3339 most of the time but has been seen
+/// Parses the kill timestamp leniently. `AlbionBB` emits RFC3339 most of the time but has been seen
 /// using bare `YYYY-MM-DD HH:MM:SS` strings on older endpoints.
 fn parse_kill_time(time: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(time)
         .or_else(|_| DateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S"))
         .ok()
-        .map(DateTime::into)
 }
 
 /// Returns `true` when the kill's victim belongs to the configured guild.

@@ -98,7 +98,7 @@ mod tests {
     use crate::migration::MigratorTrait;
     use crate::modules::admin::entities::ActiveModel as GuildSettingsActiveModel;
     use crate::modules::applications::ApplicationService;
-    use sea_orm::{ColumnTrait, Database, QueryFilter};
+    use sea_orm::{ColumnTrait, Database};
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:").await.expect("connect");

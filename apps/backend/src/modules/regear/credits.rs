@@ -75,19 +75,18 @@ where
         .one(db)
         .await?;
 
-    let balance = match existing {
-        Some(model) => model,
-        None => {
-            let active = RegearRequestBalanceActiveModel {
-                user_id: Set(user_id),
-                weekly_balance: Set(settings.weekly_request_topup_amount.max(0)),
-                weekly_last_topup_at: Set(now.into()),
-                bonus_balance: Set(0),
-                created_at: Set(now.into()),
-                updated_at: Set(now.into()),
-            };
-            return Ok(active.insert(db).await?);
-        }
+    let balance = if let Some(model) = existing {
+        model
+    } else {
+        let active = RegearRequestBalanceActiveModel {
+            user_id: Set(user_id),
+            weekly_balance: Set(settings.weekly_request_topup_amount.max(0)),
+            weekly_last_topup_at: Set(now.into()),
+            bonus_balance: Set(0),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+        };
+        return Ok(active.insert(db).await?);
     };
 
     let advanced = apply_weekly_topup(balance.clone(), settings, now);

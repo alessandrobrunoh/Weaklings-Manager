@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 
 /// Singleton admin knobs for the XP curve, rates, and warn threshold.
 pub mod progression_setting {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, Decimal,
+        DeriveEntityModel, DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden,
+        ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "progression_settings")]
@@ -55,7 +59,11 @@ pub mod progression_setting {
 
 /// One Albion-aligned, admin-modellable season.
 pub mod progression_season {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "progression_seasons")]
@@ -85,7 +93,11 @@ pub mod progression_season {
 
 /// Per-user XP/level inside one season.
 pub mod progression_account {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, Decimal,
+        DeriveEntityModel, DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden,
+        ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "progression_accounts")]
@@ -123,7 +135,11 @@ pub mod progression_account {
 
 /// Append-only XP award log.
 pub mod progression_xp_ledger {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, Decimal,
+        DeriveEntityModel, DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden,
+        ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "progression_xp_ledger")]

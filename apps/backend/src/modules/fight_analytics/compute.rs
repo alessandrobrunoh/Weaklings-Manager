@@ -393,7 +393,7 @@ mod tests {
         // A per-unique-player mean would instead average p1's own two
         // appearances first ((900+100)/2 = 500), then average with p2's 200,
         // landing on 350 — deliberately different from the appearance mean.
-        let per_unique_player_mean = (500.0 + 200.0) / 2.0;
+        let per_unique_player_mean = f64::midpoint(500.0, 200.0);
         assert!((analytics.avg_friendly_item_power - per_unique_player_mean).abs() > 1.0);
     }
 

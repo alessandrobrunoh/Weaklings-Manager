@@ -131,7 +131,7 @@ pub struct EventReadScope {
 }
 
 impl EventReadScope {
-    /// AlbionBB server derived from the tenant's region.
+    /// `AlbionBB` server derived from the tenant's region.
     #[must_use]
     pub fn server(&self) -> String {
         self.server.clone()

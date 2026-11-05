@@ -29,9 +29,7 @@ use super::fight_grouping::{
     FIGHT_GROUPING_VERSION, FightEvidence, FightGroupingDecision, score_fight_grouping,
 };
 use crate::errors::AppError;
-use crate::modules::albionbb::client::{
-    AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
-};
+use crate::modules::albionbb::client::{AlbionBbBattleSummary, AlbionBbBattlesFilters};
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::audit::service::AuditService;
 use crate::modules::battles::entities::{
@@ -55,7 +53,7 @@ use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort
 const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 
 /// Grace period after a session is stopped during which the linker keeps
-/// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
+/// re-fetching `AlbionBB` to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
 /// Keep flash VOD posts behind the same undo window as Discord announcements.
@@ -599,7 +597,7 @@ async fn opponent_rollups_for_battles(
 
 /// Battle-side classification rules for event analytics.
 ///
-/// AlbionBB exposes every guild in the fight as a peer, but event stats need to separate our side
+/// `AlbionBB` exposes every guild in the fight as a peer, but event stats need to separate our side
 /// from real opponents. The configured guild plus allied guild IDs/names are treated as friendly,
 /// so alliance members do not pollute opponent charts or matchup summaries.
 ///
@@ -661,14 +659,14 @@ impl BattleLinkingContext {
         }
     }
 
-    /// Sets the AlbionBB server used by automatic battle linking.
+    /// Sets the `AlbionBB` server used by automatic battle linking.
     #[must_use]
     pub fn with_server(mut self, server: Option<String>) -> Self {
         self.server = server;
         self
     }
 
-    /// AlbionBB server path segment, if configured.
+    /// `AlbionBB` server path segment, if configured.
     #[must_use]
     pub fn server(&self) -> Option<&str> {
         self.server.as_deref()
@@ -703,7 +701,7 @@ impl BattleLinkingContext {
         self.guild_id.as_deref() == Some(guild_id)
     }
 
-    /// Configured Albion guild ID used to query AlbionBB and identify our own
+    /// Configured Albion guild ID used to query `AlbionBB` and identify our own
     /// guild row. `None` for alliance-side contexts, which have no guild of
     /// their own.
     #[must_use]
@@ -724,7 +722,7 @@ impl BattleLinkingContext {
     }
 }
 
-/// Compact battle snapshot derived from AlbionBB for event analytics.
+/// Compact battle snapshot derived from `AlbionBB` for event analytics.
 ///
 /// Used to carry only the two `event_battles` columns still populated this way
 /// (`guild_players_count`/`battle_total_players`) — kills/deaths/fame, win/loss, and opponent
@@ -1216,7 +1214,7 @@ async fn build_event_fight_views(
 
 /// Replaces stale event-link summary metrics with hydrated canonical snapshot data.
 ///
-/// The event linker receives a compact AlbionBB list payload; the persisted battle
+/// The event linker receives a compact `AlbionBB` list payload; the persisted battle
 /// snapshot is hydrated from the detail endpoint and is therefore authoritative when
 /// present. The original row remains the fallback for historical data not yet hydrated.
 async fn apply_canonical_snapshot_metrics(
@@ -1338,11 +1336,11 @@ async fn build_event_loss_estimate(
     total.players = players.into_values().collect();
     total
         .players
-        .sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+        .sort_by_key(|player| std::cmp::Reverse(player.estimated_loss));
     total.guilds = guilds.into_values().collect();
     total
         .guilds
-        .sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+        .sort_by_key(|guild| std::cmp::Reverse(guild.estimated_loss));
     Ok(total)
 }
 
@@ -2457,7 +2455,7 @@ impl EventService {
         })
     }
 
-    /// Helper to convert event::Model to EventView.
+    /// Helper to convert `event::Model` to `EventView`.
     pub async fn to_event_view(
         &self,
         db: &DatabaseConnection,
@@ -2600,7 +2598,7 @@ impl EventService {
     ) -> Result<Vec<EventView>, AppError> {
         let now: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
         let scheduled_start_is_future = sea_orm::Condition::any()
-            .add(event::Column::StartTimeUtc.gte(now.clone()))
+            .add(event::Column::StartTimeUtc.gte(now))
             .add(
                 sea_orm::Condition::all()
                     .add(event::Column::StartTimeUtc.is_null())
@@ -2642,28 +2640,28 @@ impl EventService {
             query.filter(event::Column::ArchivedAt.is_null())
         };
 
-        if let Some(search) = filters.search {
-            if !search.trim().is_empty() {
-                let pattern = format!("%{}%", search.trim());
-                query = query.filter(
-                    sea_orm::Condition::any().add(
-                        Expr::expr(Func::lower(Expr::col(event::Column::Title)))
-                            .like(pattern.to_lowercase()),
-                    ),
-                );
-            }
+        if let Some(search) = filters.search
+            && !search.trim().is_empty()
+        {
+            let pattern = format!("%{}%", search.trim());
+            query = query.filter(
+                sea_orm::Condition::any().add(
+                    Expr::expr(Func::lower(Expr::col(event::Column::Title)))
+                        .like(pattern.to_lowercase()),
+                ),
+            );
         }
 
-        if let Some(date_from) = filters.date_from {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from) {
-                query = query.filter(event::Column::StartTimeUtc.gte(dt));
-            }
+        if let Some(date_from) = filters.date_from
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from)
+        {
+            query = query.filter(event::Column::StartTimeUtc.gte(dt));
         }
 
-        if let Some(date_to) = filters.date_to {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to) {
-                query = query.filter(event::Column::StartTimeUtc.lte(dt));
-            }
+        if let Some(date_to) = filters.date_to
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to)
+        {
+            query = query.filter(event::Column::StartTimeUtc.lte(dt));
         }
 
         if let Some(status) = filters
@@ -2968,7 +2966,7 @@ impl EventService {
 
     /// Aggregates all linked battles for events using a composition.
     ///
-    /// This powers the comp-level analytics page without depending on AlbionBB
+    /// This powers the comp-level analytics page without depending on `AlbionBB`
     /// at read time; only snapshots already linked to completed/live events are
     /// used.
     pub async fn get_comp_performance(
@@ -3617,8 +3615,7 @@ impl EventService {
                 > 0;
             if !comp_exists {
                 return Err(AppError::NotFound(format!(
-                    "Composition {} not found",
-                    comp_id
+                    "Composition {comp_id} not found"
                 )));
             }
             active.comp_id = Set(Some(comp_id));
@@ -4235,9 +4232,9 @@ impl EventService {
 
     // --- Battle linker -----------------------------------------------------
 
-    /// Links every AlbionBB battle for the guild that falls in the event's time window.
+    /// Links every `AlbionBB` battle for the guild that falls in the event's time window.
     ///
-    /// The worker calls this repeatedly because AlbionBB can lag up to ~30m. The
+    /// The worker calls this repeatedly because `AlbionBB` can lag up to ~30m. The
     /// listing is paginated, and no player-count heuristic is applied: the number
     /// of sign-ups is not a reliable indication of the actual fight size.
     pub async fn link_battles_for_event(
@@ -4268,8 +4265,7 @@ impl EventService {
         let started_at_utc = started_at.with_timezone(&Utc);
         let window_end = model
             .stopped_at
-            .map(|t| t.with_timezone(&Utc))
-            .unwrap_or_else(Utc::now);
+            .map_or_else(Utc::now, |t| t.with_timezone(&Utc));
 
         // AlbionBB returns a raw array without pagination metadata. Walk pages until
         // an empty page (or a page with no new IDs) is returned, with a safety cap
@@ -4366,7 +4362,7 @@ impl EventService {
 
     /// Replaces the manually linked battle set for an event.
     ///
-    /// Officers can attach zero or more AlbionBB battles after reviewing what actually happened
+    /// Officers can attach zero or more `AlbionBB` battles after reviewing what actually happened
     /// during the event. The method fetches each requested battle before changing the database so a
     /// temporary upstream failure does not wipe existing analytics.
     ///
@@ -4394,7 +4390,7 @@ impl EventService {
     ///
     /// # Errors
     /// Returns validation errors for malformed IDs or battles that do not include the configured
-    /// guild, not-found when the event/battle is missing, and upstream errors from AlbionBB.
+    /// guild, not-found when the event/battle is missing, and upstream errors from `AlbionBB`.
     pub async fn replace_event_battles(
         &self,
         db: &DatabaseConnection,
@@ -4494,7 +4490,7 @@ impl EventService {
             let mut row = event_battle::ActiveModel {
                 event_id: Set(event_id),
                 albionbb_battle_id: Set(battle_id),
-                battle_started_at: Set(started.into()),
+                battle_started_at: Set(started),
                 fetched_at: Set(Utc::now().into()),
                 ..Default::default()
             };
@@ -4514,7 +4510,7 @@ impl EventService {
             .await
     }
 
-    /// Returns `true` when the linker should stop polling AlbionBB for this
+    /// Returns `true` when the linker should stop polling `AlbionBB` for this
     /// event. Policy: stopped sessions stop after `LINK_GRACE_PERIOD` past
     /// `stopped_at`; live sessions never auto-complete the linker (the worker
     /// keeps polling as long as the session is live).
@@ -4988,10 +4984,45 @@ impl Default for EventService {
     }
 }
 
+/// Creates an empty loot split already attached to an event.
+///
+/// Values start at zero and the roster starts empty: the split exists so the
+/// link is in place, and the officer fills in the haul once the fight is over.
+/// Participants are seeded from the event's sign-ups the first time the split
+/// is updated, which is later than creation time and therefore more accurate.
+async fn create_linked_split(
+    db: &impl sea_orm::ConnectionTrait,
+    creator_id: i64,
+    event_id: i64,
+    event_title: &str,
+    island_tab_id: i64,
+) -> Result<(), AppError> {
+    use crate::modules::splits::entities::split;
+    use crate::modules::splits::status::SplitStatus;
+    use sea_orm::prelude::Decimal;
+
+    split::ActiveModel {
+        created_by: Set(creator_id),
+        status: Set(SplitStatus::AwaitingEvent.to_string()),
+        estimated_market_value: Set(Decimal::ZERO),
+        repair_value: Set(Decimal::ZERO),
+        bags_value: Set(Decimal::ZERO),
+        note: Set(Some(format!("Auto-created for event: {event_title}"))),
+        event_id: Set(Some(event_id)),
+        island_tab_id: Set(Some(island_tab_id)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
+    use crate::modules::albionbb::client::AlbionBbGuild;
     use crate::modules::comps::entities::{
         build::ActiveModel as BuildActiveModel,
         build_category::ActiveModel as BuildCategoryActiveModel,
@@ -9283,38 +9314,4 @@ mod tests {
         assert_eq!(stats.total_kill_fame, 3_000_000);
         assert!((stats.average_guild_players - 12.0).abs() < f64::EPSILON);
     }
-}
-
-/// Creates an empty loot split already attached to an event.
-///
-/// Values start at zero and the roster starts empty: the split exists so the
-/// link is in place, and the officer fills in the haul once the fight is over.
-/// Participants are seeded from the event's sign-ups the first time the split
-/// is updated, which is later than creation time and therefore more accurate.
-async fn create_linked_split(
-    db: &impl sea_orm::ConnectionTrait,
-    creator_id: i64,
-    event_id: i64,
-    event_title: &str,
-    island_tab_id: i64,
-) -> Result<(), AppError> {
-    use crate::modules::splits::entities::split;
-    use crate::modules::splits::status::SplitStatus;
-    use sea_orm::prelude::Decimal;
-
-    split::ActiveModel {
-        created_by: Set(creator_id),
-        status: Set(SplitStatus::AwaitingEvent.to_string()),
-        estimated_market_value: Set(Decimal::ZERO),
-        repair_value: Set(Decimal::ZERO),
-        bags_value: Set(Decimal::ZERO),
-        note: Set(Some(format!("Auto-created for event: {event_title}"))),
-        event_id: Set(Some(event_id)),
-        island_tab_id: Set(Some(island_tab_id)),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(AppError::Database)?;
-    Ok(())
 }

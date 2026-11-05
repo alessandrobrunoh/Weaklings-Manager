@@ -254,6 +254,7 @@ pub async fn mark_inactive(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finish_target(
     control: &DatabaseConnection,
     job_id: Uuid,

@@ -582,7 +582,7 @@ mod tests {
             .header("Cookie", cookie_str)
             .body(())
             .unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(key);
 
         let context = UserContext::from_request_parts(&mut parts, &())
@@ -607,7 +607,7 @@ mod tests {
             .header("Cookie", cookie_str)
             .body(())
             .unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(key);
         parts.extensions.insert(admins);
 
@@ -661,7 +661,7 @@ mod tests {
             .header("Cookie", cookie_str)
             .body(())
             .unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(key);
         parts.extensions.insert(db);
 
@@ -690,7 +690,7 @@ mod tests {
             if let Some(role_ids) = role_ids {
                 request = request.header("X-Discord-Role-Ids", role_ids);
             }
-            let (mut parts, _) = request.body(()).unwrap().into_parts();
+            let (mut parts, ()) = request.body(()).unwrap().into_parts();
             parts.extensions.insert(Config {
                 backend_port: 3000,
                 database_url: "sqlite::memory:".into(),
@@ -806,7 +806,7 @@ mod tests {
     #[tokio::test]
     async fn test_user_context_extraction_missing_cookie() {
         let req = Request::builder().body(()).unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(Key::generate());
         let result = UserContext::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());
@@ -824,7 +824,7 @@ mod tests {
             .header("Cookie", cookie_str)
             .body(())
             .unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(Key::generate());
 
         let result = UserContext::from_request_parts(&mut parts, &()).await;

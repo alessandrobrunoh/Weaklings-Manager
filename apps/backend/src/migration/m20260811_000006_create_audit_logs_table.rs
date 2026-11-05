@@ -1,4 +1,4 @@
-//! Creates the audit_logs table to track any action performed by anyone.
+//! Creates the `audit_logs` table to track any action performed by anyone.
 
 use sea_orm_migration::prelude::*;
 

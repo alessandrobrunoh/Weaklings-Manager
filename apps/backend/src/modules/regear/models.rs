@@ -58,9 +58,9 @@ pub struct DeathView {
     pub event_title: String,
     /// The `event_battles` row id. `None` for a self-reported request.
     pub event_battle_id: Option<i64>,
-    /// AlbionBB battle id (for the `/battles/{id}` link). `None` for a self-reported request.
+    /// `AlbionBB` battle id (for the `/battles/{id}` link). `None` for a self-reported request.
     pub albionbb_battle_id: Option<String>,
-    /// AlbionBB kill-event id. `None` for a self-reported request.
+    /// `AlbionBB` kill-event id. `None` for a self-reported request.
     pub albion_kill_event_id: Option<String>,
     /// Where this row came from: extracted from a kill feed, or opened by the member.
     pub source: RegearSource,

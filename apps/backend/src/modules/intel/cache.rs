@@ -48,11 +48,7 @@ impl ReportCache {
 
     fn key(tenant_id: &str, range: DateRange, granularity: &str) -> Key {
         const HOUR: i64 = 3600;
-        let g = if granularity.eq_ignore_ascii_case("day") {
-            1
-        } else {
-            0
-        };
+        let g = u8::from(granularity.eq_ignore_ascii_case("day"));
         (
             tenant_id.to_owned(),
             range.from.timestamp() / HOUR,

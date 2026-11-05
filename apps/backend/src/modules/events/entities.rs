@@ -68,7 +68,7 @@ pub mod event {
         pub alliance_discord_message_id: Option<String>,
         /// Whether creating this event should request a VOD forum post.
         pub vod_forum_post_enabled: bool,
-        /// Durable VOD post delivery state: not_requested, pending, attempted, or created.
+        /// Durable VOD post delivery state: `not_requested`, pending, attempted, or created.
         pub vod_forum_post_status: String,
         /// Discord forum thread created for this event, when recorded.
         pub vod_forum_thread_id: Option<String>,

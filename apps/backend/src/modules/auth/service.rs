@@ -219,10 +219,10 @@ pub fn matching_tenants(
         .filter(|tenant| held.contains(tenant.id.as_str()))
         .map(|tenant| {
             let mut choice = tenant.clone();
-            if let Some(discord_name) = discord_names.get(tenant.id.as_str()) {
-                if !discord_name.is_empty() {
-                    choice.name = (*discord_name).to_owned();
-                }
+            if let Some(discord_name) = discord_names.get(tenant.id.as_str())
+                && !discord_name.is_empty()
+            {
+                choice.name = (*discord_name).to_owned();
             }
             if let Some(guild) = user_guilds.iter().find(|g| g.id == tenant.id) {
                 choice.icon_hash = guild.icon.clone();
@@ -597,7 +597,7 @@ pub fn roles_after_member_lookup(
 fn cached_member_lookup(key: &(String, String)) -> Option<GuildMemberLookup> {
     let cache = member_lookup_cache()
         .lock()
-        .unwrap_or_else(|err| err.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let entry = cache.get(key)?;
     if entry.at.elapsed() > std::time::Duration::from_secs(60) {
         return None;
@@ -611,7 +611,7 @@ fn remember_member_lookup(key: &(String, String), lookup: &GuildMemberLookup) {
     }
     let mut cache = member_lookup_cache()
         .lock()
-        .unwrap_or_else(|err| err.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     cache.insert(
         key.clone(),
         CachedMemberLookup {

@@ -521,6 +521,7 @@ async fn remove_participant(
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn complete_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -754,6 +755,7 @@ async fn match_participants(
         (status = 400, description = "No split ids supplied", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_splits_batch(
     user: UserContext,
     Extension(perms): Extension<Permissions>,

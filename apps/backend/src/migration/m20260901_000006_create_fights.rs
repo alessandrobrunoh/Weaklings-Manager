@@ -1,6 +1,6 @@
 //! Creates the canonical Fight tables.
 //!
-//! A Fight represents one real engagement and may contain one or more AlbionBB
+//! A Fight represents one real engagement and may contain one or more `AlbionBB`
 //! battle records. Existing event links are backfilled during this migration;
 //! malformed IDs and cross-event conflicts are retained in an issue table for
 //! officer reconciliation rather than silently discarded.
@@ -247,19 +247,18 @@ async fn backfill_event_fights(manager: &SchemaManager<'_>) -> Result<(), DbErr>
         let event_id: i64 = row.try_get_by_index(1)?;
         let battle_id_text: String = row.try_get_by_index(2)?;
         let started_at: DateTimeWithTimeZone = row.try_get_by_index(3)?;
-        let battle_id = match battle_id_text.parse::<i64>() {
-            Ok(battle_id) => battle_id,
-            Err(_) => {
-                record_backfill_issue(
-                    db,
-                    backend,
-                    event_battle_id,
-                    &battle_id_text,
-                    "invalid AlbionBB battle ID",
-                )
-                .await?;
-                continue;
-            }
+        let battle_id = if let Ok(battle_id) = battle_id_text.parse::<i64>() {
+            battle_id
+        } else {
+            record_backfill_issue(
+                db,
+                backend,
+                event_battle_id,
+                &battle_id_text,
+                "invalid AlbionBB battle ID",
+            )
+            .await?;
+            continue;
         };
 
         if let Some(previous_event_id) = assigned_battles.get(&battle_id) {

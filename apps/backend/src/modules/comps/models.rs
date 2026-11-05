@@ -51,16 +51,16 @@ pub struct BuildItemView {
     pub spells: BuildItemSpells,
     /// The equipment slot of this item.
     pub slot: BuildSlot,
-    /// The OpenAlbion item type.
+    /// The `OpenAlbion` item type.
     pub openalbion_item_type: String,
-    /// The OpenAlbion item ID.
+    /// The `OpenAlbion` item ID.
     #[schema(example = 4532)]
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// The `OpenAlbion` item name.
     pub openalbion_item_name: String,
-    /// The OpenAlbion item icon URL.
+    /// The `OpenAlbion` item icon URL.
     pub openalbion_item_icon: Option<String>,
-    /// The OpenAlbion item tier.
+    /// The `OpenAlbion` item tier.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
     #[schema(example = 4)]
@@ -219,9 +219,9 @@ pub struct CompDetail {
 pub struct ItemPriceRow {
     /// The equipment slot this item occupies.
     pub slot: BuildSlot,
-    /// The OpenAlbion item id.
+    /// The `OpenAlbion` item id.
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// The `OpenAlbion` item name.
     pub openalbion_item_name: String,
     /// Cheapest sell price found for this item, in silver. `0` when no listing was available.
     #[schema(value_type = String, example = "980000")]
@@ -390,19 +390,19 @@ pub struct UpdateBuildRequest {
 pub struct CreateBuildItemRequest {
     /// The equipment slot where this item belongs.
     pub slot: BuildSlot,
-    /// The OpenAlbion item type.
+    /// The `OpenAlbion` item type.
     pub openalbion_item_type: String,
-    /// The OpenAlbion item ID.
+    /// The `OpenAlbion` item ID.
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// The `OpenAlbion` item name.
     pub openalbion_item_name: String,
-    /// The OpenAlbion item icon URL.
+    /// The `OpenAlbion` item icon URL.
     pub openalbion_item_icon: Option<String>,
     /// Abilities chosen for this item while it was still a picker draft, if any. Validated the
     /// same way `PUT .../items/{slot}/spells` validates them.
     #[serde(default)]
     pub spells: Option<BuildItemSpells>,
-    /// The OpenAlbion item tier.
+    /// The `OpenAlbion` item tier.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
@@ -422,15 +422,15 @@ pub struct CreateBuildItemRequest {
     "openalbion_item_tier": "8.0"
 }))]
 pub struct UpsertBuildItemRequest {
-    /// The OpenAlbion item type.
+    /// The `OpenAlbion` item type.
     pub openalbion_item_type: String,
-    /// The OpenAlbion item ID.
+    /// The `OpenAlbion` item ID.
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// The `OpenAlbion` item name.
     pub openalbion_item_name: String,
-    /// The OpenAlbion item icon URL.
+    /// The `OpenAlbion` item icon URL.
     pub openalbion_item_icon: Option<String>,
-    /// The OpenAlbion item tier.
+    /// The `OpenAlbion` item tier.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]

@@ -302,7 +302,7 @@ impl GuildSettingsView {
     }
 }
 
-/// A Discord role available for AutoRole configuration.
+/// A Discord role available for `AutoRole` configuration.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DiscordRoleView {
     /// Discord role snowflake.
@@ -360,7 +360,7 @@ pub struct DiscordChannelView {
     pub available_tags: Vec<DiscordForumTagView>,
 }
 
-/// Current AutoRole configuration.
+/// Current `AutoRole` configuration.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AutoRoleSettingsView {
     /// Configured Discord role snowflake, or `null` when disabled.
@@ -369,10 +369,10 @@ pub struct AutoRoleSettingsView {
     pub default_role_discord_id: Option<String>,
 }
 
-/// Request body for the AutoRole configuration endpoint.
+/// Request body for the `AutoRole` configuration endpoint.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateAutoRoleRequest {
-    /// Discord role snowflake; an empty string disables AutoRole.
+    /// Discord role snowflake; an empty string disables `AutoRole`.
     pub discord_auto_role_id: String,
 }
 

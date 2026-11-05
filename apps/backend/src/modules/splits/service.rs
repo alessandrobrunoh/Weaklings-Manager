@@ -193,7 +193,7 @@ async fn insert_split_credit<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Reconciles split_credit rows for a completed split so each participant's net credit matches
+/// Reconciles `split_credit` rows for a completed split so each participant's net credit matches
 /// their current target share.
 ///
 /// Open (`Pending`, `Rejected`, `Requested`) credit rows for a participant on this split are
@@ -1003,8 +1003,7 @@ impl SplitService {
             None => GuildSettingsEntity::find_by_id(1)
                 .one(db)
                 .await?
-                .map(|settings| settings.default_split_fee)
-                .unwrap_or_else(default_split_fee),
+                .map_or_else(default_split_fee, |settings| settings.default_split_fee),
         };
         validate_fee(fee)?;
         if req.estimated_market_value < Decimal::ZERO {
@@ -1534,8 +1533,7 @@ impl SplitService {
         let default_split_fee = GuildSettingsEntity::find_by_id(1)
             .one(db)
             .await?
-            .map(|settings| settings.default_split_fee)
-            .unwrap_or_else(default_split_fee);
+            .map_or_else(default_split_fee, |settings| settings.default_split_fee);
         Ok(SplitKpiSummary {
             pending_count,
             completed_count,
@@ -1646,16 +1644,16 @@ impl SplitService {
             query = query.filter(sea_orm::Condition::any().add(note_cond).add(creator_cond));
         }
 
-        if let Some(date_from) = &filters.date_from {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_from) {
-                query = query.filter(SplitColumn::CreatedAt.gte(dt));
-            }
+        if let Some(date_from) = &filters.date_from
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_from)
+        {
+            query = query.filter(SplitColumn::CreatedAt.gte(dt));
         }
 
-        if let Some(date_to) = &filters.date_to {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_to) {
-                query = query.filter(SplitColumn::CreatedAt.lte(dt));
-            }
+        if let Some(date_to) = &filters.date_to
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_to)
+        {
+            query = query.filter(SplitColumn::CreatedAt.lte(dt));
         }
 
         let query = match sort_order {
@@ -1808,9 +1806,7 @@ impl SplitService {
         };
 
         let check_name = next_name.as_deref().unwrap_or(&island.name);
-        let check_city = next_city
-            .map(|city| city.to_string())
-            .unwrap_or_else(|| island.city.clone());
+        let check_city = next_city.map_or_else(|| island.city.clone(), |city| city.to_string());
         if island_name_taken(db, &check_city, check_name, Some(island.id)).await? {
             return Err(AppError::Validation(format!(
                 "island {check_name} already exists in {check_city}"
@@ -2083,14 +2079,6 @@ impl SplitService {
         self.get_split(db, split_id).await
     }
 
-    /// Completes a pending split: computes the net value and atomically generates one Guild Bank
-    /// transaction per participant.
-    ///
-    /// # Errors
-    ///
-    /// * Returns `AppError::Validation` if the split is not pending, has no participants, or the
-    ///   net value is not positive.
-    /// * Returns `AppError::Database` if the transaction fails.
     /// Completes several splits in one action.
     ///
     /// Each split is completed independently and failures are collected rather
@@ -2136,6 +2124,14 @@ impl SplitService {
         })
     }
 
+    /// Completes a pending split: computes the net value and atomically generates one Guild Bank
+    /// transaction per participant.
+    ///
+    /// # Errors
+    ///
+    /// * Returns `AppError::Validation` if the split is not pending, has no participants, or the
+    ///   net value is not positive.
+    /// * Returns `AppError::Database` if the transaction fails.
     pub async fn complete_split(
         &self,
         db: &DatabaseConnection,

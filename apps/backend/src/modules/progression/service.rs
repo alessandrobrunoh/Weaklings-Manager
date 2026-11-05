@@ -1210,15 +1210,14 @@ fn validate_guild_ranks(ranks: &[GuildRankView]) -> Result<(), AppError> {
                 "rank names must be 1-40 characters and minimum XP must increase from zero".into(),
             ));
         }
-        if let Some(role_id) = &rank.discord_role_id {
-            if !role_id.bytes().all(|byte| byte.is_ascii_digit())
+        if let Some(role_id) = &rank.discord_role_id
+            && (!role_id.bytes().all(|byte| byte.is_ascii_digit())
                 || !(17..=20).contains(&role_id.len())
-                || !role_ids.insert(role_id)
-            {
-                return Err(AppError::Validation(
-                    "Discord role IDs must be unique 17-20 digit IDs".into(),
-                ));
-            }
+                || !role_ids.insert(role_id))
+        {
+            return Err(AppError::Validation(
+                "Discord role IDs must be unique 17-20 digit IDs".into(),
+            ));
         }
     }
     Ok(())

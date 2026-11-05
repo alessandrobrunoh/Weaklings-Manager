@@ -279,7 +279,7 @@ impl UserService {
                     node_name: Set(name.to_string()),
                     category: Set(category),
                     level: Set(item.level),
-                    updated_at: Set(now.clone()),
+                    updated_at: Set(now),
                     updated_by_user_id: Set(Some(editor_user_id)),
                     ..Default::default()
                 })
@@ -383,8 +383,8 @@ impl UserService {
             .await?;
 
         Ok(UserMetrics {
-            events_attended,
             most_played_build,
+            events_attended,
             total_estimated_loss,
             top_estimated_loss,
             ..extras
@@ -592,8 +592,8 @@ impl UserService {
             .sort
             .as_deref()
             .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .is_some();
+            .as_ref()
+            .is_some_and(|value| !value.is_empty());
         let order = if sort_requested {
             SortOrder::from_query(filters.order.as_deref())
         } else {

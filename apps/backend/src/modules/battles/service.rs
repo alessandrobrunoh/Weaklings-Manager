@@ -43,7 +43,7 @@ use super::outcome::{self, BattleOutcome, FriendlySide, GuildLine};
 use super::{evidence, evidence_writer};
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
-/// giving up. Keeps the endpoint from scanning AlbionBB's entire history.
+/// giving up. Keeps the endpoint from scanning `AlbionBB`'s entire history.
 const MY_BATTLES_MAX_UPSTREAM_PAGES: u64 = 5;
 
 /// Minimum number of players from the configured guild required for a battle to
@@ -53,7 +53,7 @@ const DEFAULT_MIN_GUILD_PLAYERS: i64 = 1;
 
 /// How long a hydrated guild-battle catalog stays fresh in the local cache.
 const LIST_CACHE_TTL: Duration = Duration::from_secs(60);
-/// AlbionBB has no sort API, so we hydrate several recent pages and page/sort locally.
+/// `AlbionBB` has no sort API, so we hydrate several recent pages and page/sort locally.
 const GUILD_CATALOG_MAX_PAGES: u64 = 20;
 const LOSS_ESTIMATE_LOCATIONS: &str =
     "Caerleon,Bridgewatch,Fort Sterling,Lymhurst,Martlock,Thetford,Brecilien";
@@ -109,8 +109,9 @@ impl BattlesService {
 
     /// Lists recent battles of the configured guild.
     ///
-    /// AlbionBB cannot sort or search, so we hydrate a short catalog of recent
+    /// `AlbionBB` cannot sort or search, so we hydrate a short catalog of recent
     /// pages, cache it, then filter/sort/paginate in memory.
+    #[allow(clippy::too_many_arguments)]
     pub async fn list_guild_battles(
         &self,
         db: &DatabaseConnection,
@@ -136,7 +137,7 @@ impl BattlesService {
 
     /// Hydrates up to [`GUILD_CATALOG_MAX_PAGES`] of recent guild battles.
     ///
-    /// Uses AlbionBB list payloads only. Per-battle detail is fetched later for
+    /// Uses `AlbionBB` list payloads only. Per-battle detail is fetched later for
     /// the visible page so search/sort can cover the catalog without N detail
     /// calls per list page.
     async fn guild_catalog(&self, min_players: i64) -> Result<Vec<BattleSummary>, AppError> {
@@ -210,7 +211,7 @@ impl BattlesService {
     }
 
     /// Fetches full detail for a battle (battle + kills combined), cached
-    /// server-side by the underlying AlbionBB service.
+    /// server-side by the underlying `AlbionBB` service.
     pub async fn get_battle_detail(&self, battle_id: i64) -> Result<BattleDetail, AppError> {
         let detail = self
             .albionbb
@@ -438,9 +439,10 @@ impl BattlesService {
     /// Pages through the configured guild's battles (capped at
     /// `MY_BATTLES_MAX_UPSTREAM_PAGES` upstream pages), fetches each battle's
     /// detail, and keeps only those whose players list contains the linked
-    /// Albion player name. AlbionBB's battle-detail player list currently does
+    /// Albion player name. `AlbionBB`'s battle-detail player list currently does
     /// not expose the player id, so name matching is the most reliable signal
     /// available here. The resulting set is paginated locally.
+    #[allow(clippy::too_many_arguments)]
     pub async fn list_my_battles(
         &self,
         db: &DatabaseConnection,
@@ -838,8 +840,8 @@ async fn persist_battle_snapshot(
     let mut row: GuildBattleSnapshotActiveModel =
         existing.map_or_else(Default::default, Into::into);
     row.battle_id = Set(battle.summary.battle_id);
-    row.start_time = Set(start_time.into());
-    row.end_time = Set(end_time.map(Into::into));
+    row.start_time = Set(start_time);
+    row.end_time = Set(end_time);
     row.total_players = Set(battle.summary.total_players);
     row.total_kills = Set(battle.summary.total_kills);
     row.total_fame = Set(battle.summary.total_fame);
@@ -1051,9 +1053,9 @@ async fn estimate_losses(
     }
 
     let mut players = player_rollups.into_values().collect::<Vec<_>>();
-    players.sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+    players.sort_by_key(|player| std::cmp::Reverse(player.estimated_loss));
     let mut guilds = guild_rollups.into_values().collect::<Vec<_>>();
-    guilds.sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+    guilds.sort_by_key(|guild| std::cmp::Reverse(guild.estimated_loss));
 
     Ok(BattleLossEstimate {
         total_estimated_loss,
@@ -1068,7 +1070,7 @@ async fn estimate_losses(
 ///
 /// Opponent deaths may be interesting for fight outcome, but silver-loss accounting must describe
 /// our members only. The scope prefers Albion guild IDs and uses the configured guild name only as a
-/// fallback when AlbionBB omits IDs in the kill feed.
+/// fallback when `AlbionBB` omits IDs in the kill feed.
 struct LossEstimateScope {
     guild_id: String,
     guild_name: Option<String>,
@@ -1208,7 +1210,7 @@ fn read_i32(source: &Value, key: &str) -> Option<i32> {
 
 /// Resolves the guild event a battle was fought under, if any.
 ///
-/// Two hops, because `event_battles` stores the AlbionBB id as a string while
+/// Two hops, because `event_battles` stores the `AlbionBB` id as a string while
 /// callers hold it as an integer — a SQL cast would be Postgres-only and break
 /// the SQLite test backend.
 async fn find_linked_event(

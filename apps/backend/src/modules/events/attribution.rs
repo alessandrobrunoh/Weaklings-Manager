@@ -108,12 +108,12 @@ pub async fn resolve_join_attribution(
     if let Some(stored) =
         stored_attribution(control, &canonical_tenant, canonical_event, discord_id).await?
     {
-        if let Some(requested) = requested.filter(|guild| !guild.is_empty()) {
-            if requested != stored {
-                return Err(AppError::Conflict(format!(
-                    "this signup is already attributed to guild {stored}; the attribution cannot be changed"
-                )));
-            }
+        if let Some(requested) = requested.filter(|guild| !guild.is_empty())
+            && requested != stored
+        {
+            return Err(AppError::Conflict(format!(
+                "this signup is already attributed to guild {stored}; the attribution cannot be changed"
+            )));
         }
         return Ok(stored);
     }
@@ -129,28 +129,25 @@ pub async fn resolve_join_attribution(
                     .to_owned(),
             ));
         }
-        match requested.map(str::trim).filter(|guild| !guild.is_empty()) {
-            Some(requested) => {
-                if !eligible.iter().any(|guild| guild.tenant_id == requested) {
-                    return Err(AppError::Forbidden(format!(
-                        "guild {requested} is not one of your eligible guilds for this event"
-                    )));
-                }
-                requested.to_owned()
+        if let Some(requested) = requested.map(str::trim).filter(|guild| !guild.is_empty()) {
+            if !eligible.iter().any(|guild| guild.tenant_id == requested) {
+                return Err(AppError::Forbidden(format!(
+                    "guild {requested} is not one of your eligible guilds for this event"
+                )));
             }
-            None => {
-                if eligible.len() > 1 {
-                    let choices = eligible
-                        .iter()
-                        .map(|guild| format!("{} ({})", guild.name, guild.tenant_id))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return Err(AppError::Conflict(format!(
-                        "you are a member of multiple guilds in this alliance; pass guild_tenant_id to choose one of: {choices}"
-                    )));
-                }
-                eligible[0].tenant_id.clone()
+            requested.to_owned()
+        } else {
+            if eligible.len() > 1 {
+                let choices = eligible
+                    .iter()
+                    .map(|guild| format!("{} ({})", guild.name, guild.tenant_id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(AppError::Conflict(format!(
+                    "you are a member of multiple guilds in this alliance; pass guild_tenant_id to choose one of: {choices}"
+                )));
             }
+            eligible[0].tenant_id.clone()
         }
     };
 

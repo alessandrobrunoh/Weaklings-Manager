@@ -13,18 +13,17 @@ pub fn init_tracer_provider() -> Option<SdkTracerProvider> {
         || has_endpoint(std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").ok());
 
     let provider = if endpoint_configured {
-        match SpanExporter::builder().build() {
-            Ok(exporter) => Some(
+        if let Ok(exporter) = SpanExporter::builder().build() {
+            Some(
                 SdkTracerProvider::builder()
                     .with_batch_exporter(exporter)
                     .build(),
-            ),
-            Err(_) => {
-                eprintln!(
-                    "WARNING: OpenTelemetry exporter configuration failed; continuing with console tracing"
-                );
-                None
-            }
+            )
+        } else {
+            eprintln!(
+                "WARNING: OpenTelemetry exporter configuration failed; continuing with console tracing"
+            );
+            None
         }
     } else {
         None

@@ -1,7 +1,7 @@
 //! Comp service logic module.
 //!
 //! Provides CRUD operations for build categories, comp categories, builds (with per-slot
-//! items sourced from OpenAlbion), and comps (compositions that group builds with a quantity).
+//! items sourced from `OpenAlbion`), and comps (compositions that group builds with a quantity).
 
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
@@ -32,10 +32,10 @@ use super::entities::{
 use super::models::{
     AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemSpells,
     BuildItemView, BuildSummary, BuildVersionRef, CompBuildView, CompCategoryView, CompDetail,
-    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildItemRequest,
-    CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest,
-    UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
-    UpdateCompRequest, UpsertBuildItemRequest,
+    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildRequest,
+    CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
+    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
+    UpsertBuildItemRequest,
 };
 use super::status::{
     BuildLoadout, BuildRole, BuildSlot, icon_url_with_quality, parse_item_enchantment,
@@ -787,20 +787,21 @@ impl CompService {
         let mut icon_map: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
         for (type_str, ids) in &needed_by_type {
             for item in &catalog {
-                if item.item_type.as_deref() == Some(type_str.as_str()) && ids.contains(&item.id) {
-                    if let Some(icon) = &item.icon {
-                        icon_map.insert(item.id, icon.clone());
-                    }
+                if item.item_type.as_deref() == Some(type_str.as_str())
+                    && ids.contains(&item.id)
+                    && let Some(icon) = &item.icon
+                {
+                    icon_map.insert(item.id, icon.clone());
                 }
             }
         }
 
         // Apply resolved icons back into the views.
         for v in item_views.iter_mut() {
-            if v.openalbion_item_icon.is_none() {
-                if let Some(icon) = icon_map.get(&v.openalbion_item_id) {
-                    v.openalbion_item_icon = Some(icon.clone());
-                }
+            if v.openalbion_item_icon.is_none()
+                && let Some(icon) = icon_map.get(&v.openalbion_item_id)
+            {
+                v.openalbion_item_icon = Some(icon.clone());
             }
         }
 
@@ -1667,16 +1668,16 @@ impl CompService {
             );
         }
 
-        if let Some(date_from) = filters.date_from {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from) {
-                query = query.filter(CompColumn::CreatedAt.gte(dt));
-            }
+        if let Some(date_from) = filters.date_from
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from)
+        {
+            query = query.filter(CompColumn::CreatedAt.gte(dt));
         }
 
-        if let Some(date_to) = filters.date_to {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to) {
-                query = query.filter(CompColumn::CreatedAt.lte(dt));
-            }
+        if let Some(date_to) = filters.date_to
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to)
+        {
+            query = query.filter(CompColumn::CreatedAt.lte(dt));
         }
 
         let sort_column = resolve_sort_key(
@@ -2315,6 +2316,7 @@ impl Default for CompService {
 
 #[cfg(test)]
 mod tests {
+    use super::super::models::CreateBuildItemRequest;
     use super::*;
     use crate::migration::MigratorTrait;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
@@ -2885,7 +2887,7 @@ mod tests {
             Some("PASSIVE_BLEEDCHANCE")
         );
         assert!(
-            stored.active.get("2").is_none(),
+            !stored.active.contains_key("2"),
             "an unfilled slot stays empty"
         );
     }
@@ -3994,9 +3996,9 @@ mod tests {
             .iter()
             .map(|entry| (entry.build_id, entry.quantity))
             .collect();
-        copied.sort();
+        copied.sort_unstable();
         let mut expected = vec![(hammer.summary.id, 5), (axe.summary.id, 3)];
-        expected.sort();
+        expected.sort_unstable();
         assert_eq!(copied, expected);
         assert_eq!(copy.summary.version, 2);
     }

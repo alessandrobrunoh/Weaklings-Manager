@@ -214,31 +214,30 @@ impl PlatformService {
         tenant_id: &str,
         frontend_url: &str,
     ) -> Result<TenantStatusView, AppError> {
-        match Self::get_tenant(control, tenant_id).await? {
-            Some(row) => Ok(TenantStatusView {
+        if let Some(row) = Self::get_tenant(control, tenant_id).await? {
+            Ok(TenantStatusView {
                 id: row.id,
                 registered: true,
                 status: Some(row.status),
                 name: Some(row.name),
                 kind: Some(row.kind),
                 register_url: None,
-            }),
-            None => {
-                let base = frontend_url.trim_end_matches('/');
-                Ok(TenantStatusView {
-                    id: tenant_id.to_owned(),
-                    registered: false,
-                    status: None,
-                    name: None,
-                    kind: None,
-                    register_url: Some(format!("{base}/register-tenant?guild={tenant_id}")),
-                })
-            }
+            })
+        } else {
+            let base = frontend_url.trim_end_matches('/');
+            Ok(TenantStatusView {
+                id: tenant_id.to_owned(),
+                registered: false,
+                status: None,
+                name: None,
+                kind: None,
+                register_url: Some(format!("{base}/register-tenant?guild={tenant_id}")),
+            })
         }
     }
 
     /// First-time tenant onboarding: provision schema, store Albion settings,
-    /// grant SuperAdmin to the registrar, and record membership.
+    /// grant `SuperAdmin` to the registrar, and record membership.
     ///
     /// # Errors
     ///
@@ -1588,7 +1587,7 @@ impl PlatformService {
         Ok(out)
     }
 
-    /// Grant the SuperAdmin platform role.
+    /// Grant the `SuperAdmin` platform role.
     ///
     /// # Errors
     ///
@@ -2053,6 +2052,7 @@ impl PlatformService {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_role_revocation(
     conn: &impl ConnectionTrait,
     alliance_id: &str,
@@ -2171,6 +2171,24 @@ fn normalize_optional_discord_snowflake(value: &str) -> Result<Option<String>, A
         ));
     }
     Ok(Some(trimmed.to_owned()))
+}
+
+fn map_unique(err: DbErr) -> AppError {
+    match err.sql_err() {
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::Conflict("tenant id or slug already exists".to_owned())
+        }
+        _ => AppError::Database(err),
+    }
+}
+
+fn map_membership_unique(err: DbErr) -> AppError {
+    match err.sql_err() {
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::Conflict("alliance_member_already_joined".to_owned())
+        }
+        _ => AppError::Database(err),
+    }
 }
 
 #[cfg(test)]
@@ -3630,23 +3648,5 @@ mod tests {
             .await
             .expect("drop alliance");
         drop_schema(&admin, &schema).await.expect("drop");
-    }
-}
-
-fn map_unique(err: DbErr) -> AppError {
-    match err.sql_err() {
-        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
-            AppError::Conflict("tenant id or slug already exists".to_owned())
-        }
-        _ => AppError::Database(err),
-    }
-}
-
-fn map_membership_unique(err: DbErr) -> AppError {
-    match err.sql_err() {
-        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
-            AppError::Conflict("alliance_member_already_joined".to_owned())
-        }
-        _ => AppError::Database(err),
     }
 }

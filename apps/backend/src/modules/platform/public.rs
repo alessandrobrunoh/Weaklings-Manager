@@ -332,6 +332,7 @@ pub async fn decline_alliance_member(
         (status = 409, description = "Invite is still pending", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn leave_alliance_member(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -369,13 +370,12 @@ pub async fn leave_alliance_member(
         .await?
         .into_iter()
         .find(|row| row.guild_tenant_id == guild_id)
+        && let Some(role_id) = member.discord_role_id
     {
-        if let Some(role_id) = member.discord_role_id {
-            untracked.push(super::service::UntrackedAllianceRole {
-                discord_guild_id: alliance_id.clone(),
-                role_id,
-            });
-        }
+        untracked.push(super::service::UntrackedAllianceRole {
+            discord_guild_id: alliance_id.clone(),
+            role_id,
+        });
     }
     Ok(Json(ApiResponse::new(
         PlatformService::leave_active_alliance(
@@ -514,7 +514,7 @@ pub async fn patch_alliance_member(
     )))
 }
 
-/// First-time tenant registration. The caller becomes the tenant SuperAdmin (`owner_discord_id`).
+/// First-time tenant registration. The caller becomes the tenant `SuperAdmin` (`owner_discord_id`).
 #[utoipa::path(
     post,
     path = "/api/tenants/register",

@@ -943,7 +943,7 @@ mod tests {
 
     /// Every `security(("session_cookie" = ["..."]))` scope declared on a route
     /// must be a valid `Permission::as_str()` value. Catches typos and drift
-    /// between the OpenAPI annotations and the `Permission` enum at CI time.
+    /// between the `OpenAPI` annotations and the `Permission` enum at CI time.
     #[test]
     fn all_security_scopes_are_valid_permissions() {
         use utoipa::openapi::path::Operation;
@@ -975,7 +975,7 @@ mod tests {
         }
 
         let api = ApiDoc::openapi();
-        for (_path, path_item) in &api.paths.paths {
+        for path_item in api.paths.paths.values() {
             check(path_item.get.as_ref());
             check(path_item.post.as_ref());
             check(path_item.put.as_ref());

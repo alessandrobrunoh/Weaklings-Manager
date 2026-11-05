@@ -375,16 +375,12 @@ async fn sync_roster_roles(
     let mapped_roles = source_roles
         .into_iter()
         .map(|role| {
-            build_id_map
-                .get(&role.build_id)
-                .copied()
-                .map(|build_id| build_id)
-                .ok_or_else(|| {
-                    AppError::Conflict(format!(
-                        "source roster build {} has no destination mapping",
-                        role.build_id
-                    ))
-                })
+            build_id_map.get(&role.build_id).copied().ok_or_else(|| {
+                AppError::Conflict(format!(
+                    "source roster build {} has no destination mapping",
+                    role.build_id
+                ))
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     let txn = target.begin().await?;

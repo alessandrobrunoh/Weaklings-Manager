@@ -4,7 +4,7 @@
 //! (see <https://www.tools4albion.com/api_info.php>). The upstream API has no documented
 //! authentication or rate limiting. Response structs only capture the fields this backend
 //! actually uses; unknown fields are ignored by serde and missing/null fields fall back to
-//! `Option`/`#[serde(default)]` since the upstream schema mixes PascalCase and camelCase keys
+//! `Option`/`#[serde(default)]` since the upstream schema mixes `PascalCase` and camelCase keys
 //! and occasionally returns `null` for numeric fields (verified via live requests).
 
 use crate::errors::AppError;
@@ -41,9 +41,9 @@ impl AlbionRegion {
 }
 
 /// A player entry as returned by the global `/search` endpoint. JSON keys on the wire are
-/// PascalCase (`Id`, `Name`, ...) — this app re-exposes them as snake_case; the `#[serde(alias)]`
-/// on each field accepts the upstream PascalCase name when deserializing from Albion's API, but
-/// this app's own JSON output (what the frontend receives) is always the snake_case shown here.
+/// `PascalCase` (`Id`, `Name`, ...) — this app re-exposes them as `snake_case`; the `#[serde(alias)]`
+/// on each field accepts the upstream `PascalCase` name when deserializing from Albion's API, but
+/// this app's own JSON output (what the frontend receives) is always the `snake_case` shown here.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionPlayerSummary {
     /// Albion Online's opaque player id.
@@ -60,7 +60,7 @@ pub struct AlbionPlayerSummary {
     #[serde(alias = "GuildName", default)]
     #[schema(example = "Ukraine Defence Forces")]
     pub guild_name: Option<String>,
-    /// Lifetime PvP kill fame. Sometimes `null` upstream for low-activity players.
+    /// Lifetime `PvP` kill fame. Sometimes `null` upstream for low-activity players.
     #[serde(alias = "KillFame", default)]
     #[schema(example = 102244.0)]
     pub kill_fame: Option<f64>,

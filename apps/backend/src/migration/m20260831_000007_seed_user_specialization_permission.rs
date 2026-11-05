@@ -49,7 +49,6 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await
-            .map(|_| ())
     }
 }
 

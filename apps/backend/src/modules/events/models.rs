@@ -59,7 +59,7 @@ pub struct BattlePerformanceStats {
 /// Opponent rollup for event and comp analytics.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct OpponentPerformanceView {
-    /// AlbionBB guild id when available.
+    /// `AlbionBB` guild id when available.
     pub guild_id: Option<String>,
     /// Human-readable guild name when available.
     pub guild_name: String,
@@ -259,7 +259,7 @@ pub struct EventView {
     pub discord_voice_channel_id: Option<String>,
     /// Linker status: `pending` | `in_progress` | `completed` | `failed`.
     pub link_status: String,
-    /// Number of AlbionBB fetch attempts performed by the linker.
+    /// Number of `AlbionBB` fetch attempts performed by the linker.
     pub link_attempts: i64,
     /// Last error message recorded by the linker, if any.
     pub link_last_error: Option<String>,
@@ -341,7 +341,7 @@ pub struct EventParticipantView {
 pub struct EventBattleView {
     /// Row id in `event_battles`.
     pub id: i64,
-    /// AlbionBB opaque battle id.
+    /// `AlbionBB` opaque battle id.
     pub albionbb_battle_id: String,
     /// When the battle started (RFC3339).
     pub battle_started_at: String,
@@ -349,7 +349,7 @@ pub struct EventBattleView {
     pub guild_players_count: i32,
     /// Total players in the battle (across all guilds), if known.
     pub battle_total_players: Option<i32>,
-    /// When this row was last refreshed from AlbionBB (RFC3339).
+    /// When this row was last refreshed from `AlbionBB` (RFC3339).
     pub fetched_at: String,
     /// Kills scored by the configured guild.
     pub guild_kills: i64,
@@ -381,14 +381,14 @@ pub struct EventBattleView {
     pub opponent_kill_fame: Option<i64>,
 }
 
-/// One canonical real-world fight, composed of one or more AlbionBB battle segments.
+/// One canonical real-world fight, composed of one or more `AlbionBB` battle segments.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventFightView {
     /// Canonical Fight database ID.
     pub id: i64,
     /// When the first segment began (RFC3339).
     pub started_at: String,
-    /// When the latest known segment ended, if supplied by AlbionBB.
+    /// When the latest known segment ended, if supplied by `AlbionBB`.
     pub ended_at: Option<String>,
     /// `seeded`, `automatic`, or later `manual` grouping provenance.
     pub grouping_method: String,
@@ -396,7 +396,7 @@ pub struct EventFightView {
     pub grouping_confidence: f64,
     /// Whether this grouping needs officer review.
     pub needs_review: bool,
-    /// Technical AlbionBB battle IDs that make up this Fight, in sequence.
+    /// Technical `AlbionBB` battle IDs that make up this Fight, in sequence.
     pub battle_ids: Vec<String>,
 }
 
@@ -511,7 +511,7 @@ pub struct EventDetailView {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({ "battle_ids": ["123456789", "123456790"] }))]
 pub struct UpdateEventBattlesRequest {
-    /// AlbionBB battle IDs to attach. Empty list removes every linked battle from the event.
+    /// `AlbionBB` battle IDs to attach. Empty list removes every linked battle from the event.
     pub battle_ids: Vec<String>,
 }
 

@@ -1,7 +1,7 @@
 //! Local Albion catalog routing module.
 //!
 //! Exposes the historical `/api/openalbion/*` endpoints for compatibility. Their data is served
-//! from the bundled manual catalog and never fetched from the third-party OpenAlbion service.
+//! from the bundled manual catalog and never fetched from the third-party `OpenAlbion` service.
 
 use super::catalog::{
     OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType, OpenAlbionWeaponFilters,

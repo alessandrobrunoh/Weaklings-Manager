@@ -1,6 +1,6 @@
-//! AlbionBB battle linking for event sessions.
+//! `AlbionBB` battle linking for event sessions.
 //!
-//! AlbionBB takes ~30 minutes to ingest a battle, so a session is polled
+//! `AlbionBB` takes ~30 minutes to ingest a battle, so a session is polled
 //! repeatedly until either the post-stop grace period elapses (then we
 //! finalize) or the listing stabilises. This module owns that polling policy.
 
@@ -55,7 +55,7 @@ pub async fn refresh_pending_links(
 ///
 /// Finalizing is also the moment regears become extractable: the battles are
 /// linked and will not change again, so every guild death in them is now
-/// known. Running earlier would miss whatever AlbionBB had not yet ingested.
+/// known. Running earlier would miss whatever `AlbionBB` had not yet ingested.
 async fn finalize_expired_link(
     db: &DatabaseConnection,
     albiondata: &AlbionDataService,

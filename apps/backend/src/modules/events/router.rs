@@ -1,4 +1,4 @@
-//! REST API routes and OpenAPI paths for the events module.
+//! REST API routes and `OpenAPI` paths for the events module.
 
 use axum::{
     Extension, Json, Router,
@@ -457,6 +457,7 @@ pub async fn list_event_calendar(
         (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn list_events(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -551,11 +552,12 @@ async fn list_event_revisions(
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn get_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Extension(cfg): Extension<Config>,
+    Extension(_cfg): Extension<Config>,
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
@@ -648,6 +650,7 @@ async fn get_roster_suggestions(
     Ok(Json(ApiResponse::new(suggestions)))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn assign_roster_seat(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -676,6 +679,7 @@ async fn assign_roster_seat(
     )))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn clear_roster_seat(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -704,6 +708,7 @@ async fn clear_roster_seat(
     )))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn swap_roster_seats(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -735,6 +740,7 @@ async fn swap_roster_seats(
     )))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn auto_fill_roster(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -902,6 +908,7 @@ async fn list_event_roster_roles(
         (status = 409, description = "Build is already an extra roster role", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn create_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1000,6 +1007,7 @@ async fn notify_roster_roles_changed(
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn create_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1216,6 +1224,7 @@ async fn get_event_mirror_status(
         (status = 409, description = "Mirror request is not failed or no active alliance exists", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn retry_event_mirror(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1291,6 +1300,7 @@ async fn list_event_discord_roles(
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn update_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1489,6 +1499,7 @@ struct ParticipateQuery {
         (status = 404, description = "Event or build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn participate(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -1695,6 +1706,7 @@ async fn require_event_management_authority(
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn add_event_member(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1747,6 +1759,7 @@ async fn add_event_member(
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn set_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -2167,7 +2180,7 @@ async fn list_event_battles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Extension(cfg): Extension<Config>,
+    Extension(_cfg): Extension<Config>,
     Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Path(id): Path<i64>,
@@ -2205,11 +2218,12 @@ async fn list_event_battles(
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn replace_event_battles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Extension(cfg): Extension<Config>,
+    Extension(_cfg): Extension<Config>,
     Extension(albionbb): Extension<AlbionBbService>,
     Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,

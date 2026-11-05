@@ -567,12 +567,13 @@ impl RegearService {
                 return Err(AppError::Validation(format!("{name} must be >= 0")));
             }
         }
-        if let Some(strategy) = &req.pricing_fallback_strategy {
-            if strategy != "cheapest_any" && strategy != "strict" {
-                return Err(AppError::Validation(
-                    "pricing_fallback_strategy must be 'cheapest_any' or 'strict'".to_string(),
-                ));
-            }
+        if let Some(strategy) = &req.pricing_fallback_strategy
+            && strategy != "cheapest_any"
+            && strategy != "strict"
+        {
+            return Err(AppError::Validation(
+                "pricing_fallback_strategy must be 'cheapest_any' or 'strict'".to_string(),
+            ));
         }
 
         let mut active: RegearSettingActiveModel = existing.into();
@@ -725,7 +726,7 @@ impl RegearService {
             });
         }
 
-        options.sort_by(|a, b| b.event_id.cmp(&a.event_id));
+        options.sort_by_key(|option| std::cmp::Reverse(option.event_id));
         Ok(options)
     }
 
@@ -978,8 +979,10 @@ async fn to_view_with_joins(
     let event_title = event::Entity::find_by_id(model.event_id)
         .one(db)
         .await?
-        .map(|event| event.title)
-        .unwrap_or_else(|| format!("<event {}>", model.event_id));
+        .map_or_else(
+            || format!("<event {}>", model.event_id),
+            |event| event.title,
+        );
 
     let primary_build_name = match model.primary_build_id {
         Some(build_id) => build::Entity::find_by_id(build_id)

@@ -181,6 +181,45 @@ fn resolve_identifiers(items: &[build_item::Model]) -> HashMap<i64, String> {
         .collect()
 }
 
+/// Batches every resolved identifier through Albion Online Data once, honoring the configured
+/// pricing location and fallback strategy — the same lookup shape `regear::pricing` uses.
+async fn fetch_price_index(
+    albiondata: &AlbionDataService,
+    resolved: &HashMap<i64, String>,
+    settings: &RegearSettingModel,
+    server: Option<&str>,
+) -> Result<HashMap<String, i64>, AppError> {
+    if resolved.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut unique_ids: Vec<String> = resolved
+        .values()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    unique_ids.sort();
+    let joined_ids = unique_ids.join(",");
+
+    let prices = albiondata
+        .prices(server, &joined_ids, Some(&settings.pricing_location), None)
+        .await
+        .unwrap_or_default();
+    let fallback_prices = if matches!(
+        PricingFallback::from_str(&settings.pricing_fallback_strategy),
+        PricingFallback::CheapestAny
+    ) {
+        albiondata
+            .prices(server, &joined_ids, None, None)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    Ok(cheapest_price_index(&prices, &fallback_prices))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,43 +420,4 @@ mod tests {
         assert!(price.builds.is_empty());
         assert_eq!(price.total, Decimal::ZERO);
     }
-}
-
-/// Batches every resolved identifier through Albion Online Data once, honoring the configured
-/// pricing location and fallback strategy — the same lookup shape `regear::pricing` uses.
-async fn fetch_price_index(
-    albiondata: &AlbionDataService,
-    resolved: &HashMap<i64, String>,
-    settings: &RegearSettingModel,
-    server: Option<&str>,
-) -> Result<HashMap<String, i64>, AppError> {
-    if resolved.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let mut unique_ids: Vec<String> = resolved
-        .values()
-        .cloned()
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    unique_ids.sort();
-    let joined_ids = unique_ids.join(",");
-
-    let prices = albiondata
-        .prices(server, &joined_ids, Some(&settings.pricing_location), None)
-        .await
-        .unwrap_or_default();
-    let fallback_prices = if matches!(
-        PricingFallback::from_str(&settings.pricing_fallback_strategy),
-        PricingFallback::CheapestAny
-    ) {
-        albiondata
-            .prices(server, &joined_ids, None, None)
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    Ok(cheapest_price_index(&prices, &fallback_prices))
 }

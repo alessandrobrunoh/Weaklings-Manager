@@ -14,7 +14,7 @@
 //! lost, kept for comparison against `friendly` and nothing else.
 //!
 //! This module is pure and DB-free: it takes already-fetched evidence plus a
-//! price index and returns a plain result struct. It does not touch SeaORM,
+//! price index and returns a plain result struct. It does not touch `SeaORM`,
 //! run migrations, or make HTTP calls, and it is not wired into any
 //! service/router/ingestion path.
 //!

@@ -278,9 +278,9 @@ pub struct SplitFilters {
     pub island_id: Option<i64>,
     /// Filter by note or creator username.
     pub search: Option<String>,
-    /// Filter by created_at date (inclusive).
+    /// Filter by `created_at` date (inclusive).
     pub date_from: Option<String>,
-    /// Filter by created_at date (inclusive).
+    /// Filter by `created_at` date (inclusive).
     pub date_to: Option<String>,
     /// When `true`, only archived splits. When omitted or `false`, only active splits.
     #[serde(
@@ -365,7 +365,7 @@ pub struct SplitIslandView {
 pub struct CreateIslandRequest {
     /// Island name.
     pub name: String,
-    /// Albion city key (snake_case).
+    /// Albion city key (`snake_case`).
     pub city: String,
     /// At least one tab name.
     pub tabs: Vec<String>,

@@ -286,7 +286,7 @@ pub async fn list_admins(
     )))
 }
 
-/// Grant SuperAdmin.
+/// Grant `SuperAdmin`.
 #[utoipa::path(
     post,
     path = "/api/platform/admins",

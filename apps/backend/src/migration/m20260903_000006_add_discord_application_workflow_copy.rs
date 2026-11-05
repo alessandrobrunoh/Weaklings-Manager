@@ -137,11 +137,10 @@ impl MigrationTrait for Migration {
                         .to_owned(),
                 )
                 .await
-                .map_err(|error| {
+                .inspect_err(|_error| {
                     // Keep the tuple's column name useful in migration logs without changing the
                     // database error type used by SeaORM.
                     let _ = column;
-                    error
                 })?;
         }
         Ok(())

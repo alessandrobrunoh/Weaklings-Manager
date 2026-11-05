@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 
 /// One issued warn. Revocation is a soft flag, never a delete.
 pub mod user_warn {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, Decimal,
+        DeriveEntityModel, DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden,
+        ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "user_warns")]
@@ -41,7 +45,11 @@ pub mod user_warn {
 
 /// Admin kick-reminder opened when active warns reach `warn_threshold`.
 pub mod warn_escalation {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "warn_escalations")]

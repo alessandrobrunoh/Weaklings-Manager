@@ -424,6 +424,7 @@ pub async fn delete_user_role(
         (status = 409, description = "Discord member or Albion character already provisioned", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn create_user(
     user: UserContext,
     Extension(perms): Extension<Permissions>,

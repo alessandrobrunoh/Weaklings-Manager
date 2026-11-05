@@ -20,7 +20,7 @@
 //!   character *name*, resolved through `albion_links`. Members who never
 //!   linked are invisible to those columns, so they are listed explicitly.
 //!
-//! The reference implementation also had a per-map breakdown. AlbionBB does not
+//! The reference implementation also had a per-map breakdown. `AlbionBB` does not
 //! carry a map or zone for a battle anywhere in this pipeline, so that view is
 //! replaced by an hour-of-day histogram, which the data does support.
 
@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 
 use rust_decimal::prelude::ToPrimitive;
 use sea_orm::prelude::{DateTimeWithTimeZone, Decimal};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -49,7 +49,6 @@ use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
 use crate::modules::intel::matchups::{MatchupRow, best_counter, matchups};
 use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
 use crate::modules::intel::scout::weapons_by_player;
-use crate::modules::intel::service::our_comp_profiles;
 use crate::modules::intel::similarity::ROLE_KEYS;
 use crate::modules::regear::entities as regear;
 use crate::modules::siphoned::entities as siphoned;

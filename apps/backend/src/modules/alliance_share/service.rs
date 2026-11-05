@@ -25,7 +25,7 @@ use crate::modules::splits::entities::split_island_tab::{self as split_tab, Colu
 use crate::modules::splits::entities::split_participant::{
     self as split_participant, Column as ParticipantColumn,
 };
-use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
+use crate::modules::users::entities::Entity as UserEntity;
 use crate::tenant::TenantRegistry;
 
 use super::models::{
@@ -137,7 +137,7 @@ impl AllianceShareService {
         req: CreateAllianceShareRequest,
     ) -> Result<AllianceShareView, AppError> {
         deny_unless_guild_officer(&params)?;
-        let artifact_type = req.artifact_type.as_str();
+        let _artifact_type = req.artifact_type.as_str();
         if req.artifact_type != ArtifactType::Build {
             return Err(AppError::Validation(
                 "use share_split for split artifacts".to_owned(),
@@ -962,8 +962,10 @@ async fn upsert_alliance_user(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("{}@alliance-share.invalid", actor.discord_id));
+        .map_or_else(
+            || format!("{}@alliance-share.invalid", actor.discord_id),
+            ToOwned::to_owned,
+        );
     crate::modules::users::identity::upsert_discord_user(
         db,
         &actor.discord_id,
@@ -1273,6 +1275,7 @@ mod tests {
     use crate::modules::comps::status::{BuildLoadout, BuildRole, BuildSlot};
     use crate::modules::platform::models::RegisterTenantRequest;
     use crate::modules::platform::service::PlatformService;
+    use crate::modules::users::entities::{self as user_entities};
     use crate::pagination::PaginationParams;
     use crate::postgres::{
         connect_with_search_path, drop_schema, ensure_schema,

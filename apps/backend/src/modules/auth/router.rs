@@ -13,7 +13,6 @@ use crate::modules::admin::models::BrandColorsView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::platform::service::PlatformService;
 use crate::platform_admins::PlatformAdmins;
-use crate::postgres::list_active_tenants;
 use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
 use crate::tenant::{ControlDb, TenantRegistry};
 use axum::{
@@ -845,25 +844,22 @@ pub async fn get_me(
     if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
         profile.is_tenant_owner =
             PlatformService::is_guild_owner(&control.0, tenant_id, &profile.id).await?;
-        match registry.get_or_load(tenant_id).await {
-            Ok(ctx) => {
-                profile.tenant_kind = Some(ctx.kind.clone());
-                let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
-                keys.sort();
-                profile.features = keys;
-                // Re-read rather than trust the cookie, so an admin's colour
-                // change reaches every other member on their next page load.
-                profile.brand = tenant_brand(&ctx.db).await;
-            }
-            Err(_) => {
-                profile.tenant_id = None;
-                profile.tenant_name = None;
-                profile.tenant_kind = None;
-                profile.is_tenant_owner = false;
-                profile.permissions.clear();
-                profile.features.clear();
-                profile.brand = None;
-            }
+        if let Ok(ctx) = registry.get_or_load(tenant_id).await {
+            profile.tenant_kind = Some(ctx.kind.clone());
+            let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
+            keys.sort();
+            profile.features = keys;
+            // Re-read rather than trust the cookie, so an admin's colour
+            // change reaches every other member on their next page load.
+            profile.brand = tenant_brand(&ctx.db).await;
+        } else {
+            profile.tenant_id = None;
+            profile.tenant_name = None;
+            profile.tenant_kind = None;
+            profile.is_tenant_owner = false;
+            profile.permissions.clear();
+            profile.features.clear();
+            profile.brand = None;
         }
     }
 

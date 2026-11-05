@@ -49,7 +49,7 @@ use serde_json::{Value, json};
 /// Persisted summary metadata for one ordered battle segment of a fight.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FightSegmentSummary {
-    /// AlbionBB battle ID.
+    /// `AlbionBB` battle ID.
     pub battle_id: i64,
     /// Position of this segment within the canonical fight.
     pub sequence_number: i32,
@@ -80,7 +80,7 @@ pub struct FightOutcomeView {
 
 /// A canonical Fight's outcome from the configured guild's perspective.
 ///
-/// Kept as a named alias so the OpenAPI schema and every existing import stay
+/// Kept as a named alias so the `OpenAPI` schema and every existing import stay
 /// stable while the definition itself lives in one place.
 pub type FightOutcome = BattleOutcome;
 
@@ -145,7 +145,7 @@ pub struct FightDetailView {
     pub needs_review: bool,
     /// Deterministic outcome from persisted segment evidence.
     pub outcome: FightOutcomeView,
-    /// Technical AlbionBB battle IDs that make up this fight, in sequence.
+    /// Technical `AlbionBB` battle IDs that make up this fight, in sequence.
     pub battle_ids: Vec<i64>,
     /// Number of battle segments linked to this fight, including segments not yet persisted.
     pub segment_count: i64,
@@ -787,7 +787,7 @@ pub struct MergeFightsRequest {
 /// Request to move one Battle segment from the fight in the path to another fight.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MoveBattleRequest {
-    /// Canonical AlbionBB battle ID linked to the source fight.
+    /// Canonical `AlbionBB` battle ID linked to the source fight.
     pub battle_id: i64,
     /// Destination fight. It must belong to the same Event as the source fight (or neither may).
     pub target_fight_id: i64,
@@ -796,7 +796,7 @@ pub struct MoveBattleRequest {
 /// Request to take selected Battle segments out of a fight and form a new fight.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SplitFightRequest {
-    /// Canonical AlbionBB battle IDs currently linked to the source fight.
+    /// Canonical `AlbionBB` battle IDs currently linked to the source fight.
     pub battle_ids: Vec<i64>,
 }
 
@@ -1572,6 +1572,7 @@ async fn get_fight_trends(
     })))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_fight_trend_period(
     fights: &[fight::Model],
     segments_by_fight: &HashMap<i64, Vec<fight_battle::Model>>,
@@ -2271,6 +2272,43 @@ impl PlayerRollup {
     }
 }
 
+fn add_loss_estimate(
+    total: &mut BattleLossEstimate,
+    players: &mut HashMap<String, PlayerLossEstimate>,
+    guilds: &mut HashMap<String, GuildLossEstimate>,
+    estimate: BattleLossEstimate,
+) {
+    total.total_estimated_loss += estimate.total_estimated_loss;
+    total.priced_items += estimate.priced_items;
+    total.total_items += estimate.total_items;
+
+    for player in estimate.players {
+        let rollup = players
+            .entry(player.player_name.clone())
+            .or_insert_with(|| PlayerLossEstimate {
+                player_name: player.player_name.clone(),
+                guild_name: player.guild_name.clone(),
+                ..Default::default()
+            });
+        rollup.estimated_loss += player.estimated_loss;
+        rollup.deaths += player.deaths;
+        rollup.priced_items += player.priced_items;
+        rollup.total_items += player.total_items;
+    }
+    for guild in estimate.guilds {
+        let rollup = guilds
+            .entry(guild.guild_name.clone())
+            .or_insert_with(|| GuildLossEstimate {
+                guild_name: guild.guild_name.clone(),
+                ..Default::default()
+            });
+        rollup.estimated_loss += guild.estimated_loss;
+        rollup.deaths += guild.deaths;
+        rollup.priced_items += guild.priced_items;
+        rollup.total_items += guild.total_items;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2352,6 +2390,7 @@ mod tests {
         .expect("insert fight")
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_snapshot(
         db: &DatabaseConnection,
         battle_id: i64,
@@ -3272,42 +3311,5 @@ mod tests {
                 .all(|item| item.id != reviewed_id),
             "the fight already cleared of review must not come back"
         );
-    }
-}
-
-fn add_loss_estimate(
-    total: &mut BattleLossEstimate,
-    players: &mut HashMap<String, PlayerLossEstimate>,
-    guilds: &mut HashMap<String, GuildLossEstimate>,
-    estimate: BattleLossEstimate,
-) {
-    total.total_estimated_loss += estimate.total_estimated_loss;
-    total.priced_items += estimate.priced_items;
-    total.total_items += estimate.total_items;
-
-    for player in estimate.players {
-        let rollup = players
-            .entry(player.player_name.clone())
-            .or_insert_with(|| PlayerLossEstimate {
-                player_name: player.player_name.clone(),
-                guild_name: player.guild_name.clone(),
-                ..Default::default()
-            });
-        rollup.estimated_loss += player.estimated_loss;
-        rollup.deaths += player.deaths;
-        rollup.priced_items += player.priced_items;
-        rollup.total_items += player.total_items;
-    }
-    for guild in estimate.guilds {
-        let rollup = guilds
-            .entry(guild.guild_name.clone())
-            .or_insert_with(|| GuildLossEstimate {
-                guild_name: guild.guild_name.clone(),
-                ..Default::default()
-            });
-        rollup.estimated_loss += guild.estimated_loss;
-        rollup.deaths += guild.deaths;
-        rollup.priced_items += guild.priced_items;
-        rollup.total_items += guild.total_items;
     }
 }

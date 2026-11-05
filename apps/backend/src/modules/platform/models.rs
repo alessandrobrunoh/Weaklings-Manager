@@ -186,7 +186,7 @@ pub struct PatchTenantRequest {
     pub status: Option<String>,
     /// Optional rename.
     pub name: Option<String>,
-    /// Tenant SuperAdmin Discord snowflake.
+    /// Tenant `SuperAdmin` Discord snowflake.
     pub owner_discord_id: Option<String>,
     /// Albion Online guild id.
     pub albion_guild_id: Option<String>,
@@ -308,6 +308,6 @@ pub struct PlatformAdminView {
 /// Body for `POST /api/platform/admins`.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct AssignAdminRequest {
-    /// Discord snowflake to grant SuperAdmin.
+    /// Discord snowflake to grant `SuperAdmin`.
     pub discord_id: String,
 }

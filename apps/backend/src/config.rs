@@ -58,7 +58,7 @@ pub struct Config {
     /// the server refuses to start without a sufficiently long secret, so a broken deployment
     /// fails fast instead of ever serving forgeable sessions.
     pub session_secret: String,
-    /// URL of the frontend for redirection (default: http://localhost:5173, Vite dev).
+    /// URL of the frontend for redirection (default: <http://localhost:5173>, Vite dev).
     #[serde(default = "default_frontend_url")]
     pub frontend_url: String,
     /// Albion Online API region to query (americas|europe|asia). Defaults to "europe".
@@ -74,10 +74,10 @@ pub struct Config {
     pub albion_allied_guild_names: String,
     /// Mistral AI API key, used by the `/utils/ocr` endpoint to extract text from images.
     pub mistral_api_key: String,
-    /// Base URL for the AlbionBB API. Defaults to the public endpoint.
+    /// Base URL for the `AlbionBB` API. Defaults to the public endpoint.
     #[serde(default = "default_albionbb_base_url")]
     pub albionbb_base_url: String,
-    /// Request timeout in seconds for AlbionBB API requests. Defaults to 60.
+    /// Request timeout in seconds for `AlbionBB` API requests. Defaults to 60.
     #[serde(default = "default_albionbb_timeout")]
     pub albionbb_request_timeout_secs: u64,
     /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
@@ -162,6 +162,7 @@ impl Config {
     ///
     /// Panics when a required variable is missing or malformed — appropriate at startup, where a
     /// broken deployment should fail fast.
+    #[must_use]
     pub fn from_env() -> Self {
         Self::try_from_env().expect("Failed to parse config from environment")
     }
@@ -228,7 +229,7 @@ impl Config {
     /// Parses optional comma-separated allied guild names as a fallback for incomplete upstream
     /// battle payloads.
     ///
-    /// IDs are preferred because names can change, but AlbionBB can occasionally omit IDs in
+    /// IDs are preferred because names can change, but `AlbionBB` can occasionally omit IDs in
     /// summary rows. Keeping names configurable prevents allies from leaking into opponent charts.
     ///
     /// # Example

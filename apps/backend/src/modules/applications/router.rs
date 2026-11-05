@@ -186,7 +186,7 @@ async fn accept_application(
     body: Option<Json<AcceptApplicationBody>>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
     user.require(&perms, Permission::ApplicationsManage).await?;
-    let as_trial = body.map(|Json(body)| body.as_trial).unwrap_or(false);
+    let as_trial = body.is_some_and(|Json(body)| body.as_trial);
     // Validate the trial configuration *before* resolving, so a misconfigured guild gets a
     // clean 409 and the application stays open instead of half-accepting the applicant.
     let trial_configured = if as_trial {

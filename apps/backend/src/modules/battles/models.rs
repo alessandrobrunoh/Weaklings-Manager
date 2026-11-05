@@ -1,6 +1,6 @@
 //! Clean public-facing types for the `battles` module.
 //!
-//! These are reshaped from the raw AlbionBB payload into snake_case types
+//! These are reshaped from the raw `AlbionBB` payload into `snake_case` types
 //! consistent with the rest of the codebase. Missing upstream fields fall back
 //! to safe defaults so the frontend never has to handle nulls.
 
@@ -56,7 +56,7 @@ pub struct BattleFightMetadata {
 /// A battle summary for list views.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleSummary {
-    /// AlbionBB battle id.
+    /// `AlbionBB` battle id.
     pub battle_id: i64,
     /// ISO 8601 start time.
     pub start_time: String,
@@ -133,7 +133,7 @@ pub struct BattleKillParticipant {
 /// A kill event in the battle timeline.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleKillEvent {
-    /// AlbionBB kill event id.
+    /// `AlbionBB` kill event id.
     pub event_id: i64,
     /// ISO 8601 kill time.
     pub time: String,
@@ -148,7 +148,7 @@ pub struct BattleKillEvent {
     /// Total fame awarded for this kill.
     pub total_kill_fame: i64,
     /// The entire upstream kill event preserved verbatim, so the frontend can
-    /// render any AlbionBB field we did not model explicitly.
+    /// render any `AlbionBB` field we did not model explicitly.
     pub raw: serde_json::Value,
 }
 
@@ -196,13 +196,13 @@ pub struct BattleDetail {
     pub summary: BattleSummary,
     /// Per-player breakdown.
     pub players: Vec<BattlePlayer>,
-    /// Kill timeline (newest last, as returned by AlbionBB).
+    /// Kill timeline (newest last, as returned by `AlbionBB`).
     pub kills: Vec<BattleKillEvent>,
     /// Market-based loss estimate from victim equipment, when Albion Data is reachable.
     pub estimated_losses: BattleLossEstimate,
     /// The guild event this battle was fought under, when it was linked to one.
     ///
-    /// AlbionBB knows nothing about our events, so this is resolved locally.
+    /// `AlbionBB` knows nothing about our events, so this is resolved locally.
     /// Its absence is meaningful rather than missing data: a battle with no
     /// event was picked up by the background sync and cannot be attributed to
     /// a composition.
@@ -388,26 +388,23 @@ impl BattleSummary {
 
         // 2. Seed from players
         for p in &detail.players {
-            if let Some(ally) = p.alliance_name.as_ref().filter(|s| !s.trim().is_empty()) {
-                if !p.guild_name.trim().is_empty() {
-                    guild_to_alliance
-                        .entry(p.guild_name.to_lowercase())
-                        .or_insert_with(|| (ally.trim().to_string(), p.alliance_id.clone()));
-                }
+            if let Some(ally) = p.alliance_name.as_ref().filter(|s| !s.trim().is_empty())
+                && !p.guild_name.trim().is_empty()
+            {
+                guild_to_alliance
+                    .entry(p.guild_name.to_lowercase())
+                    .or_insert_with(|| (ally.trim().to_string(), p.alliance_id.clone()));
             }
         }
 
         // Apply cross-hydrated alliances to all guilds
         for g in &mut summary.guilds {
-            if g.alliance_name
-                .as_ref()
-                .map_or(true, |s| s.trim().is_empty())
+            if g.alliance_name.as_ref().is_none_or(|s| s.trim().is_empty())
+                && let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.name.to_lowercase())
             {
-                if let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.name.to_lowercase()) {
-                    g.alliance_name = Some(ally_name.clone());
-                    if g.alliance_id.is_none() {
-                        g.alliance_id = ally_id.clone();
-                    }
+                g.alliance_name = Some(ally_name.clone());
+                if g.alliance_id.is_none() {
+                    g.alliance_id = ally_id.clone();
                 }
             }
         }
@@ -435,40 +432,38 @@ impl BattleDetail {
 
         // 2. Seed from players
         for p in &detail.players {
-            if let Some(ally) = p.alliance_name.as_ref().filter(|s| !s.trim().is_empty()) {
-                if !p.guild_name.trim().is_empty() {
-                    guild_to_alliance
-                        .entry(p.guild_name.to_lowercase())
-                        .or_insert_with(|| (ally.trim().to_string(), p.alliance_id.clone()));
-                }
+            if let Some(ally) = p.alliance_name.as_ref().filter(|s| !s.trim().is_empty())
+                && !p.guild_name.trim().is_empty()
+            {
+                guild_to_alliance
+                    .entry(p.guild_name.to_lowercase())
+                    .or_insert_with(|| (ally.trim().to_string(), p.alliance_id.clone()));
             }
         }
 
         // 3. Seed from kills & raw JSON payloads
         for k in kills {
-            if let Some(guild) = &k.killer.guild_name {
-                if let Some(ally) = k
+            if let Some(guild) = &k.killer.guild_name
+                && let Some(ally) = k
                     .killer
                     .alliance_name
                     .as_ref()
                     .filter(|s| !s.trim().is_empty())
-                {
-                    guild_to_alliance
-                        .entry(guild.to_lowercase())
-                        .or_insert_with(|| (ally.trim().to_string(), k.killer.alliance_id.clone()));
-                }
+            {
+                guild_to_alliance
+                    .entry(guild.to_lowercase())
+                    .or_insert_with(|| (ally.trim().to_string(), k.killer.alliance_id.clone()));
             }
-            if let Some(guild) = &k.victim.guild_name {
-                if let Some(ally) = k
+            if let Some(guild) = &k.victim.guild_name
+                && let Some(ally) = k
                     .victim
                     .alliance_name
                     .as_ref()
                     .filter(|s| !s.trim().is_empty())
-                {
-                    guild_to_alliance
-                        .entry(guild.to_lowercase())
-                        .or_insert_with(|| (ally.trim().to_string(), k.victim.alliance_id.clone()));
-                }
+            {
+                guild_to_alliance
+                    .entry(guild.to_lowercase())
+                    .or_insert_with(|| (ally.trim().to_string(), k.victim.alliance_id.clone()));
             }
 
             // Inspect nested raw Killer
@@ -477,13 +472,13 @@ impl BattleDetail {
                     .get("GuildName")
                     .or_else(|| killer_val.get("guildName"))
                     .and_then(|v| v.as_str());
-                if let Some(g) = guild.filter(|s| !s.trim().is_empty()) {
-                    if let Some(ally) = extract_alliance_from_json(killer_val) {
-                        let ally_id = extract_alliance_id_from_json(killer_val);
-                        guild_to_alliance
-                            .entry(g.to_lowercase())
-                            .or_insert_with(|| (ally, ally_id));
-                    }
+                if let Some(g) = guild.filter(|s| !s.trim().is_empty())
+                    && let Some(ally) = extract_alliance_from_json(killer_val)
+                {
+                    let ally_id = extract_alliance_id_from_json(killer_val);
+                    guild_to_alliance
+                        .entry(g.to_lowercase())
+                        .or_insert_with(|| (ally, ally_id));
                 }
             }
 
@@ -493,13 +488,13 @@ impl BattleDetail {
                     .get("GuildName")
                     .or_else(|| victim_val.get("guildName"))
                     .and_then(|v| v.as_str());
-                if let Some(g) = guild.filter(|s| !s.trim().is_empty()) {
-                    if let Some(ally) = extract_alliance_from_json(victim_val) {
-                        let ally_id = extract_alliance_id_from_json(victim_val);
-                        guild_to_alliance
-                            .entry(g.to_lowercase())
-                            .or_insert_with(|| (ally, ally_id));
-                    }
+                if let Some(g) = guild.filter(|s| !s.trim().is_empty())
+                    && let Some(ally) = extract_alliance_from_json(victim_val)
+                {
+                    let ally_id = extract_alliance_id_from_json(victim_val);
+                    guild_to_alliance
+                        .entry(g.to_lowercase())
+                        .or_insert_with(|| (ally, ally_id));
                 }
             }
 
@@ -517,13 +512,13 @@ impl BattleDetail {
                         .get("GuildName")
                         .or_else(|| member.get("guildName"))
                         .and_then(|v| v.as_str());
-                    if let Some(g) = guild.filter(|s| !s.trim().is_empty()) {
-                        if let Some(ally) = extract_alliance_from_json(member) {
-                            let ally_id = extract_alliance_id_from_json(member);
-                            guild_to_alliance
-                                .entry(g.to_lowercase())
-                                .or_insert_with(|| (ally, ally_id));
-                        }
+                    if let Some(g) = guild.filter(|s| !s.trim().is_empty())
+                        && let Some(ally) = extract_alliance_from_json(member)
+                    {
+                        let ally_id = extract_alliance_id_from_json(member);
+                        guild_to_alliance
+                            .entry(g.to_lowercase())
+                            .or_insert_with(|| (ally, ally_id));
                     }
                 }
             }
@@ -532,15 +527,12 @@ impl BattleDetail {
         // Cross-hydrate summary guilds
         let mut summary = BattleSummary::from(&detail.summary);
         for g in &mut summary.guilds {
-            if g.alliance_name
-                .as_ref()
-                .map_or(true, |s| s.trim().is_empty())
+            if g.alliance_name.as_ref().is_none_or(|s| s.trim().is_empty())
+                && let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.name.to_lowercase())
             {
-                if let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.name.to_lowercase()) {
-                    g.alliance_name = Some(ally_name.clone());
-                    if g.alliance_id.is_none() {
-                        g.alliance_id = ally_id.clone();
-                    }
+                g.alliance_name = Some(ally_name.clone());
+                if g.alliance_id.is_none() {
+                    g.alliance_id = ally_id.clone();
                 }
             }
         }
@@ -549,17 +541,13 @@ impl BattleDetail {
         let mut players: Vec<BattlePlayer> =
             detail.players.iter().map(BattlePlayer::from).collect();
         for p in &mut players {
-            if p.alliance_name
-                .as_ref()
-                .map_or(true, |s| s.trim().is_empty())
-            {
-                if let Some((ally_name, ally_id)) =
+            if p.alliance_name.as_ref().is_none_or(|s| s.trim().is_empty())
+                && let Some((ally_name, ally_id)) =
                     guild_to_alliance.get(&p.guild_name.to_lowercase())
-                {
-                    p.alliance_name = Some(ally_name.clone());
-                    if p.alliance_id.is_none() {
-                        p.alliance_id = ally_id.clone();
-                    }
+            {
+                p.alliance_name = Some(ally_name.clone());
+                if p.alliance_id.is_none() {
+                    p.alliance_id = ally_id.clone();
                 }
             }
         }
@@ -567,32 +555,28 @@ impl BattleDetail {
         // Cross-hydrate kills
         let mut kills: Vec<BattleKillEvent> = kills.iter().map(BattleKillEvent::from).collect();
         for k in &mut kills {
-            if let Some(g) = &k.killer.guild_name {
-                if k.killer
+            if let Some(g) = &k.killer.guild_name
+                && k.killer
                     .alliance_name
                     .as_ref()
-                    .map_or(true, |s| s.trim().is_empty())
-                {
-                    if let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.to_lowercase()) {
-                        k.killer.alliance_name = Some(ally_name.clone());
-                        if k.killer.alliance_id.is_none() {
-                            k.killer.alliance_id = ally_id.clone();
-                        }
-                    }
+                    .is_none_or(|s| s.trim().is_empty())
+                && let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.to_lowercase())
+            {
+                k.killer.alliance_name = Some(ally_name.clone());
+                if k.killer.alliance_id.is_none() {
+                    k.killer.alliance_id = ally_id.clone();
                 }
             }
-            if let Some(g) = &k.victim.guild_name {
-                if k.victim
+            if let Some(g) = &k.victim.guild_name
+                && k.victim
                     .alliance_name
                     .as_ref()
-                    .map_or(true, |s| s.trim().is_empty())
-                {
-                    if let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.to_lowercase()) {
-                        k.victim.alliance_name = Some(ally_name.clone());
-                        if k.victim.alliance_id.is_none() {
-                            k.victim.alliance_id = ally_id.clone();
-                        }
-                    }
+                    .is_none_or(|s| s.trim().is_empty())
+                && let Some((ally_name, ally_id)) = guild_to_alliance.get(&g.to_lowercase())
+            {
+                k.victim.alliance_name = Some(ally_name.clone());
+                if k.victim.alliance_id.is_none() {
+                    k.victim.alliance_id = ally_id.clone();
                 }
             }
         }

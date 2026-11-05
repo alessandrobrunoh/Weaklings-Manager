@@ -1182,19 +1182,18 @@ impl BankService {
                 req.to_user_id
             )));
         }
-        if let Some(from_user_id) = req.from_user_id {
-            if UserEntity::find_by_id(from_user_id)
+        if let Some(from_user_id) = req.from_user_id
+            && UserEntity::find_by_id(from_user_id)
                 .one(db)
                 .await?
                 .is_none()
-            {
-                return Err(AppError::NotFound(format!("User {from_user_id} not found")));
-            }
+        {
+            return Err(AppError::NotFound(format!("User {from_user_id} not found")));
         }
-        if let Some(split_id) = req.split_id {
-            if SplitEntity::find_by_id(split_id).one(db).await?.is_none() {
-                return Err(AppError::NotFound(format!("Split {split_id} not found")));
-            }
+        if let Some(split_id) = req.split_id
+            && SplitEntity::find_by_id(split_id).one(db).await?.is_none()
+        {
+            return Err(AppError::NotFound(format!("Split {split_id} not found")));
         }
 
         let status = if debit {
@@ -1280,24 +1279,23 @@ impl BankService {
         if req.amount == Some(Decimal::ZERO) {
             return Err(AppError::Validation("amount must be non-zero".to_string()));
         }
-        if let Some(to_user_id) = req.to_user_id {
-            if UserEntity::find_by_id(to_user_id).one(db).await?.is_none() {
-                return Err(AppError::NotFound(format!("User {to_user_id} not found")));
-            }
+        if let Some(to_user_id) = req.to_user_id
+            && UserEntity::find_by_id(to_user_id).one(db).await?.is_none()
+        {
+            return Err(AppError::NotFound(format!("User {to_user_id} not found")));
         }
-        if let Some(Some(from_user_id)) = req.from_user_id {
-            if UserEntity::find_by_id(from_user_id)
+        if let Some(Some(from_user_id)) = req.from_user_id
+            && UserEntity::find_by_id(from_user_id)
                 .one(db)
                 .await?
                 .is_none()
-            {
-                return Err(AppError::NotFound(format!("User {from_user_id} not found")));
-            }
+        {
+            return Err(AppError::NotFound(format!("User {from_user_id} not found")));
         }
-        if let Some(Some(split_id)) = req.split_id {
-            if SplitEntity::find_by_id(split_id).one(db).await?.is_none() {
-                return Err(AppError::NotFound(format!("Split {split_id} not found")));
-            }
+        if let Some(Some(split_id)) = req.split_id
+            && SplitEntity::find_by_id(split_id).one(db).await?.is_none()
+        {
+            return Err(AppError::NotFound(format!("Split {split_id} not found")));
         }
 
         let old_split_id = existing.split_id;
@@ -2508,6 +2506,6 @@ mod tests {
         }
         .await;
         drop_schema(&admin, &schema).await.expect("drop schema");
-        result
+        result;
     }
 }

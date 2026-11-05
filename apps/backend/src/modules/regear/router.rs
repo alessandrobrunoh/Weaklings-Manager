@@ -6,7 +6,7 @@
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
-    routing::{get, post, put},
+    routing::{get, post},
 };
 
 use crate::errors::{AppError, ProblemDetails};
@@ -61,9 +61,9 @@ pub struct RunExtractionQuery {
 /// thread it through every signature.
 #[derive(Clone)]
 pub struct RegearGuildContext {
-    /// AlbionBB guild id of the configured guild.
+    /// `AlbionBB` guild id of the configured guild.
     pub guild_id: String,
-    /// AlbionBB server region.
+    /// `AlbionBB` server region.
     pub server: String,
 }
 
@@ -416,13 +416,14 @@ async fn list_event_deaths(
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn run_extraction(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(albiondata): Extension<AlbionDataService>,
     Extension(guild_ctx): Extension<RegearGuildContext>,
-    Extension(cfg): Extension<crate::config::Config>,
+    Extension(_cfg): Extension<crate::config::Config>,
     Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Query(query): Query<RunExtractionQuery>,
@@ -599,13 +600,14 @@ async fn get_self_service_events(
         (status = 409, description = "Duplicate self-reported request for this event", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn create_self_service_request(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(albiondata): Extension<AlbionDataService>,
     Extension(guild_ctx): Extension<RegearGuildContext>,
-    Extension(cfg): Extension<crate::config::Config>,
+    Extension(_cfg): Extension<crate::config::Config>,
     Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Json(req): Json<CreateSelfServiceRegearRequest>,

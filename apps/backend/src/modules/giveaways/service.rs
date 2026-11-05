@@ -175,12 +175,12 @@ impl GiveawayService {
         }
         let silver = normalize_silver(req.silver_amount)?;
         let regear_request_bonus = req.regear_request_bonus.filter(|amount| *amount > 0);
-        if let Some(amount) = req.regear_request_bonus {
-            if amount < 0 {
-                return Err(AppError::Validation(
-                    "regear_request_bonus must be >= 0".to_string(),
-                ));
-            }
+        if let Some(amount) = req.regear_request_bonus
+            && amount < 0
+        {
+            return Err(AppError::Validation(
+                "regear_request_bonus must be >= 0".to_string(),
+            ));
         }
         if req.prizes.is_empty() && silver.is_none() && regear_request_bonus.is_none() {
             return Err(AppError::Validation(
@@ -716,9 +716,10 @@ async fn to_views(
                 ends_at: model.ends_at.to_rfc3339(),
                 status,
                 created_by: model.created_by,
-                created_by_username: creator
-                    .map(|user| user.username.clone())
-                    .unwrap_or_else(|| model.created_by.to_string()),
+                created_by_username: creator.map_or_else(
+                    || model.created_by.to_string(),
+                    |user| user.username.clone(),
+                ),
                 created_at: model.created_at.to_rfc3339(),
                 silver_amount: model.silver_amount,
                 regear_request_bonus: model.regear_request_bonus,
@@ -781,8 +782,7 @@ async fn load_entries(
                 id: entry.id,
                 user_id: entry.user_id,
                 username: user
-                    .map(|row| row.username.clone())
-                    .unwrap_or_else(|| entry.user_id.to_string()),
+                    .map_or_else(|| entry.user_id.to_string(), |row| row.username.clone()),
                 discord_id: user.and_then(|row| row.discord_id.clone()),
                 entered_at: entry.entered_at.to_rfc3339(),
             }

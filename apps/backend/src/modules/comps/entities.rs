@@ -1,7 +1,7 @@
 //! Sea-ORM entities for the comps module tables.
 //!
-//! Seven tables: build_categories, comp_categories, builds, build_items, build_item_spells,
-//! comps, comp_builds.
+//! Seven tables: `build_categories`, `comp_categories`, builds, `build_items`, `build_item_spells`,
+//! comps, `comp_builds`.
 
 pub mod build_category {
     use sea_orm::entity::prelude::*;
@@ -152,15 +152,15 @@ pub mod build_item {
         pub loadout: String,
         /// The equipment slot of this item.
         pub slot: String,
-        /// The OpenAlbion item type.
+        /// The `OpenAlbion` item type.
         pub openalbion_item_type: String,
-        /// The OpenAlbion item ID.
+        /// The `OpenAlbion` item ID.
         pub openalbion_item_id: i64,
-        /// The OpenAlbion item name.
+        /// The `OpenAlbion` item name.
         pub openalbion_item_name: String,
-        /// The OpenAlbion item icon URL.
+        /// The `OpenAlbion` item icon URL.
         pub openalbion_item_icon: Option<String>,
-        /// The OpenAlbion item tier.
+        /// The `OpenAlbion` item tier.
         pub openalbion_item_tier: Option<String>,
         /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
         pub openalbion_item_quality: i16,

@@ -292,6 +292,7 @@ pub struct LinkPlayerRequest {
         (status = 409, description = "Conflict - the caller's Discord account already has a link, or this Albion character is already linked to a different Discord account", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn link_player(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -374,6 +375,7 @@ pub struct RegisterByIgnRequest {
         (status = 409, description = "Already linked", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn register_by_ign(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -537,6 +539,7 @@ pub async fn get_user_link_status(
         (status = 404, description = "Target user not found, or no Albion player exists for the given albion_player_id", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn admin_link_user_handler(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
