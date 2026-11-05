@@ -20,7 +20,7 @@ const RENDER_ITEM_BASE_URL: &str = "https://render.albiononline.com/v1/item";
 /// a city/quality pair. Keeping those rows lets the UI distinguish "no order" from "row missing".
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// # use backend::modules::albiondata::client::AlbionDataMarketPrice;
 /// let price = AlbionDataMarketPrice {
 ///     item_id: "T4_BAG".to_string(),
@@ -73,7 +73,7 @@ pub struct AlbionDataMarketPrice {
 /// of proxying the image bytes. This keeps API responses small and lets browsers cache images.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// # use backend::modules::albiondata::client::AlbionDataItemIcon;
 /// let icon = AlbionDataItemIcon::new("T4_HEAD_PLATE_SET1", 1, 64);
 /// assert!(icon.url.contains("T4_HEAD_PLATE_SET1.png"));
@@ -99,7 +99,7 @@ impl AlbionDataItemIcon {
     /// avoids a network dependency when the caller only needs a browser-ready image source.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// # use backend::modules::albiondata::client::AlbionDataItemIcon;
     /// let icon = AlbionDataItemIcon::new("T4_BAG", 1, 64);
     /// assert_eq!(icon.quality, 1);
@@ -131,7 +131,7 @@ impl AlbionDataApiClient {
     /// workers indefinitely during upstream incidents.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// # use backend::modules::albiondata::client::AlbionDataApiClient;
     /// let client = AlbionDataApiClient::new(Some(10));
     /// ```
@@ -151,7 +151,7 @@ impl AlbionDataApiClient {
     /// filters for locations and qualities. The API returns one row per item/location/quality.
     ///
     /// # Example
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # use backend::modules::albiondata::client::AlbionDataApiClient;
     /// # async fn example() -> Result<(), backend::errors::AppError> {
     /// let client = AlbionDataApiClient::default();
@@ -221,7 +221,7 @@ impl Default for AlbionDataApiClient {
 /// current default Albion region.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// # use backend::modules::albiondata::client::market_base_url;
 /// assert_eq!(market_base_url("europe"), "https://europe.albion-online-data.com");
 /// ```

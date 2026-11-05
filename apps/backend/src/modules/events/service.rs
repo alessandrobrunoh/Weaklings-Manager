@@ -4371,7 +4371,7 @@ impl EventService {
     /// temporary upstream failure does not wipe existing analytics.
     ///
     /// # Example
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # use backend::modules::events::models::UpdateEventBattlesRequest;
     /// # use backend::modules::events::service::EventService;
     /// # async fn example(

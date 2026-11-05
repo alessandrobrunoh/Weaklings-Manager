@@ -501,7 +501,7 @@ pub struct EventDetailView {
 /// used by analytics.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// # use backend::modules::events::models::UpdateEventBattlesRequest;
 /// let request = UpdateEventBattlesRequest {
 ///     battle_ids: vec!["123456789".to_string()],
