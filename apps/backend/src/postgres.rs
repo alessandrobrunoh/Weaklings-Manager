@@ -177,35 +177,27 @@ pub(crate) mod test_support {
     use super::{Database, DatabaseConnection, DbErr};
     use sea_orm::{ConnectionTrait, DbBackend};
 
-    pub(crate) fn postgres_url() -> Option<(String, bool)> {
+    /// Integration tests run only against an explicit `TEST_DATABASE_URL`.
+    /// `DATABASE_URL` is never used here: it normally points at the dev database.
+    pub(crate) fn postgres_url() -> Option<String> {
         let _ = dotenvy::dotenv();
-        if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
-            return Some((url, true));
-        }
-        let url = std::env::var("DATABASE_URL").ok()?;
-        if url.starts_with("postgres://") || url.starts_with("postgresql://") {
-            Some((url, false))
-        } else {
-            None
-        }
+        std::env::var("TEST_DATABASE_URL")
+            .ok()
+            .filter(|url| !url.trim().is_empty())
     }
 
     pub(crate) async fn try_admin_db() -> Option<(String, DatabaseConnection)> {
-        let (url, required) = postgres_url()?;
+        let Some(url) = postgres_url() else {
+            eprintln!("skipping postgres integration test: TEST_DATABASE_URL is not set");
+            return None;
+        };
         match Database::connect(&url).await {
             Ok(db) if db.get_database_backend() == DbBackend::Postgres => Some((url, db)),
-            Ok(db) if required => {
-                panic!(
-                    "TEST_DATABASE_URL is set but backend is {:?}, expected Postgres",
-                    db.get_database_backend()
-                );
-            }
-            Ok(_) => None,
-            Err(err) if required => panic!("TEST_DATABASE_URL is set but connect failed: {err}"),
-            Err(err) => {
-                eprintln!("skipping postgres integration test: {err}");
-                None
-            }
+            Ok(db) => panic!(
+                "TEST_DATABASE_URL is set but backend is {:?}, expected Postgres",
+                db.get_database_backend()
+            ),
+            Err(err) => panic!("TEST_DATABASE_URL is set but connect failed: {err}"),
         }
     }
 
