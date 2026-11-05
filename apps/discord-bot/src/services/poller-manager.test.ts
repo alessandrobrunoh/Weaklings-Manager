@@ -103,3 +103,58 @@ test("the manager stops a poller once its guild is no longer a tenant", async ()
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("concurrent ensure calls for one guild start exactly one poller", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-manager-"));
+  forgetTenantStatus(REGISTERED);
+  try {
+    const calls: string[] = [];
+    const api = mockApi(new Set([REGISTERED]), calls);
+    initSettingsService(api);
+    const manager = new PollerManager(mockClient([REGISTERED]), api, 60_000, 60_000, directory);
+
+    // `GuildCreate` and the startup `reconcile()` race while the status call is in flight.
+    await Promise.all([manager.ensure(REGISTERED), manager.ensure(REGISTERED), manager.reconcile()]);
+
+    const first = getPoller(REGISTERED);
+    assert.equal(first?.guildId, REGISTERED);
+    assert.equal(
+      calls.filter((path) => path === `api/tenants/${REGISTERED}/status`).length >= 1,
+      true,
+    );
+    const stopped: string[] = [];
+    const originalStop = first!.stop.bind(first);
+    first!.stop = () => {
+      stopped.push("stopped");
+      originalStop();
+    };
+    await manager.ensure(REGISTERED);
+    assert.equal(getPoller(REGISTERED), first, "a later ensure keeps the running poller");
+    assert.deepEqual(stopped, [], "no poller was replaced, so none was orphaned");
+    manager.stop();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("registering a replacement poller stops the one it replaces", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-manager-"));
+  try {
+    const { Poller, registerPoller, unregisterPoller } = await import("./poller.js");
+    const api = mockApi(new Set([REGISTERED]), [], REGISTERED);
+    const settings = {} as never;
+    const first = new Poller({} as Client, api, settings, 60_000, directory);
+    const second = new Poller({} as Client, api, settings, 60_000, directory);
+    let firstStopped = false;
+    first.stop = () => {
+      firstStopped = true;
+    };
+    registerPoller(first);
+    registerPoller(second);
+    assert.equal(firstStopped, true);
+    assert.equal(getPoller(REGISTERED), second);
+    unregisterPoller(REGISTERED);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

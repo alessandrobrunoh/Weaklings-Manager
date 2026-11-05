@@ -2985,3 +2985,51 @@ test("a giveaway whose backend ack failed is not announced a second time", async
   }
 });
 
+test("pollNow during a running cycle queues one follow-up instead of running concurrently", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    let active = 0;
+    let maxActive = 0;
+    let cycles = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      firstEntered = resolve;
+    });
+    const settings = {
+      ...hotfixSettings,
+      applicationsSettings: async () => {
+        cycles += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        try {
+          if (cycles === 1) {
+            firstEntered();
+            await firstGate;
+          }
+          return { discord_applications_open: true };
+        } finally {
+          active -= 1;
+        }
+      },
+    } as unknown as SettingsService;
+
+    const poller = new Poller({} as unknown as Client, scheduledEventsApi([]), settings, 60_000, directory);
+    const first = poller.pollNow();
+    await entered;
+    const second = poller.pollNow();
+    const third = poller.pollNow();
+    releaseFirst();
+    await Promise.all([first, second, third]);
+
+    assert.equal(maxActive, 1, "cycles never overlap");
+    assert.equal(cycles, 2, "the callers that arrived mid-cycle share exactly one follow-up cycle");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+

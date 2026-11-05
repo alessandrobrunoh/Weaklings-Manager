@@ -469,7 +469,9 @@ export class Poller {
   /** Guards against a manually-triggered check overlapping a scheduled one —
    *  both would otherwise read the same stale `lastEventId`/`lastBattleId`
    *  and could announce the same event or battle twice. */
-  private polling = false;
+  private inflightPoll: Promise<void> | null = null;
+  /** Set by `pollNow()` while a cycle is running: run one more cycle right after it. */
+  private rerunRequested = false;
   /** Serializes scheduled and manual calendar writes without sharing API identities. */
   private calendarSyncQueue: Promise<void> = Promise.resolve();
 
@@ -534,9 +536,7 @@ export class Poller {
     // where this first attempt fails and has to be retried on a later tick.
     void (async () => {
       if (this.stateUnreadable) {
-        console.error(
-          `[Poller] Guild ${this.guildId} is paused: its checkpoint file is unreadable and will not be reseeded automatically. Repair or delete ${this.stateFileName}.`,
-        );
+        this.warnStateUnreadable();
         return;
       }
       if (!this.state.initialized) {
@@ -578,47 +578,78 @@ export class Poller {
    * is never posted a second time.
    */
   async pollNow(): Promise<void> {
-    await this.poll();
+    if (this.inflightPoll) {
+      // A cycle that began before the caller's change cannot be trusted to have
+      // seen it, so queue exactly one follow-up instead of silently dropping the request.
+      this.rerunRequested = true;
+      return this.inflightPoll;
+    }
+    return this.poll();
   }
 
-  private async poll(): Promise<void> {
-    if (this.polling) {
+  private warnStateUnreadable(): void {
+    console.error(
+      `[Poller] Guild ${this.guildId} is paused: its checkpoint file is unreadable and will not be reseeded automatically. Repair or delete ${this.stateFileName}.`,
+    );
+  }
+
+  private poll(): Promise<void> {
+    if (this.inflightPoll) {
+      return this.inflightPoll;
+    }
+    const run = (async () => {
+      try {
+        do {
+          this.rerunRequested = false;
+          await this.pollOnce();
+        } while (this.rerunRequested);
+      } finally {
+        this.inflightPoll = null;
+      }
+    })();
+    this.inflightPoll = run;
+    return run;
+  }
+
+  private async pollOnce(): Promise<void> {
+    if (this.stateUnreadable) {
+      this.warnStateUnreadable();
       return;
     }
-    this.polling = true;
-    try {
-      if (this.stateUnreadable) {
-        console.error(
-          `[Poller] Guild ${this.guildId} is paused: its checkpoint file is unreadable and will not be reseeded automatically. Repair or delete ${this.stateFileName}.`,
-        );
-        return;
-      }
-      if (!this.state.initialized) {
-        await this.adoptCheckpointBaseline();
-        return;
-      }
-      await this.checkApplicationStatus();
-      // Event announcements must complete before checking reminders so a newly
-      // created event already has its discussion thread recorded.
-      await this.checkNewEvents();
-      await this.checkVodForumPosts();
-      const revisions = await this.loadEventRevisions();
-      await this.checkClosedEvents(revisions);
-      await this.checkRestoredEvents();
-      await this.checkEventRosterSync(revisions);
-      await this.updateEventCalendars();
-      await this.checkNewGiveaways();
-      await this.checkGiveawayResults();
-      await this.checkEventLifecycle();
-      await this.sweepOrphanEventVoiceChannels();
-      await Promise.allSettled([
-        this.checkNewBattles(),
-        this.checkUpcomingEvents(),
-        this.checkSplitSync(),
-      ]);
-    } finally {
-      this.polling = false;
+    if (!this.state.initialized) {
+      await this.adoptCheckpointBaseline();
+      return;
     }
+    // Each step is isolated: one throwing step must not skip the ones behind it.
+    const step = async (name: string, run: () => Promise<void>): Promise<void> => {
+      try {
+        await run();
+      } catch (error) {
+        console.error(`[Poller] Step ${name} failed for guild ${this.guildId}:`, error);
+      }
+    };
+    let revisions: Map<string, EventRevision> | null = null;
+    await step("applications", () => this.checkApplicationStatus());
+    // Event announcements must complete before checking reminders so a newly
+    // created event already has its discussion thread recorded.
+    await step("new-events", () => this.checkNewEvents());
+    await step("vod-forum", () => this.checkVodForumPosts());
+    await step("revisions", async () => {
+      revisions = await this.loadEventRevisions();
+    });
+    await step("closed-events", () => this.checkClosedEvents(revisions));
+    await step("restored-events", () => this.checkRestoredEvents());
+    await step("roster-sync", () => this.checkEventRosterSync(revisions));
+    await step("calendars", () => this.updateEventCalendars());
+    await step("new-giveaways", () => this.checkNewGiveaways());
+    await step("giveaway-results", () => this.checkGiveawayResults());
+    await step("lifecycle", () => this.checkEventLifecycle());
+    await step("voice-sweep", () => this.sweepOrphanEventVoiceChannels());
+    await Promise.allSettled([
+      this.checkNewBattles(),
+      this.checkUpcomingEvents(),
+      this.checkSplitSync(),
+    ]);
   }
 
   /**
@@ -2524,6 +2555,10 @@ const pollers = new Map<string, Poller>();
 
 /** Registers a guild's `Poller`, replacing any previous one for that guild. */
 export function registerPoller(poller: Poller): void {
+  const previous = pollers.get(poller.guildId);
+  // A replaced poller keeps its interval alive and becomes unreachable, so it
+  // would announce everything a second time. Stop it before it is dropped.
+  if (previous && previous !== poller) previous.stop();
   pollers.set(poller.guildId, poller);
 }
 
