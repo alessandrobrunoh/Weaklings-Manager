@@ -1781,7 +1781,8 @@ mod tests {
         let source = seed_sqlite().await;
         let dest = seed_sqlite().await;
         let src_user = insert_user(&source, "maker", "maker@example.com").await;
-        let dest_user = insert_user(&dest, "maker", "maker@example.com").await;
+        // The destination needs the maker (matched by email) before the copy runs.
+        insert_user(&dest, "maker", "maker@example.com").await;
         let comps = CompService::new();
         let src_build_cat = comps
             .create_build_category(
@@ -1793,16 +1794,6 @@ mod tests {
             )
             .await
             .expect("src build cat");
-        let dest_build_cat = comps
-            .create_build_category(
-                &dest,
-                crate::modules::comps::models::CreateBuildCategoryRequest {
-                    name: "Crystal".to_owned(),
-                    description: None,
-                },
-            )
-            .await
-            .expect("dest build cat");
         let src_mace = comps
             .create_build(
                 &source,
@@ -1817,20 +1808,6 @@ mod tests {
             )
             .await
             .expect("src mace");
-        let dest_mace = comps
-            .create_build(
-                &dest,
-                dest_user,
-                crate::modules::comps::models::CreateBuildRequest {
-                    name: "Heavy Mace".to_owned(),
-                    description: None,
-                    role: BuildRole::Dps,
-                    category_id: dest_build_cat.id,
-                    items: None,
-                },
-            )
-            .await
-            .expect("dest mace");
         let src_holy = comps
             .create_build(
                 &source,
@@ -1845,20 +1822,6 @@ mod tests {
             )
             .await
             .expect("src holy");
-        let dest_holy = comps
-            .create_build(
-                &dest,
-                dest_user,
-                crate::modules::comps::models::CreateBuildRequest {
-                    name: "Holy Staff".to_owned(),
-                    description: None,
-                    role: BuildRole::Healer,
-                    category_id: dest_build_cat.id,
-                    items: None,
-                },
-            )
-            .await
-            .expect("dest holy");
         let src_comp_cat = comps
             .create_comp_category(
                 &source,
@@ -1892,10 +1855,6 @@ mod tests {
             )
             .await
             .expect("comp");
-
-        let mut mapping = HashMap::new();
-        mapping.insert(src_mace.summary.id, dest_mace.summary.id);
-        mapping.insert(src_holy.summary.id, dest_holy.summary.id);
 
         let (published_id, mapping) = copy_alliance_comp_to_tenant(
             &source,
