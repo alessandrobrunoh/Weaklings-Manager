@@ -1,4 +1,14 @@
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import type { Client, ForumChannel, Message, TextChannel, ThreadChannel } from "discord.js";
@@ -119,6 +129,11 @@ interface PollerState {
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
   splitUpdatedAt: string | null;
   splitAfterId: number | null;
+  /**
+   * Splits whose Forum sync failed after the cursor moved past them. They are
+   * retried with backoff so one broken split never blocks the ones behind it.
+   */
+  splitRetries: Record<string, { attempts: number; nextAt: number }>;
   massedEvents: number[];
   emptyLiveChecks: Record<string, number>;
   /** Live events whose voice channel has been seen occupied at least once. */
@@ -129,6 +144,8 @@ interface PollerState {
   lastGiveawayId: number;
   postedGiveawayIds: number[];
   announcedGiveawayDraws: number[];
+  /** Giveaway messages sent to Discord whose backend `discord-message` PUT has not been acknowledged yet. */
+  unackedGiveawayMessages: Record<string, { message_id: string; channel_id: string }>;
   /**
    * False until the checkpoints below have been seeded from the live API.
    *
@@ -189,6 +206,7 @@ function createDefaultState(): PollerState {
     archivedEventIds: [],
     splitUpdatedAt: null,
     splitAfterId: null,
+    splitRetries: {},
     massedEvents: [],
     emptyLiveChecks: {},
     occupiedLiveEvents: [],
@@ -197,6 +215,7 @@ function createDefaultState(): PollerState {
     lastGiveawayId: 0,
     postedGiveawayIds: [],
     announcedGiveawayDraws: [],
+    unackedGiveawayMessages: {},
     initialized: false,
   };
 }
@@ -249,69 +268,113 @@ function ensureStateDirectory(stateDirectory: string): void {
   }
 }
 
+/** Result of reading a checkpoint file. */
+interface LoadedState {
+  state: PollerState;
+  /**
+   * True when a checkpoint exists on disk but neither it nor its backup could
+   * be read. The poller must stay silent and must not overwrite the file:
+   * reseeding from "now" would swallow everything created in the meantime and
+   * forget every Discord thread binding.
+   */
+  unreadable: boolean;
+}
+
+function backupFileName(fileName: string): string {
+  return `${fileName}.bak`;
+}
+
+/** Parses one checkpoint file, throwing when it is not a JSON object. */
+function readStateFile(stateFile: string): PollerState {
+  const parsed: unknown = JSON.parse(readFileSync(stateFile, "utf-8"));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("poller state file does not contain a JSON object");
+  }
+  return normalizeState(parsed as Partial<PollerState>);
+}
+
+function normalizeState(parsedState: Partial<PollerState>): PollerState {
+  return {
+    lastEventId: parsedState.lastEventId ?? 0,
+    lastBattleId: parsedState.lastBattleId ?? 0,
+    pinged1hEvents: parsedState.pinged1hEvents ?? [],
+    eventThreadIds: parsedState.eventThreadIds ?? {},
+    eventParentMessageIds: parsedState.eventParentMessageIds ?? {},
+    eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
+    eventCalendarMessageIds: restoreEventCalendarMessageIds(
+      parsedState.eventCalendarMessageIds,
+    ),
+    eventCalendarFingerprints: parsedState.eventCalendarFingerprints ?? {},
+    pendingAnnounces: parsedState.pendingAnnounces ?? parsedState.failedAnnounces ?? {},
+    eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
+    archivedEventIds: parsedState.archivedEventIds ?? [],
+    splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
+    splitAfterId: parsedState.splitAfterId ?? null,
+    splitRetries: parsedState.splitRetries ?? {},
+    massedEvents: parsedState.massedEvents ?? [],
+    emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
+    occupiedLiveEvents: parsedState.occupiedLiveEvents ?? [],
+    // Old checkpoints start the sweep interval from now, avoiding a tenant
+    // herd of channel-list/delete requests immediately after bot restart.
+    lastVoiceSweepAt: parsedState.lastVoiceSweepAt ?? Date.now(),
+    applicationsOpen: parsedState.applicationsOpen,
+    lastGiveawayId: parsedState.lastGiveawayId ?? 0,
+    postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
+    announcedGiveawayDraws: parsedState.announcedGiveawayDraws ?? [],
+    unackedGiveawayMessages: parsedState.unackedGiveawayMessages ?? {},
+    // A file written before this flag existed already holds real checkpoints,
+    // so it is initialized. Treating it as fresh would re-seed the cursors to
+    // "now" and silently swallow anything created while the bot was down.
+    initialized: parsedState.initialized ?? true,
+  };
+}
+
 /**
  * Restores poller progress without losing the bot on corrupt JSON.
  *
- * A malformed checkpoint should not prevent Discord commands from coming
- * online, but filesystem permission errors must still fail loudly because the
- * service would otherwise spam duplicate announcements after each restart.
+ * Only a missing file with no backup is a fresh guild that may be seeded from
+ * the live API. A file that exists but cannot be parsed falls back to the last
+ * good backup; with no usable backup it is reported as `unreadable` so the
+ * caller refuses to reseed (which would silently drop every announcement made
+ * while the state was unavailable) and leaves the file for an operator.
  *
  * @example
  * ```ts
- * const state = loadState("/app/data", "123456789012345678");
- * console.log(state.lastEventId);
+ * const { state, unreadable } = loadState("/app/data", "poller-state-123456789012345678.json");
+ * console.log(state.lastEventId, unreadable);
  * ```
  */
-function loadState(stateDirectory: string, fileName: string): PollerState {
+function loadState(stateDirectory: string, fileName: string): LoadedState {
   ensureStateDirectory(stateDirectory);
 
   const stateFile = join(stateDirectory, fileName);
-  if (!existsSync(stateFile)) {
-    return createDefaultState();
+  const backupFile = join(stateDirectory, backupFileName(fileName));
+  const hasMain = existsSync(stateFile);
+  const hasBackup = existsSync(backupFile);
+  if (!hasMain && !hasBackup) {
+    return { state: createDefaultState(), unreadable: false };
   }
 
-  try {
-    const parsedState = JSON.parse(
-      readFileSync(stateFile, "utf-8"),
-    ) as Partial<PollerState>;
-    return {
-      lastEventId: parsedState.lastEventId ?? 0,
-      lastBattleId: parsedState.lastBattleId ?? 0,
-      pinged1hEvents: parsedState.pinged1hEvents ?? [],
-      eventThreadIds: parsedState.eventThreadIds ?? {},
-      eventParentMessageIds: parsedState.eventParentMessageIds ?? {},
-      eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
-      eventCalendarMessageIds: restoreEventCalendarMessageIds(
-        parsedState.eventCalendarMessageIds,
-      ),
-      eventCalendarFingerprints: parsedState.eventCalendarFingerprints ?? {},
-      pendingAnnounces: parsedState.pendingAnnounces ?? parsedState.failedAnnounces ?? {},
-      eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
-      archivedEventIds: parsedState.archivedEventIds ?? [],
-      splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
-      splitAfterId: parsedState.splitAfterId ?? null,
-      massedEvents: parsedState.massedEvents ?? [],
-      emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
-      occupiedLiveEvents: parsedState.occupiedLiveEvents ?? [],
-      // Old checkpoints start the sweep interval from now, avoiding a tenant
-      // herd of channel-list/delete requests immediately after bot restart.
-      lastVoiceSweepAt: parsedState.lastVoiceSweepAt ?? Date.now(),
-      applicationsOpen: parsedState.applicationsOpen,
-      lastGiveawayId: parsedState.lastGiveawayId ?? 0,
-      postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
-      announcedGiveawayDraws: parsedState.announcedGiveawayDraws ?? [],
-      // A file written before this flag existed already holds real checkpoints,
-      // so it is initialized. Treating it as fresh would re-seed the cursors to
-      // "now" and silently swallow anything created while the bot was down.
-      initialized: parsedState.initialized ?? true,
-    };
-  } catch (error) {
-    console.warn(
-      `[Poller] Ignoring unreadable state file at ${stateFile}:`,
-      error,
-    );
-    return createDefaultState();
+  if (hasMain) {
+    try {
+      return { state: readStateFile(stateFile), unreadable: false };
+    } catch (error) {
+      console.warn(`[Poller] State file ${stateFile} is unreadable:`, error);
+    }
   }
+  if (hasBackup) {
+    try {
+      const state = readStateFile(backupFile);
+      console.warn(`[Poller] Recovered checkpoints from backup ${backupFile}`);
+      return { state, unreadable: false };
+    } catch (error) {
+      console.warn(`[Poller] State backup ${backupFile} is unreadable:`, error);
+    }
+  }
+  console.error(
+    `[Poller] No usable checkpoint for ${fileName}; refusing to reseed. Fix or delete ${stateFile} to start from the current API state.`,
+  );
+  return { state: createDefaultState(), unreadable: true };
 }
 
 /**
@@ -319,7 +382,9 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
  *
  * The write is synchronous on purpose: a crash immediately after sending a
  * message must not roll the checkpoint back and re-announce the same event or
- * battle on the next start.
+ * battle on the next start. It goes through a temporary file plus an atomic
+ * rename so a crash mid-write cannot leave a truncated checkpoint, and the
+ * previous good file is kept as `.bak`.
  *
  * @example
  * ```ts
@@ -328,11 +393,27 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
  */
 function saveState(stateDirectory: string, fileName: string, state: PollerState): void {
   ensureStateDirectory(stateDirectory);
-  writeFileSync(
-    join(stateDirectory, fileName),
-    JSON.stringify(state, null, 2),
-    "utf-8",
-  );
+  const stateFile = join(stateDirectory, fileName);
+  const tmpFile = `${stateFile}.tmp`;
+
+  const fd = openSync(tmpFile, "w");
+  try {
+    writeSync(fd, JSON.stringify(state, null, 2));
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
+  if (existsSync(stateFile)) {
+    try {
+      // Only a parseable file is worth keeping as the backup.
+      JSON.parse(readFileSync(stateFile, "utf-8"));
+      copyFileSync(stateFile, join(stateDirectory, backupFileName(fileName)));
+    } catch {
+      // A corrupt current file must not overwrite the last good backup.
+    }
+  }
+  renameSync(tmpFile, stateFile);
 }
 
 /**
@@ -365,6 +446,8 @@ export class Poller {
   private readonly stateDirectory: string;
   private readonly stateFileName: string;
   private readonly state: PollerState;
+  /** True when the checkpoint file exists but cannot be read; the poller stays idle and never writes. */
+  private readonly stateUnreadable: boolean;
   private timer: NodeJS.Timeout | undefined;
   private delayedPollTimer: NodeJS.Timeout | undefined;
   private delayedPollAt = 0;
@@ -388,13 +471,17 @@ export class Poller {
     this.guildId = api.guildId;
     this.stateDirectory = stateDirectory;
     this.stateFileName = stateFileName(this.guildId);
-    this.state = loadState(this.stateDirectory, this.stateFileName);
+    const loaded = loadState(this.stateDirectory, this.stateFileName);
+    this.state = loaded.state;
+    this.stateUnreadable = loaded.unreadable;
     console.log(
       `[Poller] Starting for guild ${this.guildId} — last event ID: ${this.state.lastEventId}, last battle ID: ${this.state.lastBattleId}`,
     );
   }
 
   private save(): void {
+    // Never overwrite a checkpoint we could not read; an operator needs it.
+    if (this.stateUnreadable) return;
     saveState(this.stateDirectory, this.stateFileName, this.state);
   }
 
@@ -431,6 +518,12 @@ export class Poller {
     // baseline and never announced. `poll` keeps its own guard for the case
     // where this first attempt fails and has to be retried on a later tick.
     void (async () => {
+      if (this.stateUnreadable) {
+        console.error(
+          `[Poller] Guild ${this.guildId} is paused: its checkpoint file is unreadable and will not be reseeded automatically. Repair or delete ${this.stateFileName}.`,
+        );
+        return;
+      }
       if (!this.state.initialized) {
         await this.adoptCheckpointBaseline();
       }
@@ -479,6 +572,12 @@ export class Poller {
     }
     this.polling = true;
     try {
+      if (this.stateUnreadable) {
+        console.error(
+          `[Poller] Guild ${this.guildId} is paused: its checkpoint file is unreadable and will not be reseeded automatically. Repair or delete ${this.stateFileName}.`,
+        );
+        return;
+      }
       if (!this.state.initialized) {
         await this.adoptCheckpointBaseline();
         return;

@@ -2414,3 +2414,128 @@ test("ambiguous event forum creation remains pending and is not retried automati
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// ── Poller hotfixes: state safety, thread retention, scheduling queries ─────
+
+const HOTFIX_GUILD = "100000000000000500";
+
+function hotfixStateFile(directory: string): string {
+  return join(directory, `poller-state-${HOTFIX_GUILD}.json`);
+}
+
+function writeHotfixState(directory: string, extra: Record<string, unknown> = {}): void {
+  writeFileSync(
+    hotfixStateFile(directory),
+    JSON.stringify({
+      lastEventId: 5000,
+      lastBattleId: 0,
+      lastGiveawayId: 0,
+      pinged1hEvents: [],
+      eventThreadIds: {},
+      splitUpdatedAt: null,
+      splitAfterId: null,
+      massedEvents: [],
+      emptyLiveChecks: {},
+      initialized: true,
+      ...extra,
+    }),
+    "utf-8",
+  );
+}
+
+const hotfixSettings = {
+  applicationsSettings: async () => ({ discord_applications_open: true }),
+  splitsForumChannelId: async () => null,
+  eventsChannelId: async () => null,
+  callToArmsChannelId: async () => null,
+  battlesChannelId: async () => null,
+  giveawaysChannelId: async () => null,
+  giveawaysRoleId: async () => null,
+} as unknown as SettingsService;
+
+interface ListCall {
+  path: string;
+  params?: Record<string, string | number>;
+}
+
+/** Fake `api/events` that honours `status`, `sort`/`order` and paging like the backend. */
+function scheduledEventsApi(events: EventView[], calls: ListCall[] = []): ApiClient {
+  return {
+    guildId: HOTFIX_GUILD,
+    get: async (path: string, _discordId?: string, params?: Record<string, string | number>) => {
+      calls.push({ path, params });
+      if (path === "api/events") {
+        const limit = Number(params?.limit ?? 20);
+        const page = Number(params?.page ?? 1);
+        let rows = events.filter((event) => !params?.status || event.status === params.status);
+        rows = [...rows].sort((a, b) => a.event_date_utc.localeCompare(b.event_date_utc));
+        // The backend default is newest-first; only an explicit `order=asc` flips it.
+        if (params?.order !== "asc") rows.reverse();
+        return {
+          items: rows.slice((page - 1) * limit, page * limit),
+          total_items: rows.length,
+          total_pages: Math.max(1, Math.ceil(rows.length / limit)),
+          current_page: page,
+          limit,
+        };
+      }
+      if (path === "api/events/revisions") return [];
+      throw new Error(`unexpected GET ${path}`);
+    },
+  } as unknown as ApiClient;
+}
+
+test("a corrupt checkpoint file stays untouched, is not reseeded, and pauses the guild", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(hotfixStateFile(directory), "{ not json", "utf-8");
+    const gets: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        gets.push(path);
+        return emptyPage();
+      },
+    } as unknown as ApiClient;
+
+    const poller = new Poller({} as unknown as Client, api, hotfixSettings, 60_000, directory);
+    await poller.pollNow();
+    await poller.pollNow();
+
+    assert.deepEqual(gets, [], "no seeding, no announcing: the API is never consulted");
+    assert.equal(readFileSync(hotfixStateFile(directory), "utf-8"), "{ not json");
+    poller.rememberEventThread(1, "thread-1");
+    assert.equal(
+      readFileSync(hotfixStateFile(directory), "utf-8"),
+      "{ not json",
+      "even a later state change must not overwrite the unreadable file",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a corrupt checkpoint falls back to the last good backup instead of reseeding", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory, { lastEventId: 77, eventThreadIds: { "5": "thread-5" } });
+    const first = new Poller({} as unknown as Client, scheduledEventsApi([]), hotfixSettings, 60_000, directory);
+    first.rememberEventThread(6, "thread-6"); // rotates the good file into .bak
+    first.rememberEventThread(7, "thread-7");
+    assert.equal(existsSync(`${hotfixStateFile(directory)}.bak`), true);
+    assert.equal(existsSync(`${hotfixStateFile(directory)}.tmp`), false, "no temp file is left behind");
+
+    writeFileSync(hotfixStateFile(directory), '{"lastEventId": 7', "utf-8"); // torn write
+
+    const second = new Poller({} as unknown as Client, scheduledEventsApi([]), hotfixSettings, 60_000, directory);
+    assert.equal(second.findEventIdForThread("thread-5"), 5, "bindings survive");
+    assert.equal(second.findEventIdForThread("thread-6"), 6);
+    // The recovered poller keeps working and rewrites a valid main file.
+    second.rememberEventThread(8, "thread-8");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as { lastEventId: number };
+    assert.equal(saved.lastEventId, 77);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
