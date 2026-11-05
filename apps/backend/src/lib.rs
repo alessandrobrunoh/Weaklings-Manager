@@ -11,6 +11,11 @@ pub(crate) mod modules;
 pub(crate) mod openapi;
 pub(crate) mod platform_admins;
 pub(crate) mod postgres;
+#[allow(
+    dead_code,
+    reason = "wake/fence/state helpers are consumed by the sync and Discord outbox slices"
+)]
+pub(crate) mod runtime;
 pub(crate) mod tenant;
 
 pub mod config;
@@ -115,7 +120,12 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         albionbb_service: albionbb_service.clone(),
         albiondata_service: albiondata_service.clone(),
     });
-    modules::events::fanout_worker::spawn(control_db.clone(), registry.clone());
+    // The one spawn point for periodic loops (fanout and mirror retry today).
+    let runtime = runtime::spawn_all(
+        control_db.clone(),
+        registry.clone(),
+        runtime::RuntimeDeps::production(),
+    );
     for ctx in &tenant_contexts {
         if !tenant::starts_sync_workers(&ctx.kind) {
             tracing::info!(
@@ -189,6 +199,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(
             modules::events::roster_hub::RosterHub::new(),
         ))
+        .layer(axum::Extension(runtime))
         .layer(axum::Extension(unscoped_permissions))
         .layer(axum::Extension(platform_admins))
         .layer(axum::Extension(session_key))
