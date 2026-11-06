@@ -33,10 +33,7 @@ use std::collections::HashSet;
 use super::attribution::{
     ParticipationGuild, eligible_participation_guilds, resolve_join_attribution,
 };
-use super::lifecycle::{
-    AfterCommit, Cause, Transition, XpFilter, assert_manageable_source_event,
-    propagate_source_change,
-};
+use super::lifecycle::{AfterCommit, Cause, Transition, XpFilter, propagate_source_change};
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
     CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
@@ -46,11 +43,28 @@ use super::models::{
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
-use super::sync::{assert_active_alliance, create_mirror, is_mirror_event, sync_participation};
+use super::sync::{assert_active_alliance, create_mirror, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::alliance_share::ShareActor;
+use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable, copy_role};
+
+/// Rejects a write on a read-only copy of another tenant's event (403 + `origin`).
+///
+/// Detached copies (sync link disabled) stay locally managed and pass.
+async fn assert_event_writable(
+    db: &sea_orm::DatabaseConnection,
+    control: &ControlDb,
+    tenant_id: &str,
+    id: i64,
+) -> Result<(), AppError> {
+    let legacy = LegacyLinks {
+        control: &control.0,
+        tenant_id,
+    };
+    assert_writable(db, legacy, SyncKind::Event, id).await
+}
 
 async fn hydrate_event_view(
     mut view: EventView,
@@ -665,7 +679,7 @@ async fn assign_roster_seat(
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
         .await?;
@@ -694,7 +708,7 @@ async fn clear_roster_seat(
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .clear_roster_seat(&db, id, &seat_key, request)
         .await?;
@@ -723,7 +737,7 @@ async fn swap_roster_seats(
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let keys = vec![
         request.source_seat_key.clone(),
         request.target_seat_key.clone(),
@@ -755,7 +769,7 @@ async fn auto_fill_roster(
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let (version, changed) = EventService::new()
         .auto_fill_roster(&db, id, request, user.user_id)
         .await?;
@@ -923,7 +937,7 @@ async fn create_event_roster_role(
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
@@ -959,7 +973,7 @@ async fn delete_event_roster_role(
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
@@ -1244,7 +1258,7 @@ async fn retry_event_mirror(
         ));
     }
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    super::lifecycle::assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     super::sync::assert_active_alliance(&control.0, &tenant_id).await?;
     super::mirror_retry::requeue(&control.0, &tenant_id, id).await?;
     super::mirror_retry::process_due(&control.0, &registry).await?;
@@ -1315,7 +1329,7 @@ async fn update_event(
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     if req.ping_alliance == Some(true) {
         assert_active_alliance(&control.0, &tenant_id).await?;
     }
@@ -1422,7 +1436,7 @@ async fn delete_event(
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     run_transition(
         &user,
         &db,
@@ -1461,7 +1475,7 @@ async fn archive_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = run_transition(
         &user,
         &db,
@@ -1500,7 +1514,7 @@ async fn unarchive_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = run_transition(
         &user,
         &db,
@@ -1763,7 +1777,7 @@ async fn add_event_member(
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
     tracing::info!(
@@ -1816,7 +1830,7 @@ async fn set_participant(
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
@@ -1857,7 +1871,7 @@ async fn remove_participant(
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
@@ -1907,7 +1921,7 @@ async fn remind_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
 
     let _ = AuditService::log(
@@ -1952,11 +1966,13 @@ async fn get_event_management_authority(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventManagementAuthorityView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
-    let is_copy = match assert_manageable_source_event(&control.0, &tenant_id, id).await {
-        Ok(()) => false,
-        Err(AppError::Forbidden(_)) => true,
-        Err(error) => return Err(error),
+    let legacy = LegacyLinks {
+        control: &control.0,
+        tenant_id: &tenant_id,
     };
+    let is_copy = copy_role(&db, legacy, SyncKind::Event, id)
+        .await?
+        .is_read_only();
     let is_organizer = !is_copy && event_creator_id(&db, id).await? == user.user_id;
     let can_manage =
         !is_copy && (is_organizer || user.has_permission(&perms, Permission::EventsEdit).await);
@@ -1997,7 +2013,7 @@ async fn set_event_voice_channel(
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
         .await?;
@@ -2040,7 +2056,7 @@ async fn clear_event_voice_channel(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
         .await?;
@@ -2085,7 +2101,7 @@ async fn start_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = run_transition(
         &user,
         &db,
@@ -2128,7 +2144,7 @@ async fn cancel_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = run_transition(
         &user,
         &db,
@@ -2171,7 +2187,7 @@ async fn uncancel_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = run_transition(
         &user,
         &db,
@@ -2215,8 +2231,14 @@ async fn stop_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let award_xp = !is_mirror_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    // Only a detached copy reaches this point; it still awards nothing, exactly as
+    // before (progression belongs to the origin tenant).
+    let legacy = LegacyLinks {
+        control: &control.0,
+        tenant_id: &tenant_id,
+    };
+    let award_xp = !copy_role(&db, legacy, SyncKind::Event, id).await?.is_copy();
     let stop = Transition::Stop {
         auto: false,
         xp: XpFilter::from_award_xp(award_xp),
@@ -2299,7 +2321,7 @@ async fn replace_event_battles(
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let service = EventService::new();
     let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
         .await

@@ -490,34 +490,6 @@ async fn apply_unarchive(
     Ok(updated)
 }
 
-/// Rejects management actions on a linked copy of another tenant's event.
-///
-/// Only the source event owner tenant may edit, cancel, or archive. Copies
-/// whose sync link is still enabled reject every management mutation; a link
-/// disabled by a membership departure leaves the copy locally managed.
-pub async fn assert_manageable_source_event(
-    control: &DatabaseConnection,
-    tenant_id: &str,
-    event_id: i64,
-) -> Result<(), AppError> {
-    let row = control
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "SELECT source_tenant_id FROM event_sync_links \
-             WHERE mirror_tenant_id = $1 AND mirror_event_id = $2 AND sync_enabled",
-            [tenant_id.into(), event_id.into()],
-        ))
-        .await?;
-    if let Some(row) = row {
-        let source: String = row.try_get_by_index(0)?;
-        return Err(AppError::Forbidden(format!(
-            "this event is a synchronized copy owned by tenant {source}; \
-             manage it from the owner tenant instead"
-        )));
-    }
-    Ok(())
-}
-
 /// Converges one copy's content and lifecycle state to the current source.
 ///
 /// Content and status follow the source unconditionally. Discord voice channels
@@ -661,6 +633,7 @@ mod tests {
         service::EventService,
         sync::sync_participation,
     };
+    use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable};
     use crate::modules::users::identity::upsert_discord_user;
     use crate::postgres::{
         connect_with_search_path, drop_schema, ensure_schema,
@@ -868,13 +841,32 @@ mod tests {
         let copy_a = world.guild_copy(1, source.id).await;
 
         // Guild copies reject management; the owner tenant does not.
+        let guild_a_db = &world.tenant_dbs[1];
+        let alliance_db = &world.tenant_dbs[0];
         assert!(matches!(
-            assert_manageable_source_event(&world.control, "guild-a", copy_a.id).await,
-            Err(AppError::Forbidden(_))
+            assert_writable(
+                guild_a_db,
+                LegacyLinks {
+                    control: &world.control,
+                    tenant_id: "guild-a",
+                },
+                SyncKind::Event,
+                copy_a.id,
+            )
+            .await,
+            Err(AppError::ReadOnlyCopy(_))
         ));
-        assert_manageable_source_event(&world.control, "alliance", source.id)
-            .await
-            .expect("owner tenant may manage");
+        assert_writable(
+            alliance_db,
+            LegacyLinks {
+                control: &world.control,
+                tenant_id: "alliance",
+            },
+            SyncKind::Event,
+            source.id,
+        )
+        .await
+        .expect("owner tenant may manage");
 
         // An owner update converges every active copy.
         let alliance_db = &world.tenant_dbs[0];
