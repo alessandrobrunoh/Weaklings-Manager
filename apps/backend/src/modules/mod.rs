@@ -71,6 +71,7 @@ pub fn router() -> Router {
         .nest("/siphoned", siphoned::router())
         .nest("/regear", regear::router())
         .nest("/alliance", alliance_share::router())
+        .nest("/sync", sync::router::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())

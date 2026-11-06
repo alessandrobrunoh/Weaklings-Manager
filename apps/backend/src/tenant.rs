@@ -276,6 +276,12 @@ impl TenantRegistry {
         Ok(ctx)
     }
 
+    /// Caches a ready-made context so tests can address tenants without control rows.
+    #[cfg(test)]
+    pub(crate) fn cache_context_for_tests(&self, ctx: Arc<TenantContext>) {
+        self.inner.insert(ctx.tenant_id.clone(), ctx);
+    }
+
     /// Drop a cached context so the next request reloads flags, status, and pool.
     pub fn evict(&self, tenant_id: &str) {
         self.inner.remove(tenant_id);
