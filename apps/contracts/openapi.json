@@ -75,6 +75,203 @@
         },
         "type": "object"
       },
+      "ActionDescriptor": {
+        "description": "One action evaluated for one entity and one actor.",
+        "properties": {
+          "allowed": {
+            "description": "True when the action can run now.",
+            "type": "boolean"
+          },
+          "confirm": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConfirmBody",
+                "description": "Confirmation keys when `requires_confirm`."
+              }
+            ]
+          },
+          "group": {
+            "description": "Action bar group.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Action id.",
+            "type": "string"
+          },
+          "label_key": {
+            "description": "i18n key of the label.",
+            "type": "string"
+          },
+          "params_schema": {
+            "description": "JSON Schema of the parameters; `null` for actions without parameters.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "English default text of the reason.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_code": {
+            "description": "Machine reason when not allowed (`copy_read_only`, `wrong_state`, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_params": {
+            "description": "Values for the reason text.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "requires_confirm": {
+            "description": "True when the client must confirm first.",
+            "type": "boolean"
+          },
+          "style": {
+            "$ref": "#/components/schemas/Style",
+            "description": "Button style."
+          },
+          "transport": {
+            "description": "`action` or `direct`.",
+            "type": "string"
+          },
+          "visible": {
+            "description": "False when clients should hide the action instead of showing it disabled.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label_key",
+          "style",
+          "group",
+          "allowed",
+          "visible",
+          "requires_confirm",
+          "transport"
+        ],
+        "type": "object"
+      },
+      "ActionList": {
+        "description": "The actions available on one entity (or on a collection) for the caller.",
+        "properties": {
+          "actions": {
+            "description": "One descriptor per registered action.",
+            "items": {
+              "$ref": "#/components/schemas/ActionDescriptor"
+            },
+            "type": "array"
+          },
+          "entity": {
+            "$ref": "#/components/schemas/EntityRef",
+            "description": "The entity the list is about."
+          },
+          "etag": {
+            "description": "Revision of the entity; send it back as `expected_etag`. Absent for collections.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "entity",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "ActionRequest": {
+        "description": "Body of `POST .../actions/{action}`. Every field is optional.",
+        "properties": {
+          "expected_etag": {
+            "description": "Revision the caller saw; a different revision is refused with `stale_entity`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "description": "Makes a retried request apply once (also accepted as the `Idempotency-Key` header).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "params": {
+            "description": "Action parameters, validated against the action's schema.",
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ActionResult": {
+        "description": "Result of an executed (or replayed, or no-op) action.",
+        "properties": {
+          "action": {
+            "description": "Action id.",
+            "type": "string"
+          },
+          "actions": {
+            "description": "Fresh descriptors, so the caller re-renders without another request.",
+            "items": {
+              "$ref": "#/components/schemas/ActionDescriptor"
+            },
+            "type": "array"
+          },
+          "effects": {
+            "description": "Effects queued by the action (empty until the Discord outbox lands).",
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "entity": {
+            "description": "The entity as `GET /api/events/{id}` renders it.",
+            "type": "object"
+          },
+          "outcome": {
+            "description": "`applied` or `noop`.",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StateChange",
+            "description": "Status before and after."
+          },
+          "sync": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SyncInfo",
+                "description": "Sync outbox information (absent until the sync outbox lands)."
+              }
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "outcome",
+          "state",
+          "entity",
+          "actions",
+          "effects"
+        ],
+        "type": "object"
+      },
       "AddCompBuildRequest": {
         "description": "Request body to add a build to a comp.",
         "example": {
@@ -1102,6 +1299,66 @@
           "published_id",
           "shared_by",
           "shared_at"
+        ],
+        "type": "object"
+      },
+      "ApiResponseActionCatalog": {
+        "description": "`ApiResponse` wrapper for the catalogue.",
+        "properties": {
+          "data": {
+            "description": "Every registered action.",
+            "items": {
+              "$ref": "#/components/schemas/CatalogEntry"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "Always `success`.",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseActionList": {
+        "description": "`ApiResponse` wrapper for an action list.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ActionList",
+            "description": "The list."
+          },
+          "status": {
+            "description": "Always `success`.",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseActionResult": {
+        "description": "`ApiResponse` wrapper for an executed action.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ActionResult",
+            "description": "The result."
+          },
+          "status": {
+            "description": "Always `success`.",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
         ],
         "type": "object"
       },
@@ -9727,6 +9984,74 @@
         ],
         "type": "object"
       },
+      "CatalogEntry": {
+        "description": "One entry of `GET /api/actions/catalog`.",
+        "properties": {
+          "entity": {
+            "description": "Entity kind.",
+            "type": "string"
+          },
+          "from": {
+            "description": "Allowed source states; empty means any.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "group": {
+            "description": "Action bar group.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Action id.",
+            "type": "string"
+          },
+          "implemented": {
+            "description": "False while listed but not executable.",
+            "type": "boolean"
+          },
+          "label_key": {
+            "description": "i18n key of the label.",
+            "type": "string"
+          },
+          "module": {
+            "description": "Catalogue module the action needs.",
+            "type": "string"
+          },
+          "requires_confirm": {
+            "description": "True when the client must confirm first.",
+            "type": "boolean"
+          },
+          "style": {
+            "$ref": "#/components/schemas/Style",
+            "description": "Button style."
+          },
+          "to": {
+            "description": "Target state, when the action changes status.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transport": {
+            "description": "`action` or `direct`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity",
+          "id",
+          "label_key",
+          "style",
+          "group",
+          "module",
+          "from",
+          "transport",
+          "implemented",
+          "requires_confirm"
+        ],
+        "type": "object"
+      },
       "CharacterIpBreakdown": {
         "description": "Item Power across a whole loadout.",
         "properties": {
@@ -10423,6 +10748,24 @@
           "completed",
           "failed",
           "total_distributed"
+        ],
+        "type": "object"
+      },
+      "ConfirmBody": {
+        "description": "Confirmation keys inside a descriptor.",
+        "properties": {
+          "body_key": {
+            "description": "Key of the dialog body.",
+            "type": "string"
+          },
+          "title_key": {
+            "description": "Key of the dialog title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title_key",
+          "body_key"
         ],
         "type": "object"
       },
@@ -12654,6 +12997,41 @@
           "losses",
           "threat_score",
           "last_seen"
+        ],
+        "type": "object"
+      },
+      "EntityRef": {
+        "description": "Identity of the entity an action list describes. Collection lists carry no id.",
+        "properties": {
+          "archived": {
+            "description": "Archived flag; absent for collection lists.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Entity id; absent for collection lists.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "Current status; absent for collection lists.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "description": "Entity kind (`event`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },
@@ -22248,6 +22626,33 @@
         ],
         "type": "object"
       },
+      "StateChange": {
+        "description": "Status change of an executed action.",
+        "properties": {
+          "from": {
+            "description": "Status before the action.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Status after the action.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "Style": {
+        "description": "Visual weight of an action button.",
+        "enum": [
+          "primary",
+          "neutral",
+          "danger"
+        ],
+        "type": "string"
+      },
       "SubmitVodRequest": {
         "description": "Body of `POST /api/vods`.",
         "properties": {
@@ -22278,6 +22683,27 @@
           "discord_message_id",
           "forum_channel_id",
           "thread_owner_discord_id"
+        ],
+        "type": "object"
+      },
+      "SyncInfo": {
+        "description": "Outbox row written for delivery; absent until the outbox slices land.",
+        "properties": {
+          "outbox_id": {
+            "description": "Queue row id.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "queued": {
+            "description": "True when a row was queued.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queued"
         ],
         "type": "object"
       },
@@ -25110,6 +25536,42 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/actions/catalog": {
+      "get": {
+        "operationId": "get_action_catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseActionCatalog"
+                }
+              }
+            },
+            "description": "Action catalogue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "List every registered action",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
     "/api/admin/autorole": {
       "get": {
         "operationId": "get_autorole",
@@ -34369,6 +34831,79 @@
         ]
       }
     },
+    "/api/events/actions": {
+      "get": {
+        "operationId": "list_event_collection_actions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseActionList"
+                }
+              }
+            },
+            "description": "Collection actions for events"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "List the collection-level event actions",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
+    "/api/events/actions/{action}": {
+      "post": {
+        "operationId": "run_event_collection_action",
+        "parameters": [
+          {
+            "description": "Action id",
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unknown action"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "Run a collection-level event action",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
     "/api/events/calendar": {
       "get": {
         "description": "Returns every non-archived live event and every future scheduled event, without pagination. Requires `events.edit`; the bot uses this feed for both its scheduled calendar updates and the manual `/event-calendar-refresh` command.",
@@ -34816,6 +35351,174 @@
         "summary": "Update an event",
         "tags": [
           "events"
+        ]
+      }
+    },
+    "/api/events/{id}/actions": {
+      "get": {
+        "description": "Every registered action with `allowed`, `visible` and the machine reason when refused. Clients render this list instead of re-deriving the rules.",
+        "operationId": "list_event_actions",
+        "parameters": [
+          {
+            "description": "Event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseActionList"
+                }
+              }
+            },
+            "description": "Action descriptors for the event"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Event not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "List the actions available on an event",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
+    "/api/events/{id}/actions/{action}": {
+      "post": {
+        "description": "Applies the transition in one transaction with the action log row, or answers `noop` when the event is already in the target state. `expected_etag` guards against stale clients (409 `stale_entity`); `idempotency_key` (body or `Idempotency-Key` header) makes retries apply once.",
+        "operationId": "run_event_action",
+        "parameters": [
+          {
+            "description": "Event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Action id, e.g. `start`",
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRequest"
+              }
+            }
+          },
+          "description": "Optional parameters, revision and idempotency key",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseActionResult"
+                }
+              }
+            },
+            "description": "Action applied, replayed or no-op"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid request body or action not executable yet"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDescriptor"
+                }
+              }
+            },
+            "description": "Refused: the denied descriptor"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Event or action not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDescriptor"
+                }
+              }
+            },
+            "description": "Refused by state, archive or a stale revision"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "Run an action on an event",
+        "tags": [
+          "actions"
         ]
       }
     },

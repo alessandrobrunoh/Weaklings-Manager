@@ -33,6 +33,9 @@ use crate::modules::regear::extractor::ExtractionGuildContext;
 /// within tens of seconds, long enough not to hammer the DB.
 const TICK_INTERVAL: Duration = Duration::from_secs(30);
 
+/// How often the worker prunes expired `action_log` rows (shared-actions §3.5).
+const ACTION_LOG_PRUNE_INTERVAL: Duration = Duration::from_secs(3600);
+
 /// Spawns the event-sessions worker on the current runtime. Returns immediately;
 /// the task runs until the process exits.
 ///
@@ -50,6 +53,7 @@ pub fn spawn(
 ) {
     tokio::spawn(async move {
         let mut ticker = interval(TICK_INTERVAL);
+        let mut last_prune: Option<std::time::Instant> = None;
         loop {
             ticker.tick().await;
             if stop.load(Ordering::Relaxed) {
@@ -61,6 +65,12 @@ pub fn spawn(
                 .await
             {
                 tracing::warn!(tenant_id, error = %error, "event completion XP retry cycle failed");
+            }
+            if last_prune.is_none_or(|at| at.elapsed() >= ACTION_LOG_PRUNE_INTERVAL) {
+                if let Err(error) = crate::modules::actions::action_log::prune(&db).await {
+                    tracing::warn!(tenant_id, error = %error, "action log retention failed");
+                }
+                last_prune = Some(std::time::Instant::now());
             }
             match prepare_cycle(&control, &tenant_id).await {
                 Ok(None) => {}
