@@ -164,12 +164,15 @@ export type SplitStatus = 'pending' | 'awaiting_event' | 'completed' | 'not_comp
 export type SplitParticipantCreditStatus = TransactionStatus;
 
 /** Detail returned by the bot split-sync endpoint. Financial values are authoritative backend data. */
+/** The backend serialises `Decimal` money as strings ("1000.00"); older fixtures and tests use numbers. */
+export type DecimalValue = number | string;
+
 export interface SplitParticipant {
   user_id: number;
   username: string;
   discord_id?: string | null;
   weight: number;
-  share_amount: number | null;
+  share_amount: DecimalValue | null;
   credit_status?: SplitParticipantCreditStatus | null;
 }
 
@@ -177,11 +180,11 @@ export interface SplitDetail {
   id: number;
   created_by_username: string;
   status: SplitStatus;
-  estimated_market_value: number;
-  fee: number;
-  repair_value: number;
-  bags_value: number;
-  net_value: number | null;
+  estimated_market_value: DecimalValue;
+  fee: DecimalValue;
+  repair_value: DecimalValue;
+  bags_value: DecimalValue;
+  net_value: DecimalValue | null;
   note: string | null;
   event_id: number | null;
   event_title: string | null;
