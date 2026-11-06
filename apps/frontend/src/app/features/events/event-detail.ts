@@ -37,7 +37,6 @@ import type {
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
-  ParticipationGuildListResponse,
   ParticipationGuildOption,
   RosterSuggestions,
   SplitSummary,
@@ -5150,7 +5149,7 @@ export class EventDetailPage {
   protected async onSplitSelected(option: SearchDialogOption): Promise<void> {
     this.showSplitSearch.set(false);
     try {
-      await firstValueFrom(this.api.put(`api/splits/${option.id}`, { event_id: this.eventId }));
+      await firstValueFrom(this.api.patch(`api/splits/${option.id}`, { event_id: this.eventId }));
       this.toasts.success(this.t('events.detail.battles_saved'));
       await this.load();
     } catch (error) {
@@ -5164,7 +5163,7 @@ export class EventDetailPage {
 
   private async performUnlinkSplit(splitId: number): Promise<void> {
     try {
-      await firstValueFrom(this.api.put(`api/splits/${splitId}`, { event_id: null }));
+      await firstValueFrom(this.api.patch(`api/splits/${splitId}`, { event_id: null }));
       this.toasts.success(this.t('events.detail.battles_saved'));
       await this.load();
     } catch (error) {
@@ -5513,11 +5512,11 @@ export class EventDetailPage {
     this.participationGuildsState.set('loading');
     try {
       const response = await firstValueFrom(
-        this.api.get<ParticipationGuildListResponse>(
+        this.api.get<ParticipationGuildOption[]>(
           `api/events/${detail.id}/participation-guilds`,
         ),
       );
-      const guilds = response.data ?? [];
+      const guilds = response ?? [];
       this.participationGuilds.set(guilds);
       this.selectedGuildTenantId.set(guilds.length === 1 ? guilds[0].tenant_id : '');
       this.participationGuildsState.set('ready');

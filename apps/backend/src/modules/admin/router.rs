@@ -537,7 +537,7 @@ pub async fn update_guild_settings(
     Ok(Json(ApiResponse::new(settings)))
 }
 
-/// Read the AutoRole configuration.
+/// Read the `AutoRole` configuration.
 #[utoipa::path(
     get,
     path = "/api/admin/autorole",
@@ -585,7 +585,7 @@ pub async fn list_discord_roles(
     )))
 }
 
-/// Update or disable AutoRole.
+/// Update or disable `AutoRole`.
 #[utoipa::path(
     put,
     path = "/api/admin/autorole",

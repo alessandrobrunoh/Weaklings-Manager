@@ -1,13 +1,13 @@
 //! Slot bitmask helpers for the regear workflow.
 //!
 //! The admin-tunable `enabled_slots_mask` is a bitmask over the canonical `BuildSlot` enum.
-//! AlbionBB kill-feed equipment keys are camelCase (`MainHand`, `OffHand`, `Armor`, …) and must
+//! `AlbionBB` kill-feed equipment keys are camelCase (`MainHand`, `OffHand`, `Armor`, …) and must
 //! be mapped to the canonical slot before the mask can be consulted.
 
 use crate::modules::comps::status::BuildSlot;
 
 /// Bit position for each `BuildSlot`. Matches the declaration order in `comps::status::BuildSlot`
-/// (weapon, off_hand, head, armor, shoes, cape, bag, potion, food, mount).
+/// (weapon, `off_hand`, head, armor, shoes, cape, bag, potion, food, mount).
 ///
 /// These are part of the data contract: changing the order would silently shift every admin's
 /// configured mask. Never renumber existing variants.
@@ -53,9 +53,9 @@ pub fn is_slot_enabled(mask: i32, slot: BuildSlot) -> bool {
     ((mask as u32) & slot_bit(slot)) != 0
 }
 
-/// Maps AlbionBB equipment JSON keys (camelCase) to the canonical `BuildSlot`.
+/// Maps `AlbionBB` equipment JSON keys (camelCase) to the canonical `BuildSlot`.
 ///
-/// AlbionBB uses a fixed set of keys on the `Equipment` object; unknown keys map to `None` and
+/// `AlbionBB` uses a fixed set of keys on the `Equipment` object; unknown keys map to `None` and
 /// the caller should skip the corresponding item rather than fail the whole pricing pass.
 #[must_use]
 pub fn slot_from_albionbb_key(key: &str) -> Option<BuildSlot> {
@@ -74,7 +74,7 @@ pub fn slot_from_albionbb_key(key: &str) -> Option<BuildSlot> {
     }
 }
 
-/// The canonical AlbionBB equipment JSON key for a slot — the inverse of
+/// The canonical `AlbionBB` equipment JSON key for a slot — the inverse of
 /// [`slot_from_albionbb_key`]. Used to build a synthetic `Equipment` object for a self-service
 /// regear request, so [`super::pricing::build_breakdown`] can price it exactly like a kill-feed
 /// loadout.

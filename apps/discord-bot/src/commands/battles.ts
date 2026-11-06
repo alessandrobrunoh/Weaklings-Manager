@@ -7,7 +7,6 @@ import {
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { BattleSummary, PaginatedData } from '../api/types.js';
-import { config } from '../config.js';
 import { buildBattleListEmbed } from '../embeds/battle.embed.js';
 
 export const data = new SlashCommandBuilder()
@@ -35,7 +34,7 @@ export async function execute(
     { page, limit: 10 },
   );
 
-  const embed = buildBattleListEmbed(result.items, config.GUILD_NAME, result.current_page, result.total_pages);
+  const embed = buildBattleListEmbed(result.items, result.current_page, result.total_pages);
 
   const navRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

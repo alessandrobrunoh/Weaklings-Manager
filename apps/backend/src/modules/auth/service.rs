@@ -4,10 +4,7 @@
 
 use crate::errors::AppError;
 use crate::modules::admin::models::BrandColorsView;
-use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-};
+use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 
 /// Token response returned from Discord's token exchange endpoint.
@@ -36,8 +33,16 @@ pub struct DiscordUserProfile {
     #[schema(example = "discord_user")]
     pub username: String,
     /// The registered email address of the user (requires `email` scope).
+    ///
+    /// Only ever the address Discord reports as verified: [`AuthService::fetch_profile`] drops
+    /// an unverified one, so nothing downstream can claim a row or store it.
     #[schema(example = "user@example.com")]
     pub email: Option<String>,
+    /// Whether Discord has verified `email`. Absent when the `email` scope was not granted and
+    /// on cookies issued before this flag existed, which both read as "not verified".
+    #[schema(example = true)]
+    #[serde(default)]
+    pub verified: Option<bool>,
     /// The avatar hash of the user.
     #[schema(example = "a_1234567890abcdef1234567890abcdef")]
     pub avatar: Option<String>,
@@ -219,10 +224,10 @@ pub fn matching_tenants(
         .filter(|tenant| held.contains(tenant.id.as_str()))
         .map(|tenant| {
             let mut choice = tenant.clone();
-            if let Some(discord_name) = discord_names.get(tenant.id.as_str()) {
-                if !discord_name.is_empty() {
-                    choice.name = (*discord_name).to_owned();
-                }
+            if let Some(discord_name) = discord_names.get(tenant.id.as_str())
+                && !discord_name.is_empty()
+            {
+                choice.name = (*discord_name).to_owned();
             }
             if let Some(guild) = user_guilds.iter().find(|g| g.id == tenant.id) {
                 choice.icon_hash = guild.icon.clone();
@@ -310,10 +315,11 @@ impl AuthService {
             )));
         }
 
-        let profile = response
+        let mut profile = response
             .json::<DiscordUserProfile>()
             .await
             .map_err(|e| AppError::Unauthorized(format!("Failed to parse Discord profile: {e}")))?;
+        drop_unverified_email(&mut profile);
 
         Ok(profile)
     }
@@ -349,39 +355,6 @@ impl AuthService {
             .map_err(|e| AppError::Unauthorized(format!("failed to parse discord guilds: {e}")))
     }
 
-    /// Fetches the user's roles from Discord and maps them to database role names/priorities.
-    pub async fn fetch_member_roles(
-        &self,
-        db: &sea_orm::DatabaseConnection,
-        user_id: &str,
-        user_access_token: &str,
-        guild_id: &str,
-        bot_token: Option<&str>,
-        super_admin_id: &str,
-    ) -> (Vec<String>, String) {
-        if user_id == super_admin_id {
-            return (vec!["SuperAdmin".to_string()], "SuperAdmin".to_string());
-        }
-
-        let lookup = self
-            .fetch_guild_member_role_ids(user_id, user_access_token, guild_id, bot_token)
-            .await;
-        // Login has no previous session to preserve. A member missing from the
-        // guild gets the default role; a Discord outage does too, rather than
-        // inventing privileges. `/auth/me` is what keeps a cache across outages.
-        let user_role_ids = match &lookup {
-            GuildMemberLookup::Present(ids) => ids.clone(),
-            GuildMemberLookup::Absent | GuildMemberLookup::Unavailable => Vec::new(),
-        };
-
-        let db_roles = match super::entities::role::Entity::find().all(db).await {
-            Ok(roles) => roles,
-            Err(_) => return fallback_unmatched_roles(&[]),
-        };
-
-        resolve_linked_roles(&user_role_ids, &db_roles)
-    }
-
     /// Fetches the member's Discord role snowflakes from the guild.
     ///
     /// [`GuildMemberLookup::Absent`] is a confirmed 404 (removed from the guild)
@@ -413,11 +386,13 @@ impl AuthService {
                 .send()
                 .await
             {
-                let status = res.status().as_u16();
-                if let Some(lookup) = classify_member_status(status) {
-                    remember_member_lookup(&cache_key, &lookup);
-                    return lookup;
-                }
+                let res = match classify_member_response(res).await {
+                    Ok(res) => res,
+                    Err(lookup) => {
+                        remember_member_lookup(&cache_key, &lookup);
+                        return lookup;
+                    }
+                };
                 #[derive(Deserialize)]
                 struct GuildMemberResponse {
                     roles: Vec<String>,
@@ -442,10 +417,10 @@ impl AuthService {
             .send()
             .await
         {
-            let status = res.status().as_u16();
-            if let Some(lookup) = classify_member_status(status) {
-                return lookup;
-            }
+            let res = match classify_member_response(res).await {
+                Ok(res) => res,
+                Err(lookup) => return lookup,
+            };
             #[derive(Deserialize)]
             struct UserGuildMemberResponse {
                 roles: Vec<String>,
@@ -457,89 +432,6 @@ impl AuthService {
 
         GuildMemberLookup::Unavailable
     }
-
-    /// Finds or creates the local `users` row backing this Discord profile.
-    ///
-    /// Lookup order is Discord snowflake first, then email. Admin-provisioned members are created
-    /// with a placeholder email and a real `discord_id`, so first login must reuse that row instead
-    /// of inserting a second account keyed only by Discord's email scope.
-    ///
-    /// Discord login is always requested with the `email` scope, so `profile.email` should be
-    /// present when inserting a brand-new row; keeps `users` up to date with the latest
-    /// username/role on every login.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AppError::Unauthorized` if Discord did not provide an email and no existing row
-    /// matches this Discord id, or `AppError::Database` if the lookup/write fails.
-    pub async fn upsert_user(
-        &self,
-        db: &DatabaseConnection,
-        profile: &DiscordUserProfile,
-    ) -> Result<i64, AppError> {
-        let email = profile
-            .email
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned);
-
-        if let Some(existing) = UserEntity::find()
-            .filter(user_entities::Column::DiscordId.eq(&profile.id))
-            .one(db)
-            .await?
-        {
-            return update_existing_user(db, existing, profile, email.as_deref()).await;
-        }
-
-        let email = email.ok_or_else(|| {
-            AppError::Unauthorized("Discord account has no email to provision a user".to_string())
-        })?;
-
-        if let Some(existing) = UserEntity::find()
-            .filter(user_entities::Column::Email.eq(&email))
-            .one(db)
-            .await?
-        {
-            return update_existing_user(db, existing, profile, Some(&email)).await;
-        }
-
-        let inserted = user_entities::ActiveModel {
-            username: Set(profile.username.clone()),
-            email: Set(email),
-            role: Set(profile.highest_role.clone()),
-            discord_id: Set(Some(profile.id.clone())),
-            ..Default::default()
-        }
-        .insert(db)
-        .await?;
-        Ok(inserted.id)
-    }
-}
-
-async fn update_existing_user(
-    db: &DatabaseConnection,
-    existing: user_entities::Model,
-    profile: &DiscordUserProfile,
-    new_email: Option<&str>,
-) -> Result<i64, AppError> {
-    let id = existing.id;
-    let mut active: user_entities::ActiveModel = existing.into();
-    active.username = Set(profile.username.clone());
-    active.role = Set(profile.highest_role.clone());
-    active.discord_id = Set(Some(profile.id.clone()));
-    if let Some(email) = new_email {
-        let taken = UserEntity::find()
-            .filter(user_entities::Column::Email.eq(email))
-            .filter(user_entities::Column::Id.ne(id))
-            .one(db)
-            .await?;
-        if taken.is_none() {
-            active.email = Set(email.to_string());
-        }
-    }
-    active.update(db).await?;
-    Ok(id)
 }
 
 impl Default for AuthService {
@@ -559,17 +451,85 @@ pub enum GuildMemberLookup {
     Unavailable,
 }
 
+/// Discord's JSON error code for "Unknown Member": the guild exists and the user is not in it.
+pub const DISCORD_UNKNOWN_MEMBER: u32 = 10007;
+
 /// `Some` when the status itself decides the outcome. `None` when the body
 /// should be parsed as a member payload (2xx).
+///
+/// A 404 is [`GuildMemberLookup::Absent`] only when Discord's error body says
+/// `10007` (Unknown Member). `10004` (Unknown Guild: the bot was removed from the
+/// server), a 404 with no readable code, and every other failure are
+/// [`GuildMemberLookup::Unavailable`]; otherwise a kicked bot would read as
+/// "everybody left" and lock the whole server out.
 #[must_use]
-pub fn classify_member_status(status: u16) -> Option<GuildMemberLookup> {
+pub fn classify_member_status(
+    status: u16,
+    discord_error_code: Option<u32>,
+) -> Option<GuildMemberLookup> {
     if (200..300).contains(&status) {
         return None;
     }
-    if status == 404 {
+    if status == 404 && discord_error_code == Some(DISCORD_UNKNOWN_MEMBER) {
         return Some(GuildMemberLookup::Absent);
     }
     Some(GuildMemberLookup::Unavailable)
+}
+
+/// Reads the `code` field of a Discord error body, if the body is one.
+#[must_use]
+pub fn discord_error_code(body: &str) -> Option<u32> {
+    #[derive(Deserialize)]
+    struct DiscordError {
+        code: u32,
+    }
+    serde_json::from_str::<DiscordError>(body)
+        .ok()
+        .map(|e| e.code)
+}
+
+/// `Err(lookup)` when the status (and, for a 404, the error body) already decides the outcome,
+/// `Ok(response)` when it is a 2xx whose body is the member payload.
+async fn classify_member_response(
+    res: reqwest::Response,
+) -> Result<reqwest::Response, GuildMemberLookup> {
+    let status = res.status().as_u16();
+    if (200..300).contains(&status) {
+        return Ok(res);
+    }
+    // Only a 404 needs its body: the status alone cannot tell "not in the server" from "the
+    // bot is not in the server".
+    let code = if status == 404 {
+        discord_error_code(&res.text().await.unwrap_or_default())
+    } else {
+        None
+    };
+    Err(classify_member_status(status, code).unwrap_or(GuildMemberLookup::Unavailable))
+}
+
+/// Roles a member gets at login, or `None` when Discord confirmed they are no longer in the
+/// server (web access follows Discord presence, so the caller refuses the session).
+///
+/// An outage ([`GuildMemberLookup::Unavailable`]) resolves to the default role rather than
+/// inventing privileges; `/auth/me` is what keeps a cache across outages.
+#[must_use]
+pub fn login_roles(
+    lookup: &GuildMemberLookup,
+    db_roles: &[super::entities::role::Model],
+) -> Option<(Vec<String>, String)> {
+    match lookup {
+        GuildMemberLookup::Present(ids) => Some(resolve_linked_roles(ids, db_roles)),
+        GuildMemberLookup::Unavailable => Some(resolve_linked_roles(&[], db_roles)),
+        GuildMemberLookup::Absent => None,
+    }
+}
+
+/// Keeps an email only when Discord marked it verified. An unverified address can be typed by
+/// anyone, so it must never claim an existing row or be stored on a new one.
+pub fn drop_unverified_email(profile: &mut DiscordUserProfile) {
+    if profile.verified != Some(true) {
+        profile.email = None;
+    }
 }
 
 /// Applies a live lookup to cached session roles.
@@ -597,7 +557,7 @@ pub fn roles_after_member_lookup(
 fn cached_member_lookup(key: &(String, String)) -> Option<GuildMemberLookup> {
     let cache = member_lookup_cache()
         .lock()
-        .unwrap_or_else(|err| err.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let entry = cache.get(key)?;
     if entry.at.elapsed() > std::time::Duration::from_secs(60) {
         return None;
@@ -611,7 +571,7 @@ fn remember_member_lookup(key: &(String, String), lookup: &GuildMemberLookup) {
     }
     let mut cache = member_lookup_cache()
         .lock()
-        .unwrap_or_else(|err| err.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     cache.insert(
         key.clone(),
         CachedMemberLookup {
@@ -739,9 +699,7 @@ fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::{UserEntity, user_entities};
     use crate::modules::auth::entities::role;
-    use sea_orm::EntityTrait;
 
     fn discord_guild(owner: bool, permissions: &str) -> DiscordGuild {
         DiscordGuild {
@@ -855,17 +813,105 @@ mod tests {
     }
 
     #[test]
-    fn member_status_404_is_absence_not_an_outage() {
-        assert_eq!(classify_member_status(404), Some(GuildMemberLookup::Absent));
+    fn member_status_404_unknown_member_is_absence_not_an_outage() {
+        assert_eq!(
+            classify_member_status(404, Some(DISCORD_UNKNOWN_MEMBER)),
+            Some(GuildMemberLookup::Absent)
+        );
         assert!(matches!(
-            classify_member_status(500),
+            classify_member_status(500, None),
             Some(GuildMemberLookup::Unavailable)
         ));
         assert!(matches!(
-            classify_member_status(403),
+            classify_member_status(403, None),
             Some(GuildMemberLookup::Unavailable)
         ));
-        assert!(classify_member_status(200).is_none());
+        assert!(classify_member_status(200, None).is_none());
+    }
+
+    #[test]
+    fn unknown_guild_10004_never_reads_as_absence() {
+        // The bot was removed from the server: every member lookup 404s with 10004, which must
+        // not be mistaken for "everybody left" (it would lock the whole server out).
+        assert_eq!(
+            classify_member_status(404, Some(10004)),
+            Some(GuildMemberLookup::Unavailable)
+        );
+        // A 404 with no readable code (proxy page, empty body) is not proof either.
+        assert_eq!(
+            classify_member_status(404, None),
+            Some(GuildMemberLookup::Unavailable)
+        );
+        // The code only matters on a 404.
+        assert_eq!(
+            classify_member_status(500, Some(DISCORD_UNKNOWN_MEMBER)),
+            Some(GuildMemberLookup::Unavailable)
+        );
+    }
+
+    #[test]
+    fn discord_error_code_is_read_from_the_json_body() {
+        assert_eq!(
+            discord_error_code(r#"{"message": "Unknown Member", "code": 10007}"#),
+            Some(10007)
+        );
+        assert_eq!(
+            discord_error_code(r#"{"message": "Unknown Guild", "code": 10004}"#),
+            Some(10004)
+        );
+        assert_eq!(discord_error_code("<html>Not Found</html>"), None);
+        assert_eq!(discord_error_code(""), None);
+        assert_eq!(discord_error_code(r#"{"message": "no code"}"#), None);
+    }
+
+    #[test]
+    fn login_refuses_a_confirmed_absent_member() {
+        let roles = vec![role("a", "Officer", 50, Some("111"), false)];
+        assert!(login_roles(&GuildMemberLookup::Absent, &roles).is_none());
+    }
+
+    #[test]
+    fn login_resolves_present_roles_and_defaults_on_an_outage() {
+        let roles = vec![
+            role("a", "Officer", 50, Some("111"), false),
+            role("b", "Recruit", 1, None, true),
+        ];
+        let (names, highest) =
+            login_roles(&GuildMemberLookup::Present(vec!["111".to_string()]), &roles)
+                .expect("present member logs in");
+        assert_eq!(names, vec!["Officer".to_string()]);
+        assert_eq!(highest, "Officer");
+
+        // An outage does not invent privileges and does not lock anyone out.
+        let (names, highest) =
+            login_roles(&GuildMemberLookup::Unavailable, &roles).expect("outage still logs in");
+        assert_eq!(names, vec!["Recruit".to_string()]);
+        assert_eq!(highest, "Recruit");
+    }
+
+    #[test]
+    fn an_unverified_email_is_dropped_from_the_profile() {
+        let mut unverified = login_profile("1", "a", Some("a@example.com"), Some(false));
+        drop_unverified_email(&mut unverified);
+        assert_eq!(unverified.email, None);
+
+        // No `verified` flag (email scope not granted, or an old cookie) reads as unverified.
+        let mut unknown = login_profile("1", "a", Some("a@example.com"), None);
+        drop_unverified_email(&mut unknown);
+        assert_eq!(unknown.email, None);
+
+        let mut verified = login_profile("1", "a", Some("a@example.com"), Some(true));
+        drop_unverified_email(&mut verified);
+        assert_eq!(verified.email.as_deref(), Some("a@example.com"));
+    }
+
+    #[test]
+    fn a_profile_deserializes_without_the_verified_flag() {
+        let profile: DiscordUserProfile = serde_json::from_str(
+            r#"{"id":"1","username":"a","email":"a@example.com","avatar":null}"#,
+        )
+        .expect("discord /users/@me shape");
+        assert_eq!(profile.verified, None);
     }
 
     #[test]
@@ -960,11 +1006,17 @@ mod tests {
         }
     }
 
-    fn login_profile(id: &str, username: &str, email: Option<&str>) -> DiscordUserProfile {
+    fn login_profile(
+        id: &str,
+        username: &str,
+        email: Option<&str>,
+        verified: Option<bool>,
+    ) -> DiscordUserProfile {
         DiscordUserProfile {
             id: id.to_owned(),
             username: username.to_owned(),
             email: email.map(str::to_owned),
+            verified,
             avatar: None,
             roles: vec!["Member".into()],
             highest_role: "Member".into(),
@@ -979,136 +1031,6 @@ mod tests {
             features: vec![],
             brand: None,
         }
-    }
-
-    #[tokio::test]
-    async fn upsert_reuses_manually_created_discord_user() {
-        use crate::migration::MigratorTrait;
-        use crate::modules::users::service::provisional_discord_email;
-        use sea_orm::{ActiveModelTrait, Database, Set};
-
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-
-        let created = user_entities::ActiveModel {
-            username: Set("nelly".into()),
-            email: Set(provisional_discord_email("111")),
-            role: Set("Member".into()),
-            discord_id: Set(Some("111".into())),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("insert");
-
-        let id = AuthService::new()
-            .upsert_user(
-                &db,
-                &login_profile("111", "Nelly", Some("nelly@example.com")),
-            )
-            .await
-            .expect("upsert");
-        assert_eq!(id, created.id);
-
-        let row = UserEntity::find_by_id(id)
-            .one(&db)
-            .await
-            .expect("load")
-            .expect("row");
-        assert_eq!(row.email, "nelly@example.com");
-        assert_eq!(row.username, "Nelly");
-        assert_eq!(row.discord_id.as_deref(), Some("111"));
-
-        let count = UserEntity::find().all(&db).await.expect("list").len();
-        assert_eq!(count, 1);
-    }
-
-    #[tokio::test]
-    async fn upsert_still_matches_email_when_discord_id_was_missing() {
-        use crate::migration::MigratorTrait;
-        use sea_orm::{ActiveModelTrait, Database, Set};
-
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-
-        let created = user_entities::ActiveModel {
-            username: Set("old".into()),
-            email: Set("nelly@example.com".into()),
-            role: Set("User".into()),
-            discord_id: Set(None),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("insert");
-
-        let id = AuthService::new()
-            .upsert_user(
-                &db,
-                &login_profile("111", "Nelly", Some("nelly@example.com")),
-            )
-            .await
-            .expect("upsert");
-        assert_eq!(id, created.id);
-        let row = UserEntity::find_by_id(id)
-            .one(&db)
-            .await
-            .expect("load")
-            .expect("row");
-        assert_eq!(row.discord_id.as_deref(), Some("111"));
-    }
-
-    #[tokio::test]
-    async fn upsert_keeps_placeholder_email_when_real_email_is_taken() {
-        use crate::migration::MigratorTrait;
-        use crate::modules::users::service::provisional_discord_email;
-        use sea_orm::{ActiveModelTrait, Database, Set};
-
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-
-        user_entities::ActiveModel {
-            username: Set("other".into()),
-            email: Set("nelly@example.com".into()),
-            role: Set("User".into()),
-            discord_id: Set(Some("999".into())),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("other");
-
-        let created = user_entities::ActiveModel {
-            username: Set("nelly".into()),
-            email: Set(provisional_discord_email("111")),
-            role: Set("Member".into()),
-            discord_id: Set(Some("111".into())),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("insert");
-
-        let id = AuthService::new()
-            .upsert_user(
-                &db,
-                &login_profile("111", "Nelly", Some("nelly@example.com")),
-            )
-            .await
-            .expect("upsert");
-        assert_eq!(id, created.id);
-        let row = UserEntity::find_by_id(id)
-            .one(&db)
-            .await
-            .expect("load")
-            .expect("row");
-        assert_eq!(row.email, provisional_discord_email("111"));
     }
 
     #[test]

@@ -9,7 +9,11 @@ use serde::{Deserialize, Serialize};
 
 /// One eligible death of a guild member in a battle linked to a `call_to_arms` event.
 pub mod regear_death {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, Decimal,
+        DeriveEntityModel, DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden,
+        ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
     #[sea_orm(table_name = "regear_deaths")]
@@ -22,9 +26,9 @@ pub mod regear_death {
         /// The `event_battles` row the death came from. `None` for a self-reported request,
         /// which has no battle/kill-feed origin.
         pub event_battle_id: Option<i64>,
-        /// AlbionBB battle id (denormalized for drill-down). `None` for a self-reported request.
+        /// `AlbionBB` battle id (denormalized for drill-down). `None` for a self-reported request.
         pub albionbb_battle_id: Option<String>,
-        /// AlbionBB kill-event id (the kill feed entry that recorded this death). `None` for a
+        /// `AlbionBB` kill-event id (the kill feed entry that recorded this death). `None` for a
         /// self-reported request.
         pub albion_kill_event_id: Option<String>,
         /// When the death occurred, taken from the kill event. For a self-reported request, the
@@ -34,7 +38,7 @@ pub mod regear_death {
         pub user_id: Option<i64>,
         /// Albion in-game name of the victim, stored verbatim.
         pub player_name: String,
-        /// AlbionBB guild id at time of death (always the configured guild).
+        /// `AlbionBB` guild id at time of death (always the configured guild).
         pub guild_id: String,
         /// The build the victim signed up with for the event, if any.
         pub primary_build_id: Option<i64>,
@@ -80,7 +84,11 @@ pub mod regear_death {
 
 /// Singleton table holding guild-wide regear tunables (admin-editable).
 pub mod regear_setting {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
     #[sea_orm(table_name = "regear_settings")]
@@ -117,7 +125,11 @@ pub mod regear_setting {
 /// Per-user regear request-credit balance: a weekly rollover pool plus a giveaway-earned bonus
 /// pool. One row per user, created lazily on first need (see `regear::credits`).
 pub mod regear_request_balance {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
     #[sea_orm(table_name = "regear_request_balances")]
@@ -154,6 +166,6 @@ pub use regear_request_balance::{
     Entity as RegearRequestBalanceEntity, Model as RegearRequestBalanceModel,
 };
 pub use regear_setting::{
-    ActiveModel as RegearSettingActiveModel, Column as RegearSettingColumn,
-    Entity as RegearSettingEntity, Model as RegearSettingModel,
+    ActiveModel as RegearSettingActiveModel, Entity as RegearSettingEntity,
+    Model as RegearSettingModel,
 };

@@ -332,7 +332,6 @@ export class RegisterTenant implements OnInit {
     } catch {
       this.displayName.set(this.queryName);
     }
-    await this.loadAttachableGuilds();
   }
 
   protected onDisplayName(event: Event): void {
@@ -480,17 +479,6 @@ export class RegisterTenant implements OnInit {
       albion_guild_id: guild.id,
       albion_api_region: this.regionId(),
     };
-  }
-
-  private async loadAttachableGuilds(): Promise<void> {
-    try {
-      const guilds = await firstValueFrom(
-        this.api.get<AttachableGuild[]>('api/tenants/attachable-guilds'),
-      );
-      this.attachableGuilds.set(guilds ?? []);
-    } catch {
-      this.attachableGuilds.set([]);
-    }
   }
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;

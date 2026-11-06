@@ -94,7 +94,7 @@ pub mod scouted_comp_battle {
         pub id: i64,
         /// The scouted comp this battle contributed to.
         pub scouted_comp_id: i64,
-        /// Canonical AlbionBB battle id, matching
+        /// Canonical `AlbionBB` battle id, matching
         /// `guild_battle_snapshots.battle_id`.
         ///
         /// `event_battles.albionbb_battle_id` holds the same value as a

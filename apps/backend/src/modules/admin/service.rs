@@ -438,14 +438,14 @@ impl AdminService {
         Ok(view)
     }
 
-    /// Returns the AutoRole configuration without exposing unrelated guild settings.
+    /// Returns the `AutoRole` configuration without exposing unrelated guild settings.
     pub async fn get_autorole_settings(
         db: &DatabaseConnection,
     ) -> Result<super::models::AutoRoleSettingsView, AppError> {
         autorole_view(db).await
     }
 
-    /// Updates the AutoRole after confirming that the selected Discord role exists and is not
+    /// Updates the `AutoRole` after confirming that the selected Discord role exists and is not
     /// managed by an integration or the guild itself (`@everyone`).
     pub async fn update_autorole(
         db: &DatabaseConnection,

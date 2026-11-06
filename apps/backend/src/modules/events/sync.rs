@@ -313,8 +313,9 @@ fn peer_events(tenant_id: &str, event_id: i64, links: &[EventSyncLink]) -> Vec<(
     let canonical = links
         .iter()
         .find(|link| link.mirror_tenant == tenant_id && link.mirror_event == event_id)
-        .map(|link| (link.source_tenant.as_str(), link.source_event))
-        .unwrap_or((tenant_id, event_id));
+        .map_or((tenant_id, event_id), |link| {
+            (link.source_tenant.as_str(), link.source_event)
+        });
     let mut peers = Vec::with_capacity(links.len());
     for link in links {
         if (link.source_tenant.as_str(), link.source_event) != canonical {
@@ -331,23 +332,6 @@ fn peer_events(tenant_id: &str, event_id: i64, links: &[EventSyncLink]) -> Vec<(
     peers.sort();
     peers.dedup();
     peers
-}
-
-/// Returns whether this tenant-local event is the alliance-side mirror.
-pub async fn is_mirror_event(
-    control: &DatabaseConnection,
-    tenant_id: &str,
-    event_id: i64,
-) -> Result<bool, AppError> {
-    let row = control
-        .query_one(Statement::from_sql_and_values(
-            control.get_database_backend(),
-            "SELECT 1 FROM event_sync_links
-             WHERE mirror_tenant_id = $1 AND mirror_event_id = $2",
-            [tenant_id.into(), event_id.into()],
-        ))
-        .await?;
-    Ok(row.is_some())
 }
 
 async fn upsert_user(db: &DatabaseConnection, actor: &ShareActor) -> Result<i64, AppError> {
@@ -388,24 +372,23 @@ pub async fn sync_participation(
     }
     let (origin_tenant, origin_event) =
         canonical_event_origin(control, tenant_id, event_id).await?;
-    let attribution = match attributed_guild {
-        Some(guild) => Some(guild.to_owned()),
-        None => {
-            let stored = crate::modules::events::attribution::stored_attribution(
-                control,
-                &origin_tenant,
-                origin_event,
-                &actor.discord_id,
-            )
-            .await?;
-            if stored.is_none() && request.is_some() {
-                // Joins must always carry a resolved attribution; without one
-                // (for example a guild-tenant join of an unlinked-local event)
-                // fall back to the caller's tenant.
-                Some(tenant_id.to_owned())
-            } else {
-                stored
-            }
+    let attribution = if let Some(guild) = attributed_guild {
+        Some(guild.to_owned())
+    } else {
+        let stored = crate::modules::events::attribution::stored_attribution(
+            control,
+            &origin_tenant,
+            origin_event,
+            &actor.discord_id,
+        )
+        .await?;
+        if stored.is_none() && request.is_some() {
+            // Joins must always carry a resolved attribution; without one
+            // (for example a guild-tenant join of an unlinked-local event)
+            // fall back to the caller's tenant.
+            Some(tenant_id.to_owned())
+        } else {
+            stored
         }
     };
     let peers = filter_peers_by_attribution(control, peers, attribution.as_deref()).await?;

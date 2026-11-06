@@ -65,6 +65,7 @@ describe('Dashboard', () => {
     rank: 8,
     multiplier: 1,
     lifetime_xp: 9000,
+    guild_rank: null,
   };
 
   const mockAlbion: AlbionLinkStatus = {

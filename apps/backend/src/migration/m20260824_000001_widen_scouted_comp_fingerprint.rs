@@ -1,7 +1,7 @@
 //! Widens `scouted_comps.fingerprint` from a bounded `varchar(512)` to `text`.
 //!
 //! The fingerprint is `"role:n,role:n|weapon:n,weapon:n,..."`, one entry per
-//! distinct weapon observed in the kill feed. A ZvZ can field several dozen
+//! distinct weapon observed in the kill feed. A `ZvZ` can field several dozen
 //! distinct Albion weapon identifiers, each ~25-30 characters — 512 was sized
 //! for a small-scale skirmish and overflows in production on large fights,
 //! which is exactly the class of battle Intel most needs to scout. `text` has
@@ -46,7 +46,7 @@ impl MigrationTrait for Migration {
     ///
     /// Rolling back narrows `fingerprint` from unbounded `text` back to `varchar(512)`. This is
     /// exactly the scenario `up()`'s doc comment above describes as the reason this migration
-    /// exists: a ZvZ fight easily produces a fingerprint well past 512 characters. On Postgres,
+    /// exists: a `ZvZ` fight easily produces a fingerprint well past 512 characters. On Postgres,
     /// narrowing a column fails outright (`ERROR: value too long for type character varying(512)`)
     /// against any row already exceeding the new limit, aborting the rollback; even for rows that
     /// happen to fit, this reintroduces the original overflow bug for the next large fight scouted.

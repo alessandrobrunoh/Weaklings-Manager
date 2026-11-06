@@ -1,6 +1,6 @@
 //! `AlbionBB` service logic module.
 //!
-//! `AlbionBbService` wraps the generic AlbionBB API client and adds a short-TTL
+//! `AlbionBbService` wraps the generic `AlbionBB` API client and adds a short-TTL
 //! in-memory cache for single-battle and single-guild lookups (which are
 //! immutable historical facts). Battle list and kills endpoints are not cached.
 
@@ -16,7 +16,7 @@ use super::client::{
 use crate::errors::AppError;
 
 /// How long cached single-resource lookups are considered fresh.
-const RESOURCE_CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 24);
+const RESOURCE_CACHE_TTL: Duration = Duration::from_hours(24);
 
 /// Maximum entries retained in each cache before oldest/expired are pruned.
 const MAX_CACHE_ENTRIES: usize = 500;
@@ -25,7 +25,7 @@ type BattleCacheKey = (String, i64);
 type BattleCache = Arc<RwLock<HashMap<BattleCacheKey, (Instant, AlbionBbBattleDetail)>>>;
 type GuildCache = Arc<RwLock<HashMap<String, (Instant, AlbionBbGuildInfo)>>>;
 
-/// Service exposing AlbionBB operations, with cached single-resource lookups.
+/// Service exposing `AlbionBB` operations, with cached single-resource lookups.
 #[derive(Clone)]
 pub struct AlbionBbService {
     client: AlbionBbApiClient,
@@ -69,14 +69,13 @@ impl AlbionBbService {
         let detail = self.client.get_battle(server, battle_id).await?;
         let mut cache = self.battle_cache.write().await;
         cache.retain(|_, (fetched_at, _)| fetched_at.elapsed() < RESOURCE_CACHE_TTL);
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest_key) = cache
+        if cache.len() >= MAX_CACHE_ENTRIES
+            && let Some(oldest_key) = cache
                 .iter()
                 .min_by_key(|(_, (fetched_at, _))| *fetched_at)
                 .map(|(k, _)| k.clone())
-            {
-                cache.remove(&oldest_key);
-            }
+        {
+            cache.remove(&oldest_key);
         }
         cache.insert(key, (Instant::now(), detail.clone()));
         Ok(detail)
@@ -119,14 +118,13 @@ impl AlbionBbService {
         let info = self.client.get_guild(server, guild_id).await?;
         let mut cache = self.guild_cache.write().await;
         cache.retain(|_, (fetched_at, _)| fetched_at.elapsed() < RESOURCE_CACHE_TTL);
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest_key) = cache
+        if cache.len() >= MAX_CACHE_ENTRIES
+            && let Some(oldest_key) = cache
                 .iter()
                 .min_by_key(|(_, (fetched_at, _))| *fetched_at)
                 .map(|(k, _)| k.clone())
-            {
-                cache.remove(&oldest_key);
-            }
+        {
+            cache.remove(&oldest_key);
         }
         cache.insert(key, (Instant::now(), info.clone()));
         Ok(info)
@@ -192,7 +190,9 @@ mod tests {
         cache.insert(
             ("default".to_string(), 999),
             (
-                Instant::now() - Duration::from_secs(60 * 60 * 25),
+                Instant::now()
+                    .checked_sub(Duration::from_hours(25))
+                    .unwrap(),
                 dummy_detail.clone(),
             ),
         );

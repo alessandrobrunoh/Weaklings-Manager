@@ -94,6 +94,7 @@ pub struct MyBattlesQuery {
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn list_battles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -144,6 +145,7 @@ pub async fn list_battles(
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn get_battle(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -187,6 +189,7 @@ pub async fn get_battle(
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn list_my_battles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,

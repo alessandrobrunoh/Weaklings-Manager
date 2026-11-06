@@ -23,7 +23,7 @@ use crate::responses::ApiResponse;
 /// app because they are part of the internal guild manager API.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// # use backend::modules::albiondata::router::router;
 /// let router = router();
 /// ```

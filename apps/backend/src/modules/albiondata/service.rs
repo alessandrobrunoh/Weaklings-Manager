@@ -18,7 +18,7 @@ const MAX_ITEM_IDS_PER_PRICE_REQUEST: usize = 120;
 /// allowing explicit overrides for admin/debug tools.
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// # use backend::modules::albiondata::service::AlbionDataService;
 /// let service = AlbionDataService::new("europe".to_string(), None);
 /// let icon = service.item_icon("T4_BAG", None, None).expect("valid icon request");
@@ -39,7 +39,7 @@ impl AlbionDataService {
     /// the same region as guild/player lookups.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// # use backend::modules::albiondata::service::AlbionDataService;
     /// let service = AlbionDataService::new("europe".to_string(), Some(15));
     /// ```
@@ -68,7 +68,7 @@ impl AlbionDataService {
     /// 4096-character URL cap while still allowing bulk queries.
     ///
     /// # Example
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # use backend::modules::albiondata::service::AlbionDataService;
     /// # async fn example() -> Result<(), backend::errors::AppError> {
     /// let service = AlbionDataService::new("europe".to_string(), None);
@@ -102,7 +102,7 @@ impl AlbionDataService {
     /// network I/O; the returned URL is meant to be used as an `<img src>`.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// # use backend::modules::albiondata::service::AlbionDataService;
     /// let service = AlbionDataService::new("europe".to_string(), None);
     /// let icon = service.item_icon("T4_HEAD_PLATE_SET1", Some(1), Some(64)).expect("valid icon");

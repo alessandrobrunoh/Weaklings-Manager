@@ -77,7 +77,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_missing_session() {
         let req = Request::builder().body(()).unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(Key::generate());
         parts.extensions.insert(PlatformAdmins::new_empty());
         let err = PlatformAdmin::from_request_parts(&mut parts, &())
@@ -97,7 +97,7 @@ mod tests {
             .header("Cookie", cookie)
             .body(())
             .unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(key);
         parts.extensions.insert(PlatformAdmins::new_empty());
         let err = PlatformAdmin::from_request_parts(&mut parts, &())
@@ -119,7 +119,7 @@ mod tests {
             .header("Cookie", cookie)
             .body(())
             .unwrap();
-        let (mut parts, _) = req.into_parts();
+        let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(key);
         parts.extensions.insert(admins);
         let admin = PlatformAdmin::from_request_parts(&mut parts, &())

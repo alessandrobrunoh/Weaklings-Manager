@@ -24,7 +24,7 @@ impl<T> ApiResponse<T> {
     }
 }
 
-/// `OpenAPI` schema wrapper for UserProfile response.
+/// `OpenAPI` schema wrapper for `UserProfile` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseUserProfile {
     /// Indicates the outcome of the request, always "success".
@@ -34,7 +34,7 @@ pub struct ApiResponseUserProfile {
     pub data: crate::modules::users::service::UserProfile,
 }
 
-/// `OpenAPI` schema wrapper for UserMetrics response.
+/// `OpenAPI` schema wrapper for `UserMetrics` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseUserMetrics {
     /// Indicates the outcome of the request, always "success".
@@ -44,7 +44,7 @@ pub struct ApiResponseUserMetrics {
     pub data: crate::modules::users::service::UserMetrics,
 }
 
-/// `OpenAPI` schema wrapper for DiscordUserProfile response.
+/// `OpenAPI` schema wrapper for `DiscordUserProfile` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseDiscordUserProfile {
     /// Indicates the outcome of the request, always "success".
@@ -54,7 +54,7 @@ pub struct ApiResponseDiscordUserProfile {
     pub data: crate::modules::auth::service::DiscordUserProfile,
 }
 
-/// `OpenAPI` schema wrapper for Paginated UserProfile response.
+/// `OpenAPI` schema wrapper for Paginated `UserProfile` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedUsers {
     /// Indicates the outcome of the request, always "success".
@@ -430,6 +430,16 @@ pub struct ApiResponseEventList {
     pub data: crate::pagination::PaginatedEventSummary,
 }
 
+/// `OpenAPI` schema wrapper for the event summary counts.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventSummary {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Counts over every non-archived event.
+    pub data: crate::modules::events::models::EventSummary,
+}
+
 /// `OpenAPI` schema wrapper for the eligible participation-guild list.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseParticipationGuildList {
@@ -530,17 +540,17 @@ pub struct ApiResponseMatchedParticipantList {
     pub data: Vec<crate::modules::splits::models::MatchedParticipant>,
 }
 
-/// `OpenAPI` schema wrapper for the AlbionBB battles list response.
+/// `OpenAPI` schema wrapper for the `AlbionBB` battles list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbBattlesList {
     /// Indicates the outcome of the request, always "success".
     #[schema(example = "success")]
     pub status: String,
-    /// The battles list payload (raw AlbionBB page + optional upstream pagination metadata).
+    /// The battles list payload (raw `AlbionBB` page + optional upstream pagination metadata).
     pub data: crate::modules::albionbb::router::AlbionBbBattlesList,
 }
 
-/// `OpenAPI` schema wrapper for an AlbionBB battle detail response.
+/// `OpenAPI` schema wrapper for an `AlbionBB` battle detail response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbBattleDetail {
     /// Indicates the outcome of the request, always "success".
@@ -550,7 +560,7 @@ pub struct ApiResponseAlbionBbBattleDetail {
     pub data: crate::modules::albionbb::client::AlbionBbBattleDetail,
 }
 
-/// `OpenAPI` schema wrapper for an AlbionBB kill events list response.
+/// `OpenAPI` schema wrapper for an `AlbionBB` kill events list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbKillEventList {
     /// Indicates the outcome of the request, always "success".
@@ -560,7 +570,7 @@ pub struct ApiResponseAlbionBbKillEventList {
     pub data: Vec<crate::modules::albionbb::client::AlbionBbKillEvent>,
 }
 
-/// `OpenAPI` schema wrapper for an AlbionBB guild info response.
+/// `OpenAPI` schema wrapper for an `AlbionBB` guild info response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbGuildInfo {
     /// Indicates the outcome of the request, always "success".
@@ -570,7 +580,7 @@ pub struct ApiResponseAlbionBbGuildInfo {
     pub data: crate::modules::albionbb::client::AlbionBbGuildInfo,
 }
 
-/// `OpenAPI` schema wrapper for an AlbionBB player stats response.
+/// `OpenAPI` schema wrapper for an `AlbionBB` player stats response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbPlayerStats {
     /// Indicates the outcome of the request, always "success".

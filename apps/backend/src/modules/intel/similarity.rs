@@ -92,7 +92,7 @@ pub fn cosine(a: &[f64], b: &[f64]) -> f64 {
 ///
 /// Roles carry 55% of the score and weapons 45%; the result is then scaled down
 /// by up to 35% in proportion to how far apart the two roster sizes are, so a
-/// 5-player gank squad does not read as identical to a 40-player ZvZ ball that
+/// 5-player gank squad does not read as identical to a 40-player `ZvZ` ball that
 /// happens to share the same role ratios.
 ///
 /// A profile with no weapon data still scores on roles alone — the weapon

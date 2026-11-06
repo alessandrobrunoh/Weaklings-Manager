@@ -37,6 +37,7 @@ function build(version: number, items: BuildItemSlot[]): BuildDetail {
     created_by_username: 'admin',
     updated_at: '2026-09-01T00:00:00Z',
     item_count: items.length,
+    main_item_count: items.length,
     archived_at: null,
     items,
   };
@@ -73,6 +74,7 @@ function comp(
         created_by_username: 'admin',
         updated_at: '2026-09-01T00:00:00Z',
         item_count: 0,
+        main_item_count: 0,
         archived_at: null,
       },
     })),

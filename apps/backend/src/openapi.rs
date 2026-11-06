@@ -129,6 +129,7 @@ use utoipa::OpenApi;
         crate::modules::comps::router::remove_comp_build,
         crate::modules::events::router::list_events,
         crate::modules::events::router::list_event_calendar,
+        crate::modules::events::router::get_events_summary,
         crate::modules::events::router::list_event_revisions,
         crate::modules::events::router::get_event,
         crate::modules::events::router::get_roster_suggestions,
@@ -499,6 +500,8 @@ use utoipa::OpenApi;
             crate::modules::events::models::EventManagementAuthorityView,
             crate::pagination::PaginatedEventSummary,
             crate::responses::ApiResponseEventList,
+            crate::responses::ApiResponseEventSummary,
+            crate::modules::events::models::EventSummary,
             crate::responses::ApiResponseEventCalendarList,
             crate::responses::ApiResponseEventRevisionList,
             crate::responses::ApiResponseEventManagementAuthority,
@@ -943,7 +946,7 @@ mod tests {
 
     /// Every `security(("session_cookie" = ["..."]))` scope declared on a route
     /// must be a valid `Permission::as_str()` value. Catches typos and drift
-    /// between the OpenAPI annotations and the `Permission` enum at CI time.
+    /// between the `OpenAPI` annotations and the `Permission` enum at CI time.
     #[test]
     fn all_security_scopes_are_valid_permissions() {
         use utoipa::openapi::path::Operation;
@@ -975,7 +978,7 @@ mod tests {
         }
 
         let api = ApiDoc::openapi();
-        for (_path, path_item) in &api.paths.paths {
+        for path_item in api.paths.paths.values() {
             check(path_item.get.as_ref());
             check(path_item.post.as_ref());
             check(path_item.put.as_ref());

@@ -32,9 +32,12 @@ pub struct UserProfile {
     /// The screen name or username of the user.
     #[schema(example = "rust_developer")]
     pub username: String,
-    /// The registered email address of the user.
+    /// The registered email address of the user. Only present for the user themselves and for
+    /// viewers holding `users.create` or `roles.manage` (or the tenant owner); everyone else gets
+    /// the field omitted.
     #[schema(example = "dev@example.com")]
-    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     /// The authorization role of the user (e.g. Admin, User).
     #[schema(example = "Admin")]
     pub role: String,
@@ -95,9 +98,19 @@ impl UserProfile {
         Ok(Self {
             id: model.id as u64,
             username,
-            email: model.email,
+            email: Some(model.email),
             role: model.role,
         })
+    }
+
+    /// Drops the email unless `viewer_user_id` is this profile or `can_see_emails` is set.
+    #[must_use]
+    pub fn redacted_for(mut self, viewer_user_id: i64, can_see_emails: bool) -> Self {
+        let is_self = viewer_user_id > 0 && u64::try_from(viewer_user_id) == Ok(self.id);
+        if !is_self && !can_see_emails {
+            self.email = None;
+        }
+        self
     }
 }
 
@@ -107,9 +120,6 @@ pub struct UserFilters {
     /// Filter users whose username contains the given string (case-insensitive).
     #[schema(example = "rust")]
     pub username: Option<String>,
-    /// Filter users with the exact email address.
-    #[schema(example = "dev@example.com")]
-    pub email: Option<String>,
     /// Filter users by their exact resolved role name.
     #[schema(example = "Officer")]
     pub role: Option<String>,
@@ -279,7 +289,7 @@ impl UserService {
                     node_name: Set(name.to_string()),
                     category: Set(category),
                     level: Set(item.level),
-                    updated_at: Set(now.clone()),
+                    updated_at: Set(now),
                     updated_by_user_id: Set(Some(editor_user_id)),
                     ..Default::default()
                 })
@@ -383,8 +393,8 @@ impl UserService {
             .await?;
 
         Ok(UserMetrics {
-            events_attended,
             most_played_build,
+            events_attended,
             total_estimated_loss,
             top_estimated_loss,
             ..extras
@@ -573,9 +583,6 @@ impl UserService {
             }
             query = query.filter(name_filter);
         }
-        if let Some(ref email) = filters.email {
-            query = query.filter(UserColumn::Email.eq(email.clone()));
-        }
         if let Some(ref role) = filters.role {
             query = query.filter(UserColumn::Role.eq(role.clone()));
         }
@@ -592,8 +599,8 @@ impl UserService {
             .sort
             .as_deref()
             .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .is_some();
+            .as_ref()
+            .is_some_and(|value| !value.is_empty());
         let order = if sort_requested {
             SortOrder::from_query(filters.order.as_deref())
         } else {
@@ -619,7 +626,7 @@ impl UserService {
             .map(|m| UserProfile {
                 username: names.remove(&m.id).unwrap_or_else(|| m.username.clone()),
                 id: m.id as u64,
-                email: m.email,
+                email: Some(m.email),
                 role: m.role,
             })
             .collect();
@@ -723,6 +730,80 @@ impl Default for UserService {
 
 #[cfg(test)]
 mod tests {
+    fn profile(id: u64, email: &str) -> UserProfile {
+        UserProfile {
+            id,
+            username: format!("user-{id}"),
+            email: Some(email.to_string()),
+            role: "User".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_plain_member_sees_only_their_own_email() {
+        // Another member: no email. Self: kept. A privileged viewer: kept.
+        assert_eq!(profile(7, "a@x.io").redacted_for(3, false).email, None);
+        assert_eq!(
+            profile(7, "a@x.io").redacted_for(7, false).email.as_deref(),
+            Some("a@x.io")
+        );
+        assert_eq!(
+            profile(7, "a@x.io").redacted_for(3, true).email.as_deref(),
+            Some("a@x.io")
+        );
+        // An unresolved viewer (user_id 0) never matches a row.
+        assert_eq!(profile(0, "a@x.io").redacted_for(0, false).email, None);
+    }
+
+    #[test]
+    fn a_redacted_profile_serializes_without_an_email_key() {
+        let json = serde_json::to_value(profile(7, "a@x.io").redacted_for(3, false)).unwrap();
+        assert!(json.get("email").is_none(), "{json}");
+        let json = serde_json::to_value(profile(7, "a@x.io")).unwrap();
+        assert_eq!(json["email"], "a@x.io");
+    }
+
+    #[test]
+    fn the_email_query_parameter_is_not_a_filter() {
+        let filters: UserFilters =
+            serde_urlencoded::from_str("email=alice%40example.com&role=Admin").unwrap();
+        assert_eq!(filters.role.as_deref(), Some("Admin"));
+    }
+
+    #[tokio::test]
+    async fn listing_ignores_an_email_probe() {
+        use super::super::entities::ActiveModel;
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        for (name, email) in [("alice", "alice@example.com"), ("bob", "bob@example.com")] {
+            ActiveModel {
+                username: Set(name.to_string()),
+                email: Set(email.to_string()),
+                role: Set("User".to_string()),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("insert");
+        }
+        let filters: UserFilters = serde_urlencoded::from_str("email=alice%40example.com").unwrap();
+        let page = UserService::new()
+            .list_users(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &filters,
+            )
+            .await
+            .expect("list");
+        // The probe filters nothing, so it cannot be used to test whether an address exists.
+        assert_eq!(page.items.len(), 2);
+    }
+
     use super::*;
     use crate::migration::MigratorTrait;
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
@@ -1079,7 +1160,7 @@ mod tests {
 
         assert_eq!(profile.username, "Kay");
         assert_eq!(profile.role, "Member");
-        assert_eq!(profile.email, provisional_discord_email("111"));
+        assert_eq!(profile.email, Some(provisional_discord_email("111")));
 
         let found_by_albion_name = service
             .list_users(

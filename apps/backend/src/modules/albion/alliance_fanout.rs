@@ -108,6 +108,7 @@ pub async fn load_active_memberships(
 }
 
 /// After a successful link on `current_tenant_id`, copy link + alliance roles to paired tenants.
+#[allow(clippy::too_many_arguments)]
 pub async fn after_successful_link(
     control: &DatabaseConnection,
     registry: &TenantRegistry,
@@ -431,6 +432,7 @@ async fn player_in_discord_albion_alliance(
     shares_albion_alliance(Some(&home_alliance), Some(&player_alliance))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn assign_alliance_roles_on_tenant(
     control: &DatabaseConnection,
     cfg: &Config,

@@ -57,7 +57,7 @@ pub enum Permission {
     BankTransactionsDelete,
     /// Create / edit participants / close out a loot split. Officer-or-above today.
     /// Superseded by splits.view/.create/.edit/.delete below — kept so
-    /// existing role_permissions rows keep resolving.
+    /// existing `role_permissions` rows keep resolving.
     #[strum(serialize = "splits.manage")]
     SplitsManage,
     /// View splits and the KPI summary. Member+.
@@ -77,7 +77,7 @@ pub enum Permission {
     SplitsDelete,
     /// Manually merge, split, or move canonical Fight segments. Officer-or-above.
     /// Superseded by fights.view/.edit below — kept so existing
-    /// role_permissions rows keep resolving.
+    /// `role_permissions` rows keep resolving.
     #[strum(serialize = "fights.manage")]
     FightsManage,
     /// View fights, their detail, and trend reports. Member+.
@@ -102,7 +102,7 @@ pub enum Permission {
     #[strum(serialize = "roles.manage")]
     RolesManage,
     /// Manage build categories (create, edit, delete). Superseded by the
-    /// split permissions below — kept so existing role_permissions rows
+    /// split permissions below — kept so existing `role_permissions` rows
     /// keep resolving.
     #[strum(serialize = "comps.build_categories.manage")]
     CompsBuildCategoriesManage,
@@ -119,7 +119,7 @@ pub enum Permission {
     #[strum(serialize = "comps.build_categories.delete")]
     CompsBuildCategoriesDelete,
     /// Manage comp categories (create, edit, delete). Superseded by the
-    /// split permissions below — kept so existing role_permissions rows
+    /// split permissions below — kept so existing `role_permissions` rows
     /// keep resolving.
     #[strum(serialize = "comps.comp_categories.manage")]
     CompsCompCategoriesManage,
@@ -136,7 +136,7 @@ pub enum Permission {
     #[strum(serialize = "comps.comp_categories.delete")]
     CompsCompCategoriesDelete,
     /// Manage builds (create, edit, delete). Superseded by the split
-    /// permissions below — kept so existing role_permissions rows keep
+    /// permissions below — kept so existing `role_permissions` rows keep
     /// resolving.
     #[strum(serialize = "comps.builds.manage")]
     CompsBuildsManage,
@@ -153,7 +153,7 @@ pub enum Permission {
     #[strum(serialize = "comps.builds.delete")]
     CompsBuildsDelete,
     /// Manage comps (create, edit, delete). Superseded by the split
-    /// permissions below — kept so existing role_permissions rows keep
+    /// permissions below — kept so existing `role_permissions` rows keep
     /// resolving.
     #[strum(serialize = "comps.comps.manage")]
     CompsCompsManage,
@@ -171,7 +171,7 @@ pub enum Permission {
     CompsCompsDelete,
     /// Manage events (create, edit, delete). Superseded by the split
     /// events.view/.create/.edit/.delete below — kept so existing
-    /// role_permissions rows and any external reference keep resolving.
+    /// `role_permissions` rows and any external reference keep resolving.
     #[strum(serialize = "events.manage")]
     EventsManage,
     /// View events and their rosters. Member+.
@@ -234,7 +234,7 @@ pub enum Permission {
     IntelView,
     /// Create / edit / merge / archive scouted comps and trigger manual scouting. Officer+.
     /// Superseded by intel.create/.edit/.delete below — kept so existing
-    /// role_permissions rows keep resolving.
+    /// `role_permissions` rows keep resolving.
     #[strum(serialize = "intel.manage")]
     IntelManage,
     /// Scout a battle, creating a new scouted comp entry. Officer+.
@@ -266,7 +266,7 @@ pub enum Permission {
     ProgressionView,
     /// Edit the XP curve, rates, warn threshold, and seasons. Admin+.
     /// Superseded by progression.settings.create/.edit below — kept so
-    /// existing role_permissions rows keep resolving.
+    /// existing `role_permissions` rows keep resolving.
     #[strum(serialize = "progression.settings.manage")]
     ProgressionSettingsManage,
     /// Create a new season. Admin+.

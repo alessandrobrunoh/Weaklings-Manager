@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 
 /// One claimed VOD review URL inside a season.
 pub mod vod_review {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "vod_reviews")]

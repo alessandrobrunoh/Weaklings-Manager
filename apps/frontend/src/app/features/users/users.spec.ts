@@ -111,6 +111,32 @@ describe('Users new member', () => {
     expect(compiled.textContent).not.toContain('users.create');
   });
 
+  it('shows the email column only to holders of users.create or roles.manage', async () => {
+    const withEmails = of({
+      items: [{ id: 9, username: 'Kay', email: 'kay@example.com', role: 'Member' }],
+      total_items: 1, total_pages: 1, current_page: 1, limit: 10,
+    });
+    fixture.destroy();
+    apiGet.mockReturnValue(withEmails);
+    fixture = TestBed.createComponent(Users);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('kay@example.com');
+
+    fixture.destroy();
+    hasPermission.mockReturnValue(false);
+    apiGet.mockReturnValue(of({
+      items: [{ id: 9, username: 'Kay', role: 'Member' }],
+      total_items: 1, total_pages: 1, current_page: 1, limit: 10,
+    }));
+    fixture = TestBed.createComponent(Users);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Kay');
+    expect(element.textContent).not.toContain('common.email');
+  });
+
   it('creates a member from the selected Discord and Albion identities', async () => {
     const cmp = fixture.componentInstance as unknown as {
       openCreate: () => void;

@@ -1,9 +1,9 @@
 //! `AlbionBB` routing module.
 //!
-//! Generic, raw passthroughs to the AlbionBB API. Not typically called directly
-//! by the frontend — the [`crate::modules::battles`] module reshapes AlbionBB
+//! Generic, raw passthroughs to the `AlbionBB` API. Not typically called directly
+//! by the frontend — the [`crate::modules::battles`] module reshapes `AlbionBB`
 //! data for the configured Weaklings guild. Exposed for power users and the
-//! OpenAPI explorer.
+//! `OpenAPI` explorer.
 
 use axum::{
     Extension, Json, Router,
@@ -35,7 +35,7 @@ pub fn router() -> Router {
 /// Query parameters for browsing battles.
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct BattlesListQuery {
-    /// AlbionBB server segment (`eu`/`na`/`asia`). Defaults to `eu`.
+    /// `AlbionBB` server segment (`eu`/`na`/`asia`). Defaults to `eu`.
     pub server: Option<String>,
     /// Free-text search string.
     pub search: Option<String>,
@@ -49,7 +49,7 @@ pub struct BattlesListQuery {
     pub page: Option<u64>,
 }
 
-/// Raw battle list response — AlbionBB's payload, with the page metadata that
+/// Raw battle list response — `AlbionBB`'s payload, with the page metadata that
 /// the upstream envelope exposed. NOT wrapped in `PaginatedData` because the
 /// upstream already paginates and we only pass `page` through.
 #[derive(Debug, serde::Serialize, utoipa::ToSchema)]
@@ -232,14 +232,14 @@ pub async fn get_player_stats(
 /// Shared query params for single-resource lookups (just the server segment).
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ServerQuery {
-    /// AlbionBB server segment (`eu`/`na`/`asia`). Defaults to `eu`.
+    /// `AlbionBB` server segment (`eu`/`na`/`asia`). Defaults to `eu`.
     pub server: Option<String>,
 }
 
 /// Query params for player stats.
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct PlayerStatsQuery {
-    /// AlbionBB server segment (`eu`/`na`/`asia`). Defaults to `eu`.
+    /// `AlbionBB` server segment (`eu`/`na`/`asia`). Defaults to `eu`.
     pub server: Option<String>,
     /// Minimum total players threshold.
     pub min_players: Option<i64>,

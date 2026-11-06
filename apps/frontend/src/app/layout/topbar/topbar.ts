@@ -201,17 +201,18 @@ import type { NavSection } from '../sidebar/sidebar';
     >
       @for (toast of toasts.toasts(); track toast.id) {
         <div
-          class="pointer-events-auto flex items-center justify-between gap-3 rounded-[var(--radius-cards)] border bg-[var(--color-surface)] px-3.5 py-2.5 shadow-[var(--shadow-xl)]"
+          class="pointer-events-auto flex items-start justify-between gap-3 rounded-[var(--radius-cards)] border bg-[var(--color-surface)] px-3.5 py-2.5 shadow-[var(--shadow-xl)]"
           [style.borderColor]="toastBorderColor(toast.kind)"
+          [attr.role]="toast.kind === 'error' ? 'alert' : null"
         >
-          <div class="flex min-w-0 items-center gap-2.5">
+          <div class="flex min-w-0 items-start gap-2.5">
             <span
               class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius-inputs)] text-xs"
               [class]="toastIconClasses(toast.kind)"
             >
               <app-icon [name]="iconFor(toast.kind)" size="0.875rem" />
             </span>
-            <span class="truncate text-xs font-medium text-[var(--color-text)]">{{ toast.message }}</span>
+            <span class="min-w-0 break-words pt-1 text-xs font-medium text-[var(--color-text)]">{{ toast.message }}</span>
           </div>
           <button
             type="button"

@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { NotificationView, PaginatedData, UnreadCountView } from '../models/api.models';
@@ -151,5 +151,65 @@ describe('NotificationService', () => {
     await service.refreshUnread();
 
     expect(service.unreadCount()).toBe(0);
+  });
+});
+
+describe('NotificationService.reset', () => {
+  it('clears the previous tenant inbox and badge and refetches the badge', async () => {
+    let count = 5;
+    const api = {
+      get: vi.fn((path: string) => {
+        if (path === 'api/notifications/unread-count') {
+          return of({ count } satisfies UnreadCountView);
+        }
+        return of(emptyPage([sample()]));
+      }),
+      post: vi.fn(),
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: api }],
+    });
+    const service = TestBed.inject(NotificationService);
+    await service.refreshUnread();
+    await service.loadInbox();
+    expect(service.unreadCount()).toBe(5);
+    expect(service.items()).toHaveLength(1);
+
+    count = 0;
+    service.reset();
+    expect(service.items()).toEqual([]);
+    expect(service.unreadCount()).toBe(0);
+    await vi.waitFor(() =>
+      expect(api.get.mock.calls.filter(([p]) => p === 'api/notifications/unread-count').length).toBeGreaterThan(2),
+    );
+  });
+
+  it('ignores an unread-count response that was in flight for the previous tenant', async () => {
+    const stale = new Subject<UnreadCountView>();
+    let first = true;
+    const api = {
+      get: vi.fn(() => {
+        if (first) {
+          first = false;
+          return stale;
+        }
+        return of({ count: 2 } satisfies UnreadCountView);
+      }),
+      post: vi.fn(),
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: api }],
+    });
+    const service = TestBed.inject(NotificationService);
+
+    service.reset();
+    await vi.waitFor(() => expect(service.unreadCount()).toBe(2));
+    stale.next({ count: 99 });
+    stale.complete();
+    await Promise.resolve();
+
+    expect(service.unreadCount()).toBe(2);
   });
 });

@@ -147,7 +147,7 @@ impl<T> PaginatedData<T> {
     }
 }
 
-/// Concrete paginated user profile response schema for OpenAPI.
+/// Concrete paginated user profile response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedUserProfile {
     /// List of user profiles on the current page.
@@ -178,7 +178,7 @@ impl From<PaginatedData<crate::modules::users::service::UserProfile>> for Pagina
     }
 }
 
-/// Concrete paginated transaction response schema for OpenAPI.
+/// Concrete paginated transaction response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedTransactionView {
     /// List of transactions on the current page.
@@ -209,7 +209,7 @@ impl From<PaginatedData<TransactionView>> for PaginatedTransactionView {
     }
 }
 
-/// Concrete paginated split summary response schema for OpenAPI.
+/// Concrete paginated split summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedSplitSummary {
     /// List of split summaries on the current page.
@@ -240,7 +240,7 @@ impl From<PaginatedData<crate::modules::splits::models::SplitSummary>> for Pagin
     }
 }
 
-/// Concrete paginated Albion guild member response schema for OpenAPI.
+/// Concrete paginated Albion guild member response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedAlbionGuildMember {
     /// List of guild members on the current page.
@@ -273,7 +273,7 @@ impl From<PaginatedData<crate::modules::albion::client::AlbionGuildMember>>
     }
 }
 
-/// Concrete paginated `OpenAlbion` weapon response schema for OpenAPI.
+/// Concrete paginated `OpenAlbion` weapon response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedOpenAlbionWeapon {
     /// List of weapons on the current page.
@@ -306,7 +306,7 @@ impl From<PaginatedData<crate::modules::openalbion::catalog::OpenAlbionWeapon>>
     }
 }
 
-/// Concrete paginated `OpenAlbionItem` response schema for OpenAPI.
+/// Concrete paginated `OpenAlbionItem` response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedOpenAlbionItem {
     /// List of items on the current page.
@@ -339,7 +339,7 @@ impl From<PaginatedData<crate::modules::openalbion::catalog::OpenAlbionItem>>
     }
 }
 
-/// Concrete paginated comp summary response schema for OpenAPI.
+/// Concrete paginated comp summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedCompSummary {
     /// List of comp summaries on the current page.
@@ -370,7 +370,7 @@ impl From<PaginatedData<crate::modules::comps::models::CompSummary>> for Paginat
     }
 }
 
-/// Concrete paginated build summary response schema for OpenAPI.
+/// Concrete paginated build summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedBuildSummary {
     /// List of build summaries on the current page.
@@ -401,7 +401,7 @@ impl From<PaginatedData<crate::modules::comps::models::BuildSummary>> for Pagina
     }
 }
 
-/// Concrete paginated event summary response schema for OpenAPI.
+/// Concrete paginated event summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedEventSummary {
     /// List of event summaries on the current page.
@@ -432,7 +432,7 @@ impl From<PaginatedData<crate::modules::events::models::EventView>> for Paginate
     }
 }
 
-/// Concrete paginated BattleSummary response schema for OpenAPI.
+/// Concrete paginated `BattleSummary` response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedBattleSummary {
     /// List of battle summaries on the current page.
@@ -484,7 +484,7 @@ pub struct PaginatedEntryView {
     pub limit: u64,
 }
 
-/// Concrete paginated player-balance response schema for OpenAPI.
+/// Concrete paginated player-balance response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedPlayerBalance {
     /// Balance rows on the current page.
@@ -593,7 +593,7 @@ impl From<PaginatedData<crate::modules::intel::models::ScoutedCompSummary>>
     }
 }
 
-/// Concrete paginated XP leaderboard response schema for OpenAPI.
+/// Concrete paginated XP leaderboard response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedLeaderboardEntryView {
     /// Leaderboard rows on the current page.
@@ -628,7 +628,7 @@ impl From<PaginatedData<crate::modules::progression::models::LeaderboardEntryVie
     }
 }
 
-/// Concrete paginated XP ledger response schema for OpenAPI.
+/// Concrete paginated XP ledger response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedXpLedgerEntryView {
     /// Ledger rows on the current page.
@@ -661,7 +661,7 @@ impl From<PaginatedData<crate::modules::progression::models::XpLedgerEntryView>>
     }
 }
 
-/// Concrete paginated giveaway list response schema for OpenAPI.
+/// Concrete paginated giveaway list response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedGiveawayView {
     /// Giveaways on the current page.
@@ -694,7 +694,7 @@ impl From<PaginatedData<crate::modules::giveaways::models::GiveawayView>>
     }
 }
 
-/// Concrete paginated warn list response schema for OpenAPI.
+/// Concrete paginated warn list response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedWarnView {
     /// Warn rows on the current page.
@@ -725,7 +725,7 @@ impl From<PaginatedData<crate::modules::warns::models::WarnView>> for PaginatedW
     }
 }
 
-/// Concrete paginated warn-escalation response schema for OpenAPI.
+/// Concrete paginated warn-escalation response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedWarnEscalationView {
     /// Escalation rows on the current page.
@@ -758,7 +758,7 @@ impl From<PaginatedData<crate::modules::warns::models::WarnEscalationView>>
     }
 }
 
-/// Concrete paginated notification list response schema for OpenAPI.
+/// Concrete paginated notification list response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedNotificationView {
     /// Inbox rows on the current page.
@@ -791,7 +791,7 @@ impl From<PaginatedData<crate::modules::notifications::models::NotificationView>
     }
 }
 
-/// Concrete paginated enemy guild summary response schema for OpenAPI.
+/// Concrete paginated enemy guild summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedEnemyGuildSummary {
     /// List of enemy guild summaries on the current page.
@@ -824,7 +824,7 @@ impl From<PaginatedData<crate::modules::enemies::models::EnemyGuildSummary>>
     }
 }
 
-/// Concrete paginated enemy player summary response schema for OpenAPI.
+/// Concrete paginated enemy player summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedEnemyPlayerSummary {
     /// List of enemy player summaries on the current page.
@@ -857,7 +857,7 @@ impl From<PaginatedData<crate::modules::enemies::models::EnemyPlayerSummary>>
     }
 }
 
-/// Concrete paginated fingerprint summary response schema for OpenAPI.
+/// Concrete paginated fingerprint summary response schema for `OpenAPI`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedFingerprintSummary {
     /// List of fingerprint summaries on the current page.

@@ -38,6 +38,8 @@ export const RECONCILE_INTERVAL_MS = 5 * 60_000;
 export class PollerManager {
   private timer: NodeJS.Timeout | undefined;
   private reconciling = false;
+  /** Starts in flight, so two callers racing for one guild share a single start. */
+  private readonly starting = new Map<string, Promise<void>>();
 
   constructor(
     private readonly client: Client,
@@ -107,7 +109,21 @@ export class PollerManager {
   /** Starts this guild's poller if it is a registered tenant and has none yet. */
   async ensure(guildId: string): Promise<void> {
     if (getPoller(guildId)) return;
+    // `GuildCreate` and `reconcile()` can both land here while the tenant status
+    // call is in flight; join the start already underway instead of beginning a second.
+    const inflight = this.starting.get(guildId);
+    if (inflight) return inflight;
+    const start = this.startPoller(guildId).finally(() => {
+      this.starting.delete(guildId);
+    });
+    this.starting.set(guildId, start);
+    return start;
+  }
+
+  private async startPoller(guildId: string): Promise<void> {
     if (!(await isRegisteredTenant(this.api, guildId))) return;
+    // The guild may have been registered by another path while we awaited.
+    if (getPoller(guildId)) return;
 
     const poller = new Poller(
       this.client,

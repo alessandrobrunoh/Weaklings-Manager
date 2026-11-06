@@ -1,4 +1,4 @@
-//! REST API routes and OpenAPI paths for the events module.
+//! REST API routes and `OpenAPI` paths for the events module.
 
 use axum::{
     Extension, Json, Router,
@@ -22,8 +22,8 @@ use serde::Deserialize;
 use crate::responses::{
     ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail,
     ApiResponseEventFanoutStatus, ApiResponseEventList, ApiResponseEventManagementAuthority,
-    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventView,
-    ApiResponseParticipationGuildList,
+    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventSummary,
+    ApiResponseEventView, ApiResponseParticipationGuildList,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 
@@ -33,21 +33,38 @@ use std::collections::HashSet;
 use super::attribution::{
     ParticipationGuild, eligible_participation_guilds, resolve_join_attribution,
 };
-use super::lifecycle::{assert_manageable_source_event, sync_owner_change_to_copies};
+use super::lifecycle::{AfterCommit, Cause, Transition, XpFilter, propagate_source_change};
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
     CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
-    EventRevision, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
-    ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
+    EventRevision, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventSummary,
+    EventView, ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
     SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
-use super::sync::{assert_active_alliance, create_mirror, is_mirror_event, sync_participation};
+use super::sync::{assert_active_alliance, create_mirror, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::alliance_share::ShareActor;
+use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable, copy_role};
+
+/// Rejects a write on a read-only copy of another tenant's event (403 + `origin`).
+///
+/// Detached copies (sync link disabled) stay locally managed and pass.
+async fn assert_event_writable(
+    db: &sea_orm::DatabaseConnection,
+    control: &ControlDb,
+    tenant_id: &str,
+    id: i64,
+) -> Result<(), AppError> {
+    let legacy = LegacyLinks {
+        control: &control.0,
+        tenant_id,
+    };
+    assert_writable(db, legacy, SyncKind::Event, id).await
+}
 
 async fn hydrate_event_view(
     mut view: EventView,
@@ -196,6 +213,7 @@ pub fn router() -> Router {
         .route("/{id}/mirror-status", get(get_event_mirror_status))
         .route("/{id}/mirror-retry", post(retry_event_mirror))
         .route("/calendar", get(list_event_calendar))
+        .route("/summary", get(get_events_summary))
         .route("/revisions", get(list_event_revisions))
         .route(
             "/vod-forum-posts/pending",
@@ -457,6 +475,7 @@ pub async fn list_event_calendar(
         (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn list_events(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -473,6 +492,34 @@ async fn list_events(
     Ok(Json(ApiResponse::new(
         hydrate_event_list(events, &control, &registry, &tenant_id).await,
     )))
+}
+
+/// Returns counts of non-archived events by status and call-to-arms flag.
+///
+/// Requires `events.view` permission.
+#[utoipa::path(
+    get,
+    path = "/api/events/summary",
+    tag = "events",
+    summary = "Summarize events",
+    description = "Returns the number of non-archived events in total, live, scheduled and flagged \
+        as call to arms. Counted in the database, so it is exact for any number of events. \
+        Requires `events.view` permission.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Event counts retrieved", body = ApiResponseEventSummary),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails)
+    )
+)]
+pub async fn get_events_summary(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<EventSummary>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
+    let summary = EventService::new().summarize_events(&db).await?;
+    Ok(Json(ApiResponse::new(summary)))
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -551,11 +598,12 @@ async fn list_event_revisions(
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn get_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Extension(cfg): Extension<Config>,
+    Extension(_cfg): Extension<Config>,
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
@@ -648,6 +696,7 @@ async fn get_roster_suggestions(
     Ok(Json(ApiResponse::new(suggestions)))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn assign_roster_seat(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -659,7 +708,7 @@ async fn assign_roster_seat(
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
         .await?;
@@ -676,6 +725,7 @@ async fn assign_roster_seat(
     )))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn clear_roster_seat(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -687,7 +737,7 @@ async fn clear_roster_seat(
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .clear_roster_seat(&db, id, &seat_key, request)
         .await?;
@@ -704,6 +754,7 @@ async fn clear_roster_seat(
     )))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn swap_roster_seats(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -715,7 +766,7 @@ async fn swap_roster_seats(
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let keys = vec![
         request.source_seat_key.clone(),
         request.target_seat_key.clone(),
@@ -735,6 +786,7 @@ async fn swap_roster_seats(
     )))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn auto_fill_roster(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -746,7 +798,7 @@ async fn auto_fill_roster(
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let (version, changed) = EventService::new()
         .auto_fill_roster(&db, id, request, user.user_id)
         .await?;
@@ -902,6 +954,7 @@ async fn list_event_roster_roles(
         (status = 409, description = "Build is already an extra roster role", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn create_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -913,7 +966,7 @@ async fn create_event_roster_role(
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
@@ -949,7 +1002,7 @@ async fn delete_event_roster_role(
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
@@ -1000,6 +1053,7 @@ async fn notify_roster_roles_changed(
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn create_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1216,6 +1270,7 @@ async fn get_event_mirror_status(
         (status = 409, description = "Mirror request is not failed or no active alliance exists", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn retry_event_mirror(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1232,7 +1287,7 @@ async fn retry_event_mirror(
         ));
     }
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    super::lifecycle::assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     super::sync::assert_active_alliance(&control.0, &tenant_id).await?;
     super::mirror_retry::requeue(&control.0, &tenant_id, id).await?;
     super::mirror_retry::process_due(&control.0, &registry).await?;
@@ -1291,6 +1346,7 @@ async fn list_event_discord_roles(
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn update_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1302,7 +1358,7 @@ async fn update_event(
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     if req.ping_alliance == Some(true) {
         assert_active_alliance(&control.0, &tenant_id).await?;
     }
@@ -1352,12 +1408,31 @@ async fn sync_source_change(
     else {
         return Ok(());
     };
-    let operation = if model.archived_at.is_some() || model.status == "cancelled" {
-        super::fanout_outbox::Operation::Archive
-    } else {
-        super::fanout_outbox::Operation::Update
-    };
-    sync_owner_change_to_copies(&control.0, registry, tenant_id, &model, operation).await
+    propagate_source_change(&control.0, registry, tenant_id, &model).await
+}
+
+/// Applies one lifecycle transition for a web request, then propagates it to copies.
+///
+/// The transition core is shared with the scheduler and the sync engine; the route only adds
+/// the caller's identity and the legacy post-commit propagation.
+async fn run_transition(
+    user: &UserContext,
+    db: &sea_orm::DatabaseConnection,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    tenant_id: &str,
+    id: i64,
+    transition: Transition,
+) -> Result<EventView, AppError> {
+    let done = EventService::new()
+        .transition(db, id, transition, Cause::Web, Some(&user.id))
+        .await?;
+    done.outcome
+        .after_commit(&AfterCommit::legacy_propagation(
+            &control.0, registry, tenant_id,
+        ))
+        .await?;
+    Ok(done.view)
 }
 
 /// Deletes an event.
@@ -1390,10 +1465,17 @@ async fn delete_event(
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let service = EventService::new();
-    service.delete_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Archive,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1422,9 +1504,17 @@ async fn archive_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().archive_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Archive,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1453,9 +1543,17 @@ async fn unarchive_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().unarchive_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Unarchive,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -1489,6 +1587,7 @@ struct ParticipateQuery {
         (status = 404, description = "Event or build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn participate(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -1695,6 +1794,7 @@ async fn require_event_management_authority(
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn add_event_member(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1706,7 +1806,7 @@ async fn add_event_member(
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
     tracing::info!(
@@ -1747,6 +1847,7 @@ async fn add_event_member(
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn set_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -1758,7 +1859,7 @@ async fn set_participant(
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
@@ -1799,7 +1900,7 @@ async fn remove_participant(
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant.0, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
@@ -1849,7 +1950,7 @@ async fn remind_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
 
     let _ = AuditService::log(
@@ -1894,11 +1995,13 @@ async fn get_event_management_authority(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventManagementAuthorityView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
-    let is_copy = match assert_manageable_source_event(&control.0, &tenant_id, id).await {
-        Ok(()) => false,
-        Err(AppError::Forbidden(_)) => true,
-        Err(error) => return Err(error),
+    let legacy = LegacyLinks {
+        control: &control.0,
+        tenant_id: &tenant_id,
     };
+    let is_copy = copy_role(&db, legacy, SyncKind::Event, id)
+        .await?
+        .is_read_only();
     let is_organizer = !is_copy && event_creator_id(&db, id).await? == user.user_id;
     let can_manage =
         !is_copy && (is_organizer || user.has_permission(&perms, Permission::EventsEdit).await);
@@ -1939,7 +2042,7 @@ async fn set_event_voice_channel(
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
         .await?;
@@ -1982,7 +2085,7 @@ async fn clear_event_voice_channel(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
         .await?;
@@ -2027,10 +2130,17 @@ async fn start_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let service = EventService::new();
-    let event = service.start_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Start,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2063,9 +2173,17 @@ async fn cancel_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().cancel_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Cancel,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2098,9 +2216,17 @@ async fn uncancel_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let event = EventService::new().uncancel_event(&db, id).await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    let event = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        Transition::Uncancel,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2134,13 +2260,19 @@ async fn stop_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
-    let service = EventService::new();
-    let award_xp = !is_mirror_event(&control.0, &tenant_id, id).await?;
-    let event = service
-        .stop_event_with_xp_policy(&db, id, false, award_xp)
-        .await?;
-    sync_source_change(&control, &registry, &db, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
+    // Only a detached copy reaches this point; it still awards nothing, exactly as
+    // before (progression belongs to the origin tenant).
+    let legacy = LegacyLinks {
+        control: &control.0,
+        tenant_id: &tenant_id,
+    };
+    let award_xp = !copy_role(&db, legacy, SyncKind::Event, id).await?.is_copy();
+    let stop = Transition::Stop {
+        auto: false,
+        xp: XpFilter::from_award_xp(award_xp),
+    };
+    let event = run_transition(&user, &db, &control, &registry, &tenant_id, id, stop).await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -2167,7 +2299,7 @@ async fn list_event_battles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Extension(cfg): Extension<Config>,
+    Extension(_cfg): Extension<Config>,
     Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
     Path(id): Path<i64>,
@@ -2205,11 +2337,12 @@ async fn list_event_battles(
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn replace_event_battles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Extension(cfg): Extension<Config>,
+    Extension(_cfg): Extension<Config>,
     Extension(albionbb): Extension<AlbionBbService>,
     Extension(control): Extension<crate::tenant::ControlDb>,
     Extension(crate::tenant::CurrentTenantId(tenant_id)): Extension<crate::tenant::CurrentTenantId>,
@@ -2217,7 +2350,7 @@ async fn replace_event_battles(
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
-    assert_manageable_source_event(&control.0, &tenant_id, id).await?;
+    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let service = EventService::new();
     let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
         .await
@@ -2233,8 +2366,8 @@ async fn replace_event_battles(
 #[cfg(test)]
 mod tests {
     use super::{
-        EventManagementAuthorityView, get_event_management_authority, list_event_calendar,
-        parse_event_revision_ids, require_event_management_authority,
+        EventManagementAuthorityView, get_event_management_authority, get_events_summary,
+        list_event_calendar, parse_event_revision_ids, require_event_management_authority,
     };
     use crate::errors::AppError;
     use crate::modules::auth::{
@@ -2416,6 +2549,32 @@ mod tests {
         assert!(matches!(
             result,
             Err(AppError::Forbidden(message)) if message.contains("events.edit")
+        ));
+    }
+
+    #[tokio::test]
+    async fn events_summary_requires_events_view() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("test database should connect");
+        let user = UserContext {
+            id: "discord-user".to_string(),
+            username: "Member".to_string(),
+            email: None,
+            avatar: None,
+            roles: vec!["User".to_string()],
+            highest_role: "User".to_string(),
+            user_id: 1,
+            super_admin_id: None,
+            is_tenant_owner: false,
+        };
+
+        let result =
+            get_events_summary(user, Extension(Permissions::new_empty()), Extension(db)).await;
+
+        assert!(matches!(
+            result,
+            Err(AppError::Forbidden(message)) if message.contains("events.view")
         ));
     }
 

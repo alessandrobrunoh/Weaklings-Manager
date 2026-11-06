@@ -14,7 +14,7 @@ use sea_orm::{
 
 use crate::errors::AppError;
 use crate::modules::audit::service::AuditService;
-use crate::modules::bank::entities::{ActiveModel as BankActiveModel, Entity as BankEntity};
+use crate::modules::bank::entities::ActiveModel as BankActiveModel;
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::comps::status::{icon_url_with_quality, parse_item_quality};
 use crate::modules::notifications::models::NotifySpec;
@@ -141,7 +141,7 @@ impl GiveawayService {
         req: CreateGiveawayRequest,
     ) -> Result<GiveawayDetailView, AppError> {
         if creator_id <= 0 {
-            return Err(AppError::Unauthorized(
+            return Err(AppError::Forbidden(
                 "giveaways can only be created by a linked user".to_string(),
             ));
         }
@@ -175,12 +175,12 @@ impl GiveawayService {
         }
         let silver = normalize_silver(req.silver_amount)?;
         let regear_request_bonus = req.regear_request_bonus.filter(|amount| *amount > 0);
-        if let Some(amount) = req.regear_request_bonus {
-            if amount < 0 {
-                return Err(AppError::Validation(
-                    "regear_request_bonus must be >= 0".to_string(),
-                ));
-            }
+        if let Some(amount) = req.regear_request_bonus
+            && amount < 0
+        {
+            return Err(AppError::Validation(
+                "regear_request_bonus must be >= 0".to_string(),
+            ));
         }
         if req.prizes.is_empty() && silver.is_none() && regear_request_bonus.is_none() {
             return Err(AppError::Validation(
@@ -250,7 +250,7 @@ impl GiveawayService {
         user_id: i64,
     ) -> Result<GiveawayDetailView, AppError> {
         if user_id <= 0 {
-            return Err(AppError::Unauthorized(
+            return Err(AppError::Forbidden(
                 "link your Discord account with /link before entering a giveaway".to_string(),
             ));
         }
@@ -288,7 +288,7 @@ impl GiveawayService {
         user_id: i64,
     ) -> Result<GiveawayDetailView, AppError> {
         if user_id <= 0 {
-            return Err(AppError::Unauthorized(
+            return Err(AppError::Forbidden(
                 "link your Discord account with /link before leaving a giveaway".to_string(),
             ));
         }
@@ -418,6 +418,26 @@ impl GiveawayService {
         })?;
         let winner_user_id = winner.user_id;
 
+        // Claim the draw FIRST with a conditional flip. Of two concurrent callers only one
+        // matches `status = 'open'` (the loser blocks on the row lock, then re-evaluates the
+        // predicate and matches nothing), so the side effects below run at most once per
+        // giveaway. The loser rolls back instead of committing anything.
+        let flip = GiveawayEntity::update_many()
+            .filter(GiveawayColumn::Id.eq(giveaway_id))
+            .filter(GiveawayColumn::Status.eq(GiveawayStatus::Open.as_str()))
+            .set(GiveawayActiveModel {
+                status: Set(GiveawayStatus::Drawn.as_str().to_string()),
+                winner_user_id: Set(Some(winner_user_id)),
+                drawn_at: Set(Some(now.into())),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+        if flip.rows_affected != 1 {
+            txn.rollback().await?;
+            return self.get(db, giveaway_id).await;
+        }
+
         let mut silver_transaction_id = None;
         if let Some(amount) = model.silver_amount.filter(|value| *value > Decimal::ZERO) {
             let credit = BankActiveModel {
@@ -437,44 +457,44 @@ impl GiveawayService {
             .insert(&txn)
             .await?;
             silver_transaction_id = Some(credit.id);
+            GiveawayEntity::update_many()
+                .filter(GiveawayColumn::Id.eq(giveaway_id))
+                .set(GiveawayActiveModel {
+                    silver_transaction_id: Set(silver_transaction_id),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
         }
 
         if let Some(amount) = model.regear_request_bonus.filter(|amount| *amount > 0) {
-            let regear_settings = crate::modules::regear::service::load_settings(&txn).await?;
-            if let Err(error) = crate::modules::regear::credits::credit_bonus(
-                &txn,
-                &regear_settings,
-                winner_user_id,
-                amount,
-            )
-            .await
-            {
-                tracing::warn!(
-                    giveaway_id,
-                    error = %error,
-                    "failed to credit giveaway's regear request bonus onto the winner's balance"
-                );
+            // The bonus is best-effort and must not be able to fail the draw. On Postgres any
+            // failed statement aborts the whole transaction, so it runs inside a SAVEPOINT that
+            // is rolled back on error; the silver credit and the draw itself stay intact.
+            let savepoint = txn.begin().await?;
+            let credited = async {
+                let regear_settings =
+                    crate::modules::regear::service::load_settings(&savepoint).await?;
+                crate::modules::regear::credits::credit_bonus(
+                    &savepoint,
+                    &regear_settings,
+                    winner_user_id,
+                    amount,
+                )
+                .await
             }
-        }
-
-        let flip = GiveawayEntity::update_many()
-            .filter(GiveawayColumn::Id.eq(giveaway_id))
-            .filter(GiveawayColumn::Status.eq(GiveawayStatus::Open.as_str()))
-            .set(GiveawayActiveModel {
-                status: Set(GiveawayStatus::Drawn.as_str().to_string()),
-                winner_user_id: Set(Some(winner_user_id)),
-                drawn_at: Set(Some(now.into())),
-                silver_transaction_id: Set(silver_transaction_id),
-                ..Default::default()
-            })
-            .exec(&txn)
-            .await?;
-        if flip.rows_affected != 1 {
-            if let Some(tx_id) = silver_transaction_id {
-                BankEntity::delete_by_id(tx_id).exec(&txn).await?;
+            .await;
+            match credited {
+                Ok(()) => savepoint.commit().await?,
+                Err(error) => {
+                    tracing::warn!(
+                        giveaway_id,
+                        error = %error,
+                        "failed to credit giveaway's regear request bonus onto the winner's balance"
+                    );
+                    savepoint.rollback().await?;
+                }
             }
-            txn.commit().await?;
-            return self.get(db, giveaway_id).await;
         }
         txn.commit().await?;
 
@@ -716,9 +736,10 @@ async fn to_views(
                 ends_at: model.ends_at.to_rfc3339(),
                 status,
                 created_by: model.created_by,
-                created_by_username: creator
-                    .map(|user| user.username.clone())
-                    .unwrap_or_else(|| model.created_by.to_string()),
+                created_by_username: creator.map_or_else(
+                    || model.created_by.to_string(),
+                    |user| user.username.clone(),
+                ),
                 created_at: model.created_at.to_rfc3339(),
                 silver_amount: model.silver_amount,
                 regear_request_bonus: model.regear_request_bonus,
@@ -781,8 +802,7 @@ async fn load_entries(
                 id: entry.id,
                 user_id: entry.user_id,
                 username: user
-                    .map(|row| row.username.clone())
-                    .unwrap_or_else(|| entry.user_id.to_string()),
+                    .map_or_else(|| entry.user_id.to_string(), |row| row.username.clone()),
                 discord_id: user.and_then(|row| row.discord_id.clone()),
                 entered_at: entry.entered_at.to_rfc3339(),
             }
@@ -794,9 +814,11 @@ async fn load_entries(
 mod tests {
     use super::*;
     use chrono::Duration;
-    use sea_orm::{ActiveModelTrait, Database, Set};
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, Database, Set};
+    use std::collections::HashSet;
 
     use crate::migration::MigratorTrait;
+    use crate::modules::bank::entities::Entity as BankEntity;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
 
     async fn seed_db() -> DatabaseConnection {
@@ -875,6 +897,27 @@ mod tests {
                 .unwrap()
                 .contains("quality=4")
         );
+    }
+
+    #[tokio::test]
+    async fn unlinked_sessions_get_forbidden_not_unauthorized() {
+        // A signed-in web user without a linked account has user_id 0. That is
+        // "not allowed", not "no session": a 401 would make the web client drop
+        // the session. The guard runs before any query, so no database is needed.
+        let db = DatabaseConnection::Disconnected;
+        let service = GiveawayService::new();
+        assert!(matches!(
+            service.create(&db, 0, create_req()).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            service.enter(&db, 1, 0).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            service.leave(&db, 1, 0).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 
     #[tokio::test]
@@ -1042,5 +1085,200 @@ mod tests {
         let after = service.draw(&db, created.giveaway.id, true).await.unwrap();
         assert_eq!(after.giveaway.status, GiveawayStatus::Cancelled);
         assert!(after.giveaway.winner_user_id.is_none());
+    }
+
+    async fn bonus_balance(db: &DatabaseConnection, user_id: i64) -> i32 {
+        let settings = crate::modules::regear::service::load_settings(db)
+            .await
+            .unwrap();
+        crate::modules::regear::credits::get_or_create_balance(db, &settings, user_id)
+            .await
+            .unwrap()
+            .bonus_balance
+    }
+
+    async fn giveaway_credit_rows(db: &DatabaseConnection) -> u64 {
+        BankEntity::find()
+            .filter(crate::modules::bank::entities::Column::Type.eq(TYPE_GIVEAWAY_CREDIT))
+            .count(db)
+            .await
+            .unwrap()
+    }
+
+    fn prize_req(silver: i64, bonus: i32) -> CreateGiveawayRequest {
+        let mut req = create_req();
+        req.silver_amount = Some(Decimal::new(silver, 0));
+        req.regear_request_bonus = Some(bonus);
+        req
+    }
+
+    #[tokio::test]
+    async fn drawing_twice_credits_the_silver_and_regear_bonus_once() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let service = GiveawayService::new();
+        let created = service
+            .create(&db, officer, prize_req(100, 1))
+            .await
+            .unwrap();
+        service
+            .enter(&db, created.giveaway.id, alice)
+            .await
+            .unwrap();
+
+        service.draw(&db, created.giveaway.id, true).await.unwrap();
+        service.draw(&db, created.giveaway.id, true).await.unwrap();
+
+        assert_eq!(bonus_balance(&db, alice).await, 1);
+        assert_eq!(giveaway_credit_rows(&db).await, 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_draws_credit_once_and_agree_on_the_winner() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let bob = insert_user(&db, "bob").await;
+        let service = GiveawayService::new();
+        let created = service
+            .create(&db, officer, prize_req(100, 1))
+            .await
+            .unwrap();
+        service
+            .enter(&db, created.giveaway.id, alice)
+            .await
+            .unwrap();
+        service.enter(&db, created.giveaway.id, bob).await.unwrap();
+
+        let id = created.giveaway.id;
+        let (first, second) =
+            tokio::join!(service.draw(&db, id, true), service.draw(&db, id, true));
+        let first = first.unwrap();
+        let second = second.unwrap();
+        assert_eq!(
+            first.giveaway.winner_user_id,
+            second.giveaway.winner_user_id
+        );
+
+        assert_eq!(giveaway_credit_rows(&db).await, 1);
+        assert_eq!(
+            bonus_balance(&db, alice).await + bonus_balance(&db, bob).await,
+            1,
+            "only the recorded winner gets the bonus, exactly once"
+        );
+        assert_eq!(
+            bonus_balance(&db, first.giveaway.winner_user_id.unwrap()).await,
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failing_regear_bonus_does_not_fail_or_undo_the_draw() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let service = GiveawayService::new();
+        let created = service
+            .create(&db, officer, prize_req(250, 2))
+            .await
+            .unwrap();
+        service
+            .enter(&db, created.giveaway.id, alice)
+            .await
+            .unwrap();
+        db.execute_unprepared("DROP TABLE regear_request_balances")
+            .await
+            .unwrap();
+
+        let drawn = service.draw(&db, created.giveaway.id, true).await.unwrap();
+
+        assert_eq!(drawn.giveaway.status, GiveawayStatus::Drawn);
+        assert_eq!(drawn.giveaway.winner_user_id, Some(alice));
+        let tx_id = drawn.giveaway.silver_transaction_id.expect("silver credit");
+        let credit = BankEntity::find_by_id(tx_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(credit.amount, Decimal::new(250, 0));
+    }
+
+    #[tokio::test]
+    async fn pg_a_failed_bonus_credit_does_not_poison_the_draw_transaction() {
+        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_gvp").await
+        else {
+            return;
+        };
+        let db = tenant.db.clone();
+        let officer = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let service = GiveawayService::new();
+        let created = service
+            .create(&db, officer, prize_req(100, 2))
+            .await
+            .unwrap();
+        service
+            .enter(&db, created.giveaway.id, alice)
+            .await
+            .unwrap();
+        // Every bonus statement now fails; on Postgres that would abort a plain transaction.
+        db.execute_unprepared("ALTER TABLE regear_request_balances RENAME TO rrb_broken")
+            .await
+            .unwrap();
+
+        let drawn = service.draw(&db, created.giveaway.id, true).await.unwrap();
+
+        assert_eq!(drawn.giveaway.status, GiveawayStatus::Drawn);
+        assert!(drawn.giveaway.silver_transaction_id.is_some());
+        assert_eq!(giveaway_credit_rows(&db).await, 1);
+        tenant.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn pg_concurrent_draws_credit_exactly_once() {
+        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_gvc").await
+        else {
+            return;
+        };
+        let db = tenant.db.clone();
+        let officer = insert_user(&db, "officer").await;
+        let mut users = Vec::new();
+        for n in 0..4 {
+            users.push(insert_user(&db, &format!("u{n}")).await);
+        }
+        let service = GiveawayService::new();
+        let created = service
+            .create(&db, officer, prize_req(100, 1))
+            .await
+            .unwrap();
+        for user in &users {
+            service
+                .enter(&db, created.giveaway.id, *user)
+                .await
+                .unwrap();
+        }
+
+        let id = created.giveaway.id;
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                let db = db.clone();
+                tokio::spawn(async move { GiveawayService::new().draw(&db, id, true).await })
+            })
+            .collect();
+        let mut winners = HashSet::new();
+        for handle in handles {
+            let detail = handle.await.unwrap().expect("draw");
+            winners.insert(detail.giveaway.winner_user_id);
+        }
+        assert_eq!(winners.len(), 1, "every caller sees the same winner");
+
+        assert_eq!(giveaway_credit_rows(&db).await, 1);
+        let mut total = 0;
+        for user in &users {
+            total += bonus_balance(&db, *user).await;
+        }
+        assert_eq!(total, 1);
+        tenant.cleanup().await;
     }
 }

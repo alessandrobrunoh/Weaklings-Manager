@@ -2242,6 +2242,7 @@ mod calibration_tests {
             kill_fame: 1000,
             death_fame: 0,
             item_power,
+            is_friendly: false,
         };
         SnapshotActiveModel {
             battle_id: Set(1),

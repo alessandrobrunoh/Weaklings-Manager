@@ -105,26 +105,65 @@ describe('RegisterTenant', () => {
     expect(compiled.querySelector('#member-guild-a')).toBeNull();
   });
 
-  it('lets the officer pick member guilds when alliance has attachable tenants', async () => {
-    attachable = [{ id: 'guild-a', name: 'Alpha Guild' }];
-    fixture.destroy();
-    fixture = TestBed.createComponent(RegisterTenant);
-    await fixture.whenStable();
-    fixture.detectChanges();
+  it('lists attachable member guilds only after an Albion alliance is picked', async () => {
+    vi.useFakeTimers();
+    try {
+      attachable = [{ id: 'guild-a', name: 'Alpha Guild' }];
+      api.get.mockImplementation((url: string) => {
+        if (url === 'api/tenants/albion-alliances') {
+          return of([{ id: 'ally-1', name: 'Hub Alliance' }]);
+        }
+        if (url === 'api/tenants/attachable-guilds') {
+          return of(attachable);
+        }
+        return of({ id: 'g1', registered: false, register_url: null, name: null, status: null });
+      });
 
-    const compiled = fixture.nativeElement as HTMLElement;
-    const name = compiled.querySelector('#tenant-display-name') as HTMLInputElement;
-    name.value = 'Hub';
-    name.dispatchEvent(new Event('input'));
-    const alliance = compiled.querySelector('#kind-alliance') as HTMLInputElement;
-    alliance.click();
-    fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const name = compiled.querySelector('#tenant-display-name') as HTMLInputElement;
+      name.value = 'Hub';
+      name.dispatchEvent(new Event('input'));
+      (compiled.querySelector('#kind-alliance') as HTMLInputElement).click();
+      fixture.detectChanges();
 
-    compiled.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-    fixture.detectChanges();
-    expect(compiled.querySelector('#albion-alliance-search')).toBeTruthy();
-    expect(compiled.querySelector('#member-guild-a')).toBeNull();
-    expect((compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
+      compiled
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      fixture.detectChanges();
+      expect(compiled.querySelector('#albion-alliance-search')).toBeTruthy();
+      // No alliance picked yet, so no member guild is offered and next stays disabled.
+      expect(compiled.querySelector('#member-guild-a')).toBeNull();
+      expect(
+        (compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
+      ).toBe(true);
+
+      const search = compiled.querySelector('#albion-alliance-search') as HTMLInputElement;
+      search.value = 'Hub';
+      search.dispatchEvent(new Event('input'));
+      await vi.advanceTimersByTimeAsync(250);
+      fixture.detectChanges();
+
+      const hit = [...compiled.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Hub Alliance'),
+      ) as HTMLButtonElement;
+      hit.click();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+
+      expect(api.get).toHaveBeenCalledWith('api/tenants/attachable-guilds', {
+        albion_alliance_id: 'ally-1',
+        region: 'europe',
+      });
+      const member = compiled.querySelector('#member-guild-a') as HTMLInputElement;
+      expect(member).toBeTruthy();
+      member.click();
+      fixture.detectChanges();
+      expect(
+        (compiled.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('continues to albion setup when guild is selected', () => {

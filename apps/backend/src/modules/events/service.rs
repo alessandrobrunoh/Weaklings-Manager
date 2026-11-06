@@ -20,7 +20,7 @@ use super::models::{
     BuildPerformanceView, CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest,
     EventBattleView, EventCompBuildView, EventDetailView, EventFightView, EventParticipantView,
     EventRevision, EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
-    EventSignupOptionsView, EventSplitStats, EventView, OpponentPerformanceView,
+    EventSignupOptionsView, EventSplitStats, EventSummary, EventView, OpponentPerformanceView,
     ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest,
     UpdateEventBattlesRequest, UpdateEventRequest,
 };
@@ -28,10 +28,11 @@ use super::models::{
 use super::fight_grouping::{
     FIGHT_GROUPING_VERSION, FightEvidence, FightGroupingDecision, score_fight_grouping,
 };
-use crate::errors::AppError;
-use crate::modules::albionbb::client::{
-    AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
+use super::lifecycle::{
+    Cause, Transition, Transitioned, XpFilter, finish_session_in_txn, transition_in_txn,
 };
+use crate::errors::AppError;
+use crate::modules::albionbb::client::{AlbionBbBattleSummary, AlbionBbBattlesFilters};
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::audit::service::AuditService;
 use crate::modules::battles::entities::{
@@ -46,16 +47,16 @@ use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::comps::status::{BuildLoadout, BuildRole};
 use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::splits::entities::{split, split_participant};
-use crate::modules::splits::service::SplitService;
+use crate::modules::splits::service::{SplitService, SplitSyncState};
 use crate::modules::splits::status::SplitStatus;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 /// Hard cap on how long an event session can stay live before the background
 /// worker auto-stops it. Tuned to 3 hours per product requirement.
-const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
+pub(super) const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 
 /// Grace period after a session is stopped during which the linker keeps
-/// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
+/// re-fetching `AlbionBB` to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
 /// Keep flash VOD posts behind the same undo window as Discord announcements.
@@ -231,7 +232,7 @@ fn validate_event_times(mass: DateTime<Utc>, start: DateTime<Utc>) -> Result<(),
     Ok(())
 }
 
-fn reject_if_event_archived(model: &event::Model) -> Result<(), AppError> {
+pub(super) fn reject_if_event_archived(model: &event::Model) -> Result<(), AppError> {
     if model.archived_at.is_some() {
         return Err(AppError::Conflict(format!(
             "Event {} is archived",
@@ -599,7 +600,7 @@ async fn opponent_rollups_for_battles(
 
 /// Battle-side classification rules for event analytics.
 ///
-/// AlbionBB exposes every guild in the fight as a peer, but event stats need to separate our side
+/// `AlbionBB` exposes every guild in the fight as a peer, but event stats need to separate our side
 /// from real opponents. The configured guild plus allied guild IDs/names are treated as friendly,
 /// so alliance members do not pollute opponent charts or matchup summaries.
 ///
@@ -661,14 +662,14 @@ impl BattleLinkingContext {
         }
     }
 
-    /// Sets the AlbionBB server used by automatic battle linking.
+    /// Sets the `AlbionBB` server used by automatic battle linking.
     #[must_use]
     pub fn with_server(mut self, server: Option<String>) -> Self {
         self.server = server;
         self
     }
 
-    /// AlbionBB server path segment, if configured.
+    /// `AlbionBB` server path segment, if configured.
     #[must_use]
     pub fn server(&self) -> Option<&str> {
         self.server.as_deref()
@@ -703,7 +704,7 @@ impl BattleLinkingContext {
         self.guild_id.as_deref() == Some(guild_id)
     }
 
-    /// Configured Albion guild ID used to query AlbionBB and identify our own
+    /// Configured Albion guild ID used to query `AlbionBB` and identify our own
     /// guild row. `None` for alliance-side contexts, which have no guild of
     /// their own.
     #[must_use]
@@ -724,7 +725,7 @@ impl BattleLinkingContext {
     }
 }
 
-/// Compact battle snapshot derived from AlbionBB for event analytics.
+/// Compact battle snapshot derived from `AlbionBB` for event analytics.
 ///
 /// Used to carry only the two `event_battles` columns still populated this way
 /// (`guild_players_count`/`battle_total_players`) — kills/deaths/fame, win/loss, and opponent
@@ -1216,7 +1217,7 @@ async fn build_event_fight_views(
 
 /// Replaces stale event-link summary metrics with hydrated canonical snapshot data.
 ///
-/// The event linker receives a compact AlbionBB list payload; the persisted battle
+/// The event linker receives a compact `AlbionBB` list payload; the persisted battle
 /// snapshot is hydrated from the detail endpoint and is therefore authoritative when
 /// present. The original row remains the fallback for historical data not yet hydrated.
 async fn apply_canonical_snapshot_metrics(
@@ -1338,11 +1339,11 @@ async fn build_event_loss_estimate(
     total.players = players.into_values().collect();
     total
         .players
-        .sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+        .sort_by_key(|player| std::cmp::Reverse(player.estimated_loss));
     total.guilds = guilds.into_values().collect();
     total
         .guilds
-        .sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+        .sort_by_key(|guild| std::cmp::Reverse(guild.estimated_loss));
     Ok(total)
 }
 
@@ -2457,7 +2458,7 @@ impl EventService {
         })
     }
 
-    /// Helper to convert event::Model to EventView.
+    /// Helper to convert `event::Model` to `EventView`.
     pub async fn to_event_view(
         &self,
         db: &DatabaseConnection,
@@ -2600,7 +2601,7 @@ impl EventService {
     ) -> Result<Vec<EventView>, AppError> {
         let now: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
         let scheduled_start_is_future = sea_orm::Condition::any()
-            .add(event::Column::StartTimeUtc.gte(now.clone()))
+            .add(event::Column::StartTimeUtc.gte(now))
             .add(
                 sea_orm::Condition::all()
                     .add(event::Column::StartTimeUtc.is_null())
@@ -2642,28 +2643,28 @@ impl EventService {
             query.filter(event::Column::ArchivedAt.is_null())
         };
 
-        if let Some(search) = filters.search {
-            if !search.trim().is_empty() {
-                let pattern = format!("%{}%", search.trim());
-                query = query.filter(
-                    sea_orm::Condition::any().add(
-                        Expr::expr(Func::lower(Expr::col(event::Column::Title)))
-                            .like(pattern.to_lowercase()),
-                    ),
-                );
-            }
+        if let Some(search) = filters.search
+            && !search.trim().is_empty()
+        {
+            let pattern = format!("%{}%", search.trim());
+            query = query.filter(
+                sea_orm::Condition::any().add(
+                    Expr::expr(Func::lower(Expr::col(event::Column::Title)))
+                        .like(pattern.to_lowercase()),
+                ),
+            );
         }
 
-        if let Some(date_from) = filters.date_from {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from) {
-                query = query.filter(event::Column::StartTimeUtc.gte(dt));
-            }
+        if let Some(date_from) = filters.date_from
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from)
+        {
+            query = query.filter(event::Column::StartTimeUtc.gte(dt));
         }
 
-        if let Some(date_to) = filters.date_to {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to) {
-                query = query.filter(event::Column::StartTimeUtc.lte(dt));
-            }
+        if let Some(date_to) = filters.date_to
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to)
+        {
+            query = query.filter(event::Column::StartTimeUtc.lte(dt));
         }
 
         if let Some(status) = filters
@@ -2714,6 +2715,39 @@ impl EventService {
             current_page,
             limit,
         ))
+    }
+
+    /// Counts non-archived events by status and call-to-arms flag.
+    ///
+    /// Uses `COUNT` queries so the numbers stay correct however many events exist,
+    /// unlike tallying a single page of `list_events`.
+    pub async fn summarize_events(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<EventSummary, AppError> {
+        let active = || event::Entity::find().filter(event::Column::ArchivedAt.is_null());
+        let total = active().count(db).await.map_err(AppError::Database)?;
+        let live = active()
+            .filter(event::Column::Status.eq("live"))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        let scheduled = active()
+            .filter(event::Column::Status.eq("scheduled"))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        let call_to_arms = active()
+            .filter(event::Column::CallToArms.eq(true))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(EventSummary {
+            total,
+            live,
+            scheduled,
+            call_to_arms,
+        })
     }
 
     /// Gets detailed event information including participants and resolved active comp.
@@ -2968,7 +3002,7 @@ impl EventService {
 
     /// Aggregates all linked battles for events using a composition.
     ///
-    /// This powers the comp-level analytics page without depending on AlbionBB
+    /// This powers the comp-level analytics page without depending on `AlbionBB`
     /// at read time; only snapshots already linked to completed/live events are
     /// used.
     pub async fn get_comp_performance(
@@ -3617,8 +3651,7 @@ impl EventService {
                 > 0;
             if !comp_exists {
                 return Err(AppError::NotFound(format!(
-                    "Composition {} not found",
-                    comp_id
+                    "Composition {comp_id} not found"
                 )));
             }
             active.comp_id = Set(Some(comp_id));
@@ -3675,6 +3708,8 @@ impl EventService {
 
     /// Archives an event and every split still linked to it.
     ///
+    /// Thin wrapper over [`Transition::Archive`]: `begin; transition_in_txn; commit`.
+    ///
     /// # Errors
     ///
     /// Returns [`AppError::NotFound`] when the event does not exist.
@@ -3683,37 +3718,15 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        let now: DateTime<chrono::FixedOffset> = Utc::now().into();
-        let txn = db.begin().await.map_err(AppError::Database)?;
-        let mut active: event::ActiveModel = model.into();
-        active.archived_at = Set(Some(now));
-        active.updated_at = Set(now);
-        let updated = active.update(&txn).await.map_err(AppError::Database)?;
-
-        crate::modules::splits::entities::split::Entity::update_many()
-            .filter(crate::modules::splits::entities::split::Column::EventId.eq(id))
-            .filter(crate::modules::splits::entities::split::Column::ArchivedAt.is_null())
-            .col_expr(
-                crate::modules::splits::entities::split::Column::ArchivedAt,
-                Expr::value(now),
-            )
-            .col_expr(
-                crate::modules::splits::entities::split::Column::UpdatedAt,
-                Expr::value(now),
-            )
-            .exec(&txn)
-            .await
-            .map_err(AppError::Database)?;
-        txn.commit().await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Archive, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Restores an archived event and its linked archived splits to the active lists.
+    ///
+    /// Thin wrapper over [`Transition::Unarchive`].
     ///
     /// # Errors
     ///
@@ -3723,45 +3736,70 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
+        Ok(self
+            .transition(db, id, Transition::Unarchive, Cause::Manual, None)
+            .await?
+            .view)
+    }
+
+    /// Applies one lifecycle [`Transition`] in its own transaction and hydrates the view.
+    ///
+    /// `begin; transition_in_txn; commit`, then (for a stop) retries the durable completion-XP
+    /// awards. Call [`TransitionOutcome::after_commit`] on the result for legacy propagation to
+    /// copies; the thin per-transition wrappers below skip it, as they always did.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`transition_in_txn`] returns; the transaction is rolled back in that case.
+    pub async fn transition(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        transition: Transition,
+        cause: Cause,
+        actor: Option<&str>,
+    ) -> Result<Transitioned, AppError> {
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let outcome = transition_in_txn(&txn, id, transition, cause, actor).await?;
+        txn.commit().await.map_err(AppError::Database)?;
+
+        if matches!(transition, Transition::Stop { .. }) {
+            self.retry_event_completion_xp(db, id).await?;
+        }
+        let view = self.to_event_view(db, outcome.model.clone()).await?;
+        Ok(Transitioned { outcome, view })
+    }
+
+    /// Finishes a session that a copy follows from its origin: completion-XP snapshot (per
+    /// `xp`) and local-split roster sync, i.e. the body of a stop after the status write.
+    ///
+    /// Signature stub for the sync engine (SY-3b), which will call it from
+    /// `transition_in_txn(Cause::Sync)`; the stop transition already shares its body.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::NotFound`] for an unknown event, [`AppError::Conflict`] when the event
+    /// has not stopped.
+    #[allow(dead_code)]
+    pub(crate) async fn finish_copy_session(
+        &self,
+        txn: &sea_orm::DatabaseTransaction,
+        event_id: i64,
+        xp: XpFilter,
+    ) -> Result<SplitSyncState, AppError> {
+        let model = event::Entity::find_by_id(event_id)
+            .lock_exclusive()
+            .one(txn)
             .await
             .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        let should_requeue_vod =
-            model.vod_forum_post_enabled && model.vod_forum_post_status == "deleted";
-        let now = chrono::Utc::now();
-        let txn = db.begin().await.map_err(AppError::Database)?;
-        let mut active: event::ActiveModel = model.into();
-        active.archived_at = Set(None);
-        active.updated_at = Set(now.into());
-        if should_requeue_vod {
-            // A confirmed archive deletion is safe to replace: the next poll
-            // will create a fresh VOD post for the restored event. Ambiguous
-            // `attempted` posts deliberately remain non-retriable.
-            active.vod_forum_post_status = Set("pending".to_owned());
-            active.vod_forum_thread_id = Set(None);
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        if model.status != "stopped" && model.status != "auto_stopped" {
+            return Err(AppError::Conflict(format!(
+                "Event {event_id} has not stopped (status={})",
+                model.status
+            )));
         }
-        let updated = active.update(&txn).await.map_err(AppError::Database)?;
-
-        let linked = crate::modules::splits::entities::split::Entity::find()
-            .filter(crate::modules::splits::entities::split::Column::EventId.eq(id))
-            .filter(crate::modules::splits::entities::split::Column::ArchivedAt.is_not_null())
-            .all(&txn)
-            .await
-            .map_err(AppError::Database)?;
-        for split in linked {
-            let mut split_active: crate::modules::splits::entities::split::ActiveModel =
-                split.into();
-            split_active.archived_at = Set(None);
-            split_active.updated_at = Set(now.into());
-            split_active
-                .update(&txn)
-                .await
-                .map_err(AppError::Database)?;
-        }
-        txn.commit().await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        finish_session_in_txn(txn, &model, xp).await
     }
 
     // --- Session lifecycle -------------------------------------------------
@@ -3875,31 +3913,10 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        if model.status == "cancelled" {
-            return self.to_event_view(db, model).await;
-        }
-        if model.status != "scheduled" && model.status != "live" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} cannot be cancelled (status={})",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set("cancelled".to_string());
-        active.stopped_at = Set(Some(now.into()));
-        active.auto_stop_deadline = Set(None);
-        active.updated_at = Set(now.into());
-        let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Cancel, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Restores a cancelled event to `scheduled` so officers can undo a mistaken cancel.
@@ -3911,33 +3928,10 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        if model.status != "cancelled" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} cannot be restored (status={})",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set("scheduled".to_string());
-        active.started_at = Set(None);
-        active.stopped_at = Set(None);
-        active.auto_stop_deadline = Set(None);
-        active.link_status = Set("pending".to_string());
-        active.link_attempts = Set(0);
-        active.link_last_error = Set(None);
-        active.link_battles_completed_at = Set(None);
-        active.updated_at = Set(now.into());
-        let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Uncancel, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Marks an event session as live, recording `started_at = now` and computing the
@@ -3950,39 +3944,10 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        if model.status == "live" {
-            return Err(AppError::Conflict(format!("Event {id} is already live")));
-        }
-        if model.status != "scheduled" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} cannot be started (status={}); re-opening a stopped session is not supported",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let deadline = now + MAX_SESSION_DURATION;
-
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set("live".to_string());
-        active.started_at = Set(Some(now.into()));
-        active.stopped_at = Set(None);
-        active.auto_stop_deadline = Set(Some(deadline.into()));
-        active.link_status = Set("in_progress".to_string());
-        active.link_attempts = Set(0);
-        active.link_last_error = Set(None);
-        active.link_battles_completed_at = Set(None);
-        active.updated_at = Set(now.into());
-
-        let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Start, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Marks an event session as stopped. `auto=true` selects the `auto_stopped`
@@ -4001,9 +3966,12 @@ impl EventService {
 
     /// Stops an event and atomically snapshots completion XP recipients.
     ///
-    /// `award_xp` is false for alliance mirrors: only the original guild event
-    /// is authoritative for progression. The durable outbox pins its season
-    /// and configured rates at the stop timestamp, so retries cannot drift.
+    /// `award_xp` is the legacy form of [`XpFilter`]: false for alliance mirrors, where only
+    /// the original guild event is authoritative for progression. The durable outbox pins its
+    /// season and configured rates at the stop timestamp, so retries cannot drift.
+    ///
+    /// The linked-split roster sync runs inside the stop transaction in a SAVEPOINT: if it
+    /// fails the event is still stopped and its splits are marked `needs_resync`.
     pub async fn stop_event_with_xp_policy(
         &self,
         db: &DatabaseConnection,
@@ -4011,54 +3979,17 @@ impl EventService {
         auto: bool,
         award_xp: bool,
     ) -> Result<EventView, AppError> {
-        let txn = db.begin().await.map_err(AppError::Database)?;
-        let model = event::Entity::find_by_id(id)
-            .lock_exclusive()
-            .one(&txn)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        // Idempotent: already stopped.
-        if model.status == "stopped" || model.status == "auto_stopped" {
-            txn.commit().await.map_err(AppError::Database)?;
-            self.retry_event_completion_xp(db, id).await?;
-            return self.to_event_view(db, model).await;
-        }
-        if model.status != "live" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} is not live (status={})",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let new_status = if auto { "auto_stopped" } else { "stopped" };
-
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set(new_status.to_string());
-        active.stopped_at = Set(Some(now.into()));
-        active.updated_at = Set(now.into());
-
-        let updated = active.update(&txn).await.map_err(AppError::Database)?;
-
-        if award_xp {
-            self.snapshot_event_completion_xp(&txn, id, updated.created_by, now.into())
-                .await?;
-        }
-        txn.commit().await.map_err(AppError::Database)?;
-
-        // Keep linked splits' roster and lifecycle condition current as soon as the event ends.
-        SplitService::new().sync_event_participants(db, id).await?;
-
-        self.retry_event_completion_xp(db, id).await?;
-
-        self.to_event_view(db, updated).await
+        let transition = Transition::Stop {
+            auto,
+            xp: XpFilter::from_award_xp(award_xp),
+        };
+        Ok(self
+            .transition(db, id, transition, Cause::Manual, None)
+            .await?
+            .view)
     }
 
-    async fn snapshot_event_completion_xp(
-        &self,
+    pub(super) async fn snapshot_event_completion_xp(
         txn: &sea_orm::DatabaseTransaction,
         event_id: i64,
         creator_id: i64,
@@ -4235,9 +4166,9 @@ impl EventService {
 
     // --- Battle linker -----------------------------------------------------
 
-    /// Links every AlbionBB battle for the guild that falls in the event's time window.
+    /// Links every `AlbionBB` battle for the guild that falls in the event's time window.
     ///
-    /// The worker calls this repeatedly because AlbionBB can lag up to ~30m. The
+    /// The worker calls this repeatedly because `AlbionBB` can lag up to ~30m. The
     /// listing is paginated, and no player-count heuristic is applied: the number
     /// of sign-ups is not a reliable indication of the actual fight size.
     pub async fn link_battles_for_event(
@@ -4268,8 +4199,7 @@ impl EventService {
         let started_at_utc = started_at.with_timezone(&Utc);
         let window_end = model
             .stopped_at
-            .map(|t| t.with_timezone(&Utc))
-            .unwrap_or_else(Utc::now);
+            .map_or_else(Utc::now, |t| t.with_timezone(&Utc));
 
         // AlbionBB returns a raw array without pagination metadata. Walk pages until
         // an empty page (or a page with no new IDs) is returned, with a safety cap
@@ -4366,12 +4296,12 @@ impl EventService {
 
     /// Replaces the manually linked battle set for an event.
     ///
-    /// Officers can attach zero or more AlbionBB battles after reviewing what actually happened
+    /// Officers can attach zero or more `AlbionBB` battles after reviewing what actually happened
     /// during the event. The method fetches each requested battle before changing the database so a
     /// temporary upstream failure does not wipe existing analytics.
     ///
     /// # Example
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # use backend::modules::events::models::UpdateEventBattlesRequest;
     /// # use backend::modules::events::service::EventService;
     /// # async fn example(
@@ -4394,7 +4324,7 @@ impl EventService {
     ///
     /// # Errors
     /// Returns validation errors for malformed IDs or battles that do not include the configured
-    /// guild, not-found when the event/battle is missing, and upstream errors from AlbionBB.
+    /// guild, not-found when the event/battle is missing, and upstream errors from `AlbionBB`.
     pub async fn replace_event_battles(
         &self,
         db: &DatabaseConnection,
@@ -4494,7 +4424,7 @@ impl EventService {
             let mut row = event_battle::ActiveModel {
                 event_id: Set(event_id),
                 albionbb_battle_id: Set(battle_id),
-                battle_started_at: Set(started.into()),
+                battle_started_at: Set(started),
                 fetched_at: Set(Utc::now().into()),
                 ..Default::default()
             };
@@ -4514,7 +4444,7 @@ impl EventService {
             .await
     }
 
-    /// Returns `true` when the linker should stop polling AlbionBB for this
+    /// Returns `true` when the linker should stop polling `AlbionBB` for this
     /// event. Policy: stopped sessions stop after `LINK_GRACE_PERIOD` past
     /// `stopped_at`; live sessions never auto-complete the linker (the worker
     /// keeps polling as long as the session is live).
@@ -4988,10 +4918,45 @@ impl Default for EventService {
     }
 }
 
+/// Creates an empty loot split already attached to an event.
+///
+/// Values start at zero and the roster starts empty: the split exists so the
+/// link is in place, and the officer fills in the haul once the fight is over.
+/// Participants are seeded from the event's sign-ups the first time the split
+/// is updated, which is later than creation time and therefore more accurate.
+async fn create_linked_split(
+    db: &impl sea_orm::ConnectionTrait,
+    creator_id: i64,
+    event_id: i64,
+    event_title: &str,
+    island_tab_id: i64,
+) -> Result<(), AppError> {
+    use crate::modules::splits::entities::split;
+    use crate::modules::splits::status::SplitStatus;
+    use sea_orm::prelude::Decimal;
+
+    split::ActiveModel {
+        created_by: Set(creator_id),
+        status: Set(SplitStatus::AwaitingEvent.to_string()),
+        estimated_market_value: Set(Decimal::ZERO),
+        repair_value: Set(Decimal::ZERO),
+        bags_value: Set(Decimal::ZERO),
+        note: Set(Some(format!("Auto-created for event: {event_title}"))),
+        event_id: Set(Some(event_id)),
+        island_tab_id: Set(Some(island_tab_id)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
+    use crate::modules::albionbb::client::AlbionBbGuild;
     use crate::modules::comps::entities::{
         build::ActiveModel as BuildActiveModel,
         build_category::ActiveModel as BuildCategoryActiveModel,
@@ -5164,6 +5129,8 @@ mod tests {
             kill_fame: 1_000_000,
             winner: true,
             average_item_power: 1_400.0,
+            is_friendly: false,
+            is_own: false,
         }];
         if let Some(opponent_guild_id) = opponent_guild_id {
             guilds.push(BattleGuildSummary {
@@ -5177,6 +5144,8 @@ mod tests {
                 kill_fame: 500_000,
                 winner: false,
                 average_item_power: 1_390.0,
+                is_friendly: false,
+                is_own: false,
             });
         }
         let guilds_json = serde_json::to_string(&guilds).expect("guild snapshot should serialize");
@@ -5321,6 +5290,57 @@ mod tests {
         .await
         .expect("failed to insert the event")
         .id
+    }
+
+    #[tokio::test]
+    async fn summarize_events_counts_beyond_a_single_page_and_skips_archived() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let comp_category = create_comp_category(&db, "summary-cat").await;
+        let comp_id = create_comp(&db, "summary-comp", comp_category, None, Vec::new()).await;
+
+        // More events than the 100 rows the web client used to tally in the browser.
+        let mut rows = Vec::new();
+        for index in 0..130 {
+            rows.push(event::ActiveModel {
+                title: Set(format!("Event {index}")),
+                comp_id: Set(Some(comp_id)),
+                created_by: Set(author),
+                event_date_utc: Set(ts()),
+                status: Set(if index < 3 { "live" } else { "scheduled" }.to_string()),
+                call_to_arms: Set(index % 10 == 0),
+                ..Default::default()
+            });
+        }
+        for row in rows {
+            row.insert(&db).await.expect("failed to insert the event");
+        }
+        let archived = event::ActiveModel {
+            title: Set("Archived live CTA".to_string()),
+            comp_id: Set(Some(comp_id)),
+            created_by: Set(author),
+            event_date_utc: Set(ts()),
+            status: Set("live".to_string()),
+            call_to_arms: Set(true),
+            archived_at: Set(Some(ts())),
+            ..Default::default()
+        };
+        archived
+            .insert(&db)
+            .await
+            .expect("failed to insert the archived event");
+
+        let summary = EventService::new().summarize_events(&db).await.unwrap();
+
+        assert_eq!(
+            summary,
+            EventSummary {
+                total: 130,
+                live: 3,
+                scheduled: 127,
+                call_to_arms: 13,
+            }
+        );
     }
 
     #[tokio::test]
@@ -6407,6 +6427,8 @@ mod tests {
                 kill_fame: 1_000_000,
                 winner: true,
                 average_item_power: 1_400.0,
+                is_friendly: false,
+                is_own: false,
             },
             BattleGuildSummary {
                 id: "opponent-id".to_string(),
@@ -6419,6 +6441,8 @@ mod tests {
                 kill_fame: 500_000,
                 winner: false,
                 average_item_power: 1_390.0,
+                is_friendly: false,
+                is_own: false,
             },
         ])
         .expect("guild snapshot should serialize");
@@ -6815,6 +6839,8 @@ mod tests {
                 kill_fame: 2_700_000,
                 winner: true,
                 average_item_power: 1_400.0,
+                is_friendly: false,
+                is_own: false,
             },
             BattleGuildSummary {
                 id: "enemy-id".to_string(),
@@ -6827,6 +6853,8 @@ mod tests {
                 kill_fame: 1_500_000,
                 winner: false,
                 average_item_power: 1_390.0,
+                is_friendly: false,
+                is_own: false,
             },
         ])
         .expect("guild snapshot should serialize"));
@@ -9283,38 +9311,4 @@ mod tests {
         assert_eq!(stats.total_kill_fame, 3_000_000);
         assert!((stats.average_guild_players - 12.0).abs() < f64::EPSILON);
     }
-}
-
-/// Creates an empty loot split already attached to an event.
-///
-/// Values start at zero and the roster starts empty: the split exists so the
-/// link is in place, and the officer fills in the haul once the fight is over.
-/// Participants are seeded from the event's sign-ups the first time the split
-/// is updated, which is later than creation time and therefore more accurate.
-async fn create_linked_split(
-    db: &impl sea_orm::ConnectionTrait,
-    creator_id: i64,
-    event_id: i64,
-    event_title: &str,
-    island_tab_id: i64,
-) -> Result<(), AppError> {
-    use crate::modules::splits::entities::split;
-    use crate::modules::splits::status::SplitStatus;
-    use sea_orm::prelude::Decimal;
-
-    split::ActiveModel {
-        created_by: Set(creator_id),
-        status: Set(SplitStatus::AwaitingEvent.to_string()),
-        estimated_market_value: Set(Decimal::ZERO),
-        repair_value: Set(Decimal::ZERO),
-        bags_value: Set(Decimal::ZERO),
-        note: Set(Some(format!("Auto-created for event: {event_title}"))),
-        event_id: Set(Some(event_id)),
-        island_tab_id: Set(Some(island_tab_id)),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(AppError::Database)?;
-    Ok(())
 }

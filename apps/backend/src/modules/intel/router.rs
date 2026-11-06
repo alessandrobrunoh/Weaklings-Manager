@@ -301,6 +301,7 @@ pub async fn delete_scout(
         (status = 404, description = "No stored snapshot for that battle", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn scout_battle(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -540,6 +541,7 @@ pub async fn matchup_matrix(
         (status = 403, description = "Forbidden - lacks intel.report.view", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn guild_report(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -587,6 +589,7 @@ pub async fn guild_report(
         (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn refresh_guild_report(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -646,6 +649,7 @@ pub async fn refresh_guild_report(
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn leaderboards(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -715,6 +719,7 @@ pub async fn leaderboards(
         (status = 404, description = "No such user", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn player_report(
     user: UserContext,
     Extension(perms): Extension<Permissions>,

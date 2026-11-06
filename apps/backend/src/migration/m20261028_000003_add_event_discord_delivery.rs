@@ -39,21 +39,49 @@ impl MigrationTrait for Migration {
                             .string()
                             .null(),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .add_column(
                         ColumnDef::new(Alias::new("discord_event_scheduled_tag_id"))
                             .string()
                             .null(),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .add_column(
                         ColumnDef::new(Alias::new("discord_event_live_tag_id"))
                             .string()
                             .null(),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .add_column(
                         ColumnDef::new(Alias::new("discord_event_cta_tag_id"))
                             .string()
                             .null(),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .add_column(
                         ColumnDef::new(Alias::new("discord_event_flash_tag_id"))
                             .string()
@@ -61,7 +89,8 @@ impl MigrationTrait for Migration {
                     )
                     .to_owned(),
             )
-            .await
+            .await?;
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -70,9 +99,37 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Alias::new("guild_settings"))
                     .drop_column(Alias::new("discord_event_flash_tag_id"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .drop_column(Alias::new("discord_event_cta_tag_id"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .drop_column(Alias::new("discord_event_live_tag_id"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .drop_column(Alias::new("discord_event_scheduled_tag_id"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Alias::new("guild_settings"))
                     .drop_column(Alias::new("discord_events_forum_channel_id"))
                     .to_owned(),
             )

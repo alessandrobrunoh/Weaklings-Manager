@@ -5,7 +5,7 @@
 use super::permission_cache::Permissions;
 use super::service::{
     AuthService, DiscordGuild, DiscordUserProfile, OauthPending, RegisterableGuild, TenantChoice,
-    matching_tenants,
+    login_roles, matching_tenants,
 };
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
@@ -13,7 +13,6 @@ use crate::modules::admin::models::BrandColorsView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::platform::service::PlatformService;
 use crate::platform_admins::PlatformAdmins;
-use crate::postgres::list_active_tenants;
 use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
 use crate::tenant::{ControlDb, TenantRegistry};
 use axum::{
@@ -410,7 +409,10 @@ pub async fn list_session_tenants(
     post,
     path = "/api/auth/switch-tenant",
     tag = "auth",
-    responses((status = 200, description = "Session re-scoped"))
+    responses(
+        (status = 200, description = "Session re-scoped"),
+        (status = 403, description = "Not a member of that tenant, or Discord confirms the user left its server (the membership is then dropped)", body = ProblemDetails)
+    )
 )]
 pub async fn switch_tenant(
     headers: HeaderMap,
@@ -690,6 +692,40 @@ async fn registered_tenants(
         .collect())
 }
 
+/// Roles for a member entering `tenant_id`, or a refusal when Discord confirmed they left.
+///
+/// Web access follows Discord presence on guild tenants: a confirmed-absent member cannot
+/// enter, and the stale membership row that would offer them the switch is dropped so it stops
+/// appearing in their tenant list. An outage (including Unknown Guild, the bot was removed)
+/// never refuses anyone.
+///
+/// Other tenant kinds (the alliance hub) are exempt: their membership rows are also written by
+/// the Albion link fan-out for users who never joined that Discord server, so absence there
+/// is normal. Such a member keeps the default role and the row, as before this refusal existed.
+async fn admit_member(
+    control: &sea_orm::DatabaseConnection,
+    discord_id: &str,
+    tenant_id: &str,
+    tenant_kind: &str,
+    lookup: &super::service::GuildMemberLookup,
+    db_roles: &[super::entities::role::Model],
+) -> Result<(Vec<String>, String), AppError> {
+    use super::service::GuildMemberLookup;
+    let lookup = match lookup {
+        GuildMemberLookup::Absent if tenant_kind != "guild" => &GuildMemberLookup::Unavailable,
+        other => other,
+    };
+    match login_roles(lookup, db_roles) {
+        Some(roles) => Ok(roles),
+        None => {
+            PlatformService::forget_membership(control, discord_id, tenant_id).await?;
+            Err(AppError::Forbidden(
+                "you are no longer a member of that Discord server".to_owned(),
+            ))
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn finalize_session(
     cfg: &Config,
@@ -707,21 +743,31 @@ async fn finalize_session(
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
     profile.is_tenant_owner =
-        PlatformService::is_guild_owner(control, &tenant.id, &profile.id).await?;
+        PlatformService::is_tenant_owner(control, &tenant.id, &profile.id).await?;
     if profile.is_superadmin {
         profile.roles = vec!["SuperAdmin".to_string()];
         profile.highest_role = "SuperAdmin".to_string();
     } else {
-        let (roles, highest_role) = AuthService::new()
-            .fetch_member_roles(
-                &ctx.db,
+        let lookup = AuthService::new()
+            .fetch_guild_member_role_ids(
                 &profile.id,
                 access_token,
                 &tenant.id,
                 cfg.discord_bot_token.as_deref(),
-                "",
             )
             .await;
+        let db_roles = crate::modules::auth::entities::role::Entity::find()
+            .all(&ctx.db)
+            .await?;
+        let (roles, highest_role) = admit_member(
+            control,
+            &profile.id,
+            &tenant.id,
+            &ctx.kind,
+            &lookup,
+            &db_roles,
+        )
+        .await?;
         profile.roles = roles;
         profile.highest_role = highest_role;
     }
@@ -742,7 +788,17 @@ async fn finalize_session(
     // Same reasoning for the brand colours: they belong to the tenant being
     // entered, so a switch must repaint rather than carry the old server's.
     profile.brand = tenant_brand(&ctx.db).await;
-    profile.user_id = AuthService::new().upsert_user(&ctx.db, &profile).await?;
+    // Discord's snowflake is the account. Only an email Discord verified (the profile drops any
+    // other) may claim an unlinked row; an unverified or missing one gets a placeholder.
+    profile.user_id = crate::modules::users::identity::upsert_discord_login(
+        &ctx.db,
+        &profile.id,
+        &profile.username,
+        profile.email.as_deref(),
+        &profile.highest_role,
+        true,
+    )
+    .await?;
     crate::modules::platform::service::PlatformService::record_membership(
         control,
         &profile.id,
@@ -844,26 +900,23 @@ pub async fn get_me(
 
     if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
         profile.is_tenant_owner =
-            PlatformService::is_guild_owner(&control.0, tenant_id, &profile.id).await?;
-        match registry.get_or_load(tenant_id).await {
-            Ok(ctx) => {
-                profile.tenant_kind = Some(ctx.kind.clone());
-                let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
-                keys.sort();
-                profile.features = keys;
-                // Re-read rather than trust the cookie, so an admin's colour
-                // change reaches every other member on their next page load.
-                profile.brand = tenant_brand(&ctx.db).await;
-            }
-            Err(_) => {
-                profile.tenant_id = None;
-                profile.tenant_name = None;
-                profile.tenant_kind = None;
-                profile.is_tenant_owner = false;
-                profile.permissions.clear();
-                profile.features.clear();
-                profile.brand = None;
-            }
+            PlatformService::is_tenant_owner(&control.0, tenant_id, &profile.id).await?;
+        if let Ok(ctx) = registry.get_or_load(tenant_id).await {
+            profile.tenant_kind = Some(ctx.kind.clone());
+            let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
+            keys.sort();
+            profile.features = keys;
+            // Re-read rather than trust the cookie, so an admin's colour
+            // change reaches every other member on their next page load.
+            profile.brand = tenant_brand(&ctx.db).await;
+        } else {
+            profile.tenant_id = None;
+            profile.tenant_name = None;
+            profile.tenant_kind = None;
+            profile.is_tenant_owner = false;
+            profile.permissions.clear();
+            profile.features.clear();
+            profile.brand = None;
         }
     }
 
@@ -1088,6 +1141,106 @@ mod tests {
                 "cookie value was not encrypted: {raw}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn an_absent_member_is_refused_and_loses_the_membership_row() {
+        use crate::modules::auth::service::GuildMemberLookup;
+        let control = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("connect");
+        sea_orm::ConnectionTrait::execute_unprepared(
+            &control,
+            "CREATE TABLE user_tenant_memberships (\
+             discord_id TEXT NOT NULL, tenant_id TEXT NOT NULL, \
+             PRIMARY KEY (discord_id, tenant_id))",
+        )
+        .await
+        .expect("create table");
+        for (user, tenant) in [("u1", "t1"), ("u1", "t2")] {
+            PlatformService::record_membership(&control, user, tenant)
+                .await
+                .expect("record");
+        }
+
+        // Unknown Guild (10004) and every outage read as Unavailable: nobody is deactivated.
+        let kept = admit_member(
+            &control,
+            "u1",
+            "t1",
+            "guild",
+            &GuildMemberLookup::Unavailable,
+            &[],
+        )
+        .await
+        .expect("an outage still admits");
+        assert_eq!(kept.1, "User");
+        assert!(
+            PlatformService::is_member(&control, "u1", "t1")
+                .await
+                .unwrap()
+        );
+
+        let refused = admit_member(
+            &control,
+            "u1",
+            "t1",
+            "guild",
+            &GuildMemberLookup::Absent,
+            &[],
+        )
+        .await
+        .expect_err("absent members are refused");
+        assert!(matches!(refused, AppError::Forbidden(_)), "{refused:?}");
+        assert!(
+            !PlatformService::is_member(&control, "u1", "t1")
+                .await
+                .unwrap()
+        );
+        // Only the tenant they left.
+        assert!(
+            PlatformService::is_member(&control, "u1", "t2")
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_absent_member_keeps_alliance_hub_access_and_the_fanout_row() {
+        use crate::modules::auth::service::GuildMemberLookup;
+        let control = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("connect");
+        sea_orm::ConnectionTrait::execute_unprepared(
+            &control,
+            "CREATE TABLE user_tenant_memberships (\
+             discord_id TEXT NOT NULL, tenant_id TEXT NOT NULL, \
+             PRIMARY KEY (discord_id, tenant_id))",
+        )
+        .await
+        .expect("create table");
+        // The row a fan-out writes for a user who linked an Albion character; nothing says
+        // they joined the hub's Discord server.
+        PlatformService::record_membership(&control, "u1", "hub")
+            .await
+            .expect("record");
+
+        let admitted = admit_member(
+            &control,
+            "u1",
+            "hub",
+            "alliance",
+            &GuildMemberLookup::Absent,
+            &[],
+        )
+        .await
+        .expect("absence from the hub Discord does not refuse a fan-out member");
+        assert_eq!(admitted.1, "User");
+        assert!(
+            PlatformService::is_member(&control, "u1", "hub")
+                .await
+                .unwrap()
+        );
     }
 
     #[test]

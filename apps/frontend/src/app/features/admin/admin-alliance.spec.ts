@@ -146,7 +146,10 @@ describe('AdminAlliance', () => {
     expect(text).toContain('admin.alliance.memberRolesHint');
     expect(text).not.toContain('admin.allianceRole.title');
 
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    // A hub without a linked Albion alliance also renders a setup form first.
+    const form = fixture.nativeElement.querySelector(
+      '[data-testid="alliance-settings-form"]',
+    ) as HTMLFormElement;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await fixture.whenStable();
     expect(api.put).toHaveBeenCalledWith(

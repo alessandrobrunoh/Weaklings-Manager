@@ -218,10 +218,13 @@ async fn update_state(
     }
     let existing = SyncEntity::find_by_id(split_id).one(&db).await?;
     let was_existing = existing.is_some();
-    let mut active = existing.map(Into::into).unwrap_or_else(|| SyncActiveModel {
-        split_id: Set(split_id),
-        ..Default::default()
-    });
+    let mut active = existing.map_or_else(
+        || SyncActiveModel {
+            split_id: Set(split_id),
+            ..Default::default()
+        },
+        Into::into,
+    );
     if body.thread_id.is_some() {
         active.thread_id = Set(body.thread_id.clone());
     }

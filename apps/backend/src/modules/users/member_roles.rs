@@ -255,7 +255,7 @@ pub async fn add_user_role(
     db: &DatabaseConnection,
     discord: &impl DiscordMemberApi,
     editor_user_id: i64,
-    editor_is_superadmin: bool,
+    editor_bypasses_priority: bool,
     editor_role_names: &[String],
     user_id: u64,
     role_id: &str,
@@ -266,7 +266,12 @@ pub async fn add_user_role(
         .find(|role| role.id == role_id)
         .ok_or_else(|| AppError::NotFound(format!("role {role_id} not found")))?;
     ensure_assignable(target)?;
-    ensure_priority_allowed(editor_is_superadmin, editor_role_names, &db_roles, target)?;
+    ensure_priority_allowed(
+        editor_bypasses_priority,
+        editor_role_names,
+        &db_roles,
+        target,
+    )?;
 
     let discord_id = user.discord_id.clone().ok_or_else(|| {
         AppError::Validation("this member has no Discord id; they must log in once".to_string())
@@ -316,7 +321,7 @@ pub async fn remove_user_role(
     db: &DatabaseConnection,
     discord: &impl DiscordMemberApi,
     editor_user_id: i64,
-    editor_is_superadmin: bool,
+    editor_bypasses_priority: bool,
     editor_role_names: &[String],
     user_id: u64,
     role_id: &str,
@@ -327,7 +332,12 @@ pub async fn remove_user_role(
         .find(|role| role.id == role_id)
         .ok_or_else(|| AppError::NotFound(format!("role {role_id} not found")))?;
     ensure_assignable(target)?;
-    ensure_priority_allowed(editor_is_superadmin, editor_role_names, &db_roles, target)?;
+    ensure_priority_allowed(
+        editor_bypasses_priority,
+        editor_role_names,
+        &db_roles,
+        target,
+    )?;
 
     let discord_id = user.discord_id.clone().ok_or_else(|| {
         AppError::Validation("this member has no Discord id; they must log in once".to_string())
@@ -383,12 +393,12 @@ fn ensure_assignable(role: &role::Model) -> Result<(), AppError> {
 }
 
 fn ensure_priority_allowed(
-    editor_is_superadmin: bool,
+    editor_bypasses_priority: bool,
     editor_role_names: &[String],
     db_roles: &[role::Model],
     target: &role::Model,
 ) -> Result<(), AppError> {
-    if editor_is_superadmin {
+    if editor_bypasses_priority {
         return Ok(());
     }
     let actor_max = max_priority_for_names(editor_role_names, db_roles);
@@ -653,6 +663,66 @@ mod tests {
         .await
         .expect("user")
         .id
+    }
+
+    #[tokio::test]
+    async fn an_editor_who_bypasses_priority_assigns_a_top_priority_role_with_no_roles_of_their_own()
+     {
+        let db = seed_db().await;
+        let user_id = insert_user(&db, Some("discord-1")).await;
+        let admin = AdminService::create_role(
+            &db,
+            1,
+            &CreateRoleRequest {
+                name: "HubAdmin".into(),
+                priority: 100,
+                discord_role_id: Some("333333333333333333".into()),
+                is_default: false,
+                is_staff: false,
+                grants_staff: false,
+            },
+        )
+        .await
+        .expect("admin role");
+        let role_id = admin
+            .roles
+            .iter()
+            .find(|role| role.role_name == "HubAdmin")
+            .unwrap()
+            .role_id
+            .clone();
+
+        // The tenant owner: no roles that map to anything, so actor_max is 0.
+        let no_roles: Vec<String> = Vec::new();
+        let denied = add_user_role(
+            &db,
+            &FakeDiscord::new(),
+            1,
+            false,
+            &no_roles,
+            user_id as u64,
+            &role_id,
+        )
+        .await
+        .expect_err("an ordinary editor without roles cannot");
+        assert!(matches!(denied, AppError::Forbidden(_)));
+
+        let view = add_user_role(
+            &db,
+            &FakeDiscord::new(),
+            1,
+            true,
+            &no_roles,
+            user_id as u64,
+            &role_id,
+        )
+        .await
+        .expect("an owner bypasses the priority check");
+        assert!(
+            view.roles
+                .iter()
+                .any(|r| r.role_name == "HubAdmin" && r.held)
+        );
     }
 
     #[tokio::test]

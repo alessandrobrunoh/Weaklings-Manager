@@ -1,6 +1,6 @@
 //! Adds battle outcome and opponent metrics to linked event battles.
 //!
-//! The session linker stores a compact snapshot of AlbionBB battle summaries so
+//! The session linker stores a compact snapshot of `AlbionBB` battle summaries so
 //! event and comp analytics can be rendered from the database without repeatedly
 //! calling the upstream service.
 

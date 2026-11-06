@@ -31,7 +31,7 @@ pub struct CreateGiveawayRequest {
 /// One item prize on create.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateGiveawayPrizeRequest {
-    /// OpenAlbion catalog id.
+    /// `OpenAlbion` catalog id.
     pub openalbion_item_id: i64,
     /// Display name.
     pub openalbion_item_name: String,
@@ -118,7 +118,7 @@ pub struct GiveawayView {
 pub struct GiveawayPrizeView {
     /// Prize row id.
     pub id: i64,
-    /// OpenAlbion catalog id.
+    /// `OpenAlbion` catalog id.
     pub openalbion_item_id: i64,
     /// Display name.
     pub openalbion_item_name: String,

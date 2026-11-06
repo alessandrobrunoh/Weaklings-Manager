@@ -221,9 +221,7 @@ pub async fn process_due(
 }
 
 fn retry_delay_seconds(attempt: i32) -> i64 {
-    15_i64
-        .saturating_mul(1_i64 << attempt.clamp(0, 8))
-        .min(3600)
+    crate::runtime::backoff::retry_delay_seconds(attempt)
 }
 
 async fn attempt(

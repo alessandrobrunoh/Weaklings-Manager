@@ -38,10 +38,10 @@ pub struct UntrackedAllianceRole {
 pub struct PlatformService;
 
 impl PlatformService {
-    /// Whether `discord_id` is the original owner recorded for this guild tenant.
+    /// Whether `discord_id` is the original owner recorded for this tenant (guild or alliance).
     ///
     /// Owner status is intentionally tenant-scoped and never grants platform access.
-    pub async fn is_guild_owner(
+    pub async fn is_tenant_owner(
         control: &DatabaseConnection,
         tenant_id: &str,
         discord_id: &str,
@@ -49,8 +49,7 @@ impl PlatformService {
         let Some(tenant) = Self::get_tenant(control, tenant_id).await? else {
             return Ok(false);
         };
-        Ok(guild_owner_matches(
-            &tenant.kind,
+        Ok(tenant_owner_matches(
             tenant.owner_discord_id.as_deref(),
             discord_id,
         ))
@@ -214,31 +213,30 @@ impl PlatformService {
         tenant_id: &str,
         frontend_url: &str,
     ) -> Result<TenantStatusView, AppError> {
-        match Self::get_tenant(control, tenant_id).await? {
-            Some(row) => Ok(TenantStatusView {
+        if let Some(row) = Self::get_tenant(control, tenant_id).await? {
+            Ok(TenantStatusView {
                 id: row.id,
                 registered: true,
                 status: Some(row.status),
                 name: Some(row.name),
                 kind: Some(row.kind),
                 register_url: None,
-            }),
-            None => {
-                let base = frontend_url.trim_end_matches('/');
-                Ok(TenantStatusView {
-                    id: tenant_id.to_owned(),
-                    registered: false,
-                    status: None,
-                    name: None,
-                    kind: None,
-                    register_url: Some(format!("{base}/register-tenant?guild={tenant_id}")),
-                })
-            }
+            })
+        } else {
+            let base = frontend_url.trim_end_matches('/');
+            Ok(TenantStatusView {
+                id: tenant_id.to_owned(),
+                registered: false,
+                status: None,
+                name: None,
+                kind: None,
+                register_url: Some(format!("{base}/register-tenant?guild={tenant_id}")),
+            })
         }
     }
 
     /// First-time tenant onboarding: provision schema, store Albion settings,
-    /// grant SuperAdmin to the registrar, and record membership.
+    /// grant `SuperAdmin` to the registrar, and record membership.
     ///
     /// # Errors
     ///
@@ -1005,7 +1003,7 @@ impl PlatformService {
         R: Fn(&str, &str, &str) -> Fut + Sync,
         Fut: Future<Output = Result<(), String>> + Send,
     {
-        if !granted_leave && !Self::is_guild_owner(control, guild_id, actor).await? {
+        if !granted_leave && !Self::is_tenant_owner(control, guild_id, actor).await? {
             return Err(AppError::Forbidden(
                 "missing permission alliance.leave".to_owned(),
             ));
@@ -1206,6 +1204,30 @@ impl PlatformService {
                 control.get_database_backend(),
                 "INSERT INTO user_tenant_memberships (discord_id, tenant_id) \
                  VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                [discord_id.into(), tenant_id.into()],
+            ))
+            .await?;
+        Ok(())
+    }
+
+    /// Drop the right of `discord_id` to enter `tenant_id`.
+    ///
+    /// Called when a live Discord check finds the user is no longer in that tenant's server:
+    /// web access follows Discord presence, so a stale membership row must not keep a removed
+    /// member signing in. A no-op when no row exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the delete fails.
+    pub async fn forget_membership(
+        control: &DatabaseConnection,
+        discord_id: &str,
+        tenant_id: &str,
+    ) -> Result<(), AppError> {
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "DELETE FROM user_tenant_memberships WHERE discord_id = $1 AND tenant_id = $2",
                 [discord_id.into(), tenant_id.into()],
             ))
             .await?;
@@ -1588,7 +1610,7 @@ impl PlatformService {
         Ok(out)
     }
 
-    /// Grant the SuperAdmin platform role.
+    /// Grant the `SuperAdmin` platform role.
     ///
     /// # Errors
     ///
@@ -2053,6 +2075,7 @@ impl PlatformService {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_role_revocation(
     conn: &impl ConnectionTrait,
     alliance_id: &str,
@@ -2100,8 +2123,11 @@ async fn guild_belongs_to_alliance(region: &str, guild_id: &str, alliance_id: &s
     }
 }
 
-fn guild_owner_matches(kind: &str, owner_discord_id: Option<&str>, actor: &str) -> bool {
-    kind == "guild" && owner_discord_id == Some(actor)
+/// Ownership is the recorded `owner_discord_id`, whatever the tenant kind: an alliance owner
+/// has the same tenant-wide bypass as a guild owner. Leaving an alliance is guarded separately
+/// (`alliance.leave`, and `leave_active_alliance` requires a guild tenant).
+fn tenant_owner_matches(owner_discord_id: Option<&str>, actor: &str) -> bool {
+    owner_discord_id == Some(actor)
 }
 
 fn row_to_view(row: &sea_orm::QueryResult) -> Result<TenantView, DbErr> {
@@ -2173,6 +2199,24 @@ fn normalize_optional_discord_snowflake(value: &str) -> Result<Option<String>, A
     Ok(Some(trimmed.to_owned()))
 }
 
+fn map_unique(err: DbErr) -> AppError {
+    match err.sql_err() {
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::Conflict("tenant id or slug already exists".to_owned())
+        }
+        _ => AppError::Database(err),
+    }
+}
+
+fn map_membership_unique(err: DbErr) -> AppError {
+    match err.sql_err() {
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::Conflict("alliance_member_already_joined".to_owned())
+        }
+        _ => AppError::Database(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2184,14 +2228,67 @@ mod tests {
     use sea_orm_migration::MigratorTrait;
 
     #[test]
-    fn owner_identity_is_limited_to_the_selected_guild_tenant() {
-        assert!(guild_owner_matches("guild", Some("owner-1"), "owner-1"));
-        assert!(!guild_owner_matches("guild", Some("owner-1"), "owner-2"));
-        // Switching to a different guild evaluates that tenant's owner row;
+    fn owner_identity_is_limited_to_the_selected_tenant() {
+        assert!(tenant_owner_matches(Some("owner-1"), "owner-1"));
+        assert!(!tenant_owner_matches(Some("owner-1"), "owner-2"));
+        // Switching to a different tenant evaluates that tenant's owner row;
         // ownership in the previous tenant does not carry across the session.
-        assert!(!guild_owner_matches("guild", Some("owner-2"), "owner-1"));
-        assert!(!guild_owner_matches("alliance", Some("owner-1"), "owner-1"));
-        assert!(!guild_owner_matches("guild", None, "owner-1"));
+        assert!(!tenant_owner_matches(Some("owner-2"), "owner-1"));
+        assert!(!tenant_owner_matches(None, "owner-1"));
+    }
+
+    #[test]
+    fn an_alliance_owner_is_a_tenant_owner() {
+        // auth-6: the old `kind == "guild"` clause left alliance owners without the bypass.
+        assert!(tenant_owner_matches(Some("owner-1"), "owner-1"));
+        assert!(!tenant_owner_matches(Some("owner-1"), ""));
+    }
+
+    #[tokio::test]
+    async fn forgetting_a_membership_removes_only_that_tenant_for_that_user() {
+        let control = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("connect");
+        control
+            .execute_unprepared(
+                "CREATE TABLE user_tenant_memberships (\
+                 discord_id TEXT NOT NULL, tenant_id TEXT NOT NULL, \
+                 PRIMARY KEY (discord_id, tenant_id))",
+            )
+            .await
+            .expect("create table");
+        for (user, tenant) in [("u1", "t1"), ("u1", "t2"), ("u2", "t1")] {
+            PlatformService::record_membership(&control, user, tenant)
+                .await
+                .expect("record");
+        }
+
+        PlatformService::forget_membership(&control, "u1", "t1")
+            .await
+            .expect("forget");
+        // Idempotent: a second call and an unknown pair are no-ops.
+        PlatformService::forget_membership(&control, "u1", "t1")
+            .await
+            .expect("forget again");
+        PlatformService::forget_membership(&control, "nobody", "t9")
+            .await
+            .expect("forget unknown");
+
+        assert!(
+            !PlatformService::is_member(&control, "u1", "t1")
+                .await
+                .unwrap()
+        );
+        assert!(
+            PlatformService::is_member(&control, "u1", "t2")
+                .await
+                .unwrap()
+        );
+        assert!(
+            PlatformService::is_member(&control, "u2", "t1")
+                .await
+                .unwrap()
+        );
     }
 
     #[test]
@@ -3630,23 +3727,5 @@ mod tests {
             .await
             .expect("drop alliance");
         drop_schema(&admin, &schema).await.expect("drop");
-    }
-}
-
-fn map_unique(err: DbErr) -> AppError {
-    match err.sql_err() {
-        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
-            AppError::Conflict("tenant id or slug already exists".to_owned())
-        }
-        _ => AppError::Database(err),
-    }
-}
-
-fn map_membership_unique(err: DbErr) -> AppError {
-    match err.sql_err() {
-        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
-            AppError::Conflict("alliance_member_already_joined".to_owned())
-        }
-        _ => AppError::Database(err),
     }
 }

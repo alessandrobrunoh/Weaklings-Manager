@@ -25,6 +25,7 @@ function build(id: number, name: string, role: BuildSummary['role'] = 'dps'): Bu
     created_by_username: 'officer',
     updated_at: '2026-09-01T00:00:00Z',
     item_count: 1,
+    main_item_count: 1,
     archived_at: null,
   };
 }

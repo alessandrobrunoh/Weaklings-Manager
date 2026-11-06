@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 /// The lifecycle status of a loot split.
 ///
-/// Stored in the database as its lowercase/snake_case string form (see [`FromStr`]/
+/// Stored in the database as its `lowercase/snake_case` string form (see [`FromStr`]/
 /// [`fmt::Display`]), since the `splits.status` column is a plain string rather than a native
 /// DB enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -39,6 +39,70 @@ impl SplitStatus {
     }
 }
 
+impl SplitStatus {
+    /// Still open: the split can still change its participants and its outcome.
+    #[must_use]
+    pub const fn is_waiting(self) -> bool {
+        matches!(self, Self::Pending | Self::AwaitingEvent)
+    }
+
+    /// Final outcome reached (`completed`, `not_completed` or `lost`). Never re-synced.
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
+        !self.is_waiting()
+    }
+}
+
+/// One status-changing split action and the statuses it may start from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SplitTransition {
+    /// Action name (the service and the descriptors use the same names).
+    pub action: &'static str,
+    /// Statuses the action is allowed from.
+    pub from: &'static [SplitStatus],
+}
+
+/// The split lifecycle table. Archive and unarchive are flags allowed in every status, so they
+/// are not listed.
+///
+/// `complete` lists `awaiting_event` too, but the service still refuses it until the linked
+/// event has ended.
+pub const SPLIT_TRANSITIONS: &[SplitTransition] = &[
+    SplitTransition {
+        action: "update",
+        from: &[
+            SplitStatus::Pending,
+            SplitStatus::AwaitingEvent,
+            SplitStatus::Completed,
+        ],
+    },
+    SplitTransition {
+        action: "complete",
+        from: &[SplitStatus::Pending, SplitStatus::AwaitingEvent],
+    },
+    SplitTransition {
+        action: "not_completed",
+        from: &[SplitStatus::Pending, SplitStatus::AwaitingEvent],
+    },
+    SplitTransition {
+        action: "lost",
+        from: &[SplitStatus::Pending, SplitStatus::AwaitingEvent],
+    },
+    SplitTransition {
+        action: "recompute",
+        from: &[SplitStatus::AwaitingEvent],
+    },
+];
+
+/// Whether `action` may run on a split in `status`. Unknown actions are never allowed.
+#[must_use]
+pub fn allows(action: &str, status: SplitStatus) -> bool {
+    SPLIT_TRANSITIONS
+        .iter()
+        .find(|transition| transition.action == action)
+        .is_some_and(|transition| transition.from.contains(&status))
+}
+
 impl fmt::Display for SplitStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
@@ -57,5 +121,47 @@ impl FromStr for SplitStatus {
             "lost" => Ok(Self::Lost),
             other => Err(format!("unknown split status: {other}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SplitStatus, allows};
+
+    const ALL: [SplitStatus; 5] = [
+        SplitStatus::Pending,
+        SplitStatus::AwaitingEvent,
+        SplitStatus::Completed,
+        SplitStatus::NotCompleted,
+        SplitStatus::Lost,
+    ];
+
+    #[test]
+    fn terminal_statuses_cannot_be_closed_again() {
+        for status in ALL {
+            assert_ne!(status.is_waiting(), status.is_terminal());
+        }
+        for action in ["complete", "not_completed", "lost"] {
+            assert!(allows(action, SplitStatus::Pending));
+            assert!(allows(action, SplitStatus::AwaitingEvent));
+            assert!(!allows(action, SplitStatus::Completed));
+            assert!(!allows(action, SplitStatus::NotCompleted));
+            assert!(!allows(action, SplitStatus::Lost));
+        }
+    }
+
+    #[test]
+    fn only_completed_splits_are_amended_in_place() {
+        assert!(allows("update", SplitStatus::Completed));
+        assert!(allows("update", SplitStatus::AwaitingEvent));
+        assert!(!allows("update", SplitStatus::Lost));
+        assert!(!allows("update", SplitStatus::NotCompleted));
+    }
+
+    #[test]
+    fn recompute_only_moves_awaiting_splits() {
+        assert!(allows("recompute", SplitStatus::AwaitingEvent));
+        assert!(!allows("recompute", SplitStatus::Pending));
+        assert!(!allows("unknown", SplitStatus::Pending));
     }
 }

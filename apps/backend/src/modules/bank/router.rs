@@ -571,6 +571,7 @@ async fn create_transaction(
         (status = 404, description = "Not found - the transaction, or a newly-referenced id, doesn't exist", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn update_transaction(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -624,6 +625,7 @@ async fn update_transaction(
         (status = 404, description = "Not found - the transaction doesn't exist", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn delete_transaction(
     user: UserContext,
     Extension(perms): Extension<Permissions>,

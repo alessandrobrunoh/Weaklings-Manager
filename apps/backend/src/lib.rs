@@ -11,7 +11,18 @@ pub(crate) mod modules;
 pub(crate) mod openapi;
 pub(crate) mod platform_admins;
 pub(crate) mod postgres;
+#[allow(
+    dead_code,
+    reason = "wake/fence/state helpers are consumed by the sync and Discord outbox slices"
+)]
+pub(crate) mod runtime;
 pub(crate) mod tenant;
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "fixture surface is extended and consumed by later slices"
+)]
+pub(crate) mod testkit;
 
 pub mod config;
 pub(crate) mod errors;
@@ -100,13 +111,15 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         Some(cfg.albionbb_request_timeout_secs),
     );
     let albionbb_service = modules::albionbb::service::AlbionBbService::new(albionbb_client);
-    let battles_server = modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region));
+    // Template only: it carries no guild, allies or region. Every handler derives
+    // the requesting tenant's scope (`BattlesService::for_scope`), so an unscoped
+    // use classifies nobody as friendly instead of using the env guild.
     let battles_service = modules::battles::service::BattlesService::new(
         albionbb_service.clone(),
-        cfg.albion_guild_id.clone(),
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-        battles_server,
+        String::new(),
+        &[],
+        &[],
+        String::new(),
     );
 
     // Workers reload guild/region from the tenant row. Set the dependencies
@@ -115,7 +128,12 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         albionbb_service: albionbb_service.clone(),
         albiondata_service: albiondata_service.clone(),
     });
-    modules::events::fanout_worker::spawn(control_db.clone(), registry.clone());
+    // The one spawn point for periodic loops (fanout and mirror retry today).
+    let runtime = runtime::spawn_all(
+        control_db.clone(),
+        registry.clone(),
+        runtime::RuntimeDeps::production(),
+    );
     for ctx in &tenant_contexts {
         if !tenant::starts_sync_workers(&ctx.kind) {
             tracing::info!(
@@ -130,9 +148,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             .await;
     }
 
+    // Template only, like `battles_service`: handlers call `for_scope` with the tenant row.
     let regear_guild_context = modules::regear::router::RegearGuildContext {
-        guild_id: cfg.albion_guild_id.clone(),
-        server: modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region)),
+        guild_id: String::new(),
+        server: String::new(),
     };
 
     let api = Router::new()
@@ -189,6 +208,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(
             modules::events::roster_hub::RosterHub::new(),
         ))
+        .layer(axum::Extension(runtime))
         .layer(axum::Extension(unscoped_permissions))
         .layer(axum::Extension(platform_admins))
         .layer(axum::Extension(session_key))

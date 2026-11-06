@@ -215,15 +215,15 @@ fn discord_client() -> reqwest::Client {
 
 async fn configured_base_role_id(db: &DatabaseConnection) -> Option<String> {
     if let Ok(settings) = AdminService::get_guild_settings(db).await {
-        if let Some(role_id) = settings.discord_applications_accepted_role_id {
-            if !role_id.trim().is_empty() {
-                return Some(role_id);
-            }
+        if let Some(role_id) = settings.discord_applications_accepted_role_id
+            && !role_id.trim().is_empty()
+        {
+            return Some(role_id);
         }
-        if let Some(role_id) = settings.default_role_discord_id {
-            if !role_id.trim().is_empty() {
-                return Some(role_id);
-            }
+        if let Some(role_id) = settings.default_role_discord_id
+            && !role_id.trim().is_empty()
+        {
+            return Some(role_id);
         }
     }
     None

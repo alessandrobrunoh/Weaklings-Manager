@@ -25,7 +25,7 @@ use crate::modules::splits::entities::split_island_tab::{self as split_tab, Colu
 use crate::modules::splits::entities::split_participant::{
     self as split_participant, Column as ParticipantColumn,
 };
-use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
+use crate::modules::users::entities::Entity as UserEntity;
 use crate::tenant::TenantRegistry;
 
 use super::models::{
@@ -137,7 +137,7 @@ impl AllianceShareService {
         req: CreateAllianceShareRequest,
     ) -> Result<AllianceShareView, AppError> {
         deny_unless_guild_officer(&params)?;
-        let artifact_type = req.artifact_type.as_str();
+        let _artifact_type = req.artifact_type.as_str();
         if req.artifact_type != ArtifactType::Build {
             return Err(AppError::Validation(
                 "use share_split for split artifacts".to_owned(),
@@ -962,8 +962,10 @@ async fn upsert_alliance_user(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("{}@alliance-share.invalid", actor.discord_id));
+        .map_or_else(
+            || format!("{}@alliance-share.invalid", actor.discord_id),
+            ToOwned::to_owned,
+        );
     crate::modules::users::identity::upsert_discord_user(
         db,
         &actor.discord_id,
@@ -1273,6 +1275,7 @@ mod tests {
     use crate::modules::comps::status::{BuildLoadout, BuildRole, BuildSlot};
     use crate::modules::platform::models::RegisterTenantRequest;
     use crate::modules::platform::service::PlatformService;
+    use crate::modules::users::entities::{self as user_entities};
     use crate::pagination::PaginationParams;
     use crate::postgres::{
         connect_with_search_path, drop_schema, ensure_schema,
@@ -1367,15 +1370,20 @@ mod tests {
         .id
     }
 
-    fn weapon(name: &str) -> UpsertBuildItemRequest {
+    /// A main-hand weapon from the bundled catalog, addressed by its identifier. The backend
+    /// resolves the stored name, icon and tier from the catalog, so only the id is meaningful.
+    fn weapon(identifier: &str) -> UpsertBuildItemRequest {
+        let item = crate::modules::openalbion::service::catalog_item_by_identifier(identifier)
+            .unwrap_or_else(|| panic!("{identifier} is not in the bundled catalog"));
         UpsertBuildItemRequest {
             openalbion_item_type: "weapon".to_owned(),
-            openalbion_item_id: 1,
-            openalbion_item_name: name.to_owned(),
+            openalbion_item_id: item.id,
+            openalbion_item_name: item.name.clone(),
             openalbion_item_icon: None,
-            openalbion_item_tier: Some("T8".to_owned()),
+            openalbion_item_tier: None,
             openalbion_item_quality: None,
             openalbion_item_enchantment: None,
+            spells: None,
         }
     }
 
@@ -1462,7 +1470,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Mace"),
+                weapon("T8_MAIN_MACE"),
             )
             .await
             .expect("item");
@@ -1503,7 +1511,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Updated Mace"),
+                weapon("T8_MAIN_SWORD"),
             )
             .await
             .expect("update source");
@@ -1518,7 +1526,12 @@ mod tests {
         .expect("recopy");
         assert_eq!(again, published_id);
         let refreshed = comps.get_build(&dest, published_id).await.expect("refresh");
-        assert_eq!(refreshed.items[0].openalbion_item_name, "Updated Mace");
+        assert_eq!(
+            refreshed.items[0].openalbion_item_name,
+            crate::modules::openalbion::service::catalog_item_by_identifier("T8_MAIN_SWORD")
+                .expect("sword")
+                .name
+        );
         let count = build::Entity::find().all(&dest).await.expect("all").len();
         assert_eq!(count, 1, "re-share must not duplicate the published build");
     }
@@ -1647,7 +1660,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Mace"),
+                weapon("T8_MAIN_MACE"),
             )
             .await
             .expect("item");
@@ -1694,7 +1707,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Better Mace"),
+                weapon("T8_2H_HOLYSTAFF"),
             )
             .await
             .expect("edit");
@@ -1718,7 +1731,12 @@ mod tests {
             .get_build(&alliance_ctx.db, first.published_id)
             .await
             .expect("published");
-        assert_eq!(refreshed.items[0].openalbion_item_name, "Better Mace");
+        assert_eq!(
+            refreshed.items[0].openalbion_item_name,
+            crate::modules::openalbion::service::catalog_item_by_identifier("T8_2H_HOLYSTAFF")
+                .expect("holy staff")
+                .name
+        );
 
         drop_schema(&admin, &guild.schema_name)
             .await
@@ -1781,7 +1799,8 @@ mod tests {
         let source = seed_sqlite().await;
         let dest = seed_sqlite().await;
         let src_user = insert_user(&source, "maker", "maker@example.com").await;
-        let dest_user = insert_user(&dest, "maker", "maker@example.com").await;
+        // The destination needs the maker (matched by email) before the copy runs.
+        insert_user(&dest, "maker", "maker@example.com").await;
         let comps = CompService::new();
         let src_build_cat = comps
             .create_build_category(
@@ -1793,16 +1812,6 @@ mod tests {
             )
             .await
             .expect("src build cat");
-        let dest_build_cat = comps
-            .create_build_category(
-                &dest,
-                crate::modules::comps::models::CreateBuildCategoryRequest {
-                    name: "Crystal".to_owned(),
-                    description: None,
-                },
-            )
-            .await
-            .expect("dest build cat");
         let src_mace = comps
             .create_build(
                 &source,
@@ -1817,20 +1826,6 @@ mod tests {
             )
             .await
             .expect("src mace");
-        let dest_mace = comps
-            .create_build(
-                &dest,
-                dest_user,
-                crate::modules::comps::models::CreateBuildRequest {
-                    name: "Heavy Mace".to_owned(),
-                    description: None,
-                    role: BuildRole::Dps,
-                    category_id: dest_build_cat.id,
-                    items: None,
-                },
-            )
-            .await
-            .expect("dest mace");
         let src_holy = comps
             .create_build(
                 &source,
@@ -1845,20 +1840,6 @@ mod tests {
             )
             .await
             .expect("src holy");
-        let dest_holy = comps
-            .create_build(
-                &dest,
-                dest_user,
-                crate::modules::comps::models::CreateBuildRequest {
-                    name: "Holy Staff".to_owned(),
-                    description: None,
-                    role: BuildRole::Healer,
-                    category_id: dest_build_cat.id,
-                    items: None,
-                },
-            )
-            .await
-            .expect("dest holy");
         let src_comp_cat = comps
             .create_comp_category(
                 &source,
@@ -1892,10 +1873,6 @@ mod tests {
             )
             .await
             .expect("comp");
-
-        let mut mapping = HashMap::new();
-        mapping.insert(src_mace.summary.id, dest_mace.summary.id);
-        mapping.insert(src_holy.summary.id, dest_holy.summary.id);
 
         let (published_id, mapping) = copy_alliance_comp_to_tenant(
             &source,
@@ -2520,10 +2497,7 @@ mod tests {
             .complete_split(&dest, published_id, dest_user)
             .await
             .expect_err("alliance complete");
-        match complete_err {
-            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
-            other => panic!("expected forbidden, got {other:?}"),
-        }
+        assert!(matches!(complete_err, AppError::ReadOnlyCopy(_)));
         let bags_err = SplitService::new()
             .update_split(
                 &dest,
@@ -2543,8 +2517,8 @@ mod tests {
             .await
             .expect_err("bags");
         match bags_err {
-            AppError::Forbidden(_) => {}
-            other => panic!("expected forbidden, got {other:?}"),
+            AppError::ReadOnlyCopy(_) => {}
+            other => panic!("expected read-only copy, got {other:?}"),
         }
 
         let guild_sync = split_discord_sync::Entity::find_by_id(created.summary.id)

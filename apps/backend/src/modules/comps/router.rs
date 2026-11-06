@@ -29,6 +29,7 @@ use super::models::{
     UpdateCompRequest, UpsertBuildItemRequest,
 };
 use super::price_cache::PriceCache;
+use super::pricing::{cached_build_price, cached_comp_price, evict_build_prices};
 use super::service::CompService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::combat::models::BuildItemPowerParams;
@@ -568,7 +569,7 @@ async fn update_build(
 /// Deletes a build.
 ///
 /// Requires `comps.builds.manage` permission.
-/// Fails with 409 Conflict if any comp_builds reference this build.
+/// Fails with 409 Conflict if any `comp_builds` reference this build.
 #[utoipa::path(
     delete,
     path = "/api/comps/builds/{id}",
@@ -592,10 +593,13 @@ async fn delete_build(
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::CompsBuildsDelete).await?;
     let service = CompService::new();
     service.delete_build(&db, id).await?;
+    cache.invalidate_build(&tenant.0, id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -623,23 +627,25 @@ async fn delete_build(
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn upsert_build_item(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path((id, slot)): Path<(i64, String)>,
     Query(loadout): Query<BuildItemLoadoutQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpsertBuildItemRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
     user.require(&perms, Permission::CompsBuildsEdit).await?;
-    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
-        .map_err(|e| AppError::Validation(e))?;
+    let slot =
+        crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
-    let build = service
-        .upsert_build_item(&db, id, loadout, slot, req)
-        .await?;
-    Ok(Json(ApiResponse::new(build)))
+    let result = service.upsert_build_item(&db, id, loadout, slot, req).await;
+    evict_build_prices(&cache, &db, &tenant.0, id).await;
+    Ok(Json(ApiResponse::new(result?)))
 }
 
 /// Removes a build item.
@@ -669,13 +675,17 @@ async fn remove_build_item(
     Path((id, slot)): Path<(i64, String)>,
     Query(loadout): Query<BuildItemLoadoutQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::CompsBuildsEdit).await?;
-    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
-        .map_err(|e| AppError::Validation(e))?;
+    let slot =
+        crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
-    service.remove_build_item(&db, id, loadout, slot).await?;
+    let result = service.remove_build_item(&db, id, loadout, slot).await;
+    evict_build_prices(&cache, &db, &tenant.0, id).await;
+    result?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -706,23 +716,27 @@ async fn remove_build_item(
         (status = 404, description = "The slot holds no item", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn set_build_item_spells(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path((id, slot)): Path<(i64, String)>,
     Query(loadout): Query<BuildItemLoadoutQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<BuildItemSpells>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
     user.require(&perms, Permission::CompsBuildsEdit).await?;
-    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
-        .map_err(|e| AppError::Validation(e))?;
+    let slot =
+        crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
-    let build = service
+    let result = service
         .set_build_item_spells(&db, id, loadout, slot, req)
-        .await?;
-    Ok(Json(ApiResponse::new(build)))
+        .await;
+    evict_build_prices(&cache, &db, &tenant.0, id).await;
+    Ok(Json(ApiResponse::new(result?)))
 }
 
 /// Creates the next version of a build.
@@ -974,15 +988,18 @@ async fn update_comp(
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpdateCompRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
     user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
-    let comp = service.update_comp(&db, id, req).await?;
-    Ok(Json(ApiResponse::new(comp)))
+    let result = service.update_comp(&db, id, req).await;
+    cache.invalidate_comp(&tenant.0, id);
+    Ok(Json(ApiResponse::new(result?)))
 }
 
-/// Deletes a comp (cascades to comp_builds via FK).
+/// Deletes a comp (cascades to `comp_builds` via FK).
 ///
 /// Requires `comps.comps.manage` permission.
 #[utoipa::path(
@@ -1008,14 +1025,17 @@ async fn delete_comp(
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::CompsCompsDelete).await?;
     let service = CompService::new();
     service.delete_comp(&db, id).await?;
+    cache.invalidate_comp(&tenant.0, id);
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Adds a build to a comp (upsert on (comp_id, build_id)).
+/// Adds a build to a comp (upsert on (`comp_id`, `build_id`)).
 ///
 /// Requires `comps.comps.manage` permission.
 /// If the build already exists in the comp, its quantity is updated to the new value.
@@ -1043,12 +1063,15 @@ async fn add_comp_build(
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<AddCompBuildRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
     user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
-    let comp = service.add_comp_build(&db, id, req).await?;
-    Ok(Json(ApiResponse::new(comp)))
+    let result = service.add_comp_build(&db, id, req).await;
+    cache.invalidate_comp(&tenant.0, id);
+    Ok(Json(ApiResponse::new(result?)))
 }
 
 /// Updates a comp build quantity.
@@ -1079,14 +1102,17 @@ async fn update_comp_build_quantity(
     Extension(perms): Extension<Permissions>,
     Path((id, build_id)): Path<(i64, i64)>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpdateCompBuildQuantityRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
     user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
-    let comp = service
+    let result = service
         .update_comp_build_quantity(&db, id, build_id, req)
-        .await?;
-    Ok(Json(ApiResponse::new(comp)))
+        .await;
+    cache.invalidate_comp(&tenant.0, id);
+    Ok(Json(ApiResponse::new(result?)))
 }
 
 /// Removes a build from a comp.
@@ -1115,10 +1141,14 @@ async fn remove_comp_build(
     Extension(perms): Extension<Permissions>,
     Path((id, build_id)): Path<(i64, i64)>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
-    service.remove_comp_build(&db, id, build_id).await?;
+    let result = service.remove_comp_build(&db, id, build_id).await;
+    cache.invalidate_comp(&tenant.0, id);
+    result?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1401,7 +1431,9 @@ async fn get_build_performance(
     summary = "Get a build's total market price",
     description = "Prices the build's main-loadout items live from Albion Online Data, using the \
         guild's configured `pricing_location`/`pricing_fallback_strategy` (the same knobs the \
-        regear admin panel exposes). Served from a short-lived cache.",
+        regear admin panel exposes). Prices ignore item quality (cheapest listing of the tier and \
+        enchantment), and `unpriced_item_count` reports items with no listing. A market outage is \
+        returned as an error and never cached; edits to the build evict its cached price.",
     security(("session_cookie" = ["comps.builds.view"])),
     params(("id" = i64, Path, description = "Build ID")),
     responses(
@@ -1422,12 +1454,7 @@ async fn get_build_price(
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildPriceView>>, AppError> {
     user.require(&perms, Permission::CompsBuildsView).await?;
     let settings = crate::modules::regear::service::load_settings(&db).await?;
-    if let Some(cached) = cache.get_build(&tenant.0, &settings.pricing_location, id) {
-        return Ok(Json(ApiResponse::new(cached)));
-    }
-    let view =
-        crate::modules::comps::pricing::price_build(&db, &albiondata, id, &settings, None).await?;
-    cache.put_build(&tenant.0, &settings.pricing_location, id, &view);
+    let view = cached_build_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
 }
 
@@ -1443,7 +1470,9 @@ async fn get_build_price(
     tag = "comps",
     summary = "Get a comp's total market price",
     description = "Prices every build in the comp in one combined Albion Online Data query \
-        (Σ build price × quantity). Served from a short-lived cache.",
+        (Σ build price × quantity). `unpriced_item_count` reports item slots with no listing. A market \
+        outage is returned as an error and never cached; edits to the comp or its builds evict \
+        its cached price.",
     security(("session_cookie" = ["comps.comps.view"])),
     params(("id" = i64, Path, description = "Comp ID")),
     responses(
@@ -1464,11 +1493,6 @@ async fn get_comp_price(
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompPriceView>>, AppError> {
     user.require(&perms, Permission::CompsCompsView).await?;
     let settings = crate::modules::regear::service::load_settings(&db).await?;
-    if let Some(cached) = cache.get_comp(&tenant.0, &settings.pricing_location, id) {
-        return Ok(Json(ApiResponse::new(cached)));
-    }
-    let view =
-        crate::modules::comps::pricing::price_comp(&db, &albiondata, id, &settings, None).await?;
-    cache.put_comp(&tenant.0, &settings.pricing_location, id, &view);
+    let view = cached_comp_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
 }

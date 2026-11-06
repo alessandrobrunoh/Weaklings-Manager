@@ -201,7 +201,7 @@ impl SiphonedService {
             ));
         }
 
-        lock_player_names(&txn, &[quote.player_name.clone()]).await?;
+        lock_player_names(&txn, std::slice::from_ref(&quote.player_name)).await?;
         let current_net = siphoned_net(&txn, &quote.player_name).await?;
         if current_net != -quote.debt {
             return Err(AppError::Conflict(
@@ -243,18 +243,15 @@ impl SiphonedService {
             entity_type: Set(Some("SIPHONED_SETTLEMENT".into())),
             entity_id: Set(Some(entry.id)),
             user_id: Set(Some(actor_user_id)),
-            details: Set(Some(
-                serde_json::json!({
-                    "quote_id": quote.id,
-                    "player_name": quote.player_name,
-                    "user_id": quote.user_id,
-                    "debt": quote.debt,
-                    "unit_price": quote.unit_price,
-                    "total": quote.total,
-                    "transaction_id": bank.id,
-                })
-                .into(),
-            )),
+            details: Set(Some(serde_json::json!({
+                "quote_id": quote.id,
+                "player_name": quote.player_name,
+                "user_id": quote.user_id,
+                "debt": quote.debt,
+                "unit_price": quote.unit_price,
+                "total": quote.total,
+                "transaction_id": bank.id,
+            }))),
             ..Default::default()
         };
         audit.insert(&txn).await?;
@@ -375,7 +372,7 @@ impl SiphonedService {
         validate_row(0, req)?;
         let ingested_at: DateTime<FixedOffset> = Utc::now().into();
         let txn = db.begin().await?;
-        lock_player_names(&txn, &[req.player_name.clone()]).await?;
+        lock_player_names(&txn, std::slice::from_ref(&req.player_name)).await?;
         let active = ActiveModel {
             occurred_at: Set(req.occurred_at),
             player_name: Set(req.player_name.trim().to_string()),
@@ -462,7 +459,7 @@ impl SiphonedService {
         let txn = db.begin().await?;
         let mut entry = SiphonedEntryEntity::find_by_id(entry_id).one(&txn).await?;
         while let Some(observed) = entry {
-            lock_player_names(&txn, &[observed.player_name.clone()]).await?;
+            lock_player_names(&txn, std::slice::from_ref(&observed.player_name)).await?;
             entry = SiphonedEntryEntity::find_by_id(entry_id).one(&txn).await?;
             if entry
                 .as_ref()
@@ -569,7 +566,7 @@ impl SiphonedService {
             .filter(|value| !value.is_empty())
             .map(|value| format!("%{}%", value.to_lowercase()));
         let search_clause = if search_pattern.is_some() {
-            r#"WHERE LOWER(player_name) LIKE $1"#
+            r"WHERE LOWER(player_name) LIKE $1"
         } else {
             ""
         };

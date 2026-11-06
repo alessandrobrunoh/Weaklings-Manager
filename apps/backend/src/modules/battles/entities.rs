@@ -1,6 +1,6 @@
-//! SeaORM entity for persisted guild battle snapshots.
+//! `SeaORM` entity for persisted guild battle snapshots.
 //!
-//! The snapshot stores hydrated AlbionBB data as JSON strings because the app needs a stable local
+//! The snapshot stores hydrated `AlbionBB` data as JSON strings because the app needs a stable local
 //! analytics source even when upstream payloads evolve. Service code owns serialization so the DB
 //! remains portable across supported SQL backends.
 

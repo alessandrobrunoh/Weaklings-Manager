@@ -51,16 +51,16 @@ pub struct BuildItemView {
     pub spells: BuildItemSpells,
     /// The equipment slot of this item.
     pub slot: BuildSlot,
-    /// The OpenAlbion item type.
+    /// The `OpenAlbion` item type.
     pub openalbion_item_type: String,
-    /// The OpenAlbion item ID.
+    /// The `OpenAlbion` item ID.
     #[schema(example = 4532)]
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// The `OpenAlbion` item name.
     pub openalbion_item_name: String,
-    /// The OpenAlbion item icon URL.
+    /// The `OpenAlbion` item icon URL.
     pub openalbion_item_icon: Option<String>,
-    /// The OpenAlbion item tier.
+    /// The `OpenAlbion` item tier.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
     #[schema(example = 4)]
@@ -128,9 +128,12 @@ pub struct BuildSummary {
     pub created_by_username: String,
     /// The timestamp when the build was last updated.
     pub updated_at: String,
-    /// The number of items in the build.
+    /// The number of items in the build, both loadouts.
     #[schema(example = 7)]
     pub item_count: u64,
+    /// The number of items in the main loadout (the one a 10-slot build is measured by).
+    #[schema(example = 7)]
+    pub main_item_count: u64,
     /// When this build was archived, if it has been. `None` means it's active.
     pub archived_at: Option<String>,
 }
@@ -219,9 +222,9 @@ pub struct CompDetail {
 pub struct ItemPriceRow {
     /// The equipment slot this item occupies.
     pub slot: BuildSlot,
-    /// The OpenAlbion item id.
+    /// The `OpenAlbion` item id.
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// The `OpenAlbion` item name.
     pub openalbion_item_name: String,
     /// Cheapest sell price found for this item, in silver. `0` when no listing was available.
     #[schema(value_type = String, example = "980000")]
@@ -240,6 +243,11 @@ pub struct BuildPriceView {
     /// Σ of `items[].unit_price`.
     #[schema(value_type = String, example = "4200000")]
     pub total: Decimal,
+    /// How many of the build's main-loadout items have no market price (no listing found, or the
+    /// item could not be resolved to a market identifier). `total` understates the real cost by
+    /// these items, so a client should flag a non-zero count rather than show `total` as exact.
+    #[schema(example = 0)]
+    pub unpriced_item_count: u32,
     /// RFC3339 timestamp this price was computed at (informs the caller how fresh a cached
     /// response is).
     pub priced_at: String,
@@ -260,6 +268,10 @@ pub struct CompBuildPriceRow {
     /// `unit_total * quantity`.
     #[schema(value_type = String, example = "8400000")]
     pub subtotal: Decimal,
+    /// How many of one copy of this build's items have no market price; see
+    /// [`BuildPriceView::unpriced_item_count`].
+    #[schema(example = 0)]
+    pub unpriced_item_count: u32,
 }
 
 /// A comp's total market price, computed live from Albion Online Data.
@@ -272,6 +284,11 @@ pub struct CompPriceView {
     /// Σ of `builds[].subtotal`.
     #[schema(value_type = String, example = "42000000")]
     pub total: Decimal,
+    /// Σ of `builds[].unpriced_item_count * builds[].quantity`: every unpriced item slot in the
+    /// comp, counting each copy of a build. `total` understates the real cost when this is
+    /// non-zero.
+    #[schema(example = 0)]
+    pub unpriced_item_count: u32,
     /// RFC3339 timestamp this price was computed at.
     pub priced_at: String,
 }
@@ -390,19 +407,23 @@ pub struct UpdateBuildRequest {
 pub struct CreateBuildItemRequest {
     /// The equipment slot where this item belongs.
     pub slot: BuildSlot,
-    /// The OpenAlbion item type.
+    /// The `OpenAlbion` item type.
     pub openalbion_item_type: String,
-    /// The OpenAlbion item ID.
+    /// The `OpenAlbion` item ID.
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// Ignored: the stored name is the catalog's name for `openalbion_item_id`. Accepted so
+    /// existing clients keep working.
+    #[serde(default)]
     pub openalbion_item_name: String,
-    /// The OpenAlbion item icon URL.
+    /// Ignored: the stored icon is the catalog's render URL for `openalbion_item_id`, with the
+    /// chosen quality.
     pub openalbion_item_icon: Option<String>,
     /// Abilities chosen for this item while it was still a picker draft, if any. Validated the
     /// same way `PUT .../items/{slot}/spells` validates them.
     #[serde(default)]
     pub spells: Option<BuildItemSpells>,
-    /// The OpenAlbion item tier.
+    /// The expected `OpenAlbion` item tier. Optional: when given it must match the catalog's tier
+    /// for the item, and the stored tier is always the catalog's.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
@@ -422,15 +443,19 @@ pub struct CreateBuildItemRequest {
     "openalbion_item_tier": "8.0"
 }))]
 pub struct UpsertBuildItemRequest {
-    /// The OpenAlbion item type.
+    /// The `OpenAlbion` item type.
     pub openalbion_item_type: String,
-    /// The OpenAlbion item ID.
+    /// The `OpenAlbion` item ID.
     pub openalbion_item_id: i64,
-    /// The OpenAlbion item name.
+    /// Ignored: the stored name is the catalog's name for `openalbion_item_id`. Accepted so
+    /// existing clients keep working.
+    #[serde(default)]
     pub openalbion_item_name: String,
-    /// The OpenAlbion item icon URL.
+    /// Ignored: the stored icon is the catalog's render URL for `openalbion_item_id`, with the
+    /// chosen quality.
     pub openalbion_item_icon: Option<String>,
-    /// The OpenAlbion item tier.
+    /// The expected `OpenAlbion` item tier. Optional: when given it must match the catalog's tier
+    /// for the item, and the stored tier is always the catalog's.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
@@ -438,6 +463,12 @@ pub struct UpsertBuildItemRequest {
     /// Albion enchantment level. Omitted values become plain (`0`).
     #[schema(example = 2)]
     pub openalbion_item_enchantment: Option<i16>,
+    /// The abilities to store on the item, saved together with it in one transaction. When
+    /// present they replace every ability previously chosen on the slot (an empty selection
+    /// clears them) and are validated against what this item offers; when omitted, abilities the
+    /// new item still offers are kept.
+    #[serde(default)]
+    pub spells: Option<BuildItemSpells>,
 }
 
 /// Request body to create a comp.

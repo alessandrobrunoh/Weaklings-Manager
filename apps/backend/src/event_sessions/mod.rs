@@ -2,9 +2,9 @@
 //!
 //! The worker runs on a fixed cadence and delegates to two focused passes:
 //! 1. [`auto_stop_expired_sessions`] — auto-stop live sessions past their deadline.
-//! 2. [`refresh_pending_links`] — keep polling AlbionBB until battles are linked.
+//! 2. [`refresh_pending_links`] — keep polling `AlbionBB` until battles are linked.
 //!
-//! The AlbionBB upstream can take ~30 minutes to ingest a battle, so each
+//! The `AlbionBB` upstream can take ~30 minutes to ingest a battle, so each
 //! session is polled repeatedly until either the post-stop grace period elapses
 //! or the listing stabilises (same row count two ticks in a row).
 
@@ -64,7 +64,7 @@ pub fn spawn(
             }
             match prepare_cycle(&control, &tenant_id).await {
                 Ok(None) => {}
-                Ok(Some(scope)) if stop.load(Ordering::Relaxed) => {
+                Ok(Some(_scope)) if stop.load(Ordering::Relaxed) => {
                     tracing::info!(tenant_id, "event-sessions worker stopped");
                     break;
                 }

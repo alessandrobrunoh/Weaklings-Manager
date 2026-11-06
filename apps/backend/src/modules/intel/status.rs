@@ -15,7 +15,7 @@ pub const SMALL_SCALE_MAX_PLAYERS: i64 = 8;
 ///
 /// Derived purely from enemy headcount, which is crude but stable: it is the
 /// one property of a comp that is always observable, even when the kill feed
-/// covers only a fraction of the players. Stored as its snake_case string,
+/// covers only a fraction of the players. Stored as its `snake_case` string,
 /// matching how `builds.role` is persisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]

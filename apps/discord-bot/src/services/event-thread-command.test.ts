@@ -73,6 +73,7 @@ function makePoller(threadByEvent: Record<string, string>): Poller {
     eventSignupMessageIdFor: () => 'card-message-1',
     pollNow: async () => undefined,
     closeEventThread: async () => true,
+    finalizeStoppedEventThread: async () => true,
     rememberEventThread: () => undefined,
   } as unknown as Poller;
 }

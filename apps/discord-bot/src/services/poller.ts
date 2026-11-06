@@ -1,4 +1,14 @@
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import type { Client, ForumChannel, Message, TextChannel, ThreadChannel } from "discord.js";
@@ -35,7 +45,6 @@ import {
   buildApplicationPanelMessage,
   buildApplicationStatusAnnouncement,
 } from "../embeds/application.embed.js";
-import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
 import { flashCopy } from "./flash-copy.js";
@@ -119,6 +128,11 @@ interface PollerState {
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
   splitUpdatedAt: string | null;
   splitAfterId: number | null;
+  /**
+   * Splits whose Forum sync failed after the cursor moved past them. They are
+   * retried with backoff so one broken split never blocks the ones behind it.
+   */
+  splitRetries: Record<string, { attempts: number; nextAt: number }>;
   massedEvents: number[];
   emptyLiveChecks: Record<string, number>;
   /** Live events whose voice channel has been seen occupied at least once. */
@@ -129,6 +143,8 @@ interface PollerState {
   lastGiveawayId: number;
   postedGiveawayIds: number[];
   announcedGiveawayDraws: number[];
+  /** Giveaway messages sent to Discord whose backend `discord-message` PUT has not been acknowledged yet. */
+  unackedGiveawayMessages: Record<string, { message_id: string; channel_id: string }>;
   /**
    * False until the checkpoints below have been seeded from the live API.
    *
@@ -156,6 +172,21 @@ export interface EventCalendarChannelFailure {
   reason: string;
 }
 
+/** Max ids per `api/events/revisions` request; the backend truncates longer lists. */
+const EVENT_REVISION_CHUNK = 100;
+/** Page size and bounds for scanning scheduled/live events. */
+const EVENT_SCAN_PAGE_SIZE = 100;
+/**
+ * How far past its start a still-scheduled event may be before the lifecycle
+ * stops acting on it. The scan walks all scheduled events oldest first, so
+ * abandoned or test events that were never started would otherwise be massed
+ * and started on the first tick, pinging roles for events nobody expects.
+ */
+const LIFECYCLE_MAX_OVERDUE_MS = 24 * 60 * 60 * 1000;
+/** Retry schedule for splits whose Forum sync failed. */
+const SPLIT_RETRY_MAX_ATTEMPTS = 8;
+const SPLIT_RETRY_BASE_MS = 60_000;
+const SPLIT_RETRY_MAX_MS = 60 * 60_000;
 /** Discord JSON error for a message id that no longer exists. */
 const DISCORD_UNKNOWN_MESSAGE = 10008;
 /** Discord JSON error for an operation the bot's current channel permissions reject. */
@@ -189,6 +220,7 @@ function createDefaultState(): PollerState {
     archivedEventIds: [],
     splitUpdatedAt: null,
     splitAfterId: null,
+    splitRetries: {},
     massedEvents: [],
     emptyLiveChecks: {},
     occupiedLiveEvents: [],
@@ -197,6 +229,7 @@ function createDefaultState(): PollerState {
     lastGiveawayId: 0,
     postedGiveawayIds: [],
     announcedGiveawayDraws: [],
+    unackedGiveawayMessages: {},
     initialized: false,
   };
 }
@@ -249,69 +282,113 @@ function ensureStateDirectory(stateDirectory: string): void {
   }
 }
 
+/** Result of reading a checkpoint file. */
+interface LoadedState {
+  state: PollerState;
+  /**
+   * True when a checkpoint exists on disk but neither it nor its backup could
+   * be read. The poller must stay silent and must not overwrite the file:
+   * reseeding from "now" would swallow everything created in the meantime and
+   * forget every Discord thread binding.
+   */
+  unreadable: boolean;
+}
+
+function backupFileName(fileName: string): string {
+  return `${fileName}.bak`;
+}
+
+/** Parses one checkpoint file, throwing when it is not a JSON object. */
+function readStateFile(stateFile: string): PollerState {
+  const parsed: unknown = JSON.parse(readFileSync(stateFile, "utf-8"));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("poller state file does not contain a JSON object");
+  }
+  return normalizeState(parsed as Partial<PollerState>);
+}
+
+function normalizeState(parsedState: Partial<PollerState>): PollerState {
+  return {
+    lastEventId: parsedState.lastEventId ?? 0,
+    lastBattleId: parsedState.lastBattleId ?? 0,
+    pinged1hEvents: parsedState.pinged1hEvents ?? [],
+    eventThreadIds: parsedState.eventThreadIds ?? {},
+    eventParentMessageIds: parsedState.eventParentMessageIds ?? {},
+    eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
+    eventCalendarMessageIds: restoreEventCalendarMessageIds(
+      parsedState.eventCalendarMessageIds,
+    ),
+    eventCalendarFingerprints: parsedState.eventCalendarFingerprints ?? {},
+    pendingAnnounces: parsedState.pendingAnnounces ?? parsedState.failedAnnounces ?? {},
+    eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
+    archivedEventIds: parsedState.archivedEventIds ?? [],
+    splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
+    splitAfterId: parsedState.splitAfterId ?? null,
+    splitRetries: parsedState.splitRetries ?? {},
+    massedEvents: parsedState.massedEvents ?? [],
+    emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
+    occupiedLiveEvents: parsedState.occupiedLiveEvents ?? [],
+    // Old checkpoints start the sweep interval from now, avoiding a tenant
+    // herd of channel-list/delete requests immediately after bot restart.
+    lastVoiceSweepAt: parsedState.lastVoiceSweepAt ?? Date.now(),
+    applicationsOpen: parsedState.applicationsOpen,
+    lastGiveawayId: parsedState.lastGiveawayId ?? 0,
+    postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
+    announcedGiveawayDraws: parsedState.announcedGiveawayDraws ?? [],
+    unackedGiveawayMessages: parsedState.unackedGiveawayMessages ?? {},
+    // A file written before this flag existed already holds real checkpoints,
+    // so it is initialized. Treating it as fresh would re-seed the cursors to
+    // "now" and silently swallow anything created while the bot was down.
+    initialized: parsedState.initialized ?? true,
+  };
+}
+
 /**
  * Restores poller progress without losing the bot on corrupt JSON.
  *
- * A malformed checkpoint should not prevent Discord commands from coming
- * online, but filesystem permission errors must still fail loudly because the
- * service would otherwise spam duplicate announcements after each restart.
+ * Only a missing file with no backup is a fresh guild that may be seeded from
+ * the live API. A file that exists but cannot be parsed falls back to the last
+ * good backup; with no usable backup it is reported as `unreadable` so the
+ * caller refuses to reseed (which would silently drop every announcement made
+ * while the state was unavailable) and leaves the file for an operator.
  *
  * @example
  * ```ts
- * const state = loadState("/app/data", "123456789012345678");
- * console.log(state.lastEventId);
+ * const { state, unreadable } = loadState("/app/data", "poller-state-123456789012345678.json");
+ * console.log(state.lastEventId, unreadable);
  * ```
  */
-function loadState(stateDirectory: string, fileName: string): PollerState {
+function loadState(stateDirectory: string, fileName: string): LoadedState {
   ensureStateDirectory(stateDirectory);
 
   const stateFile = join(stateDirectory, fileName);
-  if (!existsSync(stateFile)) {
-    return createDefaultState();
+  const backupFile = join(stateDirectory, backupFileName(fileName));
+  const hasMain = existsSync(stateFile);
+  const hasBackup = existsSync(backupFile);
+  if (!hasMain && !hasBackup) {
+    return { state: createDefaultState(), unreadable: false };
   }
 
-  try {
-    const parsedState = JSON.parse(
-      readFileSync(stateFile, "utf-8"),
-    ) as Partial<PollerState>;
-    return {
-      lastEventId: parsedState.lastEventId ?? 0,
-      lastBattleId: parsedState.lastBattleId ?? 0,
-      pinged1hEvents: parsedState.pinged1hEvents ?? [],
-      eventThreadIds: parsedState.eventThreadIds ?? {},
-      eventParentMessageIds: parsedState.eventParentMessageIds ?? {},
-      eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
-      eventCalendarMessageIds: restoreEventCalendarMessageIds(
-        parsedState.eventCalendarMessageIds,
-      ),
-      eventCalendarFingerprints: parsedState.eventCalendarFingerprints ?? {},
-      pendingAnnounces: parsedState.pendingAnnounces ?? parsedState.failedAnnounces ?? {},
-      eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
-      archivedEventIds: parsedState.archivedEventIds ?? [],
-      splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
-      splitAfterId: parsedState.splitAfterId ?? null,
-      massedEvents: parsedState.massedEvents ?? [],
-      emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
-      occupiedLiveEvents: parsedState.occupiedLiveEvents ?? [],
-      // Old checkpoints start the sweep interval from now, avoiding a tenant
-      // herd of channel-list/delete requests immediately after bot restart.
-      lastVoiceSweepAt: parsedState.lastVoiceSweepAt ?? Date.now(),
-      applicationsOpen: parsedState.applicationsOpen,
-      lastGiveawayId: parsedState.lastGiveawayId ?? 0,
-      postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
-      announcedGiveawayDraws: parsedState.announcedGiveawayDraws ?? [],
-      // A file written before this flag existed already holds real checkpoints,
-      // so it is initialized. Treating it as fresh would re-seed the cursors to
-      // "now" and silently swallow anything created while the bot was down.
-      initialized: parsedState.initialized ?? true,
-    };
-  } catch (error) {
-    console.warn(
-      `[Poller] Ignoring unreadable state file at ${stateFile}:`,
-      error,
-    );
-    return createDefaultState();
+  if (hasMain) {
+    try {
+      return { state: readStateFile(stateFile), unreadable: false };
+    } catch (error) {
+      console.warn(`[Poller] State file ${stateFile} is unreadable:`, error);
+    }
   }
+  if (hasBackup) {
+    try {
+      const state = readStateFile(backupFile);
+      console.warn(`[Poller] Recovered checkpoints from backup ${backupFile}`);
+      return { state, unreadable: false };
+    } catch (error) {
+      console.warn(`[Poller] State backup ${backupFile} is unreadable:`, error);
+    }
+  }
+  console.error(
+    `[Poller] No usable checkpoint for ${fileName}; refusing to reseed. Fix or delete ${stateFile} to start from the current API state.`,
+  );
+  return { state: createDefaultState(), unreadable: true };
 }
 
 /**
@@ -319,7 +396,9 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
  *
  * The write is synchronous on purpose: a crash immediately after sending a
  * message must not roll the checkpoint back and re-announce the same event or
- * battle on the next start.
+ * battle on the next start. It goes through a temporary file plus an atomic
+ * rename so a crash mid-write cannot leave a truncated checkpoint, and the
+ * previous good file is kept as `.bak`.
  *
  * @example
  * ```ts
@@ -328,11 +407,27 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
  */
 function saveState(stateDirectory: string, fileName: string, state: PollerState): void {
   ensureStateDirectory(stateDirectory);
-  writeFileSync(
-    join(stateDirectory, fileName),
-    JSON.stringify(state, null, 2),
-    "utf-8",
-  );
+  const stateFile = join(stateDirectory, fileName);
+  const tmpFile = `${stateFile}.tmp`;
+
+  const fd = openSync(tmpFile, "w");
+  try {
+    writeSync(fd, JSON.stringify(state, null, 2));
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
+  if (existsSync(stateFile)) {
+    try {
+      // Only a parseable file is worth keeping as the backup.
+      JSON.parse(readFileSync(stateFile, "utf-8"));
+      copyFileSync(stateFile, join(stateDirectory, backupFileName(fileName)));
+    } catch {
+      // A corrupt current file must not overwrite the last good backup.
+    }
+  }
+  renameSync(tmpFile, stateFile);
 }
 
 /**
@@ -365,13 +460,17 @@ export class Poller {
   private readonly stateDirectory: string;
   private readonly stateFileName: string;
   private readonly state: PollerState;
+  /** True when the checkpoint file exists but cannot be read; the poller stays idle and never writes. */
+  private readonly stateUnreadable: boolean;
   private timer: NodeJS.Timeout | undefined;
   private delayedPollTimer: NodeJS.Timeout | undefined;
   private delayedPollAt = 0;
   /** Guards against a manually-triggered check overlapping a scheduled one —
    *  both would otherwise read the same stale `lastEventId`/`lastBattleId`
    *  and could announce the same event or battle twice. */
-  private polling = false;
+  private inflightPoll: Promise<void> | null = null;
+  /** Set by `pollNow()` while a cycle is running: run one more cycle right after it. */
+  private rerunRequested = false;
   /** Serializes scheduled and manual calendar writes without sharing API identities. */
   private calendarSyncQueue: Promise<void> = Promise.resolve();
 
@@ -388,13 +487,17 @@ export class Poller {
     this.guildId = api.guildId;
     this.stateDirectory = stateDirectory;
     this.stateFileName = stateFileName(this.guildId);
-    this.state = loadState(this.stateDirectory, this.stateFileName);
+    const loaded = loadState(this.stateDirectory, this.stateFileName);
+    this.state = loaded.state;
+    this.stateUnreadable = loaded.unreadable;
     console.log(
       `[Poller] Starting for guild ${this.guildId} — last event ID: ${this.state.lastEventId}, last battle ID: ${this.state.lastBattleId}`,
     );
   }
 
   private save(): void {
+    // Never overwrite a checkpoint we could not read; an operator needs it.
+    if (this.stateUnreadable) return;
     saveState(this.stateDirectory, this.stateFileName, this.state);
   }
 
@@ -431,6 +534,10 @@ export class Poller {
     // baseline and never announced. `poll` keeps its own guard for the case
     // where this first attempt fails and has to be retried on a later tick.
     void (async () => {
+      if (this.stateUnreadable) {
+        this.warnStateUnreadable();
+        return;
+      }
       if (!this.state.initialized) {
         await this.adoptCheckpointBaseline();
       }
@@ -470,41 +577,78 @@ export class Poller {
    * is never posted a second time.
    */
   async pollNow(): Promise<void> {
-    await this.poll();
+    if (this.inflightPoll) {
+      // A cycle that began before the caller's change cannot be trusted to have
+      // seen it, so queue exactly one follow-up instead of silently dropping the request.
+      this.rerunRequested = true;
+      return this.inflightPoll;
+    }
+    return this.poll();
   }
 
-  private async poll(): Promise<void> {
-    if (this.polling) {
+  private warnStateUnreadable(): void {
+    console.error(
+      `[Poller] Guild ${this.guildId} is paused: its checkpoint file is unreadable and will not be reseeded automatically. Repair or delete ${this.stateFileName}.`,
+    );
+  }
+
+  private poll(): Promise<void> {
+    if (this.inflightPoll) {
+      return this.inflightPoll;
+    }
+    const run = (async () => {
+      try {
+        do {
+          this.rerunRequested = false;
+          await this.pollOnce();
+        } while (this.rerunRequested);
+      } finally {
+        this.inflightPoll = null;
+      }
+    })();
+    this.inflightPoll = run;
+    return run;
+  }
+
+  private async pollOnce(): Promise<void> {
+    if (this.stateUnreadable) {
+      this.warnStateUnreadable();
       return;
     }
-    this.polling = true;
-    try {
-      if (!this.state.initialized) {
-        await this.adoptCheckpointBaseline();
-        return;
-      }
-      await this.checkApplicationStatus();
-      // Event announcements must complete before checking reminders so a newly
-      // created event already has its discussion thread recorded.
-      await this.checkNewEvents();
-      await this.checkVodForumPosts();
-      const revisions = await this.loadEventRevisions();
-      await this.checkClosedEvents(revisions);
-      await this.checkRestoredEvents();
-      await this.checkEventRosterSync(revisions);
-      await this.updateEventCalendars();
-      await this.checkNewGiveaways();
-      await this.checkGiveawayResults();
-      await this.checkEventLifecycle();
-      await this.sweepOrphanEventVoiceChannels();
-      await Promise.allSettled([
-        this.checkNewBattles(),
-        this.checkUpcomingEvents(),
-        this.checkSplitSync(),
-      ]);
-    } finally {
-      this.polling = false;
+    if (!this.state.initialized) {
+      await this.adoptCheckpointBaseline();
+      return;
     }
+    // Each step is isolated: one throwing step must not skip the ones behind it.
+    const step = async (name: string, run: () => Promise<void>): Promise<void> => {
+      try {
+        await run();
+      } catch (error) {
+        console.error(`[Poller] Step ${name} failed for guild ${this.guildId}:`, error);
+      }
+    };
+    let revisions: Map<string, EventRevision> | null = null;
+    await step("applications", () => this.checkApplicationStatus());
+    // Event announcements must complete before checking reminders so a newly
+    // created event already has its discussion thread recorded.
+    await step("new-events", () => this.checkNewEvents());
+    await step("vod-forum", () => this.checkVodForumPosts());
+    await step("revisions", async () => {
+      revisions = await this.loadEventRevisions();
+    });
+    await step("closed-events", () => this.checkClosedEvents(revisions));
+    await step("restored-events", () => this.checkRestoredEvents());
+    await step("roster-sync", () => this.checkEventRosterSync(revisions));
+    await step("calendars", () => this.updateEventCalendars());
+    await step("new-giveaways", () => this.checkNewGiveaways());
+    await step("giveaway-results", () => this.checkGiveawayResults());
+    await step("lifecycle", () => this.checkEventLifecycle());
+    await step("voice-sweep", () => this.sweepOrphanEventVoiceChannels());
+    await Promise.allSettled([
+      this.checkNewBattles(),
+      this.checkUpcomingEvents(),
+      this.checkSplitSync(),
+    ]);
   }
 
   /**
@@ -1210,7 +1354,10 @@ export class Poller {
   ): Promise<EventCalendarRefreshResult> {
     const routes = await this.loadEventChannelRoutes();
     const configuredChannelIds = calendarChannelIds(routes);
-    if (configuredChannelIds.length === 0 && !discordUserId) {
+    const calendarMode = (await this.eventDelivery()) === "calendar";
+    // Message and forum guilds have no calendar panel. Scheduled ticks must not
+    // touch Discord for them at all; only an explicit refresh command proceeds.
+    if ((configuredChannelIds.length === 0 || !calendarMode) && !discordUserId) {
       return {
         eventCount: 0,
         configuredChannels: 0,
@@ -1227,7 +1374,7 @@ export class Poller {
     let unroutedCallToArms = 0;
     for (const event of events) {
       if (flashUndoTimeRemaining(event) > 0) continue;
-      if ((await this.eventDelivery()) !== "calendar") {
+      if (!calendarMode) {
         continue;
       }
       const channelId = destinationChannel(event, routes);
@@ -1470,13 +1617,34 @@ export class Poller {
     const ids = Object.keys(this.state.eventThreadIds);
     if (ids.length === 0) return new Map();
     try {
-      const items = await this.api.get<EventRevision[]>("api/events/revisions", undefined, {
-        ids: ids.join(","),
-      });
-      return new Map((items ?? []).map((item) => [String(item.id), item]));
+      // The backend silently truncates the id list at 200 (keeping the lowest
+      // ids), so ask in chunks: anything missing from an answer must really be
+      // missing, not just cut off.
+      const revisions = new Map<string, EventRevision>();
+      for (let offset = 0; offset < ids.length; offset += EVENT_REVISION_CHUNK) {
+        const chunk = ids.slice(offset, offset + EVENT_REVISION_CHUNK);
+        const items = await this.api.get<EventRevision[]>("api/events/revisions", undefined, {
+          ids: chunk.join(","),
+        });
+        for (const item of items ?? []) revisions.set(String(item.id), item);
+      }
+      return revisions;
     } catch (error) {
       console.warn("[Poller] Could not load event revisions:", error);
       return null;
+    }
+  }
+
+  /**
+   * Confirms an event is really gone before its Discord thread is torn down.
+   * A revision list that merely omits an id is not proof of deletion.
+   */
+  private async eventIsDeleted(eventId: string): Promise<boolean> {
+    try {
+      await this.api.get<EventView>(`api/events/${eventId}`);
+      return false;
+    } catch (error) {
+      return error instanceof ApiError && error.status === 404;
     }
   }
 
@@ -1490,6 +1658,9 @@ export class Poller {
       try {
         const event = revisions.get(eventId);
         if (!event) {
+          // Absent from the revision list is only a hint. Confirm the event is
+          // really deleted before closing a thread that may belong to a live event.
+          if (!(await this.eventIsDeleted(eventId))) continue;
           // The backend record is gone (deleted event). Close leftover Discord
           // state once, then drop the mapping so the next poll does not 404 forever.
           console.warn(
@@ -1513,7 +1684,7 @@ export class Poller {
         }
         if (!terminalStatuses.has(event.status)) continue;
 
-        if (threadId) await this.closeEventThread(event.id);
+        if (threadId) await this.finalizeStoppedEventThread(event.id);
       } catch (error) {
         // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
@@ -1554,6 +1725,33 @@ export class Poller {
     } catch (error) {
       console.warn(`[Poller] Could not reconcile restored archived events: ${String(error)}`);
     }
+  }
+
+  /**
+   * Renders the final signup card (stopped status, frozen roster, no live
+   * buttons) and only then locks the thread: once archived, Discord rejects
+   * the edit and the card would stay "LIVE" forever.
+   */
+  async finalizeStoppedEventThread(eventId: number): Promise<boolean> {
+    const key = String(eventId);
+    if (this.state.eventThreadIds[key]) {
+      try {
+        const thread = await this.getEventThread(eventId);
+        if (thread) {
+          const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
+          const messageId = await refreshEventSignupCard(
+            thread,
+            detail,
+            "Poller",
+            this.state.eventSignupMessageIds[key],
+          );
+          if (messageId) this.state.eventSignupMessageIds[key] = messageId;
+        }
+      } catch (error) {
+        console.warn(`[Poller] Could not render the final card for event #${eventId}:`, error);
+      }
+    }
+    return this.closeEventThread(eventId);
   }
 
   /**
@@ -1711,13 +1909,40 @@ export class Poller {
     }
   }
 
+  /**
+   * Lists every event with one status, soonest first.
+   *
+   * `api/events` defaults to newest-date-first, so a plain page 1 is filled by
+   * far-future events and hides the ones that are due now. Filtering by status
+   * and sorting ascending, then walking every page, keeps due events visible
+   * however many future ones exist.
+   */
+  private async listEventsByStatus(status: "scheduled" | "live"): Promise<EventView[]> {
+    const listed = await this.listSinceCheckpoint<EventView>(
+      "api/events",
+      0,
+      (event) => event.id,
+      EVENT_SCAN_PAGE_SIZE,
+      { status, sort: "start_time_utc", order: "asc" },
+    );
+    return listed.items;
+  }
+
   /** Executes Mass and Start automatically, then auto-stops live events after occupied voice goes empty. */
   private async checkEventLifecycle(): Promise<void> {
     try {
-      const result = await this.api.get<PaginatedData<EventView>>("api/events", undefined, { page: 1, limit: 50 });
+      const [scheduled, live] = await Promise.all([
+        this.listEventsByStatus("scheduled"),
+        this.listEventsByStatus("live"),
+      ]);
       const now = Date.now();
-      for (const event of result.items) {
+      const seenEventIds = new Set<number>();
+      for (const event of [...scheduled, ...live]) {
+        if (seenEventIds.has(event.id)) continue;
+        seenEventIds.add(event.id);
         if (event.status === "scheduled") {
+          const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
+          if (Number.isFinite(startAt) && now - startAt > LIFECYCLE_MAX_OVERDUE_MS) continue;
           const massAt = new Date(event.mass_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(massAt) && now >= massAt && !this.state.massedEvents.includes(event.id)) {
             try {
@@ -1725,12 +1950,15 @@ export class Poller {
               const massed = await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
               await this.postAllianceLifecycle(massed.event, "mass");
               this.state.massedEvents.push(event.id);
+              // Only ids of still-scheduled events matter; keep the list bounded.
+              if (this.state.massedEvents.length > 500) {
+                this.state.massedEvents = this.state.massedEvents.slice(-500);
+              }
               this.save();
             } catch (error) {
               console.warn(`[Poller] Could not mass event #${event.id}:`, error);
             }
           }
-          const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(startAt) && now >= startAt) {
             try {
               const thread = await this.getEventThread(event.id);
@@ -1766,7 +1994,7 @@ export class Poller {
           this.state.emptyLiveChecks[key] = next.emptyTicks;
           if (next.shouldStop) {
             await stopDiscordEvent(this.client, this.api, "", event.id);
-            await this.closeEventThread(event.id);
+            await this.finalizeStoppedEventThread(event.id);
             this.forgetLiveVoiceWatch(event.id);
           }
           this.save();
@@ -1902,7 +2130,11 @@ export class Poller {
 
   /**
    * Synchronizes split Forum posts from the backend-owned incremental contract.
-   * The `(updated_at, id)` cursor advances after each successfully maintained Discord post.
+   *
+   * The `(updated_at, id)` cursor moves past every split it has attempted, so a
+   * split that cannot be synced (missing tag, locked thread, no permission)
+   * never blocks the ones behind it. Failed splits go to `splitRetries` and are
+   * retried with exponential backoff, then given up on loudly.
    */
   private async checkSplitSync(): Promise<void> {
     try {
@@ -1910,6 +2142,8 @@ export class Poller {
       if (!forumChannelId) return;
 
       const adapter = new SplitForumAdapter(this.client, this.api, forumChannelId);
+      await this.retryFailedSplits(adapter);
+
       let hasMore = true;
       while (hasMore) {
         const params: Record<string, string | number> = { limit: 50 };
@@ -1924,10 +2158,9 @@ export class Poller {
           params,
         );
         for (const split of batch.items) {
-          const item = await this.api.get<SplitDiscordSync>(
-            `api/splits/${split.id}/discord-sync`,
-          );
-          if (!await adapter.sync(item)) return;
+          const synced = await this.syncSplit(adapter, split.id);
+          if (synced === "failed") this.recordSplitFailure(split.id);
+          else delete this.state.splitRetries[String(split.id)];
 
           this.state.splitUpdatedAt = split.updated_at ?? split.created_at;
           this.state.splitAfterId = split.id;
@@ -1941,22 +2174,56 @@ export class Poller {
     }
   }
 
+  /** Syncs one split; `gone` means the backend no longer has it. */
+  private async syncSplit(
+    adapter: SplitForumAdapter,
+    splitId: number,
+  ): Promise<"synced" | "failed" | "gone"> {
+    try {
+      const item = await this.api.get<SplitDiscordSync>(`api/splits/${splitId}/discord-sync`);
+      return (await adapter.sync(item)) ? "synced" : "failed";
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return "gone";
+      console.warn(`[Poller] Could not sync split #${splitId}:`, error);
+      return "failed";
+    }
+  }
+
+  private recordSplitFailure(splitId: number): void {
+    const key = String(splitId);
+    const attempts = (this.state.splitRetries[key]?.attempts ?? 0) + 1;
+    if (attempts >= SPLIT_RETRY_MAX_ATTEMPTS) {
+      console.error(
+        `[Poller] Giving up on split #${splitId} after ${attempts} failed Forum syncs; it will sync again when it next changes`,
+      );
+      delete this.state.splitRetries[key];
+      return;
+    }
+    const delay = Math.min(SPLIT_RETRY_BASE_MS * 2 ** (attempts - 1), SPLIT_RETRY_MAX_MS);
+    this.state.splitRetries[key] = { attempts, nextAt: Date.now() + delay };
+  }
+
+  private async retryFailedSplits(adapter: SplitForumAdapter): Promise<void> {
+    const now = Date.now();
+    for (const [key, retry] of Object.entries(this.state.splitRetries)) {
+      if (retry.nextAt > now) continue;
+      const splitId = Number(key);
+      const result = await this.syncSplit(adapter, splitId);
+      if (result === "failed") this.recordSplitFailure(splitId);
+      else delete this.state.splitRetries[key];
+      this.save();
+    }
+  }
+
   /** Checks for scheduled events starting in <= 1 hour and notifies their discussion thread. */
   private async checkUpcomingEvents(): Promise<void> {
     try {
-      const result = await this.api.get<PaginatedData<EventView>>(
-        "api/events",
-        undefined,
-        {
-          page: 1,
-          limit: 20,
-        },
-      );
+      const scheduled = await this.listEventsByStatus("scheduled");
 
       const now = new Date().getTime();
       const oneHourMs = 60 * 60 * 1000;
 
-      const upcomingEvents = result.items.filter((e) => {
+      const upcomingEvents = scheduled.filter((e) => {
         if (e.status !== "scheduled") return false;
         if (this.state.pinged1hEvents.includes(e.id)) return false;
 
@@ -1968,49 +2235,51 @@ export class Poller {
       if (upcomingEvents.length === 0) return;
 
       for (const event of upcomingEvents) {
-        const threadId = this.state.eventThreadIds[String(event.id)];
-        let thread = threadId ? await this.client.channels.fetch(threadId) : null;
+        try {
+          const threadId = this.state.eventThreadIds[String(event.id)];
+          let thread = threadId ? await this.client.channels.fetch(threadId) : null;
 
-        // Events announced before thread IDs were persisted can still be recovered
-        // while their discussion thread is active.
-        if (!thread?.isThread()) {
-          const eventsChannel = await this.getTextChannel(await this.settings.eventsChannelId());
-          const activeThreads = eventsChannel ? await eventsChannel.threads.fetchActive() : null;
-          thread = activeThreads?.threads.find(
-            (candidate) => candidate.name === buildEventThreadName(event.title),
-          ) ?? null;
-        }
-        if (!thread?.isThread()) {
-          console.warn(
-            `[Poller] Cannot send 1h warning for event #${event.id}: no active announcement thread was found`,
+          // Events announced before thread IDs were persisted can still be recovered
+          // while their discussion thread is active.
+          if (!thread?.isThread()) {
+            const eventsChannel = await this.getTextChannel(await this.settings.eventsChannelId());
+            const activeThreads = eventsChannel ? await eventsChannel.threads.fetchActive() : null;
+            thread = activeThreads?.threads.find(
+              (candidate) => candidate.name === buildEventThreadName(event.title),
+            ) ?? null;
+          }
+          if (!thread?.isThread()) {
+            console.warn(
+              `[Poller] Cannot send 1h warning for event #${event.id}: no active announcement thread was found`,
+            );
+            continue;
+          }
+
+          this.state.eventThreadIds[String(event.id)] = thread.id;
+          const roleIds = event.discord_role_ids ?? [];
+          const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+          await withUnarchivedThread(
+            thread,
+            `Event #${event.id} 1h warning`,
+            (active) => active.send({
+              content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
+              allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
+            }),
           );
-          continue;
+
+          this.state.pinged1hEvents.push(event.id);
+          this.save();
+          console.log(`[Poller] Posted 1h warning in the thread for event #${event.id}`);
+        } catch (error) {
+          console.warn(`[Poller] Could not send 1h warning for event #${event.id}:`, error);
         }
-
-        this.state.eventThreadIds[String(event.id)] = thread.id;
-        const roleIds = event.discord_role_ids ?? [];
-        const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
-        await withUnarchivedThread(
-          thread,
-          `Event #${event.id} 1h warning`,
-          (active) => active.send({
-            content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
-            allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
-          }),
-        );
-
-        this.state.pinged1hEvents.push(event.id);
-        this.save();
-        console.log(`[Poller] Posted 1h warning in the thread for event #${event.id}`);
       }
 
-      // Cleanup old pinged events (keep last 50)
+      // Cleanup old pinged events (keep last 50). This list is only a "already
+      // warned" memo: thread bindings are NOT derived from it and must never be
+      // pruned here, or every announced event outside the last 50 pings loses its thread.
       if (this.state.pinged1hEvents.length > 50) {
         this.state.pinged1hEvents = this.state.pinged1hEvents.slice(-50);
-        const retainedEventIds = new Set(this.state.pinged1hEvents.map(String));
-        this.state.eventThreadIds = Object.fromEntries(
-          Object.entries(this.state.eventThreadIds).filter(([eventId]) => retainedEventIds.has(eventId)),
-        );
         this.save();
       }
     } catch (err) {
@@ -2043,13 +2312,32 @@ export class Poller {
         return;
       }
 
-      const channel = await this.getTextChannel(await this.settings.battlesChannelId());
+      const battlesChannelId = await this.settings.battlesChannelId();
+      if (!battlesChannelId) {
+        // Nothing is configured to deliver to. Skip these battles instead of
+        // leaving them as a backlog that floods the channel once one is set.
+        if (listedBattles.complete && listedBattles.newestId > this.state.lastBattleId) {
+          console.warn(
+            `[Poller] No battles channel configured for guild ${this.guildId}; skipping ${newBattles.length} battle(s)`,
+          );
+          this.state.lastBattleId = listedBattles.newestId;
+          this.save();
+        }
+        return;
+      }
+      const channel = await this.getTextChannel(battlesChannelId);
       if (!channel) return;
 
       for (const battle of newBattles) {
-        const embed = buildBattleEmbed(battle, GUILD_NAME);
+        const embed = buildBattleEmbed(battle);
         await channel.send({ embeds: [embed] });
         console.log(`[Poller] Announced battle #${battle.battle_id}`);
+        // Advance per item (the list is sorted ascending) so a later failure
+        // cannot make the next tick re-send battles that already reached Discord.
+        if (listedBattles.complete) {
+          this.state.lastBattleId = battle.battle_id;
+          this.save();
+        }
       }
       if (listedBattles.complete && listedBattles.newestId > this.state.lastBattleId) {
         this.state.lastBattleId = listedBattles.newestId;
@@ -2063,6 +2351,7 @@ export class Poller {
   /** Announces newly created giveaways into the configured channel. */
   private async checkNewGiveaways(): Promise<void> {
     try {
+      await this.ackUnackedGiveawayMessages();
       const listedGiveaways = await this.listSinceCheckpoint<GiveawayView>(
         "api/giveaways",
         this.state.lastGiveawayId,
@@ -2093,25 +2382,57 @@ export class Poller {
       const channel = await this.getTextChannel(channelId);
       if (!channel) return;
 
+      // Each giveaway is delivered independently. The cursor only moves past a
+      // contiguous run of delivered ones, and `postedGiveawayIds` (written right
+      // after the Discord send) keeps a retried item from being announced twice.
+      let cursorBlocked = false;
       for (const summary of newGiveaways) {
-        const detail = await this.api.get<GiveawayDetailView>(`api/giveaways/${summary.id}`);
-        const message = await channel.send(buildGiveawayAnnouncementMessage(detail, roleId));
-        await this.api.put(
-          `api/giveaways/${detail.id}/discord-message`,
-          { message_id: message.id, channel_id: channel.id },
-        );
-        if (!this.state.postedGiveawayIds.includes(detail.id)) {
-          this.state.postedGiveawayIds.push(detail.id);
+        try {
+          if (!this.state.postedGiveawayIds.includes(summary.id)) {
+            const detail = await this.api.get<GiveawayDetailView>(`api/giveaways/${summary.id}`);
+            const message = await channel.send(buildGiveawayAnnouncementMessage(detail, roleId));
+            this.state.postedGiveawayIds.push(detail.id);
+            this.state.unackedGiveawayMessages[String(detail.id)] = {
+              message_id: message.id,
+              channel_id: channel.id,
+            };
+            this.save();
+            console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
+            await this.ackUnackedGiveawayMessages();
+          }
+          if (!cursorBlocked && listedGiveaways.complete) {
+            this.state.lastGiveawayId = Math.max(this.state.lastGiveawayId, summary.id);
+            this.save();
+          }
+        } catch (error) {
+          cursorBlocked = true;
+          console.warn(`[Poller] Could not announce giveaway #${summary.id}:`, error);
         }
-        this.save();
-        console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
       }
-      if (listedGiveaways.complete && listedGiveaways.newestId > this.state.lastGiveawayId) {
+      if (!cursorBlocked && listedGiveaways.complete && listedGiveaways.newestId > this.state.lastGiveawayId) {
         this.state.lastGiveawayId = listedGiveaways.newestId;
         this.save();
       }
     } catch (error) {
       console.error("[Poller] Failed to check giveaways:", error);
+    }
+  }
+
+  /** Records sent giveaway messages with the backend; failures stay queued for the next tick. */
+  private async ackUnackedGiveawayMessages(): Promise<void> {
+    for (const [giveawayId, binding] of Object.entries(this.state.unackedGiveawayMessages)) {
+      try {
+        await this.api.put(`api/giveaways/${giveawayId}/discord-message`, binding);
+        delete this.state.unackedGiveawayMessages[giveawayId];
+        this.save();
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          delete this.state.unackedGiveawayMessages[giveawayId];
+          this.save();
+          continue;
+        }
+        console.warn(`[Poller] Could not record Discord message for giveaway #${giveawayId}; will retry:`, error);
+      }
     }
   }
 
@@ -2126,8 +2447,13 @@ export class Poller {
         if (detail.status === "open") continue;
         if (detail.discord_channel_id && detail.discord_message_id) {
           const channel = await this.getTextChannel(detail.discord_channel_id);
+          // Only a message that is really gone counts as "nothing to edit". Any
+          // other failure is transient and must retry, not mark the draw announced.
           const message = channel
-            ? await channel.messages.fetch(detail.discord_message_id).catch(() => null)
+            ? await channel.messages.fetch(detail.discord_message_id).catch((error: unknown) => {
+                if (discordErrorCode(error) === DISCORD_UNKNOWN_MESSAGE) return null;
+                throw error;
+              })
             : null;
           if (message) {
             await message.edit({
@@ -2135,7 +2461,9 @@ export class Poller {
               components: [buildGiveawayActionRow(detail)],
             });
             if (detail.status === "drawn") {
-              await channel?.send(buildGiveawayWinnerMessage(detail)).catch(() => undefined);
+              await channel?.send(buildGiveawayWinnerMessage(detail)).catch((error: unknown) => {
+                console.warn(`[Poller] Could not post winner message for giveaway #${giveawayId}:`, error);
+              });
             }
           }
         }
@@ -2226,6 +2554,10 @@ const pollers = new Map<string, Poller>();
 
 /** Registers a guild's `Poller`, replacing any previous one for that guild. */
 export function registerPoller(poller: Poller): void {
+  const previous = pollers.get(poller.guildId);
+  // A replaced poller keeps its interval alive and becomes unreachable, so it
+  // would announce everything a second time. Stop it before it is dropped.
+  if (previous && previous !== poller) previous.stop();
   pollers.set(poller.guildId, poller);
 }
 

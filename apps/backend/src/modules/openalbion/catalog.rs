@@ -8,7 +8,7 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 
 /// An item category (e.g. "Swords", "Bows"), optionally nested under a parent category type.
-/// `subcategories` recurses to arbitrary depth (marked `no_recursion` in the OpenAPI schema only
+/// `subcategories` recurses to arbitrary depth (marked `no_recursion` in the `OpenAPI` schema only
 /// to avoid an infinite schema definition — the actual JSON payload nests normally).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(example = json!({
@@ -63,7 +63,7 @@ pub struct OpenAlbionWeapon {
 }
 
 /// A single named stat value (e.g. "Physical damage" -> 125) on a weapon quality tier. `value`
-/// is untyped JSON because OpenAlbion mixes numbers and strings across different stat names.
+/// is untyped JSON because `OpenAlbion` mixes numbers and strings across different stat names.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(example = json!({ "name": "Physical damage", "value": 125 }))]
 pub struct OpenAlbionStatEntry {
@@ -106,7 +106,7 @@ pub struct OpenAlbionWeaponStats {
     pub stats: Vec<OpenAlbionWeaponQualityStat>,
 }
 
-/// Type of OpenAlbion item.
+/// Type of `OpenAlbion` item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenAlbionItemType {
@@ -134,7 +134,7 @@ impl FromStr for OpenAlbionItemType {
     }
 }
 
-/// A unified item entry that can represent any of the 4 OpenAlbion item types.
+/// A unified item entry that can represent any of the 4 `OpenAlbion` item types.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(example = json!({
     "id": 42,

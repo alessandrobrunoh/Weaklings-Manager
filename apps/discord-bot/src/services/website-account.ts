@@ -18,15 +18,32 @@ export function isUnregisteredWebsiteUserError(error: unknown): error is ApiErro
   );
 }
 
+/** How long a positive "has a website account" answer is reused. */
+const REGISTERED_CACHE_TTL_MS = 5 * 60_000;
+const registeredUntil = new Map<string, number>();
+
+/** Drops every cached answer; used by tests. */
+export function clearWebsiteRegistrationCache(): void {
+  registeredUntil.clear();
+}
+
 /**
  * Checks that the Discord user has a local website profile.
+ *
+ * Only a positive answer is cached: this check sits in front of every command,
+ * and a slow backend round trip here is what pushes a command past Discord's 3
+ * second acknowledgement window. A user who is not registered yet is always
+ * re-checked, so signing in on the website takes effect immediately.
  */
 export async function isWebsiteUserRegistered(
   api: ApiClient,
   discordId: string,
 ): Promise<boolean> {
+  const cacheKey = `${api.guildId ?? ''}:${discordId}`;
+  if ((registeredUntil.get(cacheKey) ?? 0) > Date.now()) return true;
   try {
     await api.get('api/users/me', discordId);
+    registeredUntil.set(cacheKey, Date.now() + REGISTERED_CACHE_TTL_MS);
     return true;
   } catch (error) {
     if (isUnregisteredWebsiteUserError(error)) {

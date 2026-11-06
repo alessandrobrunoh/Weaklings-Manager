@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 
 /// Officer-composed guild announcement. Fan-out rows point here via `source_id`.
 pub mod notification_broadcast {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "notification_broadcasts")]
@@ -31,7 +35,11 @@ pub mod notification_broadcast {
 
 /// One inbox row for one recipient.
 pub mod notification {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "notifications")]

@@ -4,7 +4,11 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub mod giveaway {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, Decimal,
+        DeriveEntityModel, DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden,
+        ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
     #[sea_orm(table_name = "giveaways")]
@@ -52,7 +56,10 @@ pub mod giveaway {
 }
 
 pub mod giveaway_prize {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DeriveEntityModel, DerivePrimaryKey,
+        DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait, Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "giveaway_prizes")]
@@ -62,7 +69,7 @@ pub mod giveaway_prize {
         pub id: i64,
         /// Parent giveaway.
         pub giveaway_id: i64,
-        /// OpenAlbion catalog id.
+        /// `OpenAlbion` catalog id.
         pub openalbion_item_id: i64,
         /// Display name snapshotted at create time.
         pub openalbion_item_name: String,
@@ -85,7 +92,11 @@ pub mod giveaway_prize {
 }
 
 pub mod giveaway_entry {
-    use super::*;
+    use super::{
+        ActiveEnum, ActiveModelBehavior, ActiveModelTrait, DateTimeWithTimeZone, DeriveEntityModel,
+        DerivePrimaryKey, DeriveRelation, Deserialize, EnumIter, Iden, ModelTrait, PrimaryKeyTrait,
+        Serialize,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
     #[sea_orm(table_name = "giveaway_entries")]

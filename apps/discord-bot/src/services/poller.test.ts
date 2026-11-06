@@ -109,6 +109,9 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
         apiGets.push(path);
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
         if (path === "api/events/revisions") return [eventRevision(32, "stopped")];
+        // Event 28 is absent from the revisions; the poller must confirm the delete.
+        if (path === "api/events/28") throw new ApiError(404, "Event 28 not found");
+        if (path === "api/events/32") return { ...calendarEvent(32, "Stopped"), status: "stopped", participants: [], roster_version: 1 };
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -141,7 +144,12 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
     assert.equal(apiGets.includes("api/events/revisions"), true);
-    assert.equal(apiGets.some((path) => /^api\/events\/\d+$/.test(path)), false);
+    // Event 28 is confirmed deleted before its thread is touched; event 32 gets
+    // its final card rendered before its thread is closed.
+    assert.deepEqual(
+      apiGets.filter((path) => /^api\/events\/\d+$/.test(path)).sort(),
+      ["api/events/28", "api/events/32"],
+    );
 
     apiGets.length = 0;
     await poller.pollNow();
@@ -1014,6 +1022,7 @@ test("each guild keeps its own checkpoint file", async () => {
           return emptyPage();
         }
         if (path === "api/events/revisions") return [];
+        if (path === "api/events/28") throw new ApiError(404, "Event 28 not found");
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -1749,6 +1758,7 @@ test("scheduled and manual calendar refreshes serialize without duplicating mess
     const settings = {
       eventsChannelId: async () => "events-channel",
       callToArmsChannelId: async () => null,
+      eventDelivery: async () => "calendar",
     } as unknown as SettingsService;
     let sendCount = 0;
     let editCount = 0;
@@ -2414,3 +2424,612 @@ test("ambiguous event forum creation remains pending and is not retried automati
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// ── Poller hotfixes: state safety, thread retention, scheduling queries ─────
+
+const HOTFIX_GUILD = "100000000000000500";
+
+function hotfixStateFile(directory: string): string {
+  return join(directory, `poller-state-${HOTFIX_GUILD}.json`);
+}
+
+function writeHotfixState(directory: string, extra: Record<string, unknown> = {}): void {
+  writeFileSync(
+    hotfixStateFile(directory),
+    JSON.stringify({
+      lastEventId: 5000,
+      lastBattleId: 0,
+      lastGiveawayId: 0,
+      pinged1hEvents: [],
+      eventThreadIds: {},
+      splitUpdatedAt: null,
+      splitAfterId: null,
+      massedEvents: [],
+      emptyLiveChecks: {},
+      initialized: true,
+      ...extra,
+    }),
+    "utf-8",
+  );
+}
+
+const hotfixSettings = {
+  applicationsSettings: async () => ({ discord_applications_open: true }),
+  splitsForumChannelId: async () => null,
+  eventsChannelId: async () => null,
+  callToArmsChannelId: async () => null,
+  battlesChannelId: async () => null,
+  giveawaysChannelId: async () => null,
+  giveawaysRoleId: async () => null,
+} as unknown as SettingsService;
+
+interface ListCall {
+  path: string;
+  params?: Record<string, string | number>;
+}
+
+/** Fake `api/events` that honours `status`, `sort`/`order` and paging like the backend. */
+function scheduledEventsApi(events: EventView[], calls: ListCall[] = []): ApiClient {
+  return {
+    guildId: HOTFIX_GUILD,
+    get: async (path: string, _discordId?: string, params?: Record<string, string | number>) => {
+      calls.push({ path, params });
+      if (path === "api/events") {
+        const limit = Number(params?.limit ?? 20);
+        const page = Number(params?.page ?? 1);
+        let rows = events.filter((event) => !params?.status || event.status === params.status);
+        rows = [...rows].sort((a, b) => a.event_date_utc.localeCompare(b.event_date_utc));
+        // The backend default is newest-first; only an explicit `order=asc` flips it.
+        if (params?.order !== "asc") rows.reverse();
+        return {
+          items: rows.slice((page - 1) * limit, page * limit),
+          total_items: rows.length,
+          total_pages: Math.max(1, Math.ceil(rows.length / limit)),
+          current_page: page,
+          limit,
+        };
+      }
+      if (path === "api/events/revisions") return [];
+      throw new Error(`unexpected GET ${path}`);
+    },
+  } as unknown as ApiClient;
+}
+
+test("a corrupt checkpoint file stays untouched, is not reseeded, and pauses the guild", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(hotfixStateFile(directory), "{ not json", "utf-8");
+    const gets: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        gets.push(path);
+        return emptyPage();
+      },
+    } as unknown as ApiClient;
+
+    const poller = new Poller({} as unknown as Client, api, hotfixSettings, 60_000, directory);
+    await poller.pollNow();
+    await poller.pollNow();
+
+    assert.deepEqual(gets, [], "no seeding, no announcing: the API is never consulted");
+    assert.equal(readFileSync(hotfixStateFile(directory), "utf-8"), "{ not json");
+    poller.rememberEventThread(1, "thread-1");
+    assert.equal(
+      readFileSync(hotfixStateFile(directory), "utf-8"),
+      "{ not json",
+      "even a later state change must not overwrite the unreadable file",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a corrupt checkpoint falls back to the last good backup instead of reseeding", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory, { lastEventId: 77, eventThreadIds: { "5": "thread-5" } });
+    const first = new Poller({} as unknown as Client, scheduledEventsApi([]), hotfixSettings, 60_000, directory);
+    first.rememberEventThread(6, "thread-6"); // rotates the good file into .bak
+    first.rememberEventThread(7, "thread-7");
+    assert.equal(existsSync(`${hotfixStateFile(directory)}.bak`), true);
+    assert.equal(existsSync(`${hotfixStateFile(directory)}.tmp`), false, "no temp file is left behind");
+
+    writeFileSync(hotfixStateFile(directory), '{"lastEventId": 7', "utf-8"); // torn write
+
+    const second = new Poller({} as unknown as Client, scheduledEventsApi([]), hotfixSettings, 60_000, directory);
+    assert.equal(second.findEventIdForThread("thread-5"), 5, "bindings survive");
+    assert.equal(second.findEventIdForThread("thread-6"), 6);
+    // The recovered poller keeps working and rewrites a valid main file.
+    second.rememberEventThread(8, "thread-8");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as { lastEventId: number };
+    assert.equal(saved.lastEventId, 77);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function sendingThread(id: string, sends: Array<{ id: string; content?: string }>): ThreadChannel {
+  return {
+    id,
+    isThread: () => true,
+    archived: false,
+    locked: false,
+    send: async (message: { content?: string }) => {
+      sends.push({ id, content: message.content });
+      return { id: "ping" };
+    },
+  } as unknown as ThreadChannel;
+}
+
+test("more than 50 pinged events never drops the thread mappings of other events", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const pinged = Array.from({ length: 51 }, (_, index) => 100 + index);
+    writeHotfixState(directory, {
+      pinged1hEvents: pinged,
+      eventThreadIds: { "7": "thread-7", "2000": "thread-2000" },
+    });
+    const due: EventView = {
+      ...calendarEvent(2000, "Due soon"),
+      event_date_utc: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    const sends: Array<{ id: string; content?: string }> = [];
+    const client = {
+      channels: { fetch: async (id: string) => sendingThread(id, sends) },
+    } as unknown as Client;
+
+    const poller = new Poller(client, scheduledEventsApi([due]), hotfixSettings, 60_000, directory);
+    await (poller as unknown as { checkUpcomingEvents(): Promise<void> }).checkUpcomingEvents();
+
+    assert.equal(sends.length, 1, "the due event gets its 1h warning");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      pinged1hEvents: number[];
+      eventThreadIds: Record<string, string>;
+    };
+    assert.equal(saved.pinged1hEvents.length, 50, "the memo list is still bounded");
+    assert.deepEqual(
+      saved.eventThreadIds,
+      { "7": "thread-7", "2000": "thread-2000" },
+      "thread bindings must not be derived from the pinged list",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an event missing from the revisions answer is only closed after the backend confirms it is gone", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory, { eventThreadIds: { "7": "thread-7", "8": "thread-8" } });
+    const archivedThreads: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/events/revisions") return []; // answer omits both ids
+        if (path === "api/events/7") return { ...calendarEvent(7, "Still alive"), participants: [] };
+        if (path === "api/events/8") throw new ApiError(404, "Event 8 not found");
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const client = {
+      channels: {
+        fetch: async (id: string) => ({
+          id,
+          isThread: () => true,
+          archived: false,
+          locked: false,
+          setLocked: async () => undefined,
+          setArchived: async (value: boolean) => {
+            if (value) archivedThreads.push(id);
+          },
+        }),
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, api, hotfixSettings, 60_000, directory);
+    await (
+      poller as unknown as { checkClosedEvents(r: Map<string, unknown>): Promise<void> }
+    ).checkClosedEvents(new Map());
+
+    assert.deepEqual(archivedThreads, ["thread-8"], "only the really-deleted event is closed");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      eventThreadIds: Record<string, string>;
+    };
+    assert.deepEqual(saved.eventThreadIds, { "7": "thread-7" });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("revisions are requested in chunks so a long mapping list is never truncated", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const threads = Object.fromEntries(
+      Array.from({ length: 250 }, (_, index) => [String(index + 1), `thread-${index + 1}`]),
+    );
+    writeHotfixState(directory, { eventThreadIds: threads });
+    const requested: number[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string, _d?: string, params?: Record<string, string | number>) => {
+        assert.equal(path, "api/events/revisions");
+        const ids = String(params?.ids).split(",");
+        requested.push(ids.length);
+        return ids.map((id) => eventRevision(Number(id), "scheduled"));
+      },
+    } as unknown as ApiClient;
+    const poller = new Poller({} as unknown as Client, api, hotfixSettings, 60_000, directory);
+    const revisions = await (
+      poller as unknown as { loadEventRevisions(): Promise<Map<string, unknown> | null> }
+    ).loadEventRevisions();
+
+    assert.equal(revisions?.size, 250);
+    assert.ok(requested.every((size) => size <= 100), `chunks were ${requested.join(",")}`);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the final signup card is rendered before the stopped event's thread is archived", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory, { eventThreadIds: { "9": "thread-9" } });
+    const log: string[] = [];
+    let archived = false;
+    const card = {
+      id: "card-1",
+      components: [{ components: [{ customId: "event:join:9" }] }],
+      edit: async () => {
+        // Discord rejects edits inside an archived thread.
+        if (archived) throw Object.assign(new Error("Thread is archived"), { code: 50083 });
+        log.push("edit-card");
+      },
+    };
+    const thread = {
+      id: "thread-9",
+      isThread: () => true,
+      get archived() {
+        return archived;
+      },
+      locked: false,
+      guild: { preferredLocale: "en-US" },
+      messages: {
+        fetch: async (query: unknown) => (typeof query === "string" ? card : new Map([[card.id, card]])),
+      },
+      setLocked: async () => {
+        log.push("lock");
+      },
+      setArchived: async (value: boolean) => {
+        archived = value;
+        log.push(value ? "archive" : "unarchive");
+        return thread;
+      },
+    };
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/events/9") {
+          return { ...calendarEvent(9, "Over"), status: "stopped", participants: [], roster_version: 3 };
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+    const client = { channels: { fetch: async () => thread } } as unknown as Client;
+
+    const poller = new Poller(client, api, hotfixSettings, 60_000, directory);
+    assert.equal(await poller.finalizeStoppedEventThread(9), true);
+
+    assert.deepEqual(log, ["edit-card", "lock", "archive"]);
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      eventThreadIds: Record<string, string>;
+    };
+    assert.deepEqual(saved.eventThreadIds, {});
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("scheduled events beyond page 1 still get their 1h reminder", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    // 120 overdue "scheduled" events sort before the one starting in 30 minutes
+    // when ordered soonest-first, and after it in the backend's default newest-first order.
+    const overdue: EventView[] = Array.from({ length: 120 }, (_, index) => ({
+      ...calendarEvent(1000 + index, `Overdue ${index}`),
+      event_date_utc: new Date(Date.now() - (200 - index) * 60_000).toISOString(),
+    }));
+    const due: EventView = {
+      ...calendarEvent(3000, "Due soon"),
+      event_date_utc: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    // Far-future events fill what used to be page 1 of the newest-first list.
+    const future: EventView[] = Array.from({ length: 60 }, (_, index) => ({
+      ...calendarEvent(4000 + index, `Future ${index}`),
+      event_date_utc: new Date(Date.now() + (5 + index) * 24 * 3_600_000).toISOString(),
+    }));
+    writeHotfixState(directory, { eventThreadIds: { "3000": "thread-3000" } });
+
+    const calls: ListCall[] = [];
+    const sends: Array<{ id: string; content?: string }> = [];
+    const client = {
+      channels: { fetch: async (id: string) => sendingThread(id, sends) },
+    } as unknown as Client;
+    const poller = new Poller(
+      client,
+      scheduledEventsApi([...overdue, due, ...future], calls),
+      hotfixSettings,
+      60_000,
+      directory,
+    );
+    await (poller as unknown as { checkUpcomingEvents(): Promise<void> }).checkUpcomingEvents();
+
+    assert.deepEqual(sends.map((send) => send.id), ["thread-3000"]);
+    const listCalls = calls.filter((call) => call.path === "api/events");
+    assert.ok(listCalls.length > 1, "the scan walks past page 1");
+    assert.ok(
+      listCalls.every((call) => call.params?.status === "scheduled" && call.params?.order === "asc"),
+      "only scheduled events are listed, soonest first",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("message-delivery guilds never touch the Discord calendar panel on scheduled ticks", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    const gets: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        gets.push(path);
+        return [];
+      },
+    } as unknown as ApiClient;
+    let discordCalls = 0;
+    const client = {
+      channels: {
+        fetch: async () => {
+          discordCalls += 1;
+          return null;
+        },
+      },
+    } as unknown as Client;
+    const settings = {
+      ...hotfixSettings,
+      eventsChannelId: async () => "events-channel",
+      eventDelivery: async () => "message",
+    } as unknown as SettingsService;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await (poller as unknown as { updateEventCalendars(): Promise<void> }).updateEventCalendars();
+
+    assert.equal(discordCalls, 0);
+    assert.deepEqual(gets, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("lifecycle ignores scheduled events long overdue and still reaches a due event beyond page 1", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const hour = 3_600_000;
+    const at = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+    // Abandoned events days or months overdue sort first ascending and must be left alone.
+    const abandoned: EventView[] = Array.from({ length: 3 }, (_, index) => ({
+      ...calendarEvent(100 + index, `Abandoned ${index}`),
+      event_date_utc: at(-(5 + index * 30) * 24 * hour),
+    }));
+    // More than one page of recently due events pushes the last one past page 1.
+    const recent: EventView[] = Array.from({ length: 120 }, (_, index) => ({
+      ...calendarEvent(1000 + index, `Recent ${index}`),
+      event_date_utc: at(-(20 * hour) + index * 60_000),
+    }));
+    const attempted = new Set<number>();
+    const events = [...abandoned, ...recent];
+    const base = scheduledEventsApi(events);
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string, discordId?: string, params?: Record<string, string | number>) => {
+        const match = /^api\/events\/(\d+)$/.exec(path);
+        if (match) {
+          attempted.add(Number(match[1]));
+          throw new Error("stop after recording the attempt");
+        }
+        return base.get(path, discordId, params);
+      },
+    } as unknown as ApiClient;
+    writeHotfixState(directory);
+    const poller = new Poller({} as unknown as Client, api, hotfixSettings, 60_000, directory);
+    await (poller as unknown as { checkEventLifecycle(): Promise<void> }).checkEventLifecycle();
+
+    for (const event of abandoned) {
+      assert.ok(!attempted.has(event.id), `abandoned event #${event.id} must not be massed or started`);
+    }
+    assert.ok(attempted.has(1119), "a due event beyond page 1 is still massed and started");
+    assert.ok(attempted.has(1000));
+  } finally {
+    console.warn = originalWarn;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+test("a split that fails to sync does not block the splits behind it", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    const puts: string[] = [];
+    const archivedItem = (splitId: number) => ({
+      split_id: splitId,
+      detail: { id: splitId, status: "open", archived_at: "2026-01-01T00:00:00Z", event_id: null },
+      transactions: [],
+      audit: [],
+      next_audit_cursor: 0,
+      next_transaction_cursor: 0,
+      thread_id: null,
+      summary_message_id: null,
+    });
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/splits/discord-sync") {
+          return {
+            items: [
+              { id: 1, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:01Z" },
+              { id: 2, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:02Z" },
+            ],
+            has_more: false,
+          };
+        }
+        if (path === "api/splits/1/discord-sync") throw new ApiError(500, "boom");
+        if (path === "api/splits/2/discord-sync") return archivedItem(2);
+        throw new Error(`unexpected GET ${path}`);
+      },
+      put: async (path: string) => {
+        puts.push(path);
+        return {};
+      },
+    } as unknown as ApiClient;
+    const settings = {
+      ...hotfixSettings,
+      splitsForumChannelId: async () => "forum-1",
+    } as unknown as SettingsService;
+
+    const poller = new Poller({} as unknown as Client, api, settings, 60_000, directory);
+    await (poller as unknown as { checkSplitSync(): Promise<void> }).checkSplitSync();
+
+    assert.deepEqual(puts, ["api/splits/2/discord-sync"], "split 2 is synced despite split 1 failing");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      splitAfterId: number;
+      splitRetries: Record<string, { attempts: number }>;
+    };
+    assert.equal(saved.splitAfterId, 2, "the cursor moved past both");
+    assert.equal(saved.splitRetries["1"]?.attempts, 1, "the failed split is queued for retry");
+    assert.equal(saved.splitRetries["2"], undefined);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a giveaway whose backend ack failed is not announced a second time", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    const giveaway = {
+      id: 11,
+      title: "Raffle",
+      description: null,
+      ends_at: "2030-01-01T00:00:00Z",
+      status: "open",
+      created_by: 1,
+      created_by_username: "Officer",
+      created_at: "2029-12-01T00:00:00Z",
+      entry_count: 0,
+      prizes: [],
+      entries: [],
+    };
+    let putFails = true;
+    const puts: string[] = [];
+    const api = {
+      guildId: HOTFIX_GUILD,
+      get: async (path: string) => {
+        if (path === "api/giveaways") {
+          return { items: [giveaway], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+        }
+        if (path === "api/giveaways/11") return giveaway;
+        throw new Error(`unexpected GET ${path}`);
+      },
+      put: async (path: string) => {
+        puts.push(path);
+        if (putFails) throw new ApiError(502, "bad gateway");
+        return {};
+      },
+    } as unknown as ApiClient;
+    let sent = 0;
+    const channel = {
+      id: "giveaways-channel",
+      isTextBased: () => true,
+      send: async () => {
+        sent += 1;
+        return { id: `message-${sent}` };
+      },
+    };
+    const settings = {
+      ...hotfixSettings,
+      giveawaysChannelId: async () => "giveaways-channel",
+    } as unknown as SettingsService;
+    const client = { channels: { fetch: async () => channel } } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    const run = () => (poller as unknown as { checkNewGiveaways(): Promise<void> }).checkNewGiveaways();
+    await run();
+    await run();
+    assert.equal(sent, 1, "a failed ack must not cause a duplicate announcement");
+
+    putFails = false;
+    await run();
+    assert.equal(sent, 1);
+    assert.equal(puts.length >= 2, true, "the ack is retried until the backend accepts it");
+    const saved = JSON.parse(readFileSync(hotfixStateFile(directory), "utf-8")) as {
+      unackedGiveawayMessages: Record<string, unknown>;
+      lastGiveawayId: number;
+    };
+    assert.deepEqual(saved.unackedGiveawayMessages, {});
+    assert.equal(saved.lastGiveawayId, 11);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("pollNow during a running cycle queues one follow-up instead of running concurrently", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeHotfixState(directory);
+    let active = 0;
+    let maxActive = 0;
+    let cycles = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      firstEntered = resolve;
+    });
+    const settings = {
+      ...hotfixSettings,
+      applicationsSettings: async () => {
+        cycles += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        try {
+          if (cycles === 1) {
+            firstEntered();
+            await firstGate;
+          }
+          return { discord_applications_open: true };
+        } finally {
+          active -= 1;
+        }
+      },
+    } as unknown as SettingsService;
+
+    const poller = new Poller({} as unknown as Client, scheduledEventsApi([]), settings, 60_000, directory);
+    const first = poller.pollNow();
+    await entered;
+    const second = poller.pollNow();
+    const third = poller.pollNow();
+    releaseFirst();
+    await Promise.all([first, second, third]);
+
+    assert.equal(maxActive, 1, "cycles never overlap");
+    assert.equal(cycles, 2, "the callers that arrived mid-cycle share exactly one follow-up cycle");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+

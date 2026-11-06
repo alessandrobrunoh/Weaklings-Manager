@@ -291,7 +291,8 @@ export function discordGuildIconUrl(
 export interface UserProfile {
   id: number;
   username: string;
-  email: string;
+  /** Present only for the caller's own row and for `users.create`/`roles.manage` holders. */
+  email?: string;
   role: Role;
 }
 
@@ -341,7 +342,6 @@ export interface UserMetrics {
 
 export interface UserFilters {
   username?: string;
-  email?: string;
   role?: string;
 }
 
@@ -597,6 +597,14 @@ export interface UpdateIslandTabRequest {
 /* ----------------------------- Events ------------------------------- */
 
 export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped' | 'cancelled';
+
+/** Response of `GET /api/events/summary`: counts over every non-archived event. */
+export interface EventSummary {
+  total: number;
+  live: number;
+  scheduled: number;
+  call_to_arms: number;
+}
 
 export interface EventView {
   id: number;
@@ -1094,11 +1102,6 @@ export interface ParticipationGuildOption {
   name: string;
 }
 
-/** Response of `GET /api/events/{id}/participation-guilds`. */
-export interface ParticipationGuildListResponse {
-  data: ParticipationGuildOption[];
-}
-
 /* ----------------------------- Battles ------------------------------ */
 
 export interface BattleGuildSummary {
@@ -1112,6 +1115,10 @@ export interface BattleGuildSummary {
   kill_fame: number;
   winner: boolean;
   average_item_power?: number;
+  /** Backend verdict: this guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
+  /** Backend verdict: this is the requesting tenant's own guild. */
+  is_own?: boolean;
 }
 
 export interface BattleSummary {
@@ -1142,6 +1149,8 @@ export interface BattlePlayer {
   kill_fame: number;
   death_fame: number;
   item_power: number;
+  /** Backend verdict: the player's guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
 }
 
 export interface BattleKillParticipant {
@@ -1151,6 +1160,8 @@ export interface BattleKillParticipant {
   guild_name: string | null;
   alliance_name?: string | null;
   alliance_id?: string | null;
+  /** Backend verdict: the participant's guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
 }
 
 export interface BattleKillEvent {
@@ -1396,6 +1407,8 @@ export interface BuildSummary {
   created_by_username: string;
   updated_at: string;
   item_count: number;
+  /** Items in the main loadout; a build fills 10 slots. */
+  main_item_count: number;
   /** When this build was archived, if it has been. `null` means it's active. */
   archived_at: string | null;
 }

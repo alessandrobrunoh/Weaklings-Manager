@@ -25,7 +25,6 @@ use super::models::{
     TransactionFilters, TransactionView, UpdateTransactionRequest, WithdrawRequest,
 };
 use super::service::BankService;
-use super::status::TransactionStatus;
 
 /// Identity of the caller on the alliance tenant, used to match member-guild users.
 pub(super) struct AllianceCaller {
@@ -618,6 +617,7 @@ pub(super) async fn delete_transaction(
 
 #[cfg(test)]
 mod tests {
+    use super::super::status::TransactionStatus;
     use super::*;
     use crate::control_migration::Migrator;
     use crate::modules::platform::models::RegisterTenantRequest;

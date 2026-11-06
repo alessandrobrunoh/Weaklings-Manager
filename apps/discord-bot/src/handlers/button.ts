@@ -29,7 +29,6 @@ import {
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
-import { config } from "../config.js";
 import { formatSilver } from '../format.js';
 import { ensureEventManagementAllowed } from "../services/event-authority.js";
 import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "../services/event-lifecycle.js";
@@ -988,7 +987,8 @@ async function handleEventButton(
       interaction.user.id,
       eventId,
     );
-    await getPoller(api.guildId)?.closeEventThread(eventId);
+    // Render the final card before archiving: Discord rejects edits to messages
+    // inside an archived thread, which would leave the card stuck on LIVE.
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event, interaction.guild?.preferredLocale)],
       components: buildEventThreadActionRows(
@@ -996,6 +996,7 @@ async function handleEventButton(
         interaction.guild?.preferredLocale,
       ),
     });
+    await getPoller(api.guildId)?.closeEventThread(eventId);
     const message = result.voiceChannelOccupied
       ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
       : result.voiceChannelDeleted
@@ -1079,7 +1080,6 @@ async function handleBattlesNav(
 
   const embed = buildBattleListEmbed(
     result.items,
-    config.GUILD_NAME,
     result.current_page,
     result.total_pages,
   );

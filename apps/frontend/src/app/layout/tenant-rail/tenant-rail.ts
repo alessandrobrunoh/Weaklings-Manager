@@ -6,6 +6,7 @@ import { filter } from 'rxjs';
 import type { TenantChoice } from '../../core/models/api.models';
 import { discordGuildIconUrl } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon } from '../../shared/components/icon/icon';
@@ -181,6 +182,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 })
 export class TenantRail {
   private readonly auth = inject(AuthService);
+  private readonly notifications = inject(NotificationService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
 
@@ -237,6 +239,10 @@ export class TenantRail {
     this.busy.set(true);
     try {
       await this.auth.switchTenant(tenant.id);
+      // Root singletons and pages keep the previous tenant's data: drop the
+      // inbox, and let the shell recreate the routed page (it is keyed on the
+      // tenant id), which also covers switching while already on /dashboard.
+      this.notifications.reset();
       await this.router.navigateByUrl('/dashboard');
       this.navigate.emit();
     } finally {

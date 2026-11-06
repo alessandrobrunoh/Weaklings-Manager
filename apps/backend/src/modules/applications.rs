@@ -5,4 +5,5 @@ mod router;
 mod service;
 
 pub use router::router;
+#[cfg(test)]
 pub use service::ApplicationService;

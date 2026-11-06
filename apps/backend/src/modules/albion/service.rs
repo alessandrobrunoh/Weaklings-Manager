@@ -87,24 +87,24 @@ impl AlbionService {
         let found = self.client.search(query).await?;
         let mut alliances = std::collections::BTreeMap::<String, String>::new();
         for guild in found.guilds.into_iter().take(8) {
-            if let (Some(id), Some(name)) = (guild.alliance_id, guild.alliance_name) {
-                if !id.is_empty() {
-                    alliances.entry(id).or_insert(name);
-                    continue;
-                }
+            if let (Some(id), Some(name)) = (guild.alliance_id, guild.alliance_name)
+                && !id.is_empty()
+            {
+                alliances.entry(id).or_insert(name);
+                continue;
             }
-            if let Ok(detail) = self.client.get_guild(&guild.id).await {
-                if let Some(id) = detail.alliance_id.filter(|id| !id.is_empty()) {
-                    let name = self
-                        .client
-                        .get_alliance(&id)
-                        .await
-                        .ok()
-                        .and_then(|alliance| alliance.name)
-                        .filter(|name| !name.is_empty())
-                        .unwrap_or(id.clone());
-                    alliances.entry(id).or_insert(name);
-                }
+            if let Ok(detail) = self.client.get_guild(&guild.id).await
+                && let Some(id) = detail.alliance_id.filter(|id| !id.is_empty())
+            {
+                let name = self
+                    .client
+                    .get_alliance(&id)
+                    .await
+                    .ok()
+                    .and_then(|alliance| alliance.name)
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(id.clone());
+                alliances.entry(id).or_insert(name);
             }
         }
         Ok(alliances.into_iter().collect())

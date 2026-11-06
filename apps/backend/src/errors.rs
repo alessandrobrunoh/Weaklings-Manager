@@ -14,6 +14,8 @@ use serde_json::json;
 use thiserror::Error;
 use utoipa::ToSchema;
 
+use crate::modules::sync::OriginRef;
+
 /// One row that's stopping a delete/update from proceeding.
 ///
 /// Carried on [`AppError::ConflictWithReferences`] so the frontend can show
@@ -47,6 +49,15 @@ pub struct ProblemDetails {
     /// Optional parameter validation errors or specific metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invalid_params: Option<serde_json::Value>,
+    /// Stable machine-readable error code (additive; absent on legacy problems).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
+    /// Structured, code-specific extra data (additive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// Where the authoritative entity lives, set when a write hit a read-only copy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<OriginRef>,
 }
 
 /// Centralized application error registry.
@@ -76,6 +87,19 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// Error indicating the caller exceeded a usage cap and should retry later.
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
+
+    /// A conflict with a stable machine-readable problem `code` that clients branch on (HTTP 409).
+    #[error("Conflict: {message}")]
+    ConflictWithCode {
+        /// Stable problem code, e.g. `completed_alliance_split_immutable`.
+        code: &'static str,
+        /// Human-readable summary of the conflict.
+        message: String,
+    },
+
     /// A conflict where the caller needs to see exactly what's blocking the
     /// action (e.g. deleting a comp that's still linked to live events) —
     /// carries the specific rows in the way, not just a message string.
@@ -86,6 +110,11 @@ pub enum AppError {
         /// The specific rows in the way, for a rich frontend list.
         references: Vec<BlockingReference>,
     },
+
+    /// A write hit a read-only synchronized copy; the payload says where the origin lives
+    /// so clients can link to it. HTTP 403, problem code `copy_read_only`.
+    #[error("Read-only copy: {}", .0.summary())]
+    ReadOnlyCopy(Box<OriginRef>),
 
     /// Error indicating an upstream third-party service (e.g. Albion Online API) failed or is unreachable.
     #[error("Upstream service error: {0}")]
@@ -98,6 +127,8 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let mut code = None;
+        let mut origin = None;
         let (status, type_uri, title, detail, invalid_params) = match self {
             Self::Database(err) => {
                 // A constraint violation is a client-facing conflict, not a
@@ -178,6 +209,27 @@ impl IntoResponse for AppError {
                 msg,
                 None,
             ),
+            Self::TooManyRequests(msg) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "/errors/too-many-requests",
+                "Too Many Requests",
+                msg,
+                None,
+            ),
+
+            Self::ConflictWithCode {
+                code: found,
+                message,
+            } => {
+                code = Some(found);
+                (
+                    StatusCode::CONFLICT,
+                    "/errors/conflict",
+                    "Conflict",
+                    message,
+                    None,
+                )
+            }
             Self::ConflictWithReferences {
                 message,
                 references,
@@ -188,6 +240,18 @@ impl IntoResponse for AppError {
                 message,
                 Some(json!({ "blocking_references": references })),
             ),
+            Self::ReadOnlyCopy(origin_ref) => {
+                code = Some("copy_read_only");
+                let detail = origin_ref.summary();
+                origin = Some(*origin_ref);
+                (
+                    StatusCode::FORBIDDEN,
+                    "/errors/sync-copy-read-only",
+                    "Read-Only Synchronized Copy",
+                    detail,
+                    None,
+                )
+            }
             Self::UpstreamService(msg) => (
                 StatusCode::BAD_GATEWAY,
                 "/errors/upstream-service-error",
@@ -211,6 +275,9 @@ impl IntoResponse for AppError {
             detail,
             instance: None,
             invalid_params,
+            code,
+            details: None,
+            origin,
         };
 
         (
@@ -247,6 +314,13 @@ mod tests {
     struct ProblemDetailsJson {
         status: StatusCode,
         detail: String,
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_maps_to_429() {
+        let problem = problem_of(AppError::TooManyRequests("slow down".into())).await;
+        assert_eq!(problem.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(problem.detail, "slow down");
     }
 
     /// An unclassified `DbErr` (not a FK/unique violation `sea_orm` can name —

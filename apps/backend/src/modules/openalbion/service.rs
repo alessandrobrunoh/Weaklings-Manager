@@ -2,7 +2,7 @@
 //!
 //! The historical `/api/openalbion/*` endpoints are kept as a compatibility surface, but all
 //! data is read from the curated catalog bundled with the application. This module never contacts
-//! the third-party OpenAlbion API.
+//! the third-party `OpenAlbion` API.
 
 use super::catalog::{
     OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemAbilities, OpenAlbionItemType,
@@ -140,6 +140,15 @@ fn catalog_items() -> &'static [OpenAlbionItem] {
 #[must_use]
 pub fn catalog_item_by_id(item_id: i64) -> Option<&'static OpenAlbionItem> {
     catalog_items().iter().find(|item| item.id == item_id)
+}
+
+/// Test helper: the catalog row for an identifier such as `T8_MAIN_SWORD`.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn catalog_item_by_identifier(identifier: &str) -> Option<&'static OpenAlbionItem> {
+    catalog_items()
+        .iter()
+        .find(|item| item.identifier.as_deref() == Some(identifier))
 }
 
 /// Whether a catalog identifier represents a real craftable/selectable item.
@@ -526,7 +535,7 @@ mod ability_catalog_tests {
         let abilities = ability_catalog();
         let mut missing: Vec<String> = catalog_items()
             .iter()
-            .filter(|item| matches!(item.item_type.as_deref(), Some("weapon") | Some("armor")))
+            .filter(|item| matches!(item.item_type.as_deref(), Some("weapon" | "armor")))
             .filter_map(|item| item.identifier.as_deref())
             .map(base_identifier)
             .filter(|base| !abilities.contains_key(base))
