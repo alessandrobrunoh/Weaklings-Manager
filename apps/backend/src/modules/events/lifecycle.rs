@@ -2142,12 +2142,27 @@ mod tests {
             ))
             .await
             .expect("link mirror");
+        // A copy whose link was disabled (membership departure) is local now: it must
+        // still stop, and still award nothing.
+        let (detached, _) = seed_event(db, &fx, "live", false).await;
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO event_sync_links \
+                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id, \
+                  sync_enabled) \
+                 VALUES ($1,'guild-b',2,'guild-a',$2,false)",
+                [uuid::Uuid::new_v4().into(), detached.into()],
+            ))
+            .await
+            .expect("link detached copy");
 
         auto_stop_expired_sessions(db, &EventService::new(), &world.control, "guild-a")
             .await
             .expect("auto-stop pass");
 
-        for id in [own, mirror] {
+        for id in [own, mirror, detached] {
             let row = event::Entity::find_by_id(id)
                 .one(db)
                 .await
@@ -2166,6 +2181,11 @@ mod tests {
             "own event snapshots creator + participants"
         );
         assert_eq!(xp(mirror).await.unwrap(), 0, "a mirror never awards XP");
+        assert_eq!(
+            xp(detached).await.unwrap(),
+            0,
+            "a detached copy awards no XP"
+        );
         let split_row = crate::modules::splits::entities::split::Entity::find_by_id(own_split)
             .one(db)
             .await
@@ -2176,6 +2196,82 @@ mod tests {
             "the stop synced the linked split"
         );
         world.close().await;
+    }
+}
+
+/// Auto-stop must treat every copy role the same way on SQLite: all roles stop, none but
+/// origins and unsynced events award XP, and a detached copy is not special-cased.
+#[cfg(test)]
+mod copy_role_auto_stop_tests {
+    use super::transition_tests::{fixture, seed_event, sqlite_db as bare_sqlite_db};
+    use super::*;
+    use crate::event_sessions::auto_stop::auto_stop_expired_sessions;
+    use crate::modules::events::entities::event_completion_xp;
+    use crate::modules::sync::test_support::{link_event, sqlite_db};
+    use sea_orm::PaginatorTrait;
+
+    const TENANT: &str = "guild-a";
+
+    #[tokio::test]
+    async fn every_copy_role_auto_stops_and_only_origins_award_xp() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (unsynced, _) = seed_event(&db, &fx, "live", false).await;
+        let (origin, _) = seed_event(&db, &fx, "live", false).await;
+        let (active_copy, _) = seed_event(&db, &fx, "live", false).await;
+        let (detached_copy, _) = seed_event(&db, &fx, "live", false).await;
+        link_event(&db, (TENANT, origin), ("guild-b", 900), true).await;
+        link_event(&db, ("guild-b", 1), (TENANT, active_copy), true).await;
+        link_event(&db, ("guild-b", 2), (TENANT, detached_copy), false).await;
+
+        auto_stop_expired_sessions(&db, &EventService::new(), &db, TENANT)
+            .await
+            .expect("auto-stop pass");
+
+        let xp_rows = |id| {
+            let db = &db;
+            async move {
+                event_completion_xp::Entity::find()
+                    .filter(event_completion_xp::Column::EventId.eq(id))
+                    .count(db)
+                    .await
+                    .unwrap()
+            }
+        };
+        for (id, expected_xp) in [
+            (unsynced, 3),
+            (origin, 3),
+            (active_copy, 0),
+            // The regression this guards: a disabled link must neither keep the event live
+            // forever nor start awarding XP the origin tenant owns.
+            (detached_copy, 0),
+        ] {
+            let row = event::Entity::find_by_id(id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(row.status, "auto_stopped", "event {id} must stop");
+            assert_eq!(xp_rows(id).await, expected_xp, "xp rows of event {id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failing_control_lookup_leaves_the_session_live() {
+        // Without the link table the copy role cannot be resolved; stopping blindly could
+        // award XP to a copy, so the session is left for the next pass.
+        let db = bare_sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "live", false).await;
+        auto_stop_expired_sessions(&db, &EventService::new(), &db, TENANT)
+            .await
+            .expect("pass");
+        let row = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.status, "live");
     }
 }
 

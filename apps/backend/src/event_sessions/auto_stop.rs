@@ -12,6 +12,7 @@ use crate::errors::AppError;
 use crate::modules::events::entities::event;
 use crate::modules::events::lifecycle::{Cause, Transition, XpFilter};
 use crate::modules::events::service::EventService;
+use crate::modules::sync::{LegacyLinks, SyncKind, copy_role};
 
 /// Stops every `live` session whose `auto_stop_deadline` has already elapsed.
 ///
@@ -45,20 +46,21 @@ pub async fn auto_stop_expired_sessions(
             continue;
         }
         tracing::info!(event_id = session.id, "auto-stopping expired event session");
-        let award_xp =
-            match crate::modules::events::sync::is_mirror_event(control, tenant_id, session.id)
-                .await
-            {
-                Ok(is_mirror) => !is_mirror,
-                Err(error) => {
-                    tracing::warn!(
-                        event_id = session.id,
-                        error = %error,
-                        "could not resolve event mirror authority; leaving session live"
-                    );
-                    continue;
-                }
-            };
+        // Every role stops: an active copy follows local times, a detached copy is
+        // local and behaves as an origin. Progression rewards stay with the origin
+        // tenant, so any copy (detached included) awards nothing.
+        let legacy = LegacyLinks { control, tenant_id };
+        let award_xp = match copy_role(db, legacy, SyncKind::Event, session.id).await {
+            Ok(role) => !role.is_copy(),
+            Err(error) => {
+                tracing::warn!(
+                    event_id = session.id,
+                    error = %error,
+                    "could not resolve event copy role; leaving session live"
+                );
+                continue;
+            }
+        };
         let stop = Transition::Stop {
             auto: true,
             xp: XpFilter::from_award_xp(award_xp),
