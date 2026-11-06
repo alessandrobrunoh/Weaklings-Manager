@@ -18,11 +18,20 @@ pub enum WakeTarget {
     Fanout,
     /// Alliance event mirror retry queue.
     MirrorRetry,
+    /// Sync engine relay (tenant outbox to control jobs).
+    SyncRelay,
+    /// Sync engine executors (claim and apply control jobs).
+    SyncExecutor,
 }
 
 impl WakeTarget {
     /// Every target, in declaration order.
-    pub const ALL: [WakeTarget; 2] = [WakeTarget::Fanout, WakeTarget::MirrorRetry];
+    pub const ALL: [WakeTarget; 4] = [
+        WakeTarget::Fanout,
+        WakeTarget::MirrorRetry,
+        WakeTarget::SyncRelay,
+        WakeTarget::SyncExecutor,
+    ];
 
     const fn bit(self) -> u32 {
         1 << (self as u32)
