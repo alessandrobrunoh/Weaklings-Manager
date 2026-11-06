@@ -10,6 +10,8 @@
 //! engine runs against the world through [`World::run_until_idle`]; Postgres
 //! behaviour (row locks, `SKIP LOCKED`) stays behind `TEST_DATABASE_URL`.
 
+pub mod discord_stub;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

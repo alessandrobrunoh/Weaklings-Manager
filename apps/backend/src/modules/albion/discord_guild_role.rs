@@ -2,6 +2,7 @@
 
 use crate::config::Config;
 use crate::modules::admin::service::AdminService;
+use crate::modules::discord_api::{DiscordRest, LiveDiscordRest};
 use sea_orm::DatabaseConnection;
 
 /// Returns whether a live Albion player profile belongs to the configured guild.
@@ -43,44 +44,28 @@ pub async fn assign_discord_role(
     discord_user_id: &str,
     role_id: &str,
 ) -> bool {
-    let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
+    let discord = LiveDiscordRest::new(cfg);
+    if !discord.has_bot_token() {
         tracing::debug!("skipping Discord role assignment: bot token is not configured");
         return false;
-    };
+    }
     let guild_id = guild_id.trim();
     let role_id = role_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() || role_id.is_empty() {
         return false;
     }
 
-    let url = format!(
-        "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}/roles/{role_id}"
-    );
-    match discord_client()
-        .put(&url)
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .send()
+    match discord
+        .add_member_role(guild_id, discord_user_id, role_id)
         .await
     {
-        Ok(response) if response.status().is_success() => {
+        Ok(()) => {
             tracing::info!(
                 discord_user_id,
                 role_id,
                 "assigned configured Discord guild role after Albion link"
             );
-            return true;
-        }
-        Ok(response) => {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            tracing::warn!(
-                discord_user_id,
-                role_id,
-                %status,
-                body,
-                "failed to assign configured Discord guild role after Albion link"
-            );
+            true
         }
         Err(error) => {
             tracing::warn!(
@@ -89,9 +74,9 @@ pub async fn assign_discord_role(
                 error = %error,
                 "failed to assign configured Discord guild role after Albion link"
             );
+            false
         }
     }
-    false
 }
 
 /// Revokes the configured Guild base role from a Discord member of `guild_id`.
@@ -114,39 +99,31 @@ pub async fn revoke_guild_role(
 
 /// Revokes `role_id` and reports whether Discord confirmed it.
 ///
-/// Missing bot token and any non-success response (other than 404, which means
-/// the member no longer has the role) are errors so the caller can retry.
+/// Missing bot token and any failure other than a `404` (the member no longer has the role, or
+/// the bot is no longer in the server) are errors so the caller can retry.
 pub async fn revoke_discord_role_verified(
     cfg: &Config,
     guild_id: &str,
     discord_user_id: &str,
     role_id: &str,
 ) -> Result<(), String> {
-    let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
+    let discord = LiveDiscordRest::new(cfg);
+    if !discord.has_bot_token() {
         return Err("discord bot token is not configured".to_owned());
-    };
+    }
     let guild_id = guild_id.trim();
     let role_id = role_id.trim();
     let discord_user_id = discord_user_id.trim();
     if guild_id.is_empty() || discord_user_id.is_empty() || role_id.is_empty() {
         return Err("discord role revocation is missing guild, user, or role".to_owned());
     }
-    let url = format!(
-        "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}/roles/{role_id}"
-    );
-    let response = discord_client()
-        .delete(&url)
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .send()
+    match discord
+        .remove_member_role(guild_id, discord_user_id, role_id)
         .await
-        .map_err(|error| error.to_string())?;
-    if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
-        Ok(())
-    } else {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        Err(format!("discord role revocation failed: {status} {body}"))
+    {
+        Ok(()) => Ok(()),
+        Err(error) if error.is_role_removed() => Ok(()),
+        Err(error) => Err(format!("discord role revocation failed: {error}")),
     }
 }
 
@@ -157,45 +134,33 @@ pub async fn revoke_discord_role(
     discord_user_id: &str,
     role_id: &str,
 ) {
-    let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
+    let discord = LiveDiscordRest::new(cfg);
+    if !discord.has_bot_token() {
         tracing::debug!("skipping Discord role revocation: bot token is not configured");
         return;
-    };
+    }
     let guild_id = guild_id.trim();
     let role_id = role_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() || role_id.is_empty() {
         return;
     }
 
-    let url = format!(
-        "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}/roles/{role_id}"
-    );
-    match discord_client()
-        .delete(&url)
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .send()
+    match discord
+        .remove_member_role(guild_id, discord_user_id, role_id)
         .await
     {
-        Ok(response)
-            if response.status().is_success()
-                || response.status() == reqwest::StatusCode::NOT_FOUND =>
-        {
+        Ok(()) => {
             tracing::info!(
                 discord_user_id,
                 role_id,
                 "revoked configured Discord guild role after Albion unlink"
             );
         }
-        Ok(response) => {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            tracing::warn!(
+        Err(error) if error.is_role_removed() => {
+            tracing::info!(
                 discord_user_id,
                 role_id,
-                %status,
-                body,
-                "failed to revoke configured Discord guild role after Albion unlink"
+                "configured Discord guild role was already gone after Albion unlink"
             );
         }
         Err(error) => {
@@ -207,10 +172,6 @@ pub async fn revoke_discord_role(
             );
         }
     }
-}
-
-fn discord_client() -> reqwest::Client {
-    crate::http_client::shared()
 }
 
 async fn configured_base_role_id(db: &DatabaseConnection) -> Option<String> {
@@ -237,13 +198,11 @@ pub async fn configured_alliance_role_id(db: &DatabaseConnection) -> Option<Stri
         .filter(|role_id| !role_id.trim().is_empty())
 }
 
-fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
-    bot_token.filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::belongs_to_configured_guild;
+    use super::{belongs_to_configured_guild, revoke_discord_role_verified};
+    use crate::config::Config;
+    use crate::testkit::discord_stub::{DiscordStub, StubReply};
 
     #[test]
     fn membership_requires_an_exact_configured_guild_id() {
@@ -254,5 +213,65 @@ mod tests {
         ));
         assert!(!belongs_to_configured_guild(None, "guild-id"));
         assert!(!belongs_to_configured_guild(Some("guild-id"), ""));
+    }
+
+    fn cfg_for(base_url: &str) -> Config {
+        let mut cfg = Config::for_tests();
+        cfg.discord_api_base = base_url.to_owned();
+        cfg.discord_bot_token = Some("bot-token".to_owned());
+        cfg
+    }
+
+    #[tokio::test]
+    async fn revoking_an_already_removed_role_counts_as_revoked() {
+        let stub = DiscordStub::start(|_| {
+            StubReply::json(404, r#"{"message":"Unknown Member","code":10007}"#)
+        })
+        .await;
+        let cfg = cfg_for(&stub.base_url);
+
+        assert_eq!(
+            revoke_discord_role_verified(&cfg, "g-role-1", "7", "r-1").await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn an_outage_keeps_the_revocation_pending() {
+        let stub = DiscordStub::start(|_| StubReply::json(500, "down")).await;
+        let cfg = cfg_for(&stub.base_url);
+
+        assert!(
+            revoke_discord_role_verified(&cfg, "g-role-2", "7", "r-1")
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_guild_404_counts_as_revoked_like_the_old_path() {
+        let stub = DiscordStub::start(|_| {
+            StubReply::json(404, r#"{"message":"Unknown Guild","code":10004}"#)
+        })
+        .await;
+        let cfg = cfg_for(&stub.base_url);
+
+        assert_eq!(
+            revoke_discord_role_verified(&cfg, "g-role-unknown", "7", "r-1").await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_token_is_reported_without_a_call() {
+        let stub = DiscordStub::start(|_| StubReply::empty(204)).await;
+        let mut cfg = cfg_for(&stub.base_url);
+        cfg.discord_bot_token = None;
+
+        assert_eq!(
+            revoke_discord_role_verified(&cfg, "g-role-3", "7", "r-1").await,
+            Err("discord bot token is not configured".to_owned())
+        );
+        assert!(stub.requests().is_empty());
     }
 }

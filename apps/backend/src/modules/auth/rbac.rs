@@ -194,7 +194,7 @@ async fn apply_live_guild_roles(parts: &Parts, ctx: &mut UserContext) {
         return;
     };
     let lookup = super::service::AuthService::new()
-        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg.discord_bot_token.as_deref())
+        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg)
         .await;
     if matches!(lookup, super::service::GuildMemberLookup::Unavailable) {
         return;
@@ -847,6 +847,8 @@ mod tests {
                 albionbb_base_url: "http://localhost".into(),
                 albionbb_request_timeout_secs: 60,
                 albiondata_request_timeout_secs: 30,
+                discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+                discord_api_timeout_secs: 10,
             });
             parts.extensions.insert(db.clone());
             let admins = PlatformAdmins::new_empty();

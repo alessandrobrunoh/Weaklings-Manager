@@ -4,7 +4,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
     Set, TransactionTrait,
 };
-use serde::Deserialize;
 
 use std::collections::HashSet;
 
@@ -12,6 +11,10 @@ use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::auth::Permission;
 use crate::modules::auth::entities::{role, role_permission};
+use crate::modules::discord_api::{
+    DiscordChannelPayload, DiscordGuildMemberPayload, DiscordRest, DiscordRolePayload,
+    DiscordUserPayload, LiveDiscordRest, upstream,
+};
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 
 use super::entities::{
@@ -837,54 +840,6 @@ impl AdminService {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct DiscordRolePayload {
-    id: String,
-    name: String,
-    position: i32,
-    managed: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct DiscordForumTagPayload {
-    id: String,
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct DiscordChannelPayload {
-    id: String,
-    name: String,
-    #[serde(rename = "type")]
-    type_id: i32,
-    parent_id: Option<String>,
-    #[serde(default)]
-    position: i32,
-    #[serde(default)]
-    available_tags: Vec<DiscordForumTagPayload>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct DiscordUserPayload {
-    id: String,
-    username: String,
-    #[serde(default)]
-    global_name: Option<String>,
-    #[serde(default)]
-    avatar: Option<String>,
-    #[serde(default)]
-    bot: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct DiscordGuildMemberPayload {
-    user: Option<DiscordUserPayload>,
-    #[serde(default)]
-    nick: Option<String>,
-    #[serde(default)]
-    roles: Vec<String>,
-}
-
 async fn default_role_discord_id(db: &DatabaseConnection) -> Result<Option<String>, AppError> {
     Ok(role::Entity::find()
         .filter(role::Column::IsDefault.eq(true))
@@ -903,108 +858,42 @@ async fn autorole_view(
     })
 }
 
-fn discord_bot_token(cfg: &Config) -> Result<&str, AppError> {
-    cfg.discord_bot_token
-        .as_deref()
-        .filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
-        .ok_or_else(|| AppError::UpstreamService("Discord bot token is not configured".to_string()))
-}
+/// Maximum members per listing page (Discord caps it at 1000).
+const MEMBER_PAGE_SIZE: u16 = 1000;
 
 async fn fetch_discord_roles(
     cfg: &Config,
     guild_id: &str,
 ) -> Result<Vec<DiscordRolePayload>, AppError> {
-    let token = discord_bot_token(cfg)?;
-
-    let response = crate::http_client::shared()
-        .get(format!(
-            "https://discord.com/api/v10/guilds/{guild_id}/roles"
-        ))
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .send()
+    LiveDiscordRest::new(cfg)
+        .guild_roles(guild_id)
         .await
-        .map_err(|error| {
-            AppError::UpstreamService(format!("Discord roles request failed: {error}"))
-        })?;
-
-    if !response.status().is_success() {
-        return Err(AppError::UpstreamService(format!(
-            "Discord roles request failed with status {}",
-            response.status()
-        )));
-    }
-
-    response.json().await.map_err(|error| {
-        AppError::UpstreamService(format!("Discord roles response was invalid: {error}"))
-    })
+        .map_err(|error| upstream("Discord roles request failed", error))
 }
 
 async fn fetch_discord_channels(
     cfg: &Config,
     guild_id: &str,
 ) -> Result<Vec<DiscordChannelPayload>, AppError> {
-    let token = discord_bot_token(cfg)?;
-
-    let response = crate::http_client::shared()
-        .get(format!(
-            "https://discord.com/api/v10/guilds/{guild_id}/channels"
-        ))
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .send()
+    LiveDiscordRest::new(cfg)
+        .guild_channels(guild_id)
         .await
-        .map_err(|error| {
-            AppError::UpstreamService(format!("Discord channels request failed: {error}"))
-        })?;
-
-    if !response.status().is_success() {
-        return Err(AppError::UpstreamService(format!(
-            "Discord channels request failed with status {}",
-            response.status()
-        )));
-    }
-
-    response.json().await.map_err(|error| {
-        AppError::UpstreamService(format!("Discord channels response was invalid: {error}"))
-    })
+        .map_err(|error| upstream("Discord channels request failed", error))
 }
 
 async fn fetch_discord_members(
     cfg: &Config,
     guild_id: &str,
 ) -> Result<Vec<DiscordGuildMemberPayload>, AppError> {
-    let token = discord_bot_token(cfg)?;
+    let discord = LiveDiscordRest::new(cfg);
     let mut members = Vec::new();
     let mut after: Option<String> = None;
 
     loop {
-        let mut url = format!("https://discord.com/api/v10/guilds/{guild_id}/members?limit=1000");
-        if let Some(after) = &after {
-            url.push_str(&format!("&after={after}"));
-        }
-
-        let response = crate::http_client::shared()
-            .get(&url)
-            .header("Authorization", format!("Bot {token}"))
-            .header("User-Agent", "[REDACTED]Backend (0.0.3)")
-            .send()
+        let page = discord
+            .guild_members_page(guild_id, after.as_deref(), MEMBER_PAGE_SIZE)
             .await
-            .map_err(|error| {
-                AppError::UpstreamService(format!("Discord members request failed: {error}"))
-            })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::UpstreamService(format!(
-                "Discord members request failed with status {status}: {body}"
-            )));
-        }
-
-        let page: Vec<DiscordGuildMemberPayload> = response.json().await.map_err(|error| {
-            AppError::UpstreamService(format!("Discord members response was invalid: {error}"))
-        })?;
+            .map_err(|error| upstream("Discord members request failed", error))?;
         if page.is_empty() {
             break;
         }
@@ -1014,7 +903,7 @@ async fn fetch_discord_members(
             .find_map(|member| member.user.as_ref().map(|user| user.id.clone()));
         let page_len = page.len();
         members.extend(page);
-        if page_len < 1000 {
+        if page_len < usize::from(MEMBER_PAGE_SIZE) {
             break;
         }
         match last_id {
@@ -1031,35 +920,16 @@ async fn fetch_discord_member(
     guild_id: &str,
     discord_user_id: &str,
 ) -> Result<DiscordGuildMemberPayload, AppError> {
-    let token = discord_bot_token(cfg)?;
-    let response = crate::http_client::shared()
-        .get(format!(
-            "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}"
-        ))
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "[REDACTED]Backend (0.0.3)")
-        .send()
+    match LiveDiscordRest::new(cfg)
+        .guild_member(guild_id, discord_user_id)
         .await
-        .map_err(|error| {
-            AppError::UpstreamService(format!("Discord member request failed: {error}"))
-        })?;
-
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err(AppError::Validation(
+    {
+        Ok(member) => Ok(member),
+        Err(error) if error.is_already_gone() => Err(AppError::Validation(
             "this member is not in the Discord guild".to_string(),
-        ));
+        )),
+        Err(error) => Err(upstream("Discord member request failed", error)),
     }
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(AppError::UpstreamService(format!(
-            "Discord member request failed with status {status}: {body}"
-        )));
-    }
-
-    response.json().await.map_err(|error| {
-        AppError::UpstreamService(format!("Discord member response was invalid: {error}"))
-    })
 }
 
 async fn registered_discord_ids(db: &DatabaseConnection) -> Result<HashSet<String>, AppError> {
@@ -1409,8 +1279,57 @@ mod tests {
     use super::*;
     use super::{DiscordGuildMemberPayload, DiscordUserPayload, unregistered_discord_members};
     use crate::migration::MigratorTrait;
+    use crate::testkit::discord_stub::{DiscordStub, StubReply};
     use sea_orm::Database;
     use std::collections::HashSet;
+
+    #[tokio::test]
+    async fn discord_roles_listing_drops_managed_and_everyone_roles() {
+        let stub = DiscordStub::start(|_| {
+            StubReply::json(
+                200,
+                r#"[
+                    {"id":"g-admin-1","name":"@everyone","position":0,"managed":false},
+                    {"id":"r-officer","name":"Officer","position":5,"managed":false},
+                    {"id":"r-bot","name":"Bot role","position":4,"managed":true}
+                ]"#,
+            )
+        })
+        .await;
+        let mut cfg = Config::for_tests();
+        cfg.discord_api_base = stub.base_url.clone();
+        cfg.discord_bot_token = Some("bot-token".to_owned());
+
+        let roles = AdminService::discord_roles(&cfg, "g-admin-1")
+            .await
+            .expect("roles");
+
+        let ids: Vec<&str> = roles.iter().map(|role| role.id.as_str()).collect();
+        assert_eq!(ids, vec!["r-officer"]);
+        assert_eq!(
+            stub.requests()[0].authorization.as_deref(),
+            Some("Bot bot-token")
+        );
+    }
+
+    #[tokio::test]
+    async fn discord_member_lookup_maps_an_absent_member_to_a_validation_error() {
+        let stub = DiscordStub::start(|_| {
+            StubReply::json(404, r#"{"message":"Unknown Member","code":10007}"#)
+        })
+        .await;
+        let mut cfg = Config::for_tests();
+        cfg.discord_api_base = stub.base_url.clone();
+        cfg.discord_bot_token = Some("bot-token".to_owned());
+
+        let Err(error) = AdminService::discord_member(&cfg, "g-admin-2", "99").await else {
+            panic!("a 10007 answer is an absent member");
+        };
+
+        assert!(
+            matches!(error, AppError::Validation(message) if message.contains("not in the Discord guild"))
+        );
+    }
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:").await.expect("connect");

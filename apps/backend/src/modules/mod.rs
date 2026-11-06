@@ -15,6 +15,7 @@ pub mod bank;
 pub mod battles;
 pub mod combat;
 pub mod comps;
+pub mod discord_api;
 pub mod economy;
 pub mod enemies;
 pub mod events;

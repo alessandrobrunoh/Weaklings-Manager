@@ -16,6 +16,7 @@ use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::auth::entities::role;
 use crate::modules::auth::service::resolve_linked_roles;
+use crate::modules::discord_api::{DiscordRest, LiveDiscordRest, upstream};
 use crate::modules::users::entities::{ActiveModel as UserActiveModel, Entity as UserEntity};
 
 /// Discord operations needed to add or remove a guild member's roles.
@@ -41,11 +42,10 @@ pub trait DiscordMemberApi: Send + Sync {
     ) -> impl Future<Output = Result<(), AppError>> + Send;
 }
 
-/// Live Discord REST client using the bot token.
+/// Live Discord operations for one tenant's server, through the shared [`DiscordRest`] client.
 pub struct LiveDiscord {
     guild_id: String,
-    token: String,
-    client: reqwest::Client,
+    discord: LiveDiscordRest,
 }
 
 impl LiveDiscord {
@@ -56,79 +56,44 @@ impl LiveDiscord {
     ///
     /// # Errors
     ///
-    /// Returns [`AppError::UpstreamService`] when the bot token is missing.
+    /// Returns [`AppError::UpstreamService`] when the bot token or guild id is missing.
     pub fn for_guild(cfg: &Config, guild_id: &str) -> Result<Self, AppError> {
-        let token = usable_bot_token(cfg.discord_bot_token.as_deref()).ok_or_else(|| {
-            AppError::UpstreamService("Discord bot token is not configured".to_string())
-        })?;
+        let discord = LiveDiscordRest::new(cfg);
+        if !discord.has_bot_token() {
+            return Err(AppError::UpstreamService(
+                "Discord bot token is not configured".to_string(),
+            ));
+        }
         let guild_id = guild_id.trim().to_string();
         if guild_id.is_empty() {
             return Err(AppError::UpstreamService(
                 "Discord guild id is not configured".to_string(),
             ));
         }
-        Ok(Self {
-            guild_id,
-            token: token.to_string(),
-            client: crate::http_client::shared(),
-        })
+        Ok(Self { guild_id, discord })
     }
 }
 
 impl DiscordMemberApi for LiveDiscord {
     async fn list_role_ids(&self, discord_user_id: &str) -> Result<Vec<String>, AppError> {
-        #[derive(Deserialize)]
-        struct GuildMemberResponse {
-            roles: Vec<String>,
-        }
-
-        let url = format!(
-            "https://discord.com/api/v10/guilds/{}/members/{discord_user_id}",
-            self.guild_id
-        );
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bot {}", self.token))
-            .header("User-Agent", "WeaklingsBackend (0.0.3)")
-            .send()
+        match self
+            .discord
+            .guild_member(&self.guild_id, discord_user_id)
             .await
-            .map_err(|error| {
-                AppError::UpstreamService(format!("Discord member request failed: {error}"))
-            })?;
-
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(AppError::Validation(
+        {
+            Ok(member) => Ok(member.roles),
+            Err(error) if error.is_already_gone() => Err(AppError::Validation(
                 "this member is not in the Discord guild".to_string(),
-            ));
+            )),
+            Err(error) => Err(upstream("Discord member request failed", error)),
         }
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::UpstreamService(format!(
-                "Discord member request failed with status {status}: {body}"
-            )));
-        }
-
-        response
-            .json::<GuildMemberResponse>()
-            .await
-            .map(|member| member.roles)
-            .map_err(|error| {
-                AppError::UpstreamService(format!("Discord member response was invalid: {error}"))
-            })
     }
 
     async fn add_role(&self, discord_user_id: &str, discord_role_id: &str) -> Result<(), AppError> {
-        mutate_member_role(
-            &self.client,
-            &self.token,
-            &self.guild_id,
-            discord_user_id,
-            discord_role_id,
-            true,
-        )
-        .await
+        self.discord
+            .add_member_role(&self.guild_id, discord_user_id, discord_role_id)
+            .await
+            .map_err(|error| upstream("Discord role update failed", error))
     }
 
     async fn remove_role(
@@ -136,54 +101,17 @@ impl DiscordMemberApi for LiveDiscord {
         discord_user_id: &str,
         discord_role_id: &str,
     ) -> Result<(), AppError> {
-        mutate_member_role(
-            &self.client,
-            &self.token,
-            &self.guild_id,
-            discord_user_id,
-            discord_role_id,
-            false,
-        )
-        .await
+        match self
+            .discord
+            .remove_member_role(&self.guild_id, discord_user_id, discord_role_id)
+            .await
+        {
+            // Revoking a role the member no longer has is a success.
+            Ok(()) => Ok(()),
+            Err(error) if error.is_role_removed() => Ok(()),
+            Err(error) => Err(upstream("Discord role update failed", error)),
+        }
     }
-}
-
-async fn mutate_member_role(
-    client: &reqwest::Client,
-    token: &str,
-    guild_id: &str,
-    discord_user_id: &str,
-    discord_role_id: &str,
-    add: bool,
-) -> Result<(), AppError> {
-    let url = format!(
-        "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}/roles/{discord_role_id}"
-    );
-    let request = if add {
-        client.put(&url)
-    } else {
-        client.delete(&url)
-    };
-    let response = request
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .send()
-        .await
-        .map_err(|error| {
-            AppError::UpstreamService(format!("Discord role update failed: {error}"))
-        })?;
-
-    if response.status().is_success()
-        || (!add && response.status() == reqwest::StatusCode::NOT_FOUND)
-    {
-        return Ok(());
-    }
-
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    Err(AppError::UpstreamService(format!(
-        "Discord role update failed with status {status}: {body}"
-    )))
 }
 
 /// One gestionale role and whether the member currently holds its Discord link.
@@ -536,10 +464,6 @@ async fn refresh_cached_highest_role(
     Ok(())
 }
 
-fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
-    bot_token.filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
-}
-
 /// In-memory Discord stand-in for tests.
 #[cfg(test)]
 #[derive(Default)]
@@ -594,6 +518,7 @@ mod tests {
     use crate::migration::MigratorTrait;
     use crate::modules::admin::models::CreateRoleRequest;
     use crate::modules::admin::service::AdminService;
+    use crate::testkit::discord_stub::{DiscordStub, StubReply};
     use sea_orm::{ActiveModelTrait, Database, Set};
 
     fn role(
@@ -932,5 +857,39 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, AppError::Validation(msg) if msg.contains("Discord id")));
+    }
+
+    fn live_cfg(base_url: &str) -> crate::config::Config {
+        let mut cfg = crate::config::Config::for_tests();
+        cfg.discord_api_base = base_url.to_owned();
+        cfg.discord_bot_token = Some("bot-token".to_owned());
+        cfg
+    }
+
+    #[tokio::test]
+    async fn live_writer_treats_a_missing_member_as_a_validation_error_and_a_gone_role_as_revoked()
+    {
+        let stub = DiscordStub::start(|_| {
+            StubReply::json(404, r#"{"message":"Unknown Member","code":10007}"#)
+        })
+        .await;
+        let discord =
+            LiveDiscord::for_guild(&live_cfg(&stub.base_url), "g-roles-1").expect("client");
+
+        let listed = discord.list_role_ids("42").await;
+        assert!(
+            matches!(listed, Err(AppError::Validation(message)) if message.contains("not in the Discord guild"))
+        );
+        assert!(discord.remove_role("42", "r-1").await.is_ok());
+        assert!(discord.add_role("42", "r-1").await.is_err());
+    }
+
+    #[test]
+    fn live_writer_needs_a_bot_token_and_a_guild() {
+        let mut cfg = crate::config::Config::for_tests();
+        cfg.discord_bot_token = None;
+        assert!(LiveDiscord::for_guild(&cfg, "g-roles-2").is_err());
+        cfg.discord_bot_token = Some("bot-token".to_owned());
+        assert!(LiveDiscord::for_guild(&cfg, "  ").is_err());
     }
 }
