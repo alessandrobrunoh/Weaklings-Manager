@@ -14,6 +14,8 @@ use serde_json::json;
 use thiserror::Error;
 use utoipa::ToSchema;
 
+use crate::modules::sync::OriginRef;
+
 /// One row that's stopping a delete/update from proceeding.
 ///
 /// Carried on [`AppError::ConflictWithReferences`] so the frontend can show
@@ -47,6 +49,15 @@ pub struct ProblemDetails {
     /// Optional parameter validation errors or specific metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invalid_params: Option<serde_json::Value>,
+    /// Stable machine-readable error code (additive; absent on legacy problems).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
+    /// Structured, code-specific extra data (additive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// Where the authoritative entity lives, set when a write hit a read-only copy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<OriginRef>,
 }
 
 /// Centralized application error registry.
@@ -87,6 +98,11 @@ pub enum AppError {
         references: Vec<BlockingReference>,
     },
 
+    /// A write hit a read-only synchronized copy; the payload says where the origin lives
+    /// so clients can link to it. HTTP 403, problem code `copy_read_only`.
+    #[error("Read-only copy: {}", .0.summary())]
+    ReadOnlyCopy(Box<OriginRef>),
+
     /// Error indicating an upstream third-party service (e.g. Albion Online API) failed or is unreachable.
     #[error("Upstream service error: {0}")]
     UpstreamService(String),
@@ -98,6 +114,8 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let mut code = None;
+        let mut origin = None;
         let (status, type_uri, title, detail, invalid_params) = match self {
             Self::Database(err) => {
                 // A constraint violation is a client-facing conflict, not a
@@ -188,6 +206,18 @@ impl IntoResponse for AppError {
                 message,
                 Some(json!({ "blocking_references": references })),
             ),
+            Self::ReadOnlyCopy(origin_ref) => {
+                code = Some("copy_read_only");
+                let detail = origin_ref.summary();
+                origin = Some(*origin_ref);
+                (
+                    StatusCode::FORBIDDEN,
+                    "/errors/sync-copy-read-only",
+                    "Read-Only Synchronized Copy",
+                    detail,
+                    None,
+                )
+            }
             Self::UpstreamService(msg) => (
                 StatusCode::BAD_GATEWAY,
                 "/errors/upstream-service-error",
@@ -211,6 +241,9 @@ impl IntoResponse for AppError {
             detail,
             instance: None,
             invalid_params,
+            code,
+            details: None,
+            origin,
         };
 
         (
