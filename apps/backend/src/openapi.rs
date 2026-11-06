@@ -2,6 +2,7 @@
 //!
 //! Exposes the `OpenApi` specification for all modular endpoints in the backend.
 
+use axum::{Json, response::IntoResponse};
 use utoipa::OpenApi;
 
 /// `OpenAPI` documentation structure containing API metadata, paths, and components.
@@ -943,6 +944,16 @@ requires or shares any credentials; both simply require a valid session cookie l
     modifiers(&SecurityAddon)
 )]
 pub struct ApiDoc;
+
+/// Serves the `OpenAPI` document as JSON for generated clients (`apps/contracts`).
+///
+/// Public and cacheable: it describes routes and schemas, never tenant data.
+pub async fn serve_openapi_json() -> impl IntoResponse {
+    (
+        [(axum::http::header::CACHE_CONTROL, "public, max-age=300")],
+        Json(ApiDoc::openapi()),
+    )
+}
 
 struct SecurityAddon;
 

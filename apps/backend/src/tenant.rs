@@ -435,6 +435,7 @@ async fn load_features(
 pub fn skip_tenant_resolution(path: &str) -> bool {
     let path = path.trim_end_matches('/');
     path == "/api/health"
+        || path == "/api/openapi.json"
         || path == "/api/auth/discord/login"
         || path == "/api/auth/discord/callback"
         || path == "/api/auth/pending-tenants"
@@ -787,6 +788,7 @@ mod tests {
     fn skip_lists_health_oauth_and_platform() {
         assert!(skip_tenant_resolution("/api/health"));
         assert!(skip_tenant_resolution("/api/health/"));
+        assert!(skip_tenant_resolution("/api/openapi.json"));
         assert!(skip_tenant_resolution("/api/auth/discord/login"));
         assert!(skip_tenant_resolution("/api/auth/discord/callback"));
         assert!(skip_tenant_resolution("/api/auth/pending-tenants"));
