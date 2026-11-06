@@ -7,10 +7,13 @@
 //! to absorb shape drift. Unknown fields are silently ignored.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use utoipa::ToSchema;
 
 use crate::errors::AppError;
+use crate::runtime::backoff::BackoffPolicy;
 
 /// Default base URL of the public `AlbionBB` API.
 const DEFAULT_BASE_URL: &str = "https://api.albionbb.com";
@@ -20,6 +23,25 @@ const DEFAULT_TIMEOUT_SECS: u64 = 60;
 
 /// Default server path segment when the caller does not specify one.
 const DEFAULT_SERVER: &str = "eu";
+
+/// Requests in flight at once across every clone of one client, so a burst of
+/// tenant workers and HTTP callers cannot overrun the shared upstream.
+const MAX_CONCURRENT_REQUESTS: usize = 4;
+
+/// Retries after the first attempt for HTTP 429, 5xx and connection failures.
+/// Timeouts are not retried: a slow upstream would multiply the caller's wait.
+const MAX_RETRIES: u32 = 2;
+
+/// Delay between attempts when the upstream sends no usable `Retry-After`.
+const RETRY_POLICY: BackoffPolicy = BackoffPolicy {
+    base: Duration::from_millis(500),
+    cap: Duration::from_secs(8),
+    max_exponent: 4,
+    jitter: 0.2,
+};
+
+/// Upper bound honoured for a `Retry-After` header.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
 
 /// Normalizes a server string into a valid `AlbionBB` path segment.
 /// Accepts `eu`/`europe`, `na`/`americas`/`us`, `asia`/`sgp`; falls back to `eu`.
@@ -429,6 +451,8 @@ pub struct AlbionBbBattlesFilters {
 pub struct AlbionBbApiClient {
     http: reqwest::Client,
     base_url: String,
+    gate: Arc<Semaphore>,
+    retry: BackoffPolicy,
 }
 
 impl AlbionBbApiClient {
@@ -445,7 +469,17 @@ impl AlbionBbApiClient {
         Self {
             http,
             base_url: base_url.trim_end_matches('/').to_string(),
+            gate: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+            retry: RETRY_POLICY,
         }
+    }
+
+    /// Replaces the retry delays, so tests do not wait on real backoff.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_retry_policy(mut self, retry: BackoffPolicy) -> Self {
+        self.retry = retry;
+        self
     }
 
     /// Builds a query string from a slice of `(key, optional value)` pairs.
@@ -464,31 +498,67 @@ impl AlbionBbApiClient {
         }
     }
 
+    /// GETs `path` and decodes the JSON body.
+    ///
+    /// Each attempt holds one permit of the shared gate. 429, 5xx and connection
+    /// failures are retried up to `MAX_RETRIES` times, waiting for the
+    /// `Retry-After` header when present and for the jittered `retry` policy
+    /// otherwise. A 404 maps to `NotFound`; everything else to `UpstreamService`.
     async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, AppError> {
         let url = format!("{}{path}", self.base_url);
+        let mut attempt: u32 = 0;
+        loop {
+            let response = {
+                let _permit =
+                    self.gate.acquire().await.map_err(|_| {
+                        AppError::UpstreamService("AlbionBB gate closed".to_string())
+                    })?;
+                self.http.get(&url).send().await
+            };
 
-        let response = self.http.get(&url).send().await.map_err(|e| {
-            AppError::UpstreamService(format!("Failed to contact AlbionBB API: {e}"))
-        })?;
+            let retry_after = match response {
+                Err(error) if error.is_connect() && attempt < MAX_RETRIES => None,
+                Err(error) => {
+                    return Err(AppError::UpstreamService(format!(
+                        "Failed to contact AlbionBB API: {error}"
+                    )));
+                }
+                Ok(response) => {
+                    let status = response.status();
+                    if status == reqwest::StatusCode::NOT_FOUND {
+                        return Err(AppError::NotFound(format!(
+                            "AlbionBB resource not found: {url}"
+                        )));
+                    }
+                    if status.is_success() {
+                        return response.json::<T>().await.map_err(|e| {
+                            AppError::UpstreamService(format!(
+                                "Failed to parse AlbionBB API response from {url}: {e}"
+                            ))
+                        });
+                    }
+                    let retryable = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                        || status.is_server_error();
+                    if !retryable || attempt >= MAX_RETRIES {
+                        return Err(AppError::UpstreamService(format!(
+                            "AlbionBB API returned {status} for {url}"
+                        )));
+                    }
+                    retry_after_header(&response)
+                }
+            };
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(AppError::NotFound(format!(
-                "AlbionBB resource not found: {url}"
-            )));
+            let delay =
+                retry_after.unwrap_or_else(|| self.retry.delay(attempt, &mut rand::thread_rng()));
+            tracing::warn!(
+                attempt = attempt + 1,
+                delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
+                path,
+                "AlbionBB request failed transiently, retrying"
+            );
+            tokio::time::sleep(delay).await;
+            attempt += 1;
         }
-
-        if !response.status().is_success() {
-            return Err(AppError::UpstreamService(format!(
-                "AlbionBB API returned {} for {url}",
-                response.status()
-            )));
-        }
-
-        response.json::<T>().await.map_err(|e| {
-            AppError::UpstreamService(format!(
-                "Failed to parse AlbionBB API response from {url}: {e}"
-            ))
-        })
     }
 
     /// Fetches battles matching the given filters. `AlbionBB` currently returns a
@@ -591,6 +661,19 @@ impl AlbionBbApiClient {
         let path = format!("/{server}/guilds/{}", urlencoding::encode(guild_id));
         self.get_json(&path).await
     }
+}
+
+/// Parses a `Retry-After` header given in seconds, capped at `MAX_RETRY_AFTER`.
+fn retry_after_header(response: &reqwest::Response) -> Option<Duration> {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|seconds| Duration::from_secs(seconds).min(MAX_RETRY_AFTER))
 }
 
 impl Default for AlbionBbApiClient {
@@ -713,5 +796,63 @@ mod tests {
         assert_eq!(kills[0].killer.guild_name.as_deref(), Some("Weaklings"));
         assert_eq!(kills[0].killer.average_item_power, 1396.40137);
         assert_eq!(kills[0].total_kill_fame, 380726);
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use crate::modules::albionbb::test_support::{json_ok, serve, status};
+
+    const BATTLE_JSON: &str = r#"{"albionId": 7, "startedAt": "2026-08-01T00:00:00Z", "finishedAt": "2026-08-01T00:30:00Z", "totalFame": 0, "totalKills": 0, "totalPlayers": 0, "guilds": [], "players": []}"#;
+
+    /// Near-zero delays so the retry tests stay fast.
+    fn instant_retry() -> BackoffPolicy {
+        BackoffPolicy {
+            base: Duration::from_millis(1),
+            cap: Duration::from_millis(1),
+            max_exponent: 0,
+            jitter: 0.0,
+        }
+    }
+
+    #[tokio::test]
+    async fn rate_limited_response_is_retried_until_success() {
+        let upstream = serve(vec![
+            status("429 Too Many Requests", "Retry-After: 0\r\n"),
+            json_ok(BATTLE_JSON),
+        ])
+        .await;
+        let client = AlbionBbApiClient::new(Some(upstream.base_url.clone()), None)
+            .with_retry_policy(instant_retry());
+
+        let battle = client.get_battle(Some("eu"), 7).await.expect("retried");
+
+        assert_eq!(battle.summary.id, 7);
+        assert_eq!(upstream.request_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn server_errors_give_up_after_the_retry_budget() {
+        let upstream = serve(vec![status("503 Service Unavailable", "")]).await;
+        let client = AlbionBbApiClient::new(Some(upstream.base_url.clone()), None)
+            .with_retry_policy(instant_retry());
+
+        let error = client.get_battle(Some("eu"), 7).await.unwrap_err();
+
+        assert!(matches!(error, AppError::UpstreamService(_)));
+        assert_eq!(upstream.request_count(), (MAX_RETRIES + 1) as usize);
+    }
+
+    #[tokio::test]
+    async fn not_found_is_not_retried() {
+        let upstream = serve(vec![status("404 Not Found", "")]).await;
+        let client = AlbionBbApiClient::new(Some(upstream.base_url.clone()), None)
+            .with_retry_policy(instant_retry());
+
+        let error = client.get_battle(Some("eu"), 7).await.unwrap_err();
+
+        assert!(matches!(error, AppError::NotFound(_)));
+        assert_eq!(upstream.request_count(), 1);
     }
 }

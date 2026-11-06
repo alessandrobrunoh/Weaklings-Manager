@@ -49,7 +49,7 @@ pub fn router() -> Router {
     path = "/api/platform/tenants",
     tag = "platform",
     responses(
-        (status = 200, description = "Tenant list"),
+        (status = 200, description = "Tenant list", body = ApiResponse<Vec<TenantView>>),
         (status = 403, description = "Not a platform admin", body = ProblemDetails)
     )
 )]
@@ -68,7 +68,7 @@ pub async fn list_tenants(
     path = "/api/platform/tenants",
     tag = "platform",
     responses(
-        (status = 200, description = "Tenant created"),
+        (status = 200, description = "Tenant created", body = ApiResponse<TenantView>),
         (status = 409, description = "Already exists", body = ProblemDetails)
     )
 )]
@@ -90,7 +90,7 @@ pub async fn create_tenant(
     tag = "platform",
     params(("id" = String, Path, description = "Tenant / Discord guild id")),
     responses(
-        (status = 200, description = "Tenant"),
+        (status = 200, description = "Tenant", body = ApiResponse<TenantView>),
         (status = 404, description = "Not found", body = ProblemDetails)
     )
 )]
@@ -111,7 +111,7 @@ pub async fn get_tenant(
     path = "/api/platform/tenants/{id}",
     tag = "platform",
     params(("id" = String, Path, description = "Tenant / Discord guild id")),
-    responses((status = 200, description = "Updated tenant"))
+    responses((status = 200, description = "Updated tenant", body = ApiResponse<TenantView>))
 )]
 pub async fn patch_tenant(
     admin: PlatformAdmin,
@@ -130,7 +130,7 @@ pub async fn patch_tenant(
     get,
     path = "/api/platform/features",
     tag = "platform",
-    responses((status = 200, description = "Feature catalog"))
+    responses((status = 200, description = "Feature catalog", body = ApiResponse<Vec<FeatureCatalogItem>>))
 )]
 pub async fn list_catalog(
     _admin: PlatformAdmin,
@@ -146,7 +146,7 @@ pub async fn list_catalog(
     get,
     path = "/api/platform/ranks",
     tag = "platform",
-    responses((status = 200, description = "Rank list"))
+    responses((status = 200, description = "Rank list", body = ApiResponse<Vec<TenantRankView>>))
 )]
 pub async fn list_ranks(
     _admin: PlatformAdmin,
@@ -162,7 +162,7 @@ pub async fn list_ranks(
     post,
     path = "/api/platform/ranks",
     tag = "platform",
-    responses((status = 200, description = "Rank created"))
+    responses((status = 200, description = "Rank created", body = ApiResponse<TenantRankView>))
 )]
 pub async fn create_rank(
     _admin: PlatformAdmin,
@@ -180,7 +180,7 @@ pub async fn create_rank(
     path = "/api/platform/ranks/{id}",
     tag = "platform",
     params(("id" = String, Path, description = "Rank id")),
-    responses((status = 200, description = "Updated rank"))
+    responses((status = 200, description = "Updated rank", body = ApiResponse<TenantRankView>))
 )]
 pub async fn patch_rank(
     _admin: PlatformAdmin,
@@ -216,7 +216,7 @@ pub async fn delete_rank(
     path = "/api/platform/ranks/{id}/features",
     tag = "platform",
     params(("id" = String, Path, description = "Rank id")),
-    responses((status = 200, description = "Updated rank"))
+    responses((status = 200, description = "Updated rank", body = ApiResponse<TenantRankView>))
 )]
 pub async fn put_rank_features(
     admin: PlatformAdmin,
@@ -237,7 +237,7 @@ pub async fn put_rank_features(
     path = "/api/platform/tenants/{id}/features",
     tag = "platform",
     params(("id" = String, Path, description = "Tenant id")),
-    responses((status = 200, description = "Feature flags"))
+    responses((status = 200, description = "Feature flags", body = ApiResponse<TenantFeaturesView>))
 )]
 pub async fn get_features(
     _admin: PlatformAdmin,
@@ -255,7 +255,7 @@ pub async fn get_features(
     path = "/api/platform/tenants/{id}/features",
     tag = "platform",
     params(("id" = String, Path, description = "Tenant id")),
-    responses((status = 200, description = "Updated flags"))
+    responses((status = 200, description = "Updated flags", body = ApiResponse<TenantFeaturesView>))
 )]
 pub async fn put_features(
     admin: PlatformAdmin,
@@ -275,7 +275,7 @@ pub async fn put_features(
     get,
     path = "/api/platform/admins",
     tag = "platform",
-    responses((status = 200, description = "Platform admins"))
+    responses((status = 200, description = "Platform admins", body = ApiResponse<Vec<PlatformAdminView>>))
 )]
 pub async fn list_admins(
     _admin: PlatformAdmin,
@@ -291,7 +291,7 @@ pub async fn list_admins(
     post,
     path = "/api/platform/admins",
     tag = "platform",
-    responses((status = 200, description = "Assignment saved"))
+    responses((status = 200, description = "Assignment saved", body = ApiResponse<PlatformAdminView>))
 )]
 pub async fn assign_admin(
     admin: PlatformAdmin,

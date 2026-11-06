@@ -49,6 +49,14 @@ pub struct Config {
     pub bot_api_secret: Option<String>,
     /// Discord Bot Token (optional).
     pub discord_bot_token: Option<String>,
+    /// Base URL of the Discord REST API (default: `https://discord.com/api/v10`).
+    ///
+    /// Overridable so staging and tests can point the backend at a stub server.
+    #[serde(default = "default_discord_api_base")]
+    pub discord_api_base: String,
+    /// Per-call timeout in seconds for Discord REST requests (default: 10).
+    #[serde(default = "default_discord_api_timeout")]
+    pub discord_api_timeout_secs: u64,
     /// Super Admin Discord User ID.
     pub super_admin_discord_id: String,
     /// Secret used to encrypt/authenticate the `session_user` cookie (see [`Config::session_key`]).
@@ -83,6 +91,10 @@ pub struct Config {
     /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
     #[serde(default = "default_albiondata_timeout")]
     pub albiondata_request_timeout_secs: u64,
+    /// What to do with a request whose tenant kind the module is not offered to
+    /// (`log` or `enforce`, see `modules::capabilities::gate`). Defaults to `log`.
+    #[serde(default = "default_module_kind_enforcement")]
+    pub module_kind_enforcement: String,
 }
 
 /// Hand-written so a stray `{cfg:?}` in a log line, panic message, or error
@@ -110,6 +122,8 @@ impl std::fmt::Debug for Config {
             .field("discord_redirect_uri", &self.discord_redirect_uri)
             .field("bot_api_secret", &redact_option(&self.bot_api_secret))
             .field("discord_bot_token", &redact_option(&self.discord_bot_token))
+            .field("discord_api_base", &self.discord_api_base)
+            .field("discord_api_timeout_secs", &self.discord_api_timeout_secs)
             .field("super_admin_discord_id", &self.super_admin_discord_id)
             .field("session_secret", &"<redacted>")
             .field("frontend_url", &self.frontend_url)
@@ -127,6 +141,7 @@ impl std::fmt::Debug for Config {
                 "albiondata_request_timeout_secs",
                 &self.albiondata_request_timeout_secs,
             )
+            .field("module_kind_enforcement", &self.module_kind_enforcement)
             .finish()
     }
 }
@@ -147,12 +162,24 @@ fn default_albionbb_base_url() -> String {
     "https://api.albionbb.com".to_string()
 }
 
+fn default_discord_api_base() -> String {
+    crate::modules::discord_api::DEFAULT_API_BASE.to_string()
+}
+
+fn default_discord_api_timeout() -> u64 {
+    10
+}
+
 fn default_albionbb_timeout() -> u64 {
     60
 }
 
 fn default_albiondata_timeout() -> u64 {
     30
+}
+
+fn default_module_kind_enforcement() -> String {
+    "log".to_string()
 }
 
 impl Config {
@@ -276,6 +303,9 @@ impl Config {
             discord_redirect_uri: "http://localhost/callback".to_string(),
             bot_api_secret: None,
             discord_bot_token: None,
+            // Unroutable on purpose: a test that forgets to stub Discord fails fast.
+            discord_api_base: "http://127.0.0.1:1/api/v10".to_string(),
+            discord_api_timeout_secs: 10,
             super_admin_discord_id: "admin".to_string(),
             session_secret: "x".repeat(64),
             frontend_url: "http://localhost".to_string(),
@@ -287,6 +317,7 @@ impl Config {
             albionbb_base_url: "http://localhost".to_string(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
+            module_kind_enforcement: "log".to_string(),
         }
     }
 }

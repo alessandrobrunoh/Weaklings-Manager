@@ -33,13 +33,17 @@ use std::collections::HashSet;
 use super::attribution::{
     ParticipationGuild, eligible_participation_guilds, resolve_join_attribution,
 };
-use super::lifecycle::{AfterCommit, Cause, Transition, XpFilter, propagate_source_change};
+use super::lifecycle::{
+    AfterCommit, Cause, EffectRef, Transition, XpFilter, emit_manual_reminder,
+    propagate_source_change,
+};
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
-    CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
-    EventRevision, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventSummary,
-    EventView, ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
-    SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    CreateEventRosterRoleRequest, EventDetailView, EventEffectsResponse, EventFilters,
+    EventManagementAuthorityView, EventRevision, EventRosterRoleView, EventRosterView,
+    EventSignupOptionsView, EventSummary, EventView, ParticipateEventRequest, RosterVersionRequest,
+    SetEventVoiceChannelRequest, SetParticipantRequest, SwapRosterSeatsRequest,
+    UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
@@ -288,6 +292,22 @@ pub fn router() -> Router {
             "/{id}/battles",
             get(list_event_battles).put(replace_event_battles),
         )
+        .route(
+            "/actions",
+            get(crate::modules::actions::router::list_event_collection_actions),
+        )
+        .route(
+            "/actions/{action}",
+            post(crate::modules::actions::router::run_event_collection_action),
+        )
+        .route(
+            "/{id}/actions",
+            get(crate::modules::actions::router::list_event_actions),
+        )
+        .route(
+            "/{id}/actions/{action}",
+            post(crate::modules::actions::router::run_event_action),
+        )
 }
 
 /// Fetches the durable queue of newly requested VOD forum posts for the bot.
@@ -297,9 +317,9 @@ pub fn router() -> Router {
     tag = "events",
     summary = "List pending VOD forum post deliveries",
     description = "Requires the configured X-Bot-Secret.",
-    responses((status = 200, description = "Pending event posts", body = [EventView]))
+    responses((status = 200, description = "Pending event posts", body = ApiResponse<Vec<EventView>>))
 )]
-async fn list_pending_vod_forum_posts(
+pub(crate) async fn list_pending_vod_forum_posts(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<Vec<EventView>>>, AppError> {
@@ -340,9 +360,9 @@ async fn record_vod_forum_post_deleted(
     summary = "Claim a VOD forum post delivery",
     params(("id" = i64, Path, description = "Event ID")),
     description = "Requires the configured X-Bot-Secret.",
-    responses((status = 200, description = "Whether the pending delivery was claimed", body = bool))
+    responses((status = 200, description = "Whether the pending delivery was claimed", body = ApiResponse<bool>))
 )]
-async fn claim_vod_forum_post(
+pub(crate) async fn claim_vod_forum_post(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -353,7 +373,7 @@ async fn claim_vod_forum_post(
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct RecordVodForumPostRequest {
+pub(crate) struct RecordVodForumPostRequest {
     /// Discord thread snowflake created for the VOD post.
     thread_id: String,
 }
@@ -367,9 +387,9 @@ struct RecordVodForumPostRequest {
     params(("id" = i64, Path, description = "Event ID")),
     request_body = RecordVodForumPostRequest,
     description = "Requires the configured X-Bot-Secret.",
-    responses((status = 200, description = "Whether the created thread was recorded", body = bool))
+    responses((status = 200, description = "Whether the created thread was recorded", body = ApiResponse<bool>))
 )]
-async fn record_vod_forum_post_created(
+pub(crate) async fn record_vod_forum_post_created(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -387,7 +407,7 @@ async fn record_vod_forum_post_created(
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct RetryVodForumPostRequest {
+pub(crate) struct RetryVodForumPostRequest {
     /// Operator confirmed that all bot workers are stopped and no post exists.
     confirm_no_post: bool,
 }
@@ -401,9 +421,9 @@ struct RetryVodForumPostRequest {
     description = "Requires X-Bot-Secret. Stop all bot workers and verify that no post exists before calling; otherwise a duplicate can be created.",
     params(("id" = i64, Path, description = "Event ID")),
     request_body = RetryVodForumPostRequest,
-    responses((status = 200, description = "Whether an attempted delivery was requeued", body = bool))
+    responses((status = 200, description = "Whether an attempted delivery was requeued", body = ApiResponse<bool>))
 )]
-async fn retry_vod_forum_post(
+pub(crate) async fn retry_vod_forum_post(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -635,12 +655,12 @@ async fn get_event(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Prospective signup options retrieved", body = EventSignupOptionsView),
+        (status = 200, description = "Prospective signup options retrieved", body = ApiResponse<EventSignupOptionsView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
-async fn get_event_signup_options(
+pub(crate) async fn get_event_signup_options(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -947,7 +967,7 @@ async fn list_event_roster_roles(
     params(("id" = i64, Path, description = "Event ID")),
     request_body = CreateEventRosterRoleRequest,
     responses(
-        (status = 200, description = "Roster role added", body = EventRosterRoleView),
+        (status = 200, description = "Roster role added", body = ApiResponse<EventRosterRoleView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event or build not found", body = ProblemDetails),
@@ -1233,7 +1253,7 @@ async fn get_event_fanout_status(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Guild-owned source event ID")),
     responses(
-        (status = 200, description = "Mirror request state", body = super::mirror_retry::MirrorRequestStatus),
+        (status = 200, description = "Mirror request state", body = ApiResponse<super::mirror_retry::MirrorRequestStatus>),
         (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
         (status = 404, description = "No mirror request exists", body = ProblemDetails)
     )
@@ -1264,7 +1284,7 @@ async fn get_event_mirror_status(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Guild-owned source event ID")),
     responses(
-        (status = 200, description = "Current mirror retry state", body = super::mirror_retry::MirrorRequestStatus),
+        (status = 200, description = "Current mirror retry state", body = ApiResponse<super::mirror_retry::MirrorRequestStatus>),
         (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
         (status = 404, description = "No mirror request exists", body = ProblemDetails),
         (status = 409, description = "Mirror request is not failed or no active alliance exists", body = ProblemDetails)
@@ -1306,7 +1326,7 @@ async fn retry_event_mirror(
     description = "Returns non-managed roles in this tenant's Discord server. Requires events.create.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 200, description = "Discord roles retrieved", body = ApiResponse<Vec<DiscordRoleView>>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.create permission", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
@@ -1415,6 +1435,7 @@ async fn sync_source_change(
 ///
 /// The transition core is shared with the scheduler and the sync engine; the route only adds
 /// the caller's identity and the legacy post-commit propagation.
+#[allow(clippy::too_many_arguments)]
 async fn run_transition(
     user: &UserContext,
     db: &sea_orm::DatabaseConnection,
@@ -1423,16 +1444,27 @@ async fn run_transition(
     tenant_id: &str,
     id: i64,
     transition: Transition,
-) -> Result<EventView, AppError> {
+    cause: Cause,
+) -> Result<(EventView, Vec<EffectRef>), AppError> {
     let done = EventService::new()
-        .transition(db, id, transition, Cause::Web, Some(&user.id))
+        .transition(db, id, transition, cause, Some(&user.id))
         .await?;
+    let effects = done.outcome.effects.clone();
     done.outcome
         .after_commit(&AfterCommit::legacy_propagation(
             &control.0, registry, tenant_id,
         ))
         .await?;
-    Ok(done.view)
+    Ok((done.view, effects))
+}
+
+/// Cause of a lifecycle request: a forwarded Discord interaction (the bot sends `X-Bot-Secret`)
+/// or a web request. The cause only labels the effect rows.
+const fn lifecycle_cause(bot: Option<&BotSecret>) -> Cause {
+    match bot {
+        Some(_) => Cause::Discord,
+        None => Cause::Web,
+    }
 }
 
 /// Deletes an event.
@@ -1474,6 +1506,7 @@ async fn delete_event(
         &tenant_id,
         id,
         Transition::Archive,
+        Cause::Web,
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)
@@ -1505,7 +1538,7 @@ async fn archive_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
-    let event = run_transition(
+    let (event, _) = run_transition(
         &user,
         &db,
         &control,
@@ -1513,6 +1546,7 @@ async fn archive_event(
         &tenant_id,
         id,
         Transition::Archive,
+        Cause::Web,
     )
     .await?;
     Ok(Json(ApiResponse::new(event)))
@@ -1544,7 +1578,7 @@ async fn unarchive_event(
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
-    let event = run_transition(
+    let (event, _) = run_transition(
         &user,
         &db,
         &control,
@@ -1552,6 +1586,7 @@ async fn unarchive_event(
         &tenant_id,
         id,
         Transition::Unarchive,
+        Cause::Web,
     )
     .await?;
     Ok(Json(ApiResponse::new(event)))
@@ -1848,7 +1883,7 @@ async fn add_event_member(
     )
 )]
 #[allow(clippy::too_many_arguments)]
-async fn set_participant(
+pub(crate) async fn set_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -1890,7 +1925,7 @@ async fn set_participant(
         (status = 404, description = "Event / participation not found", body = ProblemDetails)
     )
 )]
-async fn remove_participant(
+pub(crate) async fn remove_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -1934,7 +1969,7 @@ async fn remove_participant(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Reminder authorized", body = ApiResponseEventView),
+        (status = 200, description = "Reminder authorized", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
@@ -1948,10 +1983,11 @@ async fn remind_event(
     Extension(control): Extension<ControlDb>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiResponse<EventView>>, AppError> {
+) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
+    let effects = emit_manual_reminder(&db, id).await?;
 
     let _ = AuditService::log(
         &db,
@@ -1963,7 +1999,7 @@ async fn remind_event(
     )
     .await;
 
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(EventEffectsResponse::new(event, effects)))
 }
 
 /// Reports whether the caller may manage a given event — the read-only twin of
@@ -2113,13 +2149,14 @@ async fn clear_event_voice_channel(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Session started", body = ApiResponseEventView),
+        (status = 200, description = "Session started", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event already live", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn start_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -2127,11 +2164,12 @@ async fn start_event(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    bot: Option<BotSecret>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiResponse<EventView>>, AppError> {
+) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
-    let event = run_transition(
+    let (event, effects) = run_transition(
         &user,
         &db,
         &control,
@@ -2139,9 +2177,10 @@ async fn start_event(
         &tenant_id,
         id,
         Transition::Start,
+        lifecycle_cause(bot.as_ref()),
     )
     .await?;
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(EventEffectsResponse::new(event, effects)))
 }
 
 /// Cancels an event (status -> cancelled).
@@ -2156,13 +2195,14 @@ async fn start_event(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Event cancelled", body = ApiResponseEventView),
+        (status = 200, description = "Event cancelled", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is already completed", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn cancel_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -2170,11 +2210,12 @@ async fn cancel_event(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    bot: Option<BotSecret>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiResponse<EventView>>, AppError> {
+) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
-    let event = run_transition(
+    let (event, effects) = run_transition(
         &user,
         &db,
         &control,
@@ -2182,9 +2223,10 @@ async fn cancel_event(
         &tenant_id,
         id,
         Transition::Cancel,
+        lifecycle_cause(bot.as_ref()),
     )
     .await?;
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(EventEffectsResponse::new(event, effects)))
 }
 
 /// Restores a cancelled event (status -> scheduled).
@@ -2199,13 +2241,14 @@ async fn cancel_event(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Event restored", body = ApiResponseEventView),
+        (status = 200, description = "Event restored", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not cancelled", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn uncancel_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -2213,11 +2256,12 @@ async fn uncancel_event(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    bot: Option<BotSecret>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiResponse<EventView>>, AppError> {
+) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
-    let event = run_transition(
+    let (event, effects) = run_transition(
         &user,
         &db,
         &control,
@@ -2225,9 +2269,10 @@ async fn uncancel_event(
         &tenant_id,
         id,
         Transition::Uncancel,
+        lifecycle_cause(bot.as_ref()),
     )
     .await?;
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(EventEffectsResponse::new(event, effects)))
 }
 
 /// Stops an event session (status -> stopped).
@@ -2243,13 +2288,14 @@ async fn uncancel_event(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Session stopped", body = ApiResponseEventView),
+        (status = 200, description = "Session stopped", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not live", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn stop_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -2257,8 +2303,9 @@ async fn stop_event(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
+    bot: Option<BotSecret>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiResponse<EventView>>, AppError> {
+) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     // Only a detached copy reaches this point; it still awards nothing, exactly as
@@ -2272,8 +2319,18 @@ async fn stop_event(
         auto: false,
         xp: XpFilter::from_award_xp(award_xp),
     };
-    let event = run_transition(&user, &db, &control, &registry, &tenant_id, id, stop).await?;
-    Ok(Json(ApiResponse::new(event)))
+    let (event, effects) = run_transition(
+        &user,
+        &db,
+        &control,
+        &registry,
+        &tenant_id,
+        id,
+        stop,
+        lifecycle_cause(bot.as_ref()),
+    )
+    .await?;
+    Ok(Json(EventEffectsResponse::new(event, effects)))
 }
 
 /// Returns the battles linked to an event session so far.

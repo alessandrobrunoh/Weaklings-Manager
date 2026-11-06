@@ -5,7 +5,13 @@
 pub(crate) mod albion_scope;
 pub(crate) mod battle_sync;
 pub(crate) mod control_migration;
+#[allow(
+    dead_code,
+    reason = "the Discord outbox is inert until the lifecycle, bot API and scheduler slices consume it"
+)]
+pub(crate) mod discord_delivery;
 pub(crate) mod event_sessions;
+pub(crate) mod http_layers;
 pub(crate) mod migration;
 pub(crate) mod modules;
 pub(crate) mod openapi;
@@ -23,6 +29,7 @@ pub(crate) mod tenant;
     reason = "fixture surface is extended and consumed by later slices"
 )]
 pub(crate) mod testkit;
+pub(crate) mod ttl_cache;
 
 pub mod config;
 pub(crate) mod errors;
@@ -155,6 +162,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let api = Router::new()
+        .route(
+            "/openapi.json",
+            axum::routing::get(openapi::serve_openapi_json),
+        )
         .merge(modules::router())
         .nest("/platform", modules::platform::router())
         .nest("/tenants", modules::platform::public_router())
@@ -186,7 +197,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods(AllowMethods::mirror_request())
         .allow_headers(AllowHeaders::mirror_request());
 
-    let app = Router::new()
+    let routes = Router::new()
         .nest("/api", api)
         .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
         .layer(axum::middleware::from_fn_with_state(
@@ -241,8 +252,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     },
                 ),
-        )
-        .layer(cors);
+        );
+
+    let app = http_layers::apply(routes).layer(cors);
 
     tracing::info!(version = config::VERSION, "listening on {addr}");
 

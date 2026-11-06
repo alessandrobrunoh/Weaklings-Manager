@@ -176,6 +176,9 @@ fn matrix_config() -> crate::config::Config {
         albionbb_base_url: "http://localhost".to_owned(),
         albionbb_request_timeout_secs: 60,
         albiondata_request_timeout_secs: 30,
+        discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+        discord_api_timeout_secs: 10,
+        module_kind_enforcement: "log".to_owned(),
     }
 }
 

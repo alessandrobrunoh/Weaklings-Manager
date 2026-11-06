@@ -6,7 +6,9 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 /// The standard success wrapper envelope (`JSend` style) for generics.
-#[derive(Debug, Serialize)]
+///
+/// Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T> {
     /// Indicates the outcome of the request, always "success" for this envelope.
     pub status: &'static str,

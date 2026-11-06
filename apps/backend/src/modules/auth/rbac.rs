@@ -12,7 +12,10 @@ use super::service::DiscordUserProfile;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::platform_admins::PlatformAdmins;
-use axum::{extract::FromRequestParts, http::request::Parts};
+use axum::{
+    extract::{FromRequestParts, OptionalFromRequestParts},
+    http::request::Parts,
+};
 use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
@@ -191,7 +194,7 @@ async fn apply_live_guild_roles(parts: &Parts, ctx: &mut UserContext) {
         return;
     };
     let lookup = super::service::AuthService::new()
-        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg.discord_bot_token.as_deref())
+        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg)
         .await;
     if matches!(lookup, super::service::GuildMemberLookup::Unavailable) {
         return;
@@ -498,6 +501,28 @@ where
     }
 }
 
+/// Optional bot authentication: `None` when the request carries no `X-Bot-Secret` header, so
+/// the same route serves web users and forwarded bot interactions. A present but wrong secret
+/// is still rejected rather than downgraded to a web request.
+impl<S> OptionalFromRequestParts<S> for BotSecret
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        if !parts.headers.contains_key(crate::tenant::BOT_SECRET_HEADER) {
+            return Ok(None);
+        }
+        <Self as FromRequestParts<S>>::from_request_parts(parts, state)
+            .await
+            .map(Some)
+    }
+}
+
 /// Bot-authenticated Discord actor identified by `X-Discord-Id`.
 ///
 /// Unlike [`UserContext`], a missing local `users` row is not an error: application tickets are
@@ -524,7 +549,7 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let _secret = BotSecret::from_request_parts(parts, state).await?;
+        let _secret = <BotSecret as FromRequestParts<S>>::from_request_parts(parts, state).await?;
         let discord_id = parts
             .headers
             .get("X-Discord-Id")
@@ -822,6 +847,9 @@ mod tests {
                 albionbb_base_url: "http://localhost".into(),
                 albionbb_request_timeout_secs: 60,
                 albiondata_request_timeout_secs: 30,
+                discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+                discord_api_timeout_secs: 10,
+                module_kind_enforcement: "log".to_owned(),
             });
             parts.extensions.insert(db.clone());
             let admins = PlatformAdmins::new_empty();

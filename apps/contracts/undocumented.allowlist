@@ -1,0 +1,39 @@
+# Mounted /api routes with no ApiDoc entry yet. This list may only shrink.
+# SA-1 deviation: the spec asks for every existing path in ApiDoc. These handlers
+# (applications, tickets, health, event roster, split discord-sync, tenant members,
+# alliance setup, user specializations, VOD forum post delete/archive) are deferred
+# to follow-up slices; remove a line when its handler gets a #[utoipa::path].
+DELETE /api/events/{}/roster/seats/{}
+GET /api/applications/active
+GET /api/applications/latest
+GET /api/events/vod-forum-posts/archived
+GET /api/events/{}/roster
+GET /api/events/{}/roster/live
+GET /api/health
+GET /api/splits/discord-sync
+GET /api/splits/{}/discord-sync
+GET /api/tenants/albion-alliances
+GET /api/tickets/active
+GET /api/users/me/specializations
+GET /api/users/{}/specializations
+PATCH /api/tenants/{}/members/{}
+POST /api/alliances/{}/reset-setup
+POST /api/alliances/{}/setup
+POST /api/applications
+POST /api/applications/{}/accept
+POST /api/applications/{}/close
+POST /api/applications/{}/decline
+POST /api/applications/{}/reopen
+POST /api/events/{}/roster/auto-fill
+POST /api/events/{}/roster/swaps
+POST /api/events/{}/vod-forum-post/deleted
+POST /api/tenants/{}/members/{}/accept
+POST /api/tenants/{}/members/{}/decline
+POST /api/tenants/{}/members/{}/invite
+POST /api/tenants/{}/members/{}/leave
+POST /api/tickets
+POST /api/tickets/{}/close
+PUT /api/events/{}/roster/seats/{}
+PUT /api/splits/{}/discord-sync
+PUT /api/users/me/specializations
+PUT /api/users/{}/specializations

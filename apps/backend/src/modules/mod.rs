@@ -2,6 +2,7 @@
 //!
 //! Exposes and aggregates all functional modules (users, auth, etc.) in the backend.
 
+pub mod actions;
 pub mod admin;
 pub mod albion;
 pub mod albionbb;
@@ -13,8 +14,10 @@ pub mod audit;
 pub mod auth;
 pub mod bank;
 pub mod battles;
+pub mod capabilities;
 pub mod combat;
 pub mod comps;
+pub mod discord_api;
 pub mod economy;
 pub mod enemies;
 pub mod events;
@@ -68,11 +71,14 @@ pub fn router() -> Router {
         .nest("/combat", combat::router())
         .nest("/comps", comps::router())
         .nest("/events", events::router())
+        .nest("/actions", actions::router())
         .nest("/fights", fights::router())
         .nest("/giveaways", giveaways::router())
         .nest("/siphoned", siphoned::router())
         .nest("/regear", regear::router())
         .nest("/alliance", alliance_share::router())
+        .nest("/sync", sync::router::router())
+        .nest("/me", capabilities::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())

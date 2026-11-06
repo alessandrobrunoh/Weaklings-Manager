@@ -293,8 +293,8 @@ pub async fn discord_callback(
     tag = "auth",
     summary = "List Discord servers the user can enter after OAuth",
     responses(
-        (status = 200, description = "Pending tenant choices"),
-        (status = 401, description = "No pending OAuth pick", body = ProblemDetails)
+        (status = 200, description = "Pending tenant choices", body = ApiResponse<Vec<TenantChoice>>),
+        (status = 401, description = "No pending OAuth pick", body = ApiResponse<Vec<TenantChoice>>)
     )
 )]
 pub async fn pending_tenants(
@@ -363,7 +363,7 @@ pub async fn select_tenant(
     get,
     path = "/api/auth/tenants",
     tag = "auth",
-    responses((status = 200, description = "Accessible tenants"))
+    responses((status = 200, description = "Accessible tenants", body = ApiResponse<Vec<TenantChoice>>))
 )]
 pub async fn list_session_tenants(
     headers: HeaderMap,
@@ -457,7 +457,7 @@ pub async fn switch_tenant(
     get,
     path = "/api/auth/registerable-guilds",
     tag = "auth",
-    responses((status = 200, description = "Guilds available to register"))
+    responses((status = 200, description = "Guilds available to register", body = ApiResponse<Vec<RegisterableGuild>>))
 )]
 pub async fn list_registerable_guilds(
     headers: HeaderMap,
@@ -749,12 +749,7 @@ async fn finalize_session(
         profile.highest_role = "SuperAdmin".to_string();
     } else {
         let lookup = AuthService::new()
-            .fetch_guild_member_role_ids(
-                &profile.id,
-                access_token,
-                &tenant.id,
-                cfg.discord_bot_token.as_deref(),
-            )
+            .fetch_guild_member_role_ids(&profile.id, access_token, &tenant.id, cfg)
             .await;
         let db_roles = crate::modules::auth::entities::role::Entity::find()
             .all(&ctx.db)
@@ -946,12 +941,7 @@ pub async fn get_me(
         if let Some(tenant_id) = profile.tenant_id.clone().filter(|id| !id.trim().is_empty()) {
             let service = AuthService::new();
             let lookup = service
-                .fetch_guild_member_role_ids(
-                    &profile.id,
-                    "",
-                    &tenant_id,
-                    cfg.discord_bot_token.as_deref(),
-                )
+                .fetch_guild_member_role_ids(&profile.id, "", &tenant_id, &cfg)
                 .await;
             // Unavailable keeps the cookie. Absent and Present replace it, so a
             // removed member or a removed Discord role cannot keep the old names
@@ -1117,6 +1107,9 @@ mod tests {
             albionbb_base_url: "http://localhost".to_owned(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
+            discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+            discord_api_timeout_secs: 10,
+            module_kind_enforcement: "log".to_owned(),
         }
     }
 

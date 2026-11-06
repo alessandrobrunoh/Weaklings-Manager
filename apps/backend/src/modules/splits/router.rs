@@ -220,7 +220,7 @@ async fn create_split(
     security(("session_cookie" = [])),
     params(ListSplitsQuery),
     responses(
-        (status = 200, description = "List of splits retrieved successfully", body = PaginatedSplitSummary),
+        (status = 200, description = "List of splits retrieved successfully", body = ApiResponse<PaginatedSplitSummary>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -302,7 +302,7 @@ async fn get_split(
     )
 )]
 #[allow(clippy::too_many_arguments)]
-async fn update_split(
+pub(crate) async fn update_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -336,7 +336,7 @@ async fn update_split(
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
     )
 )]
-async fn delete_split(
+pub(crate) async fn delete_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -473,6 +473,7 @@ async fn add_or_update_participant(
 #[utoipa::path(
     delete,
     path = "/api/splits/{id}/participants/{user_id}",
+    operation_id = "remove_split_participant",
     tag = "splits",
     summary = "Remove one participant from a pending split (Officer/Admin only)",
     description = "Only works while the split is `pending`. No request body. Idempotent in effect \
@@ -484,7 +485,7 @@ async fn add_or_update_participant(
         ("user_id" = i64, Path, description = "The participant's internal user id (from GET /users, not their Discord id)")
     ),
     responses(
-        (status = 200, description = "Participant removed (or already absent); returns the updated split detail", body = ApiResponseSplitDetail),
+        (status = 200, description = "Participant removed (or already absent, body = ApiResponse<SplitDetail>); returns the updated split detail", body = ApiResponseSplitDetail),
         (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
         (status = 400, description = "Validation error - the split isn't pending", body = ProblemDetails),
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
@@ -586,7 +587,7 @@ async fn complete_split(
     security(("session_cookie" = ["splits.edit"])),
     params(("id" = i64, Path, description = "Alliance split id")),
     responses(
-        (status = 200, description = "Distribution batch progress", body = crate::modules::splits::alliance_distribution::DistributionStatus),
+        (status = 200, description = "Distribution batch progress", body = ApiResponse<super::alliance_distribution::DistributionStatus>),
         (status = 404, description = "No distribution batch exists", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -669,7 +670,7 @@ pub async fn donate_split_share(
     security(("session_cookie" = ["splits.edit"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
-        (status = 200, description = "Split marked not completed; status is now \"not_completed\" (terminal)", body = ApiResponseSplitDetail),
+        (status = 200, description = "Split marked not completed; status is now \"not_completed\" (terminal, body = ApiResponse<SplitDetail>)", body = ApiResponseSplitDetail),
         (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
         (status = 400, description = "Validation error - the split is not in pending status", body = ProblemDetails),
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
@@ -712,7 +713,7 @@ async fn not_completed_split(
     security(("session_cookie" = ["splits.edit"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
-        (status = 200, description = "Split marked lost; status is now \"lost\" (terminal)", body = ApiResponseSplitDetail),
+        (status = 200, description = "Split marked lost; status is now \"lost\" (terminal, body = ApiResponse<SplitDetail>)", body = ApiResponseSplitDetail),
         (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
         (status = 400, description = "Validation error - the split is not in pending status", body = ProblemDetails),
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
@@ -755,7 +756,7 @@ async fn lost_split(
     security(("session_cookie" = [])),
     request_body(content = MatchParticipantsRequest, description = "Candidate names to match, e.g. OCR output lines."),
     responses(
-        (status = 200, description = "Matching completed (possibly with zero matches)", body = ApiResponseMatchedParticipantList),
+        (status = 200, description = "Matching completed (possibly with zero matches, body = ApiResponse<Vec<MatchedParticipant>>)", body = ApiResponseMatchedParticipantList),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -787,7 +788,7 @@ async fn match_participants(
     security(("session_cookie" = ["splits.edit"])),
     request_body = CompleteSplitsBatchRequest,
     responses(
-        (status = 200, description = "Batch processed", body = CompleteSplitsBatchResult),
+        (status = 200, description = "Batch processed", body = ApiResponse<CompleteSplitsBatchResult>),
         (status = 400, description = "No split ids supplied", body = ProblemDetails)
     )
 )]
@@ -877,7 +878,7 @@ pub async fn complete_splits_batch(
     summary = "List guild islands and their tabs",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Island catalog", body = Vec<SplitIslandView>),
+        (status = 200, description = "Island catalog", body = ApiResponse<Vec<SplitIslandView>>),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     )
 )]
@@ -933,7 +934,7 @@ async fn list_islands(
     security(("session_cookie" = ["splits.islands.manage"])),
     request_body = CreateIslandRequest,
     responses(
-        (status = 200, description = "Island created", body = SplitIslandView),
+        (status = 200, description = "Island created", body = ApiResponse<SplitIslandView>),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -960,7 +961,7 @@ async fn create_island(
     params(("id" = i64, Path, description = "Island id")),
     request_body = UpdateIslandRequest,
     responses(
-        (status = 200, description = "Island updated", body = SplitIslandView),
+        (status = 200, description = "Island updated", body = ApiResponse<SplitIslandView>),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails)
     )
@@ -1018,7 +1019,7 @@ async fn delete_island(
     params(("id" = i64, Path, description = "Island id")),
     request_body = CreateIslandTabRequest,
     responses(
-        (status = 200, description = "Tab added", body = SplitIslandView),
+        (status = 200, description = "Tab added", body = ApiResponse<SplitIslandView>),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails)
     )
@@ -1049,7 +1050,7 @@ async fn add_island_tab(
     ),
     request_body = UpdateIslandTabRequest,
     responses(
-        (status = 200, description = "Tab updated", body = SplitIslandView),
+        (status = 200, description = "Tab updated", body = ApiResponse<SplitIslandView>),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails)
     )
@@ -1081,7 +1082,7 @@ async fn update_island_tab(
         ("tab_id" = i64, Path, description = "Tab id")
     ),
     responses(
-        (status = 200, description = "Tab deleted", body = SplitIslandView),
+        (status = 200, description = "Tab deleted", body = ApiResponse<SplitIslandView>),
         (status = 400, description = "Last tab or still referenced", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails)

@@ -109,7 +109,9 @@ impl LoopTask for EventMirrorRetry {
 /// Every loop the server runs. Owner slices append their loop here.
 #[must_use]
 pub fn registered_tasks() -> Vec<Arc<dyn LoopTask>> {
-    vec![Arc::new(EventFanout), Arc::new(EventMirrorRetry)]
+    let mut tasks: Vec<Arc<dyn LoopTask>> = vec![Arc::new(EventFanout), Arc::new(EventMirrorRetry)];
+    tasks.extend(crate::modules::sync::engine::registered_tasks());
+    tasks
 }
 
 #[cfg(test)]
@@ -129,8 +131,13 @@ mod tests {
         let before = targets.len();
         targets.dedup();
         assert_eq!(before, targets.len());
-        // Both legacy loops keep their 15 s cadence.
-        assert!(tasks.iter().all(|t| t.tick() == Duration::from_secs(15)));
+        // Both legacy loops keep their 15 s cadence; the sync loops have their own.
+        assert!(
+            tasks
+                .iter()
+                .filter(|t| !t.name().starts_with("sync_"))
+                .all(|t| t.tick() == Duration::from_secs(15))
+        );
     }
 
     struct Counting(Arc<AtomicUsize>);

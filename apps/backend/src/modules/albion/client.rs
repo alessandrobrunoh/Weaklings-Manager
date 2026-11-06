@@ -201,12 +201,10 @@ pub struct AlbionApiClient {
 impl AlbionApiClient {
     #[must_use]
     pub fn new(region: AlbionRegion) -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        // Shares the process-wide pool (same 30 s timeout), so building a client
+        // per call reuses connections instead of opening new TLS sessions.
         Self {
-            http,
+            http: crate::http_client::shared(),
             base_url: region.base_url(),
         }
     }

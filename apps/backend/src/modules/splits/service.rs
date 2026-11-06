@@ -2021,11 +2021,26 @@ impl SplitService {
             .order_by_asc(IslandColumn::Name)
             .all(db)
             .await?;
-        let mut views = Vec::with_capacity(islands.len());
-        for island in islands {
-            views.push(load_island_view(db, island).await?);
+        // One tabs read for the whole list instead of one per island.
+        let island_ids: Vec<i64> = islands.iter().map(|island| island.id).collect();
+        let mut tabs_by_island: HashMap<i64, Vec<TabModel>> = HashMap::new();
+        if !island_ids.is_empty() {
+            let tabs = TabEntity::find()
+                .filter(TabColumn::IslandId.is_in(island_ids))
+                .order_by_asc(TabColumn::Id)
+                .all(db)
+                .await?;
+            for tab in tabs {
+                tabs_by_island.entry(tab.island_id).or_default().push(tab);
+            }
         }
-        Ok(views)
+        Ok(islands
+            .into_iter()
+            .map(|island| {
+                let tabs = tabs_by_island.remove(&island.id).unwrap_or_default();
+                to_island_view(island, tabs)
+            })
+            .collect())
     }
 
     fn ensure_island_catalog_mutable(&self) -> Result<(), AppError> {
@@ -3748,6 +3763,53 @@ mod tests {
 
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].user_id, bob_id);
+    }
+
+    /// The island list is read on every split screen load; its statement count must not grow
+    /// with the number of islands.
+    #[tokio::test]
+    async fn island_list_query_count_does_not_grow_with_islands() {
+        let counted = crate::testkit::queries::CountedDb::sqlite_memory().await;
+        crate::migration::Migrator::up(&counted.connection(), None)
+            .await
+            .expect("Failed to run database migrations");
+        let db = counted.connection();
+        let service = SplitService::new();
+        let cities = [
+            "lymhurst",
+            "bridgewatch",
+            "martlock",
+            "caerleon",
+            "thetford",
+        ];
+        let mut created = 0;
+        let mut statements_per_list = Vec::new();
+        for target in [2usize, 12] {
+            while created < target {
+                service
+                    .create_island(
+                        &db,
+                        CreateIslandRequest {
+                            name: format!("island {created}"),
+                            city: cities[created % cities.len()].to_string(),
+                            tabs: vec!["Loot".to_string(), "Silver".to_string()],
+                        },
+                    )
+                    .await
+                    .unwrap();
+                created += 1;
+            }
+            let before = counted.statements();
+            let listed = service.list_islands(&db).await.unwrap();
+            statements_per_list.push(counted.statements() - before);
+            assert_eq!(listed.len(), target);
+            assert!(listed.iter().all(|island| island.tabs.len() == 2));
+        }
+        assert!(statements_per_list[0] > 0, "the counter must see the reads");
+        assert_eq!(
+            statements_per_list[0], statements_per_list[1],
+            "statements per island list: {statements_per_list:?}"
+        );
     }
 
     #[tokio::test]

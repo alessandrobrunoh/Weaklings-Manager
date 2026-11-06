@@ -2,12 +2,20 @@
 //!
 //! Exposes the `OpenApi` specification for all modular endpoints in the backend.
 
+use axum::{Json, response::IntoResponse};
 use utoipa::OpenApi;
 
 /// `OpenAPI` documentation structure containing API metadata, paths, and components.
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::modules::capabilities::router::me_capabilities,
+        crate::modules::capabilities::router::tenant_capabilities,
+        crate::modules::actions::router::get_action_catalog,
+        crate::modules::actions::router::list_event_actions,
+        crate::modules::actions::router::list_event_collection_actions,
+        crate::modules::actions::router::run_event_action,
+        crate::modules::actions::router::run_event_collection_action,
         crate::modules::audit::router::list_audit_logs,
         crate::modules::users::router::get_my_profile,
         crate::modules::members::router::ensure_member,
@@ -300,9 +308,53 @@ use utoipa::OpenApi;
         crate::modules::attention::router::get_attention_findings,
         crate::modules::fights::get_fight_backfill_issues,
         crate::modules::intel::router::scout_snapshots_backfill,
+        crate::modules::events::router::remove_participant,
+        crate::modules::events::router::list_pending_vod_forum_posts,
+        crate::modules::events::router::get_event_signup_options,
+        crate::modules::events::router::claim_vod_forum_post,
+        crate::modules::events::router::record_vod_forum_post_created,
+        crate::modules::events::router::retry_vod_forum_post,
+        crate::modules::events::router::set_participant,
+        crate::modules::splits::router::delete_split,
+        crate::modules::splits::router::update_split,
+        crate::modules::fights::list_fights,
+        crate::modules::fights::get_fight_trends,
+        crate::modules::fights::get_fight,
+        crate::modules::fights::merge_fights,
+        crate::modules::fights::move_battle,
+        crate::modules::fights::split_fight,
+        crate::modules::admin::router::get_tenant_features,
+        crate::modules::admin::router::put_tenant_features,
+        crate::modules::platform::public::invite_alliance_member,
+        crate::modules::bank::router::reject_withdrawal,
+        crate::modules::comps::router::archive_build,
+        crate::modules::comps::router::unarchive_build,
+        crate::modules::comps::router::archive_comp,
+        crate::modules::comps::router::unarchive_comp,
     ),
     components(
         schemas(
+            crate::modules::capabilities::model::ApiResponseCapabilities,
+            crate::modules::actions::model::ApiResponseActionList,
+            crate::modules::actions::model::ApiResponseActionResult,
+            crate::modules::actions::model::ApiResponseActionCatalog,
+            crate::modules::actions::model::ActionList,
+            crate::modules::actions::model::ActionDescriptor,
+            crate::modules::actions::model::ActionResult,
+            crate::modules::actions::model::ActionRequest,
+            crate::modules::actions::model::ConfirmBody,
+            crate::modules::actions::model::EntityRef,
+            crate::modules::actions::model::StateChange,
+            crate::modules::actions::model::SyncInfo,
+            crate::modules::actions::model::CatalogEntry,
+            crate::modules::actions::model::Style,
+            crate::modules::capabilities::model::Capabilities,
+            crate::modules::capabilities::model::TenantBlock,
+            crate::modules::capabilities::model::AllianceBlock,
+            crate::modules::capabilities::model::UserBlock,
+            crate::modules::capabilities::model::ModuleEntry,
+            crate::modules::capabilities::model::CommandEntry,
+            crate::modules::capabilities::model::NavEntry,
             crate::modules::audit::router::AuditLogResponse,
             crate::modules::audit::router::PaginatedAuditLogResponse,
             crate::modules::audit::router::ApiResponsePaginatedAuditLogs,
@@ -507,6 +559,8 @@ use utoipa::OpenApi;
             crate::responses::ApiResponseEventRevisionList,
             crate::responses::ApiResponseEventManagementAuthority,
             crate::responses::ApiResponseEventView,
+            crate::modules::events::models::EventEffectsResponse,
+            crate::modules::events::lifecycle::EffectRef,
             crate::responses::ApiResponseEventFanoutStatus,
             crate::modules::events::models::EventRevision,
             crate::responses::ApiResponseEventDetail,
@@ -923,6 +977,16 @@ requires or shares any credentials; both simply require a valid session cookie l
 )]
 pub struct ApiDoc;
 
+/// Serves the `OpenAPI` document as JSON for generated clients (`apps/contracts`).
+///
+/// Public and cacheable: it describes routes and schemas, never tenant data.
+pub async fn serve_openapi_json() -> impl IntoResponse {
+    (
+        [(axum::http::header::CACHE_CONTROL, "public, max-age=300")],
+        Json(ApiDoc::openapi()),
+    )
+}
+
 struct SecurityAddon;
 
 impl utoipa::Modify for SecurityAddon {
@@ -944,7 +1008,369 @@ impl utoipa::Modify for SecurityAddon {
 mod tests {
     use super::*;
     use crate::modules::auth::Permission;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+    use std::path::{Path, PathBuf};
     use utoipa::OpenApi;
+
+    /// `apps/contracts`: the committed OpenAPI snapshot and the route allowlist.
+    fn contracts_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../contracts")
+    }
+
+    fn update_requested() -> bool {
+        std::env::var("UPDATE_CONTRACTS").is_ok_and(|value| value == "1")
+    }
+
+    /// Replaces every `{param}` segment with `{}`, so router parameter names
+    /// (`{id}`) and annotation names (`{event_id}`) compare equal.
+    fn shape(path: &str) -> String {
+        let mut out = String::with_capacity(path.len());
+        let mut in_param = false;
+        for ch in path.chars() {
+            match ch {
+                '{' => {
+                    in_param = true;
+                    out.push_str("{}");
+                }
+                '}' => in_param = false,
+                _ if in_param => {}
+                _ => out.push(ch),
+            }
+        }
+        out
+    }
+
+    const HTTP_METHODS: [&str; 8] = [
+        "get", "post", "put", "patch", "delete", "head", "options", "trace",
+    ];
+
+    fn rendered_document() -> String {
+        let value = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialises");
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&value).expect("OpenAPI pretty-prints")
+        )
+    }
+
+    /// Every `(METHOD, shape)` the live `ApiDoc` declares.
+    fn documented_routes() -> BTreeSet<(String, String)> {
+        let value = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialises");
+        let mut out = BTreeSet::new();
+        for (path, item) in value["paths"].as_object().into_iter().flatten() {
+            for method in HTTP_METHODS {
+                if item.get(method).is_some() {
+                    out.insert((method.to_uppercase(), shape(path)));
+                }
+            }
+        }
+        out
+    }
+
+    /// The HTTP methods of a `.route(...)` argument list, e.g. `get(a).patch(b)`.
+    fn methods_in(args: &str) -> Vec<&'static str> {
+        let bytes = args.as_bytes();
+        let mut found = Vec::new();
+        for method in HTTP_METHODS {
+            for (idx, _) in args.match_indices(method) {
+                let starts_token =
+                    idx == 0 || !(bytes[idx - 1].is_ascii_alphanumeric() || bytes[idx - 1] == b'_');
+                if starts_token && args[idx + method.len()..].trim_start().starts_with('(') {
+                    found.push(method);
+                }
+            }
+        }
+        found
+    }
+
+    /// `(literal path, methods)` for every `.route("...", ...)` call in `src`.
+    fn route_calls(src: &str) -> Vec<(String, Vec<&'static str>)> {
+        let mut out = Vec::new();
+        let mut rest = src;
+        while let Some(idx) = rest.find(".route(") {
+            let after = rest[idx + ".route(".len()..].trim_start();
+            let Some(body) = after.strip_prefix('"') else {
+                rest = &rest[idx + ".route(".len()..];
+                continue;
+            };
+            let Some(end) = body.find('"') else { break };
+            let literal = &body[..end];
+            let args_src = &body[end + 1..];
+            let mut depth = 1usize;
+            let mut close = args_src.len();
+            for (i, ch) in args_src.char_indices() {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            out.push((literal.to_owned(), methods_in(&args_src[..close])));
+            rest = &args_src[close..];
+        }
+        out
+    }
+
+    /// The `(METHOD, shape)` of every route mounted under `/api` by the module
+    /// routers. Prefixes come from `modules/mod.rs`; `platform` is mounted by
+    /// `lib.rs` (`/platform`, and `/tenants` and `/alliances` for `public.rs`).
+    fn mounted_routes(modules_dir: &Path) -> BTreeSet<(String, String)> {
+        let registry = fs::read_to_string(modules_dir.join("mod.rs")).expect("modules/mod.rs");
+        let mut prefixes: BTreeMap<String, String> = BTreeMap::new();
+        for line in registry.lines() {
+            let Some(rest) = line.trim().strip_prefix(".nest(\"") else {
+                continue;
+            };
+            let Some((prefix, tail)) = rest.split_once('"') else {
+                continue;
+            };
+            if let Some(module) = tail
+                .split("::router()")
+                .next()
+                .filter(|_| tail.contains("::router()"))
+            {
+                let module = module.trim_start_matches(|c: char| c == ',' || c.is_whitespace());
+                prefixes.insert(module.to_owned(), prefix.to_owned());
+            }
+        }
+        prefixes.insert("platform".to_owned(), "/platform".to_owned());
+
+        let mut files = Vec::new();
+        collect_rs_files(modules_dir, &mut files);
+        let mut out = BTreeSet::new();
+        for file in files {
+            let rel = file.strip_prefix(modules_dir).expect("under modules/");
+            let top = rel
+                .components()
+                .next()
+                .map(|c| {
+                    c.as_os_str()
+                        .to_string_lossy()
+                        .trim_end_matches(".rs")
+                        .to_owned()
+                })
+                .unwrap_or_default();
+            let Some(prefix) = prefixes.get(&top) else {
+                continue;
+            };
+            let text = fs::read_to_string(&file).expect("readable module source");
+            // Test code mounts throwaway routers; only production code counts.
+            let production = text.split("#[cfg(test)]").next().unwrap_or_default();
+            let file_name = rel.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let alliance_split = production.find("pub fn alliance_router");
+            for (literal, methods) in route_calls(production) {
+                let mut mount = prefix.clone();
+                if top == "platform" && file_name == "public.rs" {
+                    let at = production
+                        .find(&format!(".route(\"{literal}\""))
+                        .unwrap_or(0);
+                    mount = match alliance_split {
+                        Some(split) if at > split => "/alliances".to_owned(),
+                        _ => "/tenants".to_owned(),
+                    };
+                }
+                let full = if literal == "/" {
+                    format!("/api{mount}")
+                } else {
+                    format!("/api{mount}{literal}")
+                };
+                for method in methods {
+                    out.insert((method.to_uppercase(), shape(&full)));
+                }
+            }
+        }
+        out
+    }
+
+    fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).expect("readable directory") {
+            let path = entry.expect("directory entry").path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// Header written above the allowlist entries. Lines starting with `#` are comments.
+    const UNDOCUMENTED_HEADER: &str = "\
+# Mounted /api routes with no ApiDoc entry yet. This list may only shrink.
+# SA-1 deviation: the spec asks for every existing path in ApiDoc. These handlers
+# (applications, tickets, health, event roster, split discord-sync, tenant members,
+# alliance setup, user specializations, VOD forum post delete/archive) are deferred
+# to follow-up slices; remove a line when its handler gets a #[utoipa::path].
+";
+
+    /// Successful bodies that stay bare on purpose: the Albion proxy routes return
+    /// the upstream payload unwrapped. Changing them would change client behaviour.
+    const BARE_BODY_EXCEPTIONS: [&str; 2] = [
+        "GET /api/albion/guilds/{id}",
+        "GET /api/albion/players/{id}",
+    ];
+
+    fn allowlist() -> BTreeSet<(String, String)> {
+        let text =
+            fs::read_to_string(contracts_dir().join("undocumented.allowlist")).unwrap_or_default();
+        text.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .filter_map(|line| line.split_once(' '))
+            .map(|(method, path)| (method.to_uppercase(), shape(path)))
+            .collect()
+    }
+
+    #[test]
+    fn contracts_are_current() {
+        let rendered = rendered_document();
+        let path = contracts_dir().join("openapi.json");
+        if update_requested() {
+            fs::write(&path, &rendered).expect("write apps/contracts/openapi.json");
+            return;
+        }
+        let committed = fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            committed == rendered,
+            "apps/contracts/openapi.json is stale; run `UPDATE_CONTRACTS=1 cargo test contracts_are_current` and commit the result"
+        );
+    }
+
+    /// Every mounted route is either in `ApiDoc` or on the committed allowlist,
+    /// and the allowlist lists only routes that are still undocumented.
+    #[test]
+    fn mounted_routes_are_documented_or_allowlisted() {
+        let mounted = mounted_routes(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src/modules"));
+        let documented = documented_routes();
+        let undocumented: BTreeSet<_> = mounted.difference(&documented).cloned().collect();
+        if update_requested() {
+            let entries: String = undocumented
+                .iter()
+                .map(|(method, path)| format!("{method} {path}\n"))
+                .collect();
+            fs::write(
+                contracts_dir().join("undocumented.allowlist"),
+                format!("{UNDOCUMENTED_HEADER}{entries}"),
+            )
+            .expect("write undocumented.allowlist");
+            return;
+        }
+        let allowed = allowlist();
+        let unlisted: Vec<_> = undocumented.difference(&allowed).collect();
+        let stale: Vec<_> = allowed.difference(&undocumented).collect();
+        assert!(
+            unlisted.is_empty(),
+            "routes mounted but neither in ApiDoc nor allowlisted: {unlisted:?}"
+        );
+        assert!(
+            stale.is_empty(),
+            "allowlist entries that are now documented or gone (remove them): {stale:?}"
+        );
+    }
+
+    /// Successful JSON bodies go through the `ApiResponse*` / paginated envelope,
+    /// so clients unwrap `data` the same way everywhere.
+    #[test]
+    fn success_bodies_use_the_envelope() {
+        let value = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialises");
+        let mut bare = Vec::new();
+        for (path, item) in value["paths"].as_object().into_iter().flatten() {
+            for method in HTTP_METHODS {
+                let Some(op) = item.get(method) else { continue };
+                for (code, response) in op["responses"].as_object().into_iter().flatten() {
+                    if !code.starts_with('2') {
+                        continue;
+                    }
+                    let Some(schema) =
+                        response["content"]["application/json"]["schema"].get("$ref")
+                    else {
+                        continue;
+                    };
+                    let name = schema
+                        .as_str()
+                        .unwrap_or_default()
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default();
+                    let route = format!("{} {path}", method.to_uppercase());
+                    // `EventEffectsResponse` is the success envelope (`status`, `data`) plus the
+                    // Discord `effects` the lifecycle routes wrote.
+                    if !name.starts_with("ApiResponse")
+                        && !name.starts_with("Paginated")
+                        && name != "EventEffectsResponse"
+                        && !BARE_BODY_EXCEPTIONS.contains(&route.as_str())
+                    {
+                        bare.push(format!("{route} -> {name}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            bare.is_empty(),
+            "success bodies without an envelope: {bare:?}"
+        );
+    }
+
+    /// `operationId`s name the generated client functions, so each one must be unique.
+    #[test]
+    fn operation_ids_are_unique() {
+        let value = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialises");
+        let mut seen: BTreeMap<String, String> = BTreeMap::new();
+        let mut dupes = Vec::new();
+        for (path, item) in value["paths"].as_object().into_iter().flatten() {
+            for method in HTTP_METHODS {
+                let Some(id) = item[method]["operationId"].as_str() else {
+                    continue;
+                };
+                let route = format!("{} {path}", method.to_uppercase());
+                if let Some(first) = seen.insert(id.to_owned(), route.clone()) {
+                    dupes.push(format!("{id}: {first} and {route}"));
+                }
+            }
+        }
+        assert!(dupes.is_empty(), "duplicate operationIds: {dupes:?}");
+    }
+
+    /// Every `$ref` points at a component the document declares.
+    #[test]
+    fn every_schema_reference_resolves() {
+        let value = serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialises");
+        let mut refs = Vec::new();
+        collect_refs(&value, &mut refs);
+        let schemas = value["components"]["schemas"].as_object();
+        let dangling: Vec<_> = refs
+            .iter()
+            .filter(|name| schemas.is_none_or(|map| !map.contains_key(name.as_str())))
+            .collect();
+        assert!(dangling.is_empty(), "dangling $ref targets: {dangling:?}");
+    }
+
+    fn collect_refs(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, child) in map {
+                    if key == "$ref" {
+                        if let Some(target) = child.as_str() {
+                            out.push(target.rsplit('/').next().unwrap_or_default().to_owned());
+                        }
+                    } else {
+                        collect_refs(child, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    collect_refs(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
 
     /// Every `security(("session_cookie" = ["..."]))` scope declared on a route
     /// must be a valid `Permission::as_str()` value. Catches typos and drift

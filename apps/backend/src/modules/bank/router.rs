@@ -253,7 +253,7 @@ pub async fn get_admin_summary(
     security(("session_cookie" = [])),
     params(ListTransactionsQuery),
     responses(
-        (status = 200, description = "Transactions retrieved successfully", body = PaginatedTransactionView),
+        (status = 200, description = "Transactions retrieved successfully", body = ApiResponse<PaginatedTransactionView>),
         (status = 403, description = "Forbidden - viewing another user's transactions requires bank.view_others, and ?global=true requires bank.view_others or bank.withdraw.accept", body = ProblemDetails)
     )
 )]
@@ -350,7 +350,7 @@ async fn list_transactions(
     security(("session_cookie" = [])),
     request_body(content = WithdrawRequest, description = "Either `transaction_ids` (specific rows) or `all: true`; provide exactly one of the two."),
     responses(
-        (status = 200, description = "The transactions that were moved to \"requested\" status (may be an empty list)", body = ApiResponseTransactionViewList),
+        (status = 200, description = "The transactions that were moved to \"requested\" status (may be an empty list, body = ApiResponse<Vec<TransactionView>>)", body = ApiResponseTransactionViewList),
         (status = 400, description = "Validation error - neither transaction_ids nor all=true was provided, or a selected transaction isn't the caller's / isn't requestable", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
@@ -404,7 +404,7 @@ async fn withdraw(
     security(("session_cookie" = ["bank.withdraw.accept"])),
     request_body(content = AcceptWithdrawalRequest, description = "Either `transaction_ids` (specific rows, any member) or `all: true` for every currently-requested transaction guild-wide; provide exactly one of the two."),
     responses(
-        (status = 200, description = "The transactions that were accepted and paid out (may be an empty list)", body = ApiResponseTransactionViewList),
+        (status = 200, description = "The transactions that were accepted and paid out (may be an empty list, body = ApiResponse<Vec<TransactionView>>)", body = ApiResponseTransactionViewList),
         (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
         (status = 400, description = "Validation error - neither transaction_ids nor all=true was provided, or a selected transaction isn't currently requested", body = ProblemDetails)
     )
@@ -457,12 +457,12 @@ async fn accept_withdrawal(
     security(("session_cookie" = ["bank.withdraw.accept"])),
     request_body(content = RejectWithdrawalRequest, description = "Either `transaction_ids` or `all: true`."),
     responses(
-        (status = 200, description = "The transactions that were rejected (may be an empty list)", body = ApiResponseTransactionViewList),
+        (status = 200, description = "The transactions that were rejected (may be an empty list, body = ApiResponse<Vec<TransactionView>>)", body = ApiResponseTransactionViewList),
         (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
         (status = 400, description = "Validation error", body = ProblemDetails)
     )
 )]
-async fn reject_withdrawal(
+pub(crate) async fn reject_withdrawal(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,

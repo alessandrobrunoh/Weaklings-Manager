@@ -18,11 +18,20 @@ pub enum WakeTarget {
     Fanout,
     /// Alliance event mirror retry queue.
     MirrorRetry,
+    /// Sync engine relay (tenant outbox to control jobs).
+    SyncRelay,
+    /// Sync engine executors (claim and apply control jobs).
+    SyncExecutor,
 }
 
 impl WakeTarget {
     /// Every target, in declaration order.
-    pub const ALL: [WakeTarget; 2] = [WakeTarget::Fanout, WakeTarget::MirrorRetry];
+    pub const ALL: [WakeTarget; 4] = [
+        WakeTarget::Fanout,
+        WakeTarget::MirrorRetry,
+        WakeTarget::SyncRelay,
+        WakeTarget::SyncExecutor,
+    ];
 
     const fn bit(self) -> u32 {
         1 << (self as u32)
@@ -130,8 +139,15 @@ mod tests {
         assert!(fanout.contains(WakeTarget::Fanout));
         assert!(!fanout.contains(WakeTarget::MirrorRetry));
         let both = fanout.union(WakeSet::of(WakeTarget::MirrorRetry));
-        assert_eq!(both, WakeSet::all());
-        assert_eq!(both.iter().collect::<Vec<_>>(), WakeTarget::ALL);
+        assert_eq!(
+            both.iter().collect::<Vec<_>>(),
+            [WakeTarget::Fanout, WakeTarget::MirrorRetry]
+        );
+        let every = WakeTarget::ALL
+            .into_iter()
+            .fold(WakeSet::none(), WakeSet::with);
+        assert_eq!(every, WakeSet::all());
+        assert_eq!(every.iter().collect::<Vec<_>>(), WakeTarget::ALL);
         assert_eq!(fanout.union(fanout), fanout);
         assert_eq!(WakeSet::from(WakeTarget::MirrorRetry).iter().count(), 1);
     }

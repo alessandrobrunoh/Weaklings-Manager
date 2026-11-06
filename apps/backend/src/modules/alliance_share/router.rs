@@ -43,7 +43,7 @@ pub fn router() -> Router {
     tag = "alliance",
     request_body = CreateAllianceShareRequest,
     responses(
-        (status = 200, description = "Snapshot published (or updated in place)", body = AllianceShareView),
+        (status = 200, description = "Snapshot published (or updated in place, body = ApiResponse<AllianceShareView>)", body = ApiResponse<AllianceShareView>),
         (status = 400, description = "Called from an alliance tenant", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Missing alliance.share", body = ProblemDetails),
@@ -91,7 +91,7 @@ async fn create_share(
     tag = "alliance",
     params(("id" = i64, Path, description = "Source build id")),
     responses(
-        (status = 200, description = "Share status", body = AllianceShareStatusView),
+        (status = 200, description = "Share status", body = ApiResponse<AllianceShareStatusView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     ),
     security(("session_cookie" = []))
@@ -114,7 +114,7 @@ async fn get_build_share(
     tag = "alliance",
     params(("id" = i64, Path, description = "Source comp id")),
     responses(
-        (status = 200, description = "Share status", body = AllianceShareStatusView),
+        (status = 200, description = "Share status", body = ApiResponse<AllianceShareStatusView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     ),
     security(("session_cookie" = []))
@@ -218,7 +218,7 @@ async fn unshare_comp(
     tag = "alliance",
     params(("id" = i64, Path, description = "Source split id")),
     responses(
-        (status = 200, description = "Share status", body = AllianceShareStatusView),
+        (status = 200, description = "Share status", body = ApiResponse<AllianceShareStatusView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     ),
     security(("session_cookie" = []))

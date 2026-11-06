@@ -84,6 +84,7 @@ async fn require_self_or_officer(
 #[utoipa::path(
     get,
     path = "/api/progression/me",
+    operation_id = "get_progression_me",
     tag = "progression",
     summary = "Get the caller's season XP, level, and rank",
     description = "Returns the active covering season (if any), the caller's XP/level in that \
@@ -120,7 +121,7 @@ async fn get_me(
         short level-threshold preview. Members can read it; only admins can write.",
     security(("session_cookie" = ["progression.view"])),
     responses(
-        (status = 200, description = "Settings retrieved", body = ProgressionSettingsView),
+        (status = 200, description = "Settings retrieved", body = ApiResponse<ProgressionSettingsView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -150,7 +151,7 @@ async fn get_settings(
     security(("session_cookie" = ["progression.settings.manage"])),
     request_body = UpdateProgressionSettingsRequest,
     responses(
-        (status = 200, description = "Settings updated", body = ProgressionSettingsView),
+        (status = 200, description = "Settings updated", body = ApiResponse<ProgressionSettingsView>),
         (status = 400, description = "Invalid settings", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
@@ -182,7 +183,7 @@ async fn update_settings(
     summary = "List progression seasons",
     security(("session_cookie" = ["progression.view"])),
     responses(
-        (status = 200, description = "Seasons retrieved", body = Vec<SeasonView>),
+        (status = 200, description = "Seasons retrieved", body = ApiResponse<Vec<SeasonView>>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -210,7 +211,7 @@ async fn list_seasons(
     security(("session_cookie" = ["progression.settings.manage"])),
     request_body = CreateSeasonRequest,
     responses(
-        (status = 200, description = "Season created", body = SeasonView),
+        (status = 200, description = "Season created", body = ApiResponse<SeasonView>),
         (status = 400, description = "Invalid window or name", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
@@ -244,7 +245,7 @@ async fn create_season(
     params(("season_id" = i64, Path, description = "Season id")),
     request_body = UpdateSeasonRequest,
     responses(
-        (status = 200, description = "Season updated", body = SeasonView),
+        (status = 200, description = "Season updated", body = ApiResponse<SeasonView>),
         (status = 400, description = "Invalid window or name", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
@@ -279,7 +280,7 @@ async fn update_season(
     security(("session_cookie" = ["progression.settings.manage"])),
     params(("season_id" = i64, Path, description = "Season id")),
     responses(
-        (status = 200, description = "Season activated", body = SeasonView),
+        (status = 200, description = "Season activated", body = ApiResponse<SeasonView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Season not found", body = ProblemDetails)
@@ -373,6 +374,7 @@ async fn get_leaderboard(
 #[utoipa::path(
     get,
     path = "/api/progression/users/{id}",
+    operation_id = "get_progression_user",
     tag = "progression",
     summary = "Get a member's season XP snapshot",
     security(("session_cookie" = ["progression.view"])),

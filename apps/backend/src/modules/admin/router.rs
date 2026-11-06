@@ -104,7 +104,7 @@ async fn reload_permissions(
         granted, not only what already is. Requires `permissions.reload`.",
     security(("session_cookie" = ["permissions.reload"])),
     responses(
-        (status = 200, description = "Matrix retrieved", body = PermissionMatrix),
+        (status = 200, description = "Matrix retrieved", body = ApiResponse<PermissionMatrix>),
         (status = 403, description = "Forbidden - lacks permissions.reload", body = ProblemDetails)
     )
 )]
@@ -138,7 +138,7 @@ pub async fn get_permission_matrix(
     params(("role_id" = String, Path, description = "Internal role id")),
     request_body = UpdateRolePermissionsRequest,
     responses(
-        (status = 200, description = "Permissions updated", body = PermissionMatrix),
+        (status = 200, description = "Permissions updated", body = ApiResponse<PermissionMatrix>),
         (status = 400, description = "Unknown permission key", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks permissions.reload", body = ProblemDetails),
         (status = 404, description = "Role not found", body = ProblemDetails)
@@ -207,7 +207,7 @@ pub async fn update_role_permissions(
     security(("session_cookie" = ["roles.manage"])),
     request_body = CreateRoleRequest,
     responses(
-        (status = 200, description = "Role created", body = PermissionMatrix),
+        (status = 200, description = "Role created", body = ApiResponse<PermissionMatrix>),
         (status = 400, description = "Invalid name or Discord snowflake", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
         (status = 409, description = "Name or Discord link already taken", body = ProblemDetails)
@@ -237,7 +237,7 @@ pub async fn create_role(
     params(("role_id" = String, Path, description = "Internal role id")),
     request_body = UpdateRoleRequest,
     responses(
-        (status = 200, description = "Role updated", body = PermissionMatrix),
+        (status = 200, description = "Role updated", body = ApiResponse<PermissionMatrix>),
         (status = 400, description = "Invalid name or Discord snowflake", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
         (status = 404, description = "Role not found", body = ProblemDetails),
@@ -269,7 +269,7 @@ pub async fn update_role(
     security(("session_cookie" = ["roles.manage"])),
     params(("role_id" = String, Path, description = "Internal role id")),
     responses(
-        (status = 200, description = "Role deleted", body = PermissionMatrix),
+        (status = 200, description = "Role deleted", body = ApiResponse<PermissionMatrix>),
         (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
         (status = 404, description = "Role not found", body = ProblemDetails),
         (status = 409, description = "Protected default or last roles.manage grant", body = ProblemDetails)
@@ -299,7 +299,7 @@ pub async fn delete_role(
         Discord settings, events, or progression settings. Missing bot token yields 502.",
     security(("session_cookie" = ["roles.manage"])),
     responses(
-        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 200, description = "Discord roles retrieved", body = ApiResponse<Vec<DiscordRoleView>>),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
     )
@@ -326,7 +326,7 @@ pub async fn list_guild_discord_roles(
         forum tags attached to forum channels. Same permission set as `/api/admin/discord/roles`.",
     security(("session_cookie" = ["admin.settings.manage"])),
     responses(
-        (status = 200, description = "Discord channels retrieved", body = [DiscordChannelView]),
+        (status = 200, description = "Discord channels retrieved", body = ApiResponse<Vec<DiscordChannelView>>),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
     )
@@ -363,7 +363,7 @@ pub struct ListDiscordMembersQuery {
     security(("session_cookie" = ["users.create"])),
     params(ListDiscordMembersQuery),
     responses(
-        (status = 200, description = "Unregistered Discord members", body = [DiscordMemberView]),
+        (status = 200, description = "Unregistered Discord members", body = ApiResponse<Vec<DiscordMemberView>>),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable, bot token missing, or Server Members Intent disabled", body = ProblemDetails)
     )
@@ -420,7 +420,7 @@ async fn require_discord_catalog(user: &UserContext, perms: &Permissions) -> Res
         settings screen can edit them. Requires `admin.settings.manage`.",
     security(("session_cookie" = ["admin.settings.manage"])),
     responses(
-        (status = 200, description = "Colours retrieved", body = BrandColorsView),
+        (status = 200, description = "Colours retrieved", body = ApiResponse<BrandColorsView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
     )
@@ -453,7 +453,7 @@ pub async fn get_branding(
         other members on their next page load. Requires `admin.settings.manage`.",
     security(("session_cookie" = ["admin.settings.manage"])),
     responses(
-        (status = 200, description = "Colours saved", body = BrandColorsView),
+        (status = 200, description = "Colours saved", body = ApiResponse<BrandColorsView>),
         (status = 400, description = "A colour is not a hex triplet", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
@@ -489,7 +489,7 @@ pub async fn update_branding(
         `admin.settings.manage`.",
     security(("session_cookie" = ["admin.settings.manage"])),
     responses(
-        (status = 200, description = "Settings retrieved", body = GuildSettingsView),
+        (status = 200, description = "Settings retrieved", body = ApiResponse<GuildSettingsView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
     )
@@ -520,7 +520,7 @@ pub async fn get_guild_settings(
     security(("session_cookie" = ["admin.settings.manage"])),
     request_body(content = UpdateGuildSettingsRequest, description = "Fields to update. All fields are optional; absent fields are left unchanged, empty strings clear."),
     responses(
-        (status = 200, description = "Settings updated", body = GuildSettingsView),
+        (status = 200, description = "Settings updated", body = ApiResponse<GuildSettingsView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
     )
@@ -545,7 +545,7 @@ pub async fn update_guild_settings(
     summary = "Read the Discord AutoRole configuration",
     security(("session_cookie" = ["autorole.manage"])),
     responses(
-        (status = 200, description = "AutoRole configuration retrieved", body = AutoRoleSettingsView),
+        (status = 200, description = "AutoRole configuration retrieved", body = ApiResponse<AutoRoleSettingsView>),
         (status = 403, description = "Forbidden - lacks autorole.manage", body = ProblemDetails)
     )
 )]
@@ -568,7 +568,7 @@ pub async fn get_autorole(
     summary = "List Discord roles available for AutoRole",
     security(("session_cookie" = ["autorole.manage"])),
     responses(
-        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 200, description = "Discord roles retrieved", body = ApiResponse<Vec<DiscordRoleView>>),
         (status = 403, description = "Forbidden - lacks autorole.manage", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable", body = ProblemDetails)
     )
@@ -595,7 +595,7 @@ pub async fn list_discord_roles(
     security(("session_cookie" = ["autorole.manage"])),
     request_body = UpdateAutoRoleRequest,
     responses(
-        (status = 200, description = "AutoRole updated", body = AutoRoleSettingsView),
+        (status = 200, description = "AutoRole updated", body = ApiResponse<AutoRoleSettingsView>),
         (status = 400, description = "Role is invalid or cannot be assigned", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks autorole.manage", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable", body = ProblemDetails)
@@ -650,7 +650,7 @@ async fn require_tenant_feature_admin(
     get,
     path = "/api/admin/features",
     tag = "admin",
-    responses((status = 200, description = "Tenant feature flags"))
+    responses((status = 200, description = "Tenant feature flags", body = ApiResponse<TenantFeaturesView>))
 )]
 pub async fn get_tenant_features(
     user: UserContext,
@@ -669,7 +669,7 @@ pub async fn get_tenant_features(
     put,
     path = "/api/admin/features",
     tag = "admin",
-    responses((status = 200, description = "Updated flags"))
+    responses((status = 200, description = "Updated flags", body = ApiResponse<TenantFeaturesView>))
 )]
 pub async fn put_tenant_features(
     user: UserContext,

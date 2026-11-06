@@ -2252,6 +2252,8 @@ mod tests {
             vod_forum_thread_id: None,
             source_tenant_id: None,
             source_event_id: None,
+            mass_notified_at: None,
+            reminder_notified_at: None,
         });
         raw.participations.push(event_participation::Model {
             id: 1,
