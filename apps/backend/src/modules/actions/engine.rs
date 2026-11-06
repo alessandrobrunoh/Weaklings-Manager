@@ -21,7 +21,9 @@ use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::capabilities::catalogue;
 use crate::modules::events::{
     entities::event as event_entity,
-    lifecycle::{AfterCommit, Cause, Transition, XpFilter, transition_in_txn},
+    lifecycle::{
+        AfterCommit, Cause, Transition, TransitionOutcome, WakeSet, XpFilter, transition_in_txn,
+    },
     service::EventService,
 };
 use crate::modules::sync::{OriginRef, copy_role::CopyRole};
@@ -79,7 +81,11 @@ pub struct Actor {
 }
 
 /// Permissions the event actions consult.
-const EVENT_PERMISSIONS: [Permission; 2] = [Permission::EventsEdit, Permission::EventsDelete];
+const EVENT_PERMISSIONS: [Permission; 3] = [
+    Permission::EventsView,
+    Permission::EventsEdit,
+    Permission::EventsDelete,
+];
 
 /// Builds the actor for a request in the current tenant.
 pub async fn actor_for(user: &UserContext, perms: &Permissions, tenant_kind: &str) -> Actor {
@@ -162,6 +168,18 @@ pub fn evaluate(def: &ActionDef, facts: &Facts, actor: &Actor) -> Verdict {
                 def.module
             ),
             json!({ "module": def.module }),
+        );
+    }
+    if !actor.granted.contains(&Permission::EventsView) {
+        return denied(
+            "permission_missing",
+            403,
+            false,
+            format!(
+                "You need {} to use this event.",
+                Permission::EventsView.as_str()
+            ),
+            json!({ "permission": Permission::EventsView.as_str() }),
         );
     }
     if def.origin == OriginRule::OwnerOnly && facts.copy.is_read_only() {
@@ -479,6 +497,30 @@ pub async fn execute(
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+    // A concurrent identical request may have applied while this one waited for the lock; its
+    // row is visible now, so the first answer stands and nothing else runs.
+    if let Some(key) = request.idempotency_key {
+        match action_log::find_replay(&txn, actor.user_id, def.id, key).await {
+            Ok(Some(previous)) => {
+                let _ = txn.rollback().await;
+                return Ok(finish(
+                    target,
+                    actor,
+                    def,
+                    event_id,
+                    "applied",
+                    &previous.from_state.unwrap_or_default(),
+                    &previous.to_state.unwrap_or_default(),
+                )
+                .await?);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let _ = txn.rollback().await;
+                return Err(error.into());
+            }
+        }
+    }
     let facts = Facts::from_model(&model, pre.copy, pre.origin.clone());
     if request.expected_etag.is_some_and(|etag| etag != facts.etag) {
         let _ = txn.rollback().await;
@@ -492,54 +534,36 @@ pub async fn execute(
         });
     }
 
-    if is_noop(def, &facts) {
-        let logged = action_log::insert(
-            &txn,
-            NewRow {
-                entity_type: "event",
-                entity_id: event_id,
-                action: def.id,
-                actor_user_id: actor.user_id,
-                channel: channel_of(cause),
-                idempotency_key: request.idempotency_key,
-                from_state: &facts.state,
-                to_state: &facts.state,
-                outcome: "noop",
-                params: truncated_params(request.params),
-            },
-        )
-        .await;
-        if let Err(error) = logged {
-            let _ = txn.rollback().await;
-            return Err(error.into());
-        }
-        txn.commit().await.map_err(AppError::Database)?;
-        return Ok(finish(
-            target,
-            actor,
-            def,
-            event_id,
-            "noop",
-            &facts.state,
-            &facts.state,
-        )
-        .await?);
-    }
-
     let xp = XpFilter::from_award_xp(!facts.copy.is_copy());
     let Some(transition) = event_def::transition_for(def.id, xp) else {
         let _ = txn.rollback().await;
         return Err(AppError::Internal(format!("no transition for {}", def.id)).into());
     };
-    let outcome = match transition_in_txn(
-        &txn,
-        event_id,
-        transition,
-        cause,
-        actor.discord_id.as_deref(),
-    )
-    .await
-    {
+    // A no-op writes no status. A stop still goes through the transition core, which resyncs a
+    // stale split roster on a repeated stop; other no-ops take an unchanged outcome so the
+    // post-commit work below runs for them too, as the legacy routes did.
+    let applied = if is_noop(def, &facts) && !matches!(transition, Transition::Stop { .. }) {
+        Ok(TransitionOutcome {
+            model: model.clone(),
+            transition,
+            cause,
+            changed: false,
+            splits: None,
+            effects: Vec::new(),
+            sync_outbox_id: None,
+            wake: WakeSet::default(),
+        })
+    } else {
+        transition_in_txn(
+            &txn,
+            event_id,
+            transition,
+            cause,
+            actor.discord_id.as_deref(),
+        )
+        .await
+    };
+    let outcome = match applied {
         Ok(outcome) => outcome,
         Err(error) => {
             let _ = txn.rollback().await;
@@ -547,6 +571,7 @@ pub async fn execute(
         }
     };
     let to = outcome.model.status.clone();
+    let label = if outcome.changed { "applied" } else { "noop" };
     let logged = action_log::insert(
         &txn,
         NewRow {
@@ -558,7 +583,7 @@ pub async fn execute(
             idempotency_key: request.idempotency_key,
             from_state: &facts.state,
             to_state: &to,
-            outcome: "applied",
+            outcome: label,
             params: truncated_params(request.params),
         },
     )
@@ -569,11 +594,11 @@ pub async fn execute(
     }
     txn.commit().await.map_err(AppError::Database)?;
 
-    if matches!(transition, Transition::Stop { .. }) {
+    if matches!(outcome.transition, Transition::Stop { .. }) {
         EventService::new()
             .retry_event_completion_xp(target.db, event_id)
             .await?;
     }
     outcome.after_commit(after).await?;
-    Ok(finish(target, actor, def, event_id, "applied", &facts.state, &to).await?)
+    Ok(finish(target, actor, def, event_id, label, &facts.state, &to).await?)
 }

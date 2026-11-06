@@ -17,15 +17,20 @@ use super::engine::{
 };
 use super::entities::event as event_def;
 use super::model::{Noop, OriginRule};
-use crate::modules::auth::Permission;
+use super::router;
+use crate::errors::AppError;
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::events::entities::event;
 use crate::modules::events::lifecycle::XpFilter;
 use crate::modules::events::lifecycle::{AfterCommit, Cause};
 use crate::modules::events::status::{EVENT_TRANSITIONS, edge};
+use crate::modules::splits::entities::split;
 use crate::modules::sync::OriginRef;
 use crate::modules::sync::copy_role::CopyRole;
-use crate::modules::sync::test_support::sqlite_db;
+use crate::modules::sync::test_support::{insert_split, sqlite_db};
 use crate::modules::users::entities as users;
+use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind};
+use axum::{Extension, extract::Path};
 
 const TENANT: &str = "1000000000000000001";
 
@@ -41,12 +46,32 @@ fn facts(state: &str, archived: bool, creator: i64, copy: CopyRole) -> Facts {
     }
 }
 
+/// An actor that may view events (every test actor may, the view check has its own test).
 fn actor(user_id: i64, granted: &[Permission], module_available: bool) -> Actor {
     Actor {
         user_id,
         discord_id: None,
-        granted: granted.iter().copied().collect::<HashSet<_>>(),
+        granted: granted
+            .iter()
+            .copied()
+            .chain(std::iter::once(Permission::EventsView))
+            .collect::<HashSet<_>>(),
         module_available,
+    }
+}
+
+/// A signed-in tenant member without any permission.
+fn outsider() -> UserContext {
+    UserContext {
+        id: "900000000000000009".to_owned(),
+        username: "outsider".to_owned(),
+        email: None,
+        avatar: None,
+        roles: Vec::new(),
+        highest_role: String::new(),
+        user_id: 9,
+        super_admin_id: None,
+        is_tenant_owner: false,
     }
 }
 
@@ -117,6 +142,56 @@ fn module_gate_comes_first_and_hides_the_action() {
         !descriptor.visible,
         "module refusals are hidden, not shown disabled"
     );
+}
+
+#[test]
+fn viewing_is_checked_before_the_copy_and_authority_rules() {
+    let copy = facts("live", false, 1, CopyRole::ActiveCopy);
+    let blind = Actor {
+        user_id: 1,
+        discord_id: None,
+        granted: [Permission::EventsEdit].into_iter().collect(),
+        module_available: true,
+    };
+    assert_eq!(
+        reason(&evaluate(def("stop"), &copy, &blind)),
+        Some("permission_missing"),
+        "a copy's origin is not revealed to someone who cannot view events"
+    );
+    assert!(!describe_one(def("stop"), &copy, &blind).visible);
+}
+
+#[tokio::test]
+async fn non_viewers_get_403_from_both_action_lists() {
+    let fx = fixture().await;
+    let id = insert_event(&fx.db, fx.creator, "scheduled", false).await;
+    let event_list = router::list_event_actions(
+        outsider(),
+        Extension(Permissions::new_empty()),
+        Extension(fx.db.clone()),
+        Extension(ControlDb(fx.db.clone())),
+        Extension(CurrentTenantId(TENANT.to_owned())),
+        Extension(CurrentTenantKind("guild".to_owned())),
+        Path(id),
+    )
+    .await;
+    assert!(matches!(event_list, Err(AppError::Forbidden(_))));
+    // Forbidden before the lookup, so an unknown id answers the same way.
+    let unknown = router::list_event_actions(
+        outsider(),
+        Extension(Permissions::new_empty()),
+        Extension(fx.db.clone()),
+        Extension(ControlDb(fx.db.clone())),
+        Extension(CurrentTenantId(TENANT.to_owned())),
+        Extension(CurrentTenantKind("guild".to_owned())),
+        Path(id + 1000),
+    )
+    .await;
+    assert!(matches!(unknown, Err(AppError::Forbidden(_))));
+    let collection =
+        router::list_event_collection_actions(outsider(), Extension(Permissions::new_empty()))
+            .await;
+    assert!(matches!(collection, Err(AppError::Forbidden(_))));
 }
 
 #[test]
@@ -464,6 +539,74 @@ async fn replay_with_the_same_key_returns_the_first_answer_without_a_second_row(
 }
 
 #[tokio::test]
+async fn concurrent_same_key_starts_answer_once_without_a_second_row() {
+    let fx = fixture().await;
+    let id = insert_event(&fx.db, fx.creator, "scheduled", false).await;
+    let cx = target(&fx.db);
+    let after = AfterCommit::default();
+    let first = request("start", Some("double-click"));
+    let second = request("start", Some("double-click"));
+    let (a, b) = tokio::join!(
+        engine::execute(&cx, &fx.manager, id, &first, Cause::Web, &after,),
+        engine::execute(&cx, &fx.manager, id, &second, Cause::Web, &after,),
+    );
+    for result in [a, b] {
+        let result = result.expect("both requests get the first answer, not a 500");
+        assert_eq!(result.outcome, "applied");
+        assert_eq!(result.state.to, "live");
+    }
+    assert_eq!(status_of(&fx.db, id).await, "live");
+    let starts = log_rows(&fx.db, id)
+        .await
+        .into_iter()
+        .filter(|row| row.action == "start")
+        .count();
+    assert_eq!(starts, 1, "one log row for the double-clicked start");
+}
+
+#[tokio::test]
+async fn a_repeated_stop_repairs_a_split_whose_sync_failed_earlier() {
+    let fx = fixture().await;
+    let id = insert_event(&fx.db, fx.creator, "stopped", false).await;
+    let split_id = insert_split(&fx.db, fx.creator, false).await;
+    split::ActiveModel {
+        id: Set(split_id),
+        event_id: Set(Some(id)),
+        status: Set("awaiting_event".to_owned()),
+        needs_resync: Set(true),
+        ..Default::default()
+    }
+    .update(&fx.db)
+    .await
+    .expect("flag the split as stale");
+
+    let result = engine::execute(
+        &target(&fx.db),
+        &fx.manager,
+        id,
+        &request("stop", None),
+        Cause::Web,
+        &AfterCommit::default(),
+    )
+    .await
+    .expect("repeated stop");
+    assert_eq!(result.outcome, "noop");
+    assert_eq!(status_of(&fx.db, id).await, "stopped");
+    let split = split::Entity::find_by_id(split_id)
+        .one(&fx.db)
+        .await
+        .expect("read split")
+        .expect("split exists");
+    assert!(
+        !split.needs_resync,
+        "the no-op stop retried the split repair"
+    );
+    let rows = log_rows(&fx.db, id).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].outcome, "noop");
+}
+
+#[tokio::test]
 async fn same_state_requests_are_noops_and_leave_the_row_alone() {
     let fx = fixture().await;
     let id = insert_event(&fx.db, fx.creator, "stopped", false).await;
@@ -757,6 +900,20 @@ async fn concurrent_starts_apply_once_on_postgres() {
     let noops = outcomes.iter().filter(|o| o.as_str() == "noop").count();
     assert_eq!((applied, noops), (1, 1), "{outcomes:?}");
     assert_eq!(status_of(&db, id).await, "live");
+
+    // The same race with one shared idempotency key: the loser replays, never a 500.
+    let keyed = insert_event(&db, creator, "scheduled", false).await;
+    let keyed_a = request("start", Some("dbl"));
+    let keyed_b = request("start", Some("dbl"));
+    let (a, b) = tokio::join!(
+        engine::execute(&cx_a, &manager, keyed, &keyed_a, Cause::Web, &after),
+        engine::execute(&cx_b, &manager, keyed, &keyed_b, Cause::Web, &after),
+    );
+    for result in [a, b] {
+        assert_eq!(result.expect("keyed start answers").outcome, "applied");
+    }
+    assert_eq!(status_of(&db, keyed).await, "live");
+    assert_eq!(log_rows(&db, keyed).await.len(), 1, "one log row");
 
     db.close().await.expect("close tenant DB");
     drop_schema(&admin, &schema).await.expect("drop schema");

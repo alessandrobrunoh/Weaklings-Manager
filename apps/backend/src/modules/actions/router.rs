@@ -21,7 +21,7 @@ use super::model::{
     ApiResponseActionResult, CatalogEntry,
 };
 use crate::errors::AppError;
-use crate::modules::auth::{Permissions, UserContext};
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::events::lifecycle::{AfterCommit, Cause};
 use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
@@ -67,6 +67,8 @@ pub async fn list_event_actions(
     Extension(CurrentTenantKind(kind)): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<ActionList>>, AppError> {
+    // Checked before the lookup so a non-viewer learns neither the event's state nor whether it exists.
+    user.require(&perms, Permission::EventsView).await?;
     let actor = actor_of(&user, &perms, &kind).await;
     let facts = engine::load_event_facts(&db, &control, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(engine::event_action_list(
@@ -87,8 +89,10 @@ pub async fn list_event_actions(
     )
 )]
 pub async fn list_event_collection_actions(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
 ) -> Result<Json<ApiResponse<ActionList>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
     Ok(Json(ApiResponse::new(engine::event_collection_list())))
 }
 
