@@ -12431,6 +12431,25 @@
         ],
         "type": "object"
       },
+      "EffectRef": {
+        "description": "Reference to an effect row written by a transition or a reminder (DO §5.2).",
+        "properties": {
+          "id": {
+            "description": "Outbox row id.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "Effect kind (`discord_delivery::kinds`), in its stored string form.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
       "EffectSide": {
         "description": "Which side of the fight an effect lands on, as the dataset's own `target` vocabulary maps onto\nthe two groups a caller reasons about — the fight has no geometry, so anything more specific\nthan \"the caster's side\" or \"the other side\" is not meaningful here.",
         "enum": [
@@ -13484,6 +13503,32 @@
           "regear_requested_total",
           "net",
           "friendly_combat_loss_total"
+        ],
+        "type": "object"
+      },
+      "EventEffectsResponse": {
+        "description": "Response of the lifecycle routes (start, stop, cancel, uncancel, remind): the event as the\nAPI renders it after the request, plus the Discord effects this request wrote. The effects\nare what the bot executes; an empty list means the request changed nothing.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EventView",
+            "description": "The event as the API renders it after the request."
+          },
+          "effects": {
+            "description": "Discord effects written by this request, in the order they were written.",
+            "items": {
+              "$ref": "#/components/schemas/EffectRef"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "effects"
         ],
         "type": "object"
       },
@@ -35778,7 +35823,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseEventView"
+                  "$ref": "#/components/schemas/EventEffectsResponse"
                 }
               }
             },
@@ -36771,7 +36816,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseEventView"
+                  "$ref": "#/components/schemas/EventEffectsResponse"
                 }
               }
             },
@@ -37194,7 +37239,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseEventView"
+                  "$ref": "#/components/schemas/EventEffectsResponse"
                 }
               }
             },
@@ -37273,7 +37318,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseEventView"
+                  "$ref": "#/components/schemas/EventEffectsResponse"
                 }
               }
             },
@@ -37420,7 +37465,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseEventView"
+                  "$ref": "#/components/schemas/EventEffectsResponse"
                 }
               }
             },
@@ -40226,6 +40271,41 @@
         "summary": "What the signed-in user may see and use in the current tenant.",
         "tags": [
           "capabilities"
+        ]
+      }
+    },
+    "/api/members/ensure": {
+      "post": {
+        "description": "Requires the configured X-Bot-Secret and X-Guild-Id. Idempotent; concurrent first calls converge on one row.",
+        "operationId": "ensure_member",
+        "responses": {
+          "200": {
+            "description": "Member row ensured"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid Discord id"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid or missing bot secret"
+          }
+        },
+        "summary": "Create or reactivate a member the bot verified is in this server",
+        "tags": [
+          "members"
         ]
       }
     },
@@ -47113,6 +47193,10 @@
     {
       "description": "Deterministic, versioned rules answering \"what's wrong\" instead of leaving an officer to infer it from totals. Recomputed synchronously on every read; a finding disappears once its condition stops holding. A drill-down of intel, gated on the same feature key.",
       "name": "attention"
+    },
+    {
+      "description": "Member provisioning from the Discord bot: a verified server member gets or regains a local account (`POST /members/ensure`).",
+      "name": "members"
     },
     {
       "description": "Season-scoped XP and levels: members earn XP from Discord and guild actions; admins model the season dates and curve.",
