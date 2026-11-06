@@ -7,7 +7,6 @@ import {
   validateBuildDraft,
   validateBuildName,
 } from '../../shared/validation/build-validation';
-import { groupBuildsByCreator } from './group-by-creator';
 
 import type {
   BuildCategoryView,
@@ -727,7 +726,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
         </div>
         <app-data-table
           [columns]="buildColumns()"
-          [rows]="buildsGrouped()"
+          [rows]="builds()"
           [loading]="loading()"
           [error]="loadFailed()"
           [serverMode]="true"
@@ -759,7 +758,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             <span class="chip text-xs">{{ row.category_name || t('comps.noCategory') }}</span>
           </ng-template>
           <ng-template dataTableCell="items" let-row>
-            <span class="font-mono text-xs font-semibold">{{ row.item_count }}/10 slots</span>
+            <span class="font-mono text-xs font-semibold">{{ row.main_item_count }}/10 slots</span>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
@@ -1199,9 +1198,6 @@ export class Comps {
   private compsLoadedPage = 1;
   protected readonly builds = signal<BuildSummary[]>([]);
   protected readonly buildsTotal = signal(0);
-  protected readonly buildsGrouped = computed(() =>
-    groupBuildsByCreator(this.builds()).flatMap((group) => group.items),
-  );
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
@@ -1475,7 +1471,7 @@ export class Comps {
     {
       key: 'items',
       label: 'comps.items',
-      accessor: (row) => row.item_count,
+      accessor: (row) => row.main_item_count,
       align: 'right',
     },
     { key: 'actions', label: 'common.actions', align: 'right' },

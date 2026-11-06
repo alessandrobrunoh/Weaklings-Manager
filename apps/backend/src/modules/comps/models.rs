@@ -128,9 +128,12 @@ pub struct BuildSummary {
     pub created_by_username: String,
     /// The timestamp when the build was last updated.
     pub updated_at: String,
-    /// The number of items in the build.
+    /// The number of items in the build, both loadouts.
     #[schema(example = 7)]
     pub item_count: u64,
+    /// The number of items in the main loadout (the one a 10-slot build is measured by).
+    #[schema(example = 7)]
+    pub main_item_count: u64,
     /// When this build was archived, if it has been. `None` means it's active.
     pub archived_at: Option<String>,
 }

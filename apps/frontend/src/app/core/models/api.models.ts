@@ -1396,6 +1396,8 @@ export interface BuildSummary {
   created_by_username: string;
   updated_at: string;
   item_count: number;
+  /** Items in the main loadout; a build fills 10 slots. */
+  main_item_count: number;
   /** When this build was archived, if it has been. `null` means it's active. */
   archived_at: string | null;
 }

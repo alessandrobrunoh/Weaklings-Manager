@@ -722,6 +722,11 @@ impl CompService {
             .filter(BuildItemColumn::BuildId.eq(build.id))
             .count(db)
             .await?;
+        let main_item_count = build_item::Entity::find()
+            .filter(BuildItemColumn::BuildId.eq(build.id))
+            .filter(BuildItemColumn::Loadout.eq(BuildLoadout::Main.as_str()))
+            .count(db)
+            .await?;
 
         Ok(BuildSummary {
             id: build.id,
@@ -734,6 +739,7 @@ impl CompService {
             created_by_username,
             updated_at: build.updated_at.to_rfc3339(),
             item_count,
+            main_item_count,
             archived_at: build.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
@@ -4400,6 +4406,22 @@ mod tests {
             )
         );
         assert!(spells_on(&after, BuildLoadout::Main, BuildSlot::Weapon).active.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_build_summary_counts_only_the_main_loadout_for_its_slots() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        for loadout in [BuildLoadout::Main, BuildLoadout::Swap] {
+            service
+                .upsert_build_item(&db, build_id, loadout, BuildSlot::Weapon, broadsword())
+                .await
+                .expect("weapon should be stored");
+        }
+
+        let detail = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(detail.summary.item_count, 2);
+        assert_eq!(detail.summary.main_item_count, 1);
     }
 
     #[tokio::test]
