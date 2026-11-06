@@ -8,13 +8,13 @@ use utoipa::ToSchema;
 pub struct SubmitVodRequest {
     /// Raw VOD URL (normalized server-side).
     pub url: String,
-    /// Discord forum thread id the command was invoked in.
+    /// Discord forum thread id the command was invoked in (verified against Discord server-side).
     pub discord_thread_id: String,
     /// Discord message id associated with the claim.
     pub discord_message_id: String,
     /// Parent forum channel id (must match `progression_settings.vod_forum_channel_id`).
     pub forum_channel_id: String,
-    /// Discord snowflake of the thread owner. Must match the claimer.
+    /// Discord snowflake of the thread owner. Must match the claimer (and Discord's own record).
     pub thread_owner_discord_id: String,
 }
 

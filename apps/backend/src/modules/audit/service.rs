@@ -11,6 +11,30 @@ use sea_orm::{
 
 pub struct AuditService;
 
+/// Maximum bytes of pretty-printed details echoed into a Discord embed field.
+const DETAILS_EMBED_MAX_BYTES: usize = 1000;
+
+/// Marker appended when details were cut for the embed.
+const TRUNCATION_MARKER: &str = "\n... (truncated)";
+
+/// Shortens `details` to at most `max_bytes` bytes of content, cutting on a char boundary.
+///
+/// `String::truncate` panics when the cut lands inside a multi-byte character (accents,
+/// Cyrillic, emoji), and this runs after the audited mutation has already committed. The cut
+/// moves back to the previous boundary so the text stays valid UTF-8 and no character is split.
+fn truncate_details(mut details: String, max_bytes: usize) -> String {
+    if details.len() <= max_bytes {
+        return details;
+    }
+    let mut cut = max_bytes;
+    while !details.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    details.truncate(cut);
+    details.push_str(TRUNCATION_MARKER);
+    details
+}
+
 /// Filters for `GET /api/audit`.
 #[derive(Debug, Clone, Default)]
 pub struct AuditListFilters {
@@ -223,11 +247,10 @@ impl AuditService {
             }
 
             if let Some(det) = &details {
-                let mut det_str = serde_json::to_string_pretty(det).unwrap_or_default();
-                if det_str.len() > 1000 {
-                    det_str.truncate(1000);
-                    det_str.push_str("\n... (truncated)");
-                }
+                let det_str = truncate_details(
+                    serde_json::to_string_pretty(det).unwrap_or_default(),
+                    DETAILS_EMBED_MAX_BYTES,
+                );
                 fields.push(serde_json::json!({
                     "name": "📝 Details",
                     "value": format!("```json\n{}\n```", det_str),
@@ -301,11 +324,10 @@ impl AuditService {
             }
 
             if let Some(det) = &inserted.details {
-                let mut det_str = serde_json::to_string_pretty(det).unwrap_or_default();
-                if det_str.len() > 1000 {
-                    det_str.truncate(1000);
-                    det_str.push_str("\n... (truncated)");
-                }
+                let det_str = truncate_details(
+                    serde_json::to_string_pretty(det).unwrap_or_default(),
+                    DETAILS_EMBED_MAX_BYTES,
+                );
                 fields.push(serde_json::json!({
                     "name": "📋 Transaction Details",
                     "value": format!("```json\n{}\n```", det_str),
@@ -429,6 +451,53 @@ mod tests {
             .await
             .expect("migrate");
         db
+    }
+
+    #[test]
+    fn truncate_details_keeps_short_text_untouched() {
+        let text = "{\"reason\": \"ok\"}".to_string();
+        assert_eq!(truncate_details(text.clone(), 1000), text);
+    }
+
+    #[test]
+    fn truncate_details_does_not_split_an_emoji_at_the_cut() {
+        // 998 ASCII bytes then a 4-byte emoji: byte 1000 is inside the emoji.
+        let text = format!("{}{}tail", "a".repeat(998), "\u{1F525}");
+        assert!(!text.is_char_boundary(1000));
+        let out = truncate_details(text, 1000);
+        assert_eq!(out, format!("{}{}", "a".repeat(998), TRUNCATION_MARKER));
+    }
+
+    #[test]
+    fn truncate_details_keeps_an_emoji_that_ends_exactly_on_the_cut() {
+        let text = format!("{}{}tail", "a".repeat(996), "\u{1F525}");
+        assert!(text.is_char_boundary(1000));
+        let out = truncate_details(text, 1000);
+        assert_eq!(
+            out,
+            format!("{}{}{}", "a".repeat(996), "\u{1F525}", TRUNCATION_MARKER)
+        );
+    }
+
+    #[test]
+    fn truncate_details_handles_accents_and_cyrillic_at_every_offset() {
+        for pad in 990..1000 {
+            let text = format!("{}{}", "a".repeat(pad), "\u{e8}\u{416}\u{1F525}".repeat(10));
+            let out = truncate_details(text, 1000);
+            assert!(out.ends_with(TRUNCATION_MARKER));
+            assert!(out.len() <= 1000 + TRUNCATION_MARKER.len());
+        }
+    }
+
+    #[tokio::test]
+    async fn log_stores_long_multibyte_details_intact() {
+        let db = seed_db().await;
+        let reason = format!("{}\u{1F525}", "\u{e8}".repeat(600));
+        let details = serde_json::json!({ "reason": reason });
+        let stored = AuditService::log(&db, "WARN_ISSUE", None, None, None, Some(details.clone()))
+            .await
+            .expect("log must not panic or fail on multibyte details");
+        assert_eq!(stored.details, Some(details));
     }
 
     async fn insert_log(db: &DatabaseConnection, action: &str, entity_type: Option<&str>) {
