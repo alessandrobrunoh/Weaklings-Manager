@@ -5,6 +5,11 @@
 pub(crate) mod albion_scope;
 pub(crate) mod battle_sync;
 pub(crate) mod control_migration;
+#[allow(
+    dead_code,
+    reason = "the Discord outbox is inert until the lifecycle, bot API and scheduler slices consume it"
+)]
+pub(crate) mod discord_delivery;
 pub(crate) mod event_sessions;
 pub(crate) mod migration;
 pub(crate) mod modules;

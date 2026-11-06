@@ -3688,6 +3688,12 @@ impl EventService {
         active.event_date_utc = Set(start.into());
         active.mass_time_utc = Set(Some(mass.into()));
         active.start_time_utc = Set(Some(start.into()));
+        // A schedule moved into the future re-arms the mass notice and the reminder (R22), so a
+        // postponed event is announced again at its new time.
+        if (mass != current_mass || start != current_start) && start > chrono::Utc::now() {
+            active.mass_notified_at = Set(None);
+            active.reminder_notified_at = Set(None);
+        }
 
         active.updated_at = Set(chrono::Utc::now().into());
 
@@ -7821,6 +7827,8 @@ mod tests {
                 vod_forum_thread_id: None,
                 source_tenant_id: None,
                 source_event_id: None,
+                mass_notified_at: None,
+                reminder_notified_at: None,
             },
             Some("comp".to_string()),
             "admin".to_string(),

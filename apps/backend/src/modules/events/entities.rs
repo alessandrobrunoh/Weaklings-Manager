@@ -78,6 +78,11 @@ pub mod event {
         pub source_tenant_id: Option<String>,
         /// Origin event ID for a cross-tenant event copy, when applicable.
         pub source_event_id: Option<i64>,
+        /// When the mass notice was emitted for the current schedule (DO-3a, R22). Cleared
+        /// by a time change into the future so a postponed event is announced again.
+        pub mass_notified_at: Option<DateTimeWithTimeZone>,
+        /// When the one-hour reminder was emitted or made moot for the current schedule (R22).
+        pub reminder_notified_at: Option<DateTimeWithTimeZone>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

@@ -8,13 +8,21 @@
 //! No cross-tenant write is atomic: each destination converges independently
 //! to the current source state, which makes every retry idempotent.
 
-use chrono::Utc;
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    DbBackend, EntityTrait, QueryFilter, QuerySelect, Set, Statement, sea_query::Expr,
+    DbBackend, EntityTrait, QueryFilter, QuerySelect, Set, Statement, TransactionTrait,
+    sea_query::Expr,
 };
+use serde::Serialize;
+use serde_json::json;
+use utoipa::ToSchema;
 
 use crate::{
+    discord_delivery::{
+        kinds::{Cause as OutboxCause, EffectKind},
+        outbox::{self, Effect, EmitOutcome},
+    },
     errors::AppError,
     modules::splits::{
         entities::split,
@@ -107,13 +115,12 @@ pub enum Cause {
     Manual,
 }
 
-/// Reference to an effect row written by a transition. Always empty until the Discord
-/// outbox (DO-3a) starts emitting effects from [`transition_in_txn`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Reference to an effect row written by a transition or a reminder (DO §5.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct EffectRef {
     /// Outbox row id.
     pub id: i64,
-    /// Effect kind (`discord_delivery::kinds`).
+    /// Effect kind (`discord_delivery::kinds`), in its stored string form.
     pub kind: String,
 }
 
@@ -314,16 +321,170 @@ pub async fn transition_in_txn(
         Transition::Unarchive => (apply_unarchive(txn, model).await?, true),
     };
 
+    // Effects only for a row that changed: a repeated stop or cancel writes nothing new.
+    let effects = if changed {
+        emit_transition_effects(txn, transition, &model, cause).await?
+    } else {
+        Vec::new()
+    };
+    let wake = WakeSet {
+        discord_outbox: !effects.is_empty(),
+        ..WakeSet::default()
+    };
+
     Ok(TransitionOutcome {
         model,
         transition,
         cause,
         changed,
         splits,
-        effects: Vec::new(),
+        effects,
         sync_outbox_id: None,
-        wake: WakeSet::default(),
+        wake,
     })
+}
+
+/// Grace period after a session stops before its voice channel is released (DO §4).
+const VOICE_RELEASE_HOURS: i64 = 6;
+
+/// Debounce of `calendar.sync` (DO catalogue): a burst of transitions rebuilds the calendar once.
+const CALENDAR_DEBOUNCE_SECS: i64 = 5;
+
+/// Maps the lifecycle cause onto the outbox label. The label is stored, never branched on,
+/// except by the manual reminder key (which callers pass explicitly).
+const fn outbox_cause(cause: Cause) -> OutboxCause {
+    match cause {
+        Cause::Web => OutboxCause::Web,
+        Cause::Discord => OutboxCause::Discord,
+        Cause::Scheduler => OutboxCause::Scheduler,
+        Cause::Sync { .. } => OutboxCause::Sync,
+        Cause::Settings => OutboxCause::Settings,
+        Cause::Reconcile => OutboxCause::Reconcile,
+        Cause::Import => OutboxCause::Import,
+        Cause::Manual => OutboxCause::Manual,
+    }
+}
+
+/// Writes one effect and records its row id. An already-done once key writes nothing.
+async fn record_effect(
+    txn: &impl ConnectionTrait,
+    now: DateTime<Utc>,
+    cause: OutboxCause,
+    effect: Effect,
+    written: &mut Vec<EffectRef>,
+) -> Result<(), AppError> {
+    let kind = effect.kind;
+    match outbox::emit(txn, now, cause, None, effect).await? {
+        EmitOutcome::Inserted(id) | EmitOutcome::Coalesced(id) => written.push(EffectRef {
+            id,
+            kind: kind.as_str().to_owned(),
+        }),
+        EmitOutcome::AlreadyDone => {}
+    }
+    Ok(())
+}
+
+/// Writes the Discord effects of a transition that changed the row, inside its transaction.
+async fn emit_transition_effects(
+    txn: &DatabaseTransaction,
+    transition: Transition,
+    event: &event::Model,
+    cause: Cause,
+) -> Result<Vec<EffectRef>, AppError> {
+    let now = Utc::now();
+    let mut written = Vec::new();
+    for effect in transition_effects(transition, event, now) {
+        record_effect(txn, now, outbox_cause(cause), effect, &mut written).await?;
+    }
+    Ok(written)
+}
+
+/// The effects of a transition in DO §5.2 order. Depends on the transition and the stored
+/// row only, never on the cause, so every cause yields the same `(kind, payload)` list.
+fn transition_effects(
+    transition: Transition,
+    event: &event::Model,
+    now: DateTime<Utc>,
+) -> Vec<Effect> {
+    let id = event.id;
+    let stopped_at = event.stopped_at.map_or(now, |at| at.with_timezone(&Utc));
+    let voice_release = || {
+        let mut effect = Effect::new(EffectKind::VoiceRelease, id);
+        effect.expires_at = Some(stopped_at + ChronoDuration::hours(VOICE_RELEASE_HOURS));
+        effect
+    };
+    let close = |reason: &str| {
+        let mut effect = Effect::new(EffectKind::EventClose, id);
+        effect.payload = json!({ "reason": reason });
+        effect
+    };
+    let calendar = || {
+        let mut effect = Effect::new(EffectKind::CalendarSync, 0);
+        effect.available_at = Some(now + ChronoDuration::seconds(CALENDAR_DEBOUNCE_SECS));
+        effect
+    };
+    match transition {
+        Transition::Start => {
+            let started_at = event.started_at.map_or(now, |at| at.with_timezone(&Utc));
+            let mut start = Effect::new(EffectKind::EventStart, id);
+            start.key_suffix = Some(started_at.timestamp().to_string());
+            start.expires_at = event.auto_stop_deadline.map(|at| at.with_timezone(&Utc));
+            vec![start, Effect::new(EffectKind::EventUpsert, id), calendar()]
+        }
+        Transition::Stop { auto, .. } => vec![
+            close(if auto { "auto_stopped" } else { "stopped" }),
+            voice_release(),
+            calendar(),
+        ],
+        Transition::Cancel => vec![close("cancelled"), voice_release(), calendar()],
+        Transition::Uncancel | Transition::Unarchive => {
+            vec![Effect::new(EffectKind::EventUpsert, id), calendar()]
+        }
+        Transition::Archive => {
+            let mut effects = vec![Effect::new(EffectKind::EventRemove, id)];
+            if event.vod_forum_thread_id.is_some() {
+                effects.push(Effect::new(EffectKind::VodDelete, id));
+            }
+            if event.discord_voice_channel_id.is_some() {
+                effects.push(voice_release());
+            }
+            effects.push(calendar());
+            effects
+        }
+    }
+}
+
+/// Emits the manual "starts in less than one hour" reminder (DO §5.2, `remind`).
+///
+/// Always `cause = manual`, whoever asked, and coalesced per minute, so the web and the Discord
+/// remind produce the same effect. Only the caller checks that the event is still scheduled.
+///
+/// # Errors
+///
+/// [`AppError::NotFound`] for an unknown event, [`AppError::Database`] otherwise.
+pub async fn emit_manual_reminder(
+    db: &DatabaseConnection,
+    event_id: i64,
+) -> Result<Vec<EffectRef>, AppError> {
+    let txn = db.begin().await.map_err(AppError::Database)?;
+    let event = event::Entity::find_by_id(event_id)
+        .one(&txn)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+    let now = Utc::now();
+    let mut effect = Effect::new(EffectKind::EventReminder, event_id);
+    effect.key_suffix = Some(now.format("%Y%m%d%H%M").to_string());
+    effect.expires_at = Some(
+        event
+            .start_time_utc
+            .unwrap_or(event.event_date_utc)
+            .with_timezone(&Utc),
+    );
+    let mut written = Vec::new();
+    record_effect(&txn, now, OutboxCause::Manual, effect, &mut written).await?;
+    txn.commit().await.map_err(AppError::Database)?;
+    Ok(written)
 }
 
 /// What happens after a stop wrote the status: the completion-XP snapshot (per `xp`) and the
@@ -368,6 +529,10 @@ async fn apply_start(
 
     let now = Utc::now();
     let deadline = now + MAX_SESSION_DURATION;
+    // A live event no longer needs the mass notice or the one-hour reminder: starting stamps
+    // both, keeping any stamp that was already set.
+    let mass_notified_at = model.mass_notified_at.or(Some(now.into()));
+    let reminder_notified_at = model.reminder_notified_at.or(Some(now.into()));
     let mut active: event::ActiveModel = model.into();
     active.status = Set("live".to_string());
     active.started_at = Set(Some(now.into()));
@@ -377,6 +542,8 @@ async fn apply_start(
     active.link_attempts = Set(0);
     active.link_last_error = Set(None);
     active.link_battles_completed_at = Set(None);
+    active.mass_notified_at = Set(mass_notified_at);
+    active.reminder_notified_at = Set(reminder_notified_at);
     active.updated_at = Set(now.into());
     active.update(txn).await.map_err(AppError::Database)
 }
@@ -430,6 +597,14 @@ async fn apply_uncancel(
             model.id, model.status
         )));
     }
+    let now = Utc::now();
+    // A restored event that is still ahead of its start is a reschedule: its mass and
+    // reminder stamps no longer describe the schedule it returns to (R22).
+    let rescheduled = model
+        .start_time_utc
+        .unwrap_or(model.event_date_utc)
+        .with_timezone(&Utc)
+        > now;
     let mut active: event::ActiveModel = model.into();
     active.status = Set("scheduled".to_string());
     active.started_at = Set(None);
@@ -439,7 +614,11 @@ async fn apply_uncancel(
     active.link_attempts = Set(0);
     active.link_last_error = Set(None);
     active.link_battles_completed_at = Set(None);
-    active.updated_at = Set(Utc::now().into());
+    if rescheduled {
+        active.mass_notified_at = Set(None);
+        active.reminder_notified_at = Set(None);
+    }
+    active.updated_at = Set(now.into());
     active.update(txn).await.map_err(AppError::Database)
 }
 
@@ -2291,6 +2470,7 @@ mod copy_role_auto_stop_tests {
 #[cfg(test)]
 mod transition_tests {
     use super::*;
+    use crate::discord_delivery::kinds::EffectKind;
     use crate::modules::events::entities::{event_completion_xp, event_participation};
     use crate::modules::splits::entities::{split, split_participant};
     use crate::modules::users::entities as users;
@@ -2538,8 +2718,8 @@ mod transition_tests {
                 );
                 assert_eq!(outcome.cause, cause);
                 assert_eq!(outcome.model.status, expected_status);
-                assert!(outcome.effects.is_empty());
-                assert!(outcome.wake.is_empty());
+                assert!(!outcome.effects.is_empty());
+                assert!(!outcome.wake.is_empty());
                 assert_eq!(outcome.sync_outbox_id, None);
 
                 let effects = row_effects(&db, event_id, split_id).await;
@@ -2984,6 +3164,396 @@ mod transition_tests {
             .after_commit(&AfterCommit::default())
             .await
             .unwrap();
+    }
+
+    // --- Discord effects (DO-3a) -------------------------------------------
+
+    /// `(id, kind, entity_id, payload, state, cause)` of every outbox row, in id order.
+    async fn outbox(db: &DatabaseConnection) -> Vec<(i64, String, i64, String, String, String)> {
+        use sea_orm::{DbBackend, Statement};
+        db.query_all(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT id, kind, entity_id, payload, state, cause FROM discord_outbox ORDER BY id"
+                .to_owned(),
+        ))
+        .await
+        .expect("read outbox")
+        .iter()
+        .map(|row| {
+            (
+                row.try_get::<i64>("", "id").expect("id"),
+                row.try_get::<String>("", "kind").expect("kind"),
+                row.try_get::<i64>("", "entity_id").expect("entity_id"),
+                row.try_get::<String>("", "payload").expect("payload"),
+                row.try_get::<String>("", "state").expect("state"),
+                row.try_get::<String>("", "cause").expect("cause"),
+            )
+        })
+        .collect()
+    }
+
+    /// `(kind, payload)` of the rows an outcome wrote, in the order it wrote them.
+    async fn written(
+        db: &DatabaseConnection,
+        outcome: &TransitionOutcome,
+    ) -> Vec<(String, String)> {
+        let rows = outbox(db).await;
+        outcome
+            .effects
+            .iter()
+            .map(|effect| {
+                let row = rows
+                    .iter()
+                    .find(|row| row.0 == effect.id)
+                    .expect("effect row exists");
+                assert_eq!(row.1, effect.kind);
+                (row.1.clone(), row.3.clone())
+            })
+            .collect()
+    }
+
+    /// The effect kinds each transition writes, in DO §5.2 order.
+    fn expected_kinds(transition: Transition) -> Vec<&'static str> {
+        match transition {
+            Transition::Start => vec![
+                EffectKind::EventStart.as_str(),
+                EffectKind::EventUpsert.as_str(),
+                EffectKind::CalendarSync.as_str(),
+            ],
+            Transition::Stop { .. } | Transition::Cancel => vec![
+                EffectKind::EventClose.as_str(),
+                EffectKind::VoiceRelease.as_str(),
+                EffectKind::CalendarSync.as_str(),
+            ],
+            Transition::Uncancel | Transition::Unarchive => vec![
+                EffectKind::EventUpsert.as_str(),
+                EffectKind::CalendarSync.as_str(),
+            ],
+            Transition::Archive => vec![
+                EffectKind::EventRemove.as_str(),
+                EffectKind::CalendarSync.as_str(),
+            ],
+        }
+    }
+
+    #[tokio::test]
+    async fn every_cause_writes_the_same_effects_for_every_transition() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        for (transition, from, archived, _) in transition_cases() {
+            let mut baseline: Option<Vec<(String, String)>> = None;
+            for cause in every_cause() {
+                let (event_id, _) = seed_event(&db, &fx, from, archived).await;
+                let outcome = run(&db, event_id, transition, cause).await.unwrap();
+                let effects = written(&db, &outcome).await;
+                let kinds: Vec<&str> = effects.iter().map(|(kind, _)| kind.as_str()).collect();
+                assert_eq!(
+                    kinds,
+                    expected_kinds(transition),
+                    "{transition:?} from {from}"
+                );
+                match &baseline {
+                    None => baseline = Some(effects),
+                    Some(first) => assert_eq!(
+                        &effects, first,
+                        "{transition:?} from {from}: {cause:?} differs from the first cause"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn repeated_stop_and_cancel_write_no_new_effects() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let stop = Transition::Stop {
+            auto: false,
+            xp: XpFilter::Everyone,
+        };
+
+        let (id, _) = seed_event(&db, &fx, "live", false).await;
+        let first = run(&db, id, stop, Cause::Web).await.unwrap();
+        assert!(!first.effects.is_empty());
+        let before = outbox(&db).await;
+        let again = run(&db, id, stop, Cause::Discord).await.unwrap();
+        assert!(!again.changed);
+        assert!(again.effects.is_empty() && again.wake.is_empty());
+        assert_eq!(outbox(&db).await, before);
+
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        run(&db, id, Transition::Cancel, Cause::Web).await.unwrap();
+        let before = outbox(&db).await;
+        let again = run(&db, id, Transition::Cancel, Cause::Web).await.unwrap();
+        assert!(!again.changed && again.effects.is_empty());
+        assert_eq!(outbox(&db).await, before);
+    }
+
+    #[tokio::test]
+    async fn start_on_a_live_event_conflicts_and_writes_no_effect() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "live", false).await;
+        let before = outbox(&db).await;
+        let error = run(&db, id, Transition::Start, Cause::Web)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Conflict(_)), "{error:?}");
+        assert_eq!(outbox(&db).await, before);
+    }
+
+    #[tokio::test]
+    async fn start_stamps_the_reminders_and_keeps_an_earlier_mass_stamp() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        let earlier: chrono::DateTime<chrono::FixedOffset> =
+            (Utc::now() - chrono::Duration::days(1)).into();
+        event::ActiveModel {
+            id: Set(id),
+            mass_notified_at: Set(Some(earlier)),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+
+        let outcome = run(&db, id, Transition::Start, Cause::Web).await.unwrap();
+        let model = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(model.mass_notified_at, Some(earlier));
+        assert!(model.reminder_notified_at.is_some());
+
+        let kinds: Vec<String> = written(&db, &outcome)
+            .await
+            .into_iter()
+            .map(|(kind, _)| kind)
+            .collect();
+        assert_eq!(kinds[0], "event.start");
+        let start_row = outbox(&db)
+            .await
+            .into_iter()
+            .find(|row| row.0 == outcome.effects[0].id)
+            .unwrap();
+        assert_eq!(start_row.4, "pending", "a new start is due");
+    }
+
+    #[tokio::test]
+    async fn close_payload_names_how_the_session_ended() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "live", false).await;
+        let manual = run(
+            &db,
+            id,
+            Transition::Stop {
+                auto: false,
+                xp: XpFilter::Everyone,
+            },
+            Cause::Web,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            written(&db, &manual).await[0],
+            (
+                "event.close".to_owned(),
+                r#"{"reason":"stopped"}"#.to_owned()
+            )
+        );
+
+        let (id, _) = seed_event(&db, &fx, "live", false).await;
+        let auto = run(
+            &db,
+            id,
+            Transition::Stop {
+                auto: true,
+                xp: XpFilter::Everyone,
+            },
+            Cause::Scheduler,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            written(&db, &auto).await[0].1,
+            r#"{"reason":"auto_stopped"}"#
+        );
+
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        let cancelled = run(&db, id, Transition::Cancel, Cause::Web).await.unwrap();
+        assert_eq!(
+            written(&db, &cancelled).await[0].1,
+            r#"{"reason":"cancelled"}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn archive_tears_down_the_vod_post_and_voice_only_when_bound() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "stopped", false).await;
+        event::ActiveModel {
+            id: Set(id),
+            vod_forum_thread_id: Set(Some("777".to_owned())),
+            discord_voice_channel_id: Set(Some("888".to_owned())),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        let bound = run(&db, id, Transition::Archive, Cause::Web).await.unwrap();
+        let kinds: Vec<String> = written(&db, &bound)
+            .await
+            .into_iter()
+            .map(|(kind, _)| kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "event.remove",
+                "vod.delete",
+                "voice.release",
+                "calendar.sync"
+            ]
+        );
+
+        let (plain, _) = seed_event(&db, &fx, "stopped", false).await;
+        let unbound = run(&db, plain, Transition::Archive, Cause::Web)
+            .await
+            .unwrap();
+        let kinds: Vec<String> = written(&db, &unbound)
+            .await
+            .into_iter()
+            .map(|(kind, _)| kind)
+            .collect();
+        assert_eq!(kinds, ["event.remove", "calendar.sync"]);
+    }
+
+    #[tokio::test]
+    async fn uncancel_rearms_the_stamps_only_when_the_event_is_still_ahead() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        for ahead in [true, false] {
+            let (id, _) = seed_event(&db, &fx, "cancelled", false).await;
+            let when: chrono::DateTime<chrono::FixedOffset> = if ahead {
+                Utc::now() + chrono::Duration::days(2)
+            } else {
+                Utc::now() - chrono::Duration::days(2)
+            }
+            .into();
+            let stamp: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
+            event::ActiveModel {
+                id: Set(id),
+                start_time_utc: Set(Some(when)),
+                mass_notified_at: Set(Some(stamp)),
+                reminder_notified_at: Set(Some(stamp)),
+                ..Default::default()
+            }
+            .update(&db)
+            .await
+            .unwrap();
+
+            run(&db, id, Transition::Uncancel, Cause::Web)
+                .await
+                .unwrap();
+            let model = event::Entity::find_by_id(id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(model.mass_notified_at.is_none(), ahead, "ahead={ahead}");
+            assert_eq!(model.reminder_notified_at.is_none(), ahead, "ahead={ahead}");
+        }
+    }
+
+    #[tokio::test]
+    async fn calendar_sync_is_debounced_by_five_seconds() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        let before = Utc::now();
+        let outcome = run(&db, id, Transition::Cancel, Cause::Web).await.unwrap();
+        let calendar = outcome
+            .effects
+            .iter()
+            .find(|effect| effect.kind == "calendar.sync")
+            .expect("cancel rebuilds the calendar");
+        let row = crate::discord_delivery::outbox::get(&db, calendar.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let delay = row.available_at - before;
+        assert!(
+            delay >= chrono::Duration::seconds(CALENDAR_DEBOUNCE_SECS)
+                && delay < chrono::Duration::seconds(CALENDAR_DEBOUNCE_SECS + 5),
+            "available {delay:?} after the transition"
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_reminder_is_one_effect_per_minute() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        let first = emit_manual_reminder(&db, id).await.unwrap();
+        let second = emit_manual_reminder(&db, id).await.unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].kind, "event.reminder");
+        assert_eq!(second, first, "the same minute coalesces into one row");
+        let rows = outbox(&db).await;
+        let reminder = rows.iter().find(|row| row.0 == first[0].id).unwrap();
+        assert_eq!(reminder.5, "manual");
+    }
+
+    #[tokio::test]
+    async fn moving_a_schedule_into_the_future_rearms_the_stamps() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (id, _) = seed_event(&db, &fx, "scheduled", false).await;
+        let stamp: chrono::DateTime<chrono::FixedOffset> = Utc::now().into();
+        event::ActiveModel {
+            id: Set(id),
+            mass_notified_at: Set(Some(stamp)),
+            reminder_notified_at: Set(Some(stamp)),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+
+        let rename: crate::modules::events::models::UpdateEventRequest =
+            serde_json::from_value(serde_json::json!({ "title": "renamed" })).unwrap();
+        EventService::new()
+            .update_event(&db, id, rename)
+            .await
+            .unwrap();
+        let model = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            model.mass_notified_at.is_some(),
+            "unchanged times keep stamps"
+        );
+
+        let moved = (Utc::now() + chrono::Duration::days(3)).to_rfc3339();
+        let postpone: crate::modules::events::models::UpdateEventRequest =
+            serde_json::from_value(serde_json::json!({ "start_time_utc": moved })).unwrap();
+        EventService::new()
+            .update_event(&db, id, postpone)
+            .await
+            .unwrap();
+        let model = event::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(model.mass_notified_at.is_none());
+        assert!(model.reminder_notified_at.is_none());
     }
 
     // --- Postgres ---------------------------------------------------------
