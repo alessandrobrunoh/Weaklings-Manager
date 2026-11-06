@@ -430,6 +430,16 @@ pub struct ApiResponseEventList {
     pub data: crate::pagination::PaginatedEventSummary,
 }
 
+/// `OpenAPI` schema wrapper for the event summary counts.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventSummary {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Counts over every non-archived event.
+    pub data: crate::modules::events::models::EventSummary,
+}
+
 /// `OpenAPI` schema wrapper for the eligible participation-guild list.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseParticipationGuildList {

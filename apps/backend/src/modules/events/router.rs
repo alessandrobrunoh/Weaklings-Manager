@@ -22,8 +22,8 @@ use serde::Deserialize;
 use crate::responses::{
     ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail,
     ApiResponseEventFanoutStatus, ApiResponseEventList, ApiResponseEventManagementAuthority,
-    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventView,
-    ApiResponseParticipationGuildList,
+    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventSummary,
+    ApiResponseEventView, ApiResponseParticipationGuildList,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 
@@ -37,8 +37,8 @@ use super::lifecycle::{assert_manageable_source_event, sync_owner_change_to_copi
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
     CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventManagementAuthorityView,
-    EventRevision, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
-    ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
+    EventRevision, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventSummary,
+    EventView, ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
     SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
@@ -196,6 +196,7 @@ pub fn router() -> Router {
         .route("/{id}/mirror-status", get(get_event_mirror_status))
         .route("/{id}/mirror-retry", post(retry_event_mirror))
         .route("/calendar", get(list_event_calendar))
+        .route("/summary", get(get_events_summary))
         .route("/revisions", get(list_event_revisions))
         .route(
             "/vod-forum-posts/pending",
@@ -474,6 +475,34 @@ async fn list_events(
     Ok(Json(ApiResponse::new(
         hydrate_event_list(events, &control, &registry, &tenant_id).await,
     )))
+}
+
+/// Returns counts of non-archived events by status and call-to-arms flag.
+///
+/// Requires `events.view` permission.
+#[utoipa::path(
+    get,
+    path = "/api/events/summary",
+    tag = "events",
+    summary = "Summarize events",
+    description = "Returns the number of non-archived events in total, live, scheduled and flagged \
+        as call to arms. Counted in the database, so it is exact for any number of events. \
+        Requires `events.view` permission.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Event counts retrieved", body = ApiResponseEventSummary),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails)
+    )
+)]
+pub async fn get_events_summary(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<EventSummary>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
+    let summary = EventService::new().summarize_events(&db).await?;
+    Ok(Json(ApiResponse::new(summary)))
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -2247,8 +2276,8 @@ async fn replace_event_battles(
 #[cfg(test)]
 mod tests {
     use super::{
-        EventManagementAuthorityView, get_event_management_authority, list_event_calendar,
-        parse_event_revision_ids, require_event_management_authority,
+        EventManagementAuthorityView, get_event_management_authority, get_events_summary,
+        list_event_calendar, parse_event_revision_ids, require_event_management_authority,
     };
     use crate::errors::AppError;
     use crate::modules::auth::{
@@ -2430,6 +2459,32 @@ mod tests {
         assert!(matches!(
             result,
             Err(AppError::Forbidden(message)) if message.contains("events.edit")
+        ));
+    }
+
+    #[tokio::test]
+    async fn events_summary_requires_events_view() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("test database should connect");
+        let user = UserContext {
+            id: "discord-user".to_string(),
+            username: "Member".to_string(),
+            email: None,
+            avatar: None,
+            roles: vec!["User".to_string()],
+            highest_role: "User".to_string(),
+            user_id: 1,
+            super_admin_id: None,
+            is_tenant_owner: false,
+        };
+
+        let result =
+            get_events_summary(user, Extension(Permissions::new_empty()), Extension(db)).await;
+
+        assert!(matches!(
+            result,
+            Err(AppError::Forbidden(message)) if message.contains("events.view")
         ));
     }
 

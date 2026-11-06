@@ -1188,12 +1188,14 @@ export class CompBuildDetailPage {
     }
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(
+      // The endpoint answers 204 No Content, so there is no body to adopt:
+      // reload the build instead of replacing it with an empty response.
+      await firstValueFrom(
         this.api.delete<BuildDetail>(
           `api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`,
         ),
       );
-      this.build.set(updated ?? null);
+      this.build.set(await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${build.id}`)));
       this.pendingDelete.set(null);
       this.toasts.success(this.t('common.delete'));
     } catch (error) {

@@ -30,6 +30,23 @@ pub struct EventFilters {
     pub archived: Option<bool>,
 }
 
+/// Counts over every non-archived event, independent of list pagination.
+#[derive(Debug, Serialize, Clone, Default, PartialEq, Eq, ToSchema)]
+pub struct EventSummary {
+    /// All non-archived events.
+    #[schema(example = 42)]
+    pub total: u64,
+    /// Non-archived events whose session is `live`.
+    #[schema(example = 1)]
+    pub live: u64,
+    /// Non-archived events whose session is `scheduled`.
+    #[schema(example = 5)]
+    pub scheduled: u64,
+    /// Non-archived events flagged as a call to arms.
+    #[schema(example = 2)]
+    pub call_to_arms: u64,
+}
+
 /// Aggregated performance metrics for an event or composition.
 #[derive(Debug, Serialize, Clone, Default, ToSchema)]
 pub struct BattlePerformanceStats {

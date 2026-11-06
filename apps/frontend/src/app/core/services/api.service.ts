@@ -129,10 +129,33 @@ export class ApiService {
     if (err.status === 0) {
       return new ApiError(0, 'Network error — is the backend reachable?');
     }
-    const problem = err.error as ProblemDetails | undefined;
-    const detail =
-      problem?.detail ??
-      (typeof err.error === 'string' && err.error.length > 0 ? err.error : err.message);
-    return new ApiError(err.status, detail, problem);
+    const problem =
+      err.error !== null && typeof err.error === 'object'
+        ? (err.error as ProblemDetails)
+        : undefined;
+    return new ApiError(err.status, problemMessage(err, problem), problem);
   }
+}
+
+/**
+ * Human-readable message for a failed response.
+ *
+ * Prefers the backend's Problem Details `detail`. Anything else (an HTML error
+ * page from a proxy, an empty 502/503/504 body, Angular's "Http failure
+ * response for ..." text) is replaced by a short status message instead of
+ * leaking raw markup or a URL into a toast.
+ */
+function problemMessage(err: HttpErrorResponse, problem: ProblemDetails | undefined): string {
+  if (typeof problem?.detail === 'string' && problem.detail.length > 0) {
+    return problem.detail;
+  }
+  if (typeof err.error === 'string') {
+    const text = err.error.trim();
+    if (text.length > 0 && text.length <= 300 && !text.startsWith('<')) {
+      return text;
+    }
+  }
+  return err.status >= 500
+    ? `The server had a problem (error ${err.status}). Try again in a moment.`
+    : `The request failed (error ${err.status}).`;
 }

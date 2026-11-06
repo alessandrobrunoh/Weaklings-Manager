@@ -598,6 +598,14 @@ export interface UpdateIslandTabRequest {
 
 export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped' | 'cancelled';
 
+/** Response of `GET /api/events/summary`: counts over every non-archived event. */
+export interface EventSummary {
+  total: number;
+  live: number;
+  scheduled: number;
+  call_to_arms: number;
+}
+
 export interface EventView {
   id: number;
   /** Present for synchronized read-only copies; absent for events owned by this tenant. */
@@ -1092,11 +1100,6 @@ export interface ParticipateEventRequest {
 export interface ParticipationGuildOption {
   tenant_id: string;
   name: string;
-}
-
-/** Response of `GET /api/events/{id}/participation-guilds`. */
-export interface ParticipationGuildListResponse {
-  data: ParticipationGuildOption[];
 }
 
 /* ----------------------------- Battles ------------------------------ */

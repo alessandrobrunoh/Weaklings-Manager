@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { NEVER, Subject } from 'rxjs';
+import { NEVER, Subject, of } from 'rxjs';
 import { expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
@@ -54,4 +54,36 @@ it('blocks rapid ability changes until the previous full-spells update finishes'
   nextResponse.next(build);
   nextResponse.complete();
   await second;
+});
+
+it('reloads the build after removing an item instead of nulling it on 204', async () => {
+  const build = { id: 1, items: [{ slot: 'weapon', loadout: 'main', spells: { active: {}, passive: {} } }] };
+  const reloaded = { id: 1, items: [] };
+  const del = vi.fn().mockReturnValue(of(undefined));
+  const get = vi.fn().mockReturnValue(of(reloaded));
+  await TestBed.configureTestingModule({
+    imports: [CompBuildDetailPage],
+    providers: [
+      provideZonelessChangeDetection(),
+      { provide: ApiService, useValue: { delete: del, get } },
+      { provide: AuthService, useValue: { hasPermission: () => true } },
+      { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
+      { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ buildId: '1' }) }, paramMap: NEVER } },
+      { provide: Router, useValue: {} },
+      { provide: AlbionCatalogService, useValue: {} },
+      { provide: AlbionAbilitiesService, useValue: { load: () => Promise.resolve({}) } },
+      TranslateService,
+    ],
+  }).compileComponents();
+  const fixture = TestBed.createComponent(CompBuildDetailPage);
+  const page = fixture.componentInstance as unknown as {
+    build: { (): unknown; set(value: unknown): void };
+    removeItem: (loadout: 'main', slot: 'weapon') => Promise<void>;
+  };
+  page.build.set(build);
+  get.mockClear();
+  await page.removeItem('main', 'weapon');
+  expect(del).toHaveBeenCalledWith('api/comps/builds/1/items/weapon?loadout=main');
+  expect(get).toHaveBeenCalledWith('api/comps/builds/1');
+  expect(page.build()).toEqual(reloaded);
 });

@@ -29,6 +29,8 @@ export class NotificationService {
   private readonly _unreadCount = signal(0);
   private readonly _loading = signal(false);
   private readonly _error = signal<string | null>(null);
+  /** Bumped by `reset()` so responses that were in flight for the old tenant are dropped. */
+  private epoch = 0;
 
   /** Latest inbox page. */
   readonly items = this._items.asReadonly();
@@ -68,20 +70,40 @@ export class NotificationService {
    * last count so a blip is not shown as "nothing unread".
    */
   async refreshUnread(): Promise<void> {
+    const epoch = this.epoch;
     try {
       const view = await firstValueFrom(
         this.api.get<UnreadCountView>('api/notifications/unread-count'),
       );
-      this._unreadCount.set(view.count);
+      if (epoch === this.epoch) {
+        this._unreadCount.set(view.count);
+      }
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      if (epoch === this.epoch && err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         this._unreadCount.set(0);
       }
     }
   }
 
+  /**
+   * Drop the inbox and badge of the previous session scope and refetch the badge.
+   *
+   * Called when the active tenant changes: the service is a root singleton, so
+   * without this the old tenant's unread count and rows stay visible until the
+   * next poll.
+   */
+  reset(): void {
+    this.epoch++;
+    this._items.set([]);
+    this._unreadCount.set(0);
+    this._error.set(null);
+    this._loading.set(false);
+    void this.refreshUnread();
+  }
+
   /** Load the latest inbox page into `items`. */
   async loadInbox(): Promise<void> {
+    const epoch = this.epoch;
     this._loading.set(true);
     this._error.set(null);
     try {
@@ -91,11 +113,17 @@ export class NotificationService {
           limit: INBOX_LIMIT,
         }),
       );
-      this._items.set(page.items);
+      if (epoch === this.epoch) {
+        this._items.set(page.items);
+      }
     } catch {
-      this._error.set('load');
+      if (epoch === this.epoch) {
+        this._error.set('load');
+      }
     } finally {
-      this._loading.set(false);
+      if (epoch === this.epoch) {
+        this._loading.set(false);
+      }
     }
   }
 

@@ -141,7 +141,7 @@ impl GiveawayService {
         req: CreateGiveawayRequest,
     ) -> Result<GiveawayDetailView, AppError> {
         if creator_id <= 0 {
-            return Err(AppError::Unauthorized(
+            return Err(AppError::Forbidden(
                 "giveaways can only be created by a linked user".to_string(),
             ));
         }
@@ -250,7 +250,7 @@ impl GiveawayService {
         user_id: i64,
     ) -> Result<GiveawayDetailView, AppError> {
         if user_id <= 0 {
-            return Err(AppError::Unauthorized(
+            return Err(AppError::Forbidden(
                 "link your Discord account with /link before entering a giveaway".to_string(),
             ));
         }
@@ -288,7 +288,7 @@ impl GiveawayService {
         user_id: i64,
     ) -> Result<GiveawayDetailView, AppError> {
         if user_id <= 0 {
-            return Err(AppError::Unauthorized(
+            return Err(AppError::Forbidden(
                 "link your Discord account with /link before leaving a giveaway".to_string(),
             ));
         }
@@ -875,6 +875,27 @@ mod tests {
                 .unwrap()
                 .contains("quality=4")
         );
+    }
+
+    #[tokio::test]
+    async fn unlinked_sessions_get_forbidden_not_unauthorized() {
+        // A signed-in web user without a linked account has user_id 0. That is
+        // "not allowed", not "no session": a 401 would make the web client drop
+        // the session. The guard runs before any query, so no database is needed.
+        let db = DatabaseConnection::Disconnected;
+        let service = GiveawayService::new();
+        assert!(matches!(
+            service.create(&db, 0, create_req()).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            service.enter(&db, 1, 0).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            service.leave(&db, 1, 0).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 
     #[tokio::test]

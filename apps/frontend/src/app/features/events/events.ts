@@ -8,6 +8,7 @@ import type {
   CreateEventRequest,
   DiscordRoleView,
   EventStatus,
+  EventSummary,
   EventView,
   PaginatedData,
   SplitIsland,
@@ -808,14 +809,12 @@ export class Events {
 
   protected async loadStats(): Promise<void> {
     try {
-      const allData = await firstValueFrom(
-        this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 100 }),
-      );
-      const items = allData.items;
-      this.totalEventsCount.set(allData.total_items);
-      this.liveEventsCount.set(items.filter((e) => e.status === 'live').length);
-      this.scheduledEventsCount.set(items.filter((e) => e.status === 'scheduled').length);
-      this.ctaEventsCount.set(items.filter((e) => e.call_to_arms).length);
+      // Counted by the backend, so the tiles stay exact beyond one page of events.
+      const summary = await firstValueFrom(this.api.get<EventSummary>('api/events/summary'));
+      this.totalEventsCount.set(summary.total);
+      this.liveEventsCount.set(summary.live);
+      this.scheduledEventsCount.set(summary.scheduled);
+      this.ctaEventsCount.set(summary.call_to_arms);
     } catch {
       // Fallback
     }

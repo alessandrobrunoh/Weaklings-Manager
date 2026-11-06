@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, type Signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
@@ -14,6 +16,7 @@ import type {
   RosterSuggestions,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { API_BASE_URL } from '../../core/tokens/api-base.token';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeRosterService } from '../../core/services/realtime-roster.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -680,6 +683,8 @@ interface EventDetailGuildAttributionAccess {
   readonly selectedGuildTenantId: WritableSignal<string>;
   readonly guildChoiceBlocked: Signal<boolean>;
   readonly requiresGuildChoice: Signal<boolean>;
+  onSplitSelected(option: { id: number }): Promise<void>;
+  performUnlinkSplit(splitId: number): Promise<void>;
   readonly joinError: WritableSignal<string | null>;
   readonly showJoinConfirm: WritableSignal<boolean>;
   readonly draftPrimaryBuildId: WritableSignal<string>;
@@ -706,26 +711,36 @@ describe('EventDetailPage guild attribution', () => {
 
   function createPage(options: {
     tenantKind: string;
-    guilds?: { data: ParticipationGuildOption[] } | Error;
+    guilds?: ParticipationGuildOption[] | Error;
+    /** Use the real ApiService (and its envelope unwrapping) over HttpTestingController. */
+    realApi?: boolean;
   }): {
     page: EventDetailGuildAttributionAccess;
     fixture: { nativeElement: HTMLElement; detectChanges(): void };
     get: ReturnType<typeof vi.fn>;
     post: ReturnType<typeof vi.fn>;
+    patch: ReturnType<typeof vi.fn>;
   } {
     const get = vi.fn((path: string) => {
       if (path.endsWith('/participation-guilds')) {
-        return options.guilds instanceof Error ? throwError(() => options.guilds) : of(options.guilds ?? { data: [] });
+        return options.guilds instanceof Error ? throwError(() => options.guilds) : of(options.guilds ?? []);
       }
       return of({ items: [] });
     });
     const post = vi.fn().mockReturnValue(of({}));
+    const patch = vi.fn().mockReturnValue(of({}));
     const profile = signal({ user_id: 7, tenant_kind: options.tenantKind });
 
     TestBed.configureTestingModule({
       imports: [EventDetailPage],
       providers: [
-        { provide: ApiService, useValue: { get, post, put: () => of({}), delete: () => of({}) } },
+        ...(options.realApi
+          ? [
+              provideHttpClient(),
+              provideHttpClientTesting(),
+              { provide: API_BASE_URL, useValue: '' },
+            ]
+          : [{ provide: ApiService, useValue: { get, post, patch, delete: () => of({}) } }]),
         {
           provide: AuthService,
           useValue: {
@@ -756,7 +771,7 @@ describe('EventDetailPage guild attribution', () => {
     const fixture = TestBed.createComponent(EventDetailPage);
     const page = fixture.componentInstance as unknown as EventDetailGuildAttributionAccess;
     page.event.set({ id: 5, participants: [], battles: [], splits: [] } as unknown as EventDetailView);
-    return { page, fixture, get, post };
+    return { page, fixture, get, post, patch };
   }
 
   it('in a guild tenant, signs up without a guild prompt or guild_tenant_id', async () => {
@@ -777,7 +792,7 @@ describe('EventDetailPage guild attribution', () => {
   });
 
   it('in an alliance tenant with zero eligible guilds, blocks signup with an actionable state', async () => {
-    const { page } = createPage({ tenantKind: 'alliance', guilds: { data: [] } });
+    const { page } = createPage({ tenantKind: 'alliance', guilds: [] });
 
     page.toggleJoinForm();
     await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
@@ -790,7 +805,7 @@ describe('EventDetailPage guild attribution', () => {
   it('in an alliance tenant with one guild, preselects it and submits it automatically', async () => {
     const { page, post } = createPage({
       tenantKind: 'alliance',
-      guilds: { data: [{ tenant_id: 'g1', name: 'Alpha' }] },
+      guilds: [{ tenant_id: 'g1', name: 'Alpha' }],
     });
 
     page.toggleJoinForm();
@@ -813,12 +828,10 @@ describe('EventDetailPage guild attribution', () => {
   it('in an alliance tenant with multiple guilds, requires an explicit choice before signup', async () => {
     const { page, post } = createPage({
       tenantKind: 'alliance',
-      guilds: {
-        data: [
-          { tenant_id: 'g1', name: 'Alpha' },
-          { tenant_id: 'g2', name: 'Beta' },
-        ],
-      },
+      guilds: [
+        { tenant_id: 'g1', name: 'Alpha' },
+        { tenant_id: 'g2', name: 'Beta' },
+      ],
     });
 
     page.toggleJoinForm();
@@ -847,12 +860,10 @@ describe('EventDetailPage guild attribution', () => {
   it('labels the custom guild picker and associates its help text', async () => {
     const { page, fixture } = createPage({
       tenantKind: 'alliance',
-      guilds: {
-        data: [
-          { tenant_id: 'g1', name: 'Alpha' },
-          { tenant_id: 'g2', name: 'Beta' },
-        ],
-      },
+      guilds: [
+        { tenant_id: 'g1', name: 'Alpha' },
+        { tenant_id: 'g2', name: 'Beta' },
+      ],
     });
     page.toggleJoinForm();
     await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
@@ -874,5 +885,36 @@ describe('EventDetailPage guild attribution', () => {
     expect(page.participationGuilds()).toHaveLength(0);
     expect(page.selectedGuildTenantId()).toBe('');
     expect(page.guildChoiceBlocked()).toBe(true);
+  });
+
+  it('loads the participation guilds through the real API envelope (bare array after unwrapping)', async () => {
+    const { page } = createPage({ tenantKind: 'alliance', realApi: true });
+    const http = TestBed.inject(HttpTestingController);
+
+    page.toggleJoinForm();
+    http
+      .expectOne('/api/events/5/participation-guilds')
+      .flush({ status: 'success', data: [{ tenant_id: 'g1', name: 'Alpha' }] });
+    await vi.waitFor(() => expect(page.participationGuildsState()).toBe('ready'));
+
+    expect(page.participationGuilds()).toEqual([{ tenant_id: 'g1', name: 'Alpha' }]);
+    expect(page.selectedGuildTenantId()).toBe('g1');
+    expect(page.guildChoiceBlocked()).toBe(false);
+  });
+
+  it('links a split to the event with PATCH (the splits API has no PUT route)', async () => {
+    const { page, patch } = createPage({ tenantKind: 'guild' });
+
+    await page.onSplitSelected({ id: 77 });
+
+    expect(patch).toHaveBeenCalledWith('api/splits/77', { event_id: expect.any(Number) });
+  });
+
+  it('unlinks a split from the event with PATCH and a null event_id', async () => {
+    const { page, patch } = createPage({ tenantKind: 'guild' });
+
+    await page.performUnlinkSplit(77);
+
+    expect(patch).toHaveBeenCalledWith('api/splits/77', { event_id: null });
   });
 });

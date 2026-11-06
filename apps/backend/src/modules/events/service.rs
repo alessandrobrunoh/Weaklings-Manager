@@ -20,7 +20,7 @@ use super::models::{
     BuildPerformanceView, CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest,
     EventBattleView, EventCompBuildView, EventDetailView, EventFightView, EventParticipantView,
     EventRevision, EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
-    EventSignupOptionsView, EventSplitStats, EventView, OpponentPerformanceView,
+    EventSignupOptionsView, EventSplitStats, EventSummary, EventView, OpponentPerformanceView,
     ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest,
     UpdateEventBattlesRequest, UpdateEventRequest,
 };
@@ -2714,6 +2714,39 @@ impl EventService {
         ))
     }
 
+    /// Counts non-archived events by status and call-to-arms flag.
+    ///
+    /// Uses `COUNT` queries so the numbers stay correct however many events exist,
+    /// unlike tallying a single page of `list_events`.
+    pub async fn summarize_events(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<EventSummary, AppError> {
+        let active = || event::Entity::find().filter(event::Column::ArchivedAt.is_null());
+        let total = active().count(db).await.map_err(AppError::Database)?;
+        let live = active()
+            .filter(event::Column::Status.eq("live"))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        let scheduled = active()
+            .filter(event::Column::Status.eq("scheduled"))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        let call_to_arms = active()
+            .filter(event::Column::CallToArms.eq(true))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(EventSummary {
+            total,
+            live,
+            scheduled,
+            call_to_arms,
+        })
+    }
+
     /// Gets detailed event information including participants and resolved active comp.
     pub async fn get_event_detail(
         &self,
@@ -5352,6 +5385,57 @@ mod tests {
         .await
         .expect("failed to insert the event")
         .id
+    }
+
+    #[tokio::test]
+    async fn summarize_events_counts_beyond_a_single_page_and_skips_archived() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let comp_category = create_comp_category(&db, "summary-cat").await;
+        let comp_id = create_comp(&db, "summary-comp", comp_category, None, Vec::new()).await;
+
+        // More events than the 100 rows the web client used to tally in the browser.
+        let mut rows = Vec::new();
+        for index in 0..130 {
+            rows.push(event::ActiveModel {
+                title: Set(format!("Event {index}")),
+                comp_id: Set(Some(comp_id)),
+                created_by: Set(author),
+                event_date_utc: Set(ts()),
+                status: Set(if index < 3 { "live" } else { "scheduled" }.to_string()),
+                call_to_arms: Set(index % 10 == 0),
+                ..Default::default()
+            });
+        }
+        for row in rows {
+            row.insert(&db).await.expect("failed to insert the event");
+        }
+        let archived = event::ActiveModel {
+            title: Set("Archived live CTA".to_string()),
+            comp_id: Set(Some(comp_id)),
+            created_by: Set(author),
+            event_date_utc: Set(ts()),
+            status: Set("live".to_string()),
+            call_to_arms: Set(true),
+            archived_at: Set(Some(ts())),
+            ..Default::default()
+        };
+        archived
+            .insert(&db)
+            .await
+            .expect("failed to insert the archived event");
+
+        let summary = EventService::new().summarize_events(&db).await.unwrap();
+
+        assert_eq!(
+            summary,
+            EventSummary {
+                total: 130,
+                live: 3,
+                scheduled: 127,
+                call_to_arms: 13,
+            }
+        );
     }
 
     #[tokio::test]
