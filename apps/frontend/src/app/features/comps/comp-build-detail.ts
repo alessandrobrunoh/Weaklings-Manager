@@ -1143,7 +1143,11 @@ export class CompBuildDetailPage {
     }
     this.saving.set(true);
     try {
-      let updated = await firstValueFrom(
+      // The item and the abilities picked in the same popover are one request, so the backend
+      // saves both or neither: a refused ability leaves the slot as it was.
+      const spells = this.draftSpells();
+      const hasSpells = Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0;
+      const updated = await firstValueFrom(
         this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`, {
           openalbion_item_type: this.draftItemType(),
           openalbion_item_id: Number(this.draftItemId()),
@@ -1152,19 +1156,9 @@ export class CompBuildDetailPage {
           openalbion_item_tier: this.draftTier(),
           openalbion_item_quality: this.draftQuality(),
           openalbion_item_enchantment: this.draftEnchantment(),
+          ...(hasSpells ? { spells } : {}),
         }),
       );
-      // Abilities picked in the same popover, applied right after the item exists to fill —
-      // the spells endpoint targets an existing slot, so it cannot run before this PUT.
-      const spells = this.draftSpells();
-      if (Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0) {
-        updated = await firstValueFrom(
-          this.api.put<BuildDetail>(
-            `api/comps/builds/${build.id}/items/${slot}/spells?loadout=${loadout}`,
-            spells,
-          ),
-        );
-      }
       this.build.set(updated);
       void this.loadItemPowerAtMax(build.id);
       void this.loadMarketPrice(build.id);

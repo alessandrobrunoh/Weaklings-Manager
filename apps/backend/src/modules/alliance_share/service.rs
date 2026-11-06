@@ -1370,15 +1370,20 @@ mod tests {
         .id
     }
 
-    fn weapon(name: &str) -> UpsertBuildItemRequest {
+    /// A main-hand weapon from the bundled catalog, addressed by its identifier. The backend
+    /// resolves the stored name, icon and tier from the catalog, so only the id is meaningful.
+    fn weapon(identifier: &str) -> UpsertBuildItemRequest {
+        let item = crate::modules::openalbion::service::catalog_item_by_identifier(identifier)
+            .unwrap_or_else(|| panic!("{identifier} is not in the bundled catalog"));
         UpsertBuildItemRequest {
             openalbion_item_type: "weapon".to_owned(),
-            openalbion_item_id: 1,
-            openalbion_item_name: name.to_owned(),
+            openalbion_item_id: item.id,
+            openalbion_item_name: item.name.clone(),
             openalbion_item_icon: None,
-            openalbion_item_tier: Some("T8".to_owned()),
+            openalbion_item_tier: None,
             openalbion_item_quality: None,
             openalbion_item_enchantment: None,
+            spells: None,
         }
     }
 
@@ -1465,7 +1470,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Mace"),
+                weapon("T8_MAIN_MACE"),
             )
             .await
             .expect("item");
@@ -1506,7 +1511,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Updated Mace"),
+                weapon("T8_MAIN_SWORD"),
             )
             .await
             .expect("update source");
@@ -1521,7 +1526,12 @@ mod tests {
         .expect("recopy");
         assert_eq!(again, published_id);
         let refreshed = comps.get_build(&dest, published_id).await.expect("refresh");
-        assert_eq!(refreshed.items[0].openalbion_item_name, "Updated Mace");
+        assert_eq!(
+            refreshed.items[0].openalbion_item_name,
+            crate::modules::openalbion::service::catalog_item_by_identifier("T8_MAIN_SWORD")
+                .expect("sword")
+                .name
+        );
         let count = build::Entity::find().all(&dest).await.expect("all").len();
         assert_eq!(count, 1, "re-share must not duplicate the published build");
     }
@@ -1650,7 +1660,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Mace"),
+                weapon("T8_MAIN_MACE"),
             )
             .await
             .expect("item");
@@ -1697,7 +1707,7 @@ mod tests {
                 created.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Weapon,
-                weapon("Better Mace"),
+                weapon("T8_2H_HOLYSTAFF"),
             )
             .await
             .expect("edit");
@@ -1721,7 +1731,12 @@ mod tests {
             .get_build(&alliance_ctx.db, first.published_id)
             .await
             .expect("published");
-        assert_eq!(refreshed.items[0].openalbion_item_name, "Better Mace");
+        assert_eq!(
+            refreshed.items[0].openalbion_item_name,
+            crate::modules::openalbion::service::catalog_item_by_identifier("T8_2H_HOLYSTAFF")
+                .expect("holy staff")
+                .name
+        );
 
         drop_schema(&admin, &guild.schema_name)
             .await

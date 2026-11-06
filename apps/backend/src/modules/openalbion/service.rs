@@ -142,6 +142,15 @@ pub fn catalog_item_by_id(item_id: i64) -> Option<&'static OpenAlbionItem> {
     catalog_items().iter().find(|item| item.id == item_id)
 }
 
+/// Test helper: the catalog row for an identifier such as `T8_MAIN_SWORD`.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn catalog_item_by_identifier(identifier: &str) -> Option<&'static OpenAlbionItem> {
+    catalog_items()
+        .iter()
+        .find(|item| item.identifier.as_deref() == Some(identifier))
+}
+
 /// Whether a catalog identifier represents a real craftable/selectable item.
 ///
 /// The bundled source contains placeholder rows for every tier of a family. Consumables do not

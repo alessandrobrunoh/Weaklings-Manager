@@ -85,9 +85,33 @@ function compareItems(left: BuildItemView, right: BuildItemView): number {
     (rightSlot === -1 ? SLOT_ORDER.length : rightSlot);
 }
 
+/** The only host item icons are ever fetched from: Albion's public render service. */
+const ICON_HOST = 'render.albiononline.com';
+
+/**
+ * Whether the bot may fetch this icon. Icons are stored by the backend, but the bot must not
+ * trust that blindly: anything other than an https URL on the Albion render host is refused so
+ * a hostile or corrupt row cannot make the bot request an internal address.
+ */
+export function isAllowedIconUrl(iconUrl: string | null | undefined): iconUrl is string {
+  if (!iconUrl) return false;
+  try {
+    const url = new URL(iconUrl);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname.toLowerCase() === ICON_HOST &&
+      url.username === '' &&
+      url.password === '' &&
+      (url.port === '' || url.port === '443')
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function loadIcon(item: BuildItemView): Promise<Buffer> {
   const iconUrl = item.openalbion_item_icon;
-  if (!iconUrl || !/^https?:\/\//i.test(iconUrl)) {
+  if (!isAllowedIconUrl(iconUrl)) {
     return placeholderIcon();
   }
 
@@ -95,7 +119,11 @@ async function loadIcon(item: BuildItemView): Promise<Buffer> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
-      const response = await fetch(iconUrl, { signal: controller.signal });
+      const response = await fetch(iconUrl, {
+        signal: controller.signal,
+        // A redirect could leave the allow-listed host.
+        redirect: 'error',
+      });
       if (!response.ok) return placeholderIcon();
 
       const source = Buffer.from(await response.arrayBuffer());

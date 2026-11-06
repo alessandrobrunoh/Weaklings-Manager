@@ -8,7 +8,8 @@ use std::str::FromStr;
 
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
@@ -74,12 +75,34 @@ fn parse_loadout(item: &build_item::Model) -> Result<BuildLoadout, AppError> {
         .map_err(|_| AppError::Internal(format!("Unknown build loadout: {}", item.loadout)))
 }
 
-/// Validates the catalog identity supplied for a build slot.
+/// What a build slot stores about its item, taken from the bundled catalog and never from the
+/// client: the request only chooses *which* catalog item (by id), the backend owns the rest.
+struct ResolvedItem {
+    name: String,
+    icon: Option<String>,
+    tier: Option<String>,
+}
+
+impl ResolvedItem {
+    /// The catalog's name, render icon (carrying the chosen quality) and canonical tier.
+    fn from_catalog(item: &crate::modules::openalbion::catalog::OpenAlbionItem, quality: i16) -> Self {
+        Self {
+            name: item.name.clone(),
+            icon: icon_url_with_quality(item.icon.as_deref(), quality),
+            tier: item.tier.clone(),
+        }
+    }
+}
+
+/// Validates the catalog identity supplied for a build slot and returns the catalog row it
+/// resolves to.
 ///
-/// Older rows and a few internal tests predate the catalog id contract, so an unknown id is left
-/// untouched for backwards compatibility. Every id exposed by the current catalog is checked
-/// against the slot, type, and real family tier. This is the server-side counterpart to the
-/// picker filter and prevents a stale or hand-written client from creating impossible loadouts.
+/// The id must be one the bundled catalog exposes: an unknown id is refused, because the item's
+/// name, icon and tier are resolved from the catalog and there is nothing to resolve it to. (Rows
+/// stored before this contract keep whatever they hold; only new writes are checked.) The id is
+/// checked against the slot, type, and real family tier. This is the server-side counterpart to
+/// the picker filter and prevents a stale or hand-written client from creating impossible
+/// loadouts.
 fn validate_catalog_item(
     slot: BuildSlot,
     item_type: &str,
@@ -87,9 +110,11 @@ fn validate_catalog_item(
     item_tier: Option<&str>,
     quality: Option<i16>,
     enchantment: Option<i16>,
-) -> Result<(), AppError> {
+) -> Result<&'static crate::modules::openalbion::catalog::OpenAlbionItem, AppError> {
     let Some(item) = crate::modules::openalbion::service::catalog_item_by_id(item_id) else {
-        return Ok(());
+        return Err(AppError::Validation(format!(
+            "unknown catalog item {item_id}; pick an item from the catalog"
+        )));
     };
     let identifier = item.identifier.as_deref().unwrap_or_default();
     let compatible = match slot {
@@ -159,7 +184,7 @@ fn validate_catalog_item(
             item.name
         )));
     }
-    Ok(())
+    Ok(item)
 }
 
 /// The `spell_id` values chosen on one equipped item, grouped by kind.
@@ -305,7 +330,7 @@ async fn build_version_group(
 ///
 /// See [`build_version_group`]; comps follow the same rule, and `parent_id` is independent of it.
 async fn comp_version_group(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     name: &str,
     category_id: i64,
     created_by: i64,
@@ -329,7 +354,7 @@ async fn comp_version_group(
 /// sword ability the player cannot actually cast. Choices the new item still offers are kept, so
 /// re-tiering an item does not wipe the officer's work.
 async fn drop_abilities_the_item_no_longer_offers(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     item: &build_item::Model,
     build_item_id: i64,
 ) -> Result<(), AppError> {
@@ -344,6 +369,30 @@ async fn drop_abilities_the_item_no_longer_offers(
                 .exec(db)
                 .await?;
         }
+    }
+    Ok(())
+}
+
+/// Replaces every ability row of one equipped item with `chosen` (already validated).
+async fn replace_item_spells(
+    db: &impl ConnectionTrait,
+    build_item_id: i64,
+    chosen: Vec<(&'static str, i32, String)>,
+) -> Result<(), AppError> {
+    build_item_spell::Entity::delete_many()
+        .filter(BuildItemSpellColumn::BuildItemId.eq(build_item_id))
+        .exec(db)
+        .await?;
+    for (kind, slot_index, spell_id) in chosen {
+        build_item_spell::ActiveModel {
+            build_item_id: Set(build_item_id),
+            kind: Set(kind.to_string()),
+            slot_index: Set(slot_index),
+            spell_id: Set(spell_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
     }
     Ok(())
 }
@@ -673,6 +722,11 @@ impl CompService {
             .filter(BuildItemColumn::BuildId.eq(build.id))
             .count(db)
             .await?;
+        let main_item_count = build_item::Entity::find()
+            .filter(BuildItemColumn::BuildId.eq(build.id))
+            .filter(BuildItemColumn::Loadout.eq(BuildLoadout::Main.as_str()))
+            .count(db)
+            .await?;
 
         Ok(BuildSummary {
             id: build.id,
@@ -685,6 +739,7 @@ impl CompService {
             created_by_username,
             updated_at: build.updated_at.to_rfc3339(),
             item_count,
+            main_item_count,
             archived_at: build.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
@@ -949,7 +1004,7 @@ impl CompService {
     /// Refuses a comp group rename onto an identity another comp group already holds.
     async fn ensure_comp_group_identity_free(
         &self,
-        db: &DatabaseConnection,
+        db: &impl ConnectionTrait,
         comp: &comp::Model,
         name: &str,
         category_id: i64,
@@ -1053,7 +1108,7 @@ impl CompService {
                     )));
                 }
 
-                validate_catalog_item(
+                let catalog_item = validate_catalog_item(
                     item.slot,
                     &item.openalbion_item_type,
                     item.openalbion_item_id,
@@ -1066,6 +1121,7 @@ impl CompService {
                     .map_err(AppError::Validation)?;
                 let enchantment = parse_item_enchantment(item.openalbion_item_enchantment)
                     .map_err(AppError::Validation)?;
+                let resolved = ResolvedItem::from_catalog(catalog_item, quality);
                 let active = build_item::ActiveModel {
                     build_id: Set(inserted.id),
                     // Items supplied at creation time are always the main loadout; the swap is
@@ -1074,12 +1130,9 @@ impl CompService {
                     slot: Set(slot),
                     openalbion_item_type: Set(item.openalbion_item_type),
                     openalbion_item_id: Set(item.openalbion_item_id),
-                    openalbion_item_name: Set(item.openalbion_item_name),
-                    openalbion_item_icon: Set(icon_url_with_quality(
-                        item.openalbion_item_icon.as_deref(),
-                        quality,
-                    )),
-                    openalbion_item_tier: Set(item.openalbion_item_tier),
+                    openalbion_item_name: Set(resolved.name),
+                    openalbion_item_icon: Set(resolved.icon),
+                    openalbion_item_tier: Set(resolved.tier),
                     openalbion_item_quality: Set(quality),
                     openalbion_item_enchantment: Set(enchantment),
                     ..Default::default()
@@ -1420,6 +1473,13 @@ impl CompService {
     }
 
     /// Upserts (insert-or-update) the item in a specific slot of a build.
+    ///
+    /// The request names a catalog item by id; its name, icon and tier are taken from the catalog
+    /// (see [`ResolvedItem`]), whatever the client sent. The item and — when the body carries
+    /// `spells` — its ability choices are written in one transaction: a body whose abilities the
+    /// item does not offer is refused as a whole and the slot keeps its previous item and
+    /// abilities. Without `spells`, abilities the new item still offers are kept and the rest are
+    /// dropped.
     pub async fn upsert_build_item(
         &self,
         db: &DatabaseConnection,
@@ -1434,18 +1494,11 @@ impl CompService {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))?;
 
-        let existing = build_item::Entity::find()
-            .filter(BuildItemColumn::BuildId.eq(build_id))
-            .filter(BuildItemColumn::Loadout.eq(loadout.to_string()))
-            .filter(BuildItemColumn::Slot.eq(slot.to_string()))
-            .one(db)
-            .await?;
-
         let quality =
             parse_item_quality(req.openalbion_item_quality).map_err(AppError::Validation)?;
         let enchantment = parse_item_enchantment(req.openalbion_item_enchantment)
             .map_err(AppError::Validation)?;
-        validate_catalog_item(
+        let catalog_item = validate_catalog_item(
             slot,
             &req.openalbion_item_type,
             req.openalbion_item_id,
@@ -1453,36 +1506,53 @@ impl CompService {
             req.openalbion_item_quality,
             req.openalbion_item_enchantment,
         )?;
-        let icon = icon_url_with_quality(req.openalbion_item_icon.as_deref(), quality);
+        let resolved = ResolvedItem::from_catalog(catalog_item, quality);
 
-        if let Some(model) = existing {
-            let item_id = model.id;
+        let txn = db.begin().await?;
+        let existing = build_item::Entity::find()
+            .filter(BuildItemColumn::BuildId.eq(build_id))
+            .filter(BuildItemColumn::Loadout.eq(loadout.to_string()))
+            .filter(BuildItemColumn::Slot.eq(slot.to_string()))
+            .one(&txn)
+            .await?;
+
+        let stored = if let Some(model) = existing {
             let mut active: build_item::ActiveModel = model.into();
             active.openalbion_item_type = Set(req.openalbion_item_type);
             active.openalbion_item_id = Set(req.openalbion_item_id);
-            active.openalbion_item_name = Set(req.openalbion_item_name);
-            active.openalbion_item_icon = Set(icon);
-            active.openalbion_item_tier = Set(req.openalbion_item_tier);
+            active.openalbion_item_name = Set(resolved.name);
+            active.openalbion_item_icon = Set(resolved.icon);
+            active.openalbion_item_tier = Set(resolved.tier);
             active.openalbion_item_quality = Set(quality);
             active.openalbion_item_enchantment = Set(enchantment);
-            let updated = active.update(db).await?;
-            drop_abilities_the_item_no_longer_offers(db, &updated, item_id).await?;
+            let updated = active.update(&txn).await?;
+            if req.spells.is_none() {
+                drop_abilities_the_item_no_longer_offers(&txn, &updated, updated.id).await?;
+            }
+            updated
         } else {
-            let active = build_item::ActiveModel {
+            build_item::ActiveModel {
                 build_id: Set(build_id),
                 loadout: Set(loadout.to_string()),
                 slot: Set(slot.to_string()),
                 openalbion_item_type: Set(req.openalbion_item_type),
                 openalbion_item_id: Set(req.openalbion_item_id),
-                openalbion_item_name: Set(req.openalbion_item_name),
-                openalbion_item_icon: Set(icon),
-                openalbion_item_tier: Set(req.openalbion_item_tier),
+                openalbion_item_name: Set(resolved.name),
+                openalbion_item_icon: Set(resolved.icon),
+                openalbion_item_tier: Set(resolved.tier),
                 openalbion_item_quality: Set(quality),
                 openalbion_item_enchantment: Set(enchantment),
                 ..Default::default()
-            };
-            active.insert(db).await?;
+            }
+            .insert(&txn)
+            .await?
+        };
+
+        if let Some(spells) = &req.spells {
+            let chosen = validated_spell_rows(&stored, spells)?;
+            replace_item_spells(&txn, stored.id, chosen).await?;
         }
+        txn.commit().await?;
 
         self.get_build(db, build_id).await
     }
@@ -1515,21 +1585,7 @@ impl CompService {
         let chosen = validated_spell_rows(&item, &req)?;
 
         let txn = db.begin().await?;
-        build_item_spell::Entity::delete_many()
-            .filter(BuildItemSpellColumn::BuildItemId.eq(item.id))
-            .exec(&txn)
-            .await?;
-        for (kind, slot_index, spell_id) in chosen {
-            build_item_spell::ActiveModel {
-                build_item_id: Set(item.id),
-                kind: Set(kind.to_string()),
-                slot_index: Set(slot_index),
-                spell_id: Set(spell_id),
-                ..Default::default()
-            }
-            .insert(&txn)
-            .await?;
-        }
+        replace_item_spells(&txn, item.id, chosen).await?;
         txn.commit().await?;
 
         self.get_build(db, build_id).await
@@ -1836,20 +1892,27 @@ impl CompService {
     }
 
     /// Updates a comp's editable fields.
+    ///
+    /// Everything happens in one transaction and the checks run before the writes they guard: a
+    /// request that fails validation (unknown or archived parent, cycle, capacity not greater
+    /// than the parent's, identity clash) leaves the comp, its group and its builds exactly as
+    /// they were.
     pub async fn update_comp(
         &self,
         db: &DatabaseConnection,
         id: i64,
         req: UpdateCompRequest,
     ) -> Result<CompDetail, AppError> {
+        let txn = db.begin().await?;
+
         let comp = comp::Entity::find_by_id(id)
-            .one(db)
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
 
         if let Some(category_id) = req.category_id {
             let exists = comp_category::Entity::find_by_id(category_id)
-                .one(db)
+                .one(&txn)
                 .await?
                 .is_some();
             if !exists {
@@ -1859,18 +1922,26 @@ impl CompService {
             }
         }
 
+        // Parent checks that need no merge come first, so a bad request is refused before any
+        // other write. (The transaction would roll the writes back anyway; this keeps the cheap
+        // refusals cheap and the error precedence stable.)
+        if let Some(Some(parent_id)) = req.parent_id
+            && comp.parent_id != Some(parent_id)
+        {
+            self.validate_parent_target(&txn, id, parent_id).await?;
+        }
+
         let target_name = req.name.as_deref().unwrap_or(&comp.name).trim().to_string();
         let target_category = req.category_id.unwrap_or(comp.category_id);
         let identity_changed = identity_key(&target_name) != identity_key(&comp.name)
             || target_category != comp.category_id;
         if identity_changed {
-            self.ensure_comp_group_identity_free(db, &comp, &target_name, target_category)
+            self.ensure_comp_group_identity_free(&txn, &comp, &target_name, target_category)
                 .await?;
 
             // Name and category identify the group, so every version moves together.
             let group =
-                comp_version_group(db, &comp.name, comp.category_id, comp.created_by).await?;
-            let txn = db.begin().await?;
+                comp_version_group(&txn, &comp.name, comp.category_id, comp.created_by).await?;
             for sibling in &group {
                 let mut moving: comp::ActiveModel = sibling.clone().into();
                 moving.name = Set(target_name.clone());
@@ -1878,11 +1949,10 @@ impl CompService {
                 moving.updated_at = Set(now());
                 moving.update(&txn).await?;
             }
-            txn.commit().await?;
         }
 
         let comp = comp::Entity::find_by_id(id)
-            .one(db)
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
         let was_parentless = comp.parent_id.is_none();
@@ -1896,10 +1966,10 @@ impl CompService {
                 // a 5-player Comp2 created before its 10-player Comp1 is selected). Materialize
                 // that shorthand when the parent is assigned during a later edit.
                 if was_parentless {
-                    self.merge_parent_builds_if_additions(db, id, parent_id)
+                    self.merge_parent_builds_if_additions(&txn, id, parent_id)
                         .await?;
                 }
-                self.validate_expansion_parent(db, id, parent_id).await?;
+                self.validate_parent_capacity(&txn, id, parent_id).await?;
                 active.parent_id = Set(Some(parent_id));
             } else {
                 active.parent_id = Set(None);
@@ -1907,7 +1977,8 @@ impl CompService {
         }
         active.updated_at = Set(now());
 
-        let updated = active.update(db).await?;
+        let updated = active.update(&txn).await?;
+        txn.commit().await?;
 
         self.to_comp_detail(db, updated).await
     }
@@ -1919,7 +1990,7 @@ impl CompService {
     /// because its rows already represent a complete snapshot.
     async fn merge_parent_builds_if_additions(
         &self,
-        db: &DatabaseConnection,
+        db: &impl ConnectionTrait,
         comp_id: i64,
         parent_id: i64,
     ) -> Result<(), AppError> {
@@ -1971,7 +2042,7 @@ impl CompService {
     /// Returns the total number of concrete slots in a comp snapshot.
     async fn get_comp_capacity(
         &self,
-        db: &DatabaseConnection,
+        db: &impl ConnectionTrait,
         comp_id: i64,
     ) -> Result<i64, AppError> {
         Ok(comp_build::Entity::find()
@@ -1987,7 +2058,7 @@ impl CompService {
     /// around `comp_id` after one of its builds is about to change to
     /// `prospective_capacity` total slots.
     ///
-    /// `create_comp`/`validate_expansion_parent` only enforce this at comp-creation or
+    /// `create_comp`/`update_comp` only enforce this at comp-creation or
     /// re-parenting time; a build added/edited/removed later on a comp that already sits
     /// in an expansion chain must not silently break the invariant those checks set up.
     /// Checks both directions: `comp_id` must still exceed its own parent's capacity
@@ -2030,10 +2101,12 @@ impl CompService {
         Ok(())
     }
 
-    /// Verifies that assigning `parent_id` keeps the chain acyclic and strictly increasing.
-    async fn validate_expansion_parent(
+    /// Refuses a parent that can never be valid for `comp_id`, whatever its builds end up being:
+    /// the comp itself, a missing or archived comp, or one beneath `comp_id`'s own descendants
+    /// (which would make the chain a cycle).
+    async fn validate_parent_target(
         &self,
-        db: &DatabaseConnection,
+        db: &impl ConnectionTrait,
         comp_id: i64,
         parent_id: i64,
     ) -> Result<(), AppError> {
@@ -2047,12 +2120,11 @@ impl CompService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Parent comp {parent_id} not found")))?;
-        let child_capacity = self.get_comp_capacity(db, comp_id).await?;
-        let parent_capacity = self.get_comp_capacity(db, parent.id).await?;
-        if child_capacity <= parent_capacity {
-            return Err(AppError::Validation(
-                "an expansion comp must have a capacity greater than its parent".to_string(),
-            ));
+        if parent.archived_at.is_some() {
+            return Err(AppError::Validation(format!(
+                "Comp {:?} is archived and can't be used as a parent",
+                parent.name
+            )));
         }
 
         let mut current_id = parent_id;
@@ -2078,6 +2150,23 @@ impl CompService {
             };
             current_id = next_parent_id;
         }
+    }
+
+    /// Verifies that `comp_id`'s capacity strictly exceeds that of its prospective parent.
+    async fn validate_parent_capacity(
+        &self,
+        db: &impl ConnectionTrait,
+        comp_id: i64,
+        parent_id: i64,
+    ) -> Result<(), AppError> {
+        let child_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let parent_capacity = self.get_comp_capacity(db, parent_id).await?;
+        if child_capacity <= parent_capacity {
+            return Err(AppError::Validation(
+                "an expansion comp must have a capacity greater than its parent".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// Deletes a comp. Cascades to `comp_builds` via FK.
@@ -2460,16 +2549,37 @@ mod tests {
         (service, build.summary.id)
     }
 
-    fn weapon(name: &str) -> UpsertBuildItemRequest {
+    /// The bundled catalog's id for an identifier such as `T8_MAIN_SWORD`.
+    fn catalog_id(identifier: &str) -> i64 {
+        crate::modules::openalbion::service::catalog_item_by_identifier(identifier)
+            .unwrap_or_else(|| panic!("{identifier} is not in the bundled catalog"))
+            .id
+    }
+
+    /// An upsert body for a real catalog item. The name, icon and tier are deliberately left for
+    /// the backend to resolve.
+    fn catalog_upsert(item_type: &str, identifier: &str) -> UpsertBuildItemRequest {
         UpsertBuildItemRequest {
-            openalbion_item_type: "weapon".to_string(),
-            openalbion_item_id: 1,
-            openalbion_item_name: name.to_string(),
+            openalbion_item_type: item_type.to_string(),
+            openalbion_item_id: catalog_id(identifier),
+            openalbion_item_name: String::new(),
             openalbion_item_icon: None,
             openalbion_item_tier: None,
             openalbion_item_quality: None,
             openalbion_item_enchantment: None,
+            spells: None,
         }
+    }
+
+    /// A catalog weapon, picked by the name the catalog gives it.
+    fn weapon(name: &str) -> UpsertBuildItemRequest {
+        let identifier = match name {
+            "Polehammer" => "T8_2H_POLEHAMMER",
+            "Realmbreaker" => "T8_2H_AXE_AVALON",
+            "Mace" => "T8_MAIN_MACE",
+            other => panic!("no catalog weapon registered for {other}"),
+        };
+        catalog_upsert("weapon", identifier)
     }
 
     fn item_named(detail: &BuildDetail, loadout: BuildLoadout, slot: BuildSlot) -> Option<String> {
@@ -2770,16 +2880,8 @@ mod tests {
     /// A real catalog weapon, so ability validation runs against the bundled dataset.
     fn broadsword() -> UpsertBuildItemRequest {
         UpsertBuildItemRequest {
-            openalbion_item_type: "weapon".to_string(),
-            openalbion_item_id: 1,
-            openalbion_item_name: "Broadsword".to_string(),
-            openalbion_item_icon: Some(
-                "https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64"
-                    .to_string(),
-            ),
             openalbion_item_tier: Some("8".to_string()),
-            openalbion_item_quality: None,
-            openalbion_item_enchantment: None,
+            ..catalog_upsert("weapon", "T8_MAIN_SWORD")
         }
     }
 
@@ -2789,7 +2891,7 @@ mod tests {
         CreateBuildItemRequest {
             slot: BuildSlot::Weapon,
             openalbion_item_type: "weapon".to_string(),
-            openalbion_item_id: 1,
+            openalbion_item_id: catalog_id("T8_MAIN_SWORD"),
             openalbion_item_name: "Broadsword".to_string(),
             openalbion_item_icon: Some(
                 "https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64"
@@ -2804,16 +2906,8 @@ mod tests {
 
     fn holy_staff() -> UpsertBuildItemRequest {
         UpsertBuildItemRequest {
-            openalbion_item_type: "weapon".to_string(),
-            openalbion_item_id: 2,
-            openalbion_item_name: "Great Holy Staff".to_string(),
-            openalbion_item_icon: Some(
-                "https://render.albiononline.com/v1/item/T8_2H_HOLYSTAFF.png?quality=1&size=64"
-                    .to_string(),
-            ),
             openalbion_item_tier: Some("8".to_string()),
-            openalbion_item_quality: None,
-            openalbion_item_enchantment: None,
+            ..catalog_upsert("weapon", "T8_2H_HOLYSTAFF")
         }
     }
 
@@ -3032,12 +3126,9 @@ mod tests {
             .await
             .unwrap();
 
-        let mut t4 = broadsword();
+        // The tier-4 sword is a different catalog item; the tier must match the catalog's.
+        let mut t4 = catalog_upsert("weapon", "T4_MAIN_SWORD");
         t4.openalbion_item_tier = Some("4".to_string());
-        t4.openalbion_item_icon = Some(
-            "https://render.albiononline.com/v1/item/T4_MAIN_SWORD.png?quality=1&size=64"
-                .to_string(),
-        );
         let detail = service
             .upsert_build_item(&db, build_id, BuildLoadout::Main, BuildSlot::Weapon, t4)
             .await
@@ -3318,7 +3409,7 @@ mod tests {
                 second.summary.id,
                 BuildLoadout::Main,
                 BuildSlot::Head,
-                broadsword(),
+                catalog_upsert("armor", "T8_HEAD_PLATE_SET1"),
             )
             .await
             .unwrap();
@@ -3951,6 +4042,423 @@ mod tests {
                 .await,
             Err(AppError::Validation(message)) if message.contains("own parent")
         ));
+    }
+
+    /// Creates a comp holding `builds` (build id, quantity), optionally under `parent_id`.
+    async fn comp_with(
+        service: &CompService,
+        db: &DatabaseConnection,
+        user: i64,
+        category_id: i64,
+        name: &str,
+        builds: &[(i64, i32)],
+        parent_id: Option<i64>,
+    ) -> CompDetail {
+        service
+            .create_comp(
+                db,
+                user,
+                CreateCompRequest {
+                    name: name.to_string(),
+                    description: None,
+                    category_id,
+                    builds: builds
+                        .iter()
+                        .map(|(build_id, quantity)| AddCompBuildRequest {
+                            build_id: *build_id,
+                            quantity: *quantity,
+                        })
+                        .collect(),
+                    parent_id,
+                },
+            )
+            .await
+            .expect("comp should be created")
+    }
+
+    fn snapshot_of(comp: &CompDetail) -> Vec<(i64, i32)> {
+        let mut snapshot: Vec<(i64, i32)> = comp
+            .builds
+            .iter()
+            .map(|entry| (entry.build_id, entry.quantity))
+            .collect();
+        snapshot.sort_unstable();
+        snapshot
+    }
+
+    #[tokio::test]
+    async fn a_failed_parent_assignment_leaves_the_comp_unchanged() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("DPS", build_category))
+            .await
+            .expect("build");
+        let base = comp_with(
+            &service,
+            &db,
+            user,
+            comp_category,
+            "10-man",
+            &[(build.summary.id, 10)],
+            None,
+        )
+        .await;
+        // Empty child: once the parent's builds are merged in, its capacity equals the parent's,
+        // so the capacity rule must reject the request.
+        let child = comp_with(&service, &db, user, comp_category, "Child", &[], None).await;
+
+        let error = service
+            .update_comp(
+                &db,
+                child.summary.id,
+                UpdateCompRequest {
+                    name: Some("Renamed".to_string()),
+                    description: Some("new description".to_string()),
+                    category_id: None,
+                    parent_id: Some(Some(base.summary.id)),
+                },
+            )
+            .await
+            .expect_err("an empty child cannot expand the parent");
+        assert!(
+            matches!(&error, AppError::Validation(message) if message.contains("greater")),
+            "{error:?}"
+        );
+
+        let after = service.get_comp(&db, child.summary.id).await.unwrap();
+        assert!(after.builds.is_empty(), "the parent's builds must not leak in");
+        assert_eq!(after.summary.parent_id, None);
+        assert_eq!(after.summary.name, "Child");
+        assert_eq!(after.summary.description, None);
+        // The parent is untouched too.
+        let base_after = service.get_comp(&db, base.summary.id).await.unwrap();
+        assert_eq!(snapshot_of(&base_after), vec![(build.summary.id, 10)]);
+    }
+
+    #[tokio::test]
+    async fn assigning_a_comp_beneath_its_own_descendant_changes_nothing() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let tank = service
+            .create_build(&db, user, build_request("Tank", build_category))
+            .await
+            .unwrap();
+        let healer = service
+            .create_build(&db, user, build_request("Healer", build_category))
+            .await
+            .unwrap();
+        let root = comp_with(
+            &service,
+            &db,
+            user,
+            comp_category,
+            "Root",
+            &[(tank.summary.id, 10)],
+            None,
+        )
+        .await;
+        let expansion = comp_with(
+            &service,
+            &db,
+            user,
+            comp_category,
+            "Expansion",
+            &[(healer.summary.id, 5)],
+            Some(root.summary.id),
+        )
+        .await;
+        assert_eq!(expansion.summary.total_quantity, 15);
+
+        let error = service
+            .update_comp(
+                &db,
+                root.summary.id,
+                UpdateCompRequest {
+                    name: Some("Renamed root".to_string()),
+                    description: None,
+                    category_id: None,
+                    parent_id: Some(Some(expansion.summary.id)),
+                },
+            )
+            .await
+            .expect_err("a cycle must be refused");
+        assert!(
+            matches!(&error, AppError::Validation(message) if message.contains("descendants")),
+            "{error:?}"
+        );
+
+        let after = service.get_comp(&db, root.summary.id).await.unwrap();
+        assert_eq!(
+            snapshot_of(&after),
+            vec![(tank.summary.id, 10)],
+            "the descendant's builds must not be merged into the root"
+        );
+        assert_eq!(after.summary.parent_id, None);
+        assert_eq!(after.summary.name, "Root");
+    }
+
+    #[tokio::test]
+    async fn an_archived_comp_cannot_become_a_parent_through_an_update() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("DPS", build_category))
+            .await
+            .unwrap();
+        let base = comp_with(
+            &service,
+            &db,
+            user,
+            comp_category,
+            "10-man",
+            &[(build.summary.id, 10)],
+            None,
+        )
+        .await;
+        let additions = comp_with(
+            &service,
+            &db,
+            user,
+            comp_category,
+            "Additions",
+            &[(build.summary.id, 5)],
+            None,
+        )
+        .await;
+        service.archive_comp(&db, base.summary.id).await.unwrap();
+
+        let error = service
+            .update_comp(
+                &db,
+                additions.summary.id,
+                UpdateCompRequest {
+                    name: None,
+                    description: None,
+                    category_id: None,
+                    parent_id: Some(Some(base.summary.id)),
+                },
+            )
+            .await
+            .expect_err("an archived parent must be refused");
+        assert!(
+            matches!(&error, AppError::Validation(message) if message.contains("archived")),
+            "{error:?}"
+        );
+
+        let after = service.get_comp(&db, additions.summary.id).await.unwrap();
+        assert_eq!(snapshot_of(&after), vec![(build.summary.id, 5)]);
+        assert_eq!(after.summary.parent_id, None);
+    }
+
+    #[tokio::test]
+    async fn a_rename_is_rolled_back_when_the_same_update_fails_on_its_parent() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let other_category = insert_comp_category(&db, "Other comps").await;
+        let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("DPS", build_category))
+            .await
+            .unwrap();
+        let comp = comp_with(
+            &service,
+            &db,
+            user,
+            comp_category,
+            "Standard",
+            &[(build.summary.id, 5)],
+            None,
+        )
+        .await;
+
+        let error = service
+            .update_comp(
+                &db,
+                comp.summary.id,
+                UpdateCompRequest {
+                    name: Some("Moved".to_string()),
+                    description: None,
+                    category_id: Some(other_category),
+                    parent_id: Some(Some(9_999)),
+                },
+            )
+            .await
+            .expect_err("unknown parent");
+        assert!(matches!(error, AppError::NotFound(_)), "{error:?}");
+
+        let after = service.get_comp(&db, comp.summary.id).await.unwrap();
+        assert_eq!(after.summary.name, "Standard");
+        assert_eq!(after.summary.category_id, comp_category);
+    }
+
+    #[tokio::test]
+    async fn an_id_outside_the_catalog_is_refused_on_create_and_on_slot_save() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let category = insert_build_category(&db, "Rogue builds").await;
+        let service = CompService::new();
+        let mut request = build_request("Rogue", category);
+        request.items = Some(vec![CreateBuildItemRequest {
+            openalbion_item_id: 999_999_999,
+            ..broadsword_create_item(None)
+        }]);
+        let error = service
+            .create_build(&db, user, request)
+            .await
+            .expect_err("an unknown catalog id must be refused");
+        assert!(matches!(error, AppError::Validation(_)), "{error:?}");
+
+        let (service, build_id) = seed_build(&db).await;
+        let error = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                UpsertBuildItemRequest {
+                    openalbion_item_id: 999_999_999,
+                    ..broadsword()
+                },
+            )
+            .await
+            .expect_err("an unknown catalog id must be refused");
+        assert!(matches!(error, AppError::Validation(_)), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn the_stored_name_icon_and_tier_come_from_the_catalog_not_the_client() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let catalog = crate::modules::openalbion::service::catalog_item_by_identifier(
+            "T8_MAIN_SWORD",
+        )
+        .expect("T8_MAIN_SWORD is in the catalog");
+
+        let detail = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                UpsertBuildItemRequest {
+                    openalbion_item_name: "Forged name".to_string(),
+                    openalbion_item_icon: Some("https://evil.example/payload.png".to_string()),
+                    ..broadsword()
+                },
+            )
+            .await
+            .expect("a catalog id is accepted");
+
+        let stored = detail
+            .items
+            .iter()
+            .find(|item| item.slot == BuildSlot::Weapon)
+            .expect("the weapon is stored");
+        assert_eq!(Some(stored.openalbion_item_name.as_str()), Some(catalog.name.as_str()));
+        assert_eq!(stored.openalbion_item_tier.as_deref(), Some("8"));
+        let icon = stored.openalbion_item_icon.as_deref().unwrap_or_default();
+        assert!(!icon.contains("evil.example"), "the client icon must be ignored: {icon}");
+        assert!(icon.starts_with("https://render.albiononline.com/"), "{icon}");
+    }
+
+    #[tokio::test]
+    async fn a_slot_save_with_abilities_the_new_item_lacks_changes_nothing() {
+        let db = seed_db().await;
+        let (service, build_id) = build_with_broadsword(&db).await;
+
+        // Holy Staff does not offer the Broadsword's HEROICSTRIKE2, so the whole save is refused:
+        // the item must stay a Broadsword and no ability may be written.
+        let error = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                UpsertBuildItemRequest {
+                    spells: Some(spells(&[("1", "HEROICSTRIKE2")], &[])),
+                    ..holy_staff()
+                },
+            )
+            .await
+            .expect_err("abilities the item does not offer must refuse the save");
+        assert!(matches!(error, AppError::Validation(_)), "{error:?}");
+
+        let after = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(
+            item_named(&after, BuildLoadout::Main, BuildSlot::Weapon),
+            Some(
+                crate::modules::openalbion::service::catalog_item_by_identifier("T8_MAIN_SWORD")
+                    .unwrap()
+                    .name
+                    .clone()
+            )
+        );
+        assert!(spells_on(&after, BuildLoadout::Main, BuildSlot::Weapon).active.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_build_summary_counts_only_the_main_loadout_for_its_slots() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        for loadout in [BuildLoadout::Main, BuildLoadout::Swap] {
+            service
+                .upsert_build_item(&db, build_id, loadout, BuildSlot::Weapon, broadsword())
+                .await
+                .expect("weapon should be stored");
+        }
+
+        let detail = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(detail.summary.item_count, 2);
+        assert_eq!(detail.summary.main_item_count, 1);
+    }
+
+    #[tokio::test]
+    async fn a_slot_save_writes_the_item_and_its_abilities_together() {
+        let db = seed_db().await;
+        let (service, build_id) = build_with_broadsword(&db).await;
+
+        let detail = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                UpsertBuildItemRequest {
+                    spells: Some(spells(&[("1", "GENEROUSHEAL")], &[])),
+                    ..holy_staff()
+                },
+            )
+            .await
+            .expect("the staff and its ability are one save");
+
+        assert_eq!(
+            item_named(&detail, BuildLoadout::Main, BuildSlot::Weapon),
+            Some(
+                crate::modules::openalbion::service::catalog_item_by_identifier("T8_2H_HOLYSTAFF")
+                    .unwrap()
+                    .name
+                    .clone()
+            )
+        );
+        assert_eq!(
+            spells_on(&detail, BuildLoadout::Main, BuildSlot::Weapon)
+                .active
+                .get("1")
+                .map(String::as_str),
+            Some("GENEROUSHEAL")
+        );
     }
 
     #[tokio::test]
