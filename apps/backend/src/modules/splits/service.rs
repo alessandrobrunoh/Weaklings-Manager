@@ -9,14 +9,18 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use sea_orm::prelude::Decimal;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait,
 };
 
 use crate::errors::AppError;
 use crate::modules::admin::entities::Entity as GuildSettingsEntity;
 use crate::modules::albion::entities::albion_link::Entity as AlbionLinkEntity;
+use crate::modules::audit::entities::Model as AuditRow;
+use crate::modules::audit::service::AuditService;
 use crate::modules::bank::entities::{
     ActiveModel as TransactionActiveModel, Column as TransactionColumn, Entity as TransactionEntity,
 };
@@ -26,9 +30,11 @@ use crate::modules::events::entities::event::{Column as EventColumn, Entity as E
 use crate::modules::events::entities::event_participation::{
     Column as EventParticipationColumn, Entity as EventParticipationEntity,
 };
+use crate::modules::sync::{LegacyLinks, assert_split_writable};
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
+use super::alliance_distribution::distribution_batch_exists;
 use super::city::SplitIslandCity;
 use super::entities::split::{
     ActiveModel as SplitActiveModel, Column as SplitColumn, Entity as SplitEntity,
@@ -53,7 +59,7 @@ use super::models::{
     SplitIslandView, SplitKpiSummary, SplitParticipantView, SplitSummary, UpdateIslandRequest,
     UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
-use super::status::SplitStatus;
+use super::status::{SplitStatus, allows};
 
 /// Parses a split model's stored status string into a [`SplitStatus`].
 ///
@@ -139,6 +145,32 @@ async fn replace_bags<C: ConnectionTrait>(
         .await?;
     }
     Ok(())
+}
+
+/// Stored `(user_id, weight)` pairs of a split's roster.
+async fn stored_roster(
+    db: &DatabaseConnection,
+    split_id: i64,
+) -> Result<Vec<(i64, Decimal)>, AppError> {
+    Ok(ParticipantEntity::find()
+        .filter(ParticipantColumn::SplitId.eq(split_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|participant| (participant.user_id, participant.weight))
+        .collect())
+}
+
+/// Whether a requested roster differs from the stored one in membership or weight.
+fn roster_differs(stored: &[(i64, Decimal)], requested: &[UpsertParticipantRequest]) -> bool {
+    let mut stored = stored.to_vec();
+    let mut requested: Vec<(i64, Decimal)> = requested
+        .iter()
+        .map(|participant| (participant.user_id, participant.weight))
+        .collect();
+    stored.sort_by_key(|(user_id, _)| *user_id);
+    requested.sort_by_key(|(user_id, _)| *user_id);
+    stored != requested
 }
 
 async fn replace_split_participants<C: ConnectionTrait>(
@@ -423,8 +455,15 @@ pub(crate) fn event_has_ended(status: &str) -> bool {
     matches!(status, "stopped" | "auto_stopped")
 }
 
+/// Where a split linked to an event belongs: waiting for it while the event can still run,
+/// pending once the event ended or was cancelled.
+/// Whether an event in `event_status` no longer holds its linked splits: it ended or was cancelled.
+fn event_releases_split(event_status: &str) -> bool {
+    event_has_ended(event_status) || event_status == "cancelled"
+}
+
 fn status_for_event(event_status: &str) -> SplitStatus {
-    if event_has_ended(event_status) {
+    if event_releases_split(event_status) {
         SplitStatus::Pending
     } else {
         SplitStatus::AwaitingEvent
@@ -454,7 +493,30 @@ pub(crate) fn calculate_net_value(
     (value_before_fee - (value_before_fee * fee / Decimal::from(100))).round_dp(2)
 }
 
-/// Weight-proportional shares; the last participant receives the rounding remainder.
+/// The splits of an event that event-driven roster repair may touch: still waiting, not archived,
+/// and not a published copy. Completed, closed and archived splits are never re-synced.
+async fn waiting_writable_splits<C: ConnectionTrait>(
+    db: &C,
+    event_id: i64,
+) -> Result<Vec<SplitModel>, AppError> {
+    Ok(SplitEntity::find()
+        .filter(SplitColumn::EventId.eq(event_id))
+        .filter(SplitColumn::OriginReadOnly.eq(false))
+        .filter(SplitColumn::ArchivedAt.is_null())
+        .filter(SplitColumn::Status.is_in([
+            SplitStatus::Pending.to_string(),
+            SplitStatus::AwaitingEvent.to_string(),
+        ]))
+        .all(db)
+        .await?)
+}
+
+/// Weight-proportional shares, computed in `user_id` order so the result never depends on the
+/// order the rows came back from the database.
+///
+/// Every share is rounded to the cent and capped by what is still unallocated, so no share is
+/// negative and the shares sum to exactly `net_value`. The last participant (by `user_id`)
+/// receives the remainder.
 pub(crate) fn participant_shares(
     net_value: Decimal,
     weights: &[(i64, Decimal)],
@@ -462,29 +524,68 @@ pub(crate) fn participant_shares(
     if weights.is_empty() {
         return Vec::new();
     }
-    let total_weight: Decimal = weights.iter().map(|(_, weight)| *weight).sum();
+    let mut ordered = weights.to_vec();
+    ordered.sort_by_key(|(user_id, _)| *user_id);
+    let total_weight: Decimal = ordered.iter().map(|(_, weight)| *weight).sum();
     if total_weight <= Decimal::ZERO {
-        return weights
+        return ordered
             .iter()
             .map(|(user_id, _)| (*user_id, Decimal::ZERO))
             .collect();
     }
     let mut running_total = Decimal::ZERO;
-    let last_index = weights.len() - 1;
-    weights
+    let last_index = ordered.len() - 1;
+    ordered
         .iter()
         .enumerate()
         .map(|(index, (user_id, weight))| {
+            let unallocated = (net_value - running_total).max(Decimal::ZERO);
             let share = if index == last_index {
-                net_value - running_total
+                unallocated
             } else {
-                let share = (net_value * *weight / total_weight).round_dp(2);
+                let share = (net_value * *weight / total_weight)
+                    .round_dp(2)
+                    .min(unallocated);
                 running_total += share;
                 share
             };
             (*user_id, share)
         })
         .collect()
+}
+
+/// Writes one audit row for a split action inside `txn`, so it commits or rolls back together
+/// with the change it describes.
+pub(super) async fn split_audit_in<C: ConnectionTrait>(
+    txn: &C,
+    action: &str,
+    split_id: i64,
+    actor_user_id: i64,
+    details: Option<serde_json::Value>,
+) -> Result<AuditRow, AppError> {
+    AuditService::record_in(
+        txn,
+        action,
+        Some("SPLIT"),
+        Some(split_id),
+        Some(actor_user_id),
+        details,
+    )
+    .await
+}
+
+/// Best-effort Discord echo of an audit row, sent after its transaction committed.
+pub(super) async fn echo_audit_row(db: &DatabaseConnection, row: &AuditRow) {
+    AuditService::announce(
+        db,
+        row,
+        &row.action,
+        row.entity_type.as_deref(),
+        row.entity_id,
+        row.user_id,
+        row.details.clone(),
+    )
+    .await;
 }
 
 fn validate_participant_list(participants: &[UpsertParticipantRequest]) -> Result<(), AppError> {
@@ -738,9 +839,26 @@ async fn load_island_view(
     Ok(to_island_view(island, tabs))
 }
 
+/// Result of the best-effort split roster sync that runs when an event stops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitSyncState {
+    /// Every split of the event was reconciled with the event roster.
+    Synced,
+    /// The sync failed and was rolled back; the splits carry `needs_resync`.
+    NeedsResync,
+}
+
 /// Service for executing business logic operations related to loot splits.
 pub struct SplitService {
     tenant_kind: String,
+    /// Control handle that lets a rejected write name the origin of a copy.
+    origin_scope: Option<OriginScope>,
+}
+
+/// Where the service's tenant lives, for decorating `ReadOnlyCopy` errors.
+struct OriginScope {
+    control: DatabaseConnection,
+    tenant_id: String,
 }
 
 const SHARED_SPLIT_READ_ONLY: &str = "shared alliance splits are read-only";
@@ -757,11 +875,51 @@ impl SplitService {
     pub fn for_tenant(kind: impl Into<String>) -> Self {
         Self {
             tenant_kind: kind.into(),
+            origin_scope: None,
         }
     }
 
-    fn deny_mutation(&self, split: &SplitModel) -> Result<(), AppError> {
-        if split.origin_read_only || self.tenant_kind == "alliance" {
+    /// Lets a rejected write on a copy carry the origin tenant and split (403 +
+    /// `origin`). Without it the verdict is identical but the origin is not resolved.
+    #[must_use]
+    pub fn with_origin_scope(mut self, control: &DatabaseConnection, tenant_id: &str) -> Self {
+        self.origin_scope = Some(OriginScope {
+            control: control.clone(),
+            tenant_id: tenant_id.to_owned(),
+        });
+        self
+    }
+
+    /// A completed alliance split whose payout batch exists is final: corrections are made with a
+    /// separate adjustment split (owner decision, R9 / Q2).
+    async fn ensure_amendable(&self, split: &SplitModel) -> Result<(), AppError> {
+        if self.tenant_kind != "alliance" || parse_status(split)? != SplitStatus::Completed {
+            return Ok(());
+        }
+        let Some(scope) = &self.origin_scope else {
+            return Ok(());
+        };
+        if distribution_batch_exists(&scope.control, &scope.tenant_id, split.id).await? {
+            return Err(AppError::ConflictWithCode {
+                code: "completed_alliance_split_immutable",
+                message: format!(
+                    "split {} was completed and distributed to the member guilds; record a correction as a new split",
+                    split.id
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// Copies are read-only (the sync guard); alliance tenants keep their own rule that
+    /// shared splits are never edited in place.
+    async fn deny_mutation(&self, split: &SplitModel) -> Result<(), AppError> {
+        let legacy = self.origin_scope.as_ref().map(|scope| LegacyLinks {
+            control: &scope.control,
+            tenant_id: &scope.tenant_id,
+        });
+        assert_split_writable(legacy, split.id, split.origin_read_only).await?;
+        if self.tenant_kind == "alliance" {
             return Err(AppError::Forbidden(SHARED_SPLIT_READ_ONLY.to_owned()));
         }
         Ok(())
@@ -772,7 +930,8 @@ impl SplitService {
     /// # Errors
     ///
     /// * [`AppError::NotFound`] if the split does not exist.
-    /// * [`AppError::Forbidden`] when `origin_read_only` is set or the tenant is an alliance.
+    /// * [`AppError::ReadOnlyCopy`] when the split is a published copy.
+    /// * [`AppError::Forbidden`] when the tenant is an alliance.
     pub async fn assert_mutable(
         &self,
         db: &DatabaseConnection,
@@ -782,7 +941,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)
+        self.deny_mutation(&split).await
     }
 
     pub(crate) async fn to_summary(
@@ -1090,45 +1249,53 @@ impl SplitService {
         &self,
         db: &DatabaseConnection,
         split_id: i64,
-        expected: SplitStatus,
         action: &str,
     ) -> Result<SplitModel, AppError> {
         let split = SplitEntity::find_by_id(split_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
         }
-        if parse_status(&split)? != expected {
+        let status = parse_status(&split)?;
+        if !allows(action, status) {
             return Err(AppError::Validation(format!(
-                "cannot {action} a split that is not in {expected} status"
+                "cannot {action} a split that is {status}"
             )));
         }
         Ok(split)
     }
 
-    /// Closes a pending split with a terminal, non-completing status (`"not_completed"` or
-    /// `"lost"`) — no Guild Bank transactions are generated.
+    /// Closes a waiting split (pending or awaiting its event) with a terminal, non-completing
+    /// status (`"not_completed"` or `"lost"`) — no Guild Bank transactions are generated.
     async fn close_split(
         &self,
         db: &DatabaseConnection,
         split_id: i64,
         status: SplitStatus,
+        actor_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        self.load_with_status(db, split_id, SplitStatus::Pending, "close")
-            .await?;
+        let (action, audit_action) = if status == SplitStatus::Lost {
+            ("lost", "SPLIT_LOST")
+        } else {
+            ("not_completed", "SPLIT_NOT_COMPLETED")
+        };
+        self.load_with_status(db, split_id, action).await?;
 
         let txn = db.begin().await?;
 
         // Re-check the status as part of the write itself: a concurrent close/complete could have
-        // moved the split out of `pending` between the read above and here. A losing request gets
-        // a clean conflict instead of silently overwriting the other outcome.
+        // moved the split out of its waiting status between the read above and here. A losing
+        // request gets a clean conflict instead of silently overwriting the other outcome.
         let now = chrono::Utc::now().into();
         let flip = SplitEntity::update_many()
             .filter(SplitColumn::Id.eq(split_id))
-            .filter(SplitColumn::Status.eq(SplitStatus::Pending.to_string()))
+            .filter(SplitColumn::Status.is_in([
+                SplitStatus::Pending.to_string(),
+                SplitStatus::AwaitingEvent.to_string(),
+            ]))
             .set(SplitActiveModel {
                 status: Set(status.to_string()),
                 updated_at: Set(now),
@@ -1139,7 +1306,7 @@ impl SplitService {
 
         if flip.rows_affected != 1 {
             return Err(AppError::Conflict(format!(
-                "split {split_id} is no longer pending and cannot be closed"
+                "split {split_id} is no longer waiting and cannot be closed"
             )));
         }
 
@@ -1147,39 +1314,44 @@ impl SplitService {
             .one(&txn)
             .await?
             .ok_or_else(|| AppError::Internal("closed split disappeared".to_string()))?;
+        let audit = split_audit_in(&txn, audit_action, split_id, actor_user_id, None).await?;
 
         txn.commit().await?;
+        echo_audit_row(db, &audit).await;
 
         self.to_detail(db, updated).await
     }
 
-    /// Marks a pending split as not completed (e.g. the distribution didn't happen). Terminal.
+    /// Marks a waiting split as not completed (e.g. the distribution didn't happen). Terminal.
     ///
     /// # Errors
     ///
     /// * Returns `AppError::NotFound` if the split does not exist.
-    /// * Returns `AppError::Validation` if the split is not in `"pending"` status.
+    /// * Returns `AppError::Validation` if the split is already closed.
     pub async fn mark_not_completed(
         &self,
         db: &DatabaseConnection,
         split_id: i64,
+        actor_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        self.close_split(db, split_id, SplitStatus::NotCompleted)
+        self.close_split(db, split_id, SplitStatus::NotCompleted, actor_user_id)
             .await
     }
 
-    /// Marks a pending split as lost — the loot was never recovered. Terminal.
+    /// Marks a waiting split as lost — the loot was never recovered. Terminal.
     ///
     /// # Errors
     ///
     /// * Returns `AppError::NotFound` if the split does not exist.
-    /// * Returns `AppError::Validation` if the split is not in `"pending"` status.
+    /// * Returns `AppError::Validation` if the split is already closed.
     pub async fn mark_lost(
         &self,
         db: &DatabaseConnection,
         split_id: i64,
+        actor_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        self.close_split(db, split_id, SplitStatus::Lost).await
+        self.close_split(db, split_id, SplitStatus::Lost, actor_user_id)
+            .await
     }
 
     async fn load_editable(
@@ -1193,13 +1365,16 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
         let status = parse_status(&split)?;
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
         }
-        let editable = matches!(status, SplitStatus::Pending | SplitStatus::AwaitingEvent)
-            || (allow_completed && status == SplitStatus::Completed);
+        let editable = if allow_completed {
+            allows("update", status)
+        } else {
+            allows("complete", status)
+        };
         if !editable {
             return Err(AppError::Validation(format!(
                 "cannot {action} a split that is not editable"
@@ -1227,8 +1402,11 @@ impl SplitService {
         req: UpdateSplitRequest,
     ) -> Result<SplitDetail, AppError> {
         let split = self.load_editable(db, split_id, "update", true).await?;
+        self.ensure_amendable(&split).await?;
         let previous_event_id = split.event_id;
-        let completed = parse_status(&split)? == SplitStatus::Completed;
+        let status = parse_status(&split)?;
+        let completed = status == SplitStatus::Completed;
+        let unlinking = matches!(req.event_id, Some(None)) && status == SplitStatus::AwaitingEvent;
         if completed && req.event_id.is_some() {
             return Err(AppError::Validation(
                 "cannot change the linked event on a completed split".to_string(),
@@ -1240,6 +1418,17 @@ impl SplitService {
         let mut active: SplitActiveModel = split.clone().into();
 
         active.updated_at = Set(chrono::Utc::now().into());
+        if let Some(participants) = &req.participants {
+            let stored = stored_roster(db, split_id).await?;
+            if roster_differs(&stored, participants) {
+                // A hand-edited roster is authoritative: event sync no longer imports sign-ups into it.
+                active.roster_locked = Set(true);
+            }
+        }
+        if unlinking {
+            // Nothing left to wait for: the split is payable again.
+            active.status = Set(SplitStatus::Pending.to_string());
+        }
 
         if let Some(value) = req.estimated_market_value {
             if value < Decimal::ZERO {
@@ -1362,6 +1551,19 @@ impl SplitService {
     where
         C: ConnectionTrait,
     {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        // Completed and closed splits are a record of what was paid; a hand-edited roster is the
+        // officer's choice; a published copy follows its origin.
+        if !parse_status(&split)?.is_waiting()
+            || split.roster_locked
+            || split.origin_read_only
+            || split.archived_at.is_some()
+        {
+            return Ok(());
+        }
         let event_user_ids = event_participant_ids(db, event_id).await?;
         let event_user_set: HashSet<i64> = event_user_ids.into_iter().collect();
 
@@ -1401,33 +1603,135 @@ impl SplitService {
     }
 
     /// Synchronizes every split linked to an event and aligns its waiting state with the event.
-    pub async fn sync_event_participants(
+    ///
+    /// Generic over the connection so the event transition core can run it on its own
+    /// transaction. A successful pass clears `needs_resync` on every split it visited.
+    pub async fn sync_event_participants<C>(&self, db: &C, event_id: i64) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        for split in waiting_writable_splits(db, event_id).await? {
+            self.sync_participants_from_event(db, split.id, event_id)
+                .await?;
+        }
+        // Status follows the event for every waiting, writable split, archived ones included, so
+        // unarchiving a split later never shows a status the event no longer implies.
+        self.recompute_awaiting_for_event(db, event_id).await?;
+        // Terminal, archived and published splits are not repaired, so a flag left on them is stale.
+        SplitEntity::update_many()
+            .filter(SplitColumn::EventId.eq(event_id))
+            .filter(SplitColumn::NeedsResync.eq(true))
+            .col_expr(SplitColumn::NeedsResync, Expr::value(false))
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
+    /// Moves every waiting split of the event to the status the event now implies: a cancelled
+    /// or ended event releases its awaiting splits to `pending`, an uncancelled one re-awaits.
+    /// Runs inside the event transition, so the split state follows the event in the same
+    /// transaction.
+    pub async fn recompute_awaiting_for_event<C>(
         &self,
-        db: &DatabaseConnection,
+        db: &C,
         event_id: i64,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         let event = EventEntity::find_by_id(event_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
-        let desired_status = status_for_event(&event.status);
-        let splits = SplitEntity::find()
+        let desired = status_for_event(&event.status).to_string();
+        SplitEntity::update_many()
             .filter(SplitColumn::EventId.eq(event_id))
-            .all(db)
+            .filter(SplitColumn::OriginReadOnly.eq(false))
+            .filter(SplitColumn::Status.is_in([
+                SplitStatus::Pending.to_string(),
+                SplitStatus::AwaitingEvent.to_string(),
+            ]))
+            .filter(SplitColumn::Status.ne(desired.clone()))
+            .col_expr(SplitColumn::Status, Expr::value(desired))
+            .col_expr(SplitColumn::UpdatedAt, Expr::value(chrono::Utc::now()))
+            .exec(db)
             .await?;
-        for split in splits {
-            self.sync_participants_from_event(db, split.id, event_id)
-                .await?;
-            if matches!(
-                parse_status(&split)?,
-                SplitStatus::Pending | SplitStatus::AwaitingEvent
-            ) {
-                let mut active: SplitActiveModel = split.into();
-                active.status = Set(desired_status.to_string());
-                active.updated_at = Set(chrono::Utc::now().into());
-                active.update(db).await?;
+        Ok(())
+    }
+
+    /// Runs [`Self::sync_event_participants`] inside a SAVEPOINT of the caller's transaction.
+    ///
+    /// The event transition core calls this while stopping an event: a failing split sync is
+    /// rolled back to the savepoint, logged, and recorded as `needs_resync` on the event's
+    /// splits, but never fails (or rolls back) the surrounding transition. On PostgreSQL the
+    /// savepoint is what keeps the outer transaction usable after a failed statement.
+    ///
+    /// # Errors
+    ///
+    /// Only when the savepoint itself cannot be opened or released, which means the outer
+    /// transaction is no longer usable either.
+    pub async fn sync_event_participants_isolated(
+        &self,
+        txn: &DatabaseTransaction,
+        event_id: i64,
+    ) -> Result<SplitSyncState, AppError> {
+        let savepoint = txn.begin().await?;
+        match self.sync_event_participants(&savepoint, event_id).await {
+            Ok(()) => {
+                savepoint.commit().await?;
+                Ok(SplitSyncState::Synced)
+            }
+            Err(error) => {
+                savepoint.rollback().await?;
+                tracing::warn!(
+                    event_id,
+                    error = %error,
+                    "split roster sync failed; the event transition is kept and the splits are marked needs_resync"
+                );
+                if let Err(mark_error) = self.mark_needs_resync(txn, event_id).await {
+                    tracing::error!(
+                        event_id,
+                        error = %mark_error,
+                        "could not record needs_resync on the splits of the event"
+                    );
+                }
+                Ok(SplitSyncState::NeedsResync)
             }
         }
+    }
+
+    /// Whether any split of the event is waiting for a roster resync.
+    pub async fn event_has_stale_splits<C>(&self, db: &C, event_id: i64) -> Result<bool, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(SplitEntity::find()
+            .filter(SplitColumn::EventId.eq(event_id))
+            .filter(SplitColumn::NeedsResync.eq(true))
+            .one(db)
+            .await?
+            .is_some())
+    }
+
+    /// Flags the waiting, writable splits of the event as stale after a failed repair pass.
+    /// Terminal and published splits are never repaired, so they are never flagged.
+    async fn mark_needs_resync<C>(&self, db: &C, event_id: i64) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        let ids: Vec<i64> = waiting_writable_splits(db, event_id)
+            .await?
+            .into_iter()
+            .map(|split| split.id)
+            .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
+        SplitEntity::update_many()
+            .filter(SplitColumn::Id.is_in(ids))
+            .col_expr(SplitColumn::NeedsResync, Expr::value(true))
+            .exec(db)
+            .await?;
         Ok(())
     }
 
@@ -1444,8 +1748,9 @@ impl SplitService {
         &self,
         db: &DatabaseConnection,
         split_id: i64,
+        actor_user_id: i64,
     ) -> Result<(), AppError> {
-        self.archive_split(db, split_id).await?;
+        self.archive_split(db, split_id, actor_user_id).await?;
         Ok(())
     }
 
@@ -1458,17 +1763,9 @@ impl SplitService {
         &self,
         db: &DatabaseConnection,
         split_id: i64,
+        actor_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        let split = SplitEntity::find_by_id(split_id)
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
-        let mut active: SplitActiveModel = split.into();
-        active.archived_at = Set(Some(chrono::Utc::now().into()));
-        active.updated_at = Set(chrono::Utc::now().into());
-        active.update(db).await?;
-        self.get_split(db, split_id).await
+        self.set_archived(db, split_id, actor_user_id, true).await
     }
 
     /// Restores an archived split to the active list.
@@ -1480,16 +1777,38 @@ impl SplitService {
         &self,
         db: &DatabaseConnection,
         split_id: i64,
+        actor_user_id: i64,
+    ) -> Result<SplitDetail, AppError> {
+        self.set_archived(db, split_id, actor_user_id, false).await
+    }
+
+    /// Sets or clears `archived_at` and records the audit row in the same transaction.
+    async fn set_archived(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+        actor_user_id: i64,
+        archived: bool,
     ) -> Result<SplitDetail, AppError> {
         let split = SplitEntity::find_by_id(split_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
+        let now: chrono::DateTime<chrono::FixedOffset> = chrono::Utc::now().into();
+        let txn = db.begin().await?;
         let mut active: SplitActiveModel = split.into();
-        active.archived_at = Set(None);
-        active.updated_at = Set(chrono::Utc::now().into());
-        active.update(db).await?;
+        active.archived_at = Set(archived.then_some(now));
+        active.updated_at = Set(now);
+        active.update(&txn).await?;
+        let audit_action = if archived {
+            "SPLIT_ARCHIVED"
+        } else {
+            "SPLIT_UNARCHIVED"
+        };
+        let audit = split_audit_in(&txn, audit_action, split_id, actor_user_id, None).await?;
+        txn.commit().await?;
+        echo_audit_row(db, &audit).await;
         self.get_split(db, split_id).await
     }
 
@@ -2003,6 +2322,7 @@ impl SplitService {
         req: UpsertParticipantRequest,
     ) -> Result<SplitDetail, AppError> {
         let split = self.load_editable(db, split_id, "modify", true).await?;
+        self.ensure_amendable(&split).await?;
         let completed = parse_status(&split)? == SplitStatus::Completed;
 
         if req.weight <= Decimal::ZERO {
@@ -2016,10 +2336,15 @@ impl SplitService {
             .one(&txn)
             .await?;
 
-        if let Some(existing) = existing {
-            let mut active: ParticipantActiveModel = existing.into();
-            active.weight = Set(req.weight);
-            active.update(&txn).await?;
+        let changed = if let Some(existing) = existing {
+            if existing.weight == req.weight {
+                false
+            } else {
+                let mut active: ParticipantActiveModel = existing.into();
+                active.weight = Set(req.weight);
+                active.update(&txn).await?;
+                true
+            }
         } else {
             let active = ParticipantActiveModel {
                 split_id: Set(split_id),
@@ -2028,10 +2353,17 @@ impl SplitService {
                 ..Default::default()
             };
             active.insert(&txn).await?;
+            true
+        };
+        if !changed {
+            // Re-saving an unchanged participant is not an edit, so the roster stays unlocked.
+            txn.commit().await?;
+            return self.get_split(db, split_id).await;
         }
 
         let mut split_active: SplitActiveModel = split.into();
         split_active.updated_at = Set(chrono::Utc::now().into());
+        split_active.roster_locked = Set(true);
         let split = split_active.update(&txn).await?;
         if completed {
             reconcile_completed_split_credits(&txn, split_id, split.created_by).await?;
@@ -2053,6 +2385,7 @@ impl SplitService {
         user_id: i64,
     ) -> Result<SplitDetail, AppError> {
         let split = self.load_editable(db, split_id, "modify", true).await?;
+        self.ensure_amendable(&split).await?;
         let completed = parse_status(&split)? == SplitStatus::Completed;
         if completed {
             let remaining = ParticipantEntity::find()
@@ -2067,14 +2400,20 @@ impl SplitService {
         }
 
         let txn = db.begin().await?;
-        ParticipantEntity::delete_many()
+        let removed = ParticipantEntity::delete_many()
             .filter(ParticipantColumn::SplitId.eq(split_id))
             .filter(ParticipantColumn::UserId.eq(user_id))
             .exec(&txn)
             .await?;
+        if removed.rows_affected == 0 {
+            // Removing someone who is not on the roster changes nothing and does not lock it.
+            txn.commit().await?;
+            return self.get_split(db, split_id).await;
+        }
 
         let mut split_active: SplitActiveModel = split.into();
         split_active.updated_at = Set(chrono::Utc::now().into());
+        split_active.roster_locked = Set(true);
         let split = split_active.update(&txn).await?;
         if completed {
             reconcile_completed_split_credits(&txn, split_id, split.created_by).await?;
@@ -2149,7 +2488,7 @@ impl SplitService {
                 .one(db)
                 .await?
                 .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
-            if !event_has_ended(&event.status) {
+            if !event_releases_split(&event.status) {
                 return Err(AppError::Conflict(format!(
                     "split {split_id} is awaiting event {event_id} to finish"
                 )));
@@ -2213,6 +2552,7 @@ impl SplitService {
             )));
         }
 
+        let mut audit_rows = Vec::with_capacity(shares.len() + 1);
         for (user_id, share) in shares {
             let inserted_tx = TransactionActiveModel {
                 from_user_id: Set(None),
@@ -2225,21 +2565,36 @@ impl SplitService {
             }
             .insert(&txn)
             .await?;
-            let _ = crate::modules::audit::service::AuditService::log(
-                db,
-                "TRANSACTION_CREATED",
-                Some("TRANSACTION"),
-                Some(inserted_tx.id),
-                Some(officer_user_id),
+            audit_rows.push(
+                AuditService::record_in(
+                    &txn,
+                    "TRANSACTION_CREATED",
+                    Some("TRANSACTION"),
+                    Some(inserted_tx.id),
+                    Some(officer_user_id),
+                    Some(serde_json::json!({
+                        "split_id": split_id,
+                        "amount": share,
+                        "type": TYPE_SPLIT_CREDIT,
+                        "target_user_id": user_id
+                    })),
+                )
+                .await?,
+            );
+        }
+        audit_rows.push(
+            split_audit_in(
+                &txn,
+                "SPLIT_COMPLETED",
+                split_id,
+                officer_user_id,
                 Some(serde_json::json!({
-                    "split_id": split_id,
-                    "amount": share,
-                    "type": TYPE_SPLIT_CREDIT,
-                    "target_user_id": user_id
+                    "net_value": net_value,
+                    "participants": participants.len(),
                 })),
             )
-            .await;
-        }
+            .await?,
+        );
 
         let updated_split = SplitEntity::find_by_id(split_id)
             .one(&txn)
@@ -2247,6 +2602,9 @@ impl SplitService {
             .ok_or_else(|| AppError::Internal("completed split disappeared".to_string()))?;
 
         txn.commit().await?;
+        for row in &audit_rows {
+            echo_audit_row(db, row).await;
+        }
 
         let recipients: Vec<i64> = participants
             .iter()
@@ -2462,6 +2820,132 @@ mod tests {
         island.tabs[0].id
     }
 
+    async fn roster_locked(db: &DatabaseConnection, split_id: i64) -> bool {
+        SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await
+            .unwrap()
+            .expect("split row")
+            .roster_locked
+    }
+
+    #[tokio::test]
+    async fn roster_lock_is_set_only_by_a_real_roster_change() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let created = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        let id = created.summary.id;
+        assert!(!roster_locked(&db, id).await);
+
+        // Re-saving the same weight, as the frontend does for an unchanged row, is a no-op.
+        service
+            .add_or_update_participant(
+                &db,
+                id,
+                UpsertParticipantRequest {
+                    user_id: alice,
+                    weight: Decimal::ONE,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(!roster_locked(&db, id).await);
+
+        // Removing someone who is not on the roster changes nothing either.
+        service.remove_participant(&db, id, bob).await.unwrap();
+        assert!(!roster_locked(&db, id).await);
+
+        // A weight change is a real edit and locks the roster.
+        service
+            .add_or_update_participant(
+                &db,
+                id,
+                UpsertParticipantRequest {
+                    user_id: alice,
+                    weight: Decimal::TWO,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(roster_locked(&db, id).await);
+    }
+
+    #[tokio::test]
+    async fn update_split_with_an_unchanged_roster_does_not_lock_it() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let id = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap()
+            .summary
+            .id;
+        let same_roster = || UpdateSplitRequest {
+            estimated_market_value: None,
+            fee: None,
+            repair_value: None,
+            bags_value: None,
+            bags: None,
+            note: None,
+            event_id: None,
+            island_tab_id: None,
+            participants: Some(vec![UpsertParticipantRequest {
+                user_id: alice,
+                weight: Decimal::ONE,
+            }]),
+        };
+        service.update_split(&db, id, same_roster()).await.unwrap();
+        assert!(!roster_locked(&db, id).await);
+
+        let mut changed = same_roster();
+        changed.participants = Some(vec![UpsertParticipantRequest {
+            user_id: alice,
+            weight: Decimal::from(3),
+        }]);
+        service.update_split(&db, id, changed).await.unwrap();
+        assert!(roster_locked(&db, id).await);
+    }
+
     #[tokio::test]
     async fn archiving_a_split_hides_it_without_removing_the_row() {
         let db = seed_db().await;
@@ -2489,7 +2973,7 @@ mod tests {
             .await
             .unwrap();
         let id = created.summary.id;
-        service.archive_split(&db, id).await.unwrap();
+        service.archive_split(&db, id, 1).await.unwrap();
         assert!(
             SplitEntity::find_by_id(id)
                 .one(&db)
@@ -2527,7 +3011,7 @@ mod tests {
             .unwrap();
         assert_eq!(archived.items.len(), 1);
         assert_eq!(archived.items[0].id, id);
-        service.unarchive_split(&db, id).await.unwrap();
+        service.unarchive_split(&db, id, 1).await.unwrap();
         let restored = service.get_split(&db, id).await.unwrap();
         assert!(restored.summary.archived_at.is_none());
     }
@@ -3172,7 +3656,7 @@ mod tests {
             .unwrap();
 
         let closed = service
-            .mark_not_completed(&db, split.summary.id)
+            .mark_not_completed(&db, split.summary.id, 1)
             .await
             .unwrap();
         assert_eq!(closed.summary.status, SplitStatus::NotCompleted);
@@ -3209,7 +3693,7 @@ mod tests {
             .await
             .unwrap();
 
-        let closed = service.mark_lost(&db, split.summary.id).await.unwrap();
+        let closed = service.mark_lost(&db, split.summary.id, 1).await.unwrap();
         assert_eq!(closed.summary.status, SplitStatus::Lost);
 
         let complete_result = service.complete_split(&db, split.summary.id, admin).await;
@@ -4102,6 +4586,140 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn isolated_event_sync_rolls_back_to_a_savepoint_and_flags_the_split() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let kept = insert_user(&db, "kept", "kept@example.com").await;
+        let stale = insert_user(&db, "stale", "stale@example.com").await;
+        let late = insert_user(&db, "late", "late@example.com").await;
+        let category = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set("test".to_string()),
+            slug: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set("test comp".to_string()),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let event = crate::modules::events::entities::event::ActiveModel {
+            title: Set("stopped event".to_string()),
+            comp_id: Set(Some(comp.id)),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            status: Set("stopped".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        for user_id in [kept, late] {
+            crate::modules::events::entities::event_participation::ActiveModel {
+                event_id: Set(event.id),
+                user_id: Set(user_id),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+        }
+        let split = SplitActiveModel {
+            created_by: Set(creator),
+            status: Set(SplitStatus::AwaitingEvent.to_string()),
+            estimated_market_value: Set("100".parse().unwrap()),
+            fee: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            event_id: Set(Some(event.id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        for user_id in [kept, stale] {
+            ParticipantActiveModel {
+                split_id: Set(split.id),
+                user_id: Set(user_id),
+                weight: Set(Decimal::ONE),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+        }
+        let roster = |db: DatabaseConnection| async move {
+            let mut ids: Vec<i64> = ParticipantEntity::find()
+                .filter(ParticipantColumn::SplitId.eq(split.id))
+                .all(&db)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|row| row.user_id)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        let mut before = vec![kept, stale];
+        before.sort_unstable();
+        let mut after = vec![kept, late];
+        after.sort_unstable();
+
+        // Reconciliation deletes `stale` first and fails inserting `late`.
+        db.execute_unprepared(
+            "CREATE TRIGGER fail_insert BEFORE INSERT ON split_participants \
+             BEGIN SELECT RAISE(ABORT, 'injected'); END",
+        )
+        .await
+        .unwrap();
+        let service = SplitService::new();
+        let txn = db.begin().await.unwrap();
+        let state = service
+            .sync_event_participants_isolated(&txn, event.id)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(state, SplitSyncState::NeedsResync);
+        assert_eq!(roster(db.clone()).await, before, "partial sync rolled back");
+        let flagged = SplitEntity::find_by_id(split.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(flagged.needs_resync);
+        assert_eq!(flagged.status, "awaiting_event");
+        assert!(service.event_has_stale_splits(&db, event.id).await.unwrap());
+
+        // A later successful pass reconciles, follows the event, and clears the flag.
+        db.execute_unprepared("DROP TRIGGER fail_insert")
+            .await
+            .unwrap();
+        let txn = db.begin().await.unwrap();
+        let state = service
+            .sync_event_participants_isolated(&txn, event.id)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(state, SplitSyncState::Synced);
+        assert_eq!(roster(db.clone()).await, after);
+        let fixed = SplitEntity::find_by_id(split.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!fixed.needs_resync);
+        assert_eq!(fixed.status, "pending");
+        assert!(!service.event_has_stale_splits(&db, event.id).await.unwrap());
+    }
+
+    #[tokio::test]
     async fn completing_linked_split_is_allowed_after_event_stops() {
         let db = seed_db().await;
         let creator = insert_user(&db, "creator", "creator@example.com").await;
@@ -4228,28 +4846,27 @@ mod tests {
             .await
             .expect_err("complete forbidden");
         match complete_err {
-            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
-            other => panic!("expected forbidden, got {other:?}"),
+            AppError::ReadOnlyCopy(origin) => {
+                assert_eq!(origin.kind, crate::modules::sync::SyncKind::Split);
+            }
+            other => panic!("expected read-only copy, got {other:?}"),
         }
 
         let bags_err = service
             .update_split(&db, created.summary.id, bags_update(vec!["50.00"]))
             .await
             .expect_err("bags forbidden");
-        match bags_err {
-            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
-            other => panic!("expected forbidden, got {other:?}"),
-        }
+        assert!(matches!(bags_err, AppError::ReadOnlyCopy(_)));
 
         // The actor is the split creator (and can be granted global split
         // permissions at the route layer); ownership must not override origin.
         for result in [
             service
-                .archive_split(&db, created.summary.id)
+                .archive_split(&db, created.summary.id, 1)
                 .await
                 .map(|_| ()),
             service
-                .unarchive_split(&db, created.summary.id)
+                .unarchive_split(&db, created.summary.id, 1)
                 .await
                 .map(|_| ()),
             service
@@ -4257,12 +4874,15 @@ mod tests {
                 .await
                 .map(|_| ()),
             service
-                .mark_not_completed(&db, created.summary.id)
+                .mark_not_completed(&db, created.summary.id, 1)
                 .await
                 .map(|_| ()),
-            service.mark_lost(&db, created.summary.id).await.map(|_| ()),
+            service
+                .mark_lost(&db, created.summary.id, 1)
+                .await
+                .map(|_| ()),
         ] {
-            assert!(matches!(result, Err(AppError::Forbidden(_))));
+            assert!(matches!(result, Err(AppError::ReadOnlyCopy(_))));
         }
 
         let detail = service.get_split(&db, created.summary.id).await.unwrap();
@@ -4329,5 +4949,440 @@ mod tests {
         }
         let readable = alliance.get_split(&db, created.summary.id).await.unwrap();
         assert_eq!(readable.summary.status, SplitStatus::Pending);
+    }
+
+    /// A comp and an event in `status` with one signed-up player; returns the event id.
+    async fn event_with_signup(
+        db: &DatabaseConnection,
+        creator: i64,
+        tag: &str,
+        status: &str,
+        player: i64,
+    ) -> i64 {
+        let category = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set(format!("category {tag}")),
+            slug: Set(format!("category-{tag}")),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set(format!("comp {tag}")),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let event = crate::modules::events::entities::event::ActiveModel {
+            title: Set(format!("event {tag}")),
+            comp_id: Set(Some(comp.id)),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            status: Set(status.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        signup(db, event.id, player).await;
+        event.id
+    }
+
+    async fn signup(db: &DatabaseConnection, event_id: i64, user_id: i64) {
+        crate::modules::events::entities::event_participation::ActiveModel {
+            event_id: Set(event_id),
+            user_id: Set(user_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    /// A split linked to `event_id` with the given status and roster (weight one each).
+    async fn linked_split(
+        db: &DatabaseConnection,
+        creator: i64,
+        event_id: Option<i64>,
+        status: SplitStatus,
+        roster: &[i64],
+    ) -> i64 {
+        let split = SplitActiveModel {
+            created_by: Set(creator),
+            status: Set(status.to_string()),
+            estimated_market_value: Set("100".parse().unwrap()),
+            fee: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            event_id: Set(event_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        for user_id in roster {
+            ParticipantActiveModel {
+                split_id: Set(split.id),
+                user_id: Set(*user_id),
+                weight: Set(Decimal::ONE),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        split.id
+    }
+
+    async fn roster_of(db: &DatabaseConnection, split_id: i64) -> Vec<i64> {
+        let mut ids: Vec<i64> = ParticipantEntity::find()
+            .filter(ParticipantColumn::SplitId.eq(split_id))
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|participant| participant.user_id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    async fn split_row(db: &DatabaseConnection, id: i64) -> SplitModel {
+        SplitEntity::find_by_id(id).one(db).await.unwrap().unwrap()
+    }
+
+    async fn audit_actions(db: &DatabaseConnection, action: &str) -> Vec<Option<i64>> {
+        crate::modules::audit::entities::Entity::find()
+            .filter(crate::modules::audit::entities::Column::Action.eq(action))
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.entity_id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn event_sync_leaves_closed_locked_and_published_splits_alone() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let late = insert_user(&db, "late", "late@example.com").await;
+        let event = event_with_signup(&db, creator, "roster", "stopped", first).await;
+        signup(&db, event, late).await;
+
+        let open = linked_split(&db, creator, Some(event), SplitStatus::Pending, &[first]).await;
+        let locked = linked_split(&db, creator, Some(event), SplitStatus::Pending, &[first]).await;
+        SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(locked))
+            .col_expr(SplitColumn::RosterLocked, Expr::value(true))
+            .exec(&db)
+            .await
+            .unwrap();
+        let completed =
+            linked_split(&db, creator, Some(event), SplitStatus::Completed, &[first]).await;
+        let published = linked_split(
+            &db,
+            creator,
+            Some(event),
+            SplitStatus::AwaitingEvent,
+            &[first],
+        )
+        .await;
+        SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(published))
+            .col_expr(SplitColumn::OriginReadOnly, Expr::value(true))
+            .exec(&db)
+            .await
+            .unwrap();
+
+        SplitService::new()
+            .sync_event_participants(&db, event)
+            .await
+            .unwrap();
+
+        assert_eq!(roster_of(&db, open).await, vec![first, late]);
+        assert_eq!(roster_of(&db, locked).await, vec![first]);
+        assert_eq!(split_row(&db, locked).await.status, "pending");
+        assert_eq!(roster_of(&db, completed).await, vec![first]);
+        assert_eq!(split_row(&db, completed).await.status, "completed");
+        assert_eq!(roster_of(&db, published).await, vec![first]);
+        assert_eq!(split_row(&db, published).await.status, "awaiting_event");
+    }
+
+    #[tokio::test]
+    async fn failed_repair_flags_only_waiting_writable_splits() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let event = event_with_signup(&db, creator, "flags", "stopped", first).await;
+        let open = linked_split(&db, creator, Some(event), SplitStatus::Pending, &[first]).await;
+        let completed =
+            linked_split(&db, creator, Some(event), SplitStatus::Completed, &[first]).await;
+        let published =
+            linked_split(&db, creator, Some(event), SplitStatus::Pending, &[first]).await;
+        SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(published))
+            .col_expr(SplitColumn::OriginReadOnly, Expr::value(true))
+            .exec(&db)
+            .await
+            .unwrap();
+
+        SplitService::new()
+            .mark_needs_resync(&db, event)
+            .await
+            .unwrap();
+
+        assert!(split_row(&db, open).await.needs_resync);
+        assert!(!split_row(&db, completed).await.needs_resync);
+        assert!(!split_row(&db, published).await.needs_resync);
+    }
+
+    #[tokio::test]
+    async fn closing_an_awaiting_split_is_allowed_and_audited() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let event = event_with_signup(&db, creator, "close", "scheduled", first).await;
+        let split = linked_split(
+            &db,
+            creator,
+            Some(event),
+            SplitStatus::AwaitingEvent,
+            &[first],
+        )
+        .await;
+
+        let closed = SplitService::new()
+            .mark_not_completed(&db, split, creator)
+            .await
+            .unwrap();
+
+        assert_eq!(closed.summary.status, SplitStatus::NotCompleted);
+        assert_eq!(
+            audit_actions(&db, "SPLIT_NOT_COMPLETED").await,
+            vec![Some(split)]
+        );
+    }
+
+    #[tokio::test]
+    async fn unlinking_an_awaiting_split_makes_it_payable_again() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let event = event_with_signup(&db, creator, "unlink", "scheduled", first).await;
+        let split = linked_split(
+            &db,
+            creator,
+            Some(event),
+            SplitStatus::AwaitingEvent,
+            &[first],
+        )
+        .await;
+
+        SplitService::new()
+            .update_split(
+                &db,
+                split,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    fee: None,
+                    repair_value: None,
+                    bags_value: None,
+                    bags: None,
+                    note: None,
+                    event_id: Some(None),
+                    island_tab_id: None,
+                    participants: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let row = split_row(&db, split).await;
+        assert_eq!(row.status, "pending");
+        assert_eq!(row.event_id, None);
+    }
+
+    #[tokio::test]
+    async fn split_lifecycle_actions_write_their_audit_rows() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let split = linked_split(&db, creator, None, SplitStatus::Pending, &[first]).await;
+        let service = SplitService::new();
+
+        service.archive_split(&db, split, creator).await.unwrap();
+        service.unarchive_split(&db, split, creator).await.unwrap();
+        assert_eq!(
+            audit_actions(&db, "SPLIT_ARCHIVED").await,
+            vec![Some(split)]
+        );
+        assert_eq!(
+            audit_actions(&db, "SPLIT_UNARCHIVED").await,
+            vec![Some(split)]
+        );
+
+        service.complete_split(&db, split, creator).await.unwrap();
+        assert_eq!(
+            audit_actions(&db, "SPLIT_COMPLETED").await,
+            vec![Some(split)]
+        );
+        assert_eq!(audit_actions(&db, "TRANSACTION_CREATED").await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn completed_alliance_split_with_a_distribution_batch_is_final() {
+        let db = seed_db().await;
+        let control = seed_db().await;
+        control
+            .execute_unprepared(
+                "CREATE TABLE alliance_split_distribution_batches (\
+                    id TEXT PRIMARY KEY, alliance_tenant_id TEXT NOT NULL, split_id BIGINT NOT NULL)",
+            )
+            .await
+            .unwrap();
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let distributed =
+            linked_split(&db, creator, None, SplitStatus::Completed, &[creator]).await;
+        let plain = linked_split(&db, creator, None, SplitStatus::Completed, &[creator]).await;
+        control
+            .execute_unprepared(&format!(
+                "INSERT INTO alliance_split_distribution_batches (id, alliance_tenant_id, split_id) \
+                 VALUES ('batch-1', 'alliance-a', {distributed})"
+            ))
+            .await
+            .unwrap();
+        let service =
+            SplitService::for_tenant("alliance").with_origin_scope(&control, "alliance-a");
+
+        let err = service
+            .ensure_amendable(&split_row(&db, distributed).await)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::ConflictWithCode {
+                code: "completed_alliance_split_immutable",
+                ..
+            }
+        ));
+        service
+            .ensure_amendable(&split_row(&db, plain).await)
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn participant_shares_do_not_depend_on_row_order_and_sum_to_net() {
+        let net = Decimal::new(10000, 2);
+        let forward = vec![(1, Decimal::ONE), (2, Decimal::ONE), (3, Decimal::ONE)];
+        let backward: Vec<_> = forward.iter().rev().copied().collect();
+
+        let shares = participant_shares(net, &forward);
+
+        assert_eq!(shares, participant_shares(net, &backward));
+        let total: Decimal = shares.iter().map(|(_, share)| *share).sum();
+        assert_eq!(total, net);
+        // The rounding remainder lands on the highest user id.
+        assert_eq!(
+            shares,
+            vec![
+                (1, Decimal::new(3333, 2)),
+                (2, Decimal::new(3333, 2)),
+                (3, Decimal::new(3334, 2)),
+            ]
+        );
+    }
+
+    #[test]
+    fn participant_shares_are_never_negative_and_sum_to_net() {
+        let net = Decimal::new(10, 2);
+        let weights = vec![
+            (1, Decimal::ONE),
+            (2, Decimal::ONE),
+            (3, Decimal::new(1, 3)),
+        ];
+
+        let shares = participant_shares(net, &weights);
+
+        assert!(shares.iter().all(|(_, share)| *share >= Decimal::ZERO));
+        let total: Decimal = shares.iter().map(|(_, share)| *share).sum();
+        assert_eq!(total, net);
+    }
+
+    #[tokio::test]
+    async fn completing_a_split_whose_event_was_cancelled_is_allowed() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let event = event_with_signup(&db, creator, "cancelled", "cancelled", first).await;
+        let split = linked_split(&db, creator, Some(event), SplitStatus::Pending, &[first]).await;
+
+        let completed = SplitService::new()
+            .complete_split(&db, split, creator)
+            .await
+            .unwrap();
+
+        assert_eq!(completed.summary.status, SplitStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn archived_splits_are_not_re_synced_but_follow_their_event_status() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let late = insert_user(&db, "late", "late@example.com").await;
+        let event = event_with_signup(&db, creator, "archived", "stopped", first).await;
+        signup(&db, event, late).await;
+        let archived = linked_split(
+            &db,
+            creator,
+            Some(event),
+            SplitStatus::AwaitingEvent,
+            &[first],
+        )
+        .await;
+        SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(archived))
+            .col_expr(SplitColumn::ArchivedAt, Expr::value(chrono::Utc::now()))
+            .exec(&db)
+            .await
+            .unwrap();
+
+        SplitService::new()
+            .sync_event_participants(&db, event)
+            .await
+            .unwrap();
+
+        assert_eq!(roster_of(&db, archived).await, vec![first]);
+        assert_eq!(split_row(&db, archived).await.status, "pending");
+    }
+
+    #[tokio::test]
+    async fn failed_repair_never_flags_an_archived_split() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let event = event_with_signup(&db, creator, "archived-flag", "stopped", first).await;
+        let archived =
+            linked_split(&db, creator, Some(event), SplitStatus::Pending, &[first]).await;
+        SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(archived))
+            .col_expr(SplitColumn::ArchivedAt, Expr::value(chrono::Utc::now()))
+            .exec(&db)
+            .await
+            .unwrap();
+
+        SplitService::new()
+            .mark_needs_resync(&db, event)
+            .await
+            .unwrap();
+
+        assert!(!split_row(&db, archived).await.needs_resync);
     }
 }

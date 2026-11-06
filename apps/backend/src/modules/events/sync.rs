@@ -334,23 +334,6 @@ fn peer_events(tenant_id: &str, event_id: i64, links: &[EventSyncLink]) -> Vec<(
     peers
 }
 
-/// Returns whether this tenant-local event is the alliance-side mirror.
-pub async fn is_mirror_event(
-    control: &DatabaseConnection,
-    tenant_id: &str,
-    event_id: i64,
-) -> Result<bool, AppError> {
-    let row = control
-        .query_one(Statement::from_sql_and_values(
-            control.get_database_backend(),
-            "SELECT 1 FROM event_sync_links
-             WHERE mirror_tenant_id = $1 AND mirror_event_id = $2",
-            [tenant_id.into(), event_id.into()],
-        ))
-        .await?;
-    Ok(row.is_some())
-}
-
 async fn upsert_user(db: &DatabaseConnection, actor: &ShareActor) -> Result<i64, AppError> {
     let email = actor
         .email

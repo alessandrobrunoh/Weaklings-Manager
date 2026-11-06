@@ -28,6 +28,9 @@ use super::models::{
 use super::fight_grouping::{
     FIGHT_GROUPING_VERSION, FightEvidence, FightGroupingDecision, score_fight_grouping,
 };
+use super::lifecycle::{
+    Cause, Transition, Transitioned, XpFilter, finish_session_in_txn, transition_in_txn,
+};
 use crate::errors::AppError;
 use crate::modules::albionbb::client::{AlbionBbBattleSummary, AlbionBbBattlesFilters};
 use crate::modules::albionbb::service::AlbionBbService;
@@ -44,13 +47,13 @@ use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::comps::status::{BuildLoadout, BuildRole};
 use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::splits::entities::{split, split_participant};
-use crate::modules::splits::service::SplitService;
+use crate::modules::splits::service::{SplitService, SplitSyncState};
 use crate::modules::splits::status::SplitStatus;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 /// Hard cap on how long an event session can stay live before the background
 /// worker auto-stops it. Tuned to 3 hours per product requirement.
-const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
+pub(super) const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 
 /// Grace period after a session is stopped during which the linker keeps
 /// re-fetching `AlbionBB` to absorb the upstream's slow ingestion (~30 minutes).
@@ -229,7 +232,7 @@ fn validate_event_times(mass: DateTime<Utc>, start: DateTime<Utc>) -> Result<(),
     Ok(())
 }
 
-fn reject_if_event_archived(model: &event::Model) -> Result<(), AppError> {
+pub(super) fn reject_if_event_archived(model: &event::Model) -> Result<(), AppError> {
     if model.archived_at.is_some() {
         return Err(AppError::Conflict(format!(
             "Event {} is archived",
@@ -3705,6 +3708,8 @@ impl EventService {
 
     /// Archives an event and every split still linked to it.
     ///
+    /// Thin wrapper over [`Transition::Archive`]: `begin; transition_in_txn; commit`.
+    ///
     /// # Errors
     ///
     /// Returns [`AppError::NotFound`] when the event does not exist.
@@ -3713,37 +3718,15 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        let now: DateTime<chrono::FixedOffset> = Utc::now().into();
-        let txn = db.begin().await.map_err(AppError::Database)?;
-        let mut active: event::ActiveModel = model.into();
-        active.archived_at = Set(Some(now));
-        active.updated_at = Set(now);
-        let updated = active.update(&txn).await.map_err(AppError::Database)?;
-
-        crate::modules::splits::entities::split::Entity::update_many()
-            .filter(crate::modules::splits::entities::split::Column::EventId.eq(id))
-            .filter(crate::modules::splits::entities::split::Column::ArchivedAt.is_null())
-            .col_expr(
-                crate::modules::splits::entities::split::Column::ArchivedAt,
-                Expr::value(now),
-            )
-            .col_expr(
-                crate::modules::splits::entities::split::Column::UpdatedAt,
-                Expr::value(now),
-            )
-            .exec(&txn)
-            .await
-            .map_err(AppError::Database)?;
-        txn.commit().await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Archive, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Restores an archived event and its linked archived splits to the active lists.
+    ///
+    /// Thin wrapper over [`Transition::Unarchive`].
     ///
     /// # Errors
     ///
@@ -3753,45 +3736,70 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
+        Ok(self
+            .transition(db, id, Transition::Unarchive, Cause::Manual, None)
+            .await?
+            .view)
+    }
+
+    /// Applies one lifecycle [`Transition`] in its own transaction and hydrates the view.
+    ///
+    /// `begin; transition_in_txn; commit`, then (for a stop) retries the durable completion-XP
+    /// awards. Call [`TransitionOutcome::after_commit`] on the result for legacy propagation to
+    /// copies; the thin per-transition wrappers below skip it, as they always did.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`transition_in_txn`] returns; the transaction is rolled back in that case.
+    pub async fn transition(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        transition: Transition,
+        cause: Cause,
+        actor: Option<&str>,
+    ) -> Result<Transitioned, AppError> {
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let outcome = transition_in_txn(&txn, id, transition, cause, actor).await?;
+        txn.commit().await.map_err(AppError::Database)?;
+
+        if matches!(transition, Transition::Stop { .. }) {
+            self.retry_event_completion_xp(db, id).await?;
+        }
+        let view = self.to_event_view(db, outcome.model.clone()).await?;
+        Ok(Transitioned { outcome, view })
+    }
+
+    /// Finishes a session that a copy follows from its origin: completion-XP snapshot (per
+    /// `xp`) and local-split roster sync, i.e. the body of a stop after the status write.
+    ///
+    /// Signature stub for the sync engine (SY-3b), which will call it from
+    /// `transition_in_txn(Cause::Sync)`; the stop transition already shares its body.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::NotFound`] for an unknown event, [`AppError::Conflict`] when the event
+    /// has not stopped.
+    #[allow(dead_code)]
+    pub(crate) async fn finish_copy_session(
+        &self,
+        txn: &sea_orm::DatabaseTransaction,
+        event_id: i64,
+        xp: XpFilter,
+    ) -> Result<SplitSyncState, AppError> {
+        let model = event::Entity::find_by_id(event_id)
+            .lock_exclusive()
+            .one(txn)
             .await
             .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        let should_requeue_vod =
-            model.vod_forum_post_enabled && model.vod_forum_post_status == "deleted";
-        let now = chrono::Utc::now();
-        let txn = db.begin().await.map_err(AppError::Database)?;
-        let mut active: event::ActiveModel = model.into();
-        active.archived_at = Set(None);
-        active.updated_at = Set(now.into());
-        if should_requeue_vod {
-            // A confirmed archive deletion is safe to replace: the next poll
-            // will create a fresh VOD post for the restored event. Ambiguous
-            // `attempted` posts deliberately remain non-retriable.
-            active.vod_forum_post_status = Set("pending".to_owned());
-            active.vod_forum_thread_id = Set(None);
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        if model.status != "stopped" && model.status != "auto_stopped" {
+            return Err(AppError::Conflict(format!(
+                "Event {event_id} has not stopped (status={})",
+                model.status
+            )));
         }
-        let updated = active.update(&txn).await.map_err(AppError::Database)?;
-
-        let linked = crate::modules::splits::entities::split::Entity::find()
-            .filter(crate::modules::splits::entities::split::Column::EventId.eq(id))
-            .filter(crate::modules::splits::entities::split::Column::ArchivedAt.is_not_null())
-            .all(&txn)
-            .await
-            .map_err(AppError::Database)?;
-        for split in linked {
-            let mut split_active: crate::modules::splits::entities::split::ActiveModel =
-                split.into();
-            split_active.archived_at = Set(None);
-            split_active.updated_at = Set(now.into());
-            split_active
-                .update(&txn)
-                .await
-                .map_err(AppError::Database)?;
-        }
-        txn.commit().await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        finish_session_in_txn(txn, &model, xp).await
     }
 
     // --- Session lifecycle -------------------------------------------------
@@ -3905,31 +3913,10 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        if model.status == "cancelled" {
-            return self.to_event_view(db, model).await;
-        }
-        if model.status != "scheduled" && model.status != "live" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} cannot be cancelled (status={})",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set("cancelled".to_string());
-        active.stopped_at = Set(Some(now.into()));
-        active.auto_stop_deadline = Set(None);
-        active.updated_at = Set(now.into());
-        let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Cancel, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Restores a cancelled event to `scheduled` so officers can undo a mistaken cancel.
@@ -3941,33 +3928,10 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        if model.status != "cancelled" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} cannot be restored (status={})",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set("scheduled".to_string());
-        active.started_at = Set(None);
-        active.stopped_at = Set(None);
-        active.auto_stop_deadline = Set(None);
-        active.link_status = Set("pending".to_string());
-        active.link_attempts = Set(0);
-        active.link_last_error = Set(None);
-        active.link_battles_completed_at = Set(None);
-        active.updated_at = Set(now.into());
-        let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Uncancel, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Marks an event session as live, recording `started_at = now` and computing the
@@ -3980,39 +3944,10 @@ impl EventService {
         db: &DatabaseConnection,
         id: i64,
     ) -> Result<EventView, AppError> {
-        let model = event::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        if model.status == "live" {
-            return Err(AppError::Conflict(format!("Event {id} is already live")));
-        }
-        if model.status != "scheduled" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} cannot be started (status={}); re-opening a stopped session is not supported",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let deadline = now + MAX_SESSION_DURATION;
-
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set("live".to_string());
-        active.started_at = Set(Some(now.into()));
-        active.stopped_at = Set(None);
-        active.auto_stop_deadline = Set(Some(deadline.into()));
-        active.link_status = Set("in_progress".to_string());
-        active.link_attempts = Set(0);
-        active.link_last_error = Set(None);
-        active.link_battles_completed_at = Set(None);
-        active.updated_at = Set(now.into());
-
-        let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_event_view(db, updated).await
+        Ok(self
+            .transition(db, id, Transition::Start, Cause::Manual, None)
+            .await?
+            .view)
     }
 
     /// Marks an event session as stopped. `auto=true` selects the `auto_stopped`
@@ -4031,9 +3966,12 @@ impl EventService {
 
     /// Stops an event and atomically snapshots completion XP recipients.
     ///
-    /// `award_xp` is false for alliance mirrors: only the original guild event
-    /// is authoritative for progression. The durable outbox pins its season
-    /// and configured rates at the stop timestamp, so retries cannot drift.
+    /// `award_xp` is the legacy form of [`XpFilter`]: false for alliance mirrors, where only
+    /// the original guild event is authoritative for progression. The durable outbox pins its
+    /// season and configured rates at the stop timestamp, so retries cannot drift.
+    ///
+    /// The linked-split roster sync runs inside the stop transaction in a SAVEPOINT: if it
+    /// fails the event is still stopped and its splits are marked `needs_resync`.
     pub async fn stop_event_with_xp_policy(
         &self,
         db: &DatabaseConnection,
@@ -4041,54 +3979,17 @@ impl EventService {
         auto: bool,
         award_xp: bool,
     ) -> Result<EventView, AppError> {
-        let txn = db.begin().await.map_err(AppError::Database)?;
-        let model = event::Entity::find_by_id(id)
-            .lock_exclusive()
-            .one(&txn)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        reject_if_event_archived(&model)?;
-
-        // Idempotent: already stopped.
-        if model.status == "stopped" || model.status == "auto_stopped" {
-            txn.commit().await.map_err(AppError::Database)?;
-            self.retry_event_completion_xp(db, id).await?;
-            return self.to_event_view(db, model).await;
-        }
-        if model.status != "live" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} is not live (status={})",
-                model.status
-            )));
-        }
-
-        let now: DateTime<Utc> = Utc::now();
-        let new_status = if auto { "auto_stopped" } else { "stopped" };
-
-        let mut active: event::ActiveModel = model.into();
-        active.status = Set(new_status.to_string());
-        active.stopped_at = Set(Some(now.into()));
-        active.updated_at = Set(now.into());
-
-        let updated = active.update(&txn).await.map_err(AppError::Database)?;
-
-        if award_xp {
-            self.snapshot_event_completion_xp(&txn, id, updated.created_by, now.into())
-                .await?;
-        }
-        txn.commit().await.map_err(AppError::Database)?;
-
-        // Keep linked splits' roster and lifecycle condition current as soon as the event ends.
-        SplitService::new().sync_event_participants(db, id).await?;
-
-        self.retry_event_completion_xp(db, id).await?;
-
-        self.to_event_view(db, updated).await
+        let transition = Transition::Stop {
+            auto,
+            xp: XpFilter::from_award_xp(award_xp),
+        };
+        Ok(self
+            .transition(db, id, transition, Cause::Manual, None)
+            .await?
+            .view)
     }
 
-    async fn snapshot_event_completion_xp(
-        &self,
+    pub(super) async fn snapshot_event_completion_xp(
         txn: &sea_orm::DatabaseTransaction,
         event_id: i64,
         creator_id: i64,

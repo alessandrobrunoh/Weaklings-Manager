@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::{
     errors::AppError,
     modules::{
+        audit::entities::Model as AuditRow,
         bank::status::TransactionStatus,
         events::{
             attribution::stored_attribution, entities::event::Entity as EventEntity,
@@ -21,8 +22,12 @@ use crate::{
                 split::{Column as SplitColumn, Entity as SplitEntity},
                 split_participant::{Column as ParticipantColumn, Entity as ParticipantEntity},
             },
-            service::{SplitService, calculate_net_value, event_has_ended, participant_shares},
+            service::{
+                SplitService, calculate_net_value, echo_audit_row, event_has_ended,
+                participant_shares, split_audit_in,
+            },
         },
+        sync::{LegacyLinks, assert_split_writable},
         users::entities::{Column as UserColumn, Entity as UserEntity},
     },
     tenant::TenantRegistry,
@@ -125,11 +130,16 @@ pub async fn complete(
         .one(alliance_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-    if split.origin_read_only {
-        return Err(AppError::Forbidden(
-            "a synchronized split copy cannot be distributed".to_owned(),
-        ));
-    }
+    // A synchronized copy is never distributed from here; the origin pays out.
+    assert_split_writable(
+        Some(LegacyLinks {
+            control,
+            tenant_id: alliance_tenant_id,
+        }),
+        split_id,
+        split.origin_read_only,
+    )
+    .await?;
     if distribution_complete(control, alliance_tenant_id, split_id).await? {
         return SplitService::for_tenant("alliance")
             .get_split(alliance_db, split_id)
@@ -181,6 +191,7 @@ pub async fn complete(
             "split net value must be positive to distribute".to_owned(),
         ));
     }
+    let participant_count = participants.len();
     let (canonical_tenant, canonical_event) =
         canonical_event_origin(control, alliance_tenant_id, event_id).await?;
     if canonical_tenant != alliance_tenant_id {
@@ -311,7 +322,14 @@ pub async fn complete(
         }
     }
 
-    finalize_source_split(alliance_db, split_id, net_value).await?;
+    let audit = finalize_source_split(
+        alliance_db,
+        split_id,
+        actor_user_id,
+        net_value,
+        participant_count,
+    )
+    .await?;
     control
         .execute(Statement::from_sql_and_values(
             DbBackend::Postgres,
@@ -319,6 +337,9 @@ pub async fn complete(
             [batch_id.into()],
         ))
         .await?;
+    if let Some(row) = &audit {
+        echo_audit_row(alliance_db, row).await;
+    }
     SplitService::for_tenant("alliance")
         .get_split(alliance_db, split_id)
         .await
@@ -450,7 +471,7 @@ async fn distribution_complete(
     }
 }
 
-async fn distribution_batch_exists(
+pub(crate) async fn distribution_batch_exists(
     control: &DatabaseConnection,
     alliance_tenant_id: &str,
     split_id: i64,
@@ -558,11 +579,16 @@ async fn mark_batch_failed(
     Ok(())
 }
 
+/// Flips the alliance split to `completed` and writes its `SPLIT_COMPLETED` audit row in one
+/// transaction. Returns the audit row only for the call that performed the flip, so a retry that
+/// finds the split already completed does not add a second row.
 async fn finalize_source_split(
     alliance_db: &DatabaseConnection,
     split_id: i64,
+    actor_user_id: i64,
     net_value: sea_orm::prelude::Decimal,
-) -> Result<(), AppError> {
+    participant_count: usize,
+) -> Result<Option<AuditRow>, AppError> {
     let txn = alliance_db.begin().await?;
     let update = SplitEntity::update_many()
         .filter(SplitColumn::Id.eq(split_id))
@@ -584,14 +610,146 @@ async fn finalize_source_split(
                     .to_owned(),
             ));
         }
+        txn.commit().await?;
+        return Ok(None);
     }
+    let audit = split_audit_in(
+        &txn,
+        "SPLIT_COMPLETED",
+        split_id,
+        actor_user_id,
+        Some(serde_json::json!({
+            "net_value": net_value,
+            "participants": participant_count,
+            "alliance_distribution": true,
+        })),
+    )
+    .await?;
     txn.commit().await?;
-    Ok(())
+    Ok(Some(audit))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::migration::MigratorTrait;
+    use crate::modules::audit::entities::{Column as AuditColumn, Entity as AuditEntity};
+    use crate::modules::splits::models::{
+        CreateIslandRequest, CreateSplitRequest, UpsertParticipantRequest,
+    };
+    use sea_orm::{ActiveModelTrait, Database};
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("run migrations");
+        db
+    }
+
+    async fn pending_split(db: &DatabaseConnection, creator: i64, user: i64) -> i64 {
+        let island = SplitService::new()
+            .create_island(
+                db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .expect("island");
+        SplitService::new()
+            .create_split(
+                db,
+                creator,
+                CreateSplitRequest {
+                    estimated_market_value: "100.00".parse().unwrap(),
+                    fee: Some(sea_orm::prelude::Decimal::ZERO),
+                    repair_value: sea_orm::prelude::Decimal::ZERO,
+                    bags_value: sea_orm::prelude::Decimal::ZERO,
+                    bags: Vec::new(),
+                    note: None,
+                    event_id: None,
+                    island_tab_id: island.tabs[0].id,
+                    participants: vec![UpsertParticipantRequest {
+                        user_id: user,
+                        weight: sea_orm::prelude::Decimal::ONE,
+                    }],
+                },
+            )
+            .await
+            .expect("split")
+            .summary
+            .id
+    }
+
+    /// The alliance completion flip writes `SPLIT_COMPLETED` in its own transaction, and a retry
+    /// that finds the split already completed adds no second row.
+    #[tokio::test]
+    async fn alliance_finalize_writes_split_completed_audit_once() {
+        use crate::modules::users::entities::ActiveModel as UserActiveModel;
+        use sea_orm::prelude::Decimal;
+        let db = seed_db().await;
+        let admin = UserActiveModel {
+            username: Set("admin".to_string()),
+            email: Set("admin@example.com".to_string()),
+            role: Set("User".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("admin")
+        .id;
+        let alice = UserActiveModel {
+            username: Set("alice".to_string()),
+            email: Set("alice@example.com".to_string()),
+            role: Set("User".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("alice")
+        .id;
+        let split_id = pending_split(&db, admin, alice).await;
+
+        let net = Decimal::new(10000, 2);
+        let first = finalize_source_split(&db, split_id, admin, net, 1)
+            .await
+            .expect("first finalize")
+            .expect("audit row for the completing call");
+        assert_eq!(first.action, "SPLIT_COMPLETED");
+        assert_eq!(first.entity_type.as_deref(), Some("SPLIT"));
+        assert_eq!(first.entity_id, Some(split_id));
+        assert_eq!(first.user_id, Some(admin));
+        assert_eq!(first.split_id, Some(split_id));
+
+        let again = finalize_source_split(&db, split_id, admin, net, 1)
+            .await
+            .expect("retry finalize");
+        assert!(again.is_none(), "a retry must not write a second audit row");
+
+        let rows = AuditEntity::find()
+            .filter(AuditColumn::Action.eq("SPLIT_COMPLETED"))
+            .filter(AuditColumn::EntityId.eq(split_id))
+            .all(&db)
+            .await
+            .expect("audit rows");
+        assert_eq!(rows.len(), 1);
+        let details = rows[0].details.clone().expect("details");
+        assert_eq!(details["participants"], 1);
+        assert_eq!(details["alliance_distribution"], true);
+
+        let split = SplitEntity::find_by_id(split_id)
+            .one(&db)
+            .await
+            .expect("split query")
+            .expect("split");
+        assert_eq!(split.status, "completed");
+        assert_eq!(split.net_value, Some(net));
+    }
 
     #[test]
     fn weighted_projection_preserves_the_exact_net_with_last_person_remainder() {

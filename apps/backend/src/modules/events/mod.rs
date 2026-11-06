@@ -3,6 +3,8 @@
 //! Handles scheduling events and coordinating player sign-ups / comp scaling.
 
 pub mod attribution;
+#[cfg(test)]
+mod copy_matrix_tests;
 pub mod entities;
 pub mod fanout_outbox;
 pub mod fanout_worker;

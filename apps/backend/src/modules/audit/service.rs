@@ -5,8 +5,8 @@ use crate::modules::admin::service::AdminService;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 use reqwest::Client;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
 
 pub struct AuditService;
@@ -133,8 +133,14 @@ impl AuditService {
         ))
     }
 
-    pub async fn log(
-        db: &DatabaseConnection,
+    /// Writes one audit row on `db`: a connection, or an open transaction so the row is rolled
+    /// back together with the change it records. Never echoes to Discord; see [`Self::announce`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Database` when the insert fails.
+    pub async fn record_in<C: ConnectionTrait>(
+        db: &C,
         action: &str,
         entity_type: Option<&str>,
         entity_id: Option<i64>,
@@ -158,7 +164,51 @@ impl AuditService {
             details: Set(details.clone()),
             ..Default::default()
         };
+        model
+            .insert(db)
+            .await
+            .map_err(crate::errors::AppError::Database)
+    }
 
+    /// Records an audit row and, best-effort, echoes it to the configured Discord channels.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Database` when the insert fails; a failed echo is only logged.
+    pub async fn log(
+        db: &DatabaseConnection,
+        action: &str,
+        entity_type: Option<&str>,
+        entity_id: Option<i64>,
+        user_id: Option<i64>,
+        details: Option<serde_json::Value>,
+    ) -> Result<entities::Model, crate::errors::AppError> {
+        let inserted =
+            Self::record_in(db, action, entity_type, entity_id, user_id, details.clone()).await?;
+        Self::announce(
+            db,
+            &inserted,
+            action,
+            entity_type,
+            entity_id,
+            user_id,
+            details,
+        )
+        .await;
+        Ok(inserted)
+    }
+
+    /// Best-effort Discord echo of an audit row that was already written. Call it after the
+    /// surrounding transaction committed, so a Discord failure never affects the change.
+    pub async fn announce(
+        db: &DatabaseConnection,
+        inserted: &entities::Model,
+        action: &str,
+        entity_type: Option<&str>,
+        entity_id: Option<i64>,
+        user_id: Option<i64>,
+        details: Option<serde_json::Value>,
+    ) {
         // Discord notifications are best-effort: a missing/misconfigured environment (e.g. unit
         // tests) must never abort the audit row write or the surrounding request. The bot token
         // itself is still a deployment secret (an env var, not something an admin edits), but the
@@ -168,15 +218,10 @@ impl AuditService {
             Ok(cfg) => cfg,
             Err(e) => {
                 tracing::warn!("Skipping Discord notifications, config unavailable: {e}");
-                return model
-                    .insert(db)
-                    .await
-                    .map_err(crate::errors::AppError::Database);
+                return;
             }
         };
         let guild_settings = AdminService::get_guild_settings(db).await.ok();
-
-        let inserted = model.insert(db).await?;
 
         let mut user_display = String::from("System");
         if let Some(uid) = user_id {
@@ -371,8 +416,6 @@ impl AuditService {
 
             Self::send_discord_payload(channel_id, token, payload).await;
         }
-
-        Ok(inserted)
     }
 
     /// Sends a payload to a Discord channel via the bot REST API, retrying on rate limits.
@@ -587,5 +630,42 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("fame")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn an_audit_row_written_in_a_transaction_rolls_back_with_it() {
+        use sea_orm::TransactionTrait;
+        let db = seed_db().await;
+        let count = |db: DatabaseConnection| async move {
+            entities::Entity::find().all(&db).await.expect("list").len()
+        };
+
+        let txn = db.begin().await.expect("begin");
+        AuditService::record_in(
+            &txn,
+            "SPLIT_ARCHIVED",
+            Some("SPLIT"),
+            Some(1),
+            Some(1),
+            None,
+        )
+        .await
+        .expect("record");
+        txn.rollback().await.expect("rollback");
+        assert_eq!(count(db.clone()).await, 0);
+
+        let txn = db.begin().await.expect("begin");
+        AuditService::record_in(
+            &txn,
+            "SPLIT_ARCHIVED",
+            Some("SPLIT"),
+            Some(1),
+            Some(1),
+            None,
+        )
+        .await
+        .expect("record");
+        txn.commit().await.expect("commit");
+        assert_eq!(count(db.clone()).await, 1);
     }
 }

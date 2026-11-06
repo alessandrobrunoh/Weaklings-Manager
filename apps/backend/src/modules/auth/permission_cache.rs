@@ -35,6 +35,14 @@ impl PermissionCache {
                             | Permission::EventsEdit
                             | Permission::EventsDelete
                     ))
+                || (permissions.contains(&Permission::SplitsManage)
+                    && matches!(
+                        perm,
+                        Permission::SplitsView
+                            | Permission::SplitsCreate
+                            | Permission::SplitsEdit
+                            | Permission::SplitsDelete
+                    ))
         })
     }
 
@@ -192,5 +200,34 @@ mod tests {
             assert!(cache.role_has("Legacy event manager", permission));
         }
         assert!(!cache.role_has("Member", Permission::EventsEdit));
+    }
+
+    #[test]
+    fn splits_manage_grant_covers_granular_split_permissions() {
+        let cache = PermissionCache {
+            inner: HashMap::from([
+                (
+                    "Split manager".to_string(),
+                    HashSet::from([Permission::SplitsManage]),
+                ),
+                (
+                    "Split editor".to_string(),
+                    HashSet::from([Permission::SplitsEdit]),
+                ),
+            ]),
+        };
+
+        for permission in [
+            Permission::SplitsView,
+            Permission::SplitsCreate,
+            Permission::SplitsEdit,
+            Permission::SplitsDelete,
+        ] {
+            assert!(cache.role_has("Split manager", permission));
+        }
+        // The implication is one way: a plain `splits.edit` holder gets no manage rights.
+        assert!(cache.role_has("Split editor", Permission::SplitsEdit));
+        assert!(!cache.role_has("Split editor", Permission::SplitsDelete));
+        assert!(!cache.role_has("Split editor", Permission::SplitsManage));
     }
 }

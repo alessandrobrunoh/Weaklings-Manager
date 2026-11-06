@@ -2297,6 +2297,8 @@ mod tests {
             finalized_at: Some(ts("2026-08-19T00:00:00Z")),
             archived_at: None,
             origin_read_only: false,
+            needs_resync: false,
+            roster_locked: false,
         });
         // Pending split: ignored regardless of date.
         raw.splits.push(split::Model {
@@ -2316,6 +2318,8 @@ mod tests {
             finalized_at: None,
             archived_at: None,
             origin_read_only: false,
+            needs_resync: false,
+            roster_locked: false,
         });
         // Withdrawn transaction: counted.
         raw.transactions.push(transaction::Model {
@@ -2405,6 +2409,8 @@ mod tests {
             finalized_at: Some(ts("2026-08-19T00:00:00Z")),
             archived_at: None,
             origin_read_only: false,
+            needs_resync: false,
+            roster_locked: false,
         });
 
         let economy = compute_economy(&raw, &compute_overview(&[], &HashSet::new()), &[]);
