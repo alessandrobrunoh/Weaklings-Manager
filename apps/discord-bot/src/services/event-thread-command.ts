@@ -206,7 +206,7 @@ export async function executeEventThreadAction(
       interaction.user.id,
       eventId,
     );
-    await poller?.closeEventThread(eventId);
+    await poller?.finalizeStoppedEventThread(eventId);
     const message = result.voiceChannelOccupied
       ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
       : result.voiceChannelDeleted

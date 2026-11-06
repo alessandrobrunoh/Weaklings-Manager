@@ -27,6 +27,7 @@ import {
 } from "./services/bang-command.js";
 import { fetchTenantStatus, isRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
+import { safeErrorReply } from "./services/interaction-reply.js";
 
 const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
 
@@ -93,7 +94,7 @@ async function main(): Promise<void> {
         const message =
           err instanceof Error ? err.message : "An unexpected error occurred.";
         console.error(`[Bot] Error in message action "${interaction.commandName}":`, err);
-        await interaction.reply({
+        await safeErrorReply(interaction, {
           embeds: [
             createResponseEmbed("error", "Command Error", message, "COMMAND FAILED"),
           ],
@@ -132,11 +133,7 @@ async function main(): Promise<void> {
           "COMMAND FAILED",
         );
         const reply = { embeds: [errEmbed], flags: ["Ephemeral"] as any };
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp(reply);
-        } else {
-          await interaction.reply(reply);
-        }
+        await safeErrorReply(interaction, reply);
       }
       return;
     }

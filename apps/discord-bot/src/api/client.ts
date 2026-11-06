@@ -1,6 +1,13 @@
 import type { ApiResponse } from './types.js';
 
 /**
+ * Longest a single backend request may take. Without a bound, a hung connection
+ * stalls a guild's poller (or a slash command) for undici's default timeout of
+ * several minutes.
+ */
+export const API_REQUEST_TIMEOUT_MS = 15_000;
+
+/**
  * HTTP client for the Albion Guild Manager backend.
  *
  * Authentication strategy: the bot passes two custom headers on every request:
@@ -77,6 +84,7 @@ export class ApiClient {
       const url = this.buildUrl('api/auth/me');
       const res = await fetch(url, {
         headers: this.headers(discordId),
+        signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) return null;
       return (await res.json()) as ApiResponse<unknown>;
@@ -93,13 +101,21 @@ export class ApiClient {
   ): Promise<T> {
     const headers = this.headers(discordId);
 
-    const init: RequestInit = { method, headers };
+    const init: RequestInit = { method, headers, signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS) };
     if (body !== undefined) {
       (headers as Record<string, string>)['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
 
-    const res = await fetch(url, init);
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (error) {
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+        throw new ApiError(504, `Backend did not answer ${method} ${new URL(url).pathname} in time`);
+      }
+      throw error;
+    }
 
     if (!res.ok) {
       let detail: string = res.statusText;
