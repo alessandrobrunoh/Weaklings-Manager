@@ -76,6 +76,10 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// Error indicating the caller exceeded a usage cap and should retry later.
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
+
     /// A conflict where the caller needs to see exactly what's blocking the
     /// action (e.g. deleting a comp that's still linked to live events) —
     /// carries the specific rows in the way, not just a message string.
@@ -178,6 +182,13 @@ impl IntoResponse for AppError {
                 msg,
                 None,
             ),
+            Self::TooManyRequests(msg) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "/errors/too-many-requests",
+                "Too Many Requests",
+                msg,
+                None,
+            ),
             Self::ConflictWithReferences {
                 message,
                 references,
@@ -247,6 +258,13 @@ mod tests {
     struct ProblemDetailsJson {
         status: StatusCode,
         detail: String,
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_maps_to_429() {
+        let problem = problem_of(AppError::TooManyRequests("slow down".into())).await;
+        assert_eq!(problem.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(problem.detail, "slow down");
     }
 
     /// An unclassified `DbErr` (not a FK/unique violation `sea_orm` can name —
