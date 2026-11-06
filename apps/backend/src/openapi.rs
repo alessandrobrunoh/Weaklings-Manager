@@ -506,6 +506,8 @@ use utoipa::OpenApi;
             crate::responses::ApiResponseEventRevisionList,
             crate::responses::ApiResponseEventManagementAuthority,
             crate::responses::ApiResponseEventView,
+            crate::modules::events::models::EventEffectsResponse,
+            crate::modules::events::lifecycle::EffectRef,
             crate::responses::ApiResponseEventFanoutStatus,
             crate::modules::events::models::EventRevision,
             crate::responses::ApiResponseEventDetail,

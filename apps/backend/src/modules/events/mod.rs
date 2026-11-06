@@ -5,6 +5,8 @@
 pub mod attribution;
 #[cfg(test)]
 mod copy_matrix_tests;
+#[cfg(test)]
+mod effects_tests;
 pub mod entities;
 pub mod fanout_outbox;
 pub mod fanout_worker;

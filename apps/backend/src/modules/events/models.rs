@@ -4,6 +4,8 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::lifecycle::EffectRef;
+
 use crate::modules::battles::models::BattleLossEstimate;
 use crate::modules::comps::status::BuildRole;
 
@@ -218,6 +220,31 @@ pub struct EventManagementAuthorityView {
     /// The permission that grants management authority to non-organizers.
     #[schema(example = "events.edit")]
     pub required_permission: String,
+}
+
+/// Response of the lifecycle routes (start, stop, cancel, uncancel, remind): the event as the
+/// API renders it after the request, plus the Discord effects this request wrote. The effects
+/// are what the bot executes; an empty list means the request changed nothing.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct EventEffectsResponse {
+    /// Indicates the outcome of the request, always "success".
+    pub status: String,
+    /// The event as the API renders it after the request.
+    pub data: EventView,
+    /// Discord effects written by this request, in the order they were written.
+    pub effects: Vec<EffectRef>,
+}
+
+impl EventEffectsResponse {
+    /// Wraps the event and its effects in the success envelope.
+    #[must_use]
+    pub fn new(data: EventView, effects: Vec<EffectRef>) -> Self {
+        Self {
+            status: "success".to_owned(),
+            data,
+            effects,
+        }
+    }
 }
 
 /// General details of an event.
