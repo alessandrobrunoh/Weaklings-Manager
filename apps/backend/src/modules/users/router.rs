@@ -228,7 +228,7 @@ async fn update_user_specializations(
         ListUsersQuery
     ),
     responses(
-        (status = 200, description = "List of users retrieved successfully", body = PaginatedUserProfile),
+        (status = 200, description = "List of users retrieved successfully", body = ApiResponse<PaginatedUserProfile>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -305,7 +305,7 @@ pub async fn get_user(
     security(("session_cookie" = [])),
     params(("user_id" = u64, Path, description = "Internal user id")),
     responses(
-        (status = 200, description = "Roles retrieved", body = UserRolesView),
+        (status = 200, description = "Roles retrieved", body = ApiResponse<UserRolesView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 404, description = "User not found", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable", body = ProblemDetails)
@@ -338,7 +338,7 @@ pub async fn get_user_roles(
     params(("user_id" = u64, Path, description = "Internal user id")),
     request_body = AssignUserRoleRequest,
     responses(
-        (status = 200, description = "Role assigned", body = UserRolesView),
+        (status = 200, description = "Role assigned", body = ApiResponse<UserRolesView>),
         (status = 400, description = "Role is unlinked, is the generic staff role, or the member has no Discord id", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "User or role not found", body = ProblemDetails),
@@ -385,7 +385,7 @@ pub async fn post_user_role(
         ("role_id" = String, Path, description = "Internal role id")
     ),
     responses(
-        (status = 200, description = "Role removed", body = UserRolesView),
+        (status = 200, description = "Role removed", body = ApiResponse<UserRolesView>),
         (status = 400, description = "Role is unlinked or is the generic staff role", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "User or role not found", body = ProblemDetails),

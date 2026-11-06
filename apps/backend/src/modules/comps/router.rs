@@ -794,7 +794,7 @@ async fn create_build_version(
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
-async fn archive_build(
+pub(crate) async fn archive_build(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
@@ -825,7 +825,7 @@ async fn archive_build(
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
-async fn unarchive_build(
+pub(crate) async fn unarchive_build(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
@@ -1208,7 +1208,7 @@ async fn create_comp_version(
         (status = 404, description = "Comp not found", body = ProblemDetails)
     )
 )]
-async fn archive_comp(
+pub(crate) async fn archive_comp(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
@@ -1239,7 +1239,7 @@ async fn archive_comp(
         (status = 404, description = "Comp not found", body = ProblemDetails)
     )
 )]
-async fn unarchive_comp(
+pub(crate) async fn unarchive_comp(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
@@ -1437,7 +1437,7 @@ async fn get_build_performance(
     security(("session_cookie" = ["comps.builds.view"])),
     params(("id" = i64, Path, description = "Build ID")),
     responses(
-        (status = 200, description = "Build price computed", body = crate::modules::comps::models::BuildPriceView),
+        (status = 200, description = "Build price computed", body = ApiResponse<crate::modules::comps::models::BuildPriceView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks comps.builds.view", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
@@ -1476,7 +1476,7 @@ async fn get_build_price(
     security(("session_cookie" = ["comps.comps.view"])),
     params(("id" = i64, Path, description = "Comp ID")),
     responses(
-        (status = 200, description = "Comp price computed", body = crate::modules::comps::models::CompPriceView),
+        (status = 200, description = "Comp price computed", body = ApiResponse<crate::modules::comps::models::CompPriceView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks comps.comps.view", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails)

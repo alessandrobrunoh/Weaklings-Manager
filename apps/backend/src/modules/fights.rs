@@ -469,11 +469,11 @@ impl FightListQuery {
     security(("session_cookie" = [])),
     params(FightListQuery),
     responses(
-        (status = 200, description = "Paginated fight summaries", body = PaginatedFightList),
+        (status = 200, description = "Paginated fight summaries", body = ApiResponse<PaginatedFightList>),
         (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails)
     )
 )]
-async fn list_fights(
+pub(crate) async fn list_fights(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
@@ -862,7 +862,7 @@ const MANUAL_NEEDS_REVIEW: bool = false;
     security(("session_cookie" = ["fights.manage"])),
     request_body = MergeFightsRequest,
     responses(
-        (status = 200, description = "Fights merged", body = FightMutationResult),
+        (status = 200, description = "Fights merged", body = ApiResponse<FightMutationResult>),
         (status = 400, description = "Invalid fight selection", body = crate::errors::ProblemDetails),
         (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails),
         (status = 403, description = "Missing fights.manage permission", body = crate::errors::ProblemDetails),
@@ -870,7 +870,7 @@ const MANUAL_NEEDS_REVIEW: bool = false;
         (status = 409, description = "Fights belong to different Events", body = crate::errors::ProblemDetails)
     )
 )]
-async fn merge_fights(
+pub(crate) async fn merge_fights(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
@@ -954,9 +954,9 @@ async fn merge_fights(
     security(("session_cookie" = ["fights.manage"])),
     params(("id" = i64, Path, description = "Source fight ID")),
     request_body = MoveBattleRequest,
-    responses((status = 200, description = "Battle moved", body = FightMutationResult))
+    responses((status = 200, description = "Battle moved", body = ApiResponse<FightMutationResult>))
 )]
-async fn move_battle(
+pub(crate) async fn move_battle(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
@@ -1083,9 +1083,9 @@ async fn move_battle(
     security(("session_cookie" = ["fights.manage"])),
     params(("id" = i64, Path, description = "Source fight ID")),
     request_body = SplitFightRequest,
-    responses((status = 200, description = "Fight split", body = FightMutationResult))
+    responses((status = 200, description = "Fight split", body = ApiResponse<FightMutationResult>))
 )]
-async fn split_fight(
+pub(crate) async fn split_fight(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
@@ -1451,11 +1451,11 @@ async fn ordered_battle_ids(db: &DatabaseTransaction, fight_id: i64) -> Result<V
     description = "Compares the latest 30 days with the preceding 30 days. Combat totals use persisted canonical-fight snapshots; roster build and comp selections use linked event participants.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Fight trends", body = FightTrendView),
+        (status = 200, description = "Fight trends", body = ApiResponse<FightTrendView>),
         (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails)
     )
 )]
-async fn get_fight_trends(
+pub(crate) async fn get_fight_trends(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
@@ -1769,12 +1769,12 @@ fn build_fight_trend_period(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Fight ID")),
     responses(
-        (status = 200, description = "Fight detail", body = FightDetailView),
+        (status = 200, description = "Fight detail", body = ApiResponse<FightDetailView>),
         (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails),
         (status = 404, description = "Fight not found", body = crate::errors::ProblemDetails)
     )
 )]
-async fn get_fight(
+pub(crate) async fn get_fight(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,

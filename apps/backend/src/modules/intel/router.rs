@@ -161,7 +161,7 @@ async fn guild_context(
     security(("session_cookie" = ["intel.view"])),
     params(ListScoutsQuery),
     responses(
-        (status = 200, description = "Scouts retrieved", body = PaginatedScoutedComp),
+        (status = 200, description = "Scouts retrieved", body = ApiResponse<PaginatedScoutedComp>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
     )
@@ -198,7 +198,7 @@ pub async fn list_scouts(
     security(("session_cookie" = ["intel.view"])),
     params(("id" = i64, Path, description = "Scouted comp id")),
     responses(
-        (status = 200, description = "Scout retrieved", body = ScoutedCompDetail),
+        (status = 200, description = "Scout retrieved", body = ApiResponse<ScoutedCompDetail>),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
         (status = 404, description = "Scout not found", body = ProblemDetails)
     )
@@ -230,7 +230,7 @@ pub async fn get_scout(
     params(("id" = i64, Path, description = "Scouted comp id")),
     request_body = UpdateScoutRequest,
     responses(
-        (status = 200, description = "Scout updated", body = ScoutedCompDetail),
+        (status = 200, description = "Scout updated", body = ApiResponse<ScoutedCompDetail>),
         (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails),
         (status = 404, description = "Scout not found", body = ProblemDetails)
     )
@@ -296,7 +296,7 @@ pub async fn delete_scout(
     security(("session_cookie" = ["intel.manage"])),
     params(("battle_id" = i64, Path, description = "AlbionBB battle id"), ScoutBattleQuery),
     responses(
-        (status = 200, description = "Battle scouted", body = Vec<ScoutOutcome>),
+        (status = 200, description = "Battle scouted", body = ApiResponse<Vec<ScoutOutcome>>),
         (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails),
         (status = 404, description = "No stored snapshot for that battle", body = ProblemDetails)
     )
@@ -395,7 +395,7 @@ pub async fn scout_snapshots_backfill(
     security(("session_cookie" = ["intel.view"])),
     params(("id" = i64, Path, description = "Scouted comp id"), SuggestionQuery),
     responses(
-        (status = 200, description = "Similar scouts", body = Vec<SimilarityHit>),
+        (status = 200, description = "Similar scouts", body = ApiResponse<Vec<SimilarityHit>>),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
         (status = 404, description = "Scout not found", body = ProblemDetails)
     )
@@ -430,7 +430,7 @@ pub async fn similar_scouts(
     security(("session_cookie" = ["intel.view"])),
     params(("id" = i64, Path, description = "Scouted comp id"), SuggestionQuery),
     responses(
-        (status = 200, description = "Counter suggestions", body = Vec<CounterSuggestion>),
+        (status = 200, description = "Counter suggestions", body = ApiResponse<Vec<CounterSuggestion>>),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
         (status = 404, description = "Scout not found", body = ProblemDetails)
     )
@@ -464,7 +464,7 @@ pub async fn counters(
     security(("session_cookie" = ["intel.view"])),
     params(("comp_id" = i64, Path, description = "Our comp id"), SuggestionQuery),
     responses(
-        (status = 200, description = "Threatening scouts", body = Vec<SimilarityHit>),
+        (status = 200, description = "Threatening scouts", body = ApiResponse<Vec<SimilarityHit>>),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
         (status = 404, description = "Comp not found or has no builds", body = ProblemDetails)
     )
@@ -500,7 +500,7 @@ pub async fn threats_to_comp(
     security(("session_cookie" = ["intel.view"])),
     params(MatchupQuery),
     responses(
-        (status = 200, description = "Matchup matrix", body = MatchupReport),
+        (status = 200, description = "Matchup matrix", body = ApiResponse<MatchupReport>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
     )
@@ -536,7 +536,7 @@ pub async fn matchup_matrix(
     security(("session_cookie" = ["intel.report.view"])),
     params(ReportParams),
     responses(
-        (status = 200, description = "Report computed", body = GuildReport),
+        (status = 200, description = "Report computed", body = ApiResponse<GuildReport>),
         (status = 400, description = "Invalid window", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks intel.report.view", body = ProblemDetails)
     )
@@ -584,7 +584,7 @@ pub async fn guild_report(
     security(("session_cookie" = ["intel.manage"])),
     params(ReportParams),
     responses(
-        (status = 200, description = "Report recomputed", body = GuildReport),
+        (status = 200, description = "Report recomputed", body = ApiResponse<GuildReport>),
         (status = 400, description = "Invalid window", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails)
     )
@@ -644,7 +644,7 @@ pub async fn refresh_guild_report(
     security(("session_cookie" = ["intel.view"])),
     params(ReportParams),
     responses(
-        (status = 200, description = "Leaderboards computed", body = ReportLeaderboards),
+        (status = 200, description = "Leaderboards computed", body = ApiResponse<ReportLeaderboards>),
         (status = 400, description = "Invalid window", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
     )
@@ -713,7 +713,7 @@ pub async fn leaderboards(
     security(("session_cookie" = ["intel.report.view"])),
     params(("user_id" = i64, Path, description = "App user id"), ReportParams),
     responses(
-        (status = 200, description = "Player report computed", body = PlayerReport),
+        (status = 200, description = "Player report computed", body = ApiResponse<PlayerReport>),
         (status = 400, description = "Invalid window", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks intel.report.view", body = ProblemDetails),
         (status = 404, description = "No such user", body = ProblemDetails)

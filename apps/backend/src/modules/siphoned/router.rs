@@ -89,8 +89,8 @@ pub fn router() -> Router {
     security(("session_cookie" = ["siphoned.ingest", "bank.transactions.create"])),
     request_body(content = SettlementQuoteRequest),
     responses(
-        (status = 200, description = "Quote ready for confirmation"),
-        (status = 400, description = "Invalid player name", body = ProblemDetails),
+        (status = 200, description = "Quote ready for confirmation", body = ApiResponse<super::models::SettlementQuoteView>),
+        (status = 400, description = "Invalid player name", body = ApiResponse<super::models::SettlementQuoteView>),
         (status = 403, description = "Missing settlement permission", body = ProblemDetails),
         (status = 404, description = "No linked guild account", body = ProblemDetails),
         (status = 409, description = "No current debt to settle", body = ProblemDetails)
@@ -122,8 +122,8 @@ pub async fn create_settlement_quote(
     security(("session_cookie" = ["siphoned.ingest", "bank.transactions.create"])),
     params(("quote_id" = String, Path, description = "The server-issued quote id.")),
     responses(
-        (status = 200, description = "Settlement confirmed (or idempotent replay)"),
-        (status = 403, description = "Missing permission or quote belongs to another officer", body = ProblemDetails),
+        (status = 200, description = "Settlement confirmed (or idempotent replay, body = ApiResponse<super::models::SettlementResult>)"),
+        (status = 403, description = "Missing permission or quote belongs to another officer", body = ApiResponse<super::models::SettlementResult>),
         (status = 404, description = "Quote not found", body = ProblemDetails),
         (status = 409, description = "Quote expired or debt changed", body = ProblemDetails)
     )
@@ -380,6 +380,7 @@ async fn list_balances(
 #[utoipa::path(
     get,
     path = "/api/siphoned/balances/{player_name}",
+    operation_id = "get_siphoned_balance",
     tag = "siphoned",
     summary = "One player's siphoned energy balance and recent activity",
     description = "Same aggregation as `GET /balances`, restricted to a single player (matched \

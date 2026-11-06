@@ -27,6 +27,7 @@ use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
 use crate::modules::auth::service::DiscordUserProfile;
+use crate::modules::capabilities::{self, Enforcement};
 use crate::postgres::{self, connect_tenant_pool, list_active_tenants};
 use crate::{albion_scope, battle_sync, event_sessions};
 
@@ -561,7 +562,7 @@ async fn lookup_tenant_kind(
     Ok(kind)
 }
 
-async fn load_features(
+pub(crate) async fn load_features(
     control_db: &DatabaseConnection,
     tenant_id: &str,
 ) -> Result<HashSet<String>, AppError> {
@@ -589,6 +590,7 @@ async fn load_features(
 pub fn skip_tenant_resolution(path: &str) -> bool {
     let path = path.trim_end_matches('/');
     path == "/api/health"
+        || path == "/api/openapi.json"
         || path == "/api/auth/discord/login"
         || path == "/api/auth/discord/callback"
         || path == "/api/auth/pending-tenants"
@@ -618,7 +620,7 @@ pub fn skip_tenant_resolution(path: &str) -> bool {
 /// the broader one it sits inside. Only what the client gates is gated here: a
 /// prefix that also backs an always-available page must not be listed, or that
 /// page breaks for tenants without the module.
-const FEATURE_GATES: &[(&str, &str)] = &[
+pub(crate) const FEATURE_GATES: &[(&str, &str)] = &[
     // Paid splits: islands are the gated part, the rest of `/api/splits` is not.
     ("/api/splits/islands", "splits.paid"),
     ("/api/splits", "splits"),
@@ -669,6 +671,30 @@ fn required_feature(path: &str) -> Option<&'static str> {
                     .is_some_and(|rest| rest.starts_with('/'))
         })
         .map(|(_, feature)| *feature)
+}
+
+/// Module access for one request: the kind rule, then the legacy feature table.
+///
+/// The kind rule runs first because it gives the precise reason
+/// (`module_unavailable` / `kind_unsupported`). Checking the feature first would
+/// answer an alliance request for a guild-only module with the legacy 403 and no
+/// `code`, so enforce mode would never report it.
+fn check_module_access(
+    path: &str,
+    kind: &str,
+    features: &TenantFeatures,
+    enforcement: Enforcement,
+) -> Result<(), AppError> {
+    capabilities::kind_gate(path, kind, enforcement)?;
+    if let Some(feature) = required_feature(path) {
+        let alliance_bank = feature == "bank" && kind == "alliance";
+        if !features.contains(feature) && !alliance_bank {
+            return Err(AppError::Forbidden(format!(
+                "the {feature} module is not enabled for this guild"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Whether a handler on `path` needs a tenant database bound to the request.
@@ -832,14 +858,14 @@ pub async fn resolve_tenant(
         "resolved tenant"
     );
     let features = TenantFeatures(ctx.features.clone());
-    if let Some(feature) = required_feature(&path) {
-        let alliance_bank = feature == "bank" && ctx.kind == "alliance";
-        if !features.contains(feature) && !alliance_bank {
-            return Err(AppError::Forbidden(format!(
-                "the {feature} module is not enabled for this guild"
-            )));
-        }
-    }
+    let enforcement = req
+        .extensions()
+        .get::<Config>()
+        .map_or(Enforcement::Log, |cfg| {
+            Enforcement::parse(&cfg.module_kind_enforcement)
+        });
+    check_module_access(&path, &ctx.kind, &features, enforcement)?;
+    let version = capabilities::tenant_version(&ctx.kind, "active", &ctx.features);
 
     let (mut parts, body) = req.into_parts();
     parts.extensions.insert(ctx.db.clone());
@@ -849,7 +875,14 @@ pub async fn resolve_tenant(
         .extensions
         .insert(CurrentTenantId(ctx.tenant_id.clone()));
     parts.extensions.insert(CurrentTenantKind(ctx.kind.clone()));
-    Ok(next.run(Request::from_parts(parts, body)).await)
+    let mut response = next.run(Request::from_parts(parts, body)).await;
+    if let Ok(value) = axum::http::HeaderValue::from_str(&version) {
+        response.headers_mut().insert(
+            axum::http::HeaderName::from_static(capabilities::router::CAPABILITIES_VERSION_HEADER),
+            value,
+        );
+    }
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -881,6 +914,35 @@ mod tests {
         assert_eq!(
             required_feature("/api/splits/islands/7/tabs"),
             Some("splits.paid")
+        );
+    }
+
+    #[test]
+    fn kind_rule_refuses_before_the_feature_table_does() {
+        let none = TenantFeatures::default();
+        let warns = TenantFeatures(HashSet::from(["warns".to_owned()]));
+
+        // Enforce: the kind reason wins even with the flag on or off.
+        for features in [&none, &warns] {
+            let err = check_module_access("/api/warns", "alliance", features, Enforcement::Enforce)
+                .expect_err("enforce refuses a guild-only module for an alliance");
+            assert!(
+                matches!(err, AppError::ModuleUnavailable { .. }),
+                "expected module_unavailable, got {err:?}"
+            );
+        }
+
+        // Log: the request goes through once the legacy feature passes.
+        assert!(check_module_access("/api/warns", "alliance", &warns, Enforcement::Log).is_ok());
+        // A guild without the flag keeps the legacy 403.
+        assert!(matches!(
+            check_module_access("/api/warns", "guild", &none, Enforcement::Log),
+            Err(AppError::Forbidden(_))
+        ));
+        // The alliance bank needs no feature flag.
+        assert!(
+            check_module_access("/api/bank/balance", "alliance", &none, Enforcement::Enforce)
+                .is_ok()
         );
     }
 
@@ -943,6 +1005,7 @@ mod tests {
     fn skip_lists_health_oauth_and_platform() {
         assert!(skip_tenant_resolution("/api/health"));
         assert!(skip_tenant_resolution("/api/health/"));
+        assert!(skip_tenant_resolution("/api/openapi.json"));
         assert!(skip_tenant_resolution("/api/auth/discord/login"));
         assert!(skip_tenant_resolution("/api/auth/discord/callback"));
         assert!(skip_tenant_resolution("/api/auth/pending-tenants"));
@@ -1041,6 +1104,7 @@ mod tests {
             albionbb_base_url: "http://localhost".to_owned(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
+            module_kind_enforcement: "log".to_owned(),
         }
     }
 
@@ -1337,6 +1401,98 @@ mod tests {
             .expect("provision succeeds with no workers configured");
         assert_eq!(ctx.schema_name, schema);
         assert_eq!(registry.cached_len(), 1);
+
+        drop_schema(&admin, &schema).await.expect("drop schema");
+        cleanup_control_tenant(&control, &id, "")
+            .await
+            .expect("cleanup tenant");
+    }
+
+    /// `MODULE_KIND_ENFORCEMENT=enforce` refuses a guild-only module for an
+    /// alliance tenant through the real middleware; `log` lets it through and
+    /// counts it. Needs `TEST_DATABASE_URL`; skipped otherwise.
+    #[tokio::test]
+    async fn enforce_refuses_a_guild_only_module_for_an_alliance_only_in_enforce_mode() {
+        use axum::body::Body;
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        ensure_schema(&admin, CONTROL_SCHEMA)
+            .await
+            .expect("control schema");
+        let control = connect_with_search_path(&url, CONTROL_SCHEMA)
+            .await
+            .expect("control connect");
+        control_migration::Migrator::up(&control, None)
+            .await
+            .expect("control migrations");
+
+        let id = unique_schema("te");
+        let schema = format!("tenant_{id}");
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "INSERT INTO tenants (id, slug, name, schema_name, status, kind) \
+                 VALUES ($1, $1, $1, $2, 'active', 'alliance')",
+                [id.clone().into(), schema.clone().into()],
+            ))
+            .await
+            .expect("insert alliance tenant");
+        ensure_schema(&admin, &schema).await.expect("tenant schema");
+        // The legacy feature table must pass, so only the kind rule can refuse.
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "INSERT INTO tenant_feature_flags (tenant_id, feature_key, enabled) \
+                 VALUES ($1, 'warns', true)",
+                [id.clone().into()],
+            ))
+            .await
+            .expect("enable warns");
+
+        let send = |mode: &str| {
+            let mut cfg = cfg_with_bot_secret(Some("s3cret"));
+            cfg.module_kind_enforcement = mode.to_owned();
+            let registry = TenantRegistry::new(url.clone(), control.clone());
+            let app = axum::Router::new()
+                .route("/api/warns", get(|| async { "ok" }))
+                .layer(axum::middleware::from_fn_with_state(
+                    registry,
+                    resolve_tenant,
+                ))
+                .layer(axum::Extension(ControlDb(control.clone())))
+                .layer(axum::Extension(cfg));
+            let request = axum::http::Request::builder()
+                .uri("/api/warns")
+                .header(BOT_SECRET_HEADER, "s3cret")
+                .header(GUILD_ID_HEADER, id.as_str())
+                .body(Body::empty())
+                .expect("request");
+            async move { app.oneshot(request).await.expect("router responds") }
+        };
+
+        let refused = send("enforce").await;
+        assert_eq!(refused.status(), axum::http::StatusCode::FORBIDDEN);
+        let bytes = axum::body::to_bytes(refused.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let problem: serde_json::Value = serde_json::from_slice(&bytes).expect("problem json");
+        assert_eq!(problem["code"], "module_unavailable");
+        assert_eq!(problem["details"]["module"], "warns");
+
+        let before = capabilities::gate::would_block_total();
+        let allowed = send("log").await;
+        assert_eq!(allowed.status(), axum::http::StatusCode::OK);
+        assert!(capabilities::gate::would_block_total() > before);
+        assert!(
+            allowed
+                .headers()
+                .contains_key(capabilities::router::CAPABILITIES_VERSION_HEADER),
+            "every tenant response carries the capabilities version"
+        );
 
         drop_schema(&admin, &schema).await.expect("drop schema");
         cleanup_control_tenant(&control, &id, "")

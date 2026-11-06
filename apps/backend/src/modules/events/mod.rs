@@ -17,6 +17,7 @@ pub mod models;
 pub mod roster_hub;
 pub mod router;
 pub mod service;
+pub mod status;
 pub mod sync;
 
 pub use router::router;

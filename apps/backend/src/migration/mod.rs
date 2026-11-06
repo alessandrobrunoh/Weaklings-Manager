@@ -148,6 +148,7 @@ mod m20261106_000003_index_event_battles_albionbb_battle_id;
 mod m20261107_000001_create_discord_delivery;
 mod m20261107_000001_create_sync_tables;
 mod m20261107_000002_add_event_mass_notified_at;
+mod m20261107_000002_create_action_log;
 mod m20261107_000002_seed_sync_permissions;
 mod m20261107_000003_add_event_reminder_notified_at;
 mod m20261107_000004_backfill_event_discord_stamps;
@@ -303,6 +304,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_000001_create_discord_delivery::Migration),
             Box::new(m20261107_000001_create_sync_tables::Migration),
             Box::new(m20261107_000002_add_event_mass_notified_at::Migration),
+            Box::new(m20261107_000002_create_action_log::Migration),
             Box::new(m20261107_000002_seed_sync_permissions::Migration),
             Box::new(m20261107_000003_add_event_reminder_notified_at::Migration),
             Box::new(m20261107_000004_backfill_event_discord_stamps::Migration),

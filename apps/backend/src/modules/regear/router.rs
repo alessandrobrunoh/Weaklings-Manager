@@ -128,7 +128,7 @@ pub fn router() -> Router {
     security(("session_cookie" = ["regear.view"])),
     params(ListDeathsQuery),
     responses(
-        (status = 200, description = "Deaths retrieved successfully", body = crate::pagination::PaginatedDeathView),
+        (status = 200, description = "Deaths retrieved successfully", body = ApiResponse<crate::pagination::PaginatedDeathView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks regear.view, or used global without regear.adjudicate", body = ProblemDetails)
     )
@@ -175,7 +175,7 @@ async fn list_deaths(
         additionally scope by user id (callers who can see the queue can see any row).",
     security(("session_cookie" = ["regear.view"])),
     responses(
-        (status = 200, description = "Death retrieved successfully", body = crate::modules::regear::models::DeathView),
+        (status = 200, description = "Death retrieved successfully", body = ApiResponse<crate::modules::regear::models::DeathView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks regear.view", body = ProblemDetails),
         (status = 404, description = "Death not found", body = ProblemDetails)
@@ -209,7 +209,7 @@ async fn get_death(
         the member must click per death. Rejected deaths can never be re-requested.",
     security(("session_cookie" = ["regear.request"])),
     responses(
-        (status = 200, description = "Death moved to pending", body = crate::modules::regear::models::DeathView),
+        (status = 200, description = "Death moved to pending", body = ApiResponse<crate::modules::regear::models::DeathView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - not your death or lacks permission", body = ProblemDetails),
         (status = 404, description = "Death not found", body = ProblemDetails),
@@ -243,7 +243,7 @@ async fn request_regear(
     security(("session_cookie" = ["regear.adjudicate"])),
     params(ListDeathsQuery),
     responses(
-        (status = 200, description = "Pending requests retrieved", body = crate::pagination::PaginatedDeathView),
+        (status = 200, description = "Pending requests retrieved", body = ApiResponse<crate::pagination::PaginatedDeathView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks regear.adjudicate", body = ProblemDetails)
     )
@@ -287,7 +287,7 @@ async fn list_pending_requests(
     security(("session_cookie" = ["regear.adjudicate"])),
     request_body(content = AcceptRegearRequest, description = "The officer-edited breakdown and the accepted total. The total must equal the sum of `unit_price * quantity` for included rows."),
     responses(
-        (status = 200, description = "Request accepted; bank row credited", body = crate::modules::regear::models::DeathView),
+        (status = 200, description = "Request accepted; bank row credited", body = ApiResponse<crate::modules::regear::models::DeathView>),
         (status = 400, description = "Breakdown does not sum to final_amount", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
@@ -326,7 +326,7 @@ async fn accept_request(
     security(("session_cookie" = ["regear.adjudicate"])),
     request_body(content = RejectRegearRequest, description = "The mandatory rejection note."),
     responses(
-        (status = 200, description = "Request rejected (terminal)", body = crate::modules::regear::models::DeathView),
+        (status = 200, description = "Request rejected (terminal, body = ApiResponse<crate::modules::regear::models::DeathView>)", body = ApiResponse<crate::modules::regear::models::DeathView>),
         (status = 400, description = "Note missing or too long", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
@@ -364,7 +364,7 @@ async fn reject_request(
     security(("session_cookie" = ["regear.view"])),
     params(ListDeathsQuery),
     responses(
-        (status = 200, description = "Deaths retrieved", body = crate::pagination::PaginatedDeathView),
+        (status = 200, description = "Deaths retrieved", body = ApiResponse<crate::pagination::PaginatedDeathView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -410,7 +410,7 @@ async fn list_event_deaths(
     security(("session_cookie" = ["regear.adjudicate"])),
     params(RunExtractionQuery),
     responses(
-        (status = 200, description = "Extraction completed", body = ExtractionReport),
+        (status = 200, description = "Extraction completed", body = ApiResponse<ExtractionReport>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
@@ -454,12 +454,13 @@ async fn run_extraction(
 #[utoipa::path(
     get,
     path = "/api/regear/settings",
+    operation_id = "get_regear_settings",
     tag = "regear",
     summary = "Read guild-wide regear settings",
     description = "Returns the singleton `regear_settings` row (caps, slot mask, pricing).",
     security(("session_cookie" = ["regear.view"])),
     responses(
-        (status = 200, description = "Settings retrieved", body = RegearSettingsView),
+        (status = 200, description = "Settings retrieved", body = ApiResponse<RegearSettingsView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -484,6 +485,7 @@ async fn get_settings(
 #[utoipa::path(
     put,
     path = "/api/regear/settings",
+    operation_id = "update_regear_settings",
     tag = "regear",
     summary = "Update guild-wide regear settings",
     description = "Partial update: only the fields present in the body are changed. The slot mask \
@@ -491,7 +493,7 @@ async fn get_settings(
     security(("session_cookie" = ["regear.settings.manage"])),
     request_body(content = UpdateRegearSettingsRequest, description = "Fields to update. All fields are optional; absent fields are left unchanged."),
     responses(
-        (status = 200, description = "Settings updated", body = RegearSettingsView),
+        (status = 200, description = "Settings updated", body = ApiResponse<RegearSettingsView>),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
@@ -524,7 +526,7 @@ async fn update_settings(
         in the rolling 30-day window, alongside the configured caps. Powers the budget badge.",
     security(("session_cookie" = ["regear.view"])),
     responses(
-        (status = 200, description = "Summary retrieved", body = RegearBudgetSummary),
+        (status = 200, description = "Summary retrieved", body = ApiResponse<RegearBudgetSummary>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -556,7 +558,7 @@ async fn get_my_summary(
         picker).",
     security(("session_cookie" = ["regear.request"])),
     responses(
-        (status = 200, description = "Eligible events retrieved", body = Vec<SelfServiceEventOption>),
+        (status = 200, description = "Eligible events retrieved", body = ApiResponse<Vec<SelfServiceEventOption>>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks regear.request", body = ProblemDetails)
     )
@@ -593,7 +595,7 @@ async fn get_self_service_events(
     security(("session_cookie" = ["regear.request"])),
     request_body(content = CreateSelfServiceRegearRequest, description = "The event, the build being claimed for, and any per-slot overrides."),
     responses(
-        (status = 200, description = "Request opened as pending", body = crate::modules::regear::models::DeathView),
+        (status = 200, description = "Request opened as pending", body = ApiResponse<crate::modules::regear::models::DeathView>),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),

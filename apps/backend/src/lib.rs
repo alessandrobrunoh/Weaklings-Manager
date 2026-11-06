@@ -162,6 +162,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let api = Router::new()
+        .route(
+            "/openapi.json",
+            axum::routing::get(openapi::serve_openapi_json),
+        )
         .merge(modules::router())
         .nest("/platform", modules::platform::router())
         .nest("/tenants", modules::platform::public_router())
