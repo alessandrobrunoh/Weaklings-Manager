@@ -822,6 +822,8 @@ mod tests {
                 albionbb_base_url: "http://localhost".into(),
                 albionbb_request_timeout_secs: 60,
                 albiondata_request_timeout_secs: 30,
+                discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+                discord_api_timeout_secs: 10,
             });
             parts.extensions.insert(db.clone());
             let admins = PlatformAdmins::new_empty();

@@ -1107,6 +1107,8 @@ mod tests {
             bot_api_secret: None,
             discord_bot_token: None,
             super_admin_discord_id: "admin".to_owned(),
+            discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+            discord_api_timeout_secs: 10,
             session_secret: "x".repeat(64),
             frontend_url: "http://localhost".to_owned(),
             albion_api_region: "europe".to_owned(),

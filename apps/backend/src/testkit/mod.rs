@@ -9,6 +9,8 @@
 //! this fixture with `run_until_idle` and failpoints; Postgres-backed worlds
 //! stay behind `TEST_DATABASE_URL`).
 
+pub mod discord_stub;
+
 use std::collections::BTreeMap;
 
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
