@@ -2732,8 +2732,13 @@ impl EventService {
 
         let paginator = query.paginate(db, limit);
 
-        let total_items = paginator.num_items().await.map_err(AppError::Database)?;
-        let total_pages = paginator.num_pages().await.map_err(AppError::Database)?;
+        let sea_orm::ItemsAndPagesNumber {
+            number_of_items: total_items,
+            number_of_pages: total_pages,
+        } = paginator
+            .num_items_and_pages()
+            .await
+            .map_err(AppError::Database)?;
         let current_page = page + 1;
 
         let models = paginator
