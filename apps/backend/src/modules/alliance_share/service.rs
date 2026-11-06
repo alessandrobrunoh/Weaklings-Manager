@@ -2482,10 +2482,7 @@ mod tests {
             .complete_split(&dest, published_id, dest_user)
             .await
             .expect_err("alliance complete");
-        match complete_err {
-            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
-            other => panic!("expected forbidden, got {other:?}"),
-        }
+        assert!(matches!(complete_err, AppError::ReadOnlyCopy(_)));
         let bags_err = SplitService::new()
             .update_split(
                 &dest,
@@ -2505,8 +2502,8 @@ mod tests {
             .await
             .expect_err("bags");
         match bags_err {
-            AppError::Forbidden(_) => {}
-            other => panic!("expected forbidden, got {other:?}"),
+            AppError::ReadOnlyCopy(_) => {}
+            other => panic!("expected read-only copy, got {other:?}"),
         }
 
         let guild_sync = split_discord_sync::Entity::find_by_id(created.summary.id)

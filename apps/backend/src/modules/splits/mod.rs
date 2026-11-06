@@ -4,6 +4,8 @@
 
 pub mod alliance_distribution;
 pub mod city;
+#[cfg(test)]
+mod copy_matrix_tests;
 pub mod discord_sync;
 pub mod entities;
 pub mod models;

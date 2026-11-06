@@ -28,6 +28,7 @@ use crate::modules::events::entities::event::{Column as EventColumn, Entity as E
 use crate::modules::events::entities::event_participation::{
     Column as EventParticipationColumn, Entity as EventParticipationEntity,
 };
+use crate::modules::sync::{LegacyLinks, assert_split_writable};
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
@@ -749,6 +750,14 @@ pub enum SplitSyncState {
 /// Service for executing business logic operations related to loot splits.
 pub struct SplitService {
     tenant_kind: String,
+    /// Control handle that lets a rejected write name the origin of a copy.
+    origin_scope: Option<OriginScope>,
+}
+
+/// Where the service's tenant lives, for decorating `ReadOnlyCopy` errors.
+struct OriginScope {
+    control: DatabaseConnection,
+    tenant_id: String,
 }
 
 const SHARED_SPLIT_READ_ONLY: &str = "shared alliance splits are read-only";
@@ -765,11 +774,30 @@ impl SplitService {
     pub fn for_tenant(kind: impl Into<String>) -> Self {
         Self {
             tenant_kind: kind.into(),
+            origin_scope: None,
         }
     }
 
-    fn deny_mutation(&self, split: &SplitModel) -> Result<(), AppError> {
-        if split.origin_read_only || self.tenant_kind == "alliance" {
+    /// Lets a rejected write on a copy carry the origin tenant and split (403 +
+    /// `origin`). Without it the verdict is identical but the origin is not resolved.
+    #[must_use]
+    pub fn with_origin_scope(mut self, control: &DatabaseConnection, tenant_id: &str) -> Self {
+        self.origin_scope = Some(OriginScope {
+            control: control.clone(),
+            tenant_id: tenant_id.to_owned(),
+        });
+        self
+    }
+
+    /// Copies are read-only (the sync guard); alliance tenants keep their own rule that
+    /// shared splits are never edited in place.
+    async fn deny_mutation(&self, split: &SplitModel) -> Result<(), AppError> {
+        let legacy = self.origin_scope.as_ref().map(|scope| LegacyLinks {
+            control: &scope.control,
+            tenant_id: &scope.tenant_id,
+        });
+        assert_split_writable(legacy, split.id, split.origin_read_only).await?;
+        if self.tenant_kind == "alliance" {
             return Err(AppError::Forbidden(SHARED_SPLIT_READ_ONLY.to_owned()));
         }
         Ok(())
@@ -780,7 +808,8 @@ impl SplitService {
     /// # Errors
     ///
     /// * [`AppError::NotFound`] if the split does not exist.
-    /// * [`AppError::Forbidden`] when `origin_read_only` is set or the tenant is an alliance.
+    /// * [`AppError::ReadOnlyCopy`] when the split is a published copy.
+    /// * [`AppError::Forbidden`] when the tenant is an alliance.
     pub async fn assert_mutable(
         &self,
         db: &DatabaseConnection,
@@ -790,7 +819,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)
+        self.deny_mutation(&split).await
     }
 
     pub(crate) async fn to_summary(
@@ -1104,7 +1133,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
         }
@@ -1200,7 +1229,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
         let status = parse_status(&split)?;
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
@@ -1543,7 +1572,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
         let mut active: SplitActiveModel = split.into();
         active.archived_at = Set(Some(chrono::Utc::now().into()));
         active.updated_at = Set(chrono::Utc::now().into());
@@ -1565,7 +1594,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-        self.deny_mutation(&split)?;
+        self.deny_mutation(&split).await?;
         let mut active: SplitActiveModel = split.into();
         active.archived_at = Set(None);
         active.updated_at = Set(chrono::Utc::now().into());
@@ -4351,18 +4380,17 @@ mod tests {
             .await
             .expect_err("complete forbidden");
         match complete_err {
-            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
-            other => panic!("expected forbidden, got {other:?}"),
+            AppError::ReadOnlyCopy(origin) => {
+                assert_eq!(origin.kind, crate::modules::sync::SyncKind::Split);
+            }
+            other => panic!("expected read-only copy, got {other:?}"),
         }
 
         let bags_err = service
             .update_split(&db, created.summary.id, bags_update(vec!["50.00"]))
             .await
             .expect_err("bags forbidden");
-        match bags_err {
-            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
-            other => panic!("expected forbidden, got {other:?}"),
-        }
+        assert!(matches!(bags_err, AppError::ReadOnlyCopy(_)));
 
         // The actor is the split creator (and can be granted global split
         // permissions at the route layer); ownership must not override origin.
@@ -4385,7 +4413,7 @@ mod tests {
                 .map(|_| ()),
             service.mark_lost(&db, created.summary.id).await.map(|_| ()),
         ] {
-            assert!(matches!(result, Err(AppError::Forbidden(_))));
+            assert!(matches!(result, Err(AppError::ReadOnlyCopy(_))));
         }
 
         let detail = service.get_split(&db, created.summary.id).await.unwrap();

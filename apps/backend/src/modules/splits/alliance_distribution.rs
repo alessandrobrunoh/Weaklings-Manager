@@ -23,6 +23,7 @@ use crate::{
             },
             service::{SplitService, calculate_net_value, event_has_ended, participant_shares},
         },
+        sync::{LegacyLinks, assert_split_writable},
         users::entities::{Column as UserColumn, Entity as UserEntity},
     },
     tenant::TenantRegistry,
@@ -125,11 +126,16 @@ pub async fn complete(
         .one(alliance_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
-    if split.origin_read_only {
-        return Err(AppError::Forbidden(
-            "a synchronized split copy cannot be distributed".to_owned(),
-        ));
-    }
+    // A synchronized copy is never distributed from here; the origin pays out.
+    assert_split_writable(
+        Some(LegacyLinks {
+            control,
+            tenant_id: alliance_tenant_id,
+        }),
+        split_id,
+        split.origin_read_only,
+    )
+    .await?;
     if distribution_complete(control, alliance_tenant_id, split_id).await? {
         return SplitService::for_tenant("alliance")
             .get_split(alliance_db, split_id)

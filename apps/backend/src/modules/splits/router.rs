@@ -25,8 +25,10 @@ use super::models::{
 };
 use super::service::SplitService;
 
-fn split_service(kind: &CurrentTenantKind) -> SplitService {
-    SplitService::for_tenant(&kind.0)
+/// Builds the tenant-bound service; `control` and `tenant_id` let a write rejected on a
+/// read-only copy name its origin.
+fn split_service(kind: &CurrentTenantKind, control: &ControlDb, tenant_id: &str) -> SplitService {
+    SplitService::for_tenant(&kind.0).with_origin_scope(&control.0, tenant_id)
 }
 
 fn authorize_split_owner_or_global(
@@ -193,7 +195,7 @@ async fn create_split(
     Json(req): Json<CreateSplitRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsCreate).await?;
-    let split = split_service(&kind)
+    let split = SplitService::for_tenant(&kind.0)
         .create_split(&db, user.user_id, req)
         .await?;
     Ok(Json(ApiResponse::new(split)))
@@ -299,16 +301,21 @@ async fn get_split(
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn update_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateSplitRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let split = split_service(&kind).update_split(&db, id, req).await?;
+    let split = split_service(&kind, &control, &tenant_id)
+        .update_split(&db, id, req)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -334,10 +341,14 @@ async fn delete_split(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
-    split_service(&kind).delete_split(&db, id).await?;
+    split_service(&kind, &control, &tenant_id)
+        .delete_split(&db, id)
+        .await?;
     Ok(axum::response::Response::builder()
         .status(axum::http::StatusCode::NO_CONTENT)
         .body(axum::body::Body::empty())
@@ -363,10 +374,14 @@ async fn archive_split(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
-    let split = split_service(&kind).archive_split(&db, id).await?;
+    let split = split_service(&kind, &control, &tenant_id)
+        .archive_split(&db, id)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -389,10 +404,14 @@ async fn unarchive_split(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
-    let split = split_service(&kind).unarchive_split(&db, id).await?;
+    let split = split_service(&kind, &control, &tenant_id)
+        .unarchive_split(&db, id)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -425,16 +444,19 @@ async fn unarchive_split(
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn add_or_update_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<UpsertParticipantRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let split = split_service(&kind)
+    let split = split_service(&kind, &control, &tenant_id)
         .add_or_update_participant(&db, id, req)
         .await?;
     Ok(Json(ApiResponse::new(split)))
@@ -473,10 +495,12 @@ async fn remove_participant(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path((id, user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let split = split_service(&kind)
+    let split = split_service(&kind, &control, &tenant_id)
         .remove_participant(&db, id, user_id)
         .await?;
     Ok(Json(ApiResponse::new(split)))
@@ -544,7 +568,7 @@ async fn complete_split(
         )
         .await?
     } else {
-        split_service(&kind)
+        split_service(&kind, &control, &tenant_id)
             .complete_split(&db, id, user.user_id)
             .await?
     };
@@ -610,9 +634,13 @@ pub async fn donate_split_share(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    split_service(&kind).assert_mutable(&db, id).await?;
+    split_service(&kind, &control, &tenant_id)
+        .assert_mutable(&db, id)
+        .await?;
     BankService::new()
         .donate_split_share(&db, id, user.user_id)
         .await?;
@@ -652,10 +680,14 @@ async fn not_completed_split(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
-    let split = split_service(&kind).mark_not_completed(&db, id).await?;
+    let split = split_service(&kind, &control, &tenant_id)
+        .mark_not_completed(&db, id)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -691,10 +723,14 @@ async fn lost_split(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
-    let split = split_service(&kind).mark_lost(&db, id).await?;
+    let split = split_service(&kind, &control, &tenant_id)
+        .mark_lost(&db, id)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -771,7 +807,7 @@ pub async fn complete_splits_batch(
             "must provide at least one split id".to_string(),
         ));
     }
-    let service = split_service(&kind);
+    let service = split_service(&kind, &control, &tenant_id);
     let mut authorized_ids = Vec::new();
     let mut failed = Vec::new();
     for split_id in &body.split_ids {
