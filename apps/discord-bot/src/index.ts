@@ -1,7 +1,6 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { config } from "./config.js";
 import { ApiClient } from "./api/client.js";
-import { discordRoleIdsFromMember } from "./api/discord-role-ids.js";
 import type {
   AlbionLinkStatus,
   AwardMessageRequest,
@@ -28,6 +27,7 @@ import {
 import { fetchTenantStatus, isRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 import { safeErrorReply } from "./services/interaction-reply.js";
+import { actorApiFor } from "./services/actor.js";
 
 const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
 
@@ -162,12 +162,7 @@ async function main(): Promise<void> {
         }
         return;
       }
-      const actorApi = api
-        .withGuild(interaction.guildId)
-        .withDiscordActor(
-          interaction.user.id,
-          discordRoleIdsFromMember(interaction.member),
-        );
+      const actorApi = actorApiFor(interaction, api.withGuild(interaction.guildId));
       await handleButton(interaction, actorApi);
       return;
     }
@@ -175,12 +170,7 @@ async function main(): Promise<void> {
     // Select menu interactions
     if (interaction.isStringSelectMenu()) {
       if (!interaction.guildId) return;
-      const actorApi = api
-        .withGuild(interaction.guildId)
-        .withDiscordActor(
-          interaction.user.id,
-          discordRoleIdsFromMember(interaction.member),
-        );
+      const actorApi = actorApiFor(interaction, api.withGuild(interaction.guildId));
       await handleSelectMenu(interaction, actorApi);
       return;
     }
@@ -188,12 +178,7 @@ async function main(): Promise<void> {
     // Modal submissions (Discord forms opened by a button)
     if (interaction.isModalSubmit()) {
       if (!interaction.guildId) return;
-      const actorApi = api
-        .withGuild(interaction.guildId)
-        .withDiscordActor(
-          interaction.user.id,
-          discordRoleIdsFromMember(interaction.member),
-        );
+      const actorApi = actorApiFor(interaction, api.withGuild(interaction.guildId));
       await handleModal(interaction, actorApi);
       return;
     }

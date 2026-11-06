@@ -50,10 +50,6 @@ import { unlockAndUnarchiveThread } from "../services/discord-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import { flashCopy } from "../services/flash-copy.js";
 import {
-  buildWebsiteAccountRequiredReply,
-  isWebsiteUserRegistered,
-} from "../services/website-account.js";
-import {
   createPrivateTicketThread,
   fetchGuildChannel,
   staffRolePing,
@@ -615,11 +611,6 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
 
     await interaction.deferReply({ flags: ["Ephemeral"] });
-
-    if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
-      await interaction.editReply(buildWebsiteAccountRequiredReply());
-      return;
-    }
 
     // Flash masses are binary: the signup-options select menu is comp-shaped
     // and answers 409 for them, so the kind decides the flow before any

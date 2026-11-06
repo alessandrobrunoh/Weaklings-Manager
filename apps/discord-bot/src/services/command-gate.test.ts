@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import { ApiError } from '../api/client.js';
 import type { ApiClient } from '../api/client.js';
 import type { BotCommand } from '../commands/index.js';
 import {
@@ -56,16 +55,11 @@ afterEach(() => {
   }
 });
 
-function stubApi(status: TenantStatus, accountError?: ApiError): ApiClient {
+function stubApi(status: TenantStatus, actorCalls: unknown[][] = []): ApiClient {
   const scoped = {
     guildId: status.id,
-    async get(path: string) {
-      if (path === 'api/users/me' && accountError) {
-        throw accountError;
-      }
-      return { linked: false };
-    },
-    withDiscordActor() {
+    withDiscordActor(...args: unknown[]) {
+      actorCalls.push(args);
       return scoped;
     },
   } as unknown as ApiClient;
@@ -87,7 +81,8 @@ function stubInteraction(opts: {
   return {
     commandName: opts.commandName,
     guildId: opts.guildId === undefined ? nextGuildId() : opts.guildId,
-    user: { id: 'member-id' },
+    inGuild: () => true,
+    user: { id: 'member-id', username: 'member-name' },
     member: { roles: [] },
     replied: false,
     deferred: false,
@@ -181,26 +176,16 @@ describe('executeSlashCommand', () => {
     assert.equal(interaction.replies.length, 0);
   });
 
-  it('prompts an unregistered website user before executing a command', async () => {
+  it('runs a command for a member the backend has never seen, with the actor attached', async () => {
     const interaction = stubInteraction({ commandName: 'event-join' });
     const command = stubCommand();
-    const api = stubApi(
-      guildStatus(interaction.guildId!),
-      new ApiError(401, 'Discord user member-id has no linked account in this system.'),
-    );
+    const actorCalls: unknown[][] = [];
+    const api = stubApi(guildStatus(interaction.guildId!), actorCalls);
 
     await executeSlashCommand(interaction, api, command);
 
-    assert.equal(command.calls.length, 0);
-    assert.equal(interaction.replies.length, 1);
-    const payload = interaction.replies[0] as {
-      embeds: Array<{ data: { title?: string; description?: string } }>;
-      components: Array<{ toJSON(): { components: Array<{ label?: string }> } }>;
-      flags: string[];
-    };
-    assert.match(payload.embeds[0].data.title ?? '', /Website Account Required/);
-    assert.match(payload.embeds[0].data.description ?? '', /not registered with Weaklings Manager/);
-    assert.equal(payload.components[0]?.toJSON().components[0]?.label, 'Link your account');
-    assert.deepEqual(payload.flags, ['Ephemeral']);
+    assert.equal(command.calls.length, 1);
+    assert.equal(interaction.replies.length, 0);
+    assert.deepEqual(actorCalls, [['member-id', [], 'member-name']]);
   });
 });

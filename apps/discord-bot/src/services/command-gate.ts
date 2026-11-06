@@ -3,14 +3,10 @@ import type {
   MessageContextMenuCommandInteraction,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
-import { discordRoleIdsFromMember } from '../api/discord-role-ids.js';
 import type { BotCommand, BotMessageCommand } from '../commands/index.js';
 import { createResponseEmbed } from '../embeds/theme.js';
+import { actorApiFor } from './actor.js';
 import { fetchTenantStatus, requireRegisteredTenant } from './tenant-gate.js';
-import {
-  buildWebsiteAccountRequiredReply,
-  isWebsiteUserRegistered,
-} from './website-account.js';
 
 /**
  * Slash commands that belong on an alliance Discord hub.
@@ -44,7 +40,8 @@ export function isCommandAllowedOnTenant(
 }
 
 /**
- * Tenant registration + alliance allowlist, then the command body.
+ * Tenant registration + alliance allowlist, then the command body. A Discord member the backend
+ * has not seen yet is provisioned by the backend on this call, so no website sign-in is needed.
  *
  * Callers keep their own try/catch so execute errors still use the shared
  * command-failed embed.
@@ -76,22 +73,10 @@ export async function executeSlashCommand(
     return;
   }
 
-  const actorApi = guildApi.withDiscordActor(
-    interaction.user.id,
-    discordRoleIdsFromMember(interaction.member),
-  );
-  if (!(await isWebsiteUserRegistered(actorApi, interaction.user.id))) {
-    await interaction.reply({
-      ...buildWebsiteAccountRequiredReply(),
-      flags: ['Ephemeral'],
-    });
-    return;
-  }
-
-  await command.execute(interaction, actorApi);
+  await command.execute(interaction, actorApiFor(interaction, guildApi));
 }
 
-/** Tenant and account gate for message context-menu commands. */
+/** Tenant gate for message context-menu commands. */
 export async function executeMessageContextCommand(
   interaction: MessageContextMenuCommandInteraction,
   api: ApiClient,
@@ -118,16 +103,5 @@ export async function executeMessageContextCommand(
     return;
   }
 
-  const actorApi = guildApi.withDiscordActor(
-    interaction.user.id,
-    discordRoleIdsFromMember(interaction.member),
-  );
-  if (!(await isWebsiteUserRegistered(actorApi, interaction.user.id))) {
-    await interaction.reply({
-      ...buildWebsiteAccountRequiredReply(),
-      flags: ['Ephemeral'],
-    });
-    return;
-  }
-  await command.execute(interaction, actorApi);
+  await command.execute(interaction, actorApiFor(interaction, guildApi));
 }

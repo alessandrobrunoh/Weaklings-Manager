@@ -28,9 +28,8 @@ export async function execute(
     } else {
       const userId = await resolveInternalUserId(
         api,
-        interaction.user.id,
-        target.id,
-        target.username,
+        target,
+        interaction.options.getMember('member') !== null,
       );
       if (userId === null) {
         const errEmbed = createResponseEmbed(

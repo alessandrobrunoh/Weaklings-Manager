@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains reusable bot workflows and lifecycle services used by command and interaction handlers. The inspected boundaries include per-guild poller management, tenant and website-account gates, command registration, event lifecycle operations, and application/event-thread helpers.
+This directory contains reusable bot workflows and lifecycle services used by command and interaction handlers. The inspected boundaries include per-guild poller management, tenant gates, command registration, event lifecycle operations, and application/event-thread helpers.
 
 ## Interface
 
