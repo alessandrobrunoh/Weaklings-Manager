@@ -142,6 +142,10 @@ mod m20261103_000001_add_alliance_distribution_key;
 mod m20261105_000001_regear_self_report_unique;
 mod m20261106_000001_add_split_needs_resync;
 mod m20261106_000002_add_split_roster_locked;
+mod m20261107_000001_create_discord_delivery;
+mod m20261107_000002_add_event_mass_notified_at;
+mod m20261107_000003_add_event_reminder_notified_at;
+mod m20261107_000004_backfill_event_discord_stamps;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -288,6 +292,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261105_000001_regear_self_report_unique::Migration),
             Box::new(m20261106_000001_add_split_needs_resync::Migration),
             Box::new(m20261106_000002_add_split_roster_locked::Migration),
+            Box::new(m20261107_000001_create_discord_delivery::Migration),
+            Box::new(m20261107_000002_add_event_mass_notified_at::Migration),
+            Box::new(m20261107_000003_add_event_reminder_notified_at::Migration),
+            Box::new(m20261107_000004_backfill_event_discord_stamps::Migration),
         ]
     }
 }
