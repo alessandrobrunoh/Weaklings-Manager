@@ -78,8 +78,8 @@ describe('ApiService envelope and error normalization', () => {
   it('uses the Problem Details detail as the error message', () => {
     const { api, http } = setup();
     let error: unknown;
-    api.get('api/x').subscribe({ error: (e) => (error = e) });
-    http.expectOne('/api/x').flush({ detail: 'Comp is used by 3 events' }, { status: 409, statusText: 'Conflict' });
+    api.get('api/events/5').subscribe({ error: (e) => (error = e) });
+    http.expectOne('/api/events/5').flush({ detail: 'Comp is used by 3 events' }, { status: 409, statusText: 'Conflict' });
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(409);
     expect((error as ApiError).message).toBe('Comp is used by 3 events');
@@ -88,9 +88,9 @@ describe('ApiService envelope and error normalization', () => {
   it('replaces an HTML gateway page with a short server-error message', () => {
     const { api, http } = setup();
     let error: ApiError | undefined;
-    api.get('api/x').subscribe({ error: (e) => (error = e) });
+    api.get('api/events/5').subscribe({ error: (e) => (error = e) });
     http
-      .expectOne('/api/x')
+      .expectOne('/api/events/5')
       .flush('<html><body>502 Bad Gateway</body></html>', { status: 502, statusText: 'Bad Gateway' });
     expect(error?.message).toContain('502');
     expect(error?.message).not.toContain('<html');
@@ -100,8 +100,8 @@ describe('ApiService envelope and error normalization', () => {
   it('reports an empty 4xx body without Angular failure text', () => {
     const { api, http } = setup();
     let error: ApiError | undefined;
-    api.get('api/x').subscribe({ error: (e) => (error = e) });
-    http.expectOne('/api/x').flush(null, { status: 403, statusText: 'Forbidden' });
+    api.get('api/events/5').subscribe({ error: (e) => (error = e) });
+    http.expectOne('/api/events/5').flush(null, { status: 403, statusText: 'Forbidden' });
     expect(error?.status).toBe(403);
     expect(error?.message).toBe('The request failed (error 403).');
   });

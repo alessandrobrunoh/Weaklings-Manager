@@ -1,0 +1,37 @@
+# Client (method, path) pairs the snapshot cannot confirm yet. This list may only shrink.
+# SA-1 deviation: the spec starts this list empty, but the clients call routes that
+# have no ApiDoc entry yet (see undocumented.allowlist, same routes). Each line is
+# removed when its handler gets a #[utoipa::path] and the route moves into openapi.json.
+# Event roster, specializations, albion-alliances, alliance setup:
+GET /api/events/{id}/roster
+PUT /api/events/{id}/roster/seats/{seat_id}
+DELETE /api/events/{id}/roster/seats/{seat_id}
+POST /api/events/{id}/roster/swaps
+POST /api/events/{id}/roster/auto-fill
+GET /api/users/me/specializations
+PUT /api/users/me/specializations
+GET /api/users/{id}/specializations
+PUT /api/users/{id}/specializations
+GET /api/tenants/albion-alliances
+POST /api/alliances/{id}/setup
+POST /api/alliances/{id}/reset-setup
+# Bot tickets and applications, VOD forum posts, split discord-sync.
+GET /api/tickets/active
+POST /api/tickets
+POST /api/tickets/{id}/close
+GET /api/applications/active
+GET /api/applications/latest
+POST /api/applications
+POST /api/applications/{id}/close
+POST /api/applications/{id}/reopen
+GET /api/events/vod-forum-posts/archived
+POST /api/events/{id}/vod-forum-post/deleted
+GET /api/splits/discord-sync
+GET /api/splits/{id}/discord-sync
+PUT /api/splits/{id}/discord-sync
+# Dynamic segments: the scanners cannot resolve `${action}` to one literal route.
+# Each concrete action is a documented or listed route (accept/decline, complete/lost/
+# not-completed, archive/unarchive, the combat test actions).
+POST /api/applications/{id}
+POST /api/splits/{id}/{action}
+POST /api/combat/tests/{id}/{action}

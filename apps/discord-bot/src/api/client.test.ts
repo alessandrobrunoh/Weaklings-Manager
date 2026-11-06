@@ -24,7 +24,7 @@ test("ApiClient sends member roles only with the matching Discord actor", async 
       ]);
 
     await actorApi.get("api/events", "222222222222222222");
-    await actorApi.get("api/users/target", "555555555555555555");
+    await actorApi.get("api/users/555555555555555555", "555555555555555555");
 
     assert.equal(calls[0]?.get("X-Discord-Id"), "222222222222222222");
     assert.equal(
