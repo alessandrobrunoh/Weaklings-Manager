@@ -57,16 +57,22 @@ impl UserContext {
             .is_some_and(|id| id == self.id)
     }
 
+    /// Whether this user is exempt from the "not above your own role" priority checks.
+    ///
+    /// The same set that bypasses permission checks in [`Self::require`]: platform admins and
+    /// the tenant owner. Without it an owner whose Discord roles map to nothing has priority 0
+    /// and passes `roles.manage` only to be refused every assignment.
+    #[must_use]
+    pub fn bypasses_priority(&self) -> bool {
+        self.is_superadmin() || self.is_tenant_owner
+    }
+
     /// Returns `true` if the user holds `perm` through any of their roles.
     ///
     /// Async because the shared permission cache sits behind an `RwLock`.
     pub async fn has_permission(&self, perms: &Permissions, perm: Permission) -> bool {
         perms
-            .check(
-                self.is_superadmin() || self.is_tenant_owner,
-                &self.roles,
-                perm,
-            )
+            .check(self.bypasses_priority(), &self.roles, perm)
             .await
     }
 
@@ -77,11 +83,7 @@ impl UserContext {
     /// Returns `AppError::Forbidden` when the user lacks `perm`.
     pub async fn require(&self, perms: &Permissions, perm: Permission) -> Result<(), AppError> {
         perms
-            .require(
-                self.is_superadmin() || self.is_tenant_owner,
-                &self.roles,
-                perm,
-            )
+            .require(self.bypasses_priority(), &self.roles, perm)
             .await
     }
 }
@@ -555,6 +557,45 @@ mod tests {
                 .has_permission(&permissions, Permission::AllianceLeave)
                 .await
         );
+    }
+
+    #[tokio::test]
+    async fn tenant_owner_without_roles_passes_roles_manage_and_bypasses_priority() {
+        // auth-6/auth-19: an alliance owner holds no Discord role that maps to anything.
+        let permissions = Permissions::new_empty();
+        let owner = UserContext {
+            id: "alliance-owner".to_string(),
+            username: "Alliance owner".to_string(),
+            email: None,
+            avatar: None,
+            roles: vec![],
+            highest_role: "User".to_string(),
+            user_id: 1,
+            super_admin_id: None,
+            is_tenant_owner: true,
+        };
+        assert!(
+            owner
+                .require(&permissions, Permission::RolesManage)
+                .await
+                .is_ok()
+        );
+        assert!(owner.bypasses_priority());
+        assert!(!owner.is_superadmin());
+
+        let mut member = owner.clone();
+        member.is_tenant_owner = false;
+        assert!(
+            member
+                .require(&permissions, Permission::RolesManage)
+                .await
+                .is_err()
+        );
+        assert!(!member.bypasses_priority());
+
+        let mut admin = member.clone();
+        admin.super_admin_id = Some(admin.id.clone());
+        assert!(admin.bypasses_priority());
     }
 
     /// Encrypts `profile_json` into a `session_user` cookie the way `discord_callback`/`get_me`

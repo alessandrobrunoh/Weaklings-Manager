@@ -16,7 +16,7 @@ Key types include `UserProfile`, `UserMetrics`, `CreateUserRequest`, `UpdateSpec
 - Display names prefer the linked Albion character name, then the stored username; missing user rows resolve to `"Unknown"`.
 - Specialization keys are canonicalized by trimming, lowercasing category, uppercasing identifier, and removing a leading `T1_`–`T8_` tier prefix. Duplicate canonical keys keep the maximum level.
 - Specialization DTOs document levels `0..=120` for weapon/armor and `0..=100` for mastery; bulk updates are capped at 500 rows.
-- Role assignment/removal rejects the generic staff role and roles without a Discord link. Non-superadmins cannot act on higher-priority roles than their own highest named-role priority.
+- Role assignment/removal rejects the generic staff role and roles without a Discord link. Editors who do not bypass priority (`UserContext::bypasses_priority`: platform admins and the tenant owner) cannot act on higher-priority roles than their own highest named-role priority.
 - The generic staff role is derived from held, linked roles marked `grants_staff`.
 
 ## Side Effects
