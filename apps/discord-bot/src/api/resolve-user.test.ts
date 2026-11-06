@@ -3,42 +3,61 @@ import test from 'node:test';
 import type { ApiClient } from './client.js';
 import { resolveInternalUserId } from './resolve-user.js';
 
-function api(items: Array<{ id: number; username: string }>): ApiClient {
+interface Call {
+  path: string;
+  body: unknown;
+  discordId: string | undefined;
+}
+
+function api(result: unknown, calls: Call[] = [], failure?: Error): ApiClient {
   return {
+    post: async (path: string, body: unknown, discordId?: string) => {
+      calls.push({ path, body, discordId });
+      if (failure) throw failure;
+      return result;
+    },
     get: async (path: string) => {
-      if (path === 'api/users/me' || path === 'api/auth/me') {
-        throw new Error('unlinked');
-      }
-      if (path === 'api/users') {
-        return { items, total_items: items.length, total_pages: 1, current_page: 1, limit: 25 };
-      }
-      throw new Error(`unexpected ${path}`);
+      throw new Error(`no lookups expected, got ${path}`);
     },
   } as unknown as ApiClient;
 }
 
-test('resolveInternalUserId returns a unique exact username', async () => {
-  const id = await resolveInternalUserId(api([
-    { id: 4, username: 'alice-alt' },
-    { id: 5, username: 'Alice' },
-  ]), 'actor', 'target', 'alice');
-  assert.equal(id, 5);
+const target = { id: '222222222222222222', username: 'Never Logged In' };
+
+test('resolveInternalUserId provisions a verified server member through members/ensure', async () => {
+  const calls: Call[] = [];
+  const id = await resolveInternalUserId(
+    api({ user_id: 41, created: true, active: true }, calls),
+    target,
+    true,
+  );
+  assert.equal(id, 41);
+  assert.deepEqual(calls, [
+    {
+      path: 'api/members/ensure',
+      body: { discord_id: '222222222222222222', username: 'Never Logged In' },
+      discordId: undefined,
+    },
+  ]);
 });
 
-test('resolveInternalUserId rejects a single partial username match', async () => {
+test('resolveInternalUserId refuses a user option that is not a server member, without calling the backend', async () => {
+  const calls: Call[] = [];
+  const id = await resolveInternalUserId(api({ user_id: 1 }, calls), target, false);
+  assert.equal(id, null);
+  assert.equal(calls.length, 0);
+});
+
+test('resolveInternalUserId returns null when the backend refuses', async () => {
   const id = await resolveInternalUserId(
-    api([{ id: 9, username: 'alice-other' }]),
-    'actor',
-    'target',
-    'alice',
+    api(null, [], new Error('Invalid bot secret')),
+    target,
+    true,
   );
   assert.equal(id, null);
 });
 
-test('resolveInternalUserId rejects two exact username matches', async () => {
-  const id = await resolveInternalUserId(api([
-    { id: 1, username: 'alice' },
-    { id: 2, username: 'Alice' },
-  ]), 'actor', 'target', 'alice');
+test('resolveInternalUserId ignores a malformed backend answer', async () => {
+  const id = await resolveInternalUserId(api({ user_id: 0 }), target, true);
   assert.equal(id, null);
 });
