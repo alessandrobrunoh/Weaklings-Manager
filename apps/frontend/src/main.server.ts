@@ -10,6 +10,7 @@ import { filter } from 'rxjs';
 import { App } from './app/app';
 import { config } from './app/app.config.server';
 import { SERVER_REQUEST_CONTEXT } from './app/core/tokens/server-request.token';
+import { isSameOriginPath } from './app/core/routing/same-origin-path';
 
 /**
  * Per-request context Analog passes as the third argument to `render`.
@@ -72,7 +73,8 @@ export default async function render(
     { document, url },
   );
 
-  if (landing.redirectTo !== null && context) {
+  // Only a same-origin path becomes a Location header; anything else renders as a page.
+  if (landing.redirectTo !== null && context && isSameOriginPath(landing.redirectTo)) {
     context.res.statusCode = 302;
     context.res.setHeader('Location', landing.redirectTo);
     return '';

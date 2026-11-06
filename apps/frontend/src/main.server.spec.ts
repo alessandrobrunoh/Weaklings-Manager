@@ -117,6 +117,21 @@ describe('server render', () => {
     expect(probes).toHaveLength(1);
   });
 
+  it.each(['//evil.example', '/%2F%2Fevil.example', '/\\evil.example'])(
+    'never redirects off-origin for next=%s, even with a valid session',
+    async (next) => {
+      const context = fakeContext(SESSION_COOKIE);
+
+      await render(`/login?next=${encodeURIComponent(next)}`, DOCUMENT, context);
+
+      const location = context.res.setHeader.mock.calls.find(([name]) => name === 'Location');
+      if (location) {
+        expect(String(location[1])).toMatch(/^\/(?!\/|\\)/);
+        expect(String(location[1])).not.toContain('evil.example');
+      }
+    },
+  );
+
   it('renders the login page directly when the public route is requested without a session', async () => {
     const context = fakeContext();
 
