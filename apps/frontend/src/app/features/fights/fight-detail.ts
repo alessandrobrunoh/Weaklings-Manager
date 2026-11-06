@@ -42,8 +42,6 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
-const DEFAULT_OUR_GUILD_NAME = 'weaklings';
-
 export type FightTab = 'overview' | 'guilds' | 'players' | 'roster' | 'segments';
 
 export type CombatRole = 'tank' | 'healer' | 'support' | 'melee_dps' | 'ranged_dps' | 'other';
@@ -1251,26 +1249,15 @@ export class FightDetailPage {
   protected readonly playerSearchQuery = signal('');
   protected readonly guildSearchQuery = signal('');
 
-  protected readonly ourGuildName = computed(() => {
-    const profile = this.auth.profile();
-    if (profile?.tenant_name?.trim()) {
-      return profile.tenant_name.trim();
-    }
-    if (profile && 'guild_name' in profile && typeof (profile as Record<string, unknown>)['guild_name'] === 'string') {
-      const g = (profile as Record<string, unknown>)['guild_name'] as string;
-      if (g.trim()) {
-        return g.trim();
-      }
-    }
-    return DEFAULT_OUR_GUILD_NAME;
-  });
-
+  // "Ours" is decided by the backend from the tenant's Albion scope
+  // (`is_own` / `is_friendly`); the Discord server name is never compared.
   protected readonly ourGuild = computed<BattleGuildSummary | null>(() => {
     const fight = this.fight();
     if (!fight?.guilds) return null;
-    const target = this.ourGuildName().toLowerCase();
-    return fight.guilds.find((g) => g.name.toLowerCase() === target) ?? null;
+    return fight.guilds.find((g) => g.is_own) ?? fight.guilds.find((g) => g.is_friendly) ?? null;
   });
+
+  protected readonly ourGuildName = computed(() => this.ourGuild()?.name ?? '');
 
   protected readonly ourAllianceName = computed<string | null>(() => {
     return this.ourGuild()?.alliance_name?.trim() || null;
@@ -1279,15 +1266,13 @@ export class FightDetailPage {
   protected readonly enrichedGuilds = computed<FightGuildRow[]>(() => {
     const fight = this.fight();
     if (!fight || !fight.guilds) return [];
-    const ourName = this.ourGuildName().toLowerCase();
-    const ourAlly = this.ourAllianceName()?.toLowerCase() ?? null;
     const lossesMap = new Map(
       fight.estimated_losses?.guilds?.map((l) => [l.guild_name.toLowerCase(), l.estimated_loss]) ?? [],
     );
 
     return fight.guilds.map((g) => {
-      const isOurGuild = g.name.toLowerCase() === ourName;
-      const isOurAlliance = Boolean(ourAlly && g.alliance_name?.toLowerCase() === ourAlly) || isOurGuild;
+      const isOurGuild = g.is_own === true;
+      const isOurAlliance = g.is_friendly === true;
       const kdRatio = g.deaths > 0 ? g.kills / g.deaths : g.kills;
       const famePerPlayer = g.players > 0 ? Math.round(g.kill_fame / g.players) : 0;
       const estimatedLoss = lossesMap.get(g.name.toLowerCase()) ?? 0;
@@ -1317,14 +1302,14 @@ export class FightDetailPage {
     const fight = this.fight();
     if (!fight || !fight.players) return [];
     const ourName = this.ourGuildName().toLowerCase();
-    const ourAlly = this.ourAllianceName()?.toLowerCase() ?? null;
     const lossesMap = new Map(
       fight.estimated_losses?.players?.map((l) => [l.player_name.toLowerCase(), l.estimated_loss]) ?? [],
     );
 
     return fight.players.map((p) => {
-      const isOurGuild = (p.guild_name ?? '').toLowerCase() === ourName;
-      const isOurAlliance = Boolean(ourAlly && (p.alliance_name ?? '').toLowerCase() === ourAlly) || isOurGuild;
+      // `ourName` comes from the backend-flagged own guild, not from the tenant name.
+      const isOurAlliance = p.is_friendly === true;
+      const isOurGuild = isOurAlliance && ourName !== '' && (p.guild_name ?? '').toLowerCase() === ourName;
       const kdRatio = p.deaths > 0 ? p.kills / p.deaths : p.kills;
       const estimatedLoss = lossesMap.get(p.name.toLowerCase()) ?? 0;
       return {
