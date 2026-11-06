@@ -23,6 +23,26 @@ pub struct Model {
     pub discord_id: Option<String>,
     /// The timestamp when the user was created.
     pub created_at: DateTimeWithTimeZone,
+    /// Present in this tenant's Discord (or proven by an interaction). The only deactivation
+    /// flag: `false` means soft-deactivated (`left_reason` says why). Ex-members keep their
+    /// history.
+    pub active: bool,
+    /// When the row was last deactivated. Cleared on reactivation.
+    pub left_at: Option<DateTimeWithTimeZone>,
+    /// Why the row is inactive: `left`, `absent_on_check`, `reconcile` or `not_joined` (created by
+    /// cross-tenant propagation and never seen in this Discord).
+    pub left_reason: Option<String>,
+    /// JSON array of Discord role snowflakes, sorted and unique. Stored as text for SQLite.
+    pub discord_role_ids: String,
+    /// Last time the role snapshot was confirmed against Discord. `None` means unknown.
+    pub roles_checked_at: Option<DateTimeWithTimeZone>,
+    /// `occurred_at` of the last applied membership event (ordering guard).
+    pub member_event_at: Option<DateTimeWithTimeZone>,
+    /// How the row was first created: `web`, `bot`, `gateway`, `reconcile`, `admin`,
+    /// `alliance_sync`, `event_sync`, or `sync` for rows created before this was recorded.
+    pub provisioned_via: String,
+    /// Self-service link/unlink cooldown anchor.
+    pub last_link_change_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, DeriveRelation, EnumIter)]
