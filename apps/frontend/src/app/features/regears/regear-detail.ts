@@ -52,7 +52,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
       min-width: 0;
     }
     .workbench-page .card {
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       padding: clamp(0.875rem, 3vw, 1.25rem);
     }
     .detail-actions {

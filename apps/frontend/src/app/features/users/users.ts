@@ -73,7 +73,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     }
     .workbench-page .kpi-card {
       padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
     }
     .kpi-card {
       position: relative;
@@ -93,7 +93,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
     .role-pill {
@@ -101,7 +101,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       align-items: center;
       gap: 0.375rem;
       padding: 0.2rem 0.625rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       font-size: 0.6875rem;
       font-weight: 600;
       letter-spacing: 0.02em;

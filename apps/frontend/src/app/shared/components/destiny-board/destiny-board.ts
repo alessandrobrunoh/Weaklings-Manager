@@ -74,7 +74,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
       position: relative;
       overflow: hidden;
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-xl, 12px);
+      border-radius: var(--radius-xl);
       background:
         radial-gradient(circle at center, rgba(255, 255, 255, 0.03), transparent 58%),
         var(--color-surface-2);
@@ -124,7 +124,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
     }
     .destiny-inspector {
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-xl, 12px);
+      border-radius: var(--radius-xl);
       background: var(--color-surface);
       padding: 0.85rem;
       display: flex;
@@ -141,7 +141,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
     .destiny-icon {
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       object-fit: contain;
       background: var(--color-surface-2);
       flex-shrink: 0;
@@ -167,7 +167,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
       display: inline-block;
       width: 0.55rem;
       height: 0.55rem;
-      border-radius: 99px;
+      border-radius: var(--radius-pills);
       margin-right: 0.3rem;
     }
     .destiny-actions {
@@ -179,7 +179,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
       margin-top: 0.75rem;
       padding: 0.75rem;
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-md, 6px);
+      border-radius: var(--radius-md);
       background: var(--color-surface);
     }
     @supports not (accent-color: var(--color-primary)) {
@@ -190,7 +190,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
       }
       .destiny-controls input[type='range']::-webkit-slider-runnable-track {
         height: 6px;
-        border-radius: 99px;
+        border-radius: var(--radius-pills);
         background: var(--color-graphite);
       }
       .destiny-controls input[type='range']::-webkit-slider-thumb {
@@ -198,7 +198,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
         width: 14px;
         height: 14px;
         margin-top: -4px;
-        border-radius: 99px;
+        border-radius: var(--radius-pills);
         background: var(--color-primary);
       }
     }

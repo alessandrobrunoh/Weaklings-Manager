@@ -17,7 +17,7 @@ import { Icon, type IconName } from '../icon/icon';
     .kpi-card {
       position: relative;
       overflow: hidden;
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       border: 1px solid var(--color-border);
       background: var(--color-surface);
       padding: var(--spacing-12, 0.75rem) var(--spacing-16, 1rem);
@@ -36,7 +36,7 @@ import { Icon, type IconName } from '../icon/icon';
       justify-content: center;
       width: 1.875rem;
       height: 1.875rem;
-      border-radius: var(--radius-md, 6px);
+      border-radius: var(--radius-md);
       flex-shrink: 0;
       border: 1px solid transparent;
     }

@@ -84,7 +84,7 @@ const SLOT_ORDER: readonly BuildSlot[] = [
       overflow: hidden;
     }
     .workbench-page .card {
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
     }
     .event-card {
       display: block;
@@ -109,7 +109,7 @@ const SLOT_ORDER: readonly BuildSlot[] = [
       align-items: center;
       gap: 0.375rem;
       padding: 0.375rem 0.75rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       border: 1px solid var(--color-border);
       background: var(--color-surface);
       font-size: 0.75rem;

@@ -377,7 +377,7 @@ const MAGNET_PX = 6;
       overscroll-behavior-x: contain;
       max-height: 32rem;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background-color: var(--color-surface);
       touch-action: pan-x pan-y;
     }
@@ -438,7 +438,7 @@ const MAGNET_PX = 6;
       flex: none;
       align-items: center;
       justify-content: center;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       color: var(--color-text-secondary);
     }
     .lane-toggle:focus-visible {
@@ -474,7 +474,7 @@ const MAGNET_PX = 6;
       justify-content: center;
       border: 1px solid var(--color-border-strong, var(--color-border));
       border-left: 2px solid var(--color-primary);
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       background-color: var(--color-surface-2, var(--color-surface));
       touch-action: none;
       cursor: grab;

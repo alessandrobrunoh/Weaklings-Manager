@@ -155,7 +155,7 @@ export function echartsTheme(isDark: boolean): Record<string, unknown> {
       borderColor: chrome.axis,
       borderWidth: 1,
       padding: [8, 10],
-      extraCssText: 'border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.28);',
+      extraCssText: 'border-radius:var(--radius-md);box-shadow:0 6px 24px rgba(0,0,0,0.28);',
       textStyle: { color: chrome.textPrimary, fontSize: 12, fontFamily: FONT_FAMILY },
       axisPointer: {
         type: 'line',

@@ -120,7 +120,7 @@ export interface SearchDialogOption {
       width: 100%;
       text-align: left;
       padding: 0.75rem 0.875rem;
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       display: flex;
       align-items: center;
       justify-content: space-between;

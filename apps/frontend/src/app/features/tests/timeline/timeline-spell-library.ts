@@ -101,7 +101,7 @@ interface LibrarySection {
       align-items: center;
       gap: 0.5rem;
       border: 1px solid var(--color-border);
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       background-color: var(--color-surface-2, var(--color-surface));
       padding: 0.25rem 0.5rem;
       font-size: 0.75rem;
@@ -121,7 +121,7 @@ interface LibrarySection {
     }
     .library-slot {
       min-width: 1.25rem;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       background-color: var(--color-primary-container);
       padding: 0 0.25rem;
       text-align: center;

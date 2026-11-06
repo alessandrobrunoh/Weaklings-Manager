@@ -85,7 +85,7 @@ type EChartsInstance = {
       align-items: center;
       gap: 0.375rem;
       padding: 0.125rem 0.25rem;
-      border-radius: var(--radius-badges, 4px);
+      border-radius: var(--radius-badges);
       color: var(--color-text-tertiary);
       cursor: pointer;
       font-size: 0.6875rem;
@@ -115,7 +115,7 @@ type EChartsInstance = {
       margin-block-start: 0.5rem;
       overflow: auto;
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-md, 6px);
+      border-radius: var(--radius-md);
     }
     .chart__table {
       inline-size: 100%;

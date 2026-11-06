@@ -140,13 +140,13 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
     :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg,
     :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
     :host ::ng-deep input,
     :host ::ng-deep select,
     :host ::ng-deep button {
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
     }
     .kpi-card {
       position: relative;
@@ -166,7 +166,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
     .template-option {

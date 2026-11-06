@@ -60,7 +60,7 @@ interface NextMassCard {
     .action-panel {
       background-color: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       transition: border-color 150ms ease, background-color 150ms ease;
     }
     .identity-card:hover,
@@ -82,7 +82,7 @@ interface NextMassCard {
     .icon-capsule {
       width: 1.75rem;
       height: 1.75rem;
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -96,13 +96,13 @@ interface NextMassCard {
 
     .xp-track {
       height: 0.375rem;
-      border-radius: 1px;
+      border-radius: var(--radius-hairline);
       overflow: hidden;
       background: var(--color-surface-2);
     }
     .xp-track__fill {
       height: 100%;
-      border-radius: 1px;
+      border-radius: var(--radius-hairline);
       background: var(--color-primary);
     }
 
@@ -122,7 +122,7 @@ interface NextMassCard {
       align-items: center;
       gap: 0.375rem;
       padding: 0.375rem 0.75rem;
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       font-size: 0.75rem;
       font-weight: 500;
       line-height: 1;
@@ -144,7 +144,7 @@ interface NextMassCard {
       font-size: 0.75rem;
       font-weight: 600;
       padding: 0.375rem 0.75rem;
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       transition: background-color 150ms ease;
       line-height: 1.25;
     }

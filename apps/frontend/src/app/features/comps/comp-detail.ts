@@ -147,13 +147,13 @@ interface BuildOptionGroup {
     :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg,
     :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
     :host ::ng-deep input,
     :host ::ng-deep select,
     :host ::ng-deep button {
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
     }
     .comp-detail__party-tab--active {
       border-bottom-color: var(--color-primary);

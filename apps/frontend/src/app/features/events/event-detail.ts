@@ -3023,12 +3023,12 @@ interface AddEventMemberRequest {
       }
       :host ::ng-deep .rounded-xl,
       :host ::ng-deep .rounded-2xl {
-        border-radius: var(--radius-cards, 2px);
+        border-radius: var(--radius-cards);
         box-shadow: none;
       }
       :host ::ng-deep .rounded-lg,
       :host ::ng-deep .rounded-md {
-        border-radius: var(--radius-cards, 2px);
+        border-radius: var(--radius-cards);
         box-shadow: none;
       }
       :host ::ng-deep .border {
