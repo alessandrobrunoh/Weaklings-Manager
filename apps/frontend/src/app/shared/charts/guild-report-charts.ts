@@ -101,7 +101,7 @@ function axisTooltip(): Record<string, unknown> {
       const rows = params
         .map((param) => {
           const value = fmt(toNumber(param.value));
-          const key = `<span style="display:inline-block;width:12px;height:2px;border-radius:1px;background:${
+          const key = `<span style="display:inline-block;width:12px;height:2px;border-radius:var(--radius-hairline);background:${
             param.color ?? 'currentColor'
           };vertical-align:middle;margin-inline-end:6px"></span>`;
           return `<div style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:3px">

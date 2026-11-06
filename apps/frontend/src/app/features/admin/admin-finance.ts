@@ -135,7 +135,7 @@ function toDateInput(date: Date): string {
       gap: 0.625rem;
       padding: 0.75rem 0.875rem;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background: var(--color-surface);
     }
     .fin-filters {
@@ -180,7 +180,7 @@ function toDateInput(date: Date): string {
       gap: 0.375rem;
       padding: 0.3125rem 0.625rem;
       border: 1px solid transparent;
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       background: transparent;
       color: var(--color-text-secondary);
       font-size: 0.75rem;
@@ -230,7 +230,7 @@ function toDateInput(date: Date): string {
       justify-content: center;
       inline-size: 1.625rem;
       block-size: 1.625rem;
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       border: 1px solid var(--color-border);
       background: var(--color-surface-2);
       color: var(--color-primary);
@@ -246,7 +246,7 @@ function toDateInput(date: Date): string {
       flex: 0 0 auto;
       padding: 0.125rem 0.4375rem;
       border: 1px solid var(--color-border);
-      border-radius: 999px;
+      border-radius: var(--radius-pills);
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
       font-size: 0.625rem;
@@ -274,7 +274,7 @@ function toDateInput(date: Date): string {
       gap: 0.5rem;
       padding: 0.875rem 1rem;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background: var(--color-surface);
       color: inherit;
       text-decoration: none;
@@ -323,7 +323,7 @@ function toDateInput(date: Date): string {
       justify-content: center;
       inline-size: 1.5rem;
       block-size: 1.5rem;
-      border-radius: 5px;
+      border-radius: var(--radius-tick);
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
     }
@@ -358,7 +358,7 @@ function toDateInput(date: Date): string {
     }
     .fin-kpi__pill {
       padding: 0.0625rem 0.375rem;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
@@ -403,7 +403,7 @@ function toDateInput(date: Date): string {
       align-items: center;
       gap: 0.1875rem;
       padding: 0.0625rem 0.3125rem;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
       font-size: 0.625rem;
@@ -438,7 +438,7 @@ function toDateInput(date: Date): string {
       gap: 0.875rem;
       padding: 1rem;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background: var(--color-surface);
     }
     .fin-pipeline__steps {
@@ -454,7 +454,7 @@ function toDateInput(date: Date): string {
       gap: 0.25rem;
       padding: 0.625rem 0.75rem;
       border: 1px solid var(--color-border);
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       background: var(--color-surface-2);
     }
     .fin-step--highlight {
@@ -480,7 +480,7 @@ function toDateInput(date: Date): string {
       align-items: center;
       justify-content: center;
       padding: 0.0625rem 0.3125rem;
-      border-radius: 3px;
+      border-radius: var(--radius-chip);
       background: var(--color-surface);
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
@@ -515,7 +515,7 @@ function toDateInput(date: Date): string {
       display: flex;
       overflow: hidden;
       block-size: 0.625rem;
-      border-radius: 999px;
+      border-radius: var(--radius-pills);
       background: var(--color-surface-2);
     }
     .fin-bar-seg {
@@ -555,7 +555,7 @@ function toDateInput(date: Date): string {
       flex-direction: column;
       padding: 0.875rem 1rem;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background: var(--color-surface);
     }
     .fin-card--full {
@@ -583,7 +583,7 @@ function toDateInput(date: Date): string {
     .fin-card__badge {
       flex: 0 0 auto;
       padding: 0.125rem 0.4375rem;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
@@ -606,7 +606,7 @@ function toDateInput(date: Date): string {
     .fin-table-wrap {
       overflow-x: auto;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background: var(--color-surface);
     }
     .fin-table {
@@ -686,7 +686,7 @@ function toDateInput(date: Date): string {
       margin: 0;
       padding: 0.625rem 0.75rem;
       border: 1px solid var(--color-border);
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       background: var(--color-surface);
       color: var(--color-text-tertiary);
       font-size: 0.6875rem;
@@ -2156,7 +2156,7 @@ export class AdminFinance {
           .map((param) => {
             const raw = toNumber(param.value as number);
             const value = unit === 'silver' ? this.formatAmount(raw) : this.formatAmount(raw);
-            const key = `<span style="display:inline-block;width:12px;height:2px;border-radius:1px;background:${
+            const key = `<span style="display:inline-block;width:12px;height:2px;border-radius:var(--radius-hairline);background:${
               param.color ?? 'currentColor'
             };vertical-align:middle;margin-inline-end:6px"></span>`;
             return `<div style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:3px">

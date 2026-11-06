@@ -49,7 +49,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
       left: 0;
       width: 4px;
       height: 0;
-      border-radius: 0 4px 4px 0;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
       background: var(--color-text);
       transition: height 0.15s cubic-bezier(0.16, 1, 0.3, 1);
     }

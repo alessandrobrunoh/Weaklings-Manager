@@ -235,7 +235,7 @@ export interface AbilityChoiceChange {
       justify-content: center;
       padding: 0.125rem;
       border: 1px solid var(--color-border);
-      border-radius: 0.375rem;
+      border-radius: var(--radius-badges);
       background: var(--color-surface-1, transparent);
       cursor: pointer;
       transition: border-color 120ms ease-out, background-color 120ms ease-out;
@@ -266,7 +266,7 @@ export interface AbilityChoiceChange {
       height: 2.25rem;
       padding: 0.125rem;
       border: 1px solid var(--color-border);
-      border-radius: 0.375rem;
+      border-radius: var(--radius-badges);
       background: var(--color-surface-1, transparent);
       cursor: pointer;
       transition: border-color 120ms ease-out, background-color 120ms ease-out;
@@ -297,7 +297,7 @@ export interface AbilityChoiceChange {
       height: 1.75rem;
       padding: 0 0.375rem;
       border: 1px solid var(--color-border);
-      border-radius: 0.375rem;
+      border-radius: var(--radius-badges);
       font-size: 0.75rem;
       font-weight: 600;
       color: var(--color-text-secondary);
@@ -314,7 +314,7 @@ export interface AbilityChoiceChange {
     .ability-bar__icon {
       width: 1.75rem;
       height: 1.75rem;
-      border-radius: 0.25rem;
+      border-radius: var(--radius-sm);
       object-fit: contain;
     }
 

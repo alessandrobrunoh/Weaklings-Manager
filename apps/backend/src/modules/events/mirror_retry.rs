@@ -50,6 +50,18 @@ struct Claimed {
     lease_token: Uuid,
 }
 
+/// Member emails are never copied across tenants; the mirror request keeps only the Discord
+/// snowflake and username. `actor_email` is left NULL (cleared by the control scrub migration).
+const ENQUEUE_SQL: &str = "INSERT INTO event_mirror_requests \
+     (id, source_tenant_id, source_event_id, actor_discord_id, actor_username, \
+      state, last_error, next_attempt_at) \
+     VALUES ($1,$2,$3,$4,$5,'pending',$6, NOW() + INTERVAL '15 seconds') \
+     ON CONFLICT (source_tenant_id, source_event_id) DO UPDATE SET \
+       state='pending', last_error=EXCLUDED.last_error, attempts=0, \
+       actor_discord_id=EXCLUDED.actor_discord_id, actor_username=EXCLUDED.actor_username, \
+       next_attempt_at=NOW() + INTERVAL '15 seconds', lease_until=NULL, updated_at=NOW() \
+     WHERE event_mirror_requests.state <> 'complete'";
+
 /// Records (or re-arms) a mirror request after an inline attempt failed.
 pub async fn enqueue(
     control: &DatabaseConnection,
@@ -61,23 +73,13 @@ pub async fn enqueue(
     control
         .execute(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "INSERT INTO event_mirror_requests \
-             (id, source_tenant_id, source_event_id, actor_discord_id, actor_username, actor_email, \
-              state, last_error, next_attempt_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,'pending',$7, NOW() + INTERVAL '15 seconds') \
-             ON CONFLICT (source_tenant_id, source_event_id) DO UPDATE SET \
-               state='pending', last_error=EXCLUDED.last_error, attempts=0, \
-               actor_discord_id=EXCLUDED.actor_discord_id, actor_username=EXCLUDED.actor_username, \
-               actor_email=EXCLUDED.actor_email, \
-               next_attempt_at=NOW() + INTERVAL '15 seconds', lease_until=NULL, updated_at=NOW() \
-             WHERE event_mirror_requests.state <> 'complete'",
+            ENQUEUE_SQL,
             [
                 Uuid::new_v4().into(),
                 source_tenant_id.into(),
                 source_event_id.into(),
                 actor.discord_id.clone().into(),
                 actor.username.clone().into(),
-                actor.email.clone().into(),
                 error.to_owned().into(),
             ],
         ))
@@ -283,4 +285,15 @@ async fn finish(
         ))
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ENQUEUE_SQL;
+
+    #[test]
+    fn enqueue_never_writes_member_email() {
+        assert!(!ENQUEUE_SQL.contains("actor_email"));
+        assert_eq!(ENQUEUE_SQL.matches('$').count(), 6);
+    }
 }

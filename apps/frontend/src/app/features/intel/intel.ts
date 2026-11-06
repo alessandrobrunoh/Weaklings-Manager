@@ -88,7 +88,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg,
     :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
     .intel-trend-chart { min-inline-size: 0; }
@@ -97,7 +97,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     .intel-trend-chart__note, .intel-trend-chart__sample { margin: 0.2rem 0 0; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.45; }
     .intel-trend-chart__sample { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; white-space: nowrap; }
     .intel-trend-chart__bars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 0.2rem; block-size: 8rem; margin-block: 1rem 0; padding-block: 0.35rem; border-block-end: 1px solid var(--color-border-strong); }
-    .intel-trend-chart__bar { display: block; min-block-size: 2px; border-radius: 2px 2px 0 0; background-color: var(--color-primary); opacity: 0.8; }
+    .intel-trend-chart__bar { display: block; min-block-size: 2px; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background-color: var(--color-primary); opacity: 0.8; }
     .intel-trend-chart__axis { display: flex; justify-content: space-between; margin-block-start: 0.4rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
     .intel-trend-chart__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
     .intel-trend-chart__data summary { inline-size: fit-content; cursor: pointer; }
@@ -124,7 +124,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
   `,

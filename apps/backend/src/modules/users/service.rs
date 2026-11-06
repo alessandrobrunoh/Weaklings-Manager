@@ -158,9 +158,11 @@ pub struct CreateLinkedMember {
 }
 
 /// Placeholder email for members provisioned before they log in with Discord OAuth.
+///
+/// Delegates to [`crate::modules::users::identity::provisional_discord_email`], the single source.
 #[must_use]
 pub fn provisional_discord_email(discord_id: &str) -> String {
-    format!("{discord_id}@discord.invalid")
+    crate::modules::users::identity::provisional_discord_email(discord_id)
 }
 
 /// Service for executing business logic operations related to users.

@@ -41,7 +41,7 @@ interface PlannedSelection {
     :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg,
     :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
     .fight-trends { display: grid; gap: 1rem; }
@@ -68,7 +68,7 @@ interface PlannedSelection {
     .fight-trends__scale { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
     .fight-trends__bars-scroll { overflow-x: auto; }
     .fight-trends__bars { display: grid; grid-template-columns: repeat(30, minmax(0.4rem, 1fr)); align-items: end; gap: 0.2rem; block-size: 9rem; padding-block: 0.5rem; border-block-end: 1px solid var(--color-border-strong); }
-    .fight-trends__bar { display: block; min-block-size: 2px; border-radius: 2px 2px 0 0; background: var(--color-primary); opacity: 0.78; }
+    .fight-trends__bar { display: block; min-block-size: 2px; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-primary); opacity: 0.78; }
     .fight-trends__axis { display: flex; justify-content: space-between; margin-block-start: 0.45rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.625rem; }
     .fight-trends__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
     .fight-trends__data-summary { cursor: pointer; color: var(--color-text-secondary); }

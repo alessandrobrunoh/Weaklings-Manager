@@ -26,7 +26,7 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
       gap: 0.375rem;
       min-height: 1.375rem;
       padding: 0.125rem 0.5rem;
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       font-size: 0.6875rem;
       font-weight: 600;
       letter-spacing: 0.02em;
@@ -37,7 +37,7 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
       display: inline-block;
       width: 0.3125rem;
       height: 0.3125rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       background-color: currentColor;
       flex-shrink: 0;
     }

@@ -52,7 +52,7 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
     :host ::ng-deep .rounded-xl, :host ::ng-deep .rounded-2xl,
     :host ::ng-deep .rounded-lg, :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg, :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
   `],

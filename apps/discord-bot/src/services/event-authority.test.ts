@@ -63,20 +63,19 @@ describe("ensureEventManagementAllowed", () => {
     assert.match(payload.embeds[0].data.description ?? "", /Events Manage/);
   });
 
-  it("asks an unlinked Discord user to register instead of managing the event", async () => {
+  it("refuses a member the backend could not verify, without changing the event", async () => {
     const interaction = stubInteraction();
     const allowed = await ensureEventManagementAllowed(
       interaction,
-      stubApi(
-        new ApiError(401, "Discord user member-1 has no linked account in this system."),
-      ),
+      stubApi(new ApiError(403, "member_inactive")),
       7,
     );
     assert.equal(allowed, false);
     const payload = interaction.replies[0] as {
-      embeds: Array<{ data: { title?: string } }>;
+      embeds: Array<{ data: { title?: string; description?: string } }>;
     };
-    assert.match(payload.embeds[0].data.title ?? "", /Website Account Required/);
+    assert.match(payload.embeds[0].data.title ?? "", /Unable to Verify Event Authority/);
+    assert.match(payload.embeds[0].data.description ?? "", /no event changes were made/);
   });
 
   it("fails closed with a clear error when the authority endpoint is missing", async () => {

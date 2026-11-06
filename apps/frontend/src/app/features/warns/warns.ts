@@ -86,7 +86,7 @@ function isWarnsTab(value: string): value is WarnsTab {
     }
     .workbench-page .kpi-card {
       padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
     }
     .kpi-card {
       position: relative;
@@ -106,7 +106,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
     .status-pill {
@@ -114,7 +114,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       align-items: center;
       gap: 0.375rem;
       padding: 0.25rem 0.625rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       font-size: 0.6875rem;
       font-weight: 600;
       letter-spacing: 0.02em;
@@ -139,7 +139,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       color: var(--color-error);
       border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
     }
-    .warns-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
+    .warns-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: var(--radius-badges); color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
   `,
   template: `
     <app-page-header [title]="t('warns.title')" [subtitle]="t('warns.subtitle')">

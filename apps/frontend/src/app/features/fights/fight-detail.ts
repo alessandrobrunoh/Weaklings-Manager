@@ -1157,7 +1157,7 @@ type PendingFightMutation =
     :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg,
     :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
     @layer components {

@@ -18,12 +18,12 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
       background-color: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.04);
       height: 0.4375rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       overflow: hidden;
     }
     .meter-fill {
       height: 100%;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
   `,

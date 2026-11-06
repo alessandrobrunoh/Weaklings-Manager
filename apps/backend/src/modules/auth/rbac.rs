@@ -312,20 +312,12 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         .get::<DatabaseConnection>()
         .ok_or_else(|| AppError::Internal("Database extension missing".to_string()))?;
 
-    use crate::modules::users::entities::{Column as UserCol, Entity as UserEntity};
+    use crate::modules::users::entities::Entity as UserEntity;
+    use crate::modules::users::identity::{self, MemberSeed, Presence, Via};
 
-    let user = UserEntity::find()
-        .filter(UserCol::DiscordId.eq(&discord_id))
-        .one(db)
-        .await
-        .map_err(|e| AppError::Internal(format!("DB error resolving Discord ID: {e}")))?
-        .ok_or_else(|| {
-            AppError::Unauthorized(format!(
-                "Discord user {discord_id} has no linked account in this system. \
-                 Please log in via the web app first."
-            ))
-        })?;
-
+    // `X-Discord-Role-Ids` is only sent for an interaction by a member of this server (even one
+    // with no roles), so its presence proves Discord membership.
+    let claims_member = parts.headers.contains_key("X-Discord-Role-Ids");
     let role_ids_header = parts
         .headers
         .get("X-Discord-Role-Ids")
@@ -335,6 +327,51 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
                 .map_err(|_| AppError::Unauthorized("Invalid Discord role ID header".to_string()))
         })
         .transpose()?;
+
+    let existing = identity::find_by_discord_id(db, &discord_id).await?;
+    let user = match (existing, claims_member) {
+        (Some(user), _) if user.active => user,
+        (Some(_), false) => {
+            return Err(AppError::Forbidden("member_inactive".to_string()));
+        }
+        (None, false) => {
+            return Err(AppError::Unauthorized("member_not_provisioned".to_string()));
+        }
+        // The interaction proves presence: create the row, or reactivate it. The snapshot and the
+        // web membership row are written here only, not on every request.
+        (_, true) => {
+            let username = decode_username_header(parts);
+            let role_ids = role_ids_header
+                .map(|raw| {
+                    raw.split(',')
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let ensured = identity::ensure_member(
+                db,
+                MemberSeed {
+                    discord_id: &discord_id,
+                    username: username.as_deref(),
+                    verified_email: None,
+                    role_ids: Some(&role_ids),
+                    presence: Presence::Present,
+                    via: Via::Bot,
+                    event_at: chrono::Utc::now(),
+                },
+            )
+            .await?;
+            record_bot_membership(parts, &discord_id).await?;
+            UserEntity::find_by_id(ensured.user_id)
+                .one(db)
+                .await
+                .map_err(|e| AppError::Internal(format!("DB error reloading member: {e}")))?
+                .ok_or_else(|| AppError::Internal("member row vanished".to_string()))?
+        }
+    };
+
     let (mut roles, mut highest_role) =
         super::service::resolve_bot_role_ids(db, role_ids_header, &user.role).await?;
 
@@ -379,6 +416,39 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         super_admin_id,
         is_tenant_owner,
     }))
+}
+
+/// Reads the actor's Discord username from `X-Discord-Username` (percent-encoded UTF-8, at most
+/// 100 characters). Absent or undecodable gives `None`; the stored name is kept then.
+fn decode_username_header(parts: &Parts) -> Option<String> {
+    let raw = parts
+        .headers
+        .get("X-Discord-Username")
+        .and_then(|value| value.to_str().ok())?;
+    let decoded = urlencoding::decode(raw).ok()?;
+    let trimmed = decoded.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.chars().take(100).collect())
+}
+
+/// Records that this Discord user belongs to the request's tenant (web access follows presence).
+/// A no-op without a control database or tenant, as in unit tests.
+async fn record_bot_membership(parts: &Parts, discord_id: &str) -> Result<(), AppError> {
+    let (Some(control), Some(tenant)) = (
+        parts.extensions.get::<crate::tenant::ControlDb>(),
+        parts.extensions.get::<crate::tenant::CurrentTenantId>(),
+    ) else {
+        return Ok(());
+    };
+    if tenant.0.trim().is_empty() {
+        return Ok(());
+    }
+    crate::modules::platform::service::PlatformService::record_membership(
+        &control.0, discord_id, &tenant.0,
+    )
+    .await
 }
 
 /// Marker extracted when the request carries a valid `X-Bot-Secret`.
@@ -870,5 +940,127 @@ mod tests {
 
         let result = UserContext::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());
+    }
+
+    /// Parts for a bot request, with the config and a migrated tenant database attached.
+    async fn bot_parts(
+        db: &sea_orm::DatabaseConnection,
+        discord_id: &str,
+        claims_member: bool,
+        username: Option<&str>,
+    ) -> Parts {
+        let mut config = crate::config::Config::for_tests();
+        config.bot_api_secret = Some("bot-secret".to_string());
+        let mut builder = axum::http::Request::builder()
+            .header(crate::tenant::BOT_SECRET_HEADER, "bot-secret")
+            .header("X-Discord-Id", discord_id);
+        if claims_member {
+            builder = builder.header("X-Discord-Role-Ids", "");
+        }
+        if let Some(name) = username {
+            builder = builder.header("X-Discord-Username", name);
+        }
+        let (mut parts, _) = builder.body(()).expect("request").into_parts();
+        parts.extensions.insert(config);
+        parts.extensions.insert(db.clone());
+        parts
+    }
+
+    async fn tenant_db() -> sea_orm::DatabaseConnection {
+        use sea_orm::Database;
+        use sea_orm_migration::MigratorTrait;
+        let db = Database::connect("sqlite::memory:").await.expect("sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        db
+    }
+
+    #[tokio::test]
+    async fn bot_interaction_provisions_an_unseen_member_with_a_decoded_username() {
+        let db = tenant_db().await;
+        let mut parts = bot_parts(&db, "4242", true, Some("Mon%20Nom")).await;
+        let ctx = try_from_bot_headers(&mut parts)
+            .await
+            .expect("provisioned")
+            .expect("bot request");
+        assert_eq!(ctx.id, "4242");
+        assert_eq!(ctx.username, "Mon Nom");
+        let stored = crate::modules::users::identity::find_by_discord_id(&db, "4242")
+            .await
+            .expect("lookup")
+            .expect("row created");
+        assert!(stored.active);
+        assert_eq!(stored.provisioned_via, "bot");
+        assert_eq!(stored.id, ctx.user_id);
+    }
+
+    #[tokio::test]
+    async fn unseen_member_without_presence_proof_is_not_provisioned() {
+        let db = tenant_db().await;
+        let mut parts = bot_parts(&db, "5151", false, None).await;
+        let err = try_from_bot_headers(&mut parts).await.expect_err("refused");
+        assert!(matches!(err, AppError::Unauthorized(ref m) if m == "member_not_provisioned"));
+        assert!(
+            crate::modules::users::identity::find_by_discord_id(&db, "5151")
+                .await
+                .expect("lookup")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn inactive_member_is_refused_without_presence_proof_and_reactivated_with_it() {
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+        let db = tenant_db().await;
+        let seeded = crate::modules::users::entities::ActiveModel {
+            username: Set("left".to_string()),
+            email: Set("6161@discord.invalid".to_string()),
+            role: Set("User".to_string()),
+            discord_id: Set(Some("6161".to_string())),
+            active: Set(false),
+            left_reason: Set(Some("left".to_string())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("seed inactive");
+
+        let mut refused = bot_parts(&db, "6161", false, None).await;
+        let err = try_from_bot_headers(&mut refused)
+            .await
+            .expect_err("inactive refused");
+        assert!(matches!(err, AppError::Forbidden(ref m) if m == "member_inactive"));
+
+        let mut present = bot_parts(&db, "6161", true, None).await;
+        let ctx = try_from_bot_headers(&mut present)
+            .await
+            .expect("reactivated")
+            .expect("bot request");
+        assert_eq!(ctx.user_id, seeded.id);
+        let stored = crate::modules::users::identity::find_by_discord_id(&db, "6161")
+            .await
+            .expect("lookup")
+            .expect("row");
+        assert!(stored.active);
+        assert_eq!(stored.left_reason, None);
+    }
+
+    #[test]
+    fn username_header_is_percent_decoded_trimmed_and_capped() {
+        let long = "a".repeat(150);
+        let (parts, _) = axum::http::Request::builder()
+            .header("X-Discord-Username", format!("%20 {long} "))
+            .body(())
+            .expect("request")
+            .into_parts();
+        let name = decode_username_header(&parts).expect("name");
+        assert_eq!(name.chars().count(), 100);
+        assert!(name.starts_with('a'));
+        let (none, _) = axum::http::Request::builder()
+            .body(())
+            .expect("request")
+            .into_parts();
+        assert_eq!(decode_username_header(&none), None);
     }
 }

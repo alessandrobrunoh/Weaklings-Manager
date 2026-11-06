@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import type { Message } from 'discord.js';
-import { ApiError, type ApiClient } from '../api/client.js';
+import type { ApiClient } from '../api/client.js';
 import { commands } from '../commands/index.js';
 import { forgetTenantStatus, type TenantStatus } from './tenant-gate.js';
 import {
@@ -35,13 +35,10 @@ function allianceStatus(id: string): TenantStatus {
 }
 
 /** API stub shaped like the one in command-gate.test.ts. */
-function stubApi(status: TenantStatus, accountError?: ApiError): ApiClient {
+function stubApi(status: TenantStatus): ApiClient {
   const scoped = {
     guildId: status.id,
     async get(path: string) {
-      if (path === 'api/users/me' && accountError) {
-        throw accountError;
-      }
       if (path === 'api/bank/balance') {
         return {
           pending_total: 0,
@@ -174,23 +171,42 @@ describe('handleBangCommand', () => {
     assert.equal(payload.embeds[0].data.description, ALLIANCE_GUILD_ONLY_MESSAGE);
   });
 
-  it('prompts unregistered website users instead of running the command', async () => {
+  it('runs !balance for a member the backend has never seen (provisioned by the backend)', async () => {
     const guildId = nextGuildId();
     const message = stubMessage('!balance', guildId);
-    const api = stubApi(
-      guildStatus(guildId),
-      new ApiError(401, 'Discord user member-id has no linked account in this system.'),
-    );
+    const api = stubApi(guildStatus(guildId));
 
     await handleBangCommand(message, api, commands);
 
     assert.equal(message.sent.length, 1);
     const payload = (message.sent[0] as unknown as { payload: { embeds: Array<{ data: { title?: string } }> } }).payload;
-    assert.match(payload.embeds[0].data.title ?? '', /Website Account Required/);
+    assert.match(payload.embeds[0].data.title ?? '', /Vault Balance/);
   });
 });
 
 describe('BangCommandInteractionAdapter', () => {
+  it('reports a user option as a guild member only when the mention carries the member', () => {
+    const warn = commands.get('warn')!;
+    const args = ['<@1>', 'reason', 'low'];
+
+    const outside = stubMessage('!warn <@1> reason low', 'g');
+    (outside.mentions as unknown as { users: Map<string, unknown> }).users.set('1', {
+      id: '1',
+      username: 'outsider',
+    });
+    const outsideAdapter = new BangCommandInteractionAdapter(outside, warn, 'warn', args);
+    assert.equal(outsideAdapter.options.getMember('user'), null);
+    assert.equal(outsideAdapter.inGuild(), true);
+
+    const inside = stubMessage('!warn <@1> reason low', 'g');
+    const member = { id: '1', user: { id: '1', username: 'insider' } };
+    (inside.mentions as unknown as { users: Map<string, unknown>; members: Map<string, unknown> })
+      .users.set('1', { id: '1', username: 'insider' });
+    (inside.mentions as unknown as { members: Map<string, unknown> }).members = new Map([['1', member]]);
+    const insideAdapter = new BangCommandInteractionAdapter(inside, warn, 'warn', args);
+    assert.deepEqual(insideAdapter.options.getMember('user'), member);
+  });
+
   it('fills options positionally, including subcommands and typed coercion', () => {
     const message = stubMessage('!ignored', 'g');
     const warn = commands.get('warn')!;

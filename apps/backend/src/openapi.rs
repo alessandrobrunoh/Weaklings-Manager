@@ -10,6 +10,7 @@ use utoipa::OpenApi;
     paths(
         crate::modules::audit::router::list_audit_logs,
         crate::modules::users::router::get_my_profile,
+        crate::modules::members::router::ensure_member,
         crate::modules::users::router::get_my_metrics,
         crate::modules::users::router::list_users,
         crate::modules::users::router::get_user,
@@ -777,6 +778,7 @@ use utoipa::OpenApi;
         (name = "fight_analytics", description = "Persisted per-fight outcome and stats rollup, recomputed eagerly on battle hydration and manual Fight merge/split/move. `enemy_*` figures are trade/observation indicators only, never income. A drill-down of battle/fight evidence, gated on the same feature key."),
         (name = "fights", description = "Read-only canonical Fight API: persisted fights grouped from one or more AlbionBB battles, with manual merge/split/move tools and grouping-review diagnostics."),
         (name = "attention", description = "Deterministic, versioned rules answering \"what's wrong\" instead of leaving an officer to infer it from totals. Recomputed synchronously on every read; a finding disappears once its condition stops holding. A drill-down of intel, gated on the same feature key."),
+        (name = "members", description = "Member provisioning from the Discord bot: a verified server member gets or regains a local account (`POST /members/ensure`)."),
         (name = "progression", description = "Season-scoped XP and levels: members earn XP from Discord and guild actions; admins model the season dates and curve."),
         (name = "vods", description = "VOD review claims: one XP grant per normalized URL per covering season, posted in the configured Discord forum."),
         (name = "warns", description = "Disciplinary warn register: issue/revoke with audit, and an admin escalation when the active-warn count reaches the configured threshold. No auto-kick."),
