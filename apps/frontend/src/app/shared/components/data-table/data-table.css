@@ -9,16 +9,16 @@
 :host input,
 :host select,
 :host button {
-  border-radius: var(--radius-inputs, 8px);
+  border-radius: var(--radius-inputs);
 }
 
 :host .rounded-lg,
 :host .rounded-md {
-  border-radius: var(--radius-inputs, 8px);
+  border-radius: var(--radius-inputs);
 }
 
 :host .rounded-full {
-  border-radius: var(--radius-pills, 9999px);
+  border-radius: var(--radius-pills);
 }
 
 :host th {

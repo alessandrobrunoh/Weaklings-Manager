@@ -92,7 +92,7 @@ const GROUPING_FETCH_LIMIT = 500;
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
   `],

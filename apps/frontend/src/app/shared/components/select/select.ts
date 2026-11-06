@@ -68,7 +68,7 @@ let nextId = 0;
       width: 100%;
       text-align: start;
       border: 0;
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       padding: 0.5rem 0.625rem;
       background: transparent;
       color: var(--color-text);

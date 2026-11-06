@@ -78,7 +78,7 @@ export interface WithdrawalSelectableGroup {
     }
     .workbench-page .kpi-card {
       padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
     }
     .kpi-card {
       position: relative;
@@ -98,7 +98,7 @@ export interface WithdrawalSelectableGroup {
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
   `,

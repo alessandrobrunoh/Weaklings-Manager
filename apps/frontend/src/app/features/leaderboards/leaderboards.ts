@@ -487,7 +487,7 @@ const PODIUM_SIZE = 3;
       :host ::ng-deep .rounded-md,
       :host ::ng-deep .shadow-lg,
       :host ::ng-deep .shadow-xl {
-        border-radius: var(--radius-cards, 2px);
+        border-radius: var(--radius-cards);
         box-shadow: none;
       }
       /* ---------- Season Hero Banner ---------- */

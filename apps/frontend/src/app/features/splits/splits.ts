@@ -108,7 +108,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
     }
     .workbench-page .kpi-card {
       padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
     }
     :host {
       display: block;
@@ -132,7 +132,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
     .icon-capsule {
       width: 2.125rem;
       height: 2.125rem;
-      border-radius: 6px;
+      border-radius: var(--radius-badges);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -171,7 +171,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
       align-items: center;
       gap: 0.375rem;
       padding: 0.25rem 0.625rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       font-size: 0.75rem;
       font-weight: 500;
       line-height: 1;

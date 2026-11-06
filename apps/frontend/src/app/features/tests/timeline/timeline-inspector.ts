@@ -294,7 +294,7 @@ interface TargetSection {
       width: 100%;
       align-items: center;
       gap: 0.375rem;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       padding: 0.125rem 0.25rem;
       font-size: 0.75rem;
       font-weight: 600;
@@ -312,7 +312,7 @@ interface TargetSection {
       align-items: center;
       justify-content: center;
       border: 1px solid var(--color-border-strong, var(--color-border));
-      border-radius: 3px;
+      border-radius: var(--radius-chip);
     }
     .group-toggle__dash {
       height: 2px;

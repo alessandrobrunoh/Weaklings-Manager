@@ -116,6 +116,11 @@
   --radius-smallcards: 12px;
   --radius-checkboxes: 4px;
   --radius-badges: 6px;
+  /* Fine-grained steps for hairline bars, ticks and chips (never inline px). */
+  --radius-hairline: 1px;
+  --radius-xs: 2px;
+  --radius-chip: 3px;
+  --radius-tick: 5px;
 
   /* Elevation — Discord builds depth from contrast, so shadows stay quiet */
   --shadow-subtle: 0 0 0 1px rgb(11 12 17 / 30%);
@@ -153,9 +158,9 @@ html.dark {
   --color-text: #ffffff;
   --color-text-heading: #ffffff;
   --color-text-secondary: var(--color-fog);
-  --color-text-tertiary: #9aa0bf;
-  --color-text-muted: var(--color-ash);
-  --color-text-steel: var(--color-ash);
+  --color-text-tertiary: #b2b7cb;
+  --color-text-muted: #9ea3b8;
+  --color-text-steel: #9ea3b8;
   --color-text-disabled: #6e7387;
 
   /* Blurple is the only saturated colour in the layout chrome.
@@ -276,9 +281,9 @@ html.light {
   --color-text: #1d1e26;
   --color-text-heading: #0b0c11;
   --color-text-secondary: #4a4d63;
-  --color-text-tertiary: #61657f;
-  --color-text-muted: #6e7287;
-  --color-text-steel: #61657f;
+  --color-text-tertiary: #52566d;
+  --color-text-muted: #5d6178;
+  --color-text-steel: #52566d;
   --color-text-disabled: #8a8fa5;
 
   /* Light mode darkens the brand hues rather than replacing them, so a guild's
@@ -1714,95 +1719,4 @@ app-shell .data-table__row--clickable:focus-visible {
     animation-duration: 0.01ms;
     animation-iteration-count: 1;
   }
-}
-
-/* Zed workbench foundation: quiet paper canvas, hairline structure, and the
-   active tenant color as its accent. Legacy feature classes keep their names
-   and behavior while the authenticated shell uses this compact geometry. */
-:root,
-html.light {
-  color-scheme: light;
-  --color-rail: #f8f7f3;
-  --color-chrome: #ffffff;
-  --color-bg: #faf9f6;
-  --color-surface: #ffffff;
-  --color-surface-1: #ffffff;
-  --color-surface-2: #f5f4f0;
-  --color-surface-3: #ebe9e3;
-  --color-surface-muted: #f5f4f0;
-  --color-surface-hover: #eef0f3;
-  --color-surface-active: #e3e7ec;
-  --color-border: #dadde2;
-  --color-border-strong: #b2b5bb;
-  --color-overlay: rgb(40 44 51 / 48%);
-  --color-text: #3a3d43;
-  --color-text-heading: var(--color-primary);
-  --color-text-secondary: #464b57;
-  --color-text-tertiary: #5d636f;
-  --color-text-muted: #6a7282;
-  --color-text-steel: #878a98;
-  --color-text-disabled: #6a7282;
-  --color-primary: color-mix(in oklab, var(--brand-primary, var(--color-blurple)) 88%, #000);
-  --color-primary-hover: color-mix(in oklab, var(--color-primary) 84%, #000);
-  --color-primary-active: color-mix(in oklab, var(--color-primary) 70%, #000);
-  --color-primary-container: color-mix(in oklab, var(--color-primary) 14%, transparent);
-  --color-primary-subtle: color-mix(in oklab, var(--color-primary) 8%, transparent);
-  --color-on-primary: #ffffff;
-  --rail-width: 56px;
-  --sidebar-width: 232px;
-  --chrome-height: 44px;
-  --page-max-width: 1200px;
-  --page-gap: 12px;
-  --element-gap: 6px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 24px;
-  --radius-cards: 16px;
-  --radius-panels: 24px;
-  --radius-dialogs: 20px;
-  --radius-inputs: 8px;
-  --radius-buttons: 8px;
-  --radius-checkboxes: 4px;
-  --radius-badges: 6px;
-  --shadow-subtle: rgba(111, 123, 144, 0.1) 0 -2px 0 0 inset;
-  --shadow-subtle-2: rgba(111, 123, 144, 0.05) 0 -2px 0 0 inset;
-  --shadow-xl: 0 1px 3px rgb(40 44 51 / 10%);
-  --font-display: 'IBM Plex Serif', 'Source Serif Pro', Georgia, serif;
-  --font-sans: 'Inter', 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', 'Geist Mono', ui-monospace, monospace;
-}
-
-html.dark {
-  color-scheme: dark;
-  --color-rail: #0b0c0f;
-  --color-chrome: #111318;
-  --color-bg: #17191e;
-  --color-surface: #1d2026;
-  --color-surface-1: #1d2026;
-  --color-surface-2: #252930;
-  --color-surface-3: #2f353d;
-  --color-surface-muted: #252930;
-  --color-surface-hover: #30363f;
-  --color-surface-active: #292f37;
-  --color-border: #3b424c;
-  --color-border-strong: #535c68;
-  --color-overlay: rgb(0 0 0 / 72%);
-  --color-text: #f4f4f2;
-  --color-text-heading: var(--color-primary);
-  --color-text-secondary: #dadde2;
-  --color-text-tertiary: #b7bdc7;
-  --color-text-muted: #a4abb6;
-  --color-text-steel: #8e96a2;
-  --color-text-disabled: #707985;
-  --color-primary: color-mix(in oklab, var(--brand-primary, var(--color-blurple)) 92%, #fff);
-  --color-primary-container: color-mix(in oklab, var(--color-primary) 20%, transparent);
-  --color-primary-subtle: color-mix(in oklab, var(--color-primary) 12%, transparent);
-}
-
-.shadow-lg,
-.shadow-xl,
-.shadow-2xl {
-  box-shadow: none !important;
 }

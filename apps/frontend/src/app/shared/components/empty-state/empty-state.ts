@@ -35,7 +35,7 @@ import { Icon, type IconName } from '../icon/icon';
   `,
   styles: `
     .empty-state__icon {
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
       border-color: var(--color-border);
       background: var(--color-surface-2);
       color: var(--color-info);

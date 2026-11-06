@@ -113,7 +113,7 @@ function parsePercentageInput(raw: string): number | null {
       min-width: 0;
     }
     .workbench-page .card {
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
     }
   `,
   template: `

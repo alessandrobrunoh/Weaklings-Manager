@@ -87,13 +87,13 @@ interface BattleScopeStats {
     :host ::ng-deep .rounded-md,
     :host ::ng-deep .shadow-lg,
     :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards, 2px);
+      border-radius: var(--radius-cards);
       box-shadow: none;
     }
     :host ::ng-deep input,
     :host ::ng-deep select,
     :host ::ng-deep button {
-      border-radius: var(--radius-sm, 2px);
+      border-radius: var(--radius-sm);
     }
     .kpi-card {
       position: relative;
@@ -113,7 +113,7 @@ interface BattleScopeStats {
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
     .outcome-pill {
@@ -121,7 +121,7 @@ interface BattleScopeStats {
       align-items: center;
       gap: 0.375rem;
       padding: 0.2rem 0.55rem;
-      border-radius: 9999px;
+      border-radius: var(--radius-pills);
       font-size: 0.6875rem;
       font-weight: 700;
       letter-spacing: 0.03em;
