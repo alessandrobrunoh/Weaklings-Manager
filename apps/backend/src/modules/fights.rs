@@ -18,7 +18,6 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::albion::entities::albion_link;
 use crate::modules::battles::entities::{
@@ -28,7 +27,8 @@ use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
 use crate::modules::battles::outcome::{
-    BattleOutcome, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome, combine_segments,
+    BattleOutcome, BattleSide, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome,
+    combine_segments,
 };
 use crate::modules::comps::entities::{build, comp};
 use crate::modules::events::entities::{
@@ -44,6 +44,7 @@ use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
 use crate::responses::{ApiResponse, ApiResponseFightBackfillIssueList};
+use crate::tenant::{ControlDb, CurrentTenantId};
 use serde_json::{Value, json};
 
 /// Persisted summary metadata for one ordered battle segment of a fight.
@@ -476,10 +477,12 @@ async fn list_fights(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
-    Extension(config): Extension<Config>,
+    Extension(ControlDb(control)): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Query(query): Query<FightListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedFightList>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
+    let side = tenant_friendly_side(&control, &tenant_id).await?;
     let pagination = query.pagination();
     // Outcome and combat values are derived from every Fight's persisted segments, so pagination
     // must happen after hydration, filtering, and sorting rather than on the raw `fights` rows.
@@ -564,7 +567,7 @@ async fn list_fights(
                 total_players: summary.total_players,
                 total_kills: summary.total_kills,
                 total_fame: summary.total_fame,
-                outcome: resolve_fight_outcome(fight_segments, &snapshots_by_battle, &config)?,
+                outcome: resolve_fight_outcome(fight_segments, &snapshots_by_battle, &side)?,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -715,12 +718,48 @@ const fn fight_outcome_rank(outcome: FightOutcome) -> u8 {
     }
 }
 
-/// Our side, as configured for this deployment.
-fn friendly_side(config: &Config) -> FriendlySide {
-    FriendlySide::new(
-        &config.albion_guild_id,
-        &config.albion_allied_guild_ids(),
-        &config.albion_allied_guild_names(),
+/// Our side, as configured for the requesting tenant.
+///
+/// Never falls back to the process-wide `ALBION_*` environment: that names one
+/// deployment guild and would misclassify every other tenant. A tenant without
+/// an Albion identity simply has no friendly side, so its outcomes are
+/// `unknown` instead of an error that would break the whole page.
+async fn tenant_friendly_side(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+) -> Result<FriendlySide, AppError> {
+    match crate::albion_scope::load_friendly_side(control, tenant_id).await {
+        Ok(side) => Ok(side),
+        Err(crate::albion_scope::AlbionScopeError::NotConfigured) => Ok(FriendlySide::default()),
+        Err(crate::albion_scope::AlbionScopeError::Database(err)) => Err(AppError::Database(err)),
+    }
+}
+
+/// Stable rollup key for a snapshot player.
+///
+/// `AlbionBB` does not expose player ids, so the stored players usually carry
+/// a blank `id`. Keying by it would merge every player into one row; the
+/// fallback is the lower-cased name qualified by guild, because two players
+/// of different guilds can share a display name.
+fn player_rollup_key(player: &BattlePlayer) -> String {
+    let id = player.id.trim();
+    if id.is_empty() {
+        format!(
+            "name:{}|{}",
+            player.name.trim().to_ascii_lowercase(),
+            player.guild_name.trim().to_ascii_lowercase()
+        )
+    } else {
+        format!("id:{id}")
+    }
+}
+
+/// Resolves a snapshot's side against its own guild rows.
+fn snapshot_side<'a>(side: &'a FriendlySide, guilds: &[BattleGuildSummary]) -> BattleSide<'a> {
+    side.for_battle(
+        guilds
+            .iter()
+            .map(|guild| (guild.id.as_str(), guild.name.as_str())),
     )
 }
 
@@ -738,9 +777,8 @@ fn friendly_side(config: &Config) -> FriendlySide {
 fn resolve_fight_outcome(
     fight_battles: &[fight_battle::Model],
     snapshots_by_battle: &HashMap<i64, crate::modules::battles::entities::Model>,
-    config: &Config,
+    side: &FriendlySide,
 ) -> Result<FightOutcomeView, AppError> {
-    let side = friendly_side(config);
     let mut verdicts = Vec::with_capacity(fight_battles.len());
 
     for segment in fight_battles {
@@ -765,7 +803,7 @@ fn resolve_fight_outcome(
                 winner: guild.winner,
             })
             .collect::<Vec<_>>();
-        verdicts.push(battle_outcome(&lines, snapshot.total_fame, &side));
+        verdicts.push(battle_outcome(&lines, snapshot.total_fame, side));
     }
 
     let combined = combine_segments(&verdicts);
@@ -1421,9 +1459,11 @@ async fn get_fight_trends(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
-    Extension(config): Extension<Config>,
+    Extension(ControlDb(control)): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<FightTrendView>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
+    let side = tenant_friendly_side(&control, &tenant_id).await?;
     let window_end = Utc::now();
     let current_start = window_end - Duration::days(30);
     let previous_start = current_start - Duration::days(30);
@@ -1533,7 +1573,7 @@ async fn get_fight_trends(
         &participations_by_event,
         &build_names,
         &comp_names,
-        &config,
+        &side,
         current_start,
         window_end,
     )?;
@@ -1545,7 +1585,7 @@ async fn get_fight_trends(
         &participations_by_event,
         &build_names,
         &comp_names,
-        &config,
+        &side,
         previous_start,
         current_start,
     )?;
@@ -1581,7 +1621,7 @@ fn build_fight_trend_period(
     participations_by_event: &HashMap<i64, Vec<event_participation::Model>>,
     build_names: &HashMap<i64, String>,
     comp_names: &HashMap<i64, String>,
-    config: &Config,
+    side: &FriendlySide,
     window_start: chrono::DateTime<Utc>,
     window_end: chrono::DateTime<Utc>,
 ) -> Result<FightTrendPeriod, AppError> {
@@ -1589,16 +1629,6 @@ fn build_fight_trend_period(
         let started_at = fight.started_at.with_timezone(&Utc);
         started_at >= window_start && started_at < window_end
     });
-    let friendly_guild_ids = config
-        .albion_allied_guild_ids()
-        .into_iter()
-        .chain(std::iter::once(config.albion_guild_id.clone()))
-        .collect::<HashSet<_>>();
-    let friendly_guild_names = config
-        .albion_allied_guild_names()
-        .into_iter()
-        .map(|name| name.to_ascii_lowercase())
-        .collect::<HashSet<_>>();
     let mut fight_sample_size = 0_i64;
     let mut combat_sample_size = 0_i64;
     let mut win_sample_size = 0_i64;
@@ -1629,22 +1659,23 @@ fn build_fight_trend_period(
             };
             has_snapshot = true;
             persisted_segments += 1;
+            let snapshot_guilds: Vec<BattleGuildSummary> =
+                parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
+            let battle_side = snapshot_side(side, &snapshot_guilds);
             let snapshot_players: Vec<BattlePlayer> =
                 parse_snapshot(&snapshot.players_json, "player", snapshot.battle_id)?;
-            for player in snapshot_players.into_iter().filter(|player| {
-                friendly_guild_ids.contains(&player.guild_id)
-                    || friendly_guild_names.contains(&player.guild_name.to_ascii_lowercase())
-            }) {
+            for player in snapshot_players
+                .into_iter()
+                .filter(|player| battle_side.contains(&player.guild_id, &player.guild_name))
+            {
                 kills += player.kills;
                 deaths += player.deaths;
                 kill_fame += player.kill_fame;
             }
-            let snapshot_guilds: Vec<BattleGuildSummary> =
-                parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
-            for guild in snapshot_guilds.into_iter().filter(|guild| {
-                friendly_guild_ids.contains(&guild.id)
-                    || friendly_guild_names.contains(&guild.name.to_ascii_lowercase())
-            }) {
+            for guild in snapshot_guilds
+                .into_iter()
+                .filter(|guild| battle_side.contains(&guild.id, &guild.name))
+            {
                 winner = Some(winner.unwrap_or(false) || guild.winner);
             }
         }
@@ -1747,10 +1778,12 @@ async fn get_fight(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
-    Extension(config): Extension<Config>,
+    Extension(ControlDb(control)): Extension<ControlDb>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<FightDetailView>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
+    let side = tenant_friendly_side(&control, &tenant_id).await?;
     let model = fight::Entity::find_by_id(id)
         .one(&db)
         .await
@@ -1780,9 +1813,9 @@ async fn get_fight(
         .into_iter()
         .map(|snapshot| (snapshot.battle_id, snapshot))
         .collect::<HashMap<_, _>>();
-    let outcome = resolve_fight_outcome(&fight_battles, &snapshots_by_battle, &config)?;
-    let analytics = build_fight_analytics(&fight_battles, &snapshots_by_battle)?;
-    let mut observed_friendly_players = observed_friendly_players(&snapshots_by_battle, &config)?;
+    let outcome = resolve_fight_outcome(&fight_battles, &snapshots_by_battle, &side)?;
+    let analytics = build_fight_analytics(&fight_battles, &snapshots_by_battle, &side)?;
+    let mut observed_friendly_players = observed_friendly_players(&snapshots_by_battle, &side)?;
     let planned_comp = fight_planned_comp(&db, model.event_id).await?;
     let (planned_participants, participant_coverage) = fight_participant_analytics(
         &db,
@@ -1846,29 +1879,22 @@ async fn fight_planned_comp(
 
 fn observed_friendly_players(
     snapshots_by_battle: &HashMap<i64, crate::modules::battles::entities::Model>,
-    config: &Config,
+    side: &FriendlySide,
 ) -> Result<Vec<ObservedFriendlyPlayerView>, AppError> {
-    let friendly_guild_ids = config
-        .albion_allied_guild_ids()
-        .into_iter()
-        .chain(std::iter::once(config.albion_guild_id.clone()))
-        .collect::<HashSet<_>>();
-    let friendly_guild_names = config
-        .albion_allied_guild_names()
-        .into_iter()
-        .map(|name| name.to_ascii_lowercase())
-        .collect::<HashSet<_>>();
     let mut players = HashMap::<String, PlayerRollup>::new();
 
     for snapshot in snapshots_by_battle.values() {
+        let snapshot_guilds: Vec<BattleGuildSummary> =
+            parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
+        let battle_side = snapshot_side(side, &snapshot_guilds);
         let snapshot_players: Vec<BattlePlayer> =
             parse_snapshot(&snapshot.players_json, "player", snapshot.battle_id)?;
-        for player in snapshot_players.into_iter().filter(|player| {
-            friendly_guild_ids.contains(&player.guild_id)
-                || friendly_guild_names.contains(&player.guild_name.to_ascii_lowercase())
-        }) {
+        for player in snapshot_players
+            .into_iter()
+            .filter(|player| battle_side.contains(&player.guild_id, &player.guild_name))
+        {
             players
-                .entry(player.id.clone())
+                .entry(player_rollup_key(&player))
                 .or_insert_with(|| PlayerRollup::new(player.clone()))
                 .add(&player);
         }
@@ -2001,7 +2027,10 @@ async fn fight_participant_analytics(
         })
         .collect::<HashMap<_, _>>();
     for player in observed_players.iter_mut() {
-        player.user_id = user_ids_by_albion.get(&player.albion_player_id).copied();
+        // Snapshot players usually have no id; a blank id identifies nobody.
+        player.user_id = (!player.albion_player_id.is_empty())
+            .then(|| user_ids_by_albion.get(&player.albion_player_id).copied())
+            .flatten();
     }
     let planned_participants = i64::try_from(planned.len()).unwrap_or(i64::MAX);
     let matchable_planned_participants = i64::try_from(
@@ -2049,6 +2078,7 @@ struct FightAnalytics {
 fn build_fight_analytics(
     fight_battles: &[fight_battle::Model],
     snapshots_by_battle: &HashMap<i64, crate::modules::battles::entities::Model>,
+    side: &FriendlySide,
 ) -> Result<FightAnalytics, AppError> {
     let mut total_players = 0;
     let mut total_kills = 0;
@@ -2085,21 +2115,26 @@ fn build_fight_analytics(
             total_fame: snapshot.total_fame,
         });
 
-        for guild in snapshot_guilds {
+        let battle_side = snapshot_side(side, &snapshot_guilds);
+        for mut guild in snapshot_guilds {
+            guild.is_own = battle_side.is_own(&guild.id);
+            guild.is_friendly = guild.is_own || battle_side.contains(&guild.id, &guild.name);
             guilds
                 .entry(guild_key(&guild.id, &guild.name))
                 .or_insert_with(|| GuildRollup::new(guild.clone()))
                 .add_summary(&guild);
         }
-        for player in snapshot_players {
-            player_ids.insert(player.id.clone());
+        for mut player in snapshot_players {
+            player.is_friendly = battle_side.contains(&player.guild_id, &player.guild_name);
+            let key = player_rollup_key(&player);
+            player_ids.insert(key.clone());
             guilds
                 .entry(guild_key(&player.guild_id, &player.guild_name))
-                .or_insert_with(|| GuildRollup::from_player(&player))
+                .or_insert_with(|| GuildRollup::from_player(&player, &battle_side))
                 .players
-                .insert(player.id.clone());
+                .insert(key.clone());
             players
-                .entry(player.id.clone())
+                .entry(key)
                 .or_insert_with(|| PlayerRollup::new(player.clone()))
                 .add(&player);
         }
@@ -2202,7 +2237,7 @@ impl GuildRollup {
         }
     }
 
-    fn from_player(player: &BattlePlayer) -> Self {
+    fn from_player(player: &BattlePlayer, battle_side: &BattleSide<'_>) -> Self {
         Self::new(BattleGuildSummary {
             id: player.guild_id.clone(),
             name: player.guild_name.clone(),
@@ -2214,6 +2249,8 @@ impl GuildRollup {
             kill_fame: 0,
             winner: false,
             average_item_power: 0.0,
+            is_friendly: player.is_friendly,
+            is_own: battle_side.is_own(&player.guild_id),
         })
     }
 
@@ -2222,6 +2259,8 @@ impl GuildRollup {
         self.summary.deaths += summary.deaths;
         self.summary.kill_fame += summary.kill_fame;
         self.summary.winner |= summary.winner;
+        self.summary.is_friendly |= summary.is_friendly;
+        self.summary.is_own |= summary.is_own;
         self.item_power_total += summary.average_item_power * summary.players as f64;
         self.item_power_weight += summary.players;
     }
@@ -2262,6 +2301,7 @@ impl PlayerRollup {
         self.player.deaths += player.deaths;
         self.player.kill_fame += player.kill_fame;
         self.player.death_fame += player.death_fame;
+        self.player.is_friendly |= player.is_friendly;
         self.item_power_total += player.item_power;
         self.appearances += 1;
     }
@@ -2315,6 +2355,7 @@ mod tests {
     use crate::migration::MigratorTrait;
     use crate::modules::battles::entities as battle_snapshot;
     use crate::modules::comps::entities::comp_category;
+    use crate::testkit::{ALBION_GUILDS, GUILDS, World};
     use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
@@ -2331,29 +2372,31 @@ mod tests {
         (Utc::now() + Duration::hours(offset_hours)).into()
     }
 
-    fn test_config() -> Config {
-        Config {
-            backend_port: 3000,
-            database_url: "sqlite::memory:".to_string(),
-            control_database_url: None,
-            discord_client_id: "test".to_string(),
-            discord_client_secret: "test".to_string(),
-            discord_redirect_uri: "http://localhost/callback".to_string(),
-            bot_api_secret: None,
-            discord_bot_token: None,
-            super_admin_discord_id: "test-admin".to_string(),
-            frontend_url: "http://localhost".to_string(),
-            albion_api_region: "europe".to_string(),
-            albion_guild_id: "friendly".to_string(),
-            albion_allied_guild_ids: String::new(),
-            albion_allied_guild_names: String::new(),
-            mistral_api_key: String::new(),
-            albionbb_base_url: "http://localhost".to_string(),
-            albionbb_request_timeout_secs: 60,
-            albiondata_request_timeout_secs: 30,
-            session_secret: "test-session-secret-at-least-64-bytes-long-000000000000000000000000"
-                .to_string(),
-        }
+    /// Tenant "ours" in the shared fixtures: the first seeded Albion guild.
+    fn own_guild() -> &'static str {
+        ALBION_GUILDS[0]
+    }
+
+    fn test_side() -> FriendlySide {
+        FriendlySide::new(own_guild(), &[], &[])
+    }
+
+    /// Control plane with the seeded Albion tenants, plus the extensions a
+    /// handler needs to resolve `tenant_id`'s side from it.
+    async fn tenant_extensions(
+        world: &World,
+        tenant_id: &str,
+    ) -> (Extension<ControlDb>, Extension<CurrentTenantId>) {
+        (
+            Extension(ControlDb(world.control.clone())),
+            Extension(CurrentTenantId(tenant_id.to_owned())),
+        )
+    }
+
+    async fn seeded_world() -> World {
+        let world = World::new().await;
+        world.seed_albion_control().await;
+        world
     }
 
     fn test_admin() -> UserContext {
@@ -2444,7 +2487,7 @@ mod tests {
         item_power: f64,
     ) -> BattleGuildSummary {
         BattleGuildSummary {
-            id: "friendly".to_string(),
+            id: own_guild().to_string(),
             name: "Weaklings".to_string(),
             alliance_name: None,
             alliance_id: None,
@@ -2454,6 +2497,8 @@ mod tests {
             kill_fame,
             winner,
             average_item_power: item_power,
+            is_friendly: false,
+            is_own: false,
         }
     }
 
@@ -2461,7 +2506,7 @@ mod tests {
         BattlePlayer {
             id: id.to_string(),
             name: id.to_string(),
-            guild_id: "friendly".to_string(),
+            guild_id: own_guild().to_string(),
             guild_name: "Weaklings".to_string(),
             alliance_name: None,
             alliance_id: None,
@@ -2470,6 +2515,7 @@ mod tests {
             kill_fame,
             death_fame: deaths * 10,
             item_power,
+            is_friendly: false,
         }
     }
 
@@ -2777,7 +2823,8 @@ mod tests {
 
     #[tokio::test]
     async fn fight_detail_aggregates_persisted_segment_snapshots() {
-        let db = seed_db().await;
+        let world = seeded_world().await;
+        let db = world.guild(1).db.clone();
         let first_start = timestamp(-2);
         let second_start = timestamp(-1);
         let fight = insert_fight(&db, first_start).await;
@@ -2854,11 +2901,13 @@ mod tests {
         insert_segment(&db, fight.id, 501, 1).await;
         insert_segment(&db, fight.id, 502, 2).await;
 
+        let (control, tenant) = tenant_extensions(&world, GUILDS[0]).await;
         let Json(response) = get_fight(
             test_admin(),
             Extension(Permissions::new_empty()),
             Extension(db),
-            Extension(test_config()),
+            control,
+            tenant,
             Path(fight.id),
         )
         .await
@@ -3016,7 +3065,7 @@ mod tests {
     fn snapshot(battle_id: i64, our_fame: i64, total_fame: i64) -> battle_snapshot::Model {
         let guilds = vec![
             BattleGuildSummary {
-                id: "friendly".to_string(),
+                id: own_guild().to_string(),
                 name: "Weaklings".to_string(),
                 alliance_name: None,
                 alliance_id: None,
@@ -3026,6 +3075,8 @@ mod tests {
                 kill_fame: our_fame,
                 winner: false,
                 average_item_power: 0.0,
+                is_friendly: false,
+                is_own: false,
             },
             BattleGuildSummary {
                 id: "enemy".to_string(),
@@ -3038,6 +3089,8 @@ mod tests {
                 kill_fame: total_fame - our_fame,
                 winner: false,
                 average_item_power: 0.0,
+                is_friendly: false,
+                is_own: false,
             },
         ];
         battle_snapshot::Model {
@@ -3066,7 +3119,7 @@ mod tests {
         ]);
 
         let outcome =
-            resolve_fight_outcome(&segments, &snapshots, &test_config()).expect("outcome resolves");
+            resolve_fight_outcome(&segments, &snapshots, &test_side()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Victory);
         assert_eq!(outcome.method, "unanimous_segments");
@@ -3082,7 +3135,7 @@ mod tests {
         ]);
 
         let outcome =
-            resolve_fight_outcome(&segments, &snapshots, &test_config()).expect("outcome resolves");
+            resolve_fight_outcome(&segments, &snapshots, &test_side()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Draw);
         assert_eq!(outcome.method, "mixed_segments");
@@ -3096,7 +3149,7 @@ mod tests {
         let snapshots = HashMap::from([(10, snapshot(10, 700_000, 1_000_000))]);
 
         let outcome =
-            resolve_fight_outcome(&segments, &snapshots, &test_config()).expect("outcome resolves");
+            resolve_fight_outcome(&segments, &snapshots, &test_side()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Victory);
         assert_eq!(outcome.method, "unanimous_segments_partial_coverage");
@@ -3110,7 +3163,7 @@ mod tests {
     fn a_fight_with_no_hydrated_segment_stays_unknown() {
         let segments = [segment(10, 1)];
 
-        let outcome = resolve_fight_outcome(&segments, &HashMap::new(), &test_config())
+        let outcome = resolve_fight_outcome(&segments, &HashMap::new(), &test_side())
             .expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Unknown);
@@ -3120,7 +3173,7 @@ mod tests {
     #[test]
     fn a_fight_with_no_segments_has_no_outcome_evidence() {
         let outcome =
-            resolve_fight_outcome(&[], &HashMap::new(), &test_config()).expect("outcome resolves");
+            resolve_fight_outcome(&[], &HashMap::new(), &test_side()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Unknown);
         assert_eq!(outcome.evidence_count, 0);
@@ -3272,7 +3325,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_fights_pushes_the_needs_review_filter_down_to_sql() {
-        let db = seed_db().await;
+        let world = seeded_world().await;
+        let db = world.guild(1).db.clone();
         let reviewed = insert_fight(&db, timestamp(0)).await;
         let reviewed_id = reviewed.id;
         let mut active: fight::ActiveModel = reviewed.into();
@@ -3281,11 +3335,13 @@ mod tests {
         insert_fight(&db, timestamp(1)).await; // needs_review defaults to true
         insert_fight(&db, timestamp(2)).await; // needs_review defaults to true
 
+        let (control, tenant) = tenant_extensions(&world, GUILDS[0]).await;
         let Json(response) = list_fights(
             test_admin(),
             Extension(Permissions::new_empty()),
             Extension(db.clone()),
-            Extension(test_config()),
+            control,
+            tenant,
             Query(FightListQuery {
                 page: None,
                 limit: None,
@@ -3311,5 +3367,268 @@ mod tests {
                 .all(|item| item.id != reviewed_id),
             "the fight already cleared of review must not come back"
         );
+    }
+
+    /// Two Albion guilds fought each other: guild 1 holds 75% of the fame.
+    fn rival_guilds() -> Vec<BattleGuildSummary> {
+        let line = |id: &str, name: &str, kills: i64, deaths: i64, kill_fame: i64, winner: bool| {
+            BattleGuildSummary {
+                id: id.to_string(),
+                name: name.to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 20,
+                kills,
+                deaths,
+                kill_fame,
+                winner,
+                average_item_power: 0.0,
+                is_friendly: false,
+                is_own: false,
+            }
+        };
+        vec![
+            line(ALBION_GUILDS[0], "Alpha", 8, 2, 750_000, true),
+            line(ALBION_GUILDS[1], "Beta", 2, 8, 250_000, false),
+        ]
+    }
+
+    /// A player as the real `AlbionBB` payload ships it: name and guild name only.
+    fn id_less_player(name: &str, guild_name: &str, kills: i64, deaths: i64) -> BattlePlayer {
+        BattlePlayer {
+            id: String::new(),
+            name: name.to_string(),
+            guild_id: String::new(),
+            guild_name: guild_name.to_string(),
+            alliance_name: None,
+            alliance_id: None,
+            kills,
+            deaths,
+            kill_fame: kills * 100,
+            death_fame: deaths * 10,
+            item_power: 1000.0,
+            is_friendly: false,
+        }
+    }
+
+    async fn seed_rival_fight(db: &DatabaseConnection) -> fight::Model {
+        let started = timestamp(-2);
+        let fight = insert_fight(db, started).await;
+        insert_snapshot(
+            db,
+            900,
+            started,
+            None,
+            40,
+            10,
+            1_000_000,
+            rival_guilds(),
+            vec![
+                id_less_player("Hawk", "Alpha", 3, 1),
+                id_less_player("Wren", "Alpha", 2, 0),
+                // Same display name in both guilds: still two players.
+                id_less_player("Shared", "Alpha", 1, 1),
+                id_less_player("Shared", "Beta", 4, 2),
+            ],
+            BattleLossEstimate::default(),
+        )
+        .await;
+        insert_segment(db, fight.id, 900, 1).await;
+        fight
+    }
+
+    async fn fight_detail_for(world: &World, tenant_id: &str, fight_id: i64) -> FightDetailView {
+        let (control, tenant) = tenant_extensions(world, tenant_id).await;
+        let Json(response) = get_fight(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(world.guild(1).db.clone()),
+            control,
+            tenant,
+            Path(fight_id),
+        )
+        .await
+        .expect("get fight detail");
+        response.data
+    }
+
+    #[test]
+    fn the_same_fight_resolves_differently_for_two_albion_guilds() {
+        let segments = [segment(10, 1)];
+        let battle = battle_snapshot::Model {
+            guilds_json: serde_json::to_string(&rival_guilds()).expect("guilds serialize"),
+            total_fame: 1_000_000,
+            ..snapshot(10, 700_000, 1_000_000)
+        };
+        let snapshots = HashMap::from([(10, battle)]);
+        let outcome_for = |side: FriendlySide| {
+            resolve_fight_outcome(&segments, &snapshots, &side)
+                .expect("outcome resolves")
+                .outcome
+        };
+
+        assert_eq!(
+            outcome_for(FriendlySide::new(ALBION_GUILDS[0], &[], &[])),
+            FightOutcome::Victory
+        );
+        assert_eq!(
+            outcome_for(FriendlySide::new(ALBION_GUILDS[1], &[], &[])),
+            FightOutcome::Defeat
+        );
+        // A tenant that owns neither guild is not on any side.
+        assert_eq!(
+            outcome_for(FriendlySide::new("someone-else", &[], &[])),
+            FightOutcome::Unknown
+        );
+        assert_eq!(outcome_for(FriendlySide::default()), FightOutcome::Unknown);
+    }
+
+    #[test]
+    fn players_without_ids_get_distinct_rollup_keys_per_name_and_guild() {
+        let hawk = id_less_player("Hawk", "Alpha", 0, 0);
+        assert_eq!(player_rollup_key(&hawk), player_rollup_key(&hawk.clone()));
+        assert_ne!(
+            player_rollup_key(&hawk),
+            player_rollup_key(&id_less_player("Wren", "Alpha", 0, 0))
+        );
+        assert_ne!(
+            player_rollup_key(&id_less_player("Shared", "Alpha", 0, 0)),
+            player_rollup_key(&id_less_player("Shared", "Beta", 0, 0))
+        );
+        assert_eq!(
+            player_rollup_key(&id_less_player(" HAWK ", "alpha", 0, 0)),
+            player_rollup_key(&hawk)
+        );
+        let mut with_id = hawk;
+        with_id.id = "abc".to_string();
+        assert_eq!(player_rollup_key(&with_id), "id:abc");
+    }
+
+    #[tokio::test]
+    async fn fight_detail_without_player_ids_keeps_players_apart_and_flags_our_side() {
+        let world = seeded_world().await;
+        let fight = seed_rival_fight(&world.guild(1).db).await;
+
+        let detail = fight_detail_for(&world, GUILDS[0], fight.id).await;
+
+        assert_eq!(
+            detail.unique_players, 4,
+            "no id must not collapse the roster"
+        );
+        assert_eq!(detail.players.len(), 4);
+        assert_eq!(detail.outcome.outcome, FightOutcome::Victory);
+        let mut observed = detail
+            .observed_friendly_players
+            .iter()
+            .map(|player| player.name.as_str())
+            .collect::<Vec<_>>();
+        observed.sort_unstable();
+        assert_eq!(observed, ["Hawk", "Shared", "Wren"]);
+        let flag = |name: &str, guild: &str| {
+            detail
+                .players
+                .iter()
+                .find(|player| player.name == name && player.guild_name == guild)
+                .map(|player| player.is_friendly)
+                .expect("player in roster")
+        };
+        assert!(flag("Hawk", "Alpha"));
+        assert!(flag("Shared", "Alpha"));
+        assert!(!flag("Shared", "Beta"));
+        let alpha = detail
+            .guilds
+            .iter()
+            .find(|guild| guild.name == "Alpha")
+            .unwrap();
+        let beta = detail
+            .guilds
+            .iter()
+            .find(|guild| guild.name == "Beta")
+            .unwrap();
+        assert!(alpha.is_friendly && alpha.is_own);
+        assert!(!beta.is_friendly && !beta.is_own);
+    }
+
+    #[tokio::test]
+    async fn two_tenants_classify_one_fight_differently_in_one_process() {
+        let world = seeded_world().await;
+        let fight = seed_rival_fight(&world.guild(1).db).await;
+
+        let first = fight_detail_for(&world, GUILDS[0], fight.id).await;
+        let second = fight_detail_for(&world, GUILDS[1], fight.id).await;
+        let unconfigured = fight_detail_for(&world, GUILDS[2], fight.id).await;
+        let alliance = fight_detail_for(&world, crate::testkit::ALLIANCE, fight.id).await;
+
+        assert_eq!(first.outcome.outcome, FightOutcome::Victory);
+        assert_eq!(second.outcome.outcome, FightOutcome::Defeat);
+        assert_eq!(unconfigured.outcome.outcome, FightOutcome::Unknown);
+        assert!(unconfigured.observed_friendly_players.is_empty());
+        // Beta is guild 2's own side: one observed player, and Alpha is the enemy.
+        assert_eq!(second.observed_friendly_players.len(), 1);
+        assert_eq!(second.observed_friendly_players[0].name, "Shared");
+        assert!(
+            second
+                .guilds
+                .iter()
+                .any(|guild| guild.name == "Beta" && guild.is_own)
+        );
+        // An alliance of both guilds fights on both sides: nobody is "own".
+        assert_eq!(alliance.observed_friendly_players.len(), 4);
+        assert!(
+            alliance
+                .guilds
+                .iter()
+                .all(|guild| guild.is_friendly && !guild.is_own)
+        );
+    }
+
+    #[tokio::test]
+    async fn list_and_trends_use_the_requesting_tenants_side() {
+        let world = seeded_world().await;
+        seed_rival_fight(&world.guild(1).db).await;
+
+        for (tenant_id, outcome, kills, deaths, wins) in [
+            (GUILDS[0], FightOutcome::Victory, 6, 2, 1),
+            (GUILDS[1], FightOutcome::Defeat, 4, 2, 0),
+            (GUILDS[2], FightOutcome::Unknown, 0, 0, 0),
+        ] {
+            let (control, tenant) = tenant_extensions(&world, tenant_id).await;
+            let Json(list) = list_fights(
+                test_admin(),
+                Extension(Permissions::new_empty()),
+                Extension(world.guild(1).db.clone()),
+                control,
+                tenant,
+                Query(FightListQuery {
+                    page: None,
+                    limit: None,
+                    search: None,
+                    event_id: None,
+                    needs_review: None,
+                    min_players: None,
+                    outcome: None,
+                    sort: None,
+                    order: None,
+                }),
+            )
+            .await
+            .expect("list fights");
+            assert_eq!(list.data.items[0].outcome.outcome, outcome, "{tenant_id}");
+
+            let (control, tenant) = tenant_extensions(&world, tenant_id).await;
+            let Json(trends) = get_fight_trends(
+                test_admin(),
+                Extension(Permissions::new_empty()),
+                Extension(world.guild(1).db.clone()),
+                control,
+                tenant,
+            )
+            .await
+            .expect("fight trends");
+            let period = trends.data.last_30_days;
+            assert_eq!(period.kills, kills, "{tenant_id} kills");
+            assert_eq!(period.deaths, deaths, "{tenant_id} deaths");
+            assert_eq!(period.wins, wins, "{tenant_id} wins");
+        }
     }
 }

@@ -5195,6 +5195,8 @@ mod tests {
             kill_fame: 1_000_000,
             winner: true,
             average_item_power: 1_400.0,
+            is_friendly: false,
+            is_own: false,
         }];
         if let Some(opponent_guild_id) = opponent_guild_id {
             guilds.push(BattleGuildSummary {
@@ -5208,6 +5210,8 @@ mod tests {
                 kill_fame: 500_000,
                 winner: false,
                 average_item_power: 1_390.0,
+                is_friendly: false,
+                is_own: false,
             });
         }
         let guilds_json = serde_json::to_string(&guilds).expect("guild snapshot should serialize");
@@ -6438,6 +6442,8 @@ mod tests {
                 kill_fame: 1_000_000,
                 winner: true,
                 average_item_power: 1_400.0,
+                is_friendly: false,
+                is_own: false,
             },
             BattleGuildSummary {
                 id: "opponent-id".to_string(),
@@ -6450,6 +6456,8 @@ mod tests {
                 kill_fame: 500_000,
                 winner: false,
                 average_item_power: 1_390.0,
+                is_friendly: false,
+                is_own: false,
             },
         ])
         .expect("guild snapshot should serialize");
@@ -6846,6 +6854,8 @@ mod tests {
                 kill_fame: 2_700_000,
                 winner: true,
                 average_item_power: 1_400.0,
+                is_friendly: false,
+                is_own: false,
             },
             BattleGuildSummary {
                 id: "enemy-id".to_string(),
@@ -6858,6 +6868,8 @@ mod tests {
                 kill_fame: 1_500_000,
                 winner: false,
                 average_item_power: 1_390.0,
+                is_friendly: false,
+                is_own: false,
             },
         ])
         .expect("guild snapshot should serialize"));

@@ -2456,6 +2456,7 @@ mod tests {
                 kill_fame: player_kill_fame,
                 death_fame: 0,
                 item_power: 1000.0,
+                is_friendly: false,
             }],
             per_player_loss: HashMap::from([(player_name.to_ascii_lowercase(), silver_lost)]),
             // The fight-wide totals are deliberately different from the

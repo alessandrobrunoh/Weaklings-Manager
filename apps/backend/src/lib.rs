@@ -111,13 +111,15 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         Some(cfg.albionbb_request_timeout_secs),
     );
     let albionbb_service = modules::albionbb::service::AlbionBbService::new(albionbb_client);
-    let battles_server = modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region));
+    // Template only: it carries no guild, allies or region. Every handler derives
+    // the requesting tenant's scope (`BattlesService::for_scope`), so an unscoped
+    // use classifies nobody as friendly instead of using the env guild.
     let battles_service = modules::battles::service::BattlesService::new(
         albionbb_service.clone(),
-        cfg.albion_guild_id.clone(),
-        &cfg.albion_allied_guild_ids(),
-        &cfg.albion_allied_guild_names(),
-        battles_server,
+        String::new(),
+        &[],
+        &[],
+        String::new(),
     );
 
     // Workers reload guild/region from the tenant row. Set the dependencies
@@ -146,9 +148,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             .await;
     }
 
+    // Template only, like `battles_service`: handlers call `for_scope` with the tenant row.
     let regear_guild_context = modules::regear::router::RegearGuildContext {
-        guild_id: cfg.albion_guild_id.clone(),
-        server: modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region)),
+        guild_id: String::new(),
+        server: String::new(),
     };
 
     let api = Router::new()

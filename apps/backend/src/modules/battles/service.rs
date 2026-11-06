@@ -207,6 +207,7 @@ impl BattlesService {
             let verdict =
                 outcome::battle_outcome(&guild_lines(&item.guilds), item.total_fame, &self.side);
             item.outcome = Some(verdict.outcome);
+            stamp_summary_sides(&mut item.guilds, &self.side);
         }
     }
 
@@ -221,7 +222,9 @@ impl BattlesService {
             .albionbb
             .get_battle_kills(self.server.as_deref(), battle_id)
             .await?;
-        Ok(BattleDetail::from_upstream(&detail, &kills))
+        let mut battle = BattleDetail::from_upstream(&detail, &kills);
+        stamp_detail_sides(&mut battle, &self.side);
+        Ok(battle)
     }
 
     /// Fetches battle detail and enriches it with Albion Data loss estimates.
@@ -431,6 +434,9 @@ impl BattlesService {
             }
         }
 
+        // After persistence on purpose: the side flags describe the requesting
+        // tenant and are re-stamped on every read, never stored in the snapshot.
+        stamp_detail_sides(&mut battle, &self.side);
         Ok(battle)
     }
 
@@ -501,6 +507,43 @@ impl BattlesService {
         )?;
         self.stamp_outcomes(&mut page.items);
         Ok(page)
+    }
+}
+
+/// Marks which guilds of a battle fight on the tenant's side.
+///
+/// The one place "ours" is decided for battle summaries; clients render the
+/// flags instead of comparing names.
+fn stamp_summary_sides(guilds: &mut [BattleGuildSummary], side: &FriendlySide) {
+    for guild in guilds {
+        guild.is_own = side.is_own(&guild.id);
+        guild.is_friendly = guild.is_own || side.contains(&guild.id, &guild.name);
+    }
+}
+
+/// Stamps guilds, players and kill participants of a battle detail.
+///
+/// `AlbionBB` rarely exposes a player's guild id, so players and kill
+/// participants are matched through the battle's own guild rows.
+fn stamp_detail_sides(battle: &mut BattleDetail, side: &FriendlySide) {
+    stamp_summary_sides(&mut battle.summary.guilds, side);
+    let battle_side = side.for_battle(
+        battle
+            .summary
+            .guilds
+            .iter()
+            .map(|guild| (guild.id.as_str(), guild.name.as_str())),
+    );
+    for player in &mut battle.players {
+        player.is_friendly = battle_side.contains(&player.guild_id, &player.guild_name);
+    }
+    for kill in &mut battle.kills {
+        for participant in [&mut kill.killer, &mut kill.victim] {
+            participant.is_friendly = battle_side.contains(
+                participant.guild_id.as_deref().unwrap_or_default(),
+                participant.guild_name.as_deref().unwrap_or_default(),
+            );
+        }
     }
 }
 
@@ -633,6 +676,8 @@ mod filter_tests {
             kill_fame: fame,
             winner,
             average_item_power: 0.0,
+            is_friendly: false,
+            is_own: false,
         }
     }
 

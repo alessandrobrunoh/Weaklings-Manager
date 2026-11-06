@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 
 use crate::{runtime::Runtime, tenant::TenantRegistry};
@@ -24,6 +24,9 @@ pub const GUILDS: [&str; 3] = [
     "2000000000000000002",
     "2000000000000000003",
 ];
+
+/// Albion guild ids of `G1` and `G2` once [`World::seed_albion_control`] ran.
+pub const ALBION_GUILDS: [&str; 2] = ["alb-guild-1", "alb-guild-2"];
 
 /// One tenant of the world.
 pub struct WorldTenant {
@@ -107,6 +110,72 @@ impl World {
     /// Every tenant, alliance first.
     pub fn tenants(&self) -> impl Iterator<Item = &WorldTenant> {
         self.tenants.values()
+    }
+
+    /// Creates the slice of the control `tenants` / `alliance_memberships`
+    /// tables that Albion scope reads (SQLite has no control migrations) and
+    /// fills it: `G1` and `G2` are guilds with different Albion guilds
+    /// ([`ALBION_GUILDS`]), `G3` is a guild without an Albion identity, and the
+    /// alliance tenant has `G1` and `G2` as active members and `G3` as left.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a statement fails.
+    pub async fn seed_albion_control(&self) {
+        self.control
+            .execute_unprepared(
+                "CREATE TABLE tenants (id TEXT PRIMARY KEY, kind TEXT NOT NULL, \
+                 albion_guild_id TEXT, albion_api_region TEXT, albion_alliance_id TEXT, \
+                 albion_allied_guild_ids TEXT, albion_allied_guild_names TEXT)",
+            )
+            .await
+            .expect("tenants table");
+        self.control
+            .execute_unprepared(
+                "CREATE TABLE alliance_memberships (alliance_tenant_id TEXT NOT NULL, \
+                 guild_tenant_id TEXT NOT NULL, status TEXT NOT NULL)",
+            )
+            .await
+            .expect("alliance_memberships table");
+        for (n, albion_guild) in ALBION_GUILDS.into_iter().enumerate() {
+            self.control
+                .execute_unprepared(&format!(
+                    "INSERT INTO tenants (id, kind, albion_guild_id, albion_api_region) \
+                     VALUES ('{}', 'guild', '{albion_guild}', 'europe')",
+                    GUILDS[n]
+                ))
+                .await
+                .expect("guild tenant");
+        }
+        self.control
+            .execute_unprepared(&format!(
+                "INSERT INTO tenants (id, kind, albion_api_region) \
+                 VALUES ('{}', 'guild', 'europe')",
+                GUILDS[2]
+            ))
+            .await
+            .expect("unconfigured guild tenant");
+        self.control
+            .execute_unprepared(&format!(
+                "INSERT INTO tenants (id, kind, albion_api_region, albion_alliance_id) \
+                 VALUES ('{ALLIANCE}', 'alliance', 'europe', 'alb-alliance')"
+            ))
+            .await
+            .expect("alliance tenant");
+        for (guild, status) in [
+            (GUILDS[0], "active"),
+            (GUILDS[1], "active"),
+            (GUILDS[2], "left"),
+        ] {
+            self.control
+                .execute_unprepared(&format!(
+                    "INSERT INTO alliance_memberships \
+                     (alliance_tenant_id, guild_tenant_id, status) \
+                     VALUES ('{ALLIANCE}', '{guild}', '{status}')"
+                ))
+                .await
+                .expect("membership");
+        }
     }
 }
 
