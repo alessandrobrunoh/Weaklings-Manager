@@ -47,7 +47,7 @@ impl MigrationTrait for Migration {
 mod tests {
     use crate::migration::Migrator;
     use sea_orm::{ConnectionTrait, Database, DatabaseConnection, Statement};
-    use sea_orm_migration::MigratorTrait;
+    use sea_orm_migration::{MigrationName, MigratorTrait};
 
     async fn query_one_text(db: &DatabaseConnection, sql: &str) -> String {
         use sea_orm::QueryResult;
@@ -65,9 +65,12 @@ mod tests {
     #[tokio::test]
     async fn legacy_fan_out_rows_are_marked_and_their_placeholder_addresses_rewritten() {
         let db = Database::connect("sqlite::memory:").await.expect("sqlite");
-        // Stop before the two member-lifecycle migrations (they are the last tenant steps).
-        let total = Migrator::migrations().len() as u32;
-        Migrator::up(&db, Some(total - 2))
+        // Stop before the two member-lifecycle migrations; later slices append after them.
+        let before = Migrator::migrations()
+            .iter()
+            .position(|migration| migration.name() == "m20261106_000003_users_member_lifecycle")
+            .expect("member lifecycle migration is registered");
+        Migrator::up(&db, Some(before as u32))
             .await
             .expect("up to before lifecycle");
 

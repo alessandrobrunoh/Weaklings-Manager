@@ -139,8 +139,15 @@ mod tests {
         assert!(fanout.contains(WakeTarget::Fanout));
         assert!(!fanout.contains(WakeTarget::MirrorRetry));
         let both = fanout.union(WakeSet::of(WakeTarget::MirrorRetry));
-        assert_eq!(both, WakeSet::all());
-        assert_eq!(both.iter().collect::<Vec<_>>(), WakeTarget::ALL);
+        assert_eq!(
+            both.iter().collect::<Vec<_>>(),
+            [WakeTarget::Fanout, WakeTarget::MirrorRetry]
+        );
+        let every = WakeTarget::ALL
+            .into_iter()
+            .fold(WakeSet::none(), WakeSet::with);
+        assert_eq!(every, WakeSet::all());
+        assert_eq!(every.iter().collect::<Vec<_>>(), WakeTarget::ALL);
         assert_eq!(fanout.union(fanout), fanout);
         assert_eq!(WakeSet::from(WakeTarget::MirrorRetry).iter().count(), 1);
     }

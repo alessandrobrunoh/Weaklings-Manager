@@ -1298,8 +1298,11 @@ mod tests {
                         .next()
                         .unwrap_or_default();
                     let route = format!("{} {path}", method.to_uppercase());
+                    // `EventEffectsResponse` is the success envelope (`status`, `data`) plus the
+                    // Discord `effects` the lifecycle routes wrote.
                     if !name.starts_with("ApiResponse")
                         && !name.starts_with("Paginated")
+                        && name != "EventEffectsResponse"
                         && !BARE_BODY_EXCEPTIONS.contains(&route.as_str())
                     {
                         bare.push(format!("{route} -> {name}"));

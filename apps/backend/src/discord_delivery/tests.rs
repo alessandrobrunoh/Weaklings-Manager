@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
-use sea_orm_migration::MigratorTrait;
+use sea_orm_migration::{MigrationName, MigratorTrait};
 
 use super::kinds::{Cause, EffectKind};
 use super::outbox::{self, Completion, Effect, EmitOutcome, OutboxState};
@@ -45,8 +45,15 @@ fn total_migrations() -> usize {
     crate::migration::Migrator::migrations().len()
 }
 
-/// Number of migrations this slice added at the end of the tenant list.
-const SLICE_MIGRATIONS: usize = 4;
+/// Number of migrations from this slice's first one to the end of the tenant list. Later slices
+/// append their own migrations after it, so the count is derived from the migration name.
+fn slice_migrations() -> usize {
+    let start = crate::migration::Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m20261107_000001_create_discord_delivery")
+        .expect("discord delivery migration is registered");
+    total_migrations() - start
+}
 
 #[tokio::test]
 async fn migrations_create_the_delivery_tables_and_indexes() {
@@ -76,7 +83,7 @@ async fn migrations_create_the_delivery_tables_and_indexes() {
 #[tokio::test]
 async fn slice_migrations_go_down_and_up_again_on_sqlite() {
     let db = sqlite().await;
-    crate::migration::Migrator::down(&db, Some(SLICE_MIGRATIONS as u32))
+    crate::migration::Migrator::down(&db, Some(slice_migrations() as u32))
         .await
         .expect("down");
     let tables = names_in_sqlite(&db, "table").await;
@@ -146,7 +153,7 @@ async fn insert_event(
 async fn backfill_stamps_only_past_due_non_terminal_events() {
     let db = Database::connect("sqlite::memory:").await.expect("connect");
     // Stop one step short of the slice so the events can be inserted on the old schema.
-    crate::migration::Migrator::up(&db, Some((total_migrations() - SLICE_MIGRATIONS) as u32))
+    crate::migration::Migrator::up(&db, Some((total_migrations() - slice_migrations()) as u32))
         .await
         .expect("pre-slice migrations");
     let organizer = crate::modules::sync::test_support::insert_user(&db, "organizer").await;
