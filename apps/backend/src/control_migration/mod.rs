@@ -32,6 +32,7 @@ mod m20261103_000001_alliance_split_distribution;
 mod m20261104_000001_event_mirror_requests;
 mod m20261105_000001_unique_event_sync_source_target;
 mod m20261106_000001_mirror_request_inactive_state;
+mod m20261107_000001_sync_engine;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -83,6 +84,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_000001_event_mirror_requests::Migration),
             Box::new(m20261105_000001_unique_event_sync_source_target::Migration),
             Box::new(m20261106_000001_mirror_request_inactive_state::Migration),
+            Box::new(m20261107_000001_sync_engine::Migration),
         ]
     }
 }

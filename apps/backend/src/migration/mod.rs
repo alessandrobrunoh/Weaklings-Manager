@@ -142,6 +142,8 @@ mod m20261103_000001_add_alliance_distribution_key;
 mod m20261105_000001_regear_self_report_unique;
 mod m20261106_000001_add_split_needs_resync;
 mod m20261106_000002_add_split_roster_locked;
+mod m20261107_000001_create_sync_tables;
+mod m20261107_000002_seed_sync_permissions;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -288,6 +290,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261105_000001_regear_self_report_unique::Migration),
             Box::new(m20261106_000001_add_split_needs_resync::Migration),
             Box::new(m20261106_000002_add_split_roster_locked::Migration),
+            Box::new(m20261107_000001_create_sync_tables::Migration),
+            Box::new(m20261107_000002_seed_sync_permissions::Migration),
         ]
     }
 }

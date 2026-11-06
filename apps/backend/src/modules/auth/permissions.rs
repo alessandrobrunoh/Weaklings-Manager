@@ -306,6 +306,12 @@ pub enum Permission {
     /// Leave the guild's active alliance membership. Grantable independently of sharing.
     #[strum(serialize = "alliance.leave")]
     AllianceLeave,
+    /// Read sync status, queues and attention lists. Seeded with `alliance.share`.
+    #[strum(serialize = "sync.view")]
+    SyncView,
+    /// Retry or resync synchronized entities. Seeded with `alliance.share`.
+    #[strum(serialize = "sync.manage")]
+    SyncManage,
 }
 
 impl Permission {
