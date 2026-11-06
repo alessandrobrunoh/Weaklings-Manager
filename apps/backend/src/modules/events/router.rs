@@ -288,6 +288,22 @@ pub fn router() -> Router {
             "/{id}/battles",
             get(list_event_battles).put(replace_event_battles),
         )
+        .route(
+            "/actions",
+            get(crate::modules::actions::router::list_event_collection_actions),
+        )
+        .route(
+            "/actions/{action}",
+            post(crate::modules::actions::router::run_event_collection_action),
+        )
+        .route(
+            "/{id}/actions",
+            get(crate::modules::actions::router::list_event_actions),
+        )
+        .route(
+            "/{id}/actions/{action}",
+            post(crate::modules::actions::router::run_event_action),
+        )
 }
 
 /// Fetches the durable queue of newly requested VOD forum posts for the bot.
