@@ -1,6 +1,7 @@
 //! Best-effort Discord nickname sync when a member links an Albion character.
 
 use crate::config::Config;
+use crate::modules::discord_api::{DiscordRest, LiveDiscordRest};
 
 /// Discord guild nicknames are capped at 32 Unicode characters.
 const DISCORD_NICK_MAX: usize = 32;
@@ -31,40 +32,25 @@ pub async fn sync_guild_nickname(
     let Some(nick) = nick_from_albion_name(albion_name) else {
         return;
     };
-    let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
+    let discord = LiveDiscordRest::new(cfg);
+    if !discord.has_bot_token() {
         tracing::debug!("skipping Discord nick sync: bot token is not configured");
         return;
-    };
+    }
     let guild_id = guild_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() {
         return;
     }
 
-    let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}");
-    let payload = serde_json::json!({ "nick": nick });
-    match crate::http_client::shared()
-        .patch(&url)
-        .header("Authorization", format!("Bot {token}"))
-        .header("User-Agent", "WeaklingsBackend (0.0.3)")
-        .json(&payload)
-        .send()
+    match discord
+        .set_member_nick(guild_id, discord_user_id, &nick)
         .await
     {
-        Ok(res) if res.status().is_success() => {
+        Ok(()) => {
             tracing::info!(
                 discord_user_id,
                 nick,
                 "synced Discord nickname from Albion link"
-            );
-        }
-        Ok(res) => {
-            let status = res.status();
-            let body = res.text().await.unwrap_or_default();
-            tracing::warn!(
-                discord_user_id,
-                %status,
-                body,
-                "failed to sync Discord nickname from Albion link"
             );
         }
         Err(error) => {
@@ -75,10 +61,6 @@ pub async fn sync_guild_nickname(
             );
         }
     }
-}
-
-fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
-    bot_token.filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
 }
 
 #[cfg(test)]

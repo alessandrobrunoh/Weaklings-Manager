@@ -191,7 +191,7 @@ async fn apply_live_guild_roles(parts: &Parts, ctx: &mut UserContext) {
         return;
     };
     let lookup = super::service::AuthService::new()
-        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg.discord_bot_token.as_deref())
+        .fetch_guild_member_role_ids(&ctx.id, "", &tenant.0, cfg)
         .await;
     if matches!(lookup, super::service::GuildMemberLookup::Unavailable) {
         return;

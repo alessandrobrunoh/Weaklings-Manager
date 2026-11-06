@@ -749,12 +749,7 @@ async fn finalize_session(
         profile.highest_role = "SuperAdmin".to_string();
     } else {
         let lookup = AuthService::new()
-            .fetch_guild_member_role_ids(
-                &profile.id,
-                access_token,
-                &tenant.id,
-                cfg.discord_bot_token.as_deref(),
-            )
+            .fetch_guild_member_role_ids(&profile.id, access_token, &tenant.id, cfg)
             .await;
         let db_roles = crate::modules::auth::entities::role::Entity::find()
             .all(&ctx.db)
@@ -946,12 +941,7 @@ pub async fn get_me(
         if let Some(tenant_id) = profile.tenant_id.clone().filter(|id| !id.trim().is_empty()) {
             let service = AuthService::new();
             let lookup = service
-                .fetch_guild_member_role_ids(
-                    &profile.id,
-                    "",
-                    &tenant_id,
-                    cfg.discord_bot_token.as_deref(),
-                )
+                .fetch_guild_member_role_ids(&profile.id, "", &tenant_id, &cfg)
                 .await;
             // Unavailable keeps the cookie. Absent and Present replace it, so a
             // removed member or a removed Discord role cannot keep the old names
@@ -1107,8 +1097,6 @@ mod tests {
             bot_api_secret: None,
             discord_bot_token: None,
             super_admin_discord_id: "admin".to_owned(),
-            discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
-            discord_api_timeout_secs: 10,
             session_secret: "x".repeat(64),
             frontend_url: "http://localhost".to_owned(),
             albion_api_region: "europe".to_owned(),
@@ -1119,6 +1107,8 @@ mod tests {
             albionbb_base_url: "http://localhost".to_owned(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
+            discord_api_base: "http://127.0.0.1:1/api/v10".to_owned(),
+            discord_api_timeout_secs: 10,
         }
     }
 

@@ -2,8 +2,10 @@
 //!
 //! Handles communication with Discord API for token exchange and profile retrieval.
 
+use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::admin::models::BrandColorsView;
+use crate::modules::discord_api::{DiscordError, DiscordRest, LiveDiscordRest};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 
@@ -357,17 +359,17 @@ impl AuthService {
 
     /// Fetches the member's Discord role snowflakes from the guild.
     ///
-    /// [`GuildMemberLookup::Absent`] is a confirmed 404 (removed from the guild)
-    /// and must drop cached privileges. [`GuildMemberLookup::Unavailable`] is a
-    /// transport or auth failure and must not be treated as a revocation.
-    /// Successful lookups are cached briefly so request authorization does not
+    /// [`GuildMemberLookup::Absent`] is a confirmed 404 with Discord code 10007 (removed from
+    /// the guild) and must drop cached privileges. [`GuildMemberLookup::Unavailable`] is any
+    /// other failure (bot removed, 403, 429, 5xx, network) and must not be treated as a
+    /// revocation. Successful lookups are cached briefly so request authorization does not
     /// call Discord on every call.
     pub async fn fetch_guild_member_role_ids(
         &self,
         user_id: &str,
         user_access_token: &str,
         guild_id: &str,
-        bot_token: Option<&str>,
+        cfg: &Config,
     ) -> GuildMemberLookup {
         let cache_key = (guild_id.to_owned(), user_id.to_owned());
         if user_access_token.is_empty()
@@ -376,61 +378,38 @@ impl AuthService {
             return hit;
         }
 
-        let client = crate::http_client::shared();
-        if let Some(bot) = usable_bot_token(bot_token) {
-            let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");
-            if let Ok(res) = client
-                .get(&url)
-                .header("Authorization", format!("Bot {bot}"))
-                .header("User-Agent", "WeaklingsBackend (0.0.1)")
-                .send()
-                .await
-            {
-                let res = match classify_member_response(res).await {
-                    Ok(res) => res,
-                    Err(lookup) => {
-                        remember_member_lookup(&cache_key, &lookup);
-                        return lookup;
-                    }
-                };
-                #[derive(Deserialize)]
-                struct GuildMemberResponse {
-                    roles: Vec<String>,
-                }
-                if let Ok(member) = res.json::<GuildMemberResponse>().await {
+        let discord = LiveDiscordRest::new(cfg);
+        if discord.has_bot_token() {
+            match discord.guild_member(guild_id, user_id).await {
+                Ok(member) => {
                     let lookup = GuildMemberLookup::Present(member.roles);
                     remember_member_lookup(&cache_key, &lookup);
                     return lookup;
                 }
+                Err(DiscordError::MemberNotFound) => {
+                    let lookup = GuildMemberLookup::Absent;
+                    remember_member_lookup(&cache_key, &lookup);
+                    return lookup;
+                }
+                // No bot path after all, or a transport/payload failure: try the user token.
+                Err(
+                    DiscordError::NotConfigured
+                    | DiscordError::Transport(_)
+                    | DiscordError::InvalidPayload(_),
+                ) => {}
+                // A classified answer (unknown guild, 403, 429, 5xx) is an outage, not absence.
+                Err(_) => return GuildMemberLookup::Unavailable,
             }
         }
 
         if user_access_token.is_empty() {
             return GuildMemberLookup::Unavailable;
         }
-
-        let url = format!("https://discord.com/api/v10/users/@me/guilds/{guild_id}/member");
-        if let Ok(res) = client
-            .get(&url)
-            .bearer_auth(user_access_token)
-            .header("User-Agent", "WeaklingsBackend (0.0.1)")
-            .send()
-            .await
-        {
-            let res = match classify_member_response(res).await {
-                Ok(res) => res,
-                Err(lookup) => return lookup,
-            };
-            #[derive(Deserialize)]
-            struct UserGuildMemberResponse {
-                roles: Vec<String>,
-            }
-            if let Ok(member) = res.json::<UserGuildMemberResponse>().await {
-                return GuildMemberLookup::Present(member.roles);
-            }
+        match discord.user_guild_member(user_access_token, guild_id).await {
+            Ok(member) => GuildMemberLookup::Present(member.roles),
+            Err(DiscordError::MemberNotFound) => GuildMemberLookup::Absent,
+            Err(_) => GuildMemberLookup::Unavailable,
         }
-
-        GuildMemberLookup::Unavailable
     }
 }
 
@@ -445,66 +424,10 @@ impl Default for AuthService {
 pub enum GuildMemberLookup {
     /// Member exists. `roles` may be empty.
     Present(Vec<String>),
-    /// Discord returned 404: the user is not in this guild.
+    /// Discord returned 404 with code 10007: the user is not in this guild.
     Absent,
     /// Network error, 5xx, or the bot cannot read the member. Not a revocation.
     Unavailable,
-}
-
-/// Discord's JSON error code for "Unknown Member": the guild exists and the user is not in it.
-pub const DISCORD_UNKNOWN_MEMBER: u32 = 10007;
-
-/// `Some` when the status itself decides the outcome. `None` when the body
-/// should be parsed as a member payload (2xx).
-///
-/// A 404 is [`GuildMemberLookup::Absent`] only when Discord's error body says
-/// `10007` (Unknown Member). `10004` (Unknown Guild: the bot was removed from the
-/// server), a 404 with no readable code, and every other failure are
-/// [`GuildMemberLookup::Unavailable`]; otherwise a kicked bot would read as
-/// "everybody left" and lock the whole server out.
-#[must_use]
-pub fn classify_member_status(
-    status: u16,
-    discord_error_code: Option<u32>,
-) -> Option<GuildMemberLookup> {
-    if (200..300).contains(&status) {
-        return None;
-    }
-    if status == 404 && discord_error_code == Some(DISCORD_UNKNOWN_MEMBER) {
-        return Some(GuildMemberLookup::Absent);
-    }
-    Some(GuildMemberLookup::Unavailable)
-}
-
-/// Reads the `code` field of a Discord error body, if the body is one.
-#[must_use]
-pub fn discord_error_code(body: &str) -> Option<u32> {
-    #[derive(Deserialize)]
-    struct DiscordError {
-        code: u32,
-    }
-    serde_json::from_str::<DiscordError>(body)
-        .ok()
-        .map(|e| e.code)
-}
-
-/// `Err(lookup)` when the status (and, for a 404, the error body) already decides the outcome,
-/// `Ok(response)` when it is a 2xx whose body is the member payload.
-async fn classify_member_response(
-    res: reqwest::Response,
-) -> Result<reqwest::Response, GuildMemberLookup> {
-    let status = res.status().as_u16();
-    if (200..300).contains(&status) {
-        return Ok(res);
-    }
-    // Only a 404 needs its body: the status alone cannot tell "not in the server" from "the
-    // bot is not in the server".
-    let code = if status == 404 {
-        discord_error_code(&res.text().await.unwrap_or_default())
-    } else {
-        None
-    };
-    Err(classify_member_status(status, code).unwrap_or(GuildMemberLookup::Unavailable))
 }
 
 /// Roles a member gets at login, or `None` when Discord confirmed they are no longer in the
@@ -692,14 +615,63 @@ fn fallback_unmatched_roles(db_roles: &[super::entities::role::Model]) -> (Vec<S
     (vec!["User".to_string()], "User".to_string())
 }
 
-fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
-    bot_token.filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::modules::auth::entities::role;
+    use crate::testkit::discord_stub::{DiscordStub, StubReply};
+
+    fn bot_cfg(base_url: &str) -> Config {
+        let mut cfg = Config::for_tests();
+        cfg.discord_api_base = base_url.to_owned();
+        cfg.discord_bot_token = Some("bot-token".to_owned());
+        cfg
+    }
+
+    #[tokio::test]
+    async fn only_unknown_member_is_absence_for_the_role_lookup() {
+        let stub = DiscordStub::start(|request| {
+            if request.path.contains("/members/u-absent") {
+                StubReply::json(404, r#"{"message":"Unknown Member","code":10007}"#)
+            } else if request.path.contains("/members/u-unknown-guild") {
+                StubReply::json(404, r#"{"message":"Unknown Guild","code":10004}"#)
+            } else {
+                StubReply::json(200, r#"{"roles":["r-1"],"nick":null}"#)
+            }
+        })
+        .await;
+        let cfg = bot_cfg(&stub.base_url);
+        let auth = AuthService::new();
+
+        assert_eq!(
+            auth.fetch_guild_member_role_ids("u-present", "", "g-auth-1", &cfg)
+                .await,
+            GuildMemberLookup::Present(vec!["r-1".to_string()])
+        );
+        assert_eq!(
+            auth.fetch_guild_member_role_ids("u-absent", "", "g-auth-1", &cfg)
+                .await,
+            GuildMemberLookup::Absent
+        );
+        assert_eq!(
+            auth.fetch_guild_member_role_ids("u-unknown-guild", "", "g-auth-1", &cfg)
+                .await,
+            GuildMemberLookup::Unavailable
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_bot_read_without_a_user_token_is_an_outage() {
+        let stub = DiscordStub::start(|_| StubReply::json(429, "{}").with_retry_after("1")).await;
+        let cfg = bot_cfg(&stub.base_url);
+
+        assert_eq!(
+            AuthService::new()
+                .fetch_guild_member_role_ids("u-limited", "", "g-auth-2", &cfg)
+                .await,
+            GuildMemberLookup::Unavailable
+        );
+    }
 
     fn discord_guild(owner: bool, permissions: &str) -> DiscordGuild {
         DiscordGuild {
@@ -810,58 +782,6 @@ mod tests {
         let (names, highest) = resolve_linked_roles(&["nope".into()], &roles);
         assert_eq!(names, vec!["Recruit".to_string()]);
         assert_eq!(highest, "Recruit");
-    }
-
-    #[test]
-    fn member_status_404_unknown_member_is_absence_not_an_outage() {
-        assert_eq!(
-            classify_member_status(404, Some(DISCORD_UNKNOWN_MEMBER)),
-            Some(GuildMemberLookup::Absent)
-        );
-        assert!(matches!(
-            classify_member_status(500, None),
-            Some(GuildMemberLookup::Unavailable)
-        ));
-        assert!(matches!(
-            classify_member_status(403, None),
-            Some(GuildMemberLookup::Unavailable)
-        ));
-        assert!(classify_member_status(200, None).is_none());
-    }
-
-    #[test]
-    fn unknown_guild_10004_never_reads_as_absence() {
-        // The bot was removed from the server: every member lookup 404s with 10004, which must
-        // not be mistaken for "everybody left" (it would lock the whole server out).
-        assert_eq!(
-            classify_member_status(404, Some(10004)),
-            Some(GuildMemberLookup::Unavailable)
-        );
-        // A 404 with no readable code (proxy page, empty body) is not proof either.
-        assert_eq!(
-            classify_member_status(404, None),
-            Some(GuildMemberLookup::Unavailable)
-        );
-        // The code only matters on a 404.
-        assert_eq!(
-            classify_member_status(500, Some(DISCORD_UNKNOWN_MEMBER)),
-            Some(GuildMemberLookup::Unavailable)
-        );
-    }
-
-    #[test]
-    fn discord_error_code_is_read_from_the_json_body() {
-        assert_eq!(
-            discord_error_code(r#"{"message": "Unknown Member", "code": 10007}"#),
-            Some(10007)
-        );
-        assert_eq!(
-            discord_error_code(r#"{"message": "Unknown Guild", "code": 10004}"#),
-            Some(10004)
-        );
-        assert_eq!(discord_error_code("<html>Not Found</html>"), None);
-        assert_eq!(discord_error_code(""), None);
-        assert_eq!(discord_error_code(r#"{"message": "no code"}"#), None);
     }
 
     #[test]
