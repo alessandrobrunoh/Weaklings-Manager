@@ -4383,7 +4383,11 @@ impl EventService {
             let parsed_battle_id = battle_id.parse::<i64>().map_err(|error| {
                 AppError::Validation(format!("Invalid AlbionBB battle id '{battle_id}': {error}"))
             })?;
-            let battle = albionbb.get_battle(server, parsed_battle_id).await?.summary;
+            let battle = albionbb
+                .get_battle(server, parsed_battle_id)
+                .await?
+                .summary
+                .clone();
             let snapshot = linked_battle_snapshot(&battle, context);
             if snapshot.guild_players_count == 0 {
                 return Err(AppError::Validation(format!(

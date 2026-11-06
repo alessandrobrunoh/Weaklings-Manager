@@ -23,6 +23,7 @@ pub(crate) mod tenant;
     reason = "fixture surface is extended and consumed by later slices"
 )]
 pub(crate) mod testkit;
+pub(crate) mod ttl_cache;
 
 pub mod config;
 pub(crate) mod errors;

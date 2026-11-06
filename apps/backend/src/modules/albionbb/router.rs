@@ -11,6 +11,7 @@ use axum::{
     routing::get,
 };
 use serde::Deserialize;
+use std::sync::Arc;
 use utoipa::IntoParams;
 
 use super::client::{
@@ -132,7 +133,7 @@ pub async fn get_battle(
     let detail = service
         .get_battle(params.server.as_deref(), battle_id)
         .await?;
-    Ok(Json(ApiResponse::new(detail)))
+    Ok(Json(ApiResponse::new(Arc::unwrap_or_clone(detail))))
 }
 
 /// Fetch kill events for a battle.
