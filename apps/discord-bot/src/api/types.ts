@@ -120,7 +120,7 @@ export interface DiscordUserProfile {
 export interface UserProfile {
   id: number;
   username: string;
-  email: string;
+  email?: string;
   role: Role;
 }
 

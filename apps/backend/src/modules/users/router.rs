@@ -68,6 +68,13 @@ pub fn router() -> Router {
         .route("/{user_id}/roles/{role_id}", delete(delete_user_role))
 }
 
+/// Whether `user` may read other members' emails: `users.create` (provisioning) or
+/// `roles.manage` holders, the tenant owner and platform admins included.
+async fn can_see_member_emails(user: &UserContext, perms: &Permissions) -> bool {
+    user.has_permission(perms, Permission::UsersCreate).await
+        || user.has_permission(perms, Permission::RolesManage).await
+}
+
 /// Retrieve the profile of the currently authenticated user.
 ///
 /// Returns user profile details wrapped in a success envelope.
@@ -98,7 +105,7 @@ async fn get_my_profile(
     let profile = UserProfile {
         id: user.user_id as u64,
         username,
-        email: user.email.unwrap_or_default(),
+        email: user.email,
         role: user.highest_role,
     };
     Ok(Json(ApiResponse::new(profile)))
@@ -195,7 +202,8 @@ async fn update_user_specializations(
 
 /// List all user profiles with pagination and filtering.
 ///
-/// Open to any authenticated user (needed to pick guild members as split participants).
+/// Open to any authenticated user (needed to pick guild members as split participants), but
+/// emails are only returned to the caller's own row and to `users.create`/`roles.manage` holders.
 ///
 /// # Errors
 ///
@@ -210,10 +218,11 @@ async fn update_user_specializations(
         request form uses to populate its participant picker, and the only way to resolve a \
         username to the internal `user_id` needed by `POST /splits` or `POST /splits/{id}/participants`. \
         Supports filtering by `username`/display name (case-insensitive substring; linked Albion \
-        character names are included), exact `email`, or `role`, plus \
+        character names are included), or exact `role`, plus \
         standard `page`/`limit` pagination (default `limit=10`). Page through results rather than \
         requesting an oversized `limit`. Sort with `sort=username|role` and `order=asc|desc`; \
-        unknown `sort` values return 400.",
+        unknown `sort` values return 400. `email` is omitted from each item except the caller's \
+        own and for callers holding `users.create` or `roles.manage`; there is no email filter.",
     security(("session_cookie" = [])),
     params(
         ListUsersQuery
@@ -224,13 +233,20 @@ async fn update_user_specializations(
     )
 )]
 async fn list_users(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(query): Query<ListUsersQuery>,
 ) -> Result<Json<ApiResponse<PaginatedUserProfile>>, AppError> {
     let service = UserService::new();
     let pagination = query.pagination();
-    let paginated = service.list_users(&db, &pagination, &query.filters).await?;
+    let mut paginated = service.list_users(&db, &pagination, &query.filters).await?;
+    let can_see_emails = can_see_member_emails(&user, &perms).await;
+    paginated.items = paginated
+        .items
+        .into_iter()
+        .map(|profile| profile.redacted_for(user.user_id, can_see_emails))
+        .collect();
     let response_data = PaginatedUserProfile::from(paginated);
 
     Ok(Json(ApiResponse::new(response_data)))
@@ -250,7 +266,9 @@ async fn list_users(
     tag = "users",
     summary = "Get one guild member by internal id",
     description = "Returns the same `UserProfile` shape as `GET /api/users`. Open to any \
-        authenticated user so member detail pages can load without a full roster dump.",
+        authenticated user so member detail pages can load without a full roster dump. `email` is \
+        included only for the caller's own profile and for callers holding `users.create` or \
+        `roles.manage`.",
     security(("session_cookie" = [])),
     params(("user_id" = u64, Path, description = "Internal user id")),
     responses(
@@ -260,7 +278,8 @@ async fn list_users(
     )
 )]
 pub async fn get_user(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(user_id): Path<u64>,
 ) -> Result<Json<ApiResponse<UserProfile>>, AppError> {
@@ -269,6 +288,7 @@ pub async fn get_user(
         .get_profile(&db, user_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
+    let profile = profile.redacted_for(user.user_id, can_see_member_emails(&user, &perms).await);
     Ok(Json(ApiResponse::new(profile)))
 }
 
@@ -341,7 +361,7 @@ pub async fn post_user_role(
             &db,
             &discord,
             user.user_id,
-            user.is_superadmin(),
+            user.bypasses_priority(),
             &user.roles,
             user_id,
             &body.role_id,
@@ -387,7 +407,7 @@ pub async fn delete_user_role(
             &db,
             &discord,
             user.user_id,
-            user.is_superadmin(),
+            user.bypasses_priority(),
             &user.roles,
             user_id,
             &role_id,
