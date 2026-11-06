@@ -87,6 +87,15 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// A conflict with a stable machine-readable problem `code` that clients branch on (HTTP 409).
+    #[error("Conflict: {message}")]
+    ConflictWithCode {
+        /// Stable problem code, e.g. `completed_alliance_split_immutable`.
+        code: &'static str,
+        /// Human-readable summary of the conflict.
+        message: String,
+    },
+
     /// A conflict where the caller needs to see exactly what's blocking the
     /// action (e.g. deleting a comp that's still linked to live events) —
     /// carries the specific rows in the way, not just a message string.
@@ -196,6 +205,19 @@ impl IntoResponse for AppError {
                 msg,
                 None,
             ),
+            Self::ConflictWithCode {
+                code: found,
+                message,
+            } => {
+                code = Some(found);
+                (
+                    StatusCode::CONFLICT,
+                    "/errors/conflict",
+                    "Conflict",
+                    message,
+                    None,
+                )
+            }
             Self::ConflictWithReferences {
                 message,
                 references,

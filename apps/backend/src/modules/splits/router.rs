@@ -312,7 +312,7 @@ async fn update_split(
     Path(id): Path<i64>,
     Json(req): Json<UpdateSplitRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind, &control, &tenant_id)
         .update_split(&db, id, req)
         .await?;
@@ -347,7 +347,7 @@ async fn delete_split(
 ) -> Result<axum::response::Response, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
     split_service(&kind, &control, &tenant_id)
-        .delete_split(&db, id)
+        .delete_split(&db, id, user.user_id)
         .await?;
     Ok(axum::response::Response::builder()
         .status(axum::http::StatusCode::NO_CONTENT)
@@ -380,7 +380,7 @@ async fn archive_split(
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
     let split = split_service(&kind, &control, &tenant_id)
-        .archive_split(&db, id)
+        .archive_split(&db, id, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -410,7 +410,7 @@ async fn unarchive_split(
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsDelete).await?;
     let split = split_service(&kind, &control, &tenant_id)
-        .unarchive_split(&db, id)
+        .unarchive_split(&db, id, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -455,7 +455,7 @@ async fn add_or_update_participant(
     Path(id): Path<i64>,
     Json(req): Json<UpsertParticipantRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind, &control, &tenant_id)
         .add_or_update_participant(&db, id, req)
         .await?;
@@ -499,7 +499,7 @@ async fn remove_participant(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path((id, user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
-    user.require(&perms, Permission::SplitsEdit).await?;
+    authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind, &control, &tenant_id)
         .remove_participant(&db, id, user_id)
         .await?;
@@ -686,7 +686,7 @@ async fn not_completed_split(
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind, &control, &tenant_id)
-        .mark_not_completed(&db, id)
+        .mark_not_completed(&db, id, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -729,7 +729,7 @@ async fn lost_split(
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     authorize_split_lifecycle(&db, &user, &perms, id, Permission::SplitsEdit).await?;
     let split = split_service(&kind, &control, &tenant_id)
-        .mark_lost(&db, id)
+        .mark_lost(&db, id, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(split)))
 }
@@ -1181,5 +1181,29 @@ mod tests {
             authorize_split_owner_or_global(None, 17, 404, true, Permission::SplitsEdit),
             Err(AppError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn split_lifecycle_matrix_creator_manager_and_unrelated_member() {
+        // Edit gate (update, participants, complete, close) and delete gate (archive, unarchive):
+        // the creator and a holder of the general permission pass, an unrelated member does not.
+        for permission in [Permission::SplitsEdit, Permission::SplitsDelete] {
+            let name = permission.as_str();
+            assert!(
+                authorize_split_owner_or_global(Some(17), 17, 1, false, permission).is_ok(),
+                "{name}: creator"
+            );
+            assert!(
+                authorize_split_owner_or_global(Some(17), 18, 1, true, permission).is_ok(),
+                "{name}: manager"
+            );
+            assert!(
+                matches!(
+                    authorize_split_owner_or_global(Some(17), 18, 1, false, permission),
+                    Err(AppError::Forbidden(_))
+                ),
+                "{name}: unrelated member"
+            );
+        }
     }
 }

@@ -42,6 +42,8 @@ pub mod split {
         pub origin_read_only: bool,
         /// True when the last event-driven roster sync failed; cleared by the next successful sync.
         pub needs_resync: bool,
+        /// True when an officer edited the participants by hand; event sync then leaves the roster alone.
+        pub roster_locked: bool,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

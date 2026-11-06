@@ -295,10 +295,21 @@ pub async fn transition_in_txn(
             if model.status == "cancelled" {
                 (model, false)
             } else {
-                (apply_cancel(txn, model).await?, true)
+                let updated = apply_cancel(txn, model).await?;
+                // A cancelled event releases its awaiting splits to pending, in this transaction.
+                SplitService::new()
+                    .recompute_awaiting_for_event(txn, event_id)
+                    .await?;
+                (updated, true)
             }
         }
-        Transition::Uncancel => (apply_uncancel(txn, model).await?, true),
+        Transition::Uncancel => {
+            let updated = apply_uncancel(txn, model).await?;
+            SplitService::new()
+                .recompute_awaiting_for_event(txn, event_id)
+                .await?;
+            (updated, true)
+        }
         Transition::Archive => (apply_archive(txn, model).await?, true),
         Transition::Unarchive => (apply_unarchive(txn, model).await?, true),
     };
@@ -3033,5 +3044,30 @@ mod transition_tests {
             }
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn cancelling_an_event_releases_its_awaiting_splits_and_uncancel_re_awaits_them() {
+        let db = sqlite_db().await;
+        let fx = fixture(&db).await;
+        let (event_id, split_id) = seed_event(&db, &fx, "scheduled", false).await;
+        let split_status = |db: DatabaseConnection| async move {
+            split::Entity::find_by_id(split_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap()
+                .status
+        };
+
+        run(&db, event_id, Transition::Cancel, Cause::Web)
+            .await
+            .unwrap();
+        assert_eq!(split_status(db.clone()).await, "pending");
+
+        run(&db, event_id, Transition::Uncancel, Cause::Web)
+            .await
+            .unwrap();
+        assert_eq!(split_status(db.clone()).await, "awaiting_event");
     }
 }
