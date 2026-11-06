@@ -408,15 +408,19 @@ pub struct CreateBuildItemRequest {
     pub openalbion_item_type: String,
     /// The `OpenAlbion` item ID.
     pub openalbion_item_id: i64,
-    /// The `OpenAlbion` item name.
+    /// Ignored: the stored name is the catalog's name for `openalbion_item_id`. Accepted so
+    /// existing clients keep working.
+    #[serde(default)]
     pub openalbion_item_name: String,
-    /// The `OpenAlbion` item icon URL.
+    /// Ignored: the stored icon is the catalog's render URL for `openalbion_item_id`, with the
+    /// chosen quality.
     pub openalbion_item_icon: Option<String>,
     /// Abilities chosen for this item while it was still a picker draft, if any. Validated the
     /// same way `PUT .../items/{slot}/spells` validates them.
     #[serde(default)]
     pub spells: Option<BuildItemSpells>,
-    /// The `OpenAlbion` item tier.
+    /// The expected `OpenAlbion` item tier. Optional: when given it must match the catalog's tier
+    /// for the item, and the stored tier is always the catalog's.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
@@ -440,11 +444,15 @@ pub struct UpsertBuildItemRequest {
     pub openalbion_item_type: String,
     /// The `OpenAlbion` item ID.
     pub openalbion_item_id: i64,
-    /// The `OpenAlbion` item name.
+    /// Ignored: the stored name is the catalog's name for `openalbion_item_id`. Accepted so
+    /// existing clients keep working.
+    #[serde(default)]
     pub openalbion_item_name: String,
-    /// The `OpenAlbion` item icon URL.
+    /// Ignored: the stored icon is the catalog's render URL for `openalbion_item_id`, with the
+    /// chosen quality.
     pub openalbion_item_icon: Option<String>,
-    /// The `OpenAlbion` item tier.
+    /// The expected `OpenAlbion` item tier. Optional: when given it must match the catalog's tier
+    /// for the item, and the stored tier is always the catalog's.
     pub openalbion_item_tier: Option<String>,
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
@@ -452,6 +460,12 @@ pub struct UpsertBuildItemRequest {
     /// Albion enchantment level. Omitted values become plain (`0`).
     #[schema(example = 2)]
     pub openalbion_item_enchantment: Option<i16>,
+    /// The abilities to store on the item, saved together with it in one transaction. When
+    /// present they replace every ability previously chosen on the slot (an empty selection
+    /// clears them) and are validated against what this item offers; when omitted, abilities the
+    /// new item still offers are kept.
+    #[serde(default)]
+    pub spells: Option<BuildItemSpells>,
 }
 
 /// Request body to create a comp.
