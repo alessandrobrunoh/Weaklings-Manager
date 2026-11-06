@@ -27,7 +27,7 @@ use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
 use crate::modules::auth::service::DiscordUserProfile;
-use crate::postgres::{self, connect_with_search_path, list_active_tenants};
+use crate::postgres::{self, connect_tenant_pool, list_active_tenants};
 use crate::{albion_scope, battle_sync, event_sessions};
 
 /// Header the Discord bot sends to select a guild/tenant.
@@ -133,6 +133,10 @@ pub struct TenantRegistry {
     database_url: String,
     control_db: DatabaseConnection,
     inner: Arc<DashMap<String, Arc<TenantContext>>>,
+    /// One async gate per tenant, held while its first load runs. Concurrent first
+    /// requests (and a warmup racing a request) wait for the winner instead of each
+    /// opening a pool and running `Migrator::up` in parallel.
+    loading: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Set once by `run_server` before it starts serving traffic. `OnceLock`
     /// rather than a mutable field: every clone of the registry — one per
     /// request, via the `Extension` layer — shares the same slot, and nothing
@@ -141,6 +145,11 @@ pub struct TenantRegistry {
     /// Tenants whose sync tasks are already running. The flag stops them when
     /// the tenant is suspended; reactivation starts a new pair.
     running_sync: Arc<DashMap<String, Arc<AtomicBool>>>,
+    /// Bumped for a tenant by [`Self::evict`] and [`Self::refresh`]. A load or refresh
+    /// reads this before it reads the control plane and caches its result only if the
+    /// value is unchanged, so an invalidation that overlaps the read cannot leave the
+    /// read's (possibly pre-suspension) state in the cache.
+    epochs: Arc<DashMap<String, u64>>,
 }
 
 impl TenantRegistry {
@@ -153,8 +162,10 @@ impl TenantRegistry {
             database_url,
             control_db,
             inner: Arc::new(DashMap::new()),
+            loading: Arc::new(DashMap::new()),
             workers: Arc::new(OnceLock::new()),
             running_sync: Arc::new(DashMap::new()),
+            epochs: Arc::new(DashMap::new()),
         }
     }
 
@@ -268,17 +279,153 @@ impl TenantRegistry {
     /// Returns [`AppError::NotFound`] when the tenant is missing or not `active`,
     /// or a database error if the schema cannot be opened.
     pub async fn get_or_load(&self, tenant_id: &str) -> Result<Arc<TenantContext>, AppError> {
+        self.load_once(tenant_id, || self.load(tenant_id)).await
+    }
+
+    /// Runs `load` at most once per tenant at a time (single-flight).
+    ///
+    /// Callers that find the context cached return it without taking the gate. The
+    /// rest queue on the tenant's gate, and the first one through re-checks the cache
+    /// so a load that finished while it waited is reused, not repeated.
+    async fn load_once<F, Fut>(
+        &self,
+        tenant_id: &str,
+        load: F,
+    ) -> Result<Arc<TenantContext>, AppError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<Arc<TenantContext>, AppError>>,
+    {
         if let Some(ctx) = self.inner.get(tenant_id) {
             return Ok(ctx.clone());
         }
-        let ctx = self.load(tenant_id).await?;
-        self.inner.insert(tenant_id.to_owned(), ctx.clone());
+        // The map entry guard is a temporary: it is dropped before the await below.
+        let gate = self
+            .loading
+            .entry(tenant_id.to_owned())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .value()
+            .clone();
+        let _turn = gate.lock().await;
+        if let Some(ctx) = self.inner.get(tenant_id) {
+            return Ok(ctx.clone());
+        }
+        let epoch = self.epoch(tenant_id);
+        let ctx = load().await?;
+        self.publish(tenant_id, epoch, &ctx);
         Ok(ctx)
     }
 
     /// Drop a cached context so the next request reloads flags, status, and pool.
+    ///
+    /// Use this only when the tenant itself stops being served (suspension, archive).
+    /// Feature, rank and permission changes call [`Self::refresh`] instead: evicting
+    /// there leaked the old pool while its workers still used it, and reconnected
+    /// and re-ran migrations on the next request.
+    ///
+    /// The epoch is bumped before the entry is removed, so a load that is still
+    /// reading the control plane cannot cache its result afterwards.
     pub fn evict(&self, tenant_id: &str) {
+        self.invalidate(tenant_id);
         self.inner.remove(tenant_id);
+    }
+
+    /// Re-reads feature flags, status and the permission snapshot of a cached tenant,
+    /// keeping its pool.
+    ///
+    /// The pool and the background workers that hold it stay as they are: no reconnect,
+    /// no migration check. A tenant that is no longer `active` is evicted, so the next
+    /// request is refused exactly as a cold load would be. A failed reload also evicts,
+    /// which falls back to the cold path rather than serving stale flags.
+    ///
+    /// The tenant is invalidated even when nothing is cached, so a cold load that
+    /// overlaps this call does not cache the flags it read before the write.
+    pub async fn refresh(&self, tenant_id: &str) {
+        self.invalidate(tenant_id);
+        let epoch = self.epoch(tenant_id);
+        let Some(current) = self
+            .inner
+            .get(tenant_id)
+            .map(|entry| Arc::clone(entry.value()))
+        else {
+            // Nothing cached: the next request reads the new state anyway.
+            return;
+        };
+        match self.reload_context(&current).await {
+            Ok(Some(fresh)) => self.publish(tenant_id, epoch, &Arc::new(fresh)),
+            Ok(None) => self.evict(tenant_id),
+            Err(err) => {
+                tracing::warn!(
+                    tenant_id,
+                    error = ?err,
+                    "tenant refresh failed; evicting so the next request reloads"
+                );
+                self.evict(tenant_id);
+            }
+        }
+    }
+
+    /// The current invalidation epoch of `tenant_id`. Read it before reading the
+    /// control plane, and pass it to [`Self::publish`].
+    fn epoch(&self, tenant_id: &str) -> u64 {
+        self.epochs.get(tenant_id).map_or(0, |epoch| *epoch)
+    }
+
+    fn invalidate(&self, tenant_id: &str) {
+        *self.epochs.entry(tenant_id.to_owned()).or_insert(0) += 1;
+    }
+
+    /// Caches `ctx` unless the tenant was invalidated since `epoch` was read.
+    ///
+    /// Insert first, then check: an invalidation that lands after the check finds
+    /// `ctx` in the map and removes it, because it bumps the epoch before it removes.
+    /// An invalidation that landed before the check is caught here.
+    fn publish(&self, tenant_id: &str, epoch: u64, ctx: &Arc<TenantContext>) {
+        self.inner.insert(tenant_id.to_owned(), Arc::clone(ctx));
+        if self.epoch(tenant_id) != epoch {
+            self.inner
+                .remove_if(tenant_id, |_, cached| Arc::ptr_eq(cached, ctx));
+        }
+    }
+
+    /// Builds the refreshed context for `current`, sharing its pool and permission cache.
+    ///
+    /// `Ok(None)` when the tenant is no longer active or no longer registered.
+    async fn reload_context(
+        &self,
+        current: &TenantContext,
+    ) -> Result<Option<TenantContext>, AppError> {
+        let row = self
+            .control_db
+            .query_one(Statement::from_sql_and_values(
+                self.control_db.get_database_backend(),
+                "SELECT status FROM tenants WHERE id = $1",
+                [current.tenant_id.as_str().into()],
+            ))
+            .await
+            .map_err(AppError::Database)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let status: String = row.try_get_by_index(0).map_err(AppError::Database)?;
+        if status != "active" {
+            return Ok(None);
+        }
+        current
+            .permissions
+            .reload(&current.db)
+            .await
+            .map_err(AppError::Database)?;
+        let features = load_features(&self.control_db, &current.tenant_id).await?;
+        let kind = lookup_tenant_kind(&self.control_db, &current.tenant_id).await?;
+        Ok(Some(TenantContext {
+            tenant_id: current.tenant_id.clone(),
+            schema_name: current.schema_name.clone(),
+            db: current.db.clone(),
+            permissions: current.permissions.clone(),
+            features,
+            kind,
+        }))
     }
 
     /// Create the Postgres schema, run tenant migrations, cache the context,
@@ -307,8 +454,9 @@ impl TenantRegistry {
         postgres::ensure_schema(&admin, schema_name)
             .await
             .map_err(AppError::Database)?;
+        let epoch = self.epoch(tenant_id);
         let ctx = self.open_context(tenant_id, schema_name).await?;
-        self.inner.insert(tenant_id.to_owned(), ctx.clone());
+        self.publish(tenant_id, epoch, &ctx);
         if self.workers.get().is_none() {
             // Should not happen outside of tests: `run_server` calls
             // `set_workers` before the router can accept a request that
@@ -362,7 +510,7 @@ impl TenantRegistry {
         tenant_id: &str,
         schema_name: &str,
     ) -> Result<Arc<TenantContext>, AppError> {
-        let db = connect_with_search_path(&self.database_url, schema_name)
+        let db = connect_tenant_pool(&self.database_url, schema_name)
             .await
             .map_err(AppError::Database)?;
         Migrator::up(&db, None).await.map_err(AppError::Database)?;
@@ -703,7 +851,9 @@ mod tests {
     use super::*;
     use crate::control_migration;
     use crate::postgres::test_support::{cleanup_control_tenant, try_admin_db, unique_schema};
-    use crate::postgres::{CONTROL_SCHEMA, drop_schema, ensure_schema, quote_ident};
+    use crate::postgres::{
+        CONTROL_SCHEMA, connect_with_search_path, drop_schema, ensure_schema, quote_ident,
+    };
     use axum::http::HeaderValue;
     use axum::response::IntoResponse;
 
@@ -1184,5 +1334,236 @@ mod tests {
         cleanup_control_tenant(&control, &id, "")
             .await
             .expect("cleanup tenant");
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use sea_orm::Database;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
+
+    fn context(tenant_id: &str, db: DatabaseConnection) -> Arc<TenantContext> {
+        Arc::new(TenantContext {
+            tenant_id: tenant_id.to_owned(),
+            schema_name: format!("tenant_{tenant_id}"),
+            db,
+            permissions: Permissions::new_empty(),
+            features: HashSet::new(),
+            kind: "guild".to_owned(),
+        })
+    }
+
+    /// A control plane with one tenant `t1` in `status`, plus an empty flag table.
+    async fn control_with_tenant(status: &str) -> DatabaseConnection {
+        let control = Database::connect("sqlite::memory:")
+            .await
+            .expect("control sqlite");
+        control
+            .execute_unprepared(
+                "CREATE TABLE tenants (id TEXT PRIMARY KEY, status TEXT NOT NULL, \
+                 kind TEXT NOT NULL)",
+            )
+            .await
+            .expect("tenants table");
+        control
+            .execute_unprepared(
+                "CREATE TABLE tenant_feature_flags (tenant_id TEXT NOT NULL, \
+                 feature_key TEXT NOT NULL, enabled BOOLEAN NOT NULL)",
+            )
+            .await
+            .expect("flags table");
+        control
+            .execute_unprepared(&format!(
+                "INSERT INTO tenants (id, status, kind) VALUES ('t1', '{status}', 'guild')"
+            ))
+            .await
+            .expect("tenant row");
+        control
+    }
+
+    async fn pool() -> DatabaseConnection {
+        Database::connect("sqlite::memory:")
+            .await
+            .expect("tenant sqlite")
+    }
+
+    /// A tenant database with the real schema, for code that reads the permission
+    /// tables.
+    async fn migrated_pool() -> DatabaseConnection {
+        let db = pool().await;
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("tenant migrations");
+        db
+    }
+
+    #[tokio::test]
+    async fn refresh_reloads_flags_and_keeps_the_pool() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control.clone());
+        let before = context("t1", migrated_pool().await);
+        registry.inner.insert("t1".to_owned(), Arc::clone(&before));
+        control
+            .execute_unprepared(
+                "INSERT INTO tenant_feature_flags (tenant_id, feature_key, enabled) \
+                 VALUES ('t1', 'bank', 1)",
+            )
+            .await
+            .expect("flag");
+
+        registry.refresh("t1").await;
+
+        let after = registry.inner.get("t1").expect("still cached").clone();
+        assert!(
+            !Arc::ptr_eq(&before, &after),
+            "a fresh context replaces the old one"
+        );
+        assert!(after.features.contains("bank"));
+        assert!(
+            before.features.is_empty(),
+            "the old snapshot is left untouched"
+        );
+        assert_eq!(after.schema_name, before.schema_name);
+        after.db.ping().await.expect("the shared pool still works");
+    }
+
+    #[tokio::test]
+    async fn refresh_evicts_a_tenant_that_is_no_longer_active() {
+        let control = control_with_tenant("suspended").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+        registry
+            .inner
+            .insert("t1".to_owned(), context("t1", pool().await));
+
+        registry.refresh("t1").await;
+
+        assert_eq!(registry.cached_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn refresh_of_an_uncached_tenant_is_a_no_op() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+
+        registry.refresh("t1").await;
+
+        assert_eq!(registry.cached_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn concurrent_first_loads_run_the_loader_once() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+        let db = pool().await;
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let registry = registry.clone();
+            let calls = Arc::clone(&calls);
+            let db = db.clone();
+            tasks.push(tokio::spawn(async move {
+                registry
+                    .load_once("t1", || {
+                        let calls = Arc::clone(&calls);
+                        let db = db.clone();
+                        async move {
+                            calls.fetch_add(1, Ordering::SeqCst);
+                            // Hold the gate long enough for the other callers to queue on it.
+                            tokio::time::sleep(Duration::from_millis(25)).await;
+                            Ok(context("t1", db))
+                        }
+                    })
+                    .await
+            }));
+        }
+        for task in tasks {
+            task.await.expect("join").expect("load");
+        }
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "one pool and one migration check"
+        );
+        assert_eq!(registry.cached_len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_load_that_overlaps_an_eviction_is_not_cached() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+        let db = pool().await;
+        let suspending = registry.clone();
+
+        let ctx = registry
+            .load_once("t1", || async move {
+                // Suspension commits, then evicts, while this load is still reading.
+                suspending.evict("t1");
+                Ok(context("t1", db))
+            })
+            .await
+            .expect("load");
+
+        assert_eq!(ctx.tenant_id, "t1", "the caller still gets its context");
+        assert_eq!(
+            registry.cached_len(),
+            0,
+            "a load that overlapped a suspension must not be cached"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_load_that_overlaps_a_refresh_is_not_cached() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+        let db = pool().await;
+        let writer = registry.clone();
+
+        registry
+            .load_once("t1", || async move {
+                // A flag write refreshes while the cold load is still reading.
+                writer.refresh("t1").await;
+                Ok(context("t1", db))
+            })
+            .await
+            .expect("load");
+
+        assert_eq!(
+            registry.cached_len(),
+            0,
+            "flags read before a write must not be cached"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refresh_whose_reload_overlaps_an_eviction_does_not_recache() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+        registry
+            .inner
+            .insert("t1".to_owned(), context("t1", pool().await));
+
+        // The refresh read the tenant as active, then suspension evicted before it inserted.
+        let epoch = registry.epoch("t1");
+        registry.evict("t1");
+        registry.publish("t1", epoch, &context("t1", pool().await));
+
+        assert_eq!(registry.cached_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_refresh_with_no_overlapping_invalidation_is_cached() {
+        let control = control_with_tenant("active").await;
+        let registry = TenantRegistry::new("sqlite::memory:".into(), control);
+        registry
+            .inner
+            .insert("t1".to_owned(), context("t1", migrated_pool().await));
+
+        registry.refresh("t1").await;
+
+        assert_eq!(registry.cached_len(), 1);
     }
 }

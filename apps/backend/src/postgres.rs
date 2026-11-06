@@ -10,6 +10,8 @@
 //! own `seaql_migrations` bookkeeping into whichever schema is on `search_path`,
 //! so dedicated schemas keep those trackers from mixing.
 
+use std::time::Duration;
+
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
 /// Schema that holds control-plane tables (`tenants`, platform roles, feature flags).
@@ -114,6 +116,55 @@ pub async fn connect_with_search_path(
     let mut opt = ConnectOptions::new(database_url.to_owned());
     opt.set_schema_search_path(schema);
     Database::connect(opt).await
+}
+
+/// Largest number of connections one tenant pool may open.
+///
+/// `SeaORM` (sqlx) defaults to 10 per pool. Every tenant has its own pool, so with
+/// the control pool that is about 10 x (tenants + 1) connections against Postgres's
+/// default `max_connections` of 100: roughly ten busy tenants exhaust the server.
+pub const TENANT_POOL_MAX_CONNECTIONS: u32 = 5;
+
+/// Connections a tenant pool keeps open while idle (none: an idle tenant costs nothing).
+pub const TENANT_POOL_MIN_CONNECTIONS: u32 = 0;
+
+/// How long a request waits for a free connection before it fails.
+pub const TENANT_POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Idle connections are closed after this long.
+pub const TENANT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Connections are recycled after this long, even when busy.
+pub const TENANT_POOL_MAX_LIFETIME: Duration = Duration::from_mins(30);
+
+/// Connect options for a tenant pool: `search_path` pinned to `schema` and explicit
+/// sizing, so no tenant can grow past [`TENANT_POOL_MAX_CONNECTIONS`].
+///
+/// # Errors
+///
+/// Returns an error when `schema` is not a safe identifier.
+pub fn tenant_connect_options(database_url: &str, schema: &str) -> Result<ConnectOptions, DbErr> {
+    validate_schema_name(schema)?;
+    let mut opt = ConnectOptions::new(database_url.to_owned());
+    opt.set_schema_search_path(schema)
+        .max_connections(TENANT_POOL_MAX_CONNECTIONS)
+        .min_connections(TENANT_POOL_MIN_CONNECTIONS)
+        .acquire_timeout(TENANT_POOL_ACQUIRE_TIMEOUT)
+        .idle_timeout(TENANT_POOL_IDLE_TIMEOUT)
+        .max_lifetime(TENANT_POOL_MAX_LIFETIME);
+    Ok(opt)
+}
+
+/// Opens the bounded pool for one tenant schema. See [`tenant_connect_options`].
+///
+/// # Errors
+///
+/// Returns an error when the schema name is invalid or the database cannot be reached.
+pub async fn connect_tenant_pool(
+    database_url: &str,
+    schema: &str,
+) -> Result<DatabaseConnection, DbErr> {
+    Database::connect(tenant_connect_options(database_url, schema)?).await
 }
 
 /// Quotes a Postgres identifier. Callers must already trust or validate `ident`.
@@ -275,6 +326,25 @@ mod tests {
     use super::test_support::{try_admin_db, unique_schema};
     use super::*;
     use sea_orm::DbBackend;
+
+    #[test]
+    fn tenant_pools_are_explicitly_bounded() {
+        // Regression guard for the connection budget: a tenant pool must never fall back
+        // to SeaORM's default (10 connections, no idle or acquire bound).
+        let opt = tenant_connect_options("postgres://u@127.0.0.1:1/db", "tenant_abc")
+            .expect("valid schema");
+        assert_eq!(opt.get_max_connections(), Some(TENANT_POOL_MAX_CONNECTIONS));
+        assert_eq!(opt.get_min_connections(), Some(TENANT_POOL_MIN_CONNECTIONS));
+        assert_eq!(opt.get_acquire_timeout(), Some(TENANT_POOL_ACQUIRE_TIMEOUT));
+        assert_eq!(opt.get_idle_timeout(), Some(TENANT_POOL_IDLE_TIMEOUT));
+        assert_eq!(opt.get_max_lifetime(), Some(TENANT_POOL_MAX_LIFETIME));
+    }
+
+    #[test]
+    fn tenant_pool_rejects_unsafe_schema_names() {
+        assert!(tenant_connect_options("postgres://u@127.0.0.1:1/db", "tenant_x; DROP").is_err());
+        assert!(tenant_connect_options("postgres://u@127.0.0.1:1/db", "Tenant").is_err());
+    }
 
     #[test]
     fn accepts_control_and_tenant_shaped_names() {
