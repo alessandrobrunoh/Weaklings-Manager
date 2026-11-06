@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 
 import { AuthService } from '../services/auth.service';
+import { isSameOriginPath } from '../routing/same-origin-path';
 
 
 /**
@@ -43,7 +44,7 @@ export const redirectIfAuthenticatedGuard: CanActivateFn = async (route) => {
   const auth = inject(AuthService);
   const router = inject(Router);
   const next = route.queryParamMap.get('next');
-  const destination = next && next.startsWith('/') ? next : null;
+  const destination = isSameOriginPath(next) ? next : null;
 
   const sendHome = (profile: { tenant_id?: string | null; is_platform_admin?: boolean } | null) => {
     if (destination) {

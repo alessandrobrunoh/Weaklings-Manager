@@ -1,9 +1,15 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Router, UrlTree } from '@angular/router';
+import { convertToParamMap, provideRouter, Router, UrlTree } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 
 import { AuthService } from '../services/auth.service';
-import { permissionGuard, permissionGuardTo, platformGuard, tenantGuard } from './auth.guard';
+import {
+  permissionGuard,
+  permissionGuardTo,
+  platformGuard,
+  redirectIfAuthenticatedGuard,
+  tenantGuard,
+} from './auth.guard';
 
 class AuthStub {
   permissions: string[] = [];
@@ -138,4 +144,42 @@ describe('tenantGuard', () => {
     );
     expect(router.serializeUrl(result as UrlTree)).toBe('/needs-tenant');
   });
+});
+
+describe('redirectIfAuthenticatedGuard', () => {
+  async function run(next: string | null) {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => true,
+            profile: () => ({ tenant_id: '111' }),
+            load: async () => ({ tenant_id: '111' }),
+          },
+        },
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const route = {
+      queryParamMap: convertToParamMap(next === null ? {} : { next }),
+    };
+    const result = await TestBed.runInInjectionContext(() =>
+      redirectIfAuthenticatedGuard(route as never, {} as never),
+    );
+    return router.serializeUrl(result as UrlTree);
+  }
+
+  it('honours a same-origin next', async () => {
+    expect(await run('/events/12')).toBe('/events/12');
+  });
+
+  it.each(['//evil.example', '/\\evil.example'])(
+    'does not follow an off-origin next (%s) and falls back to the dashboard',
+    async (next) => {
+      expect(await run(next)).toBe('/dashboard');
+    },
+  );
 });

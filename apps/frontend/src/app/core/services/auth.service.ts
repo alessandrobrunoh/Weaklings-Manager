@@ -1,5 +1,12 @@
-import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+import {
+  inject,
+  Injectable,
+  makeStateKey,
+  PLATFORM_ID,
+  signal,
+  TransferState,
+} from '@angular/core';
+import { isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiError, ApiService } from './api.service';
@@ -12,6 +19,20 @@ import type {
 } from '../models/api.models';
 
 /**
+ * Session probe result carried from the server render to the browser.
+ *
+ * `sessionUnreachable` is the probe's failure flag, so a backend blip during
+ * SSR shows the same state after hydration instead of flipping it.
+ */
+export interface TransferredSession {
+  readonly profile: DiscordUserProfile | null;
+  readonly sessionUnreachable: boolean;
+}
+
+/** `TransferState` key under which the server stores its session probe. */
+export const SESSION_STATE_KEY = makeStateKey<TransferredSession>('auth.session');
+
+/**
  * Session-aware authentication service.
  *
  * Holds the current user profile in a signal; pages can reactively show/hide
@@ -21,14 +42,20 @@ import type {
  * Side effects:
  *  - On `load()`, an HTTP call is made to `/api/auth/me`. A 401 or 403 means
  *    there is no session. Other failures leave the last known profile in place
- *    and set `sessionUnreachable`, so a blip is not treated as a logout. The
- *    call is skipped entirely during server-side rendering — see `fetchProfile`.
+ *    and set `sessionUnreachable`, so a blip is not treated as a logout.
+ *  - The probe runs on the server too (with the browser's cookie forwarded by
+ *    `serverSessionInterceptor`). Its result is stored in `TransferState`, and
+ *    the browser reuses it at hydration instead of probing again, so the
+ *    hydrated shell is the one the server rendered.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly api = inject(ApiService);
   private readonly apiBaseUrl = inject(API_BASE_URL);
-  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  private readonly transferState = inject(TransferState);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly isBrowser = isPlatformBrowser(this.platformId);
+  private serverProbe: Promise<TransferredSession> | null = null;
 
   private readonly _profile = signal<DiscordUserProfile | null>(null);
   private readonly _loading = signal(false);
@@ -92,9 +119,7 @@ export class AuthService {
     if (typeof window === 'undefined') {
       return;
     }
-    const suffix = next
-      ? `?next=${encodeURIComponent(next)}`
-      : '';
+    const suffix = next ? `?next=${encodeURIComponent(next)}` : '';
     window.location.href = this.buildBrowserUrl(`api/auth/discord/login${suffix}`);
   }
 
@@ -164,31 +189,56 @@ export class AuthService {
   }
 
   private async fetchProfile(): Promise<DiscordUserProfile | null> {
-    // The session is an http-only cookie, and nothing forwards it into the
-    // server render, so on the server this probe can only ever answer "signed
-    // out". It does not even reach the backend: with no `window`,
-    // `API_BASE_URL` is empty and Angular resolves the relative path against
-    // the render's document base, which carries no port — every render spent
-    // two refused connections to `http://localhost/api/auth/me`. Render the
-    // signed-out shell straight away and let hydration do the real probe.
-    if (!this.isBrowser) {
-      this.setProfile(null);
+    const session = isPlatformServer(this.platformId)
+      ? await this.probeOnceForRender()
+      : (this.takeTransferredSession() ?? (await this.probeSession()));
+
+    this.sessionUnreachable.set(session.sessionUnreachable);
+    this.setProfile(session.profile);
+    return session.profile;
+  }
+
+  /**
+   * One probe per server render: the initializer, the guards and the redirect
+   * guards all ask for the session, and they all get the same answer. The
+   * result is stored in `TransferState` for the browser to pick up.
+   */
+  private probeOnceForRender(): Promise<TransferredSession> {
+    this.serverProbe ??= this.probeSession().then((session) => {
+      this.transferState.set(SESSION_STATE_KEY, session);
+      return session;
+    });
+    return this.serverProbe;
+  }
+
+  /**
+   * The session the server probed, on the browser's first load only.
+   *
+   * Consumed on read so a later `load()` (after logout or a tenant switch)
+   * goes back to the network.
+   */
+  private takeTransferredSession(): TransferredSession | null {
+    if (!this.isBrowser || !this.transferState.hasKey(SESSION_STATE_KEY)) {
       return null;
     }
+    const session = this.transferState.get(SESSION_STATE_KEY, {
+      profile: null,
+      sessionUnreachable: false,
+    });
+    this.transferState.remove(SESSION_STATE_KEY);
+    return session;
+  }
 
+  private async probeSession(): Promise<TransferredSession> {
     try {
       const profile = await firstValueFrom(this.api.get<DiscordUserProfile>('api/auth/me'));
-      this.sessionUnreachable.set(false);
-      this.setProfile(profile ?? null);
-      return profile ?? null;
+      return { profile: profile ?? null, sessionUnreachable: false };
     } catch (err) {
       if (isSignedOut(err)) {
-        this.sessionUnreachable.set(false);
-        this.setProfile(null);
-        return null;
+        return { profile: null, sessionUnreachable: false };
       }
-      this.sessionUnreachable.set(true);
-      return this._profile();
+      // Keep the last known profile: a network or server failure is not a logout.
+      return { profile: this._profile(), sessionUnreachable: true };
     }
   }
 
