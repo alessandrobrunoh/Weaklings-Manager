@@ -240,6 +240,11 @@ pub struct BuildPriceView {
     /// Σ of `items[].unit_price`.
     #[schema(value_type = String, example = "4200000")]
     pub total: Decimal,
+    /// How many of the build's main-loadout items have no market price (no listing found, or the
+    /// item could not be resolved to a market identifier). `total` understates the real cost by
+    /// these items, so a client should flag a non-zero count rather than show `total` as exact.
+    #[schema(example = 0)]
+    pub unpriced_item_count: u32,
     /// RFC3339 timestamp this price was computed at (informs the caller how fresh a cached
     /// response is).
     pub priced_at: String,
@@ -260,6 +265,10 @@ pub struct CompBuildPriceRow {
     /// `unit_total * quantity`.
     #[schema(value_type = String, example = "8400000")]
     pub subtotal: Decimal,
+    /// How many of one copy of this build's items have no market price; see
+    /// [`BuildPriceView::unpriced_item_count`].
+    #[schema(example = 0)]
+    pub unpriced_item_count: u32,
 }
 
 /// A comp's total market price, computed live from Albion Online Data.
@@ -272,6 +281,11 @@ pub struct CompPriceView {
     /// Σ of `builds[].subtotal`.
     #[schema(value_type = String, example = "42000000")]
     pub total: Decimal,
+    /// Σ of `builds[].unpriced_item_count * builds[].quantity`: every unpriced item slot in the
+    /// comp, counting each copy of a build. `total` understates the real cost when this is
+    /// non-zero.
+    #[schema(example = 0)]
+    pub unpriced_item_count: u32,
     /// RFC3339 timestamp this price was computed at.
     pub priced_at: String,
 }
