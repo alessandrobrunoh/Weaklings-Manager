@@ -86,9 +86,10 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { Select, type SelectOption } from '../../shared/components/select/select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import type { ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
 import { EventBattlesTab } from './detail/event-battles-tab';
+import { EventHeader } from './detail/event-header';
 import { EventOverviewTab } from './detail/event-overview-tab';
 import { EventSplitsTab } from './detail/event-splits-tab';
 import {
@@ -203,9 +204,9 @@ interface AddEventMemberRequest {
     StatusChip,
     Select,
     TooltipDirective,
-    ViewToggle,
     OwnershipScopeToggle,
     EventBattlesTab,
+    EventHeader,
     EventOverviewTab,
     EventSplitsTab,
   ],
@@ -272,109 +273,23 @@ interface AddEventMemberRequest {
           </section>
         </app-page-stack>
       } @else {
-      <!-- ================= PAGE HEADER: title, officer actions, tabs ================= -->
-      <app-page-header
-        [title]="detail.title"
-        [badge]="(detail.is_synchronized_copy ?? (detail.source_event_id != null)) ? t('events.copyReadOnly') : detail.archived_at ? t('events.archived') : undefined"
-      >
-        <button
-          type="button"
-          class="btn btn--ghost btn--sm"
-          (click)="backToEvents()"
-          [appTooltip]="t('events.detail.back')"
-          tooltipPosition="bottom"
-        >
-          <app-icon name="chevron-left" size="0.875rem" />
-          {{ t('events.detail.back') }}
-        </button>
-        @if (canEdit() && detail.status === 'scheduled' && !detail.archived_at) {
-          <button
-            type="button"
-            class="btn btn--primary btn--sm"
-            (click)="start(detail.id)"
-            [appTooltip]="t('events.start')"
-            tooltipPosition="bottom"
-          >
-            <app-icon name="sparkles" size="0.875rem" />
-            {{ t('events.start') }}
-          </button>
-        }
-        @if (canEdit() && detail.status === 'scheduled' && !detail.archived_at) {
-          <button
-            type="button"
-            class="btn btn--danger btn--sm"
-            (click)="requestCancel(detail.id)"
-            [appTooltip]="t('events.cancel')"
-            tooltipPosition="bottom"
-          >
-            <app-icon name="close" size="0.875rem" />
-            {{ t('events.cancel') }}
-          </button>
-        }
-        @if (canEdit() && detail.status === 'cancelled' && !detail.archived_at) {
-          <button
-            type="button"
-            class="btn btn--primary btn--sm"
-            (click)="requestUncancel(detail.id)"
-            [appTooltip]="t('events.uncancel')"
-            tooltipPosition="bottom"
-          >
-            <app-icon name="refresh" size="0.875rem" />
-            {{ t('events.uncancel') }}
-          </button>
-        }
-        @if (canEdit() && detail.status === 'live' && !detail.archived_at) {
-          <button
-            type="button"
-            class="btn btn--danger btn--sm"
-            (click)="stop(detail.id)"
-            [appTooltip]="t('events.end')"
-            tooltipPosition="bottom"
-          >
-            <app-icon name="close" size="0.875rem" />
-            {{ t('events.stop') }}
-          </button>
-        }
-        @if (canEdit() && !detail.archived_at) {
-          <button
-            type="button"
-            class="btn btn--outline btn--sm"
-            (click)="toggleEditForm()"
-            [appTooltip]="t('events.editTooltip')"
-            tooltipPosition="bottom"
-          >
-            <app-icon name="settings" size="0.875rem" />
-            {{ t('common.edit') }}
-          </button>
-        }
-        @if (canDelete()) {
-          @if (detail.archived_at) {
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              (click)="unarchiveEvent()"
-              [disabled]="saving()"
-            >
-              {{ t('events.unarchive') }}
-            </button>
-          } @else {
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              (click)="requestArchive()"
-              [disabled]="saving()"
-            >
-              {{ t('events.archive') }}
-            </button>
-          }
-        }
-        <app-view-toggle
-          pageTabs
-          [options]="tabOptions()"
-          [active]="tab()"
-          (activeChange)="onTabChange($event)"
-        />
-      </app-page-header>
+      <app-event-detail-header
+        [event]="detail"
+        [canEdit]="canEdit()"
+        [canDelete]="canDelete()"
+        [saving]="saving()"
+        [tab]="tab()"
+        [tabOptions]="tabOptions()"
+        (back)="backToEvents()"
+        (start)="start($event)"
+        (cancel)="requestCancel($event)"
+        (uncancel)="requestUncancel($event)"
+        (stop)="stop($event)"
+        (edit)="toggleEditForm()"
+        (archive)="requestArchive()"
+        (unarchive)="unarchiveEvent()"
+        (tabChange)="onTabChange($event)"
+      />
 
       <!-- ================= EVENT SUMMARY: status, meta, description, your registration ================= -->
       <section class="card mb-3.5 p-3 sm:p-3.5">
