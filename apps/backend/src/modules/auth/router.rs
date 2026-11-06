@@ -790,15 +790,24 @@ async fn finalize_session(
     profile.brand = tenant_brand(&ctx.db).await;
     // Discord's snowflake is the account. Only an email Discord verified (the profile drops any
     // other) may claim an unlinked row; an unverified or missing one gets a placeholder.
-    profile.user_id = crate::modules::users::identity::upsert_discord_login(
+    // Web login proves the Discord account and `admit_member` just proved presence here, so the
+    // row is active. `profile.email` is already reduced to a Discord-verified address (or None).
+    let ensured = crate::modules::users::identity::ensure_member(
         &ctx.db,
-        &profile.id,
-        &profile.username,
-        profile.email.as_deref(),
-        &profile.highest_role,
-        true,
+        crate::modules::users::identity::MemberSeed {
+            discord_id: &profile.id,
+            username: Some(&profile.username),
+            verified_email: profile.email.as_deref(),
+            role_ids: None,
+            presence: crate::modules::users::identity::Presence::Present,
+            via: crate::modules::users::identity::Via::Web,
+            event_at: chrono::Utc::now(),
+        },
     )
     .await?;
+    crate::modules::users::identity::set_role(&ctx.db, ensured.user_id, &profile.highest_role)
+        .await?;
+    profile.user_id = ensured.user_id;
     crate::modules::platform::service::PlatformService::record_membership(
         control,
         &profile.id,

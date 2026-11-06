@@ -34,10 +34,6 @@ import {
   closeEventAnnouncementThread,
 } from "./event-announcement-thread.js";
 import { unlockAndUnarchiveThread } from "./discord-thread.js";
-import {
-  buildWebsiteAccountRequiredReply,
-  isWebsiteUserRegistered,
-} from "./website-account.js";
 
 export type EventThreadAction =
   | "join"
@@ -295,11 +291,6 @@ async function joinEvent(
   poller: Poller | null,
   eventId: number,
 ): Promise<void> {
-  if (!(await isWebsiteUserRegistered(api, interaction.user.id))) {
-    await interaction.editReply(buildWebsiteAccountRequiredReply());
-    return;
-  }
-
   // Flash masses are binary: the signup-options select menu is comp-shaped
   // and answers 409 for them, so the kind decides the flow before any
   // comp-specific call is made.

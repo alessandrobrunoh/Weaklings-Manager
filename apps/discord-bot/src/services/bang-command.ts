@@ -4,6 +4,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   type ChatInputCommandInteraction,
+  type GuildMember,
   type Message,
   type ModalBuilder,
   type User,
@@ -298,6 +299,8 @@ export class BangCommandInteractionAdapter {
     getNumber: (name: string) => this.typed<number>(name),
     getBoolean: (name: string) => this.typed<boolean>(name),
     getUser: (name: string) => this.typed<User>(name),
+    // A user option names a server member only when the mention carries the guild member.
+    getMember: (name: string) => this.memberFor(name),
     getChannel: (name: string) => this.typed(name),
     getRole: (name: string) => this.typed(name),
     getMentionable: (name: string) => this.typed(name),
@@ -309,6 +312,18 @@ export class BangCommandInteractionAdapter {
 
   private typed<T>(name: string): T | null {
     return (this.optionsData.values.get(name)?.value as T | undefined) ?? null;
+  }
+
+  /** The guild member a mention resolved to; `null` for someone outside this server. */
+  private memberFor(name: string): GuildMember | null {
+    const user = this.typed<User>(name);
+    if (!user) return null;
+    return this.message.mentions.members?.get(user.id) ?? null;
+  }
+
+  /** Bang commands only run in a guild, so the adapter is always inside one. */
+  inGuild(): boolean {
+    return this.guildId !== null;
   }
 
   async reply(payload: Record<string, unknown>): Promise<Message> {

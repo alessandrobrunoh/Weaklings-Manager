@@ -1,10 +1,6 @@
 import { ApiError, type ApiClient } from "../api/client.js";
 import type { EventManagementAuthorityView } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
-import {
-  buildWebsiteAccountRequiredReply,
-  isUnregisteredWebsiteUserError,
-} from "./website-account.js";
 
 /** Thread controls that change or broadcast an event, not join/leave. */
 export const EVENT_MANAGEMENT_ACTIONS = [
@@ -42,10 +38,6 @@ export async function ensureEventManagementAllowed(
       interaction.user.id,
     );
   } catch (error) {
-    if (isUnregisteredWebsiteUserError(error)) {
-      await interaction.editReply(buildWebsiteAccountRequiredReply());
-      return false;
-    }
     await interaction.editReply({
       embeds: [
         createResponseEmbed(

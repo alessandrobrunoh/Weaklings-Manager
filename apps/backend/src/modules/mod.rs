@@ -24,6 +24,7 @@ pub mod fingerprints;
 pub mod giveaways;
 pub mod health;
 pub mod intel;
+pub mod members;
 pub mod notifications;
 pub mod openalbion;
 pub mod platform;
@@ -48,6 +49,7 @@ pub fn router() -> Router {
     Router::new()
         .nest("/health", health::router())
         .nest("/users", users::router())
+        .nest("/members", members::router())
         .nest("/auth", auth::router())
         .nest("/bank", bank::router())
         .nest("/splits", splits::router())
