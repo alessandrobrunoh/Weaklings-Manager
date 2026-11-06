@@ -297,9 +297,9 @@ pub fn router() -> Router {
     tag = "events",
     summary = "List pending VOD forum post deliveries",
     description = "Requires the configured X-Bot-Secret.",
-    responses((status = 200, description = "Pending event posts", body = [EventView]))
+    responses((status = 200, description = "Pending event posts", body = ApiResponse<Vec<EventView>>))
 )]
-async fn list_pending_vod_forum_posts(
+pub(crate) async fn list_pending_vod_forum_posts(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<Vec<EventView>>>, AppError> {
@@ -340,9 +340,9 @@ async fn record_vod_forum_post_deleted(
     summary = "Claim a VOD forum post delivery",
     params(("id" = i64, Path, description = "Event ID")),
     description = "Requires the configured X-Bot-Secret.",
-    responses((status = 200, description = "Whether the pending delivery was claimed", body = bool))
+    responses((status = 200, description = "Whether the pending delivery was claimed", body = ApiResponse<bool>))
 )]
-async fn claim_vod_forum_post(
+pub(crate) async fn claim_vod_forum_post(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -353,7 +353,7 @@ async fn claim_vod_forum_post(
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct RecordVodForumPostRequest {
+pub(crate) struct RecordVodForumPostRequest {
     /// Discord thread snowflake created for the VOD post.
     thread_id: String,
 }
@@ -367,9 +367,9 @@ struct RecordVodForumPostRequest {
     params(("id" = i64, Path, description = "Event ID")),
     request_body = RecordVodForumPostRequest,
     description = "Requires the configured X-Bot-Secret.",
-    responses((status = 200, description = "Whether the created thread was recorded", body = bool))
+    responses((status = 200, description = "Whether the created thread was recorded", body = ApiResponse<bool>))
 )]
-async fn record_vod_forum_post_created(
+pub(crate) async fn record_vod_forum_post_created(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -387,7 +387,7 @@ async fn record_vod_forum_post_created(
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct RetryVodForumPostRequest {
+pub(crate) struct RetryVodForumPostRequest {
     /// Operator confirmed that all bot workers are stopped and no post exists.
     confirm_no_post: bool,
 }
@@ -401,9 +401,9 @@ struct RetryVodForumPostRequest {
     description = "Requires X-Bot-Secret. Stop all bot workers and verify that no post exists before calling; otherwise a duplicate can be created.",
     params(("id" = i64, Path, description = "Event ID")),
     request_body = RetryVodForumPostRequest,
-    responses((status = 200, description = "Whether an attempted delivery was requeued", body = bool))
+    responses((status = 200, description = "Whether an attempted delivery was requeued", body = ApiResponse<bool>))
 )]
-async fn retry_vod_forum_post(
+pub(crate) async fn retry_vod_forum_post(
     _bot: BotSecret,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -635,12 +635,12 @@ async fn get_event(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Prospective signup options retrieved", body = EventSignupOptionsView),
+        (status = 200, description = "Prospective signup options retrieved", body = ApiResponse<EventSignupOptionsView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
-async fn get_event_signup_options(
+pub(crate) async fn get_event_signup_options(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
@@ -947,7 +947,7 @@ async fn list_event_roster_roles(
     params(("id" = i64, Path, description = "Event ID")),
     request_body = CreateEventRosterRoleRequest,
     responses(
-        (status = 200, description = "Roster role added", body = EventRosterRoleView),
+        (status = 200, description = "Roster role added", body = ApiResponse<EventRosterRoleView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event or build not found", body = ProblemDetails),
@@ -1233,7 +1233,7 @@ async fn get_event_fanout_status(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Guild-owned source event ID")),
     responses(
-        (status = 200, description = "Mirror request state", body = super::mirror_retry::MirrorRequestStatus),
+        (status = 200, description = "Mirror request state", body = ApiResponse<super::mirror_retry::MirrorRequestStatus>),
         (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
         (status = 404, description = "No mirror request exists", body = ProblemDetails)
     )
@@ -1264,7 +1264,7 @@ async fn get_event_mirror_status(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Guild-owned source event ID")),
     responses(
-        (status = 200, description = "Current mirror retry state", body = super::mirror_retry::MirrorRequestStatus),
+        (status = 200, description = "Current mirror retry state", body = ApiResponse<super::mirror_retry::MirrorRequestStatus>),
         (status = 403, description = "Forbidden - lacks event management authority", body = ProblemDetails),
         (status = 404, description = "No mirror request exists", body = ProblemDetails),
         (status = 409, description = "Mirror request is not failed or no active alliance exists", body = ProblemDetails)
@@ -1306,7 +1306,7 @@ async fn retry_event_mirror(
     description = "Returns non-managed roles in this tenant's Discord server. Requires events.create.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 200, description = "Discord roles retrieved", body = ApiResponse<Vec<DiscordRoleView>>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.create permission", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
@@ -1848,7 +1848,7 @@ async fn add_event_member(
     )
 )]
 #[allow(clippy::too_many_arguments)]
-async fn set_participant(
+pub(crate) async fn set_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -1890,7 +1890,7 @@ async fn set_participant(
         (status = 404, description = "Event / participation not found", body = ProblemDetails)
     )
 )]
-async fn remove_participant(
+pub(crate) async fn remove_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,

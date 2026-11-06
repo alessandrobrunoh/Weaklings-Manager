@@ -293,8 +293,8 @@ pub async fn discord_callback(
     tag = "auth",
     summary = "List Discord servers the user can enter after OAuth",
     responses(
-        (status = 200, description = "Pending tenant choices"),
-        (status = 401, description = "No pending OAuth pick", body = ProblemDetails)
+        (status = 200, description = "Pending tenant choices", body = ApiResponse<Vec<TenantChoice>>),
+        (status = 401, description = "No pending OAuth pick", body = ApiResponse<Vec<TenantChoice>>)
     )
 )]
 pub async fn pending_tenants(
@@ -363,7 +363,7 @@ pub async fn select_tenant(
     get,
     path = "/api/auth/tenants",
     tag = "auth",
-    responses((status = 200, description = "Accessible tenants"))
+    responses((status = 200, description = "Accessible tenants", body = ApiResponse<Vec<TenantChoice>>))
 )]
 pub async fn list_session_tenants(
     headers: HeaderMap,
@@ -457,7 +457,7 @@ pub async fn switch_tenant(
     get,
     path = "/api/auth/registerable-guilds",
     tag = "auth",
-    responses((status = 200, description = "Guilds available to register"))
+    responses((status = 200, description = "Guilds available to register", body = ApiResponse<Vec<RegisterableGuild>>))
 )]
 pub async fn list_registerable_guilds(
     headers: HeaderMap,

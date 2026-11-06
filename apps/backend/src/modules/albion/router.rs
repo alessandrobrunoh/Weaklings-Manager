@@ -137,7 +137,7 @@ pub struct SearchQuery {
     security(("session_cookie" = [])),
     params(SearchQuery),
     responses(
-        (status = 200, description = "Search results retrieved successfully (guilds and players arrays, either may be empty)", body = AlbionSearchResult),
+        (status = 200, description = "Search results retrieved successfully (guilds and players arrays, either may be empty, body = ApiResponse<AlbionSearchResult>)", body = ApiResponse<AlbionSearchResult>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 502, description = "Upstream Albion API error - Sandbox Interactive's gameinfo API failed or timed out", body = ProblemDetails)
     )
@@ -187,6 +187,7 @@ pub async fn get_player(
 #[utoipa::path(
     get,
     path = "/api/albion/guilds/{id}",
+    operation_id = "get_albion_guild",
     tag = "albion",
     summary = "Get one Albion Online guild's public profile by its Albion guild id",
     description = "`id` is Albion Online's own opaque guild identifier — the same shape as the \
@@ -228,7 +229,7 @@ pub async fn get_guild(
         asked to link again.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Link status retrieved successfully (check the linked field)", body = ApiResponseAlbionLinkStatus),
+        (status = 200, description = "Link status retrieved successfully (check the linked field, body = ApiResponse<AlbionLinkStatus>)", body = ApiResponseAlbionLinkStatus),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]

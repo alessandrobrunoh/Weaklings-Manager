@@ -79,7 +79,7 @@ pub struct AlbionSearchQuery {
     path = "/api/tenants/{id}/status",
     tag = "platform",
     params(("id" = String, Path, description = "Discord guild id")),
-    responses((status = 200, description = "Registration status"))
+    responses((status = 200, description = "Registration status", body = ApiResponse<TenantStatusView>))
 )]
 pub async fn tenant_status(
     Extension(control): Extension<ControlDb>,
@@ -96,7 +96,7 @@ pub async fn tenant_status(
     get,
     path = "/api/tenants/albion-search",
     tag = "platform",
-    responses((status = 200, description = "Albion search results"))
+    responses((status = 200, description = "Albion search results", body = ApiResponse<AlbionSearchResult>))
 )]
 pub async fn albion_search(
     _profile: SessionUser,
@@ -117,8 +117,8 @@ pub async fn albion_search(
     path = "/api/tenants/attachable-guilds",
     tag = "platform",
     responses(
-        (status = 200, description = "Attachable guild tenants"),
-        (status = 401, description = "No session", body = ProblemDetails)
+        (status = 200, description = "Attachable guild tenants", body = ApiResponse<Vec<AttachableGuildView>>),
+        (status = 401, description = "No session", body = ApiResponse<Vec<AttachableGuildView>>)
     )
 )]
 pub async fn attachable_guilds(
@@ -211,8 +211,8 @@ pub async fn configure_alliance_setup(
     path = "/api/alliances/me",
     tag = "platform",
     responses(
-        (status = 200, description = "Alliance context"),
-        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 200, description = "Alliance context", body = ApiResponse<AllianceContextView>),
+        (status = 401, description = "No session", body = ApiResponse<AllianceContextView>),
         (status = 404, description = "No tenant on the session", body = ProblemDetails)
     )
 )]
@@ -238,8 +238,8 @@ pub async fn my_alliance_context(
     tag = "platform",
     params(("id" = String, Path, description = "Alliance tenant id")),
     responses(
-        (status = 200, description = "Alliance memberships"),
-        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 200, description = "Alliance memberships", body = ApiResponse<Vec<AllianceMemberView>>),
+        (status = 401, description = "No session", body = ApiResponse<Vec<AllianceMemberView>>),
         (status = 403, description = "Caller is not in this alliance", body = ProblemDetails),
         (status = 404, description = "Not an alliance", body = ProblemDetails)
     )
@@ -325,8 +325,8 @@ pub async fn decline_alliance_member(
         ("guild_id" = String, Path, description = "Guild tenant id")
     ),
     responses(
-        (status = 200, description = "Membership left; historical rows kept"),
-        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 200, description = "Membership left; historical rows kept", body = ApiResponse<AllianceMemberView>),
+        (status = 401, description = "No session", body = ApiResponse<AllianceMemberView>),
         (status = 403, description = "Caller cannot leave for this guild", body = ProblemDetails),
         (status = 404, description = "Active membership not found", body = ProblemDetails),
         (status = 409, description = "Invite is still pending", body = ProblemDetails)
@@ -415,8 +415,8 @@ pub async fn leave_alliance_member(
         ("guild_id" = String, Path, description = "Guild tenant id")
     ),
     responses(
-        (status = 200, description = "Invite recorded on the existing membership row"),
-        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 200, description = "Invite recorded on the existing membership row", body = ApiResponse<AllianceMemberView>),
+        (status = 401, description = "No session", body = ApiResponse<AllianceMemberView>),
         (status = 403, description = "Caller does not own this alliance", body = ProblemDetails),
         (status = 409, description = "Guild already has a live membership", body = ProblemDetails)
     )
@@ -447,8 +447,8 @@ pub async fn invite_alliance_member(
         ("guild_id" = String, Path, description = "Guild tenant id")
     ),
     responses(
-        (status = 200, description = "Membership accepted"),
-        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 200, description = "Membership accepted", body = ApiResponse<AllianceMemberView>),
+        (status = 401, description = "No session", body = ApiResponse<AllianceMemberView>),
         (status = 403, description = "Caller is not the guild owner", body = ProblemDetails),
         (status = 404, description = "Invite not found", body = ProblemDetails)
     )
@@ -480,8 +480,8 @@ pub async fn accept_alliance_member(
     ),
     request_body(content = PatchAllianceMemberRequest),
     responses(
-        (status = 200, description = "Membership updated"),
-        (status = 400, description = "Invalid Discord role id", body = ProblemDetails),
+        (status = 200, description = "Membership updated", body = ApiResponse<AllianceMemberView>),
+        (status = 400, description = "Invalid Discord role id", body = ApiResponse<AllianceMemberView>),
         (status = 401, description = "No session", body = ProblemDetails),
         (status = 403, description = "Lacks admin.settings.manage or not the alliance session", body = ProblemDetails),
         (status = 404, description = "Membership not found", body = ProblemDetails)
@@ -520,8 +520,8 @@ pub async fn patch_alliance_member(
     path = "/api/tenants/register",
     tag = "platform",
     responses(
-        (status = 200, description = "Tenant registered"),
-        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 200, description = "Tenant registered", body = ApiResponse<TenantStatusView>),
+        (status = 401, description = "No session", body = ApiResponse<TenantStatusView>),
         (status = 403, description = "Caller does not own or manage that Discord server", body = ProblemDetails),
         (status = 409, description = "Already registered", body = ProblemDetails)
     )

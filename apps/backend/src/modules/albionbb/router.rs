@@ -66,6 +66,7 @@ pub struct AlbionBbBattlesList {
 #[utoipa::path(
     get,
     path = "/api/albionbb/battles",
+    operation_id = "list_albionbb_battles",
     tag = "albionbb",
     summary = "Browse AlbionBB battles (raw passthrough)",
     description = "Generic AlbionBB battle search. Either `search` (free text) or `guild_id` should \
@@ -107,6 +108,7 @@ pub async fn list_battles(
 #[utoipa::path(
     get,
     path = "/api/albionbb/battles/{battle_id}",
+    operation_id = "get_albionbb_battle",
     tag = "albionbb",
     summary = "Get a single AlbionBB battle (raw passthrough)",
     description = "Includes the per-player breakdown when AlbionBB provides it. Cached server-side \
