@@ -237,7 +237,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       }
 
       <app-data-table
-        [columns]="columns"
+        [columns]="columns()"
         [rows]="users()"
         [loading]="loading()"
         [error]="loadFailed()"
@@ -259,7 +259,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         </ng-template>
 
         <ng-template dataTableCell="email" let-row>
-          <span class="text-xs text-[var(--color-text-secondary)] font-mono">{{ row.email }}</span>
+          <span class="text-xs text-[var(--color-text-secondary)] font-mono">{{ row.email ?? '' }}</span>
         </ng-template>
 
         <ng-template dataTableCell="role" let-row>
@@ -404,18 +404,19 @@ export class Users {
   private readonly tableFilters = signal<Readonly<Record<string, string>>>(this.initialQuery.columnFilters);
   private loadRequest = 0;
 
-  protected readonly columns: readonly DataTableColumn<UserProfile>[] = [
+  private readonly emailColumn: DataTableColumn<UserProfile> = {
+    key: 'email',
+    label: 'common.email',
+    accessor: (user) => user.email ?? '',
+  };
+
+  private readonly baseColumns: readonly DataTableColumn<UserProfile>[] = [
     {
       key: 'username',
       label: 'common.username',
       sortable: true,
       searchable: true,
       accessor: (user) => user.username,
-    },
-    {
-      key: 'email',
-      label: 'common.email',
-      accessor: (user) => user.email,
     },
     {
       key: 'role',
@@ -430,6 +431,18 @@ export class Users {
       accessor: () => '',
     },
   ];
+
+  /**
+   * Emails are only returned to `users.create`/`roles.manage` holders (plus a member's own row), so
+   * the column is hidden for everyone else instead of rendering a column of blanks.
+   */
+  protected readonly columns = computed<readonly DataTableColumn<UserProfile>[]>(() => {
+    if (!this.auth.hasPermission('users.create') && !this.auth.hasPermission('roles.manage')) {
+      return this.baseColumns;
+    }
+    const [username, ...rest] = this.baseColumns;
+    return [username, this.emailColumn, ...rest];
+  });
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);

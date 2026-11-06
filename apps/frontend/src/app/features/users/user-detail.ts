@@ -135,7 +135,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     } @else if (!member()) {
       <app-empty-state icon="users" [message]="t('users.detail.notFound')" />
     } @else if (member(); as user) {
-      <app-page-header [title]="user.username" [subtitle]="user.email">
+      <app-page-header [title]="user.username" [subtitle]="user.email ?? ''">
         <a
           class="btn btn--ghost btn--sm flex items-center gap-1.5"
           routerLink="/users"

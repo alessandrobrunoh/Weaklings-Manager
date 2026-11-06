@@ -291,7 +291,8 @@ export function discordGuildIconUrl(
 export interface UserProfile {
   id: number;
   username: string;
-  email: string;
+  /** Present only for the caller's own row and for `users.create`/`roles.manage` holders. */
+  email?: string;
   role: Role;
 }
 
@@ -341,7 +342,6 @@ export interface UserMetrics {
 
 export interface UserFilters {
   username?: string;
-  email?: string;
   role?: string;
 }
 
