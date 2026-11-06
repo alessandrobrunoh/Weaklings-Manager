@@ -38,10 +38,10 @@ pub struct UntrackedAllianceRole {
 pub struct PlatformService;
 
 impl PlatformService {
-    /// Whether `discord_id` is the original owner recorded for this guild tenant.
+    /// Whether `discord_id` is the original owner recorded for this tenant (guild or alliance).
     ///
     /// Owner status is intentionally tenant-scoped and never grants platform access.
-    pub async fn is_guild_owner(
+    pub async fn is_tenant_owner(
         control: &DatabaseConnection,
         tenant_id: &str,
         discord_id: &str,
@@ -49,8 +49,7 @@ impl PlatformService {
         let Some(tenant) = Self::get_tenant(control, tenant_id).await? else {
             return Ok(false);
         };
-        Ok(guild_owner_matches(
-            &tenant.kind,
+        Ok(tenant_owner_matches(
             tenant.owner_discord_id.as_deref(),
             discord_id,
         ))
@@ -1004,7 +1003,7 @@ impl PlatformService {
         R: Fn(&str, &str, &str) -> Fut + Sync,
         Fut: Future<Output = Result<(), String>> + Send,
     {
-        if !granted_leave && !Self::is_guild_owner(control, guild_id, actor).await? {
+        if !granted_leave && !Self::is_tenant_owner(control, guild_id, actor).await? {
             return Err(AppError::Forbidden(
                 "missing permission alliance.leave".to_owned(),
             ));
@@ -2100,8 +2099,11 @@ async fn guild_belongs_to_alliance(region: &str, guild_id: &str, alliance_id: &s
     }
 }
 
-fn guild_owner_matches(kind: &str, owner_discord_id: Option<&str>, actor: &str) -> bool {
-    kind == "guild" && owner_discord_id == Some(actor)
+/// Ownership is the recorded `owner_discord_id`, whatever the tenant kind: an alliance owner
+/// has the same tenant-wide bypass as a guild owner. Leaving an alliance is guarded separately
+/// (`alliance.leave`, and `leave_active_alliance` requires a guild tenant).
+fn tenant_owner_matches(owner_discord_id: Option<&str>, actor: &str) -> bool {
+    owner_discord_id == Some(actor)
 }
 
 fn row_to_view(row: &sea_orm::QueryResult) -> Result<TenantView, DbErr> {
@@ -2202,14 +2204,20 @@ mod tests {
     use sea_orm_migration::MigratorTrait;
 
     #[test]
-    fn owner_identity_is_limited_to_the_selected_guild_tenant() {
-        assert!(guild_owner_matches("guild", Some("owner-1"), "owner-1"));
-        assert!(!guild_owner_matches("guild", Some("owner-1"), "owner-2"));
-        // Switching to a different guild evaluates that tenant's owner row;
+    fn owner_identity_is_limited_to_the_selected_tenant() {
+        assert!(tenant_owner_matches(Some("owner-1"), "owner-1"));
+        assert!(!tenant_owner_matches(Some("owner-1"), "owner-2"));
+        // Switching to a different tenant evaluates that tenant's owner row;
         // ownership in the previous tenant does not carry across the session.
-        assert!(!guild_owner_matches("guild", Some("owner-2"), "owner-1"));
-        assert!(!guild_owner_matches("alliance", Some("owner-1"), "owner-1"));
-        assert!(!guild_owner_matches("guild", None, "owner-1"));
+        assert!(!tenant_owner_matches(Some("owner-2"), "owner-1"));
+        assert!(!tenant_owner_matches(None, "owner-1"));
+    }
+
+    #[test]
+    fn an_alliance_owner_is_a_tenant_owner() {
+        // auth-6: the old `kind == "guild"` clause left alliance owners without the bypass.
+        assert!(tenant_owner_matches(Some("owner-1"), "owner-1"));
+        assert!(!tenant_owner_matches(Some("owner-1"), ""));
     }
 
     #[test]

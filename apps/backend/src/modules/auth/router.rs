@@ -706,7 +706,7 @@ async fn finalize_session(
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
     profile.is_tenant_owner =
-        PlatformService::is_guild_owner(control, &tenant.id, &profile.id).await?;
+        PlatformService::is_tenant_owner(control, &tenant.id, &profile.id).await?;
     if profile.is_superadmin {
         profile.roles = vec!["SuperAdmin".to_string()];
         profile.highest_role = "SuperAdmin".to_string();
@@ -843,7 +843,7 @@ pub async fn get_me(
 
     if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
         profile.is_tenant_owner =
-            PlatformService::is_guild_owner(&control.0, tenant_id, &profile.id).await?;
+            PlatformService::is_tenant_owner(&control.0, tenant_id, &profile.id).await?;
         if let Ok(ctx) = registry.get_or_load(tenant_id).await {
             profile.tenant_kind = Some(ctx.kind.clone());
             let mut keys: Vec<_> = ctx.features.iter().cloned().collect();

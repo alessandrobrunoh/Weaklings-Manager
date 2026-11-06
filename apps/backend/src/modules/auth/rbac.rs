@@ -161,7 +161,7 @@ async fn tenant_owner_for_request(parts: &Parts, discord_id: &str) -> bool {
     let Some(control) = parts.extensions.get::<crate::tenant::ControlDb>() else {
         return false;
     };
-    crate::modules::platform::service::PlatformService::is_guild_owner(
+    crate::modules::platform::service::PlatformService::is_tenant_owner(
         &control.0, &tenant.0, discord_id,
     )
     .await
