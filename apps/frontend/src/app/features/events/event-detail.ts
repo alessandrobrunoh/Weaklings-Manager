@@ -9,7 +9,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
@@ -28,7 +28,6 @@ import type {
   CompSummary,
   EventBattleSummary,
   EventDetailView,
-  EventFight,
   EventParticipant,
   EventRosterRole,
   EventRosterSeat,
@@ -66,7 +65,6 @@ import {
   normalizeAlbionEquipmentName,
 } from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
-import { battleOutcomeLabel } from '../battles/battle-outcome';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { Checkbox } from '../../shared/components/checkbox/checkbox';
@@ -90,6 +88,9 @@ import { Select, type SelectOption } from '../../shared/components/select/select
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import { EventBattlesTab } from './detail/event-battles-tab';
+import { EventOverviewTab } from './detail/event-overview-tab';
+import { EventSplitsTab } from './detail/event-splits-tab';
 import {
   ownershipListParams,
   ownershipOptionLabel,
@@ -184,7 +185,6 @@ interface AddEventMemberRequest {
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink,
     AbilityBar,
     Avatar,
     DataTable,
@@ -205,6 +205,9 @@ interface AddEventMemberRequest {
     TooltipDirective,
     ViewToggle,
     OwnershipScopeToggle,
+    EventBattlesTab,
+    EventOverviewTab,
+    EventSplitsTab,
   ],
   template: `
     @if (loading()) {
@@ -1332,602 +1335,43 @@ interface AddEventMemberRequest {
 
           <!-- ================= TAB 2: OVERVIEW & INTEL ================= -->
           @case ('overview') {
-            <!-- Performance & Financial KPI Cards -->
-            <section
-              class="grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-4 mb-5"
-              aria-label="Event Overview KPIs"
-            >
-              <!-- Card 1: Win Rate -->
-              <article class="surface p-4">
-                <p class="event-detail__label">{{ t('events.detail.win_rate') }}</p>
-                <p class="event-detail__value mt-1">{{ formatPercent(detail.stats.win_rate) }}</p>
-                <p class="event-detail__sub mb-2">
-                  {{ detail.stats.wins }} {{ t('events.detail.wins') }} &middot;
-                  {{ detail.stats.losses }} {{ t('events.detail.losses') }}
-                </p>
-                @if (detail.stats.total_battles > 0) {
-                  <div class="event-detail__fill-bar" style="background: var(--color-danger)">
-                    <span
-                      [style.width.%]="(detail.stats.wins / detail.stats.total_battles) * 100"
-                      style="background: var(--color-success)"
-                    ></span>
-                  </div>
-                }
-              </article>
-
-              <!-- Card 2: K/D Ratio & Kill Fame -->
-              <article class="surface p-4">
-                <p class="event-detail__label">
-                  {{ t('events.detail.kd') }} &middot; {{ t('events.detail.kill_fame') }}
-                </p>
-                <p class="event-detail__value mt-1">
-                  {{ formatRatio(detail.stats.kill_death_ratio) }}
-                </p>
-                <p class="event-detail__sub mb-2">
-                  {{ detail.stats.total_kills }} {{ t('events.detail.kills') }} &middot;
-                  {{ detail.stats.total_deaths }} {{ t('events.detail.deaths') }}
-                </p>
-                <p class="text-xs font-mono text-[var(--color-text-secondary)]">
-                  Fame:
-                  <strong class="text-[var(--color-text)]">{{
-                    formatCompact(detail.stats.total_kill_fame)
-                  }}</strong>
-                </p>
-              </article>
-
-              <!-- Card 3: Estimated Combat Losses / Regear Expenses -->
-              <article class="surface p-4">
-                <p class="event-detail__label">{{ t('events.detail.our_guild_loss') }}</p>
-                <p class="event-detail__value mt-1 text-[var(--color-danger)] font-mono">
-                  -{{ formatAmount(eventLossEstimate().total_estimated_loss) }}
-                </p>
-                <p class="event-detail__sub">
-                  {{ eventLossEstimate().priced_items }}/{{ eventLossEstimate().total_items }}
-                  {{ t('events.detail.our_guild_loss_hint') }}
-                </p>
-              </article>
-
-              <!-- Card 4: Net Financial Outcome (Loot vs Expenses) -->
-              <article
-                class="surface p-4"
-                [class.border-[var(--color-success)]]="eventBalance().isProfitable"
-                [class.border-[var(--color-danger)]]="!eventBalance().isProfitable"
-              >
-                <p class="event-detail__label">Net Event Balance</p>
-                <p
-                  class="event-detail__value mt-1 font-mono"
-                  [class.text-[var(--color-success)]]="eventBalance().isProfitable"
-                  [class.text-[var(--color-danger)]]="!eventBalance().isProfitable"
-                >
-                  {{ eventBalance().netBalance >= 0 ? '+' : ''
-                  }}{{ formatAmount(eventBalance().netBalance) }}
-                </p>
-                <p class="event-detail__sub">
-                  Loot: {{ formatCompact(eventBalance().totalLoot) }} &minus; Losses:
-                  {{ formatCompact(eventBalance().totalLoss) }}
-                </p>
-              </article>
-            </section>
-
-            <!-- 2-Column Analytical Breakdown -->
-            <div class="grid gap-5 lg:grid-cols-2">
-              <!-- Left Column: Guild Member Equipment Losses -->
-              <section class="card p-0 overflow-hidden shadow-sm">
-                <header class="event-detail__section-header">
-                  <div class="flex items-center gap-2">
-                    <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-                      {{ t('events.detail.our_guild_losses_by_player') }}
-                    </h2>
-                    <span class="chip chip--tonal font-mono text-xs">{{
-                      eventLossEstimate().players.length
-                    }}</span>
-                  </div>
-                </header>
-                @if (eventLossEstimate().players.length > 0) {
-                  <div class="p-3 space-y-2 max-h-96 overflow-y-auto">
-                    @for (player of eventLossEstimate().players; track player.player_name) {
-                      <div class="surface flex items-center justify-between gap-3 p-3">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                          <app-avatar [username]="player.player_name" size="sm" />
-                          <div class="min-w-0">
-                            <p class="text-xs font-bold text-[var(--color-text)] truncate">
-                              {{ player.player_name }}
-                            </p>
-                            <p class="text-[11px] text-[var(--color-text-secondary)]">
-                              {{ player.deaths }}
-                              {{ player.deaths === 1 ? 'morte' : 'morti' }} &middot;
-                              {{ player.priced_items }}/{{ player.total_items }} item
-                            </p>
-                          </div>
-                        </div>
-
-                        <div class="text-right flex-shrink-0">
-                          <span class="font-mono text-xs font-bold text-[var(--color-danger)]">
-                            -{{ formatAmount(player.estimated_loss) }}
-                          </span>
-                          <span
-                            class="block text-[10px] font-mono text-[var(--color-text-secondary)]"
-                          >
-                            silver
-                          </span>
-                        </div>
-                      </div>
-                    }
-                  </div>
-                } @else {
-                  <p class="event-detail__empty text-center py-8">
-                    {{ t('events.detail.no_losses') }}
-                  </p>
-                }
-              </section>
-
-              <!-- Right Column: Top Opponents -->
-              <section class="card p-0 overflow-hidden shadow-sm">
-                <header class="event-detail__section-header">
-                  <div class="flex items-center gap-2">
-                    <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-                      {{ t('events.detail.opponents') }}
-                    </h2>
-                    <span class="chip chip--tonal font-mono text-xs">{{
-                      detail.stats.top_opponents.length
-                    }}</span>
-                  </div>
-                </header>
-                @if (detail.stats.top_opponents.length > 0) {
-                  <div class="p-3 space-y-2 max-h-96 overflow-y-auto">
-                    @for (
-                      opponent of detail.stats.top_opponents;
-                      track opponent.guild_id || opponent.guild_name
-                    ) {
-                      <div class="surface p-3 space-y-2">
-                        <div class="flex items-center justify-between gap-2">
-                          @if (canViewOpponents()) {
-                            <a
-                              class="text-xs font-bold text-[var(--color-primary)] hover:underline truncate inline-flex items-center gap-1"
-                              routerLink="/intel/opponents"
-                              [queryParams]="{ q: opponent.guild_name }"
-                              title="View opponent intel"
-                            >
-                              <span>{{ opponent.guild_name || 'Gilda sconosciuta' }}</span>
-                              <app-icon name="arrow-right" size="0.75rem" />
-                            </a>
-                          } @else {
-                            <span class="text-xs font-bold text-[var(--color-text)] truncate">
-                              {{ opponent.guild_name || 'Gilda sconosciuta' }}
-                            </span>
-                          }
-                          <span
-                            class="text-xs font-mono font-medium text-[var(--color-text-secondary)]"
-                          >
-                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{ opponent.battles }}
-                            btl)
-                          </span>
-                        </div>
-
-                        <div class="space-y-1">
-                          <div
-                            class="flex items-center justify-between text-[11px] font-mono text-[var(--color-text-secondary)]"
-                          >
-                            <span>{{ t('nav.guild') }}: {{ formatCompact(opponent.guild_kill_fame) }}</span>
-                            <span>Nemici: {{ formatCompact(opponent.opponent_kill_fame) }}</span>
-                          </div>
-                          @if (opponent.guild_kill_fame + opponent.opponent_kill_fame > 0) {
-                            <div
-                              class="event-detail__fill-bar"
-                              style="background: var(--color-danger)"
-                            >
-                              <span
-                                [style.width.%]="
-                                  (opponent.guild_kill_fame /
-                                    (opponent.guild_kill_fame + opponent.opponent_kill_fame)) *
-                                  100
-                                "
-                                style="background: var(--color-success)"
-                              ></span>
-                            </div>
-                          }
-                        </div>
-                      </div>
-                    }
-                  </div>
-                } @else {
-                  <p class="event-detail__empty text-center py-8">
-                    {{ t('events.detail.no_opponents') }}
-                  </p>
-                }
-              </section>
-            </div>
+            @defer (on immediate) {
+              <app-event-overview-tab
+                [event]="detail"
+                [eventLossEstimate]="eventLossEstimate()"
+                [canViewOpponents]="canViewOpponents()"
+              />
+            } @placeholder {
+              <app-loading [label]="t('common.loading')" />
+            }
           }
 
           <!-- ================= TAB 3: BATTLES & COMBAT LOGS ================= -->
           @case ('battles') {
-            <div class="space-y-5">
-              <!-- Battles Management Bar -->
-              <section class="card p-4">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div class="flex items-center gap-3">
-                    <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-                      Fight {{ detail.fights.length }} &middot; {{ t('events.detail.battles') }} ({{
-                        detail.battles.length
-                      }})
-                    </h2>
-                    <span
-                      class="font-mono text-xs font-semibold text-[var(--color-text-secondary)]"
-                    >
-                      {{ detail.stats.wins }}W / {{ detail.stats.losses }}L
-                    </span>
-                    <span class="font-mono text-xs font-semibold text-[var(--color-danger)]">
-                      Perdite: -{{ formatAmount(eventLossEstimate().total_estimated_loss) }}
-                    </span>
-                  </div>
-
-                  <div class="flex flex-wrap items-center gap-2">
-                    @if (detail.battles.length > 0) {
-                      <button
-                        type="button"
-                        class="btn btn--outline btn--sm text-xs"
-                        (click)="openBattleGroup(detail)"
-                      >
-                        <app-icon name="chart" size="0.75rem" />
-                        {{ t('battles.group_selected') }}
-                      </button>
-                    }
-                    @if (canEdit()) {
-                      <button
-                        type="button"
-                        class="btn btn--primary btn--sm text-xs"
-                        (click)="toggleBattleLinkForm()"
-                      >
-                        <app-icon name="link" size="0.75rem" />
-                        {{ t('events.detail.manage_battles') }}
-                      </button>
-                    }
-                  </div>
-                </div>
-              </section>
-
-              @if (detail.fights.length > 0) {
-                <section class="space-y-3" aria-label="Canonical fights">
-                  @for (fight of detail.fights; track fight.id) {
-                    @let metrics = fightMetrics(fight, detail.battles);
-                    <article class="card p-5 shadow-sm space-y-4">
-                      <div class="flex flex-wrap items-center justify-between gap-3">
-                        <div class="space-y-1">
-                          <div class="flex items-center gap-2">
-                            <span
-                              class="chip font-mono text-xs font-bold"
-                              [class.chip--success]="metrics.outcome === 'victory'"
-                              [class.chip--error]="metrics.outcome === 'defeat'"
-                            >
-                              {{ fightOutcomeLabel(metrics.outcome) }}
-                            </span>
-                            <h3 class="font-bold text-base text-[var(--color-text)]">
-                              Fight #{{ fight.id }}
-                            </h3>
-                          </div>
-                          <p class="text-xs text-[var(--color-text-secondary)]">
-                            {{ formatDate(fight.started_at) }} &middot; {{ fight.grouping_method }}
-                            @if (fight.needs_review) {
-                              &middot;
-                              <span class="text-warning font-semibold">necessita revisione</span>
-                            }
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm"
-                          (click)="openFight(fight)"
-                        >
-                          Apri Fight &rarr;
-                        </button>
-                      </div>
-
-                      <div
-                        class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 pt-3 border-t border-[var(--color-border)]"
-                      >
-                        <div class="surface p-3">
-                          <p class="event-detail__label">{{ t('battles.outcome') }}</p>
-                          <p class="text-xs font-bold mt-1 uppercase">{{ metrics.outcome }}</p>
-                        </div>
-                        <div class="surface p-3">
-                          <p class="event-detail__label">{{ t('battles.segments') }}</p>
-                          <p class="event-detail__value-sm mt-1">{{ metrics.segments }}</p>
-                        </div>
-                        <div class="surface p-3">
-                          <p class="event-detail__label">Confidence</p>
-                          <p class="event-detail__value-sm mt-1">
-                            {{ formatPercent(fight.grouping_confidence) }}
-                          </p>
-                        </div>
-                        @if (metrics.players !== null) {
-                          <div class="surface p-3">
-                            <p class="event-detail__label">{{ t('battles.players') }}</p>
-                            <p class="event-detail__value-sm mt-1">
-                              {{ formatNumber(metrics.players) }}
-                            </p>
-                          </div>
-                        }
-                        @if (metrics.kills !== null) {
-                          <div class="surface p-3">
-                            <p class="event-detail__label">{{ t('battles.kills') }}</p>
-                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">
-                              {{ formatNumber(metrics.kills) }}
-                            </p>
-                          </div>
-                        }
-                        @if (metrics.fame !== null) {
-                          <div class="surface p-3">
-                            <p class="event-detail__label">{{ t('battles.kill_fame') }}</p>
-                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">
-                              {{ formatCompact(metrics.fame) }}
-                            </p>
-                          </div>
-                        }
-                      </div>
-                    </article>
-                  }
-                </section>
-              }
-
-              <!-- Raw Battle segment drill-down -->
-              @if (detail.battles.length > 0) {
-                <div class="space-y-3">
-                  @for (battle of detail.battles; track battle.id) {
-                    <article class="card p-5 shadow-sm space-y-3">
-                      <div
-                        class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]"
-                      >
-                        <div class="flex items-center gap-2.5 flex-wrap">
-                          <span
-                            class="chip font-mono text-xs font-bold"
-                            [class.chip--success]="battle.outcome === 'victory'"
-                            [class.chip--error]="battle.outcome === 'defeat'"
-                          >
-                            {{ battleOutcomeChipLabel(battle.outcome) }}
-                          </span>
-                          <a
-                            class="font-mono text-xs text-[var(--color-primary)] font-bold hover:underline"
-                            [routerLink]="['/battles', battle.albionbb_battle_id]"
-                          >
-                            Battle #{{ battle.albionbb_battle_id }}
-                          </a>
-                          <span class="text-xs text-[var(--color-text-secondary)]">
-                            &middot; {{ formatDate(battle.battle_started_at) }}
-                          </span>
-                          @if (battle.opponent_guild_name) {
-                            <span class="chip chip--tonal text-xs font-semibold">
-                              vs {{ battle.opponent_guild_name }}
-                            </span>
-                          }
-                        </div>
-
-                        <div class="flex items-center gap-2">
-                          <a
-                            class="btn btn--ghost btn--sm text-xs"
-                            [href]="
-                              'https://albionbattles.com/battles/' + battle.albionbb_battle_id
-                            "
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            AlbionBB &rarr;
-                          </a>
-                          <button
-                            type="button"
-                            class="btn btn--primary btn--sm text-xs"
-                            (click)="openBattle(battle.albionbb_battle_id)"
-                          >
-                            {{ t('events.detail.open_battle') }}
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- 4-Column Combat Metrics -->
-                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="surface p-3">
-                          <span class="event-detail__label">Forze in campo</span>
-                          <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
-                            {{ battle.guild_players_count }}
-                            <span class="text-xs text-[var(--color-text-secondary)]">vs</span>
-                            {{ battle.opponent_players_count ?? '—' }}
-                          </p>
-                        </div>
-
-                        <div class="surface p-3">
-                          <span class="event-detail__label">Kill / Morti</span>
-                          <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
-                            <span class="text-[var(--color-success)]">{{
-                              battle.guild_kills
-                            }}</span>
-                            /
-                            <span class="text-[var(--color-danger)]">{{
-                              battle.guild_deaths
-                            }}</span>
-                          </p>
-                        </div>
-
-                        <div class="surface p-3">
-                          <span class="event-detail__label">{{ t('events.detail.kill_fame') }}</span>
-                          <p class="font-mono text-sm font-bold text-[var(--color-success)] mt-0.5">
-                            +{{ formatCompact(battle.guild_kill_fame) }}
-                          </p>
-                        </div>
-
-                        <div class="surface p-3">
-                          <span class="event-detail__label">Morti Registrate</span>
-                          <p class="font-mono text-sm font-bold text-[var(--color-danger)] mt-0.5">
-                            {{ battle.guild_deaths }} morti
-                          </p>
-                        </div>
-                      </div>
-                    </article>
-                  }
-                </div>
-              } @else {
-                <div class="card p-10 text-center">
-                  <app-empty-state [message]="t('events.detail.no_battles')" icon="swords" />
-                </div>
-              }
-            </div>
+            @defer (on immediate) {
+              <app-event-battles-tab
+                [event]="detail"
+                [canEdit]="canEdit()"
+                [eventLossEstimate]="eventLossEstimate()"
+                (toggleBattleLinkForm)="toggleBattleLinkForm()"
+              />
+            } @placeholder {
+              <app-loading [label]="t('common.loading')" />
+            }
           }
 
           <!-- ================= TAB 4: LOOT & SPLITS ================= -->
           @case ('splits') {
-            <div class="space-y-5">
-              <!-- Summary Strip -->
-              <section class="card p-5 shadow-sm">
-                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <div>
-                    <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-                      {{ t('events.detail.splits') }} ({{ detail.splits.length }})
-                    </h2>
-                    <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
-                      Ripartizione del bottino e compensi generati dall'evento.
-                    </p>
-                  </div>
-
-                  <div class="flex items-center gap-3">
-                    <div class="text-right">
-                      <span class="text-xs text-[var(--color-text-secondary)] block"
-                        >{{ t('splits.netPaid') }}:</span
-                      >
-                      <strong class="text-sm font-mono font-bold text-[var(--color-success)]">
-                        {{ formatAmount(detail.split_stats.completed_net_value) }} silver
-                      </strong>
-                    </div>
-                    @if (canEdit()) {
-                      <button
-                        type="button"
-                        class="btn btn--primary btn--sm text-xs"
-                        (click)="showSplitSearch.set(true)"
-                      >
-                        <app-icon name="plus" size="0.75rem" />
-                        {{ t('events.detail.link_split') }}
-                      </button>
-                    }
-                  </div>
-                </div>
-
-                @if (detail.split_stats.total_splits > 0) {
-                  <div
-                    class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[var(--color-border)]"
-                  >
-                    <div class="surface p-3">
-                      <p class="event-detail__label">{{ t('events.detail.split_total') }}</p>
-                      <p class="event-detail__value-sm mt-1 font-bold">
-                        {{ detail.split_stats.total_splits }}
-                      </p>
-                    </div>
-                    <div class="surface p-3">
-                      <p class="event-detail__label">{{ t('events.detail.split_completed') }}</p>
-                      <p class="event-detail__value-sm mt-1 text-[var(--color-success)] font-bold">
-                        {{ detail.split_stats.completed_splits }}
-                      </p>
-                    </div>
-                    <div class="surface p-3">
-                      <p class="event-detail__label">{{ t('events.detail.split_pending') }}</p>
-                      <p class="event-detail__value-sm mt-1 text-[var(--color-warning)] font-bold">
-                        {{ detail.split_stats.pending_splits }}
-                      </p>
-                    </div>
-                    <div class="surface p-3">
-                      <p class="event-detail__label">{{ t('events.detail.split_net') }}</p>
-                      <p
-                        class="event-detail__value-sm mt-1 text-[var(--color-success)] font-mono font-bold"
-                      >
-                        {{ formatAmount(detail.split_stats.completed_net_value) }}
-                      </p>
-                    </div>
-                  </div>
-                }
-              </section>
-
-              <!-- Splits List -->
-              @if (detail.splits.length > 0) {
-                <div class="space-y-3">
-                  @for (split of detail.splits; track split.id) {
-                    <article class="card p-5 shadow-sm space-y-3">
-                      <div
-                        class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]"
-                      >
-                        <div class="flex items-center gap-2.5 flex-wrap">
-                          <app-status-chip [value]="split.status" />
-                          <a
-                            class="text-sm font-bold text-[var(--color-text)] hover:underline"
-                            [routerLink]="['/splits', split.id]"
-                          >
-                            {{ split.note || t('events.detail.split_number') + split.id }}
-                          </a>
-                          @if (split.origin_read_only) {
-                            <span class="chip chip--neutral text-xs">{{ t('splits.readOnlyCopy') }}</span>
-                          }
-                          @if (split.island_name) {
-                            <span class="chip chip--tonal text-xs font-mono">
-                              {{ cityLabel(split.island_city) }} &middot;
-                              {{ split.island_name }} &middot; {{ split.island_tab_name }}
-                            </span>
-                          }
-                          <span class="text-xs text-[var(--color-text-secondary)]">
-                            &middot; {{ formatDate(split.created_at) }}
-                          </span>
-                        </div>
-
-                        <div class="flex items-center gap-2">
-                          <a
-                            class="btn btn--outline btn--sm text-xs"
-                            [routerLink]="['/splits', split.id]"
-                          >
-                            {{ t('common.open') }} &rarr;
-                          </a>
-                          @if (canEdit()) {
-                            <button
-                              type="button"
-                              class="btn btn--ghost btn--sm text-[var(--color-danger)]"
-                              (click)="unlinkSplit(split.id)"
-                              [attr.aria-label]="t('events.detail.unlink_split')"
-                            >
-                              <app-icon name="close" size="0.875rem" />
-                            </button>
-                          }
-                        </div>
-                      </div>
-
-                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="surface p-3">
-                          <span class="event-detail__label">{{ t('splits.estimated') }}</span>
-                          <p class="font-mono text-xs font-bold text-[var(--color-text)] mt-0.5">
-                            {{ formatAmount(split.estimated_market_value) }}
-                          </p>
-                        </div>
-                        <div class="surface p-3">
-                          <span class="event-detail__label">{{ t('splits.repair_cost') }}</span>
-                          <p class="font-mono text-xs font-bold text-[var(--color-danger)] mt-0.5">
-                            -{{ formatAmount(split.repair_value) }}
-                          </p>
-                        </div>
-                        <div class="surface p-3">
-                          <span class="event-detail__label">{{ t('splits.bags_value') }}</span>
-                          <p class="font-mono text-xs font-bold text-[var(--color-text)] mt-0.5">
-                            +{{ formatAmount(split.bags_value) }}
-                          </p>
-                        </div>
-                        <div class="surface p-3">
-                          <span class="event-detail__label">{{ t('splits.net_value') }}</span>
-                          <p class="font-mono text-xs font-bold text-[var(--color-success)] mt-0.5">
-                            {{ formatAmount(netOfSplit(split)) }} ({{ split.participant_count }} p)
-                          </p>
-                        </div>
-                      </div>
-                    </article>
-                  }
-                </div>
-              } @else {
-                <div class="card p-10 text-center">
-                  <app-empty-state [message]="t('events.detail.no_splits')" icon="package" />
-                </div>
-              }
-            </div>
+            @defer (on immediate) {
+              <app-event-splits-tab
+                [event]="detail"
+                [canEdit]="canEdit()"
+                (addSplit)="showSplitSearch.set(true)"
+                (unlinkSplit)="unlinkSplit($event)"
+              />
+            } @placeholder {
+              <app-loading [label]="t('common.loading')" />
+            }
           }
         }
       </app-page-stack>
@@ -3365,20 +2809,6 @@ export class EventDetailPage {
       0,
     ),
   );
-
-  protected readonly eventBalance = computed(() => {
-    const detail = this.event();
-    if (!detail) return { netBalance: 0, totalLoot: 0, totalLoss: 0, isProfitable: true };
-    const totalLoot = Number(detail.split_stats?.completed_net_value ?? 0);
-    const totalLoss = Number(this.eventLossEstimate()?.total_estimated_loss ?? 0);
-    const netBalance = totalLoot - totalLoss;
-    return {
-      netBalance,
-      totalLoot,
-      totalLoss,
-      isProfitable: netBalance >= 0,
-    };
-  });
 
   protected readonly showSplitSearch = signal(false);
   protected readonly splitSearchOptions = signal<SearchDialogOption[]>([]);
@@ -5664,105 +5094,8 @@ export class EventDetailPage {
     this.pendingConfirm.set({ kind: 'stop', eventId: id });
   }
 
-  protected openBattle(albionbbBattleId: string): void {
-    void this.router.navigate(['/battles', albionbbBattleId]);
-  }
-
-  protected openFight(fight: EventFight): void {
-    void this.router.navigate(['/fights', fight.id]);
-  }
-
-  protected openBattleGroup(detail: EventDetailView): void {
-    const ids = detail.battles.map((battle) => battle.albionbb_battle_id);
-    if (ids.length === 0) return;
-    void this.router.navigate(['/battles/group'], { queryParams: { ids: ids.join(',') } });
-  }
-
   protected formatDate(value: string): string {
     return new Date(value).toLocaleString();
-  }
-
-  protected battleOutcomeChipLabel(outcome: EventBattleSummary['outcome']): string {
-    return this.t(battleOutcomeLabel(outcome));
-  }
-
-  protected fightMetrics(fight: EventFight, battles: readonly EventBattleSummary[]): FightKpis {
-    const linkedBattles = battles.filter((battle) =>
-      fight.battle_ids.includes(battle.albionbb_battle_id),
-    );
-    const playerCounts = linkedBattles
-      .map((battle) => battle.battle_total_players)
-      .filter((players): players is number => players !== null);
-    const hasLinkedBattles = linkedBattles.length > 0;
-    // Every segment of the same Fight reports the same outcome (Fase 0-5 resolves it at the
-    // Fight level, not per raw battle segment), so the first linked segment's value is enough —
-    // no need to reconcile several booleans any more.
-    const fallbackOutcome = linkedBattles[0]?.outcome ?? 'unknown';
-
-    return {
-      outcome: fight.outcome?.outcome ?? fallbackOutcome,
-      segments: fight.segment_count ?? fight.battle_ids.length,
-      players:
-        fight.total_players ??
-        fight.stats?.total_players ??
-        (playerCounts.length > 0 ? Math.max(...playerCounts) : null),
-      kills:
-        fight.total_kills ??
-        fight.stats?.total_kills ??
-        (hasLinkedBattles
-          ? linkedBattles.reduce((total, battle) => total + battle.guild_kills, 0)
-          : null),
-      fame:
-        fight.total_fame ??
-        fight.stats?.total_fame ??
-        fight.stats?.total_kill_fame ??
-        fight.stats?.kill_fame ??
-        (hasLinkedBattles
-          ? linkedBattles.reduce((total, battle) => total + battle.guild_kill_fame, 0)
-          : null),
-    };
-  }
-
-  protected fightOutcomeLabel(outcome: FightKpis['outcome']): string {
-    return outcome.toUpperCase();
-  }
-
-  protected formatNumber(value: number): string {
-    return new Intl.NumberFormat().format(Number(value ?? 0));
-  }
-
-  protected formatAmount(value: number | string | null | undefined): string {
-    if (value === null || value === undefined) return '—';
-    return Number(value).toLocaleString();
-  }
-
-  protected netOfSplit(split: SplitSummary): number {
-    if (split.net_value !== null && split.net_value !== undefined) {
-      return Number(split.net_value);
-    }
-    return (
-      Number(split.estimated_market_value) - Number(split.repair_value) + Number(split.bags_value)
-    );
-  }
-
-  protected cityLabel(city: string | null | undefined): string {
-    if (!city) return '';
-    return this.t(`splits.city.${city}` as TranslationKey);
-  }
-
-  protected formatCompact(value: number): string {
-    return Intl.NumberFormat(undefined, {
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(value);
-  }
-
-  protected formatPercent(value: number): string {
-    return `${value.toFixed(1)}%`;
-  }
-
-  protected formatRatio(value: number): string {
-    return value.toFixed(2);
   }
 
   protected roleLabel(role: BuildRole): TranslationKey {
@@ -6088,14 +5421,6 @@ function isEventRosterView(value: unknown): value is EventRosterView {
     Array.isArray(candidate.bench) &&
     typeof candidate.roster_version === 'number'
   );
-}
-
-interface FightKpis {
-  readonly outcome: 'victory' | 'defeat' | 'draw' | 'unknown';
-  readonly segments: number;
-  readonly players: number | null;
-  readonly kills: number | null;
-  readonly fame: number | null;
 }
 
 function emptyLossEstimate(): BattleLossEstimate {
