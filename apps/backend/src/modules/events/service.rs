@@ -104,11 +104,34 @@ fn assigned_builds_by_user(
         .collect()
 }
 
-async fn resolve_assigned_build_name<C: ConnectionTrait>(
+/// Loads the builds with the given ids in one query. Missing ids are simply absent from the
+/// map; callers decide whether that is an error.
+async fn load_builds_by_id<C: ConnectionTrait>(
     db: &C,
+    mut build_ids: Vec<i64>,
+) -> Result<HashMap<i64, build::Model>, AppError> {
+    build_ids.sort_unstable();
+    build_ids.dedup();
+    if build_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(build::Entity::find()
+        .filter(build::Column::Id.is_in(build_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?
+        .into_iter()
+        .map(|build| (build.id, build))
+        .collect())
+}
+
+/// Name of the build a participant is assigned to, using the already-loaded builds. An
+/// assignment to the participant's own primary build reuses `primary_build_name`.
+fn resolve_assigned_build_name(
     assigned_build_id: Option<i64>,
     primary_build_id: Option<i64>,
     primary_build_name: &str,
+    builds_by_id: &HashMap<i64, build::Model>,
 ) -> Result<Option<String>, AppError> {
     let Some(assigned_build_id) = assigned_build_id else {
         return Ok(None);
@@ -116,13 +139,10 @@ async fn resolve_assigned_build_name<C: ConnectionTrait>(
     if Some(assigned_build_id) == primary_build_id {
         return Ok(Some(primary_build_name.to_string()));
     }
-    let name = build::Entity::find_by_id(assigned_build_id)
-        .one(db)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound(format!("Build {assigned_build_id} not found")))?
-        .name;
-    Ok(Some(name))
+    builds_by_id
+        .get(&assigned_build_id)
+        .map(|build| Some(build.name.clone()))
+        .ok_or_else(|| AppError::NotFound(format!("Build {assigned_build_id} not found")))
 }
 
 /// The pre-existing `auto_fill_roster` behaviour: first matching seat in signup order.
@@ -1417,11 +1437,7 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let mut views = Vec::with_capacity(models.len());
-        for model in models {
-            views.push(self.to_event_view(db, model).await?);
-        }
-        Ok(views)
+        self.to_event_views(db, models).await
     }
 
     /// Archived events with a recorded VOD post that still needs deletion.
@@ -1437,11 +1453,7 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let mut views = Vec::with_capacity(models.len());
-        for model in models {
-            views.push(self.to_event_view(db, model).await?);
-        }
-        Ok(views)
+        self.to_event_views(db, models).await
     }
 
     /// Acknowledge deletion only for the exact recorded thread of an archived event.
@@ -1579,51 +1591,73 @@ impl EventService {
             )
             .await?;
 
+        // Hydrated in a fixed number of queries (users, display names, builds) instead of
+        // several lookups per participant: every roster read is repeated by every open client
+        // after each seat change, so the cost must not grow with the roster size.
+        let participant_users = crate::modules::users::entities::Entity::find()
+            .filter(
+                crate::modules::users::entities::Column::Id
+                    .is_in(participant_user_ids.iter().copied()),
+            )
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let display_names =
+            crate::modules::users::display_name::resolve_for_users(db, &participant_users).await?;
+        let users_by_id: HashMap<i64, crate::modules::users::entities::Model> = participant_users
+            .into_iter()
+            .map(|user| (user.id, user))
+            .collect();
+        let builds_by_id = load_builds_by_id(
+            db,
+            participations
+                .iter()
+                .flat_map(|p| [p.primary_build_id, p.secondary_build_id])
+                .flatten()
+                .chain(
+                    participations
+                        .iter()
+                        .filter_map(|p| assigned_build_by_user.get(&p.user_id).copied()),
+                )
+                .collect(),
+        )
+        .await?;
+        let build_name_of = |id: i64| -> Result<String, AppError> {
+            builds_by_id
+                .get(&id)
+                .map(|build| build.name.clone())
+                .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))
+        };
+
         let mut participants = HashMap::new();
         for participation in participations {
-            let user = crate::modules::users::entities::Entity::find_by_id(participation.user_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-                .ok_or_else(|| {
-                    AppError::NotFound(format!("User {} not found", participation.user_id))
-                })?;
+            let user = users_by_id.get(&participation.user_id).ok_or_else(|| {
+                AppError::NotFound(format!("User {} not found", participation.user_id))
+            })?;
             let primary_build_name = match participation.primary_build_id {
-                Some(id) => {
-                    build::Entity::find_by_id(id)
-                        .one(db)
-                        .await
-                        .map_err(AppError::Database)?
-                        .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?
-                        .name
-                }
+                Some(id) => build_name_of(id)?,
                 None => "Fill".to_string(),
             };
-            let secondary_build_name = match participation.secondary_build_id {
-                Some(id) => Some(
-                    build::Entity::find_by_id(id)
-                        .one(db)
-                        .await
-                        .map_err(AppError::Database)?
-                        .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?
-                        .name,
-                ),
-                None => None,
-            };
+            let secondary_build_name = participation
+                .secondary_build_id
+                .map(build_name_of)
+                .transpose()?;
             let assigned_build_id = assigned_build_by_user.get(&participation.user_id).copied();
             let assigned_build_name = resolve_assigned_build_name(
-                db,
                 assigned_build_id,
                 participation.primary_build_id,
                 &primary_build_name,
-            )
-            .await?;
+                &builds_by_id,
+            )?;
             participants.insert(
                 participation.user_id,
                 EventParticipantView {
                     user_id: participation.user_id,
-                    username: crate::modules::users::display_name::resolve(db, &user).await?,
-                    discord_id: user.discord_id,
+                    username: display_names
+                        .get(&participation.user_id)
+                        .cloned()
+                        .unwrap_or_else(|| user.username.clone()),
+                    discord_id: user.discord_id.clone(),
                     primary_build_id: participation.primary_build_id,
                     primary_build_name,
                     secondary_build_id: participation.secondary_build_id,
@@ -1679,12 +1713,12 @@ impl EventService {
             .await
             .map_err(AppError::Database)?;
         rows.sort_by_key(|row| row.build_id);
+        let builds_by_id =
+            load_builds_by_id(db, rows.iter().map(|row| row.build_id).collect()).await?;
         let mut seats = Vec::new();
         for row in rows {
-            let build = build::Entity::find_by_id(row.build_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
+            let build = builds_by_id
+                .get(&row.build_id)
                 .ok_or_else(|| AppError::NotFound(format!("Build {} not found", row.build_id)))?;
             for ordinal in 1..=row.quantity {
                 let sequential = seats.len() as i32;
@@ -4967,6 +5001,8 @@ mod tests {
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
     use sea_orm::{ActiveValue::Set, Database};
 
+    use crate::testkit::queries::CountedDb;
+
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:")
             .await
@@ -4975,6 +5011,15 @@ mod tests {
             .await
             .expect("Failed to run database migrations");
         db
+    }
+
+    /// [`seed_db`] with every statement counted, for the query-count regressions.
+    async fn seed_counted_db() -> CountedDb {
+        let counted = CountedDb::sqlite_memory().await;
+        crate::migration::Migrator::up(&counted.connection(), None)
+            .await
+            .expect("Failed to run database migrations");
+        counted
     }
 
     /// A fixed timestamp; the values are irrelevant to these assertions.
@@ -7100,6 +7145,167 @@ mod tests {
             Some(&87),
             "roster specializations were {:?}",
             participant.specializations
+        );
+    }
+
+    /// Every open client refetches the roster after each seat change, so one roster read must
+    /// cost the same number of statements whether the event has 5 or 40 participants.
+    #[tokio::test]
+    async fn roster_read_query_count_does_not_grow_with_participants() {
+        let counted = seed_counted_db().await;
+        let db = counted.connection();
+        let creator = insert_user(&db, "perf-creator", "perf-creator@example.com").await;
+        let build_category = create_build_category(&db, "perf-builds").await;
+        let mut build_ids = Vec::new();
+        for n in 0..4 {
+            build_ids.push(create_build(&db, &format!("perf-build-{n}"), build_category).await);
+        }
+        let comp_category = create_comp_category(&db, "perf-comps").await;
+        let comp_id = create_comp(
+            &db,
+            "perf-comp",
+            comp_category,
+            None,
+            // 20 per build leaves room for 10 primary sign-ups plus 10 seats assigned on it.
+            build_ids.iter().map(|build_id| (*build_id, 20)).collect(),
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Forty seat event".to_string()),
+            comp_id: Set(Some(comp_id)),
+            created_by: Set(creator),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert event")
+        .id;
+
+        let service = EventService::new();
+        let mut seated = 0;
+        let mut statements_per_read = Vec::new();
+        for target in [5usize, 40] {
+            while seated < target {
+                let name = format!("perf-member-{seated}");
+                let user_id = insert_user(&db, &name, &format!("{name}@example.com")).await;
+                service
+                    .participate_with_roster_version(
+                        &db,
+                        event_id,
+                        user_id,
+                        ParticipateEventRequest {
+                            primary_build_id: Some(build_ids[seated % 4]),
+                            secondary_build_id: None,
+                        },
+                    )
+                    .await
+                    .expect("participation should succeed");
+                // Seated on the build after their own, so the assigned-build name is resolved too.
+                event_roster_assignment::ActiveModel {
+                    event_id: Set(event_id),
+                    user_id: Set(user_id),
+                    seat_key: Set(format!(
+                        "build:{}:{}",
+                        build_ids[(seated + 1) % 4],
+                        seated / 4 + 1
+                    )),
+                    assigned_by: Set(creator),
+                    assigned_at: Set(ts()),
+                    updated_at: Set(ts()),
+                }
+                .insert(&db)
+                .await
+                .expect("failed to assign the seat");
+                seated += 1;
+            }
+
+            let before = counted.statements();
+            let roster = service
+                .get_roster(&db, event_id)
+                .await
+                .expect("roster should load");
+            statements_per_read.push(counted.statements() - before);
+
+            let filled = roster
+                .seats
+                .iter()
+                .filter(|seat| seat.participant.is_some())
+                .count();
+            assert_eq!(filled, target, "every assigned participant takes a seat");
+            assert_eq!(roster.bench.len(), 0);
+            let seated_view = roster
+                .seats
+                .iter()
+                .find_map(|seat| seat.participant.as_ref())
+                .expect("a seated participant");
+            assert!(seated_view.username.starts_with("perf-member-"));
+            assert!(seated_view.assigned_build_name.is_some());
+        }
+
+        assert!(statements_per_read[0] > 0, "the counter must see the reads");
+        assert_eq!(
+            statements_per_read[0], statements_per_read[1],
+            "statements per roster read: {statements_per_read:?}"
+        );
+        assert!(
+            statements_per_read[1] <= 12,
+            "a 40-participant roster read took {} statements",
+            statements_per_read[1]
+        );
+    }
+
+    /// The VOD poller lists every pending event on each tick; hydrating the list must not cost
+    /// several statements per event.
+    #[tokio::test]
+    async fn pending_vod_posts_query_count_does_not_grow_with_events() {
+        let counted = seed_counted_db().await;
+        let db = counted.connection();
+        let creator = insert_user(&db, "vod-creator", "vod-creator@example.com").await;
+        let build_category = create_build_category(&db, "vod-builds").await;
+        let build_id = create_build(&db, "vod-build", build_category).await;
+        let comp_category = create_comp_category(&db, "vod-comps").await;
+        let comp_id = create_comp(&db, "vod-comp", comp_category, None, vec![(build_id, 1)]).await;
+
+        let service = EventService::new();
+        let mut inserted = 0;
+        let mut statements_per_poll = Vec::new();
+        for target in [5usize, 40] {
+            while inserted < target {
+                event::ActiveModel {
+                    title: Set(format!("VOD event {inserted}")),
+                    event_kind: Set(event::KIND_ORGANIZED.to_string()),
+                    comp_id: Set(Some(comp_id)),
+                    created_by: Set(creator),
+                    event_date_utc: Set(ts()),
+                    vod_forum_post_enabled: Set(true),
+                    vod_forum_post_status: Set("pending".to_string()),
+                    ..Default::default()
+                }
+                .insert(&db)
+                .await
+                .expect("failed to insert event");
+                inserted += 1;
+            }
+
+            let before = counted.statements();
+            let views = service
+                .pending_vod_forum_posts(&db)
+                .await
+                .expect("pending posts should load");
+            statements_per_poll.push(counted.statements() - before);
+            assert_eq!(views.len(), target);
+        }
+
+        assert!(statements_per_poll[0] > 0, "the counter must see the polls");
+        assert_eq!(
+            statements_per_poll[0], statements_per_poll[1],
+            "statements per poll: {statements_per_poll:?}"
+        );
+        assert!(
+            statements_per_poll[1] <= 8,
+            "a 40-event poll took {} statements",
+            statements_per_poll[1]
         );
     }
 
