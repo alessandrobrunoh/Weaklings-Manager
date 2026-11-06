@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 use chrono::Utc;
 use sea_orm::prelude::Decimal;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
@@ -236,14 +237,33 @@ impl RegearService {
             )));
         }
 
+        // Flip the status first, conditionally: of two requests for the same death only one
+        // matches `status = 'available'`, so the credit below is spent at most once per death.
+        // Dropping the transaction on any later error rolls the flip back.
+        let now: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
+        let flipped = RegearDeathEntity::update_many()
+            .col_expr(
+                RegearDeathColumn::Status,
+                Expr::value(RegearStatus::Pending.to_string()),
+            )
+            .col_expr(RegearDeathColumn::RequestedAt, Expr::value(Some(now)))
+            .col_expr(RegearDeathColumn::UpdatedAt, Expr::value(now))
+            .filter(RegearDeathColumn::Id.eq(death_id))
+            .filter(RegearDeathColumn::Status.eq(RegearStatus::Available.to_string()))
+            .exec(&txn)
+            .await?;
+        if flipped.rows_affected != 1 {
+            return Err(AppError::Conflict(format!(
+                "death {death_id} is not available"
+            )));
+        }
+
         consume_request_credit(&txn, &settings, caller_user_id).await?;
 
-        let now = Utc::now().into();
-        let mut active: RegearDeathActiveModel = model.into();
-        active.status = Set(RegearStatus::Pending.to_string());
-        active.requested_at = Set(Some(now));
-        active.updated_at = Set(now);
-        let updated = active.update(&txn).await?;
+        let updated = RegearDeathEntity::find_by_id(death_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("regear death {death_id} not found")))?;
         txn.commit().await?;
 
         let _ = crate::modules::audit::service::AuditService::log(
@@ -891,8 +911,8 @@ impl RegearService {
         let player_name = resolve_player_name(db, caller_user_id).await?;
 
         let txn = db.begin().await?;
-        consume_request_credit(&txn, &settings, caller_user_id).await?;
-
+        // The partial unique index `idx_regear_deaths_self_report_active` is the real duplicate
+        // guard; inserting first means a losing racer fails before it spends a credit.
         let now = Utc::now().into();
         let active = RegearDeathActiveModel {
             event_id: Set(req.event_id),
@@ -919,7 +939,21 @@ impl RegearService {
             updated_at: Set(now),
             ..Default::default()
         };
-        let inserted = active.insert(&txn).await?;
+        let inserted = match active.insert(&txn).await {
+            Ok(row) => row,
+            Err(err)
+                if matches!(
+                    err.sql_err(),
+                    Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+                ) =>
+            {
+                return Err(AppError::Conflict(
+                    "you already have a self-reported regear request for this event".to_string(),
+                ));
+            }
+            Err(err) => return Err(err.into()),
+        };
+        consume_request_credit(&txn, &settings, caller_user_id).await?;
         txn.commit().await?;
 
         let _ = crate::modules::audit::service::AuditService::log(
@@ -1619,5 +1653,235 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(duplicate, AppError::Conflict(_)));
+    }
+
+    async fn link_death_to(db: &DatabaseConnection, death: &RegearDeathModel, user: i64) {
+        let mut active: RegearDeathActiveModel = death.clone().into();
+        active.user_id = Set(Some(user));
+        active.update(db).await.expect("link victim");
+    }
+
+    async fn balance_pools(db: &DatabaseConnection, user: i64) -> (i32, i32) {
+        let balance = RegearRequestBalanceEntity::find()
+            .filter(RegearRequestBalanceColumn::UserId.eq(user))
+            .one(db)
+            .await
+            .unwrap()
+            .expect("balance row");
+        (balance.weekly_balance, balance.bonus_balance)
+    }
+
+    #[tokio::test]
+    async fn requesting_the_same_death_twice_spends_one_credit() {
+        let db = seed_db().await;
+        let user = insert_user_row(&db, "dupe").await;
+        seed_balance(&db, user, 3, 0).await;
+        let death = insert_death(
+            &db,
+            "Dupe",
+            RegearStatus::Available,
+            Utc::now().into(),
+            "k-dupe",
+        )
+        .await;
+        link_death_to(&db, &death, user).await;
+
+        let service = RegearService::new();
+        service.request_regear(&db, user, death.id).await.unwrap();
+        let second = service
+            .request_regear(&db, user, death.id)
+            .await
+            .unwrap_err();
+        assert!(matches!(second, AppError::Conflict(_)));
+        assert_eq!(balance_pools(&db, user).await, (2, 0));
+    }
+
+    #[tokio::test]
+    async fn status_flip_is_conditional_so_a_stale_reader_cannot_double_request() {
+        // Simulates the lost race deterministically: the death is already pending when the
+        // second request reaches the conditional UPDATE, so it must not spend a credit.
+        let db = seed_db().await;
+        let user = insert_user_row(&db, "stale").await;
+        seed_balance(&db, user, 3, 0).await;
+        let death = insert_death(
+            &db,
+            "Stale",
+            RegearStatus::Pending,
+            Utc::now().into(),
+            "k-stale",
+        )
+        .await;
+        link_death_to(&db, &death, user).await;
+
+        let err = RegearService::new()
+            .request_regear(&db, user, death.id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Conflict(_)));
+        assert_eq!(balance_pools(&db, user).await, (3, 0));
+    }
+
+    async fn insert_self_report(
+        db: &DatabaseConnection,
+        event_id: i64,
+        user: i64,
+        status: RegearStatus,
+    ) -> Result<RegearDeathModel, sea_orm::DbErr> {
+        let now = Utc::now().into();
+        RegearDeathActiveModel {
+            event_id: Set(event_id),
+            killed_at: Set(now),
+            user_id: Set(Some(user)),
+            player_name: Set("P".into()),
+            guild_id: Set("guild-1".into()),
+            loadout_json: Set("{}".into()),
+            auto_estimate_total: Set(Decimal::ZERO),
+            auto_estimate_breakdown_json: Set("[]".into()),
+            status: Set(status.to_string()),
+            source: Set(RegearSource::SelfReported.to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+    }
+
+    #[tokio::test]
+    async fn database_rejects_a_second_active_self_report_for_one_event() {
+        let db = seed_db().await;
+        let user = insert_user_row(&db, "selfie").await;
+        let other = insert_user_row(&db, "selfie2").await;
+        insert_self_report(&db, 5, user, RegearStatus::Pending)
+            .await
+            .expect("first self-report");
+
+        let dup = insert_self_report(&db, 5, user, RegearStatus::Pending)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            dup.sql_err(),
+            Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+        ));
+        // Another member, another event, or a terminal (rejected) row are all unaffected.
+        insert_self_report(&db, 5, other, RegearStatus::Pending)
+            .await
+            .unwrap();
+        insert_self_report(&db, 6, user, RegearStatus::Pending)
+            .await
+            .unwrap();
+        insert_self_report(&db, 5, user, RegearStatus::Rejected)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn pg_concurrent_requests_on_different_deaths_cannot_overspend() {
+        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_rgs").await
+        else {
+            return;
+        };
+        let db = tenant.db.clone();
+        let user = insert_user_row(&db, "racer").await;
+        seed_balance(&db, user, 1, 0).await;
+        let mut ids = Vec::new();
+        for n in 0..6 {
+            let death = insert_death(
+                &db,
+                "Racer",
+                RegearStatus::Available,
+                Utc::now().into(),
+                &format!("k-race-{n}"),
+            )
+            .await;
+            link_death_to(&db, &death, user).await;
+            ids.push(death.id);
+        }
+
+        let handles: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let db = db.clone();
+                tokio::spawn(
+                    async move { RegearService::new().request_regear(&db, user, id).await },
+                )
+            })
+            .collect();
+        let mut ok = 0;
+        for handle in handles {
+            if handle.await.unwrap().is_ok() {
+                ok += 1;
+            }
+        }
+        assert_eq!(ok, 1, "one credit, one successful request");
+        assert_eq!(balance_pools(&db, user).await, (0, 0));
+        let pending = RegearDeathEntity::find()
+            .filter(RegearDeathColumn::Status.eq("pending"))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(pending, 1);
+        tenant.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn pg_parallel_self_service_posts_create_one_request_and_spend_one_credit() {
+        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_rgd").await
+        else {
+            return;
+        };
+        let db = tenant.db.clone();
+        let officer = insert_user_row(&db, "officer-pg").await;
+        let member = insert_user_row(&db, "member-pg").await;
+        seed_balance(&db, member, 4, 0).await;
+        let build_id = insert_build_with_item(&db, "PG Build", officer).await;
+        let comp_id = insert_comp_with_build(&db, "PG Comp", officer, build_id).await;
+        let event_id = insert_regear_event(&db, "PG CTA", officer, comp_id).await;
+        crate::modules::events::entities::event_participation::ActiveModel {
+            event_id: Set(event_id),
+            user_id: Set(member),
+            primary_build_id: Set(Some(build_id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("participation");
+
+        let handles: Vec<_> = (0..5)
+            .map(|_| {
+                let db = db.clone();
+                tokio::spawn(async move {
+                    let albiondata =
+                        crate::modules::albiondata::service::AlbionDataService::default();
+                    let guild = ExtractionGuildContext {
+                        guild_id: "guild-1".into(),
+                        server: None,
+                    };
+                    RegearService::new()
+                        .create_self_service_request(
+                            &db,
+                            &albiondata,
+                            &guild,
+                            member,
+                            &CreateSelfServiceRegearRequest {
+                                event_id,
+                                build_id,
+                                item_overrides: Vec::new(),
+                            },
+                        )
+                        .await
+                })
+            })
+            .collect();
+        let mut ok = 0;
+        for handle in handles {
+            match handle.await.unwrap() {
+                Ok(_) => ok += 1,
+                Err(err) => assert!(matches!(err, AppError::Conflict(_)), "got {err:?}"),
+            }
+        }
+        assert_eq!(ok, 1);
+        assert_eq!(balance_pools(&db, member).await, (3, 0));
+        tenant.cleanup().await;
     }
 }

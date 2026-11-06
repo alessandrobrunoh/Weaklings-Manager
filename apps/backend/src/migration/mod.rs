@@ -139,6 +139,7 @@ mod m20261028_000003_add_event_discord_delivery;
 mod m20261028_000004_guild_event_delivery;
 mod m20261029_000001_add_event_source_identity;
 mod m20261103_000001_add_alliance_distribution_key;
+mod m20261105_000001_regear_self_report_unique;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -282,6 +283,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261028_000004_guild_event_delivery::Migration),
             Box::new(m20261029_000001_add_event_source_identity::Migration),
             Box::new(m20261103_000001_add_alliance_distribution_key::Migration),
+            Box::new(m20261105_000001_regear_self_report_unique::Migration),
         ]
     }
 }
