@@ -16,7 +16,7 @@ This directory contains Angular route guards for authentication, tenant selectio
 
 - Guards return `true` to activate a route or a `UrlTree` to redirect; they do not navigate imperatively.
 - The permission factory uses OR semantics. An empty permission list does not grant access.
-- `next` is accepted only when it is a nonempty path beginning with `/`.
+- `next` is accepted only when it is a same-origin relative path (`isSameOriginPath` in `core/routing`): it begins with `/` and is not `//` or `/\\`. The SSR render applies the same check before it writes a `Location` header.
 - Tenant checks load a profile only when one is not already available.
 
 ## Side Effects

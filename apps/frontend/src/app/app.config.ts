@@ -1,4 +1,11 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import {
+  ApplicationConfig,
+  inject,
+  PLATFORM_ID,
+  provideAppInitializer,
+  provideBrowserGlobalErrorListeners,
+} from '@angular/core';
+import { isPlatformServer } from '@angular/common';
 import {
   provideHttpClient,
   withFetch,
@@ -8,7 +15,10 @@ import {
 import { provideRouter, withComponentInputBinding, withViewTransitions } from '@angular/router';
 
 import { routes } from './app.routes';
+import { serverSessionInterceptor } from './core/interceptors/server-session.interceptor';
 import { sessionExpiryInterceptor } from './core/interceptors/session-expiry.interceptor';
+import { AuthService } from './core/services/auth.service';
+import { bootSessionProbe } from './core/services/session-boot';
 import { provideClientHydration, withEventReplay } from '@angular/platform-browser';
 
 /**
@@ -16,6 +26,13 @@ import { provideClientHydration, withEventReplay } from '@angular/platform-brows
  *
  * Adds `HttpClient` (with `fetch` for SSR), input-bound routing params,
  * view transitions for smooth route changes, and the SSR hydration bundle.
+ *
+ * The session probe runs as an app initializer, so the first render (on the
+ * server) and the first navigation already know whether a session exists. The
+ * server forwards the browser's cookie to the backend; the browser reuses the
+ * probe the server stored in `TransferState` instead of asking again. In the
+ * browser the boot waits for the probe only up to a bound (see
+ * `bootSessionProbe`), so a hung backend cannot keep the app on its splash.
  *
  * No `withInMemoryScrolling` here: it resets `window.scrollTo`, but the shell
  * root is `h-screen overflow-hidden` (`layout/shell/shell.ts`) — the window
@@ -28,10 +45,13 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideHttpClient(
       withFetch(),
-      withInterceptors([sessionExpiryInterceptor]),
+      withInterceptors([serverSessionInterceptor, sessionExpiryInterceptor]),
       withInterceptorsFromDi(),
     ),
     provideRouter(routes, withComponentInputBinding(), withViewTransitions()),
     provideClientHydration(withEventReplay()),
+    provideAppInitializer(() =>
+      bootSessionProbe(inject(AuthService), isPlatformServer(inject(PLATFORM_ID))),
+    ),
   ],
 };

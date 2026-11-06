@@ -1,9 +1,10 @@
+import { PLATFORM_ID, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError, ApiService } from './api.service';
-import { AuthService } from './auth.service';
+import { AuthService, SESSION_STATE_KEY } from './auth.service';
 
 const profile = {
   id: 'u1',
@@ -87,5 +88,87 @@ describe('AuthService session probe', () => {
 
     expect(auth.profile()).toBeNull();
     expect(post).toHaveBeenCalledWith('api/auth/logout', null);
+  });
+});
+
+describe('AuthService across the server render and hydration', () => {
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('reuses the session the server probed instead of probing again in the browser', async () => {
+    const get = vi.fn().mockReturnValue(of(profile));
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: { get, post: vi.fn() } }],
+    });
+    TestBed.inject(TransferState).set(SESSION_STATE_KEY, {
+      profile,
+      sessionUnreachable: false,
+    });
+    const auth = TestBed.inject(AuthService);
+
+    const loaded = await auth.load();
+
+    expect(loaded).toBe(profile);
+    expect(auth.isAuthenticated()).toBe(true);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('probes again on a later load once the transferred session has been used', async () => {
+    const get = vi.fn().mockReturnValue(throwError(() => new ApiError(401, 'nope')));
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: { get, post: vi.fn() } }],
+    });
+    TestBed.inject(TransferState).set(SESSION_STATE_KEY, {
+      profile,
+      sessionUnreachable: false,
+    });
+    const auth = TestBed.inject(AuthService);
+
+    await auth.load();
+    const again = await auth.load();
+
+    expect(again).toBeNull();
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('probes once per server render and stores the result for the browser', async () => {
+    const get = vi.fn().mockReturnValue(of(profile));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ApiService, useValue: { get, post: vi.fn() } },
+      ],
+    });
+    const auth = TestBed.inject(AuthService);
+
+    await Promise.all([auth.load(), auth.load()]);
+    await auth.load();
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(auth.isAuthenticated()).toBe(true);
+    expect(TestBed.inject(TransferState).get(SESSION_STATE_KEY, null)).toEqual({
+      profile,
+      sessionUnreachable: false,
+    });
+  });
+
+  it('carries an unreachable backend to the browser as unreachable, not as a logout', async () => {
+    const get = vi.fn().mockReturnValue(throwError(() => new ApiError(0, 'down')));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ApiService, useValue: { get, post: vi.fn() } },
+      ],
+    });
+    const auth = TestBed.inject(AuthService);
+
+    await auth.load();
+
+    expect(auth.sessionUnreachable()).toBe(true);
+    expect(TestBed.inject(TransferState).get(SESSION_STATE_KEY, null)).toEqual({
+      profile: null,
+      sessionUnreachable: true,
+    });
   });
 });
