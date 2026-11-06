@@ -35,7 +35,6 @@ import {
   buildApplicationPanelMessage,
   buildApplicationStatusAnnouncement,
 } from "../embeds/application.embed.js";
-import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
 import { flashCopy } from "./flash-copy.js";
@@ -2047,7 +2046,7 @@ export class Poller {
       if (!channel) return;
 
       for (const battle of newBattles) {
-        const embed = buildBattleEmbed(battle, GUILD_NAME);
+        const embed = buildBattleEmbed(battle);
         await channel.send({ embeds: [embed] });
         console.log(`[Poller] Announced battle #${battle.battle_id}`);
       }
