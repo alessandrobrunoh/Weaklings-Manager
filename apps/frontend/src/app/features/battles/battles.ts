@@ -14,7 +14,6 @@ import { firstValueFrom } from 'rxjs';
 import type {
   AlbionLinkStatus,
   BattleDetail,
-  BattleGuildSummary,
   BattleSummary,
   FightListItem,
   PaginatedData,
@@ -712,14 +711,6 @@ export class Battles {
     return battle.guilds.reduce((sum, guild) => sum + guild.deaths, 0);
   }
 
-  private winnerGuild(battle: Pick<BattleSummary, 'guilds'>): BattleGuildSummary | null {
-    return (
-      battle.guilds.find((guild) => guild.winner) ??
-      [...battle.guilds].sort((left, right) => right.kill_fame - left.kill_fame)[0] ??
-      null
-    );
-  }
-
   private startRefreshTimer(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
@@ -854,12 +845,5 @@ export class Battles {
         victories: stats.victories,
       };
     }, this.emptyScopeStats());
-  }
-
-  private guildStatsForBattle(battle: BattleSummary): BattleGuildSummary | null {
-    return (
-      battle.guilds.find((guild) => guild.name.toLowerCase() === 'weaklings') ??
-      this.winnerGuild(battle)
-    );
   }
 }

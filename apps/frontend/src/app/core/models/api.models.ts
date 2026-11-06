@@ -1115,6 +1115,10 @@ export interface BattleGuildSummary {
   kill_fame: number;
   winner: boolean;
   average_item_power?: number;
+  /** Backend verdict: this guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
+  /** Backend verdict: this is the requesting tenant's own guild. */
+  is_own?: boolean;
 }
 
 export interface BattleSummary {
@@ -1145,6 +1149,8 @@ export interface BattlePlayer {
   kill_fame: number;
   death_fame: number;
   item_power: number;
+  /** Backend verdict: the player's guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
 }
 
 export interface BattleKillParticipant {
@@ -1154,6 +1160,8 @@ export interface BattleKillParticipant {
   guild_name: string | null;
   alliance_name?: string | null;
   alliance_id?: string | null;
+  /** Backend verdict: the participant's guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
 }
 
 export interface BattleKillEvent {

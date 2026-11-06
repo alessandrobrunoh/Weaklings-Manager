@@ -4,7 +4,6 @@ import { firstValueFrom } from 'rxjs';
 
 import type { BattleDetail, BattleGuildSummary } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
-import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -263,7 +262,6 @@ interface AggregatedGuildStats {
 })
 export class BattleGroupPage {
   private readonly api = inject(ApiService);
-  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
@@ -429,8 +427,6 @@ export class BattleGroupPage {
       battles: number;
     }>();
 
-    const targetGuild = this.auth.profile()?.tenant_name?.trim().toLowerCase() || 'weaklings';
-
     for (const battle of this.battleDetails()) {
       for (const guild of battle.guilds) {
         const name = guild.name || this.t('common.none');
@@ -440,7 +436,7 @@ export class BattleGroupPage {
         const previous = statsByGuild.get(key) ?? {
           name,
           alliance_name: guild.alliance_name ?? null,
-          isOurGuild: key === targetGuild,
+          isOurGuild: false,
           players: 0,
           kills: 0,
           deaths: 0,
@@ -449,6 +445,8 @@ export class BattleGroupPage {
         };
         statsByGuild.set(key, {
           ...previous,
+          // The backend flags the tenant's own guild; names are never compared.
+          isOurGuild: previous.isOurGuild || guild.is_own === true,
           alliance_name: previous.alliance_name || (guild.alliance_name ?? null),
           players: previous.players + guild.players,
           kills: previous.kills + guild.kills,

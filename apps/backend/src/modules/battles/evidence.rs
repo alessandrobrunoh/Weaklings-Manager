@@ -253,6 +253,13 @@ pub fn normalize(
     side: &FriendlySide,
     classifier: &RoleClassifier,
 ) -> NormalizedEvidence {
+    // Players rarely carry a guild id, so their side is read through the
+    // battle's own guild rows (see `BattleSide`).
+    let battle_side = side.for_battle(
+        guilds
+            .iter()
+            .map(|guild| (guild.id.as_str(), guild.name.as_str())),
+    );
     let guild_rows = guilds
         .iter()
         .map(|guild| GuildStatRow {
@@ -310,7 +317,7 @@ pub fn normalize(
                 guild_id: player.guild_id.clone(),
                 guild_name: player.guild_name.clone(),
                 alliance_name: player.alliance_name.clone(),
-                is_friendly: side.contains(&player.guild_id, &player.guild_name),
+                is_friendly: battle_side.contains(&player.guild_id, &player.guild_name),
                 kills: saturating_i32(player.kills),
                 deaths: saturating_i32(player.deaths),
                 kill_fame: player.kill_fame,
@@ -397,6 +404,8 @@ mod tests {
             kill_fame: 10_000,
             winner,
             average_item_power: 1300.0,
+            is_friendly: false,
+            is_own: false,
         }
     }
 
@@ -413,6 +422,7 @@ mod tests {
             kill_fame: 5_000,
             death_fame: 0,
             item_power: 1300.0,
+            is_friendly: false,
         }
     }
 
@@ -478,6 +488,33 @@ mod tests {
             .unwrap();
         assert!(!theirs.is_friendly);
         assert!(!theirs.winner);
+    }
+
+    #[test]
+    fn players_without_ids_are_friendly_through_their_guild_name() {
+        // Real payloads carry only the guild name on players.
+        let guilds = [
+            guild("our-guild", "Weaklings", true),
+            guild("foe-1", "Foe One", false),
+        ];
+        let players = [
+            player("", "Ours", "", "Weaklings"),
+            player("", "Theirs", "", "Foe One"),
+        ];
+        let evidence = normalize(&guilds, &players, &[], &side(), &classifier());
+
+        let ours = evidence
+            .players
+            .iter()
+            .find(|row| row.player_name == "Ours")
+            .unwrap();
+        let theirs = evidence
+            .players
+            .iter()
+            .find(|row| row.player_name == "Theirs")
+            .unwrap();
+        assert!(ours.is_friendly);
+        assert!(!theirs.is_friendly);
     }
 
     /// Mirrors `intel::scout::tests::weapon_coverage_reflects_kill_feed_only`:

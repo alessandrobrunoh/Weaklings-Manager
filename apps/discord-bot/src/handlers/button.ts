@@ -29,7 +29,6 @@ import {
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
-import { config } from "../config.js";
 import { formatSilver } from '../format.js';
 import { ensureEventManagementAllowed } from "../services/event-authority.js";
 import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "../services/event-lifecycle.js";
@@ -1081,7 +1080,6 @@ async function handleBattlesNav(
 
   const embed = buildBattleListEmbed(
     result.items,
-    config.GUILD_NAME,
     result.current_page,
     result.total_pages,
   );

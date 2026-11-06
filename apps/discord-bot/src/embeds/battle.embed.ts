@@ -1,5 +1,9 @@
 import { EmbedBuilder } from "discord.js";
-import type { BattleSummary } from "../api/types.js";
+import type {
+  BattleGuildSummary,
+  BattleOutcome,
+  BattleSummary,
+} from "../api/types.js";
 import { BOT_COLORS, createBaseEmbed } from "./theme.js";
 
 function fmt(n: number): string {
@@ -26,16 +30,38 @@ function chartLine(
   return `${name.padEnd(16)} K ${bar(kills, maxKills)} ${kills}   D ${bar(deaths, maxDeaths)} ${deaths}`;
 }
 
+// ── Outcome e lato "nostro" (decisi dal backend, mai da nomi o env) ──────────
+
+const OUTCOME_PRESENTATION: Record<
+  BattleOutcome,
+  { color: number; result: string; badge: string }
+> = {
+  victory: { color: BOT_COLORS.SUCCESS, result: "🏆 VICTORY", badge: "🏆 **WIN**" },
+  defeat: { color: BOT_COLORS.DANGER, result: "💀 DEFEAT", badge: "💀 **LOSS**" },
+  draw: { color: BOT_COLORS.WARNING, result: "⚖️ DRAW", badge: "⚖️ **DRAW**" },
+  unknown: { color: BOT_COLORS.DARK, result: "❔ UNKNOWN", badge: "❔ **N/A**" },
+};
+
+/**
+ * Presentation for the backend verdict. A battle without one is "unknown":
+ * the bot must not guess a win or a loss.
+ */
+export function presentOutcome(battle: BattleSummary) {
+  return OUTCOME_PRESENTATION[battle.outcome ?? "unknown"];
+}
+
+/** The tenant's own guild, else the first friendly one (alliance tenants have none). */
+export function ourSide(battle: BattleSummary): BattleGuildSummary | undefined {
+  return (
+    battle.guilds.find((g) => g.is_own) ?? battle.guilds.find((g) => g.is_friendly)
+  );
+}
+
 // ── Embed singola battaglia ──────────────────────────────────────────────────
 
-export function buildBattleEmbed(
-  battle: BattleSummary,
-  guildName: string,
-): EmbedBuilder {
-  const guildSide = battle.guilds.find((g) => g.name === guildName);
-  const isWin = guildSide?.winner ?? false;
-  const color = isWin ? BOT_COLORS.SUCCESS : BOT_COLORS.DANGER;
-  const resultStr = isWin ? "🏆 VICTORY" : "💀 DEFEAT";
+export function buildBattleEmbed(battle: BattleSummary): EmbedBuilder {
+  const guildSide = ourSide(battle);
+  const { color, result: resultStr } = presentOutcome(battle);
 
   const start = new Date(battle.start_time);
   const end = new Date(battle.end_time);
@@ -70,7 +96,7 @@ export function buildBattleEmbed(
 
   // Opponents (max 3 to keep the layout compact)
   const opponents = battle.guilds
-    .filter((g) => g.name !== guildName)
+    .filter((g) => !g.is_friendly)
     .sort((a, b) => b.kill_fame - a.kill_fame)
     .slice(0, 3);
   const chartGuilds = guildSide ? [guildSide, ...opponents] : opponents;
@@ -115,7 +141,6 @@ export function buildBattleEmbed(
 
 export function buildBattleListEmbed(
   battles: BattleSummary[],
-  guildName: string,
   page: number,
   totalPages: number,
 ): EmbedBuilder {
@@ -132,8 +157,8 @@ export function buildBattleListEmbed(
   }
 
   const lines = battles.map((b) => {
-    const guildSide = b.guilds.find((g) => g.name === guildName);
-    const badge = guildSide?.winner ? "🏆 **WIN**" : "💀 **LOSS**";
+    const guildSide = ourSide(b);
+    const badge = presentOutcome(b).badge;
     const ts = Math.floor(new Date(b.start_time).getTime() / 1000);
     const kd = guildSide ? `${guildSide.kills}K / ${guildSide.deaths}D` : "—";
     const fame = guildSide ? fmt(guildSide.kill_fame) : "—";

@@ -43,7 +43,6 @@ import {
 } from '../../shared/components/view-toggle/view-toggle';
 
 const ALBION_RENDER_ITEM_BASE_URL = 'https://render.albiononline.com/v1/item';
-const DEFAULT_OUR_GUILD_NAME = 'weaklings';
 
 type DetailTab = 'overview' | 'guild_alliance' | 'guilds' | 'players' | 'timeline';
 
@@ -1244,18 +1243,13 @@ export class BattleDetailPage {
     { id: 'timeline', label: this.t('battles.kill_feed') },
   ]);
 
-  // Our guild identifier
+  // Our guild, as decided by the backend from the tenant's Albion scope
+  // (`is_own`, or the first `is_friendly` guild for an alliance tenant). The
+  // Discord server name is never compared, and no guild is guessed.
   protected readonly ourGuild = computed<BattleGuildSummary | null>(() => {
     const detail = this.battle();
     if (!detail) return null;
-    const targetGuildName =
-      this.auth.profile()?.tenant_name?.trim().toLowerCase() || DEFAULT_OUR_GUILD_NAME;
-    return (
-      detail.guilds.find((g) => g.name.toLowerCase() === targetGuildName) ??
-      detail.guilds.find((g) => g.winner) ??
-      detail.guilds[0] ??
-      null
-    );
+    return detail.guilds.find((g) => g.is_own) ?? detail.guilds.find((g) => g.is_friendly) ?? null;
   });
 
   // Cross-hydrated map of guild name -> alliance name from all available payload nodes
@@ -1332,8 +1326,6 @@ export class BattleDetailPage {
   protected readonly alliances = computed<AllianceSummary[]>(() => {
     const detail = this.battle();
     if (!detail) return [];
-    const ourGuildName = this.ourGuild()?.name.toLowerCase();
-    const ourAlly = this.ourGuildAllianceName();
     const allyMap = this.guildAllianceMap();
     const map = new Map<string, { isSolo: boolean; guilds: BattleGuildSummary[] }>();
 
@@ -1365,9 +1357,7 @@ export class BattleDetailPage {
       const kills = guilds.reduce((sum, g) => sum + g.kills, 0);
       const deaths = guilds.reduce((sum, g) => sum + g.deaths, 0);
       const killFame = guilds.reduce((sum, g) => sum + g.kill_fame, 0);
-      const isOurAlliance = guilds.some(
-        (g) => g.name.toLowerCase() === ourGuildName || (ourAlly && g.alliance_name === ourAlly),
-      );
+      const isOurAlliance = guilds.some((g) => g.is_friendly === true);
 
       // Aggregate player death fame & avg ip for this alliance
       const allyPlayers = detail.players.filter((p) =>
@@ -1410,12 +1400,11 @@ export class BattleDetailPage {
   });
 
   protected readonly topEnemyGuild = computed<BattleGuildSummary | null>(() => {
-    const ourGuildName = this.ourGuild()?.name.toLowerCase();
     const detail = this.battle();
     if (!detail) return null;
     return (
       detail.guilds
-        .filter((g) => g.name.toLowerCase() !== ourGuildName)
+        .filter((g) => g.is_friendly !== true)
         .sort((a, b) => b.kill_fame - a.kill_fame)[0] ?? null
     );
   });
@@ -1460,8 +1449,6 @@ export class BattleDetailPage {
     const detail = this.battle();
     if (!detail || detail.kills.length === 0) return [];
     const startTime = new Date(detail.start_time).getTime();
-    const ourGuildName = this.ourGuild()?.name.toLowerCase();
-    const ourAllyName = this.ourGuildAllianceName()?.toLowerCase();
 
     const minuteMap = new Map<
       number,
@@ -1471,13 +1458,8 @@ export class BattleDetailPage {
     for (const kill of detail.kills) {
       const killTime = new Date(kill.time).getTime();
       const minute = Math.max(0, Math.floor((killTime - startTime) / 60000));
-      const killerAlly = this.resolveParticipantAlliance(kill.killer)?.toLowerCase();
-      const victimAlly = this.resolveParticipantAlliance(kill.victim)?.toLowerCase();
-
-      const isOurKiller = (kill.killer.guild_name?.toLowerCase() === ourGuildName) ||
-        (Boolean(ourAllyName) && killerAlly === ourAllyName);
-      const isOurVictim = (kill.victim.guild_name?.toLowerCase() === ourGuildName) ||
-        (Boolean(ourAllyName) && victimAlly === ourAllyName);
+      const isOurKiller = this.isOurGuildParticipant(kill.killer);
+      const isOurVictim = this.isOurGuildParticipant(kill.victim);
 
       const bucket = minuteMap.get(minute) ?? {
         ourKills: 0,
@@ -1540,14 +1522,12 @@ export class BattleDetailPage {
   protected readonly enrichedGuildRows = computed<GuildEnrichedRow[]>(() => {
     const detail = this.battle();
     if (!detail) return [];
-    const ourGuildName = this.ourGuild()?.name.toLowerCase();
-    const ourAllyName = this.ourGuildAllianceName();
     const allyMap = this.guildAllianceMap();
 
     return detail.guilds.map((g) => {
-      const isOurGuild = g.name.toLowerCase() === ourGuildName;
+      const isOurGuild = g.is_own === true;
       const alliance_name = g.alliance_name?.trim() || allyMap.get(g.name.toLowerCase()) || null;
-      const isOurAlliance = Boolean(ourAllyName && alliance_name === ourAllyName);
+      const isOurAlliance = g.is_friendly === true;
       const kdRatio = g.deaths === 0 ? (g.kills > 0 ? g.kills : 0) : g.kills / g.deaths;
       const famePerPlayer = this.safeDivide(g.kill_fame, g.players);
       const estimatedLoss = (detail.estimated_losses?.guilds ?? []).find(
@@ -1571,13 +1551,13 @@ export class BattleDetailPage {
     const detail = this.battle();
     if (!detail) return [];
     const ourGuildName = this.ourGuild()?.name.toLowerCase();
-    const ourAllyName = this.ourGuildAllianceName();
     const allyMap = this.guildAllianceMap();
 
     return detail.players.map((p) => {
-      const isOurGuild = p.guild_name.toLowerCase() === ourGuildName;
       const alliance_name = p.alliance_name?.trim() || allyMap.get(p.guild_name.toLowerCase()) || null;
-      const isOurAlliance = Boolean(ourAllyName && alliance_name === ourAllyName);
+      const isOurAlliance = p.is_friendly === true;
+      // `ourGuildName` is the backend-flagged own guild, not the tenant name.
+      const isOurGuild = isOurAlliance && p.guild_name.toLowerCase() === ourGuildName;
       const weaponType = this.findPlayerWeaponType(p.name, detail.kills);
       const role = this.inferRoleFromWeapon(weaponType);
       const netFame = p.kill_fame - p.death_fame;
@@ -2488,9 +2468,8 @@ export class BattleDetailPage {
     return this.itemIconUrl(weapon);
   }
 
-  protected isOurGuildParticipant(participant: { guild_name?: string | null }): boolean {
-    const ourG = this.ourGuild()?.name.toLowerCase();
-    return Boolean(participant.guild_name && participant.guild_name.toLowerCase() === ourG);
+  protected isOurGuildParticipant(participant: { is_friendly?: boolean }): boolean {
+    return participant.is_friendly === true;
   }
 
   protected resolveParticipantAlliance(participant: { guild_name?: string | null; alliance_name?: string | null }): string | null {

@@ -1,12 +1,11 @@
 //! Retryable Alliance-to-Guild event copies.
 
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
     QueryFilter, Set, Statement, TransactionTrait,
 };
-use tokio::time::interval;
 
 use crate::{
     errors::AppError,
@@ -24,27 +23,8 @@ use crate::{
     tenant::TenantRegistry,
 };
 
-const FANOUT_TICK: Duration = Duration::from_secs(15);
 const TARGET_LEASE_SECONDS: i64 = 60;
 const MAX_TARGETS_PER_TICK: u64 = 12;
-
-/// Start the control-plane fanout retry loop.
-pub fn spawn(control: DatabaseConnection, registry: TenantRegistry) {
-    tokio::spawn(async move {
-        let mut ticker = interval(FANOUT_TICK);
-        loop {
-            ticker.tick().await;
-            if let Err(error) = process_due_targets(&control, &registry).await {
-                tracing::error!(error = %error, "event fanout retry cycle failed");
-            }
-            if let Err(error) =
-                crate::modules::events::mirror_retry::process_due(&control, &registry).await
-            {
-                tracing::error!(error = %error, "alliance event mirror retry cycle failed");
-            }
-        }
-    });
-}
 
 /// Process due outbox targets once. Also called after enqueue to reduce normal
 /// publish latency; the periodic worker recovers failures and process restarts.
@@ -103,9 +83,7 @@ pub async fn process_due_targets(
 }
 
 fn retry_delay_seconds(attempt: i32) -> i64 {
-    15_i64
-        .saturating_mul(1_i64 << attempt.clamp(0, 8))
-        .min(3600)
+    crate::runtime::backoff::retry_delay_seconds(attempt)
 }
 
 async fn process_target(

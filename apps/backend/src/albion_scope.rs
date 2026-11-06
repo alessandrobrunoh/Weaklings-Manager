@@ -8,6 +8,7 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement};
 
 use crate::modules::albionbb::client::normalize_server;
+use crate::modules::battles::outcome::FriendlySide;
 use crate::modules::events::service::BattleLinkingContext;
 
 /// Guild, region, and allies used to scope Albion reads and writes.
@@ -242,6 +243,87 @@ pub async fn load_event_read_scope(
         allied_names.as_deref(),
         &member_guild_ids,
     )
+}
+
+/// Friendly-side classification of a tenant's battles.
+///
+/// Guild tenants are their own guild plus explicit allies; alliance tenants
+/// have no own guild and every active member guild is friendly. Unlike
+/// [`EventReadScope`] this needs no Albion region: classifying already-stored
+/// battles never calls `AlbionBB`.
+///
+/// # Errors
+///
+/// Returns [`AlbionScopeError::Database`] when a query or column decode fails,
+/// and [`AlbionScopeError::NotConfigured`] when the tenant has neither a guild
+/// nor an alliance identity. Callers must not substitute env config.
+pub async fn load_friendly_side(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+) -> Result<FriendlySide, AlbionScopeError> {
+    if tenant_id.is_empty() {
+        return Err(AlbionScopeError::NotConfigured);
+    }
+    let row = control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT kind, albion_guild_id, albion_alliance_id, albion_allied_guild_ids, \
+             albion_allied_guild_names \
+             FROM tenants WHERE id = $1",
+            [tenant_id.into()],
+        ))
+        .await?;
+    let Some(row) = row else {
+        return Err(AlbionScopeError::NotConfigured);
+    };
+    let kind: String = row.try_get_by_index(0)?;
+    let guild_id: Option<String> = row.try_get_by_index(1)?;
+    let alliance_id: Option<String> = row.try_get_by_index(2)?;
+    let allied_ids: Option<String> = row.try_get_by_index(3)?;
+    let allied_names: Option<String> = row.try_get_by_index(4)?;
+    let member_guild_ids = if kind == "alliance" {
+        load_active_member_guild_ids(control, tenant_id).await?
+    } else {
+        Vec::new()
+    };
+    friendly_side_from_tenant_row(
+        &kind,
+        guild_id.as_deref(),
+        alliance_id.as_deref(),
+        allied_ids.as_deref(),
+        allied_names.as_deref(),
+        &member_guild_ids,
+    )
+}
+
+/// Pure half of [`load_friendly_side`].
+///
+/// # Errors
+///
+/// Returns [`AlbionScopeError::NotConfigured`] when the row has no usable
+/// identity for its kind.
+pub fn friendly_side_from_tenant_row(
+    kind: &str,
+    guild_id: Option<&str>,
+    alliance_id: Option<&str>,
+    allied_ids: Option<&str>,
+    allied_names: Option<&str>,
+    member_guild_ids: &[String],
+) -> Result<FriendlySide, AlbionScopeError> {
+    let guild_id = guild_id.map(str::trim).filter(|id| !id.is_empty());
+    if kind == "guild" {
+        let guild_id = guild_id.ok_or(AlbionScopeError::NotConfigured)?;
+        return Ok(FriendlySide::new(
+            guild_id,
+            &crate::config::split_csv(allied_ids.unwrap_or("")),
+            &crate::config::split_csv(allied_names.unwrap_or("")),
+        ));
+    }
+    let has_alliance = alliance_id.map(str::trim).is_some_and(|id| !id.is_empty());
+    if kind != "alliance" || !has_alliance {
+        return Err(AlbionScopeError::NotConfigured);
+    }
+    Ok(FriendlySide::new("", member_guild_ids, &[]))
 }
 
 /// Active member guild IDs of an alliance, blanks excluded.
@@ -548,6 +630,80 @@ mod tests {
         crate::postgres::drop_schema(&admin, &schema)
             .await
             .expect("drop schema");
+    }
+
+    #[test]
+    fn friendly_side_of_a_guild_row_is_its_guild_plus_explicit_allies() {
+        let side = friendly_side_from_tenant_row(
+            "guild",
+            Some(" g-1 "),
+            None,
+            Some("ally-1"),
+            Some("Friends"),
+            &[],
+        )
+        .expect("configured");
+        assert!(side.is_own("g-1"));
+        assert!(side.contains("ally-1", ""));
+        assert!(!side.is_own("ally-1"));
+        assert!(side.contains("", "friends"));
+        assert!(!side.contains("other", "Other"));
+        // A blank guild id never matches blank ids.
+        assert!(!side.contains("", ""));
+    }
+
+    #[test]
+    fn friendly_side_fails_closed_without_an_identity() {
+        assert!(matches!(
+            friendly_side_from_tenant_row("guild", Some("  "), None, None, None, &[]),
+            Err(AlbionScopeError::NotConfigured)
+        ));
+        assert!(matches!(
+            friendly_side_from_tenant_row("alliance", None, None, None, None, &[]),
+            Err(AlbionScopeError::NotConfigured)
+        ));
+        assert!(matches!(
+            friendly_side_from_tenant_row("platform", Some("g"), Some("a"), None, None, &[]),
+            Err(AlbionScopeError::NotConfigured)
+        ));
+    }
+
+    #[tokio::test]
+    async fn two_guild_tenants_in_one_process_get_different_friendly_sides() {
+        use crate::testkit::{ALBION_GUILDS, ALLIANCE, GUILDS, World};
+
+        let world = World::new().await;
+        world.seed_albion_control().await;
+
+        let first = load_friendly_side(&world.control, GUILDS[0])
+            .await
+            .expect("G1 side");
+        let second = load_friendly_side(&world.control, GUILDS[1])
+            .await
+            .expect("G2 side");
+        assert!(first.is_own(ALBION_GUILDS[0]));
+        assert!(!first.contains(ALBION_GUILDS[1], ""));
+        assert!(second.is_own(ALBION_GUILDS[1]));
+        assert!(!second.contains(ALBION_GUILDS[0], ""));
+
+        // The alliance has no own guild; its active members are friendly, a
+        // member that left is not.
+        let alliance = load_friendly_side(&world.control, ALLIANCE)
+            .await
+            .expect("alliance side");
+        assert!(alliance.contains(ALBION_GUILDS[0], ""));
+        assert!(alliance.contains(ALBION_GUILDS[1], ""));
+        assert!(!alliance.is_own(ALBION_GUILDS[0]));
+
+        // No Albion identity, or no row at all: fail closed, never env.
+        assert!(matches!(
+            load_friendly_side(&world.control, GUILDS[2]).await,
+            Err(AlbionScopeError::NotConfigured)
+        ));
+        assert!(matches!(
+            load_friendly_side(&world.control, "missing").await,
+            Err(AlbionScopeError::NotConfigured)
+        ));
     }
 
     #[test]

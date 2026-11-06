@@ -114,6 +114,63 @@ impl FriendlySide {
         }
         self.allied_names.contains(&guild_name.to_ascii_lowercase())
     }
+
+    /// Returns `true` when `guild_id` is this tenant's own guild.
+    ///
+    /// Allies are friendly but never "own". A blank id is never own, so a
+    /// payload that does not expose guild ids cannot match by accident.
+    #[must_use]
+    pub fn is_own(&self, guild_id: &str) -> bool {
+        !guild_id.is_empty() && guild_id == self.guild_id
+    }
+
+    /// Builds a [`BattleSide`] for one battle from its guild rows.
+    #[must_use]
+    pub fn for_battle<'a, 'g>(
+        &'a self,
+        guilds: impl IntoIterator<Item = (&'g str, &'g str)>,
+    ) -> BattleSide<'a> {
+        let guild_names = guilds
+            .into_iter()
+            .filter(|(id, name)| self.contains(id, name))
+            .map(|(_, name)| name.trim().to_ascii_lowercase())
+            .filter(|name| !name.is_empty())
+            .collect();
+        BattleSide {
+            side: self,
+            guild_names,
+        }
+    }
+}
+
+/// [`FriendlySide`] resolved against one battle's guild rows.
+///
+/// `AlbionBB` does not expose a player's guild id, only the guild name, so the
+/// tenant's own guild (known by id) could never be matched on a player row.
+/// The battle's own guild rows carry both: any guild the tenant recognises as
+/// friendly there makes its name friendly for the players of that battle.
+#[derive(Debug, Clone)]
+pub struct BattleSide<'a> {
+    side: &'a FriendlySide,
+    guild_names: HashSet<String>,
+}
+
+impl BattleSide<'_> {
+    /// Returns `true` when a guild or player row fights on our side.
+    #[must_use]
+    pub fn contains(&self, guild_id: &str, guild_name: &str) -> bool {
+        if self.side.contains(guild_id, guild_name) {
+            return true;
+        }
+        let name = guild_name.trim();
+        !name.is_empty() && self.guild_names.contains(&name.to_ascii_lowercase())
+    }
+
+    /// Returns `true` when `guild_id` is the tenant's own guild.
+    #[must_use]
+    pub fn is_own(&self, guild_id: &str) -> bool {
+        self.side.is_own(guild_id)
+    }
 }
 
 /// One guild's line in a battle, in the minimal shape the rule needs.
@@ -337,6 +394,42 @@ mod tests {
             kill_fame,
             winner: false,
         }
+    }
+
+    #[test]
+    fn own_guild_is_never_an_ally_or_a_blank_id() {
+        let side = side();
+        assert!(side.is_own("us"));
+        assert!(!side.is_own("ally-id"));
+        assert!(!side.is_own(""));
+        assert!(!FriendlySide::default().is_own(""));
+    }
+
+    #[test]
+    fn players_without_guild_ids_are_friendly_through_the_battle_guild_rows() {
+        let side = side();
+        let battle = side.for_battle([("us", "Albion Crew"), ("enemy", "Enemies")]);
+        assert!(battle.contains("", "Albion Crew"));
+        assert!(battle.contains("", " albion crew "));
+        assert!(!battle.contains("", "Enemies"));
+        assert!(!battle.contains("", ""));
+        // Names only count inside the battle they were seen in.
+        assert!(
+            !side
+                .for_battle([("enemy", "Enemies")])
+                .contains("", "Albion Crew")
+        );
+    }
+
+    #[test]
+    fn two_tenants_classify_the_same_battle_differently() {
+        let first = FriendlySide::new("guild-a", &[], &[]);
+        let second = FriendlySide::new("guild-b", &[], &[]);
+        let guilds = [("guild-a", "Alpha"), ("guild-b", "Beta")];
+        assert!(first.for_battle(guilds).contains("", "Alpha"));
+        assert!(!first.for_battle(guilds).contains("", "Beta"));
+        assert!(second.for_battle(guilds).contains("", "Beta"));
+        assert!(!second.for_battle(guilds).contains("", "Alpha"));
     }
 
     #[test]

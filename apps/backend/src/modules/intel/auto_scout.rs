@@ -196,6 +196,8 @@ mod tests {
             kill_fame: 0,
             winner: false,
             average_item_power: 1000.0,
+            is_friendly: false,
+            is_own: false,
         }
     }
 
@@ -212,6 +214,7 @@ mod tests {
             kill_fame: 0,
             death_fame: 0,
             item_power: 1000.0,
+            is_friendly: false,
         }
     }
 

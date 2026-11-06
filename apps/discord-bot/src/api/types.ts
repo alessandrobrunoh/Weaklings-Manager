@@ -399,7 +399,14 @@ export interface BattleGuildSummary {
   deaths: number;
   kill_fame: number;
   winner: boolean;
+  /** Backend verdict: this guild fights on the requesting tenant's side. */
+  is_friendly?: boolean;
+  /** Backend verdict: this is the requesting tenant's own guild. */
+  is_own?: boolean;
 }
+
+/** Our side's outcome as decided by the backend (never derived from names). */
+export type BattleOutcome = 'victory' | 'defeat' | 'draw' | 'unknown';
 
 export interface BattleSummary {
   battle_id: number;
@@ -409,6 +416,8 @@ export interface BattleSummary {
   total_kills: number;
   total_fame: number;
   guilds: BattleGuildSummary[];
+  /** Absent on summaries that never passed through the tenant-scoped service. */
+  outcome?: BattleOutcome;
 }
 
 /* ------------------------------ Albion ------------------------------ */

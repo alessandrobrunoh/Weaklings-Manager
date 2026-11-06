@@ -38,6 +38,16 @@ pub struct BattleGuildSummary {
     /// Average item power of guild members.
     #[serde(default)]
     pub average_item_power: f64,
+    /// `true` when this guild fights on the requesting tenant's side (its own
+    /// guild, an explicit ally, or an alliance member).
+    ///
+    /// Stamped by the backend on read from the tenant's Albion scope and never
+    /// persisted, so clients must not infer "our guild" from names.
+    #[serde(default)]
+    pub is_friendly: bool,
+    /// `true` only for the requesting tenant's own guild.
+    #[serde(default)]
+    pub is_own: bool,
 }
 
 /// Canonical Fight metadata attached to a battle list item when it has been mapped.
@@ -109,6 +119,10 @@ pub struct BattlePlayer {
     pub death_fame: i64,
     /// Average item power.
     pub item_power: f64,
+    /// `true` when the player's guild fights on the requesting tenant's side.
+    /// Stamped by the backend on read; see [`BattleGuildSummary::is_friendly`].
+    #[serde(default)]
+    pub is_friendly: bool,
 }
 
 /// A kill participant (killer or victim).
@@ -128,6 +142,10 @@ pub struct BattleKillParticipant {
     /// Alliance id, if known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alliance_id: Option<String>,
+    /// `true` when the participant's guild fights on the requesting tenant's
+    /// side. Stamped by the backend on read.
+    #[serde(default)]
+    pub is_friendly: bool,
 }
 
 /// A kill event in the battle timeline.
@@ -235,6 +253,8 @@ impl From<&AlbionBbGuild> for BattleGuildSummary {
             kill_fame: g.kill_fame,
             winner: g.winner,
             average_item_power: g.average_item_power,
+            is_friendly: false,
+            is_own: false,
         }
     }
 }
@@ -298,6 +318,7 @@ impl From<&AlbionBbPlayer> for BattlePlayer {
             kill_fame: p.kill_fame,
             death_fame: p.death_fame,
             item_power: p.item_power,
+            is_friendly: false,
         }
     }
 }
@@ -314,6 +335,7 @@ impl From<&AlbionBbKillEvent> for BattleKillEvent {
                 guild_name: e.killer.guild_name.clone(),
                 alliance_name: e.killer.alliance_name.clone(),
                 alliance_id: e.killer.alliance_id.clone(),
+                is_friendly: false,
             },
             victim: BattleKillParticipant {
                 id: e.victim.id.clone(),
@@ -322,6 +344,7 @@ impl From<&AlbionBbKillEvent> for BattleKillEvent {
                 guild_name: e.victim.guild_name.clone(),
                 alliance_name: e.victim.alliance_name.clone(),
                 alliance_id: e.victim.alliance_id.clone(),
+                is_friendly: false,
             },
             killer_item_power: e.killer_item_power,
             victim_item_power: e.victim_item_power,
