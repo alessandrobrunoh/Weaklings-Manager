@@ -20,7 +20,7 @@ use crate::modules::albion::entities::albion_link::Entity as AlbionLinkEntity;
 use crate::modules::bank::entities::{
     ActiveModel as TransactionActiveModel, Column as TransactionColumn, Entity as TransactionEntity,
 };
-use crate::modules::bank::service::TYPE_SPLIT_CREDIT;
+use crate::modules::bank::service::{TYPE_MANUAL, TYPE_SPLIT_CREDIT};
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::events::entities::event::{Column as EventColumn, Entity as EventEntity};
 use crate::modules::events::entities::event_participation::{
@@ -241,8 +241,11 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
         .map(|participant| (participant.user_id, participant.weight))
         .collect();
     let targets = participant_shares(net_value, &weights);
+    // Manual adjustments may reference a split for context, but they are not part of its credit
+    // ledger: reconcile must never merge, rewrite or delete them.
     let transactions = TransactionEntity::find()
         .filter(TransactionColumn::SplitId.eq(split_id))
+        .filter(TransactionColumn::Type.ne(TYPE_MANUAL))
         .order_by_asc(TransactionColumn::Id)
         .all(db)
         .await?;
@@ -892,6 +895,7 @@ impl SplitService {
             if is_completed {
                 let transactions = TransactionEntity::find()
                     .filter(TransactionColumn::SplitId.eq(split.id))
+                    .filter(TransactionColumn::Type.ne(TYPE_MANUAL))
                     .all(db)
                     .await?;
                 let mut credits = std::collections::HashMap::new();
@@ -2989,6 +2993,97 @@ mod tests {
         assert_eq!(net.get(&bob).copied().unwrap(), "33.33".parse().unwrap());
         assert_eq!(net.get(&carol).copied().unwrap(), "33.34".parse().unwrap());
         assert_eq!(updated.participants.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn amending_a_completed_split_does_not_clobber_manual_transactions_linked_to_it() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let participants = |users: &[i64]| -> Vec<UpsertParticipantRequest> {
+            users
+                .iter()
+                .map(|user_id| UpsertParticipantRequest {
+                    user_id: *user_id,
+                    weight: Decimal::ONE,
+                })
+                .collect()
+        };
+        let split = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request("100.00", "0.00", "0.00", participants(&[alice, bob])),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        service
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
+        // An administrator records a manual bonus for alice and references the split for context,
+        // both as an open row and as an already-paid one.
+        let mut manual_ids = Vec::new();
+        for status in [TransactionStatus::Pending, TransactionStatus::Withdrawn] {
+            let row = TransactionActiveModel {
+                to_user_id: Set(alice),
+                amount: Set("9.00".parse().unwrap()),
+                status: Set(status.to_string()),
+                r#type: Set(crate::modules::bank::service::TYPE_MANUAL.to_string()),
+                split_id: Set(Some(split.summary.id)),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+            manual_ids.push(row.id);
+        }
+
+        // Amend: alice's share drops from 50 to 33.33 (a third participant joins).
+        let carol = insert_user(&db, "carol", "carol@example.com").await;
+        service
+            .update_split(
+                &db,
+                split.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    fee: None,
+                    repair_value: None,
+                    bags_value: None,
+                    bags: None,
+                    note: None,
+                    event_id: None,
+                    island_tab_id: None,
+                    participants: Some(participants(&[alice, bob, carol])),
+                },
+            )
+            .await
+            .unwrap();
+
+        for id in manual_ids {
+            let row = TransactionEntity::find_by_id(id)
+                .one(&db)
+                .await
+                .unwrap()
+                .expect("manual row must survive the amend");
+            assert_eq!(row.amount, "9.00".parse::<Decimal>().unwrap());
+            assert_eq!(row.r#type, crate::modules::bank::service::TYPE_MANUAL);
+        }
+        let credit = TransactionEntity::find()
+            .filter(TransactionColumn::SplitId.eq(split.summary.id))
+            .filter(TransactionColumn::ToUserId.eq(alice))
+            .filter(TransactionColumn::Type.eq(TYPE_SPLIT_CREDIT))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(credit.len(), 1);
+        assert_eq!(credit[0].amount, "33.33".parse::<Decimal>().unwrap());
     }
 
     #[tokio::test]
