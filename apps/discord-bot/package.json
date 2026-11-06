@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch --env-file=../../.env --experimental-strip-types src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "gen:api": "npx --yes --package=openapi-typescript@7.13.0 openapi-typescript ../contracts/openapi.json -o src/api/gen.ts",
     "test": "npm run build && DISCORD_BOT_TOKEN=test DISCORD_CLIENT_ID=test BOT_API_SECRET=test FRONTEND_URL=http://localhost:5173 node --test dist/api/*.test.js dist/embeds/*.test.js dist/services/*.test.js",
     "start": "node --env-file=../../.env dist/index.js",
     "type-check": "tsc --noEmit"

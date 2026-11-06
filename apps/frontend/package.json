@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "gen:api": "npx --yes --package=openapi-typescript@7.13.0 openapi-typescript ../contracts/openapi.json -o src/app/core/models/api.gen.ts",
     "serve:ssr:frontend": "node dist/analog/server/index.mjs"
   },
   "private": true,
