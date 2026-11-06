@@ -166,13 +166,23 @@ impl CombatService {
                 acc
             });
 
+        // One users read and one display-name read for the whole fit, not one per member.
+        let users = crate::modules::users::entities::Entity::find()
+            .filter(
+                crate::modules::users::entities::Column::Id
+                    .is_in(levels_by_user.keys().copied().collect::<Vec<_>>()),
+            )
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let display_names =
+            crate::modules::users::display_name::resolve_for_users(db, &users).await?;
+        let users_by_id: HashMap<i64, crate::modules::users::entities::Model> =
+            users.into_iter().map(|user| (user.id, user)).collect();
+
         let mut members = Vec::with_capacity(levels_by_user.len());
         for (user_id, rows) in levels_by_user {
-            let Some(user) = crate::modules::users::entities::Entity::find_by_id(user_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-            else {
+            let Some(user) = users_by_id.get(&user_id) else {
                 continue; // The row outlived its user; nothing to report.
             };
             let specs =
@@ -180,7 +190,10 @@ impl CombatService {
             let breakdown = ip::character_ip(&items, &specs);
             members.push(MemberItemPowerView {
                 user_id,
-                username: crate::modules::users::display_name::resolve(db, &user).await?,
+                username: display_names
+                    .get(&user_id)
+                    .cloned()
+                    .unwrap_or_else(|| user.username.clone()),
                 item_power: breakdown.average,
                 at_max_spec: ceiling,
                 readiness: readiness_of(breakdown.average, ceiling),

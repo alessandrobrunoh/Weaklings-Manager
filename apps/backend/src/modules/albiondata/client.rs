@@ -122,6 +122,8 @@ impl AlbionDataItemIcon {
 #[derive(Clone)]
 pub struct AlbionDataApiClient {
     http: reqwest::Client,
+    /// Overrides the regional host; tests point it at a local fake upstream.
+    base_url_override: Option<String>,
 }
 
 impl AlbionDataApiClient {
@@ -142,7 +144,18 @@ impl AlbionDataApiClient {
             .timeout(timeout)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        Self { http }
+        Self {
+            http,
+            base_url_override: None,
+        }
+    }
+
+    /// Sends every request to `base_url` instead of the regional host.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_base_url(mut self, base_url: String) -> Self {
+        self.base_url_override = Some(base_url);
+        self
     }
 
     /// Fetches current prices for one or more item identifiers.
@@ -177,7 +190,10 @@ impl AlbionDataApiClient {
             ));
         }
 
-        let base_url = market_base_url(server);
+        let base_url = self
+            .base_url_override
+            .clone()
+            .unwrap_or_else(|| market_base_url(server).to_string());
         let encoded_items = item_ids
             .iter()
             .map(|item_id| urlencoding::encode(item_id).into_owned())

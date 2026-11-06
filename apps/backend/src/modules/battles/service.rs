@@ -11,14 +11,11 @@ use sea_orm::{
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
 
 use crate::errors::AppError;
 use crate::modules::albion::service::AlbionLinkService;
 use crate::modules::albionbb::client::{AlbionBbBattlesFilters, AlbionBbKillEvent};
-use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::albionbb::service::{AlbionBbService, GuildCatalogQuery};
 use crate::modules::albiondata::client::AlbionDataMarketPrice;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::economy;
@@ -51,14 +48,10 @@ const MY_BATTLES_MAX_UPSTREAM_PAGES: u64 = 5;
 /// at least one Weaklings participant is included.
 const DEFAULT_MIN_GUILD_PLAYERS: i64 = 1;
 
-/// How long a hydrated guild-battle catalog stays fresh in the local cache.
-const LIST_CACHE_TTL: Duration = Duration::from_secs(60);
 /// `AlbionBB` has no sort API, so we hydrate several recent pages and page/sort locally.
 const GUILD_CATALOG_MAX_PAGES: u64 = 20;
 const LOSS_ESTIMATE_LOCATIONS: &str =
     "Caerleon,Bridgewatch,Fort Sterling,Lymhurst,Martlock,Thetford,Brecilien";
-
-type BattleCatalogCache = Arc<RwLock<HashMap<i64, (Instant, Vec<BattleSummary>)>>>;
 
 /// Service exposing guild-scoped battle operations.
 #[derive(Clone)]
@@ -69,7 +62,6 @@ pub struct BattlesService {
     /// Fight resolver and the event linker do.
     side: FriendlySide,
     server: Option<String>,
-    catalog_cache: BattleCatalogCache,
 }
 
 impl BattlesService {
@@ -90,12 +82,12 @@ impl BattlesService {
             } else {
                 Some(server)
             },
-            catalog_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Guild-scoped copy. The catalog cache is not shared: it is keyed only by
-    /// page size, so two tenants would otherwise reuse each other's battles.
+    /// Guild-scoped copy. The battle catalog cache lives in the shared
+    /// [`AlbionBbService`] and is keyed by guild, so scoped copies never mix
+    /// tenants' battles.
     #[must_use]
     pub fn for_scope(&self, scope: &crate::albion_scope::AlbionScope) -> Self {
         Self::new(
@@ -137,45 +129,22 @@ impl BattlesService {
 
     /// Hydrates up to [`GUILD_CATALOG_MAX_PAGES`] of recent guild battles.
     ///
-    /// Uses `AlbionBB` list payloads only. Per-battle detail is fetched later for
-    /// the visible page so search/sort can cover the catalog without N detail
-    /// calls per list page.
+    /// Uses `AlbionBB` list payloads only. The shared catalog cache serves
+    /// repeated list views and sync ticks within its TTL. Per-battle detail is
+    /// fetched later for the visible page so search/sort can cover the catalog
+    /// without N detail calls per list page.
     async fn guild_catalog(&self, min_players: i64) -> Result<Vec<BattleSummary>, AppError> {
-        if let Some((fetched_at, cached)) = self.catalog_cache.read().await.get(&min_players)
-            && fetched_at.elapsed() < LIST_CACHE_TTL
-        {
-            return Ok(cached.clone());
-        }
-
-        let mut items = Vec::new();
-        let mut seen = HashSet::new();
-        for page in 1..=GUILD_CATALOG_MAX_PAGES {
-            let filters = AlbionBbBattlesFilters {
-                search: None,
-                guild_id: Some(self.guild_id.clone()),
-                min_players: Some(min_players),
-                min_guild_players: Some(DEFAULT_MIN_GUILD_PLAYERS),
-                page: Some(page),
-            };
-            let (raw_battles, _meta) = self
-                .albionbb
-                .get_battles(self.server.as_deref(), &filters)
-                .await?;
-            if raw_battles.is_empty() {
-                break;
-            }
-            for raw in raw_battles {
-                if seen.insert(raw.id) {
-                    items.push(BattleSummary::from(raw));
-                }
-            }
-        }
-
-        self.catalog_cache
-            .write()
-            .await
-            .insert(min_players, (Instant::now(), items.clone()));
-        Ok(items)
+        let query = GuildCatalogQuery {
+            guild_id: self.guild_id.clone(),
+            min_players,
+            min_guild_players: DEFAULT_MIN_GUILD_PLAYERS,
+            max_pages: GUILD_CATALOG_MAX_PAGES,
+        };
+        let catalog = self
+            .albionbb
+            .guild_battle_catalog(self.server.as_deref(), &query)
+            .await?;
+        Ok(catalog.iter().cloned().map(BattleSummary::from).collect())
     }
 
     /// Enriches the visible page with single-battle detail (guild kills/deaths).

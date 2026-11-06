@@ -72,18 +72,36 @@ pub async fn resolve_by_ids(
         .all(db)
         .await?;
 
+    resolve_for_users(db, &users).await
+}
+
+/// Resolves display names for user rows the caller already loaded, with one `albion_links`
+/// query and no users query. Hydration paths that fetch users themselves (roster, fit reports)
+/// use this so the same rows are not read twice.
+///
+/// # Errors
+///
+/// Returns `AppError::Database` if the `albion_links` query fails.
+pub async fn resolve_for_users(
+    db: &DatabaseConnection,
+    users: &[UserModel],
+) -> Result<HashMap<i64, String>, AppError> {
+    if users.is_empty() {
+        return Ok(HashMap::new());
+    }
+
     let discord_ids: Vec<String> = users.iter().filter_map(|u| u.discord_id.clone()).collect();
     let names = albion_names_by_discord_id(db, discord_ids).await?;
 
     Ok(users
-        .into_iter()
+        .iter()
         .map(|u| {
             let display = u
                 .discord_id
                 .as_ref()
                 .and_then(|d| names.get(d))
                 .cloned()
-                .unwrap_or(u.username);
+                .unwrap_or_else(|| u.username.clone());
             (u.id, display)
         })
         .collect())

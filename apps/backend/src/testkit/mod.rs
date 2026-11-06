@@ -69,6 +69,8 @@ pub async fn create_sync_control_tables(db: &DatabaseConnection) {
     }
 }
 
+pub mod queries;
+
 /// Discord id of the alliance tenant.
 pub const ALLIANCE: &str = "1000000000000000001";
 /// Discord ids of the guild tenants `G1`, `G2`, `G3`.

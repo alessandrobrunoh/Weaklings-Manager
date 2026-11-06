@@ -144,6 +144,7 @@ mod m20261106_000001_add_split_needs_resync;
 mod m20261106_000002_add_split_roster_locked;
 mod m20261106_000003_users_member_lifecycle;
 mod m20261106_000004_users_provisioned_via_data_fix;
+mod m20261106_000003_index_event_battles_albionbb_battle_id;
 mod m20261107_000001_create_discord_delivery;
 mod m20261107_000001_create_sync_tables;
 mod m20261107_000002_add_event_mass_notified_at;
@@ -298,6 +299,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261106_000002_add_split_roster_locked::Migration),
             Box::new(m20261106_000003_users_member_lifecycle::Migration),
             Box::new(m20261106_000004_users_provisioned_via_data_fix::Migration),
+            Box::new(m20261106_000003_index_event_battles_albionbb_battle_id::Migration),
             Box::new(m20261107_000001_create_discord_delivery::Migration),
             Box::new(m20261107_000001_create_sync_tables::Migration),
             Box::new(m20261107_000002_add_event_mass_notified_at::Migration),

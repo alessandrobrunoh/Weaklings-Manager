@@ -163,7 +163,7 @@ impl PlatformService {
                 ))
                 .await?;
             Self::sync_rank_flags(control, id, Some(&rank_id), actor).await?;
-            registry.evict(id);
+            registry.refresh(id).await;
         }
 
         // Navigation is a tenant-level platform setting rather than a plan
@@ -1423,7 +1423,7 @@ impl PlatformService {
                     .await?;
                 Self::sync_rank_flags(control, tenant_id, Some(rank_id), actor).await?;
             }
-            registry.evict(tenant_id);
+            registry.refresh(tenant_id).await;
         }
 
         if let Some(is_default) = body.is_default {
@@ -1577,7 +1577,7 @@ impl PlatformService {
                 ))
                 .await?;
         }
-        registry.evict(tenant_id);
+        registry.refresh(tenant_id).await;
         Self::get_features(control, tenant_id).await
     }
 
@@ -1936,7 +1936,7 @@ impl PlatformService {
         for row in tenant_rows {
             let tenant_id: String = row.try_get_by_index(0)?;
             Self::sync_rank_flags(control, &tenant_id, Some(rank_id), actor).await?;
-            registry.evict(&tenant_id);
+            registry.refresh(&tenant_id).await;
         }
         Self::get_rank(control, rank_id)
             .await?
