@@ -915,6 +915,29 @@
         },
         "type": "object"
       },
+      "AllianceBlock": {
+        "description": "Alliance link of a tenant.",
+        "properties": {
+          "id": {
+            "description": "Alliance tenant id.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Alliance display name.",
+            "type": "string"
+          },
+          "role": {
+            "description": "`member` for a guild in the alliance, `hub` for the alliance tenant itself.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
       "AllianceContextView": {
         "description": "Alliance settings context for the session tenant.",
         "properties": {
@@ -1504,6 +1527,25 @@
           },
           "status": {
             "description": "Indicates the outcome of the request, always \"success\".",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseCapabilities": {
+        "description": "`OpenAPI` wrapper for the success envelope of [`Capabilities`].",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Capabilities",
+            "description": "The document."
+          },
+          "status": {
+            "description": "Always `success`.",
             "example": "success",
             "type": "string"
           }
@@ -9562,6 +9604,73 @@
         ],
         "type": "object"
       },
+      "Capabilities": {
+        "description": "The capabilities document.",
+        "properties": {
+          "commands": {
+            "description": "Every catalogue command, enabled or not.",
+            "items": {
+              "$ref": "#/components/schemas/CommandEntry"
+            },
+            "type": "array"
+          },
+          "commands_hash": {
+            "description": "Digest of the enabled command names. Present on the bot document only.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modules": {
+            "description": "Modules offered to this tenant kind. Modules the kind does not support are not listed.",
+            "items": {
+              "$ref": "#/components/schemas/ModuleEntry"
+            },
+            "type": "array"
+          },
+          "nav": {
+            "description": "Navigation. Present on the user document only.",
+            "items": {
+              "$ref": "#/components/schemas/NavEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantBlock",
+            "description": "The tenant."
+          },
+          "tenant_version": {
+            "description": "Validator for the tenant part only: the value of `X-Capabilities-Version`.",
+            "type": "string"
+          },
+          "user": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserBlock",
+                "description": "The actor. Absent on the bot document."
+              }
+            ]
+          },
+          "version": {
+            "description": "Validator for the whole document: the `ETag` of `GET /api/me/capabilities`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "tenant_version",
+          "tenant",
+          "modules",
+          "commands"
+        ],
+        "type": "object"
+      },
       "CastOutcome": {
         "description": "One cast, fully resolved.",
         "properties": {
@@ -9701,6 +9810,50 @@
           "items",
           "spells",
           "destiny_nodes"
+        ],
+        "type": "object"
+      },
+      "CommandEntry": {
+        "description": "One Discord command and whether this tenant gets it.",
+        "properties": {
+          "accessible": {
+            "description": "Enabled and the actor may use it. Absent for the bot document.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "enabled": {
+            "description": "The tenant gets the command.",
+            "type": "boolean"
+          },
+          "module": {
+            "description": "Module that provides it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Command name as registered with Discord.",
+            "type": "string"
+          },
+          "reason_code": {
+            "description": "Why the command is not enabled or not accessible.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_permission": {
+            "description": "The module's view permission, if it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "module",
+          "enabled"
         ],
         "type": "object"
       },
@@ -16742,6 +16895,56 @@
         ],
         "type": "object"
       },
+      "ModuleEntry": {
+        "description": "One module as seen by the actor (or by the bot, without `accessible`).",
+        "properties": {
+          "accessible": {
+            "description": "Enabled and the actor holds the view permission. Absent for the bot document.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "enabled": {
+            "description": "Tenant kind and feature flags allow the module.",
+            "type": "boolean"
+          },
+          "grants": {
+            "description": "UI grants the actor holds (`view`, `create`, `edit`, ...). Empty for the bot document.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "key": {
+            "description": "Module key from the catalogue.",
+            "type": "string"
+          },
+          "read_only": {
+            "description": "Read-only for this tenant kind.",
+            "type": "boolean"
+          },
+          "reason_code": {
+            "description": "Why the module is not enabled or not accessible.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "description": "`own`, or `aggregate` for alliances seeing member-guild data.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "enabled",
+          "scope",
+          "read_only",
+          "grants"
+        ],
+        "type": "object"
+      },
       "MoveBattleRequest": {
         "description": "Request to move one Battle segment from the fight in the path to another fight.",
         "properties": {
@@ -16759,6 +16962,34 @@
         "required": [
           "battle_id",
           "target_fight_id"
+        ],
+        "type": "object"
+      },
+      "NavEntry": {
+        "description": "One navigation entry. Presentation (icon, label, path) stays in the client.",
+        "properties": {
+          "group": {
+            "description": "Navigation group.",
+            "type": "string"
+          },
+          "key": {
+            "description": "Navigation key the client maps to a route.",
+            "type": "string"
+          },
+          "module": {
+            "description": "Module that owns the entry.",
+            "type": "string"
+          },
+          "visible": {
+            "description": "Shown to the actor.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "module",
+          "group",
+          "visible"
         ],
         "type": "object"
       },
@@ -22103,6 +22334,52 @@
         ],
         "type": "object"
       },
+      "TenantBlock": {
+        "description": "The tenant block of the document.",
+        "properties": {
+          "alliance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AllianceBlock",
+                "description": "Alliance link, when there is one."
+              }
+            ]
+          },
+          "id": {
+            "description": "Discord guild id / `tenants.id`.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "`guild` or `alliance`.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Display name.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Tenant lifecycle status.",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA timezone, present on authenticated documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "status"
+        ],
+        "type": "object"
+      },
       "TenantChoice": {
         "description": "A registered tenant the user may enter after OAuth.",
         "properties": {
@@ -24141,6 +24418,38 @@
         "required": [
           "user_id",
           "weight"
+        ],
+        "type": "object"
+      },
+      "UserBlock": {
+        "description": "The user block, present on `GET /api/me/capabilities` only.",
+        "properties": {
+          "is_owner": {
+            "description": "Owner of the tenant.",
+            "type": "boolean"
+          },
+          "is_platform_admin": {
+            "description": "Platform admin.",
+            "type": "boolean"
+          },
+          "permissions": {
+            "description": "Stable permission keys the user holds in this tenant, sorted.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "user_id": {
+            "description": "Local `users.id`.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "is_owner",
+          "is_platform_admin",
+          "permissions"
         ],
         "type": "object"
       },
@@ -39187,6 +39496,36 @@
         ]
       }
     },
+    "/api/me/capabilities": {
+      "get": {
+        "description": "# Errors\n\nReturns a database error if the tenant row, the alliance link or the\nguild settings cannot be read.",
+        "operationId": "me_capabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseCapabilities"
+                }
+              }
+            },
+            "description": "Modules, commands and navigation for the signed-in user"
+          },
+          "304": {
+            "description": "The If-None-Match ETag still matches; no body"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "What the signed-in user may see and use in the current tenant.",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
     "/api/notifications": {
       "get": {
         "description": "# Errors\n\n`401` without a session.",
@@ -44666,6 +45005,42 @@
         "summary": "First-time tenant registration. The caller becomes the tenant `SuperAdmin` (`owner_discord_id`).",
         "tags": [
           "platform"
+        ]
+      }
+    },
+    "/api/tenants/{id}/capabilities": {
+      "get": {
+        "description": "# Errors\n\nReturns `404` when the tenant is not registered, or a database error.",
+        "operationId": "tenant_capabilities",
+        "parameters": [
+          {
+            "description": "Discord guild id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseCapabilities"
+                }
+              }
+            },
+            "description": "Modules and commands of the tenant, for the bot"
+          },
+          "304": {
+            "description": "The If-None-Match ETag still matches; no body"
+          }
+        },
+        "summary": "The bot's view of a guild: modules and commands, no user, for command registration.",
+        "tags": [
+          "capabilities"
         ]
       }
     },

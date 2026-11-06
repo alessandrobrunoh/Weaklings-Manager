@@ -32,6 +32,10 @@ use super::service::PlatformService;
 pub fn router() -> Router {
     Router::new()
         .route("/{id}/status", get(tenant_status))
+        .route(
+            "/{id}/capabilities",
+            get(crate::modules::capabilities::router::tenant_capabilities),
+        )
         .route("/register", post(register_tenant))
         .route("/albion-search", get(albion_search))
         .route("/albion-alliances", get(albion_alliances))

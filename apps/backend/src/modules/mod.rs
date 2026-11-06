@@ -13,6 +13,7 @@ pub mod audit;
 pub mod auth;
 pub mod bank;
 pub mod battles;
+pub mod capabilities;
 pub mod combat;
 pub mod comps;
 pub mod economy;
@@ -71,6 +72,7 @@ pub fn router() -> Router {
         .nest("/siphoned", siphoned::router())
         .nest("/regear", regear::router())
         .nest("/alliance", alliance_share::router())
+        .nest("/me", capabilities::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())

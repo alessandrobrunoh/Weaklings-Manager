@@ -752,6 +752,7 @@ mod tests {
                 albionbb_base_url: "http://localhost".into(),
                 albionbb_request_timeout_secs: 60,
                 albiondata_request_timeout_secs: 30,
+                module_kind_enforcement: "log".to_owned(),
             });
             parts.extensions.insert(db.clone());
             let admins = PlatformAdmins::new_empty();

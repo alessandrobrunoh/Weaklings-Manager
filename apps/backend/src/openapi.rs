@@ -9,6 +9,8 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::modules::capabilities::router::me_capabilities,
+        crate::modules::capabilities::router::tenant_capabilities,
         crate::modules::audit::router::list_audit_logs,
         crate::modules::users::router::get_my_profile,
         crate::modules::users::router::get_my_metrics,
@@ -326,6 +328,14 @@ use utoipa::OpenApi;
     ),
     components(
         schemas(
+            crate::modules::capabilities::model::ApiResponseCapabilities,
+            crate::modules::capabilities::model::Capabilities,
+            crate::modules::capabilities::model::TenantBlock,
+            crate::modules::capabilities::model::AllianceBlock,
+            crate::modules::capabilities::model::UserBlock,
+            crate::modules::capabilities::model::ModuleEntry,
+            crate::modules::capabilities::model::CommandEntry,
+            crate::modules::capabilities::model::NavEntry,
             crate::modules::audit::router::AuditLogResponse,
             crate::modules::audit::router::PaginatedAuditLogResponse,
             crate::modules::audit::router::ApiResponsePaginatedAuditLogs,

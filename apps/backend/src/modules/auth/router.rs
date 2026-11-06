@@ -1108,6 +1108,7 @@ mod tests {
             albionbb_base_url: "http://localhost".to_owned(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
+            module_kind_enforcement: "log".to_owned(),
         }
     }
 

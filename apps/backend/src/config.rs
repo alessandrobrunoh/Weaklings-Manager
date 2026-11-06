@@ -83,6 +83,10 @@ pub struct Config {
     /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
     #[serde(default = "default_albiondata_timeout")]
     pub albiondata_request_timeout_secs: u64,
+    /// What to do with a request whose tenant kind the module is not offered to
+    /// (`log` or `enforce`, see `modules::capabilities::gate`). Defaults to `log`.
+    #[serde(default = "default_module_kind_enforcement")]
+    pub module_kind_enforcement: String,
 }
 
 /// Hand-written so a stray `{cfg:?}` in a log line, panic message, or error
@@ -127,6 +131,7 @@ impl std::fmt::Debug for Config {
                 "albiondata_request_timeout_secs",
                 &self.albiondata_request_timeout_secs,
             )
+            .field("module_kind_enforcement", &self.module_kind_enforcement)
             .finish()
     }
 }
@@ -153,6 +158,10 @@ fn default_albionbb_timeout() -> u64 {
 
 fn default_albiondata_timeout() -> u64 {
     30
+}
+
+fn default_module_kind_enforcement() -> String {
+    "log".to_string()
 }
 
 impl Config {
@@ -287,6 +296,7 @@ impl Config {
             albionbb_base_url: "http://localhost".to_string(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
+            module_kind_enforcement: "log".to_string(),
         }
     }
 }

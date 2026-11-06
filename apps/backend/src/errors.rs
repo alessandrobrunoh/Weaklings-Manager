@@ -116,6 +116,16 @@ pub enum AppError {
     #[error("Read-only copy: {}", .0.summary())]
     ReadOnlyCopy(Box<OriginRef>),
 
+    /// The module is not offered to this tenant kind (`MODULE_KIND_ENFORCEMENT=enforce`).
+    /// HTTP 403, problem code `module_unavailable`, with `details.module` and `details.reason_code`.
+    #[error("Module {module} is unavailable: {reason_code}")]
+    ModuleUnavailable {
+        /// Catalogue key of the module, e.g. `warns`.
+        module: String,
+        /// Why, e.g. `kind_unsupported`.
+        reason_code: String,
+    },
+
     /// Error indicating an upstream third-party service (e.g. Albion Online API) failed or is unreachable.
     #[error("Upstream service error: {0}")]
     UpstreamService(String),
@@ -129,6 +139,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let mut code = None;
         let mut origin = None;
+        let mut details = None;
         let (status, type_uri, title, detail, invalid_params) = match self {
             Self::Database(err) => {
                 // A constraint violation is a client-facing conflict, not a
@@ -252,6 +263,21 @@ impl IntoResponse for AppError {
                     None,
                 )
             }
+            Self::ModuleUnavailable {
+                module,
+                reason_code,
+            } => {
+                code = Some("module_unavailable");
+                let detail = format!("the {module} module is not available for this tenant kind");
+                details = Some(json!({ "module": module, "reason_code": reason_code }));
+                (
+                    StatusCode::FORBIDDEN,
+                    "/errors/module-unavailable",
+                    "Module Unavailable",
+                    detail,
+                    None,
+                )
+            }
             Self::UpstreamService(msg) => (
                 StatusCode::BAD_GATEWAY,
                 "/errors/upstream-service-error",
@@ -276,7 +302,7 @@ impl IntoResponse for AppError {
             instance: None,
             invalid_params,
             code,
-            details: None,
+            details,
             origin,
         };
 
