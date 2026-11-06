@@ -1210,6 +1210,30 @@ impl PlatformService {
         Ok(())
     }
 
+    /// Drop the right of `discord_id` to enter `tenant_id`.
+    ///
+    /// Called when a live Discord check finds the user is no longer in that tenant's server:
+    /// web access follows Discord presence, so a stale membership row must not keep a removed
+    /// member signing in. A no-op when no row exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the delete fails.
+    pub async fn forget_membership(
+        control: &DatabaseConnection,
+        discord_id: &str,
+        tenant_id: &str,
+    ) -> Result<(), AppError> {
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "DELETE FROM user_tenant_memberships WHERE discord_id = $1 AND tenant_id = $2",
+                [discord_id.into(), tenant_id.into()],
+            ))
+            .await?;
+        Ok(())
+    }
+
     /// Tenants this Discord user may switch into.
     ///
     /// Platform admins see every active tenant.
@@ -2218,6 +2242,53 @@ mod tests {
         // auth-6: the old `kind == "guild"` clause left alliance owners without the bypass.
         assert!(tenant_owner_matches(Some("owner-1"), "owner-1"));
         assert!(!tenant_owner_matches(Some("owner-1"), ""));
+    }
+
+    #[tokio::test]
+    async fn forgetting_a_membership_removes_only_that_tenant_for_that_user() {
+        let control = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("connect");
+        control
+            .execute_unprepared(
+                "CREATE TABLE user_tenant_memberships (\
+                 discord_id TEXT NOT NULL, tenant_id TEXT NOT NULL, \
+                 PRIMARY KEY (discord_id, tenant_id))",
+            )
+            .await
+            .expect("create table");
+        for (user, tenant) in [("u1", "t1"), ("u1", "t2"), ("u2", "t1")] {
+            PlatformService::record_membership(&control, user, tenant)
+                .await
+                .expect("record");
+        }
+
+        PlatformService::forget_membership(&control, "u1", "t1")
+            .await
+            .expect("forget");
+        // Idempotent: a second call and an unknown pair are no-ops.
+        PlatformService::forget_membership(&control, "u1", "t1")
+            .await
+            .expect("forget again");
+        PlatformService::forget_membership(&control, "nobody", "t9")
+            .await
+            .expect("forget unknown");
+
+        assert!(
+            !PlatformService::is_member(&control, "u1", "t1")
+                .await
+                .unwrap()
+        );
+        assert!(
+            PlatformService::is_member(&control, "u1", "t2")
+                .await
+                .unwrap()
+        );
+        assert!(
+            PlatformService::is_member(&control, "u2", "t1")
+                .await
+                .unwrap()
+        );
     }
 
     #[test]

@@ -12,7 +12,7 @@ Key types include `UserProfile`, `UserMetrics`, `CreateUserRequest`, `UpdateSpec
 
 ## Invariants
 
-- User email and optional Discord ID are unique. Discord snowflake is the stable identity: email can claim only a row without a Discord ID, and a collision with another identified user gets a generated `@discord.invalid` address.
+- User email and optional Discord ID are unique. Discord snowflake is the stable identity: email can claim only a row without a Discord ID, only when Discord marked it verified (login drops an unverified one), and a missing, unverified or colliding address gets a generated `<discord_id>@discord.invalid` placeholder.
 - `UserProfile.email` is returned only for the caller's own row and to `users.create`/`roles.manage` holders (tenant owner and platform admins included); `GET /api/users` has no email filter.
 - Display names prefer the linked Albion character name, then the stored username; missing user rows resolve to `"Unknown"`.
 - Specialization keys are canonicalized by trimming, lowercasing category, uppercasing identifier, and removing a leading `T1_`–`T8_` tier prefix. Duplicate canonical keys keep the maximum level.
