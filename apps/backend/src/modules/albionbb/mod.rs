@@ -9,5 +9,7 @@
 pub mod client;
 pub mod router;
 pub mod service;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use router::router;
