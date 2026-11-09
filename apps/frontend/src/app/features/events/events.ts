@@ -646,7 +646,7 @@ export class Events {
   protected canDelete(event: EventView): boolean {
     if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
     return (
-      this.auth.hasPermission('events.delete') ||
+      this.auth.hasPermission('events.manage') ||
       event.created_by === this.auth.profile()?.user_id
     );
   }
@@ -655,7 +655,7 @@ export class Events {
   protected canEdit(event: EventView): boolean {
     if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
     return (
-      this.auth.hasPermission('events.edit') ||
+      this.auth.hasPermission('events.manage') ||
       event.created_by === this.auth.profile()?.user_id
     );
   }

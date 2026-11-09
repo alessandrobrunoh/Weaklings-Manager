@@ -35417,7 +35417,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           }
         },
         "security": [
@@ -35739,7 +35739,7 @@
     },
     "/api/events/{id}": {
       "delete": {
-        "description": "Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires `events.delete` permission.",
+        "description": "Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires being the event creator or holding `events.manage`.",
         "operationId": "delete_event",
         "parameters": [
           {
@@ -35775,7 +35775,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -35866,7 +35866,7 @@
         ]
       },
       "patch": {
-        "description": "Updates an event. Requires `events.edit` permission.",
+        "description": "Updates an event. Requires being the event creator or holding `events.manage`.",
         "operationId": "update_event",
         "parameters": [
           {
@@ -35930,7 +35930,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -36323,7 +36323,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -36402,7 +36402,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -36438,7 +36438,7 @@
     },
     "/api/events/{id}/discord-voice-channel": {
       "delete": {
-        "description": "Requires `events.edit` permission.",
+        "description": "Requires being the event creator or holding `events.manage`.",
         "operationId": "clear_event_voice_channel",
         "parameters": [
           {
@@ -36481,7 +36481,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -36515,7 +36515,7 @@
         ]
       },
       "put": {
-        "description": "Requires `events.edit` permission.",
+        "description": "Requires being the event creator or holding `events.manage`.",
         "operationId": "set_event_voice_channel",
         "parameters": [
           {
@@ -36578,7 +36578,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -36673,7 +36673,7 @@
     },
     "/api/events/{id}/management-authority": {
       "get": {
-        "description": "Returns the same organizer-or-`events.edit` decision that guards start/stop/cancel/uncancel/remind. Requires `events.view`.",
+        "description": "Returns the same organizer-or-`events.manage` decision that guards start/stop/cancel/uncancel/remind. Requires `events.view`.",
         "operationId": "get_event_management_authority",
         "parameters": [
           {
@@ -36934,7 +36934,7 @@
                 }
               }
             },
-            "description": "Forbidden - caller is not creator and lacks events.edit"
+            "description": "Forbidden - caller is not the creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37013,7 +37013,7 @@
                 }
               }
             },
-            "description": "Forbidden - caller is not creator and lacks events.edit"
+            "description": "Forbidden - caller is not the creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37111,7 +37111,7 @@
                 }
               }
             },
-            "description": "Forbidden - caller is not creator and lacks events.edit"
+            "description": "Forbidden - caller is not the creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37395,7 +37395,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37540,7 +37540,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37621,7 +37621,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37818,7 +37818,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -37897,7 +37897,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {
@@ -38044,7 +38044,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks events.edit permission"
+            "description": "Forbidden - not the event creator and lacks events.manage"
           },
           "404": {
             "content": {

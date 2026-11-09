@@ -154,6 +154,7 @@ mod m20261107_000003_add_event_reminder_notified_at;
 mod m20261107_000004_backfill_event_discord_stamps;
 mod m20261109_000001_grant_comp_build_manage_to_editors;
 mod m20261109_000002_create_albion_link_requests;
+mod m20261110_000001_restrict_manage_to_admins;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -312,6 +313,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_000004_backfill_event_discord_stamps::Migration),
             Box::new(m20261109_000001_grant_comp_build_manage_to_editors::Migration),
             Box::new(m20261109_000002_create_albion_link_requests::Migration),
+            Box::new(m20261110_000001_restrict_manage_to_admins::Migration),
         ]
     }
 }

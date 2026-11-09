@@ -95,7 +95,7 @@ describe('Events', () => {
   beforeEach(async () => {
     showModalDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
     currentUserId = 100;
-    currentPermissions = new Set(['events.create', 'events.edit', 'events.delete']);
+    currentPermissions = new Set(['events.create', 'events.edit', 'events.delete', 'events.manage']);
     await TestBed.configureTestingModule({
       imports: [Events],
       providers: [
@@ -274,9 +274,15 @@ describe('Events', () => {
     expect(page.canEdit(mockEvents[2] as EventView)).toBe(false);
     expect(page.canDelete(mockEvents[2] as EventView)).toBe(false);
 
-    currentPermissions = new Set(['events.edit']);
-    expect(page.canEdit(mockEvents[2] as EventView)).toBe(true);
+    // edit/delete cover the holder's own events only; they never reach somebody else's.
+    currentPermissions = new Set(['events.edit', 'events.delete']);
+    expect(page.canEdit(mockEvents[2] as EventView)).toBe(false);
     expect(page.canDelete(mockEvents[2] as EventView)).toBe(false);
+
+    // events.manage is the administrator override.
+    currentPermissions = new Set(['events.manage']);
+    expect(page.canEdit(mockEvents[2] as EventView)).toBe(true);
+    expect(page.canDelete(mockEvents[2] as EventView)).toBe(true);
   });
 
   it('takes the stat tiles from the backend summary, not from one page of events', () => {

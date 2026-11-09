@@ -2590,7 +2590,7 @@ export class EventDetailPage {
     if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
     const userId = this.auth.profile()?.user_id;
     return (
-      this.auth.hasPermission('events.edit') ||
+      this.auth.hasPermission('events.manage') ||
       (userId !== undefined && event?.created_by === userId)
     );
   });
@@ -2599,7 +2599,7 @@ export class EventDetailPage {
     if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
     const userId = this.auth.profile()?.user_id;
     return (
-      this.auth.hasPermission('events.delete') ||
+      this.auth.hasPermission('events.manage') ||
       (userId !== undefined && event?.created_by === userId)
     );
   });

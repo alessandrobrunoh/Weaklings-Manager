@@ -80,12 +80,9 @@ pub struct Actor {
     pub module_available: bool,
 }
 
-/// Permissions the event actions consult.
-const EVENT_PERMISSIONS: [Permission; 3] = [
-    Permission::EventsView,
-    Permission::EventsEdit,
-    Permission::EventsDelete,
-];
+/// Permissions the event actions consult. `events.manage` is the administrator override on events
+/// the actor did not create; `events.edit` / `events.delete` only ever cover the actor's own.
+const EVENT_PERMISSIONS: [Permission; 2] = [Permission::EventsView, Permission::EventsManage];
 
 /// Builds the actor for a request in the current tenant.
 pub async fn actor_for(user: &UserContext, perms: &Permissions, tenant_kind: &str) -> Actor {

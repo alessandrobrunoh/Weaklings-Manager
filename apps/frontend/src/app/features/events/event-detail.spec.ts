@@ -125,12 +125,18 @@ describe('EventDetailPage roster room', () => {
     expect(page.canEdit()).toBe(false);
     expect(page.canDelete()).toBe(false);
 
-    permissions.set(new Set(['events.edit']));
-    expect(page.canEdit()).toBe(true);
+    // edit/delete cover the holder's own events only.
+    permissions.set(new Set(['events.edit', 'events.delete']));
+    expect(page.canEdit()).toBe(false);
     expect(page.canDelete()).toBe(false);
 
+    // events.manage is the administrator override.
+    permissions.set(new Set(['events.manage']));
+    expect(page.canEdit()).toBe(true);
+    expect(page.canDelete()).toBe(true);
+
     page.event.set({ created_by: 42, source_event_id: 9, source_tenant_id: 'source' } as EventDetailView);
-    permissions.set(new Set(['events.edit', 'events.delete']));
+    permissions.set(new Set(['events.manage']));
     expect(page.canEdit()).toBe(false);
     expect(page.canDelete()).toBe(false);
 

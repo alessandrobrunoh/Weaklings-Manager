@@ -150,7 +150,7 @@ fn viewing_is_checked_before_the_copy_and_authority_rules() {
     let blind = Actor {
         user_id: 1,
         discord_id: None,
-        granted: [Permission::EventsEdit].into_iter().collect(),
+        granted: [Permission::EventsManage].into_iter().collect(),
         module_available: true,
     };
     assert_eq!(
@@ -197,7 +197,7 @@ async fn non_viewers_get_403_from_both_action_lists() {
 #[test]
 fn active_copies_refuse_owner_actions_and_allow_copy_actions() {
     let copy = facts("live", false, 1, CopyRole::ActiveCopy);
-    let owner = actor(1, &[Permission::EventsEdit], true);
+    let owner = actor(1, &[Permission::EventsManage], true);
     assert_eq!(
         reason(&evaluate(def("stop"), &copy, &owner)),
         Some("copy_read_only")
@@ -233,7 +233,7 @@ fn copy_refusal_carries_the_origin_in_params_and_text() {
     match evaluate(
         def("cancel"),
         &copy,
-        &actor(1, &[Permission::EventsEdit], true),
+        &actor(1, &[Permission::EventsManage], true),
     ) {
         Verdict::Denied(denial) => {
             assert_eq!(denial.status, 403);
@@ -265,19 +265,25 @@ fn authority_refuses_non_creators_without_the_permission() {
         reason(&evaluate(
             def("cancel"),
             &owner_created,
-            &actor(2, &[Permission::EventsEdit], true)
+            &actor(2, &[Permission::EventsManage], true)
         )),
-        None
+        None,
+        "an events.manage holder may act on somebody else's event"
     );
-    assert_eq!(
-        reason(&evaluate(
-            def("archive"),
-            &owner_created,
-            &actor(2, &[Permission::EventsEdit], true)
-        )),
-        Some("not_creator_or_manager"),
-        "archive needs the delete permission, not edit"
-    );
+    for own_only in [Permission::EventsEdit, Permission::EventsDelete] {
+        for action in ["start", "stop", "cancel", "edit", "archive"] {
+            assert_eq!(
+                reason(&evaluate(
+                    def(action),
+                    &owner_created,
+                    &actor(2, &[own_only], true)
+                )),
+                Some("not_creator_or_manager"),
+                "{} alone must not let a non-creator {action}",
+                own_only.as_str()
+            );
+        }
+    }
 }
 
 #[test]
@@ -289,19 +295,11 @@ fn archived_entities_refuse_unless_the_action_allows_it() {
         Some("archived")
     );
     assert_eq!(
-        reason(&evaluate(
-            def("archive"),
-            &archived,
-            &actor(1, &[Permission::EventsDelete], true)
-        )),
+        reason(&evaluate(def("archive"), &archived, &actor(1, &[], true))),
         None
     );
     assert_eq!(
-        reason(&evaluate(
-            def("unarchive"),
-            &archived,
-            &actor(1, &[Permission::EventsDelete], true)
-        )),
+        reason(&evaluate(def("unarchive"), &archived, &actor(1, &[], true))),
         None
     );
 }
@@ -410,11 +408,7 @@ async fn fixture() -> Fixture {
     Fixture {
         db,
         creator,
-        manager: actor(
-            creator + 1,
-            &[Permission::EventsEdit, Permission::EventsDelete],
-            true,
-        ),
+        manager: actor(creator + 1, &[Permission::EventsManage], true),
         stranger: actor(creator + 2, &[], true),
     }
 }
@@ -882,7 +876,7 @@ async fn concurrent_starts_apply_once_on_postgres() {
 
     let creator = insert_user(&db, "racer").await;
     let id = insert_event(&db, creator, "scheduled", false).await;
-    let manager = actor(creator, &[Permission::EventsEdit], true);
+    let manager = actor(creator, &[Permission::EventsManage], true);
     let cx_a = target(&db);
     let cx_b = target(&db);
     let req_a = request("start", None);
