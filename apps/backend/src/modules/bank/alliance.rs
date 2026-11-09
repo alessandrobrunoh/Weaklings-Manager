@@ -15,14 +15,17 @@ use crate::modules::platform::service::PlatformService;
 use crate::modules::users::entities::{
     Column as UserColumn, Entity as UserEntity, Model as UserModel,
 };
-use crate::pagination::{MAX_PAGE_LIMIT, PaginatedData, PaginationParams, SortOrder, paginate_vec};
+use crate::pagination::{
+    MAX_PAGE_LIMIT, PaginatedTransactionView, PaginationParams, SortOrder, paginate_vec,
+};
 use crate::tenant::{TenantContext, TenantRegistry};
 
 use super::entities::{Column as TransactionColumn, Entity as TransactionEntity};
 use super::models::{
     AcceptWithdrawalRequest, BalanceSummary, BankAnalyticsSummary, BankBreakdown,
     CreateTransactionRequest, GuildBalanceBreakdown, GuildBankSummary, RejectWithdrawalRequest,
-    TransactionFilters, TransactionView, UpdateTransactionRequest, WithdrawRequest,
+    TransactionFilters, TransactionView, UnavailableGuild, UpdateTransactionRequest,
+    WithdrawRequest,
 };
 use super::service::BankService;
 
@@ -57,33 +60,70 @@ pub(super) async fn tenant_is_alliance(
     Ok(registry.get_or_load(tenant_id).await?.kind == "alliance")
 }
 
+/// Active member guilds whose ledger can be read, for mutations and single-guild lookups.
+///
+/// An unreachable guild is simply absent here. Aggregates that sum across guilds must use
+/// [`member_guilds_with_coverage`] instead so the gap is reported rather than hidden.
 async fn active_member_guilds(
     control: &DatabaseConnection,
     registry: &TenantRegistry,
     alliance_tenant_id: &str,
 ) -> Result<Vec<MemberGuild>, AppError> {
+    Ok(
+        member_guilds_with_coverage(control, registry, alliance_tenant_id)
+            .await?
+            .0,
+    )
+}
+
+/// Active member guilds split into the ones that opened and the ones that did not.
+///
+/// Totals computed from the first list are incomplete whenever the second is non-empty, so
+/// every aggregate response must carry the second list as `unavailable_guilds`.
+async fn member_guilds_with_coverage(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+    alliance_tenant_id: &str,
+) -> Result<(Vec<MemberGuild>, Vec<UnavailableGuild>), AppError> {
     let members = PlatformService::list_alliance_members(control, alliance_tenant_id).await?;
-    let mut out = Vec::new();
+    let mut opened = Vec::new();
     for member in members {
         if member.status != "active" {
             continue;
         }
-        match registry.get_or_load(&member.guild_tenant_id).await {
-            Ok(ctx) => out.push(MemberGuild {
-                tenant_id: member.guild_tenant_id,
-                name: member.name,
+        let result = registry.get_or_load(&member.guild_tenant_id).await;
+        opened.push((member.guild_tenant_id, member.name, result));
+    }
+    Ok(partition_by_coverage(opened))
+}
+
+/// Splits per-guild open results into readable guilds and the coverage gap.
+fn partition_by_coverage(
+    opened: Vec<(String, String, Result<Arc<TenantContext>, AppError>)>,
+) -> (Vec<MemberGuild>, Vec<UnavailableGuild>) {
+    let mut reachable = Vec::new();
+    let mut unavailable = Vec::new();
+    for (tenant_id, name, result) in opened {
+        match result {
+            Ok(ctx) => reachable.push(MemberGuild {
+                tenant_id,
+                name,
                 ctx,
             }),
             Err(err) => {
                 tracing::warn!(
-                    guild_tenant_id = %member.guild_tenant_id,
+                    guild_tenant_id = %tenant_id,
                     error = %err,
-                    "skipping alliance member guild that could not be opened"
+                    "alliance member guild could not be opened; its ledger is missing from this aggregate"
                 );
+                unavailable.push(UnavailableGuild {
+                    guild_tenant_id: tenant_id,
+                    guild_name: name,
+                });
             }
         }
     }
-    Ok(out)
+    (reachable, unavailable)
 }
 
 async fn user_by_discord(
@@ -288,7 +328,8 @@ pub(super) async fn get_balance(
     caller: &AllianceCaller,
     requested_user_id: Option<i64>,
 ) -> Result<BalanceSummary, AppError> {
-    let members = active_member_guilds(control, registry, alliance_tenant_id).await?;
+    let (members, unavailable_guilds) =
+        member_guilds_with_coverage(control, registry, alliance_tenant_id).await?;
     let discord_id = target_discord_id(alliance_db, caller, requested_user_id).await?;
     let viewing_others = discord_id != caller.discord_id;
     let service = BankService::new();
@@ -327,6 +368,7 @@ pub(super) async fn get_balance(
         requested_total,
         requested_count,
         guilds,
+        unavailable_guilds,
     })
 }
 
@@ -342,8 +384,9 @@ pub(super) async fn list_transactions(
     global: bool,
     pagination: &PaginationParams,
     filters: &TransactionFilters,
-) -> Result<PaginatedData<TransactionView>, AppError> {
-    let members = active_member_guilds(control, registry, alliance_tenant_id).await?;
+) -> Result<PaginatedTransactionView, AppError> {
+    let (members, unavailable_guilds) =
+        member_guilds_with_coverage(control, registry, alliance_tenant_id).await?;
     let mut views = Vec::new();
     if global && requested_user_id.is_none() {
         for guild in &members {
@@ -371,7 +414,10 @@ pub(super) async fn list_transactions(
         }
     }
     sort_views(&mut views, filters);
-    Ok(paginate_vec(views, pagination))
+    Ok(
+        PaginatedTransactionView::from(paginate_vec(views, pagination))
+            .with_unavailable_guilds(unavailable_guilds),
+    )
 }
 
 /// Sum of settled payouts across active member guilds.
@@ -380,7 +426,8 @@ pub(super) async fn get_guild_summary(
     registry: &TenantRegistry,
     alliance_tenant_id: &str,
 ) -> Result<GuildBankSummary, AppError> {
-    let members = active_member_guilds(control, registry, alliance_tenant_id).await?;
+    let (members, unavailable_guilds) =
+        member_guilds_with_coverage(control, registry, alliance_tenant_id).await?;
     let service = BankService::new();
     let mut paid_total = Decimal::ZERO;
     let mut paid_count = 0_u64;
@@ -392,6 +439,7 @@ pub(super) async fn get_guild_summary(
     Ok(GuildBankSummary {
         paid_total,
         paid_count,
+        unavailable_guilds,
     })
 }
 
@@ -410,6 +458,7 @@ fn empty_analytics() -> BankAnalyticsSummary {
         sources: Vec::new(),
         destinations: Vec::new(),
         transaction_types: Vec::new(),
+        unavailable_guilds: Vec::new(),
     }
 }
 
@@ -430,9 +479,11 @@ pub(super) async fn get_admin_summary(
     alliance_tenant_id: &str,
     caller: &AllianceCaller,
 ) -> Result<BankAnalyticsSummary, AppError> {
-    let members = active_member_guilds(control, registry, alliance_tenant_id).await?;
+    let (members, unavailable_guilds) =
+        member_guilds_with_coverage(control, registry, alliance_tenant_id).await?;
     let service = BankService::new();
     let mut summary = empty_analytics();
+    summary.unavailable_guilds = unavailable_guilds;
     for guild in &members {
         if !can_view_others(caller, guild).await? {
             continue;
@@ -627,6 +678,39 @@ mod tests {
     };
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use sea_orm_migration::MigratorTrait;
+
+    /// A member guild that cannot be opened must be reported as unavailable, never silently
+    /// dropped: the alliance totals are then known to be incomplete. (The reachable path needs a
+    /// live tenant context and is exercised by the Postgres-backed tests below.)
+    #[test]
+    fn unreachable_member_guilds_are_reported_not_dropped() {
+        let (reachable, unavailable) = partition_by_coverage(vec![
+            (
+                "guild-a".to_owned(),
+                "Guild A".to_owned(),
+                Err(AppError::Internal("connection refused".to_owned())),
+            ),
+            (
+                "guild-b".to_owned(),
+                "Guild B".to_owned(),
+                Err(AppError::NotFound("tenant gone".to_owned())),
+            ),
+        ]);
+        assert!(reachable.is_empty());
+        assert_eq!(
+            unavailable,
+            vec![
+                UnavailableGuild {
+                    guild_tenant_id: "guild-a".to_owned(),
+                    guild_name: "Guild A".to_owned(),
+                },
+                UnavailableGuild {
+                    guild_tenant_id: "guild-b".to_owned(),
+                    guild_name: "Guild B".to_owned(),
+                },
+            ]
+        );
+    }
 
     struct World {
         url: String,

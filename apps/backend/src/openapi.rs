@@ -377,6 +377,7 @@ use utoipa::OpenApi;
             crate::modules::bank::models::TransactionView,
             crate::modules::bank::models::BalanceSummary,
             crate::modules::bank::models::GuildBalanceBreakdown,
+            crate::modules::bank::models::UnavailableGuild,
             crate::modules::bank::models::GuildBankSummary,
             crate::modules::bank::models::BankBreakdown,
             crate::modules::bank::models::BankAnalyticsSummary,

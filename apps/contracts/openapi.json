@@ -5270,6 +5270,13 @@
                 "format": "int64",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "unavailable_guilds": {
+                "description": "Member guilds left out of an alliance listing because their ledger was unreachable.\nWhen non-empty the list and its totals are incomplete. Absent on complete results.",
+                "items": {
+                  "$ref": "#/components/schemas/UnavailableGuild"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -8148,6 +8155,13 @@
             "example": "40.00",
             "type": "string"
           },
+          "unavailable_guilds": {
+            "description": "Member guilds whose ledger could not be read. When non-empty, the totals above are\n**incomplete**: they leave these guilds out. Absent on complete and single-guild results.",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableGuild"
+            },
+            "type": "array"
+          },
           "user_id": {
             "description": "The user this balance belongs to.",
             "example": 7,
@@ -8236,6 +8250,13 @@
             "description": "Aggregation by transaction type.",
             "items": {
               "$ref": "#/components/schemas/BankBreakdown"
+            },
+            "type": "array"
+          },
+          "unavailable_guilds": {
+            "description": "Member guilds left out of an alliance aggregate because their ledger was unreachable.\nWhen non-empty the totals are incomplete. Absent on complete results.",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableGuild"
             },
             "type": "array"
           }
@@ -15818,6 +15839,13 @@
             "description": "Total silver the Guild Bank has paid out across all members (status `withdrawn`).",
             "example": "12_480.50",
             "type": "string"
+          },
+          "unavailable_guilds": {
+            "description": "Member guilds left out of an alliance aggregate because their ledger was unreachable.\nWhen non-empty the totals are incomplete. Absent on complete results.",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableGuild"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -19065,6 +19093,13 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "unavailable_guilds": {
+            "description": "Member guilds left out of an alliance listing because their ledger was unreachable.\nWhen non-empty the list and its totals are incomplete. Absent on complete results.",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableGuild"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -23463,6 +23498,24 @@
           "net_distributed",
           "outflow",
           "regear_paid"
+        ],
+        "type": "object"
+      },
+      "UnavailableGuild": {
+        "description": "A member guild an alliance aggregate could not include because its ledger was unreachable.\n\nAlliance totals are computed live from every active member guild. A guild that cannot be\nopened is left out rather than failing the whole request, so the response lists it here\ninstead of presenting a partial total as if it were complete.",
+        "properties": {
+          "guild_name": {
+            "description": "Display name of the member guild.",
+            "type": "string"
+          },
+          "guild_tenant_id": {
+            "description": "Discord tenant id of the member guild.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guild_tenant_id",
+          "guild_name"
         ],
         "type": "object"
       },

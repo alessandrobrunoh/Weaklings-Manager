@@ -571,6 +571,7 @@ impl BankService {
             requested_total,
             requested_count: requested.len() as u64,
             guilds: Vec::new(),
+            unavailable_guilds: Vec::new(),
         })
     }
 
@@ -599,6 +600,7 @@ impl BankService {
         Ok(GuildBankSummary {
             paid_total,
             paid_count: withdrawn.len() as u64,
+            unavailable_guilds: Vec::new(),
         })
     }
 
@@ -633,6 +635,7 @@ impl BankService {
             sources: Vec::new(),
             destinations: Vec::new(),
             transaction_types: Vec::new(),
+            unavailable_guilds: Vec::new(),
         };
         let mut sources = HashMap::new();
         let mut destinations = HashMap::new();
