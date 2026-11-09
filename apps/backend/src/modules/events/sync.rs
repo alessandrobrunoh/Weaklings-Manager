@@ -47,7 +47,30 @@ pub async fn assert_active_alliance(
     Ok(())
 }
 
+/// Rejects sharing an event that is itself a copy of another tenant's event.
+///
+/// A mirror is always one hop from its origin. An event that carries a canonical source
+/// (`source_tenant_id`/`source_event_id`) is a copy, including a *detached* one whose link was
+/// disabled when its guild left an alliance, which the write guard deliberately lets through.
+/// Mirroring such a copy would make the copy an origin and add a second hop.
+fn ensure_event_is_origin(
+    source_tenant_id: Option<&str>,
+    source_event_id: Option<i64>,
+) -> Result<(), AppError> {
+    if source_tenant_id.is_some() || source_event_id.is_some() {
+        return Err(AppError::Conflict(
+            "this event is a copy of another tenant's event and cannot be shared onward".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Create the alliance-side event and persist its idempotent cross-tenant link.
+///
+/// # Errors
+///
+/// Returns `AppError::Conflict` when `source_event` is itself a copy of another tenant's event
+/// (see [`ensure_event_is_origin`]), or when the guild has no active alliance.
 pub async fn create_mirror(
     control: &DatabaseConnection,
     registry: &TenantRegistry,
@@ -56,6 +79,10 @@ pub async fn create_mirror(
     source_event: &EventView,
     source_creator: &ShareActor,
 ) -> Result<Option<i64>, AppError> {
+    ensure_event_is_origin(
+        source_event.source_tenant_id.as_deref(),
+        source_event.source_event_id,
+    )?;
     let existing = control
         .query_one(Statement::from_sql_and_values(
             control.get_database_backend(),
@@ -562,7 +589,24 @@ async fn map_build(
 
 #[cfg(test)]
 mod tests {
-    use super::{EventSyncLink, peer_events};
+    use super::{EventSyncLink, ensure_event_is_origin, peer_events};
+
+    #[test]
+    fn only_origin_events_can_be_mirrored() {
+        assert!(ensure_event_is_origin(None, None).is_ok());
+        // A copy, attached or detached, carries its canonical source and is never an origin.
+        for (tenant, event) in [
+            (Some("alliance-1"), Some(5)),
+            (Some("alliance-1"), None),
+            (None, Some(5)),
+        ] {
+            let err = ensure_event_is_origin(tenant, event).expect_err("a copy is not an origin");
+            assert!(
+                matches!(err, crate::errors::AppError::Conflict(_)),
+                "{err:?}"
+            );
+        }
+    }
 
     fn link(
         source_tenant: &str,
