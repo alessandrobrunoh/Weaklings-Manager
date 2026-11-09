@@ -200,7 +200,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                     {{ t('albion.title') }}
                   </p>
                   <p class="text-sm font-semibold mono" style="color: var(--color-text)">
-                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : t('albion.not_linked') }}
+                    {{ albionLinkLabel() }}
                   </p>
                 </div>
               </div>
@@ -736,6 +736,14 @@ export class UserDetailPage {
   protected readonly progression = signal<ProgressionMeView | null>(null);
   protected readonly warns = signal<WarnView[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
+  protected readonly albionLinkLabel = computed(() => {
+    const link = this.albionLink();
+    if (link?.linked) return link.albion_player_name ?? '';
+    if (link?.pending) {
+      return this.t('albion.pending.badge', { name: link.pending_albion_player_name ?? '' });
+    }
+    return this.t('albion.not_linked');
+  });
   protected readonly draft = signal<AdjustDraft>(emptyAdjustDraft());
 
   protected readonly playerIntel = signal<PlayerReport | null>(null);

@@ -1159,6 +1159,22 @@ export const en = {
   'albion.required.title': 'Link your Albion character',
   'albion.required.subtitle':
     'You must link your Discord account to your Albion character before using the guild tools. This dialog cannot be dismissed.',
+  'albion.pending.title': 'Waiting for an officer',
+  'albion.pending.subtitle': 'Your request to link {name} was sent. An officer has to approve it before you can use the guild tools.',
+  'albion.pending.refresh': 'Check again',
+  'albion.pending.withdraw': 'Withdraw and pick another character',
+  'albion.pending.sent': 'Request sent: an officer will review {name}.',
+  'albion.pending.withdrawn': 'Request withdrawn.',
+  'albion.pending.badge': 'Pending: {name}',
+  'dashboard.attention.link_pending': 'Your Albion link is waiting for an officer',
+  'albion.requests.title': 'Albion link requests',
+  'albion.requests.subtitle': 'Members asking to link a character. Approving links it, grants the Guild role and copies the link to the alliance.',
+  'albion.requests.approve': 'Approve',
+  'albion.requests.reject': 'Reject',
+  'albion.requests.approved': 'Linked {name} to {username}.',
+  'albion.requests.rejected': 'Request rejected.',
+  'albion.requests.competing': '{count} other member(s) claim this character too.',
+  'albion.requests.alreadyLinked': 'Already linked to another account: unlink it first.',
   'albion.unlink_admin': 'To unlink or change character, ask an Admin.',
 
   // Siphoned

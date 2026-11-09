@@ -642,8 +642,12 @@ export class Dashboard {
         id: 'albion',
         icon: 'link',
         iconTone: 'info',
-        text: this.t('dashboard.attention.link_albion'),
-        actionText: this.t('dashboard.attention.link_albion_action'),
+        text: this.t(
+          link.pending ? 'dashboard.attention.link_pending' : 'dashboard.attention.link_albion',
+        ),
+        actionText: link.pending
+          ? this.t('common.view')
+          : this.t('dashboard.attention.link_albion_action'),
         link: '/profile',
       });
     }

@@ -70,6 +70,7 @@ describe('Dashboard', () => {
 
   const mockAlbion: AlbionLinkStatus = {
     linked: true,
+    pending: false,
     albion_player_name: 'GalvdonAO',
   };
 
@@ -341,7 +342,7 @@ describe('Dashboard', () => {
       requested_count: 0,
     });
     dash.metrics.set({ ...mockMetrics, regears_pending: 0 });
-    dash.albionLink.set({ linked: true, albion_player_name: 'GalvdonAO' });
+    dash.albionLink.set({ linked: true, pending: false, albion_player_name: 'GalvdonAO' });
     dash.recentEvents.set([]);
     fixture.detectChanges();
 

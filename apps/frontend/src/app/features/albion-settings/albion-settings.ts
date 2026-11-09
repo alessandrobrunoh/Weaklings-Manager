@@ -91,6 +91,13 @@ const MIN_QUERY_LENGTH = 2;
                 {{ t('albionSettings.link.unlink') }}
               </button>
             </div>
+          } @else if (status.pending) {
+            <p class="text-sm" style="color: var(--color-warning)">
+              {{ t('albion.pending.title') }}
+            </p>
+            <p class="mono mt-0.5 text-lg" style="color: var(--color-text)">
+              {{ status.pending_albion_player_name }}
+            </p>
           } @else {
             <p class="text-sm" style="color: var(--color-warning)">
               {{ t('albionSettings.link.notLinked') }}
@@ -301,7 +308,7 @@ export class AlbionSettings {
     this.unlinking.set(true);
     try {
       await firstValueFrom(this.api.delete<null>('api/albion/link'));
-      this.link.set({ linked: false });
+      this.link.set({ linked: false, pending: false });
       this.unlinkConfirm.set(false);
       this.toasts.success(this.t('albionSettings.link.unlinked'));
     } catch (error) {
