@@ -1649,7 +1649,7 @@ async fn participate(
     let (detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
-    sync_participation(
+    if let Err(error) = sync_participation(
         &control.0,
         &registry,
         &tenant.0,
@@ -1662,7 +1662,12 @@ async fn participate(
         Some(request_for_sync),
         Some(&attributed_guild),
     )
-    .await?;
+    .await
+    {
+        // The signup above is already committed; surfacing an error here would tell the caller it
+        // failed when it did not, and would skip the roster broadcast below.
+        tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+    }
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
@@ -1697,7 +1702,7 @@ async fn cancel_participation(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let (detail, version, seat_key) = service.cancel_participation(&db, id, user.user_id).await?;
-    sync_participation(
+    if let Err(error) = sync_participation(
         &control.0,
         &registry,
         &tenant.0,
@@ -1710,7 +1715,11 @@ async fn cancel_participation(
         None,
         None,
     )
-    .await?;
+    .await
+    {
+        // See `participate`: the cancellation is already committed locally.
+        tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+    }
     tracing::info!(
         event_id = id,
         roster_version = version,
