@@ -378,12 +378,69 @@ async fn upsert_user(db: &DatabaseConnection, actor: &ShareActor) -> Result<i64,
     .await
 }
 
+/// Applies one participation change to a single linked copy.
+#[allow(clippy::too_many_arguments)]
+async fn sync_participation_to_peer(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+    tenant_id: &str,
+    peer_tenant: &str,
+    peer_id: i64,
+    actor: &ShareActor,
+    request: Option<&ParticipateEventRequest>,
+    (origin_tenant, origin_event): (&str, i64),
+) -> Result<(), AppError> {
+    let peer = registry.get_or_load(peer_tenant).await?;
+    let peer_user = upsert_user(&peer.db, actor).await?;
+    let service = EventService::new();
+    if let Some(request) = request {
+        let mapped = ParticipateEventRequest {
+            primary_build_id: map_build(
+                control,
+                tenant_id,
+                peer_tenant,
+                request.primary_build_id,
+                origin_tenant,
+                origin_event,
+            )
+            .await?,
+            secondary_build_id: map_build(
+                control,
+                tenant_id,
+                peer_tenant,
+                request.secondary_build_id,
+                origin_tenant,
+                origin_event,
+            )
+            .await?,
+        };
+        service
+            .participate_with_roster_version(&peer.db, peer_id, peer_user, mapped)
+            .await?;
+    } else {
+        service
+            .cancel_participation(&peer.db, peer_id, peer_user)
+            .await?;
+    }
+    crate::modules::splits::service::SplitService::new()
+        .sync_event_participants(&peer.db, peer_id)
+        .await?;
+    Ok(())
+}
+
 /// Fan out a self-service participation mutation to the linked event.
 ///
 /// The mutation reaches the canonical event, every non-guild copy (such as an
 /// alliance mirror of a guild event), and — when a guild attribution is known —
 /// only the copy in the attributed guild. Legacy joins recorded before
 /// attribution existed keep the previous propagate-to-all-peers behavior.
+///
+/// The caller's own signup is already committed when this runs, so a copy that
+/// cannot take the change (for example a selected build that was never shared
+/// with that tenant) is logged and skipped instead of failing the whole call:
+/// reporting an error for a signup that did succeed is misleading and would
+/// also stop the remaining copies from being updated. Only failing to resolve
+/// the peers at all is returned.
 pub async fn sync_participation(
     control: &DatabaseConnection,
     registry: &TenantRegistry,
@@ -423,42 +480,29 @@ pub async fn sync_participation(
         return Ok(());
     }
     let current = registry.get_or_load(tenant_id).await?;
-    let service = EventService::new();
     for (peer_tenant, peer_id) in peers {
-        let peer = registry.get_or_load(&peer_tenant).await?;
-        let peer_user = upsert_user(&peer.db, actor).await?;
-        if let Some(request) = &request {
-            let mapped = ParticipateEventRequest {
-                primary_build_id: map_build(
-                    control,
-                    tenant_id,
-                    &peer_tenant,
-                    request.primary_build_id,
-                    &origin_tenant,
-                    origin_event,
-                )
-                .await?,
-                secondary_build_id: map_build(
-                    control,
-                    tenant_id,
-                    &peer_tenant,
-                    request.secondary_build_id,
-                    &origin_tenant,
-                    origin_event,
-                )
-                .await?,
-            };
-            service
-                .participate_with_roster_version(&peer.db, peer_id, peer_user, mapped)
-                .await?;
-        } else {
-            service
-                .cancel_participation(&peer.db, peer_id, peer_user)
-                .await?;
+        if let Err(error) = sync_participation_to_peer(
+            control,
+            registry,
+            tenant_id,
+            &peer_tenant,
+            peer_id,
+            actor,
+            request.as_ref(),
+            (&origin_tenant, origin_event),
+        )
+        .await
+        {
+            tracing::error!(
+                tenant_id = %tenant_id,
+                event_id,
+                peer_tenant = %peer_tenant,
+                peer_event_id = peer_id,
+                discord_id = %actor.discord_id,
+                %error,
+                "participation was saved but could not be copied to the linked event"
+            );
         }
-        crate::modules::splits::service::SplitService::new()
-            .sync_event_participants(&peer.db, peer_id)
-            .await?;
     }
     // Event-linked splits use the event roster as their participant source.
     // Keep every copy current when a signup changes from any tenant.

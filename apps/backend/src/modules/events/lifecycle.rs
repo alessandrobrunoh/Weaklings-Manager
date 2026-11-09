@@ -1547,6 +1547,42 @@ mod tests {
         world.close().await;
     }
 
+    /// A selected build that was never shared with the linked tenant cannot be mapped there. The
+    /// caller's own signup is already saved by then, so the sync must log and skip that copy
+    /// instead of failing the call (the route used to answer with an error for a signup that had
+    /// in fact succeeded).
+    #[tokio::test]
+    async fn an_unmappable_build_does_not_fail_the_sync_of_a_saved_signup() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Unshared build event").await;
+        let copy_a = world.guild_copy(1, source.id).await;
+
+        let unshared_build = ParticipateEventRequest {
+            primary_build_id: Some(987_654),
+            secondary_build_id: None,
+        };
+        sync_participation(
+            &world.control,
+            &world.registry,
+            "guild-a",
+            copy_a.id,
+            &actor("discord-9"),
+            Some(unshared_build),
+            Some("guild-a"),
+        )
+        .await
+        .expect("a copy that cannot map the build is skipped, not an error");
+
+        assert_eq!(
+            participation_count(&world.tenant_dbs[0], source.id).await,
+            0,
+            "the copy that could not take the build is left untouched"
+        );
+        world.close().await;
+    }
+
     #[tokio::test]
     async fn alliance_split_preflights_every_guild_and_retries_after_manual_roster_removal() {
         let Some(world) = TestWorld::new().await else {
