@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { AlbionLinkRequest, AlbionLinkStatus } from '../api/types.js';
+import { buildPendingLinkEmbed } from '../embeds/link.embed.js';
 import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
@@ -31,6 +32,14 @@ export async function execute(
   };
 
   const result = await api.post<AlbionLinkStatus>('api/albion/link', body, interaction.user.id);
+
+  if (result.pending === true && result.linked !== true) {
+    // Albion cannot prove who owns a character, so for members this is only a request.
+    await interaction.editReply({
+      embeds: [buildPendingLinkEmbed(result.pending_albion_player_name ?? playerName)],
+    });
+    return;
+  }
 
   const embed = createBaseEmbed({
     category: 'ACCOUNT LINKING',

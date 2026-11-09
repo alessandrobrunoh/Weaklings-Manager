@@ -164,7 +164,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     {{ t('albion.title') }}
                   </p>
                   <p class="text-sm font-semibold mono" style="color: var(--color-text)">
-                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : t('albion.not_linked') }}
+                    {{ albionLinkLabel() }}
                   </p>
                 </div>
               </div>
@@ -687,6 +687,14 @@ export class Settings {
   protected readonly siphonedEntries = signal<SiphonedEntryView[]>([]);
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
+  protected readonly albionLinkLabel = computed(() => {
+    const link = this.albionLink();
+    if (link?.linked) return link.albion_player_name ?? '';
+    if (link?.pending) {
+      return this.t('albion.pending.badge', { name: link.pending_albion_player_name ?? '' });
+    }
+    return this.t('albion.not_linked');
+  });
   protected readonly userMetrics = signal<UserMetrics | null>(null);
   protected readonly budget = signal<RegearBudgetSummary | null>(null);
   protected readonly progression = signal<ProgressionMeView | null>(null);
@@ -1020,7 +1028,9 @@ export class Settings {
       );
       this.albionLink.set(linkStatus);
       this.closeLinkDialog();
-      this.toasts.success(this.t('albion.linked', { name: player.name }));
+      this.toasts.success(
+        this.t(linkStatus.linked ? 'albion.linked' : 'albion.pending.sent', { name: player.name }),
+      );
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

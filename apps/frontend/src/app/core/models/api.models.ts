@@ -1258,6 +1258,27 @@ export interface AlbionLinkStatus {
   albion_player_id?: string;
   albion_player_name?: string;
   linked_at?: string;
+  /** A self-service claim is waiting for an officer. It is not a link: `linked` stays false. */
+  pending: boolean;
+  pending_albion_player_id?: string;
+  pending_albion_player_name?: string;
+  requested_at?: string;
+}
+
+/** One self-service link claim in the officer queue (`GET /api/albion/link/requests`). */
+export interface AlbionLinkRequestView {
+  id: number;
+  discord_id: string;
+  user_id: number | null;
+  username: string | null;
+  albion_player_id: string;
+  albion_player_name: string;
+  albion_guild_name: string | null;
+  requested_at: string;
+  /** Other open claims on the same character. */
+  competing_requests: number;
+  /** Approving would fail with 409 until the existing link is removed. */
+  character_already_linked: boolean;
 }
 
 export interface AlbionLinkRequest {

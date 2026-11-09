@@ -8,7 +8,7 @@ use super::client::{
     AlbionAlliance, AlbionApiClient, AlbionGuild, AlbionGuildMember, AlbionPlayer,
     AlbionPlayerSummary, AlbionRegion, AlbionSearchResult,
 };
-use super::entities::albion_link;
+use super::entities::{albion_link, albion_link_request};
 use crate::errors::AppError;
 use crate::modules::audit::service::AuditService;
 use crate::pagination::{PaginatedData, PaginationParams};
@@ -458,6 +458,36 @@ pub struct AlbionLinkStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "2026-07-08T02:15:00.631376+00:00")]
     pub linked_at: Option<String>,
+    /// `true` while a self-service claim waits for an officer. A pending claim is **not** a link:
+    /// `linked` stays `false` and nothing keyed on the character (guild role, loot, regears)
+    /// applies until it is approved.
+    pub pending: bool,
+    /// Present only when `pending` is `true`: the character the account asked to link.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "aPngkjfLT2CGiZoWXLr8UQ")]
+    pub pending_albion_player_id: Option<String>,
+    /// Present only when `pending` is `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Kay")]
+    pub pending_albion_player_name: Option<String>,
+    /// Present only when `pending` is `true`. RFC 3339 timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "2026-07-08T02:15:00.631376+00:00")]
+    pub requested_at: Option<String>,
+}
+
+impl AlbionLinkStatus {
+    /// Status of an account whose self-service claim is waiting for an officer.
+    #[must_use]
+    pub fn pending(request: albion_link_request::Model) -> Self {
+        Self {
+            pending: true,
+            pending_albion_player_id: Some(request.albion_player_id),
+            pending_albion_player_name: Some(request.albion_player_name),
+            requested_at: Some(request.requested_at.to_rfc3339()),
+            ..Self::from(None)
+        }
+    }
 }
 
 impl From<Option<albion_link::Model>> for AlbionLinkStatus {
@@ -468,12 +498,20 @@ impl From<Option<albion_link::Model>> for AlbionLinkStatus {
                 albion_player_id: Some(link.albion_player_id),
                 albion_player_name: Some(link.albion_player_name),
                 linked_at: Some(link.linked_at.to_rfc3339()),
+                pending: false,
+                pending_albion_player_id: None,
+                pending_albion_player_name: None,
+                requested_at: None,
             },
             None => Self {
                 linked: false,
                 albion_player_id: None,
                 albion_player_name: None,
                 linked_at: None,
+                pending: false,
+                pending_albion_player_id: None,
+                pending_albion_player_name: None,
+                requested_at: None,
             },
         }
     }
@@ -499,6 +537,65 @@ pub const AUDIT_RELINK: &str = "ALBION_RELINK";
 
 /// Audit `entity_type` for every link event.
 pub const AUDIT_ENTITY: &str = "ALBION_LINK";
+
+/// Audit action for a self-service claim that now waits for an officer.
+pub const AUDIT_REQUEST: &str = "ALBION_LINK_REQUEST";
+/// Audit action for a claim its owner withdrew.
+pub const AUDIT_REQUEST_CANCEL: &str = "ALBION_LINK_REQUEST_CANCEL";
+/// Audit action for an officer rejecting a claim (or a claim superseded by another approval).
+pub const AUDIT_REJECT: &str = "ALBION_LINK_REJECT";
+/// Audit `entity_type` for the claim events above.
+pub const AUDIT_REQUEST_ENTITY: &str = "ALBION_LINK_REQUEST";
+
+fn request_snapshot(request: &albion_link_request::Model) -> serde_json::Value {
+    serde_json::json!({
+        "discord_id": request.discord_id,
+        "albion_player_id": request.albion_player_id,
+        "albion_player_name": request.albion_player_name,
+        "albion_guild_name": request.albion_guild_name,
+        "via": request.via,
+        "requested_at": request.requested_at.to_rfc3339(),
+    })
+}
+
+/// An account that just got a real link has nothing left to claim, so its open request (if any)
+/// goes away in the same transaction.
+async fn drop_open_request<C: sea_orm::ConnectionTrait>(
+    conn: &C,
+    discord_id: &str,
+) -> Result<(), AppError> {
+    albion_link_request::Entity::delete_many()
+        .filter(albion_link_request::Column::DiscordId.eq(discord_id))
+        .exec(conn)
+        .await?;
+    Ok(())
+}
+
+/// One open claim as an officer sees it.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct AlbionLinkRequestView {
+    /// Request id, as used by the approve/reject endpoints.
+    pub id: i64,
+    /// Discord id of the account asking for the link.
+    pub discord_id: String,
+    /// Internal user id of that account, when it has a row in this tenant.
+    pub user_id: Option<i64>,
+    /// Username of that account, when it has a row in this tenant.
+    pub username: Option<String>,
+    /// The character being claimed.
+    pub albion_player_id: String,
+    /// The character's name when the claim was made.
+    pub albion_player_name: String,
+    /// The character's Albion guild when the claim was made, if it had one.
+    pub albion_guild_name: Option<String>,
+    /// RFC 3339 timestamp.
+    pub requested_at: String,
+    /// How many *other* open claims name the same character; the officer must pick the real owner.
+    pub competing_requests: u32,
+    /// `true` when the character is already linked to an account, so approving would fail with
+    /// `409` until that link is removed.
+    pub character_already_linked: bool,
+}
 
 fn link_snapshot(link: &albion_link::Model) -> serde_json::Value {
     serde_json::json!({
@@ -593,6 +690,7 @@ impl AlbionLinkService {
         };
 
         let inserted = active.insert(&txn).await?;
+        drop_open_request(&txn, &inserted.discord_id).await?;
         AuditService::record_in(
             &txn,
             AUDIT_LINK,
@@ -640,24 +738,6 @@ impl AlbionLinkService {
         .await?;
         txn.commit().await?;
         Ok(())
-    }
-
-    /// Fetches the link (if any) for the user identified by internal numeric `user_id`.
-    pub async fn get_link_for_user_id(
-        &self,
-        db: &DatabaseConnection,
-        user_id: i64,
-    ) -> Result<Option<albion_link::Model>, AppError> {
-        let user = crate::modules::users::entities::Entity::find_by_id(user_id)
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("User {user_id} not found")))?;
-
-        if let Some(ref discord_id) = user.discord_id {
-            self.get_link_for_discord_user(db, discord_id).await
-        } else {
-            Ok(None)
-        }
     }
 
     /// Manager helper to link or re-link any user to an Albion player. The caller must already
@@ -718,6 +798,7 @@ impl AlbionLinkService {
         };
 
         let inserted = active.insert(&txn).await?;
+        drop_open_request(&txn, &inserted.discord_id).await?;
         let action = if previous.is_some() || displaced.is_some() {
             AUDIT_RELINK
         } else {
@@ -795,6 +876,374 @@ impl AlbionLinkService {
         .await?;
         txn.commit().await?;
         Ok(Some(discord_id))
+    }
+}
+
+impl AlbionLinkService {
+    /// Same as [`Self::status_for_discord_user`] for an internal user id.
+    pub async fn status_for_user_id(
+        &self,
+        db: &DatabaseConnection,
+        user_id: i64,
+    ) -> Result<AlbionLinkStatus, AppError> {
+        let user = crate::modules::users::entities::Entity::find_by_id(user_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("User {user_id} not found")))?;
+        match user.discord_id {
+            Some(discord_id) => self.status_for_discord_user(db, &discord_id).await,
+            None => Ok(AlbionLinkStatus::from(None)),
+        }
+    }
+
+    /// Fetches the open claim (if any) for the given Discord user.
+    pub async fn get_request_for_discord_user(
+        &self,
+        db: &DatabaseConnection,
+        discord_id: &str,
+    ) -> Result<Option<albion_link_request::Model>, AppError> {
+        Ok(albion_link_request::Entity::find()
+            .filter(albion_link_request::Column::DiscordId.eq(discord_id))
+            .one(db)
+            .await?)
+    }
+
+    /// Link plus open claim for one account, as the status endpoints render them. A link wins:
+    /// an account with a link has nothing left to claim.
+    pub async fn status_for_discord_user(
+        &self,
+        db: &DatabaseConnection,
+        discord_id: &str,
+    ) -> Result<AlbionLinkStatus, AppError> {
+        if let Some(link) = self.get_link_for_discord_user(db, discord_id).await? {
+            return Ok(AlbionLinkStatus::from(Some(link)));
+        }
+        Ok(self
+            .get_request_for_discord_user(db, discord_id)
+            .await?
+            .map_or_else(|| AlbionLinkStatus::from(None), AlbionLinkStatus::pending))
+    }
+
+    /// Records a claim on an Albion character that an officer still has to approve. Asking
+    /// again replaces the account's previous claim. Nothing is linked: no `albion_links` row,
+    /// and so no guild role, nickname or alliance copy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Conflict` if the account already has a link, or if the character is
+    /// already linked to an account.
+    pub async fn request_link(
+        &self,
+        db: &DatabaseConnection,
+        discord_id: &str,
+        albion_player_id: &str,
+        albion_player_name: &str,
+        albion_guild_name: Option<&str>,
+        audit: LinkAudit<'_>,
+    ) -> Result<albion_link_request::Model, AppError> {
+        let txn = db.begin().await?;
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(discord_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "Your Discord account is already linked to an Albion player".to_string(),
+            ));
+        }
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::AlbionPlayerId.eq(albion_player_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "This Albion player is already linked to another Discord account".to_string(),
+            ));
+        }
+
+        let replaced = albion_link_request::Entity::find()
+            .filter(albion_link_request::Column::DiscordId.eq(discord_id))
+            .one(&txn)
+            .await?;
+        if let Some(previous) = &replaced {
+            albion_link_request::Entity::delete_by_id(previous.id)
+                .exec(&txn)
+                .await?;
+        }
+        let saved = albion_link_request::ActiveModel {
+            discord_id: Set(discord_id.to_string()),
+            albion_player_id: Set(albion_player_id.to_string()),
+            albion_player_name: Set(albion_player_name.to_string()),
+            albion_guild_name: Set(albion_guild_name.map(ToOwned::to_owned)),
+            via: Set(audit.via.to_string()),
+            requested_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+        AuditService::record_in(
+            &txn,
+            AUDIT_REQUEST,
+            Some(AUDIT_REQUEST_ENTITY),
+            Some(saved.id),
+            audit.actor_user_id,
+            Some(serde_json::json!({
+                "via": audit.via,
+                "request": request_snapshot(&saved),
+                "replaced_request": replaced.as_ref().map(request_snapshot),
+            })),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(saved)
+    }
+
+    /// Withdraws the account's own open claim.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::NotFound` if the account has no open claim.
+    pub async fn cancel_request(
+        &self,
+        db: &DatabaseConnection,
+        discord_id: &str,
+        audit: LinkAudit<'_>,
+    ) -> Result<(), AppError> {
+        let txn = db.begin().await?;
+        let existing = albion_link_request::Entity::find()
+            .filter(albion_link_request::Column::DiscordId.eq(discord_id))
+            .one(&txn)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound("No Albion link request exists for this account".to_string())
+            })?;
+        albion_link_request::Entity::delete_by_id(existing.id)
+            .exec(&txn)
+            .await?;
+        AuditService::record_in(
+            &txn,
+            AUDIT_REQUEST_CANCEL,
+            Some(AUDIT_REQUEST_ENTITY),
+            Some(existing.id),
+            audit.actor_user_id,
+            Some(serde_json::json!({ "via": audit.via, "request": request_snapshot(&existing) })),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    /// Every open claim, oldest first, with the requester and the clashes an officer must
+    /// settle before approving.
+    pub async fn list_requests(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<AlbionLinkRequestView>, AppError> {
+        use sea_orm::QueryOrder;
+
+        let requests = albion_link_request::Entity::find()
+            .order_by_asc(albion_link_request::Column::RequestedAt)
+            .order_by_asc(albion_link_request::Column::Id)
+            .all(db)
+            .await?;
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let discord_ids: Vec<String> = requests.iter().map(|r| r.discord_id.clone()).collect();
+        let users: std::collections::HashMap<String, crate::modules::users::entities::Model> =
+            crate::modules::users::entities::Entity::find()
+                .filter(crate::modules::users::entities::Column::DiscordId.is_in(discord_ids))
+                .all(db)
+                .await?
+                .into_iter()
+                .filter_map(|user| user.discord_id.clone().map(|id| (id, user)))
+                .collect();
+
+        let player_ids: Vec<String> = requests
+            .iter()
+            .map(|r| r.albion_player_id.clone())
+            .collect();
+        let linked: HashSet<String> = albion_link::Entity::find()
+            .filter(albion_link::Column::AlbionPlayerId.is_in(player_ids))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|link| link.albion_player_id)
+            .collect();
+
+        let mut per_player: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+        for request in &requests {
+            *per_player.entry(&request.albion_player_id).or_default() += 1;
+        }
+
+        Ok(requests
+            .iter()
+            .map(|request| {
+                let user = users.get(&request.discord_id);
+                AlbionLinkRequestView {
+                    id: request.id,
+                    discord_id: request.discord_id.clone(),
+                    user_id: user.map(|u| u.id),
+                    username: user.map(|u| u.username.clone()),
+                    albion_player_id: request.albion_player_id.clone(),
+                    albion_player_name: request.albion_player_name.clone(),
+                    albion_guild_name: request.albion_guild_name.clone(),
+                    requested_at: request.requested_at.to_rfc3339(),
+                    competing_requests: per_player
+                        .get(request.albion_player_id.as_str())
+                        .copied()
+                        .unwrap_or(1)
+                        .saturating_sub(1),
+                    character_already_linked: linked.contains(&request.albion_player_id),
+                }
+            })
+            .collect())
+    }
+
+    /// Fetches one open claim.
+    pub async fn get_request(
+        &self,
+        db: &DatabaseConnection,
+        request_id: i64,
+    ) -> Result<albion_link_request::Model, AppError> {
+        albion_link_request::Entity::find_by_id(request_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Link request {request_id} not found")))
+    }
+
+    /// Turns a claim into a real link. The caller must already have checked `roles.manage`.
+    ///
+    /// The claim is consumed, and every competing claim on the same character is dropped (each
+    /// audited as superseded). Never displaces an existing link: removing someone's link is a
+    /// separate, deliberate admin action.
+    ///
+    /// # Errors
+    ///
+    /// * `AppError::NotFound` if the claim is gone (already approved, rejected or withdrawn).
+    /// * `AppError::Conflict` if the account or the character got linked in the meantime.
+    pub async fn approve_request(
+        &self,
+        db: &DatabaseConnection,
+        request_id: i64,
+        actor_user_id: i64,
+    ) -> Result<albion_link::Model, AppError> {
+        let txn = db.begin().await?;
+        let request = albion_link_request::Entity::find_by_id(request_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Link request {request_id} not found")))?;
+
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(&request.discord_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "This account is already linked to an Albion player".to_string(),
+            ));
+        }
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::AlbionPlayerId.eq(&request.albion_player_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "This Albion player is already linked to another Discord account; unlink it first"
+                    .to_string(),
+            ));
+        }
+
+        let link = albion_link::ActiveModel {
+            discord_id: Set(request.discord_id.clone()),
+            albion_player_id: Set(request.albion_player_id.clone()),
+            albion_player_name: Set(request.albion_player_name.clone()),
+            linked_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+        albion_link_request::Entity::delete_by_id(request.id)
+            .exec(&txn)
+            .await?;
+
+        let competing = albion_link_request::Entity::find()
+            .filter(albion_link_request::Column::AlbionPlayerId.eq(&request.albion_player_id))
+            .all(&txn)
+            .await?;
+        for other in &competing {
+            albion_link_request::Entity::delete_by_id(other.id)
+                .exec(&txn)
+                .await?;
+            AuditService::record_in(
+                &txn,
+                AUDIT_REJECT,
+                Some(AUDIT_REQUEST_ENTITY),
+                Some(other.id),
+                Some(actor_user_id),
+                Some(serde_json::json!({
+                    "reason": "superseded",
+                    "approved_request_id": request.id,
+                    "request": request_snapshot(other),
+                })),
+            )
+            .await?;
+        }
+
+        AuditService::record_in(
+            &txn,
+            AUDIT_LINK,
+            Some(AUDIT_ENTITY),
+            Some(link.id),
+            Some(actor_user_id),
+            Some(serde_json::json!({
+                "via": "approval",
+                "request": request_snapshot(&request),
+                "link": link_snapshot(&link),
+            })),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(link)
+    }
+
+    /// Declines a claim. The caller must already have checked `roles.manage`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::NotFound` if the claim is gone.
+    pub async fn reject_request(
+        &self,
+        db: &DatabaseConnection,
+        request_id: i64,
+        actor_user_id: i64,
+    ) -> Result<albion_link_request::Model, AppError> {
+        let txn = db.begin().await?;
+        let request = albion_link_request::Entity::find_by_id(request_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Link request {request_id} not found")))?;
+        albion_link_request::Entity::delete_by_id(request.id)
+            .exec(&txn)
+            .await?;
+        AuditService::record_in(
+            &txn,
+            AUDIT_REJECT,
+            Some(AUDIT_REQUEST_ENTITY),
+            Some(request.id),
+            Some(actor_user_id),
+            Some(
+                serde_json::json!({ "reason": "rejected", "request": request_snapshot(&request) }),
+            ),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(request)
     }
 }
 
@@ -1550,5 +1999,253 @@ mod tests {
                 .is_none()
         );
         assert_eq!(audit_actions(&db).await, [AUDIT_LINK, AUDIT_UNLINK]);
+    }
+
+    // ── approval flow ────────────────────────────────────────────────────────────────────────
+
+    async fn request(
+        db: &DatabaseConnection,
+        discord: &str,
+        player: &str,
+        name: &str,
+    ) -> albion_link_request::Model {
+        AlbionLinkService::new()
+            .request_link(db, discord, player, name, Some("Weaklings"), SELF_AUDIT)
+            .await
+            .expect("request")
+    }
+
+    #[tokio::test]
+    async fn a_self_service_request_is_not_a_link() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        request(&db, "discord_a", "player_1", "PlayerOne").await;
+
+        // Nothing keyed on `albion_links` (loot, regears, splits, guild role) can see the claim.
+        assert!(
+            service
+                .get_link_for_discord_user(&db, "discord_a")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            albion_link::Entity::find()
+                .all(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        let status = service
+            .status_for_discord_user(&db, "discord_a")
+            .await
+            .unwrap();
+        assert!(!status.linked);
+        assert!(status.pending);
+        assert_eq!(
+            status.pending_albion_player_name.as_deref(),
+            Some("PlayerOne")
+        );
+        assert_eq!(audit_actions(&db).await, [AUDIT_REQUEST]);
+    }
+
+    #[tokio::test]
+    async fn asking_again_replaces_the_open_request() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        request(&db, "discord_a", "player_1", "PlayerOne").await;
+        request(&db, "discord_a", "player_2", "PlayerTwo").await;
+
+        let open = service.list_requests(&db).await.unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].albion_player_id, "player_2");
+    }
+
+    #[tokio::test]
+    async fn a_request_for_a_linked_character_or_by_a_linked_account_conflicts() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
+            .await
+            .unwrap();
+
+        let taken = service
+            .request_link(&db, "discord_b", "player_1", "PlayerOne", None, SELF_AUDIT)
+            .await
+            .unwrap_err();
+        assert!(matches!(taken, AppError::Conflict(_)));
+        let already = service
+            .request_link(&db, "discord_a", "player_2", "PlayerTwo", None, SELF_AUDIT)
+            .await
+            .unwrap_err();
+        assert!(matches!(already, AppError::Conflict(_)));
+        assert!(service.list_requests(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn approving_creates_the_link_and_drops_competing_claims() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        let mine = request(&db, "discord_a", "player_1", "PlayerOne").await;
+        request(&db, "discord_b", "player_1", "PlayerOne").await;
+        request(&db, "discord_c", "player_9", "Unrelated").await;
+
+        let listed = service.list_requests(&db).await.unwrap();
+        let first = listed.iter().find(|r| r.id == mine.id).unwrap();
+        assert_eq!(first.competing_requests, 1);
+        assert!(!first.character_already_linked);
+
+        let link = service.approve_request(&db, mine.id, 42).await.unwrap();
+        assert_eq!(link.discord_id, "discord_a");
+        assert_eq!(link.albion_player_name, "PlayerOne");
+
+        let status = service
+            .status_for_discord_user(&db, "discord_a")
+            .await
+            .unwrap();
+        assert!(status.linked && !status.pending);
+        // The loser is neither linked nor still waiting; the unrelated claim is untouched.
+        let left: Vec<_> = service
+            .list_requests(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.discord_id)
+            .collect();
+        assert_eq!(left, ["discord_c".to_owned()]);
+        assert!(
+            service
+                .get_link_for_discord_user(&db, "discord_b")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            audit_actions(&db).await,
+            [
+                AUDIT_REQUEST,
+                AUDIT_REQUEST,
+                AUDIT_REQUEST,
+                AUDIT_REJECT,
+                AUDIT_LINK
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn approving_never_displaces_an_existing_link() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        let claim = request(&db, "discord_b", "player_1", "PlayerOne").await;
+        // Someone else gets the character linked (e.g. by an officer) while the claim waits.
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
+            .await
+            .unwrap();
+
+        let listed = service.list_requests(&db).await.unwrap();
+        assert!(listed[0].character_already_linked);
+        let error = service
+            .approve_request(&db, claim.id, 42)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Conflict(_)));
+        // The claim is kept for the officer to reject, and the rightful link is untouched.
+        assert_eq!(service.list_requests(&db).await.unwrap().len(), 1);
+        let owner = service
+            .get_link_for_discord_user(&db, "discord_a")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner.albion_player_id, "player_1");
+    }
+
+    #[tokio::test]
+    async fn approving_twice_or_a_missing_request_is_not_found() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        let claim = request(&db, "discord_a", "player_1", "PlayerOne").await;
+        service.approve_request(&db, claim.id, 42).await.unwrap();
+
+        let again = service
+            .approve_request(&db, claim.id, 42)
+            .await
+            .unwrap_err();
+        assert!(matches!(again, AppError::NotFound(_)));
+        let missing = service.reject_request(&db, 9_999, 42).await.unwrap_err();
+        assert!(matches!(missing, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn rejecting_discards_the_claim_without_linking() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        let claim = request(&db, "discord_a", "player_1", "PlayerOne").await;
+
+        let rejected = service.reject_request(&db, claim.id, 42).await.unwrap();
+        assert_eq!(rejected.discord_id, "discord_a");
+        let status = service
+            .status_for_discord_user(&db, "discord_a")
+            .await
+            .unwrap();
+        assert!(!status.linked && !status.pending);
+        assert_eq!(audit_actions(&db).await, [AUDIT_REQUEST, AUDIT_REJECT]);
+        // The account may ask again.
+        request(&db, "discord_a", "player_1", "PlayerOne").await;
+    }
+
+    #[tokio::test]
+    async fn the_owner_can_withdraw_a_request() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        request(&db, "discord_a", "player_1", "PlayerOne").await;
+
+        service
+            .cancel_request(&db, "discord_a", SELF_AUDIT)
+            .await
+            .unwrap();
+        assert!(service.list_requests(&db).await.unwrap().is_empty());
+        let again = service
+            .cancel_request(&db, "discord_a", SELF_AUDIT)
+            .await
+            .unwrap_err();
+        assert!(matches!(again, AppError::NotFound(_)));
+        assert_eq!(
+            audit_actions(&db).await,
+            [AUDIT_REQUEST, AUDIT_REQUEST_CANCEL]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_real_link_clears_the_accounts_open_request() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        let target = insert_user(&db, "target", "discord_t").await;
+        let manager = insert_user(&db, "manager", "discord_m").await;
+        request(&db, "discord_t", "player_1", "PlayerOne").await;
+
+        // An officer links the account directly: the stale claim must not linger.
+        service
+            .admin_link_user(&db, target, "player_2", "PlayerTwo", manager)
+            .await
+            .unwrap();
+        assert!(service.list_requests(&db).await.unwrap().is_empty());
+        let status = service.status_for_user_id(&db, target).await.unwrap();
+        assert!(status.linked && !status.pending);
+    }
+
+    #[tokio::test]
+    async fn the_review_list_names_the_requester() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        let user = insert_user(&db, "someone", "discord_s").await;
+        request(&db, "discord_s", "player_1", "PlayerOne").await;
+
+        let listed = service.list_requests(&db).await.unwrap();
+        assert_eq!(listed[0].user_id, Some(user));
+        assert_eq!(listed[0].username.as_deref(), Some("someone"));
+        assert_eq!(listed[0].albion_guild_name.as_deref(), Some("Weaklings"));
     }
 }

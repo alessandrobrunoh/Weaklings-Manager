@@ -30,6 +30,7 @@ import { SearchableSelect } from '../../shared/components/searchable-select/sear
 import { searchAlbionPlayers } from '../../shared/albion/albion-player-search';
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { AlbionLinkRequests } from './albion-link-requests';
 
 const PAGE_SIZE = 10;
 
@@ -51,6 +52,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    AlbionLinkRequests,
     Avatar,
     Dialog,
     PageHeader,
@@ -153,6 +155,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     </app-page-header>
 
     <app-page-stack class="workbench-page">
+      <app-albion-link-requests />
       @if (!loading() && !loadFailed()) {
       <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
         <!-- Card 1: Total -->
