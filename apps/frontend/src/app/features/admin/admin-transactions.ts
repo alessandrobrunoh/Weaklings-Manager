@@ -4,12 +4,12 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionGuildMember,
   CreateTransactionRequest,
   PaginatedData,
   TransactionStatus,
   TransactionView,
   UpdateTransactionRequest,
+  UserProfile,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -786,15 +786,18 @@ export class AdminTransactions {
     }
     this.searchingRoster.set(true);
     try {
-      const rosterPage = await firstValueFrom(
-        this.api.get<PaginatedData<AlbionGuildMember>>('api/albion/guild/roster', {
-          q: query,
+      // The transaction endpoints take local user ids, so search app members (the users
+      // endpoint matches the Discord name and the linked Albion character name, any guild)
+      // rather than the Albion guild roster, whose ids are opaque Albion strings.
+      const usersPage = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', {
+          username: query,
           limit: 25,
         }),
       );
       if (request === this.rosterSearchRequest) {
         this.rosterSearchOptions.set(
-          rosterPage.items.map((member) => ({ id: member.id, title: member.name })),
+          usersPage.items.map((member) => ({ id: String(member.id), title: member.username })),
         );
       }
     } catch (error) {

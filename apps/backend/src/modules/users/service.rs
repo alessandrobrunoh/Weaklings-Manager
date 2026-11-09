@@ -155,6 +155,8 @@ pub struct CreateLinkedMember {
     pub albion_player_id: String,
     /// Albion Online character name.
     pub albion_player_name: String,
+    /// Internal `users.id` of the manager provisioning the member, for the audit log.
+    pub actor_user_id: Option<i64>,
 }
 
 /// Placeholder email for members provisioned before they log in with Discord OAuth.
@@ -709,7 +711,7 @@ impl UserService {
         .insert(&txn)
         .await?;
 
-        albion_link::ActiveModel {
+        let link = albion_link::ActiveModel {
             discord_id: Set(discord_id.to_string()),
             albion_player_id: Set(input.albion_player_id.clone()),
             albion_player_name: Set(input.albion_player_name.clone()),
@@ -717,6 +719,22 @@ impl UserService {
             ..Default::default()
         }
         .insert(&txn)
+        .await?;
+        crate::modules::audit::service::AuditService::record_in(
+            &txn,
+            crate::modules::albion::service::AUDIT_LINK,
+            Some(crate::modules::albion::service::AUDIT_ENTITY),
+            Some(link.id),
+            input.actor_user_id,
+            Some(serde_json::json!({
+                "via": "provision",
+                "link": {
+                    "discord_id": link.discord_id,
+                    "albion_player_id": link.albion_player_id,
+                    "albion_player_name": link.albion_player_name,
+                },
+            })),
+        )
         .await?;
 
         txn.commit().await?;
@@ -1155,6 +1173,7 @@ mod tests {
                     role: "Member".into(),
                     albion_player_id: "player_1".into(),
                     albion_player_name: "Kay".into(),
+                    actor_user_id: None,
                 },
             )
             .await
@@ -1190,6 +1209,7 @@ mod tests {
                     role: "Member".into(),
                     albion_player_id: "player_2".into(),
                     albion_player_name: "Other".into(),
+                    actor_user_id: None,
                 },
             )
             .await;
@@ -1212,6 +1232,7 @@ mod tests {
                     role: "Member".into(),
                     albion_player_id: "player_1".into(),
                     albion_player_name: "Kay".into(),
+                    actor_user_id: None,
                 },
             )
             .await
@@ -1226,6 +1247,7 @@ mod tests {
                     role: "Member".into(),
                     albion_player_id: "player_1".into(),
                     albion_player_name: "Kay".into(),
+                    actor_user_id: None,
                 },
             )
             .await;

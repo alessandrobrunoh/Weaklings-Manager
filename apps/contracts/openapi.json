@@ -1073,6 +1073,11 @@
             "example": "aPngkjfLT2CGiZoWXLr8UQ",
             "type": "string"
           },
+          "in_guild": {
+            "description": "`true` when this player belongs to the tenant's configured Albion guild. Set by this app\n(never by Albion): `GET /albion/search` ranks these first. Absent upstream, so it\ndeserializes as `false`.",
+            "example": false,
+            "type": "boolean"
+          },
           "kill_fame": {
             "description": "Lifetime `PvP` kill fame. Sometimes `null` upstream for low-activity players.",
             "example": 102244.0,
@@ -1103,7 +1108,12 @@
             },
             "type": "array"
           },
+          "partial": {
+            "description": "`true` when Albion's global search could not be reached and only the configured guild's\nroster answered, so players outside the guild may be missing. Omitted when `false`.",
+            "type": "boolean"
+          },
           "players": {
+            "description": "Matching players. On `GET /albion/search` members of the configured guild come first,\nfollowed by every other Albion player the global search returned.",
             "items": {
               "$ref": "#/components/schemas/AlbionPlayerSummary"
             },
@@ -3291,7 +3301,12 @@
                 },
                 "type": "array"
               },
+              "partial": {
+                "description": "`true` when Albion's global search could not be reached and only the configured guild's\nroster answered, so players outside the guild may be missing. Omitted when `false`.",
+                "type": "boolean"
+              },
               "players": {
+                "description": "Matching players. On `GET /albion/search` members of the configured guild come first,\nfollowed by every other Albion player the global search returned.",
                 "items": {
                   "$ref": "#/components/schemas/AlbionPlayerSummary"
                 },
@@ -27046,7 +27061,7 @@
         ]
       },
       "post": {
-        "description": "Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always succeeds in replacing any existing link: it deletes the target user's current link (if any) and any other account's claim on the requested Albion character before creating the new link, all in a single transaction. The server resolves the selected player from Albion and persists that authoritative name. After a successful link the backend best-effort sets the target user's Discord guild nickname to the Albion character name.",
+        "description": "Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always succeeds in replacing any existing link: it deletes the target user's current link (if any) and any other account's claim on the requested Albion character before creating the new link, all in a single transaction, and writes an `ALBION_RELINK` (or `ALBION_LINK`) audit row naming both replaced links; an account that lost its claim has its guild role revoked. The server resolves the selected player from Albion and persists that authoritative name. After a successful link the backend best-effort sets the target user's Discord guild nickname to the Albion character name.",
         "operationId": "admin_link_user_handler",
         "parameters": [
           {
@@ -27206,7 +27221,7 @@
     },
     "/api/albion/register": {
       "post": {
-        "description": "Searches Albion for `ign`, requires a unique exact name match, then performs the same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. Guild-role assignment follows the same rule as `/link`.",
+        "description": "Searches Albion for `ign`, requires a unique exact name match, then performs the same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. Guild-role assignment follows the same rule as `/link`. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.",
         "operationId": "register_by_ign",
         "requestBody": {
           "content": {
@@ -27273,7 +27288,7 @@
     },
     "/api/albion/search": {
       "get": {
-        "description": "Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across every guild, not just the one configured server-side. Returns two separate arrays — `guilds` and `players` — both possibly empty. Use this for general lookups (e.g. \"who is this enemy guild\"); use the roster endpoint specifically for the self-link participant picker. `q` requires at least 1 character.",
+        "description": "Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across every guild, not just the one configured server-side. Returns two separate arrays — `guilds` and `players` — both possibly empty. `players` lists members of the configured guild first (`in_guild: true`, matched case- and diacritic-insensitively as a substring against the guild roster, which is cached for 60 s), followed by every other player Albion's global search returned (Albion itself caps that at 10 players per query and returns nothing for a query with leading/trailing spaces or accents, so the query is trimmed and accent-folded before it is forwarded). A player found by both sources appears once. If Albion's global search is down but the roster answered, the call still succeeds with `partial: true`; it only fails with 502 when neither source answered. This is the endpoint every player picker and link flow should use. `q` requires at least 1 character.",
         "operationId": "search",
         "parameters": [
           {
@@ -45988,7 +46003,7 @@
         ]
       },
       "post": {
-        "description": "Creates a `users` row for a Discord guild member who is not yet in the directory, then links the selected Albion character from the configured guild roster. The Discord snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). Email is stored as a placeholder until first login. Requires `users.create`.",
+        "description": "Creates a `users` row for a Discord guild member who is not yet in the directory, then links the selected Albion character: looked up in the configured guild roster first, then in Albion at large, so a character outside the guild can be linked too. The Discord snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). Email is stored as a placeholder until first login. Requires `users.create`.",
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -46039,7 +46054,7 @@
                 }
               }
             },
-            "description": "Albion character is not on the guild roster"
+            "description": "No Albion character exists for the given id or name"
           },
           "409": {
             "content": {
@@ -46059,7 +46074,7 @@
             ]
           }
         ],
-        "summary": "Provision a Discord member and link an Albion roster character",
+        "summary": "Provision a Discord member and link an Albion character",
         "tags": [
           "users"
         ]

@@ -429,9 +429,10 @@ pub async fn delete_user_role(
     post,
     path = "/api/users",
     tag = "users",
-    summary = "Provision a Discord member and link an Albion roster character",
+    summary = "Provision a Discord member and link an Albion character",
     description = "Creates a `users` row for a Discord guild member who is not yet in the directory, \
-        then links the selected Albion character from the configured guild roster. The Discord \
+        then links the selected Albion character: looked up in the configured guild roster first, then \
+        in Albion at large, so a character outside the guild can be linked too. The Discord \
         snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). \
         Email is stored as a placeholder until first login. Requires `users.create`.",
     security(("session_cookie" = ["users.create"])),
@@ -440,7 +441,7 @@ pub async fn delete_user_role(
         (status = 200, description = "Member created and linked", body = ApiResponseUserProfile),
         (status = 400, description = "Validation error — missing Discord/Albion identity or member not in guild", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks users.create", body = ProblemDetails),
-        (status = 404, description = "Albion character is not on the guild roster", body = ProblemDetails),
+        (status = 404, description = "No Albion character exists for the given id or name", body = ProblemDetails),
         (status = 409, description = "Discord member or Albion character already provisioned", body = ProblemDetails)
     )
 )]
@@ -477,12 +478,13 @@ async fn create_user(
         crate::modules::albion::client::AlbionRegion::from_env_str(&albion_scope.region),
         albion_scope.guild_id.clone(),
     );
-    let roster = albion.get_configured_guild_roster().await?;
-    let player = crate::modules::albion::service::pick_roster_member(
-        &roster,
-        body.albion_player_id.as_deref(),
-        body.albion_player_name.as_deref(),
-    )?;
+    // Guild roster first, then any Albion player: a recruit may not be in the guild yet.
+    let player = albion
+        .resolve_link_target(
+            body.albion_player_id.as_deref(),
+            body.albion_player_name.as_deref(),
+        )
+        .await?;
 
     let created = UserService::new()
         .create_linked_member(
@@ -493,6 +495,7 @@ async fn create_user(
                 role: highest,
                 albion_player_id: player.id.clone(),
                 albion_player_name: player.name.clone(),
+                actor_user_id: Some(user.user_id),
             },
         )
         .await?;

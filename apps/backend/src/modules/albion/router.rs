@@ -4,7 +4,9 @@
 //! API passthroughs, and the self-service Discord <-> Albion player link.
 
 use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult};
-use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService, pick_exact_player};
+use super::service::{
+    AlbionLinkService, AlbionLinkStatus, AlbionService, LinkAudit, pick_exact_player,
+};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
@@ -131,9 +133,15 @@ pub struct SearchQuery {
     summary = "Global Albion Online search — any player/guild, not just the configured guild",
     description = "Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across \
         every guild, not just the one configured server-side. Returns two separate arrays — \
-        `guilds` and `players` — both possibly empty. Use this for general lookups (e.g. \"who is \
-        this enemy guild\"); use the roster endpoint specifically for the self-link participant \
-        picker. `q` requires at least 1 character.",
+        `guilds` and `players` — both possibly empty. `players` lists members of the configured \
+        guild first (`in_guild: true`, matched case- and diacritic-insensitively as a substring \
+        against the guild roster, which is cached for 60 s), followed by every other player Albion's \
+        global search returned (Albion itself caps that at 10 players per query and returns nothing \
+        for a query with leading/trailing spaces or accents, so the query is trimmed and \
+        accent-folded before it is forwarded). A player found by both sources appears once. If \
+        Albion's global search is down but the roster answered, the call still succeeds with \
+        `partial: true`; it only fails with 502 when neither source answered. This is the endpoint \
+        every player picker and link flow should use. `q` requires at least 1 character.",
     security(("session_cookie" = [])),
     params(SearchQuery),
     responses(
@@ -150,7 +158,9 @@ pub async fn search(
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ApiResponse<AlbionSearchResult>>, AppError> {
     let service = build_service(&cfg, &control, &tenant_id).await?;
-    Ok(Json(ApiResponse::new(service.search(&query.q).await?)))
+    Ok(Json(ApiResponse::new(
+        service.search_all_players(&query.q).await?,
+    )))
 }
 
 /// Generic passthrough to Albion Online's player lookup.
@@ -319,7 +329,16 @@ pub async fn link_player(
 
     let link_service = AlbionLinkService::new();
     let link = link_service
-        .create_link(&db, &user.id, &player.id, &player.name)
+        .create_link(
+            &db,
+            &user.id,
+            &player.id,
+            &player.name,
+            LinkAudit {
+                actor_user_id: Some(user.user_id),
+                via: "self",
+            },
+        )
         .await?;
 
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
@@ -366,7 +385,10 @@ pub struct RegisterByIgnRequest {
     summary = "Self-link by Albion IGN",
     description = "Searches Albion for `ign`, requires a unique exact name match, then performs the \
         same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. \
-        Guild-role assignment follows the same rule as `/link`.",
+        Guild-role assignment follows the same rule as `/link`. The name is matched \
+        case- and diacritic-insensitively against the guild roster and Albion's global search; \
+        when several players share the name, the single one in the configured guild wins, \
+        otherwise the call is rejected as ambiguous.",
     security(("session_cookie" = [])),
     request_body(content = RegisterByIgnRequest),
     responses(
@@ -388,7 +410,7 @@ pub async fn register_by_ign(
     Json(body): Json<RegisterByIgnRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     let service = build_service(&cfg, &control.0, &tenant.0).await?;
-    let search = service.search(&body.ign).await?;
+    let search = service.search_all_players(&body.ign).await?;
     let summary = pick_exact_player(&search.players, &body.ign)?;
     let player = service.get_player(&summary.id).await?;
 
@@ -402,7 +424,16 @@ pub async fn register_by_ign(
 
     let link_service = AlbionLinkService::new();
     let link = link_service
-        .create_link(&db, &user.id, &player.id, &player.name)
+        .create_link(
+            &db,
+            &user.id,
+            &player.id,
+            &player.name,
+            LinkAudit {
+                actor_user_id: Some(user.user_id),
+                via: "register",
+            },
+        )
         .await?;
 
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
@@ -464,7 +495,16 @@ pub async fn unlink_player(
     Extension(registry): Extension<TenantRegistry>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     let link_service = AlbionLinkService::new();
-    link_service.delete_link(&db, &user.id).await?;
+    link_service
+        .delete_link(
+            &db,
+            &user.id,
+            LinkAudit {
+                actor_user_id: Some(user.user_id),
+                via: "self",
+            },
+        )
+        .await?;
     super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, &user.id).await;
     super::alliance_fanout::after_successful_unlink(
         &control.0, &registry, &cfg, &user.id, &tenant.0,
@@ -526,7 +566,9 @@ pub async fn get_user_link_status(
     description = "Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always \
         succeeds in replacing any existing link: it deletes the target user's current link (if any) \
         and any other account's claim on the requested Albion character before creating the new link, \
-        all in a single transaction. The server resolves the selected player from Albion and persists \
+        all in a single transaction, and writes an `ALBION_RELINK` (or `ALBION_LINK`) audit row \
+        naming both replaced links; an account that lost its claim has its guild role revoked. \
+        The server resolves the selected player from Albion and persists \
         that authoritative name. After a successful link the backend best-effort sets the target \
         user's Discord guild nickname to the Albion character name.",
     security(("session_cookie" = ["roles.manage"])),
@@ -559,9 +601,14 @@ pub async fn admin_link_user_handler(
         .await?;
 
     let link_service = AlbionLinkService::new();
-    let link = link_service
-        .admin_link_user(&db, user_id, &player.id, &player.name)
+    let outcome = link_service
+        .admin_link_user(&db, user_id, &player.id, &player.name, user.user_id)
         .await?;
+    let link = outcome.link;
+    if let Some(displaced) = &outcome.displaced_discord_id {
+        // The previous claimant no longer owns a character, so they must not keep its guild role.
+        super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, displaced).await;
+    }
 
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &link.discord_id, &player.name).await;
 
@@ -601,7 +648,10 @@ pub async fn admin_unlink_user_handler(
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
     let link_service = AlbionLinkService::new();
-    if let Some(discord_id) = link_service.admin_unlink_user(&db, user_id).await? {
+    if let Some(discord_id) = link_service
+        .admin_unlink_user(&db, user_id, user.user_id)
+        .await?
+    {
         super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, &discord_id).await;
     }
     Ok(Json(ApiResponse::new(())))

@@ -246,7 +246,16 @@ pub async fn after_successful_unlink(
                 revoke_discord_role(cfg, &tenant_id, discord_user_id, &role_id).await;
             }
             if tenant_id != current_tenant_id {
-                let _ = links.delete_link(&ctx.db, discord_user_id).await;
+                let _ = links
+                    .delete_link(
+                        &ctx.db,
+                        discord_user_id,
+                        super::service::LinkAudit {
+                            actor_user_id: None,
+                            via: "fanout",
+                        },
+                    )
+                    .await;
             }
         }
     }
@@ -534,7 +543,16 @@ async fn ensure_user_and_link(
     let _user_id = ensure_user(db, user).await?;
     let links = AlbionLinkService::new();
     match links
-        .create_link(db, &user.id, player_id, player_name)
+        .create_link(
+            db,
+            &user.id,
+            player_id,
+            player_name,
+            super::service::LinkAudit {
+                actor_user_id: None,
+                via: "fanout",
+            },
+        )
         .await
     {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(()),

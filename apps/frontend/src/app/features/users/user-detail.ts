@@ -48,6 +48,7 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { matchesAlbionName, searchAlbionPlayers } from '../../shared/albion/albion-player-search';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -646,6 +647,11 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               <app-loading [label]="t('users.link.loadingRoster')" />
             </div>
           } @else {
+            @if (rosterSearching()) {
+              <p class="text-xs" style="color: var(--color-text-secondary)" role="status">
+                {{ t('common.loading') }}
+              </p>
+            }
             <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1">
               @for (player of filteredRoster(); track player.id) {
                 <button
@@ -660,6 +666,9 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                       {{ player.name }}
                     </p>
                     <p class="text-xs" style="color: var(--color-text-secondary)">
+                      @if (player.guild_name) {
+                        {{ player.guild_name }} ·
+                      }
                       ID: {{ player.id }}
                     </p>
                   </div>
@@ -747,6 +756,11 @@ export class UserDetailPage {
   protected readonly savingLink = signal(false);
   protected readonly rosterSearch = signal('');
   protected readonly rosterMembers = signal<AlbionGuildMember[]>([]);
+  /** Matches from the all-players search for the current text (guild members ranked first). */
+  protected readonly rosterMatches = signal<AlbionGuildMember[]>([]);
+  protected readonly rosterSearching = signal(false);
+  private rosterSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  private rosterSearchRequest = 0;
 
   private pendingBody: AdjustProgressionRequest | null = null;
 
@@ -789,12 +803,17 @@ export class UserDetailPage {
       .map((role) => ({ id: role.role_id, label: role.role_name })),
   );
 
+  /**
+   * Guild roster hits first (instant, case/diacritic-insensitive), then everyone else Albion
+   * knows about from the global search, so a character outside the guild can be linked too.
+   */
   protected readonly filteredRoster = computed(() => {
-    const q = this.rosterSearch().toLowerCase().trim();
+    const q = this.rosterSearch().trim();
     if (!q) return this.rosterMembers().slice(0, 30);
-    return this.rosterMembers()
-      .filter((m) => m.name.toLowerCase().includes(q))
-      .slice(0, 30);
+    const local = this.rosterMembers().filter((m) => matchesAlbionName(m.name, q));
+    const seen = new Set(local.map((m) => m.id));
+    const remote = this.rosterMatches().filter((m) => !seen.has(m.id));
+    return [...local, ...remote].slice(0, 40);
   });
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
@@ -1009,10 +1028,43 @@ export class UserDetailPage {
   protected closeLinkDialog(): void {
     this.linkDialogOpen.set(false);
     this.rosterSearch.set('');
+    this.rosterMatches.set([]);
+    clearTimeout(this.rosterSearchTimer);
   }
 
   protected onRosterSearchInput(event: Event): void {
-    this.rosterSearch.set((event.target as HTMLInputElement).value);
+    const text = (event.target as HTMLInputElement).value;
+    this.rosterSearch.set(text);
+    clearTimeout(this.rosterSearchTimer);
+    const query = text.trim();
+    const request = ++this.rosterSearchRequest;
+    if (!query) {
+      this.rosterMatches.set([]);
+      this.rosterSearching.set(false);
+      return;
+    }
+    this.rosterSearching.set(true);
+    this.rosterSearchTimer = setTimeout(() => {
+      void searchAlbionPlayers(this.api, query)
+        .then((players) => {
+          if (request === this.rosterSearchRequest) {
+            this.rosterMatches.set(
+              players.map((p) => ({ id: p.id, name: p.name, guild_name: p.guild_name })),
+            );
+          }
+        })
+        .catch(() => {
+          // The guild roster hits are still listed; a failed global search must not block them.
+          if (request === this.rosterSearchRequest) {
+            this.rosterMatches.set([]);
+          }
+        })
+        .finally(() => {
+          if (request === this.rosterSearchRequest) {
+            this.rosterSearching.set(false);
+          }
+        });
+    }, 250);
   }
 
   protected async confirmLink(player: AlbionGuildMember): Promise<void> {

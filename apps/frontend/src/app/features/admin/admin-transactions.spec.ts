@@ -56,6 +56,32 @@ async function createComponent(): Promise<{
   return { fixture, api };
 }
 
+describe('AdminTransactions recipient search', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('searches app members by name and keeps their numeric user id', async () => {
+    const { fixture, api } = await createComponent();
+    api.get.mockImplementation((path: string) =>
+      path === 'api/users'
+        ? of({ items: [{ id: 7, username: 'Gálvdon' }], total_items: 1 })
+        : of({ items: [], total_items: 0 }),
+    );
+    const cmp = fixture.componentInstance as unknown as {
+      openRosterSearch: (target: 'create-to') => void;
+      onRosterSearchFilter: (filters: { search: string; dateFrom: string; dateTo: string }) => Promise<void>;
+      onRosterSelect: (option: { id: string; title: string }) => void;
+      rosterSearchOptions: () => { id: string; title: string }[];
+      newToUserId: () => number | null;
+    };
+    cmp.openRosterSearch('create-to');
+    await cmp.onRosterSearchFilter({ search: ' galvdon ', dateFrom: '', dateTo: '' });
+    expect(api.get).toHaveBeenCalledWith('api/users', { username: 'galvdon', limit: 25 });
+    expect(cmp.rosterSearchOptions()).toEqual([{ id: '7', title: 'Gálvdon' }]);
+    cmp.onRosterSelect(cmp.rosterSearchOptions()[0]);
+    expect(cmp.newToUserId()).toBe(7);
+  });
+});
+
 describe('AdminTransactions required fields', () => {
   afterEach(() => TestBed.resetTestingModule());
 
