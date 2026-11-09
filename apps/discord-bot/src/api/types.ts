@@ -437,6 +437,10 @@ export interface AlbionLinkStatus {
 export interface AlbionPlayerSummary {
   id: string;
   name: string;
+  guild_id?: string | null;
+  guild_name?: string | null;
+  /** True for members of the tenant's configured guild; the backend lists them first. */
+  in_guild?: boolean;
 }
 
 export interface AlbionGuildSummary {
@@ -447,6 +451,8 @@ export interface AlbionGuildSummary {
 export interface AlbionSearchResult {
   players: AlbionPlayerSummary[];
   guilds: AlbionGuildSummary[];
+  /** True when Albion's own search was down and only the guild roster answered. */
+  partial?: boolean;
 }
 
 export interface AlbionPlayer {

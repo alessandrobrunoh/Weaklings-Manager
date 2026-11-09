@@ -1218,6 +1218,7 @@ export interface BattleDetail extends BattleSummary {
 export interface AlbionGuildMember {
   id: string;
   name: string;
+  guild_name?: string | null;
 }
 
 export interface AlbionPlayer {
@@ -1227,6 +1228,8 @@ export interface AlbionPlayer {
   guild_name: string | null;
   kill_fame: number;
   death_fame: number;
+  /** True for members of the configured guild; the search lists them first. */
+  in_guild?: boolean;
 }
 
 export interface AlbionGuild {
@@ -1239,6 +1242,8 @@ export interface AlbionGuild {
 export interface AlbionSearchResult {
   guilds: AlbionGuild[];
   players: AlbionPlayer[];
+  /** True when Albion's global search was unreachable and only the guild roster answered. */
+  partial?: boolean;
 }
 
 export interface AlbionAllianceChoice {

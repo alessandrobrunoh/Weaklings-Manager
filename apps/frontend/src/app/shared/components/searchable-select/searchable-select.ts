@@ -248,9 +248,16 @@ export class SearchableSelect {
   readonly required = input(false);
   readonly loading = input(false);
   readonly ariaLabel = input('');
+  /**
+   * Server-side search: the typed text is emitted through `searchChange` and the parent replaces
+   * `options` with the matches, so the list is shown unfiltered instead of being narrowed locally.
+   */
+  readonly remote = input(false);
 
   readonly valueChange = output<string>();
   readonly valuesChange = output<string[]>();
+  /** Raw search text, emitted on every keystroke (and with `''` when the list is opened). */
+  readonly searchChange = output<string>();
 
   protected readonly open = signal(false);
   protected readonly query = signal('');
@@ -280,7 +287,7 @@ export class SearchableSelect {
   protected readonly filtered = computed(() => {
     const query = this.query().trim().toLocaleLowerCase();
     const options = this.options();
-    if (!query) {
+    if (!query || this.remote()) {
       return options;
     }
     return options.filter((option) => {
@@ -331,13 +338,16 @@ export class SearchableSelect {
     if (this.open()) {
       this.query.set('');
       this.activeIndex.set(0);
+      this.searchChange.emit('');
       setTimeout(() => this.searchEl()?.nativeElement.focus(), 0);
     }
   }
 
   protected onQuery(event: Event): void {
-    this.query.set((event.target as HTMLInputElement).value);
+    const value = (event.target as HTMLInputElement).value;
+    this.query.set(value);
     this.activeIndex.set(0);
+    this.searchChange.emit(value);
   }
 
   protected isSelected(id: string): boolean {

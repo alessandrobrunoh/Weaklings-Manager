@@ -10,13 +10,63 @@ use super::client::{
 };
 use super::entities::albion_link;
 use crate::errors::AppError;
+use crate::modules::audit::service::AuditService;
 use crate::pagination::{PaginatedData, PaginationParams};
+use crate::ttl_cache::TtlCache;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
     TransactionTrait,
 };
 use serde::Serialize;
+use std::collections::HashSet;
+use std::sync::LazyLock;
+use std::time::Duration;
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 use utoipa::ToSchema;
+
+/// How many configured-guild roster hits `GET /albion/search` keeps. Together with Albion's own
+/// cap of 10 players per query this bounds the response at 30 players.
+const MAX_GUILD_HITS: usize = 20;
+
+/// How long a fetched guild roster is reused by the merged search. Short enough that a new
+/// recruit shows up within a minute, long enough that typing in a picker does not hit Albion
+/// once per keystroke.
+const ROSTER_TTL: Duration = Duration::from_secs(60);
+
+/// Process-wide roster cache, keyed by `(gameinfo base url, guild id)`. Services are built per
+/// request, so the cache has to outlive them.
+static ROSTER_CACHE: LazyLock<TtlCache<(String, String), Vec<AlbionGuildMember>>> =
+    LazyLock::new(|| TtlCache::new(64));
+
+/// Lower-cases `value`, strips diacritics and expands the few Latin letters that do not
+/// decompose (`ø`, `ł`, `ß`, ...), so `Gálvdon`, `GALVDON` and `galvdon` compare equal.
+#[must_use]
+pub fn fold_name(value: &str) -> String {
+    value
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .flat_map(char::to_lowercase)
+        .flat_map(|c| match c {
+            'ø' => vec!['o'],
+            'ł' => vec!['l'],
+            'đ' | 'ð' => vec!['d'],
+            'ß' => vec!['s', 's'],
+            'æ' => vec!['a', 'e'],
+            'œ' => vec!['o', 'e'],
+            'þ' => vec!['t', 'h'],
+            other => vec![other],
+        })
+        .collect()
+}
+
+/// Builds the term sent to Albion: whitespace-collapsed and diacritic-free. Albion answers an
+/// empty result for a query with leading/trailing spaces or accented letters, and `400` for an
+/// empty one, so those inputs would otherwise look like "player not found".
+#[must_use]
+pub fn normalize_query(query: &str) -> String {
+    fold_name(&query.split_whitespace().collect::<Vec<_>>().join(" "))
+}
 
 /// Service exposing Albion Online API operations, scoped to the operator's configured guild.
 pub struct AlbionService {
@@ -31,6 +81,27 @@ impl AlbionService {
             client: AlbionApiClient::new(region),
             guild_id,
         }
+    }
+
+    /// Builds a service around an arbitrary client (tests point it at a loopback stub).
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_client(client: AlbionApiClient, guild_id: String) -> Self {
+        Self { client, guild_id }
+    }
+
+    /// The configured guild's roster, reused for [`ROSTER_TTL`] across requests.
+    async fn cached_guild_roster(&self) -> Result<Vec<AlbionGuildMember>, AppError> {
+        if self.guild_id.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = (self.client.base_url().to_owned(), self.guild_id.clone());
+        ROSTER_CACHE
+            .get_or_fetch(key, || async {
+                let roster = self.client.get_guild_members(&self.guild_id).await?;
+                Ok((roster, ROSTER_TTL))
+            })
+            .await
     }
 
     /// Fetches the full roster of the configured guild.
@@ -49,8 +120,8 @@ impl AlbionService {
         let mut roster = self.get_configured_guild_roster().await?;
 
         if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
-            let needle = q.to_lowercase();
-            roster.retain(|member| member.name.to_lowercase().contains(&needle));
+            let needle = normalize_query(q);
+            roster.retain(|member| fold_name(&member.name).contains(&needle));
         }
 
         let total_items = roster.len() as u64;
@@ -78,13 +149,89 @@ impl AlbionService {
         ))
     }
 
+    /// Raw Albion global search with the query normalized (see [`normalize_query`]). Blank
+    /// queries return an empty result without calling Albion.
     pub async fn search(&self, query: &str) -> Result<AlbionSearchResult, AppError> {
-        self.client.search(query).await
+        let term = normalize_query(query);
+        if term.is_empty() {
+            return Ok(AlbionSearchResult::default());
+        }
+        self.client.search(&term).await
+    }
+
+    /// Player search that always covers every Albion player, not only the configured guild.
+    ///
+    /// Albion's global search returns at most 10 players per query, ordered by name, so a
+    /// common prefix can hide the character being looked for. The configured guild's roster is
+    /// therefore matched locally as well (case- and diacritic-insensitive, substring) and
+    /// ranked first, followed by everything the global search returned. A player present in
+    /// both sources appears once.
+    ///
+    /// If Albion's global search fails, the roster hits are still returned with
+    /// `partial = true`; the call only errors when neither source answered.
+    pub async fn search_all_players(&self, query: &str) -> Result<AlbionSearchResult, AppError> {
+        let term = normalize_query(query);
+        if term.is_empty() {
+            return Ok(AlbionSearchResult::default());
+        }
+        let (upstream, roster) =
+            tokio::join!(self.client.search(&term), self.cached_guild_roster());
+        merge_search(&term, &self.guild_id, upstream, roster)
+    }
+
+    /// Resolves the character to link from an Albion player id or an in-game name.
+    ///
+    /// The configured guild's roster is tried first, but a character outside the guild is
+    /// resolved through Albion itself (`/players/<id>` or the global search), so the result is
+    /// never limited to guild members. An id always wins over a name.
+    pub async fn resolve_link_target(
+        &self,
+        albion_player_id: Option<&str>,
+        albion_player_name: Option<&str>,
+    ) -> Result<AlbionGuildMember, AppError> {
+        let roster = self.cached_guild_roster().await.unwrap_or_else(|error| {
+            tracing::warn!(error = %error, "guild roster unavailable while resolving a link target");
+            Vec::new()
+        });
+        match pick_roster_member(&roster, albion_player_id, albion_player_name) {
+            Ok(member) => return Ok(member.clone()),
+            Err(AppError::NotFound(_)) => {}
+            Err(other) => return Err(other),
+        }
+        if let Some(id) = albion_player_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let player = self.client.get_player(id).await?;
+            return Ok(AlbionGuildMember {
+                id: player.id,
+                name: player.name,
+                guild_id: player.guild_id,
+                guild_name: player.guild_name,
+                kill_fame: player.kill_fame,
+                death_fame: player.death_fame,
+            });
+        }
+        let name = albion_player_name.unwrap_or_default();
+        let found = self.search_all_players(name).await?;
+        let hit = pick_exact_player(&found.players, name)?;
+        Ok(AlbionGuildMember {
+            id: hit.id.clone(),
+            name: hit.name.clone(),
+            guild_id: hit.guild_id.clone(),
+            guild_name: hit.guild_name.clone(),
+            kill_fame: hit.kill_fame,
+            death_fame: hit.death_fame,
+        })
     }
 
     /// Alliances inferred from guild search hits. The gameinfo search does not list alliances itself.
     pub async fn search_alliances(&self, query: &str) -> Result<Vec<(String, String)>, AppError> {
-        let found = self.client.search(query).await?;
+        let term = normalize_query(query);
+        if term.is_empty() {
+            return Ok(Vec::new());
+        }
+        let found = self.client.search(&term).await?;
         let mut alliances = std::collections::BTreeMap::<String, String>::new();
         for guild in found.guilds.into_iter().take(8) {
             if let (Some(id), Some(name)) = (guild.alliance_id, guild.alliance_name)
@@ -123,10 +270,11 @@ impl AlbionService {
     }
 }
 
-/// Picks the unique search hit whose name equals `ign` (trimmed, case-insensitive).
+/// Picks the search hit whose name equals `ign` (trimmed, case- and diacritic-insensitive).
 ///
-/// Empty input is validation; zero hits is not-found; two or more exact hits is validation
-/// so `/register` never guesses.
+/// Empty input is validation; zero hits is not-found. Albion names are not globally unique, so
+/// when two or more players share the name the one flagged `in_guild` wins if it is the only
+/// one; otherwise the call is a validation error so `/register` never guesses.
 pub fn pick_exact_player<'a>(
     players: &'a [AlbionPlayerSummary],
     ign: &str,
@@ -135,20 +283,113 @@ pub fn pick_exact_player<'a>(
     if needle.is_empty() {
         return Err(AppError::Validation("ign is required".to_owned()));
     }
-    let key = needle.to_lowercase();
+    let key = fold_name(needle);
     let matches: Vec<&AlbionPlayerSummary> = players
         .iter()
-        .filter(|player| player.name.to_lowercase() == key)
+        .filter(|player| fold_name(&player.name) == key)
         .collect();
     match matches.as_slice() {
         [] => Err(AppError::NotFound(format!(
             "No Albion player named {needle:?}"
         ))),
         [player] => Ok(*player),
-        _ => Err(AppError::Validation(format!(
-            "ign {needle:?} matches more than one player"
-        ))),
+        _ => {
+            let mut in_guild = matches.iter().filter(|player| player.in_guild);
+            match (in_guild.next(), in_guild.next()) {
+                (Some(player), None) => Ok(*player),
+                _ => Err(AppError::Validation(format!(
+                    "ign {needle:?} matches more than one player"
+                ))),
+            }
+        }
     }
+}
+
+/// Merges Albion's global search with the configured guild's roster (see
+/// [`AlbionService::search_all_players`]). `term` is already normalized.
+fn merge_search(
+    term: &str,
+    guild_id: &str,
+    upstream: Result<AlbionSearchResult, AppError>,
+    roster: Result<Vec<AlbionGuildMember>, AppError>,
+) -> Result<AlbionSearchResult, AppError> {
+    let configured_guild = guild_id.trim();
+    let roster = match roster {
+        Ok(roster) => roster,
+        Err(error) => {
+            tracing::warn!(error = %error, "guild roster unavailable for player search");
+            Vec::new()
+        }
+    };
+    let (mut result, partial) = match upstream {
+        Ok(result) => (result, false),
+        Err(error) if roster.is_empty() => return Err(error),
+        Err(error) => {
+            tracing::warn!(error = %error, "Albion global search failed; answering from the guild roster");
+            (AlbionSearchResult::default(), true)
+        }
+    };
+
+    let mut guild_hits: Vec<(u8, AlbionPlayerSummary)> = roster
+        .into_iter()
+        .filter_map(|member| {
+            let folded = fold_name(&member.name);
+            let rank = if folded == term {
+                0
+            } else if folded.starts_with(term) {
+                1
+            } else if folded.contains(term) {
+                2
+            } else {
+                return None;
+            };
+            Some((
+                rank,
+                AlbionPlayerSummary {
+                    id: member.id,
+                    name: member.name,
+                    guild_id: member
+                        .guild_id
+                        .or_else(|| Some(configured_guild.to_owned())),
+                    guild_name: member.guild_name,
+                    kill_fame: member.kill_fame,
+                    death_fame: member.death_fame,
+                    in_guild: true,
+                },
+            ))
+        })
+        .collect();
+    guild_hits.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| fold_name(&a.1.name).cmp(&fold_name(&b.1.name)))
+    });
+
+    let mut seen = HashSet::new();
+    let mut players = Vec::new();
+    for (_, player) in guild_hits.into_iter().take(MAX_GUILD_HITS) {
+        if seen.insert(player.id.clone()) {
+            players.push(player);
+        }
+    }
+    let mut others = Vec::new();
+    for mut player in std::mem::take(&mut result.players) {
+        if !seen.insert(player.id.clone()) {
+            continue;
+        }
+        player.in_guild =
+            !configured_guild.is_empty() && player.guild_id.as_deref() == Some(configured_guild);
+        // Guild members that Albion's own result carried (but the roster missed, e.g. a stale
+        // cache) still rank with the guild.
+        if player.in_guild {
+            players.push(player);
+        } else {
+            others.push(player);
+        }
+    }
+    players.extend(others);
+    result.players = players;
+    result.partial = partial;
+    Ok(result)
 }
 
 /// Picks a configured-guild roster row by Albion player id, or by unique exact name.
@@ -174,10 +415,10 @@ pub fn pick_roster_member<'a>(
         .ok_or_else(|| {
             AppError::Validation("albion_player_id or albion_player_name is required".to_owned())
         })?;
-    let key = name.to_lowercase();
+    let key = fold_name(name);
     let matches: Vec<&AlbionGuildMember> = roster
         .iter()
-        .filter(|member| member.name.to_lowercase() == key)
+        .filter(|member| fold_name(&member.name) == key)
         .collect();
     match matches.as_slice() {
         [] => Err(AppError::NotFound(format!(
@@ -238,7 +479,53 @@ impl From<Option<albion_link::Model>> for AlbionLinkStatus {
     }
 }
 
+/// Who caused a link change and through which door, recorded in the audit log.
+#[derive(Debug, Clone, Copy)]
+pub struct LinkAudit<'a> {
+    /// Internal `users.id` of the actor, `None` for system-driven copies (alliance fan-out).
+    pub actor_user_id: Option<i64>,
+    /// Entry point: `self` (`POST /albion/link`), `register` (`POST /albion/register`),
+    /// `admin` (`/albion/link/users/{id}`), `provision` (`POST /api/users`), `fanout`.
+    pub via: &'a str,
+}
+
+/// Audit action for a new link.
+pub const AUDIT_LINK: &str = "ALBION_LINK";
+/// Audit action for a removed link.
+pub const AUDIT_UNLINK: &str = "ALBION_UNLINK";
+/// Audit action for a manager replacing an existing claim (the target's old link, or another
+/// account's claim on the character, was removed in the same transaction).
+pub const AUDIT_RELINK: &str = "ALBION_RELINK";
+
+/// Audit `entity_type` for every link event.
+pub const AUDIT_ENTITY: &str = "ALBION_LINK";
+
+fn link_snapshot(link: &albion_link::Model) -> serde_json::Value {
+    serde_json::json!({
+        "discord_id": link.discord_id,
+        "albion_player_id": link.albion_player_id,
+        "albion_player_name": link.albion_player_name,
+    })
+}
+
+/// Result of [`AlbionLinkService::admin_link_user`].
+#[derive(Debug)]
+pub struct AdminLinkOutcome {
+    /// The new link.
+    pub link: albion_link::Model,
+    /// Discord id of another account whose claim on the character was removed, if any. The
+    /// caller should revoke that account's guild role (best effort).
+    pub displaced_discord_id: Option<String>,
+}
+
 /// Service managing the `albion_links` table backing the Discord <-> Albion player link feature.
+///
+/// Ownership rules (Albion offers no way to prove who owns a character, so these are the
+/// guards that need no external proof):
+/// * both `discord_id` and `albion_player_id` are `UNIQUE` in the database;
+/// * self-service linking answers `409` when the character is claimed by anyone else — it can
+///   only be taken over by a user holding `roles.manage` via [`Self::admin_link_user`];
+/// * every link, unlink and relink writes an `audit_logs` row in the same transaction.
 pub struct AlbionLinkService;
 
 impl AlbionLinkService {
@@ -259,21 +546,25 @@ impl AlbionLinkService {
             .await?)
     }
 
-    /// Links a Discord account to an Albion player.
+    /// Links a Discord account to an Albion player and records `ALBION_LINK` in the audit log.
     ///
     /// # Errors
     ///
     /// Returns `AppError::Conflict` if the Discord account already has a link, or if the
-    /// Albion player is already claimed by another Discord account.
+    /// Albion player is already claimed by another Discord account (also when a concurrent
+    /// request wins the race: the database unique constraints surface as `409` too).
     pub async fn create_link(
         &self,
         db: &DatabaseConnection,
         discord_id: &str,
         albion_player_id: &str,
         albion_player_name: &str,
+        audit: LinkAudit<'_>,
     ) -> Result<albion_link::Model, AppError> {
-        if self
-            .get_link_for_discord_user(db, discord_id)
+        let txn = db.begin().await?;
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(discord_id))
+            .one(&txn)
             .await?
             .is_some()
         {
@@ -282,11 +573,12 @@ impl AlbionLinkService {
             ));
         }
 
-        let existing_for_player = albion_link::Entity::find()
+        if albion_link::Entity::find()
             .filter(albion_link::Column::AlbionPlayerId.eq(albion_player_id))
-            .one(db)
-            .await?;
-        if existing_for_player.is_some() {
+            .one(&txn)
+            .await?
+            .is_some()
+        {
             return Err(AppError::Conflict(
                 "This Albion player is already linked to another Discord account".to_string(),
             ));
@@ -300,10 +592,21 @@ impl AlbionLinkService {
             ..Default::default()
         };
 
-        Ok(active.insert(db).await?)
+        let inserted = active.insert(&txn).await?;
+        AuditService::record_in(
+            &txn,
+            AUDIT_LINK,
+            Some(AUDIT_ENTITY),
+            Some(inserted.id),
+            audit.actor_user_id,
+            Some(serde_json::json!({ "via": audit.via, "link": link_snapshot(&inserted) })),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(inserted)
     }
 
-    /// Removes the link for the given Discord account.
+    /// Removes the link for the given Discord account and records `ALBION_UNLINK`.
     ///
     /// # Errors
     ///
@@ -312,17 +615,30 @@ impl AlbionLinkService {
         &self,
         db: &DatabaseConnection,
         discord_id: &str,
+        audit: LinkAudit<'_>,
     ) -> Result<(), AppError> {
-        let existing = self
-            .get_link_for_discord_user(db, discord_id)
+        let txn = db.begin().await?;
+        let existing = albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(discord_id))
+            .one(&txn)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound("No Albion link exists for this account".to_string())
             })?;
 
         albion_link::Entity::delete_by_id(existing.id)
-            .exec(db)
+            .exec(&txn)
             .await?;
+        AuditService::record_in(
+            &txn,
+            AUDIT_UNLINK,
+            Some(AUDIT_ENTITY),
+            Some(existing.id),
+            audit.actor_user_id,
+            Some(serde_json::json!({ "via": audit.via, "link": link_snapshot(&existing) })),
+        )
+        .await?;
+        txn.commit().await?;
         Ok(())
     }
 
@@ -344,14 +660,19 @@ impl AlbionLinkService {
         }
     }
 
-    /// Admin helper to link or re-link any user to an Albion player.
+    /// Manager helper to link or re-link any user to an Albion player. The caller must already
+    /// have checked `roles.manage`.
+    ///
+    /// Records `ALBION_LINK`, or `ALBION_RELINK` (with both the replaced links) when it had to
+    /// remove the target's previous link or another account's claim on the character.
     pub async fn admin_link_user(
         &self,
         db: &DatabaseConnection,
         user_id: i64,
         albion_player_id: &str,
         albion_player_name: &str,
-    ) -> Result<albion_link::Model, AppError> {
+        actor_user_id: i64,
+    ) -> Result<AdminLinkOutcome, AppError> {
         let user = crate::modules::users::entities::Entity::find_by_id(user_id)
             .one(db)
             .await?
@@ -367,22 +688,22 @@ impl AlbionLinkService {
         let txn = db.begin().await?;
 
         // If the user already has a link, delete it to allow re-assignment
-        if let Some(existing) = albion_link::Entity::find()
+        let previous = albion_link::Entity::find()
             .filter(albion_link::Column::DiscordId.eq(&discord_id))
             .one(&txn)
-            .await?
-        {
+            .await?;
+        if let Some(existing) = &previous {
             albion_link::Entity::delete_by_id(existing.id)
                 .exec(&txn)
                 .await?;
         }
 
         // If another account was linked to this character, remove that link as well
-        if let Some(other) = albion_link::Entity::find()
+        let displaced = albion_link::Entity::find()
             .filter(albion_link::Column::AlbionPlayerId.eq(albion_player_id))
             .one(&txn)
-            .await?
-        {
+            .await?;
+        if let Some(other) = &displaced {
             albion_link::Entity::delete_by_id(other.id)
                 .exec(&txn)
                 .await?;
@@ -397,11 +718,38 @@ impl AlbionLinkService {
         };
 
         let inserted = active.insert(&txn).await?;
+        let action = if previous.is_some() || displaced.is_some() {
+            AUDIT_RELINK
+        } else {
+            AUDIT_LINK
+        };
+        AuditService::record_in(
+            &txn,
+            action,
+            Some(AUDIT_ENTITY),
+            Some(inserted.id),
+            Some(actor_user_id),
+            Some(serde_json::json!({
+                "via": "admin",
+                "target_user_id": user_id,
+                "link": link_snapshot(&inserted),
+                "replaced_target_link": previous.as_ref().map(link_snapshot),
+                "displaced_other_link": displaced.as_ref().map(link_snapshot),
+            })),
+        )
+        .await?;
         txn.commit().await?;
-        Ok(inserted)
+        let displaced_discord_id = displaced
+            .map(|other| other.discord_id)
+            .filter(|other| *other != inserted.discord_id);
+        Ok(AdminLinkOutcome {
+            link: inserted,
+            displaced_discord_id,
+        })
     }
 
-    /// Admin helper to unlink any user from their Albion player.
+    /// Manager helper to unlink any user from their Albion player (caller checked
+    /// `roles.manage`); records `ALBION_UNLINK`.
     ///
     /// Returns the unlinked user's Discord ID when a link was actually removed, so the caller can
     /// best-effort revoke the configured Discord guild role — `None` when the user has no Discord
@@ -410,6 +758,7 @@ impl AlbionLinkService {
         &self,
         db: &DatabaseConnection,
         user_id: i64,
+        actor_user_id: i64,
     ) -> Result<Option<String>, AppError> {
         let user = crate::modules::users::entities::Entity::find_by_id(user_id)
             .one(db)
@@ -420,14 +769,32 @@ impl AlbionLinkService {
             return Ok(None);
         };
 
-        if let Some(existing) = self.get_link_for_discord_user(db, &discord_id).await? {
-            albion_link::Entity::delete_by_id(existing.id)
-                .exec(db)
-                .await?;
-            return Ok(Some(discord_id));
-        }
-
-        Ok(None)
+        let txn = db.begin().await?;
+        let existing = albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(&discord_id))
+            .one(&txn)
+            .await?;
+        let Some(existing) = existing else {
+            return Ok(None);
+        };
+        albion_link::Entity::delete_by_id(existing.id)
+            .exec(&txn)
+            .await?;
+        AuditService::record_in(
+            &txn,
+            AUDIT_UNLINK,
+            Some(AUDIT_ENTITY),
+            Some(existing.id),
+            Some(actor_user_id),
+            Some(serde_json::json!({
+                "via": "admin",
+                "target_user_id": user_id,
+                "link": link_snapshot(&existing),
+            })),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(Some(discord_id))
     }
 }
 
@@ -442,6 +809,11 @@ mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
     use sea_orm::Database;
+
+    const SELF_AUDIT: LinkAudit<'static> = LinkAudit {
+        actor_user_id: None,
+        via: "self",
+    };
 
     async fn setup_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:")
@@ -467,7 +839,7 @@ mod tests {
         );
 
         let link = service
-            .create_link(&db, "discord_a", "player_1", "PlayerOne")
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
             .await
             .expect("Failed to create link");
         assert_eq!(link.albion_player_id, "player_1");
@@ -479,7 +851,7 @@ mod tests {
         assert!(fetched.is_some());
 
         service
-            .delete_link(&db, "discord_a")
+            .delete_link(&db, "discord_a", SELF_AUDIT)
             .await
             .expect("Failed to delete link");
         assert!(
@@ -497,12 +869,12 @@ mod tests {
         let service = AlbionLinkService::new();
 
         service
-            .create_link(&db, "discord_a", "player_1", "PlayerOne")
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
             .await
             .unwrap();
 
         let result = service
-            .create_link(&db, "discord_a", "player_2", "PlayerTwo")
+            .create_link(&db, "discord_a", "player_2", "PlayerTwo", SELF_AUDIT)
             .await;
         assert!(matches!(result, Err(AppError::Conflict(_))));
     }
@@ -513,12 +885,12 @@ mod tests {
         let service = AlbionLinkService::new();
 
         service
-            .create_link(&db, "discord_a", "player_1", "PlayerOne")
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
             .await
             .unwrap();
 
         let result = service
-            .create_link(&db, "discord_b", "player_1", "PlayerOne")
+            .create_link(&db, "discord_b", "player_1", "PlayerOne", SELF_AUDIT)
             .await;
         assert!(matches!(result, Err(AppError::Conflict(_))));
     }
@@ -528,7 +900,7 @@ mod tests {
         let db = setup_db().await;
         let service = AlbionLinkService::new();
 
-        let result = service.delete_link(&db, "discord_a").await;
+        let result = service.delete_link(&db, "discord_a", SELF_AUDIT).await;
         assert!(matches!(result, Err(AppError::NotFound(_))));
     }
 
@@ -540,6 +912,7 @@ mod tests {
             guild_name: None,
             kill_fame: None,
             death_fame: None,
+            in_guild: false,
         }
     }
 
@@ -607,5 +980,575 @@ mod tests {
     fn pick_roster_member_requires_id_or_name() {
         let err = pick_roster_member(&[], None, Some("  ")).expect_err("blank");
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    // ------------------------------------------------------------------ name folding
+
+    #[test]
+    fn fold_name_ignores_case_and_diacritics() {
+        assert_eq!(fold_name("Gálvdon"), "galvdon");
+        assert_eq!(fold_name("GALVDON"), "galvdon");
+        assert_eq!(fold_name("Søren"), "soren");
+        assert_eq!(fold_name("Łukasz"), "lukasz");
+        assert_eq!(fold_name("Straße"), "strasse");
+    }
+
+    #[test]
+    fn normalize_query_trims_collapses_and_folds() {
+        assert_eq!(normalize_query("  Gálvdon "), "galvdon");
+        assert_eq!(normalize_query("a   b"), "a b");
+        assert_eq!(normalize_query("   "), "");
+    }
+
+    #[test]
+    fn pick_exact_player_matches_across_diacritics() {
+        let players = [summary("1", "Gálvdon")];
+        assert_eq!(pick_exact_player(&players, "galvdon").expect("hit").id, "1");
+    }
+
+    #[test]
+    fn pick_exact_player_prefers_the_single_guild_member_among_namesakes() {
+        let mut guild = summary("1", "Galvdon");
+        guild.in_guild = true;
+        let players = [summary("2", "Galvdon"), guild];
+        assert_eq!(
+            pick_exact_player(&players, "Galvdon").expect("guild").id,
+            "1"
+        );
+    }
+
+    #[test]
+    fn pick_exact_player_rejects_namesakes_when_the_guild_cannot_decide() {
+        let players = [summary("1", "Galvdon"), summary("2", "Galvdon")];
+        assert!(matches!(
+            pick_exact_player(&players, "Galvdon"),
+            Err(AppError::Validation(_))
+        ));
+        let mut a = summary("1", "Galvdon");
+        let mut b = summary("2", "Galvdon");
+        a.in_guild = true;
+        b.in_guild = true;
+        assert!(matches!(
+            pick_exact_player(&[a, b], "Galvdon"),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    // ------------------------------------------------------------------ merged search (pure)
+
+    fn upstream_ok(players: Vec<AlbionPlayerSummary>) -> Result<AlbionSearchResult, AppError> {
+        Ok(AlbionSearchResult {
+            guilds: Vec::new(),
+            players,
+            partial: false,
+        })
+    }
+
+    fn upstream_down() -> Result<AlbionSearchResult, AppError> {
+        Err(AppError::UpstreamService("down".to_owned()))
+    }
+
+    fn ids(result: &AlbionSearchResult) -> Vec<&str> {
+        result.players.iter().map(|p| p.id.as_str()).collect()
+    }
+
+    #[test]
+    fn merge_ranks_guild_members_first_and_keeps_everyone_else() {
+        let roster = vec![
+            roster_member("g2", "Kayden"),
+            roster_member("g1", "Kay"),
+            roster_member("g3", "Unrelated"),
+        ];
+        let outsider = summary("o1", "Kayla");
+        let result =
+            merge_search("kay", "guild", upstream_ok(vec![outsider]), Ok(roster)).expect("merged");
+        // Exact guild match, prefix guild match, then the non-guild player.
+        assert_eq!(ids(&result), ["g1", "g2", "o1"]);
+        assert!(result.players[0].in_guild && result.players[1].in_guild);
+        assert!(!result.players[2].in_guild);
+        assert!(!result.partial);
+    }
+
+    #[test]
+    fn merge_matches_roster_by_substring_and_diacritics() {
+        let roster = vec![roster_member("g1", "xGálvdonx")];
+        let result =
+            merge_search("galvdon", "guild", upstream_ok(vec![]), Ok(roster)).expect("merged");
+        assert_eq!(ids(&result), ["g1"]);
+    }
+
+    #[test]
+    fn merge_dedupes_a_player_present_in_both_sources() {
+        let roster = vec![roster_member("p1", "Kay")];
+        let mut upstream = summary("p1", "Kay");
+        upstream.guild_id = Some("guild".to_owned());
+        let result =
+            merge_search("kay", "guild", upstream_ok(vec![upstream]), Ok(roster)).expect("merged");
+        assert_eq!(ids(&result), ["p1"]);
+        assert!(result.players[0].in_guild);
+    }
+
+    #[test]
+    fn merge_flags_upstream_guild_members_missing_from_a_stale_roster() {
+        let mut upstream_member = summary("p2", "Kay2");
+        upstream_member.guild_id = Some("guild".to_owned());
+        let outsider = summary("o1", "Kay1");
+        let result = merge_search(
+            "kay",
+            "guild",
+            upstream_ok(vec![outsider, upstream_member]),
+            Ok(vec![]),
+        )
+        .expect("merged");
+        assert_eq!(ids(&result), ["p2", "o1"]);
+        assert!(result.players[0].in_guild);
+    }
+
+    #[test]
+    fn merge_degrades_to_the_roster_when_albion_search_is_down() {
+        let roster = vec![roster_member("g1", "Kay")];
+        let result = merge_search("kay", "guild", upstream_down(), Ok(roster)).expect("degraded");
+        assert_eq!(ids(&result), ["g1"]);
+        assert!(result.partial);
+    }
+
+    #[test]
+    fn merge_survives_a_failing_roster() {
+        let result = merge_search(
+            "kay",
+            "guild",
+            upstream_ok(vec![summary("o1", "Kay")]),
+            Err(AppError::UpstreamService("roster down".to_owned())),
+        )
+        .expect("upstream only");
+        assert_eq!(ids(&result), ["o1"]);
+        assert!(!result.partial);
+    }
+
+    #[test]
+    fn merge_errors_only_when_nothing_answered() {
+        let err = merge_search(
+            "kay",
+            "guild",
+            upstream_down(),
+            Err(AppError::UpstreamService("roster down".to_owned())),
+        )
+        .expect_err("both down");
+        assert!(matches!(err, AppError::UpstreamService(_)));
+        // A healthy but empty roster plus a dead search is also a failure, not "no players".
+        let err = merge_search("kay", "guild", upstream_down(), Ok(vec![])).expect_err("down");
+        assert!(matches!(err, AppError::UpstreamService(_)));
+    }
+
+    #[test]
+    fn merge_caps_guild_hits_so_global_results_survive() {
+        let roster: Vec<_> = (0..40)
+            .map(|n| roster_member(&format!("g{n:02}"), &format!("Kay{n:02}")))
+            .collect();
+        let result = merge_search(
+            "kay",
+            "guild",
+            upstream_ok(vec![summary("o1", "Kay")]),
+            Ok(roster),
+        )
+        .expect("merged");
+        assert_eq!(result.players.len(), MAX_GUILD_HITS + 1);
+        assert_eq!(result.players.last().map(|p| p.id.as_str()), Some("o1"));
+    }
+
+    // ------------------------------------------------------------------ against a stub gameinfo
+
+    use axum::{Json, Router, extract::Path, extract::State, http::StatusCode, routing::get};
+    use serde_json::{Value, json};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Stub {
+        search: Arc<Mutex<(u16, Value)>>,
+        members: Arc<Mutex<(u16, Value)>>,
+        players: Arc<Mutex<Vec<Value>>>,
+        requests: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl Stub {
+        fn requests(&self) -> Vec<String> {
+            self.requests.lock().unwrap().clone()
+        }
+    }
+
+    async fn serve_stub(
+        search: (u16, Value),
+        members: (u16, Value),
+        players: Vec<Value>,
+    ) -> (String, Stub) {
+        let stub = Stub {
+            search: Arc::new(Mutex::new(search)),
+            members: Arc::new(Mutex::new(members)),
+            players: Arc::new(Mutex::new(players)),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        };
+        async fn search_h(
+            State(s): State<Stub>,
+            axum::extract::RawQuery(q): axum::extract::RawQuery,
+        ) -> (StatusCode, Json<Value>) {
+            s.requests
+                .lock()
+                .unwrap()
+                .push(format!("search?{}", q.unwrap_or_default()));
+            let (code, body) = s.search.lock().unwrap().clone();
+            (StatusCode::from_u16(code).unwrap(), Json(body))
+        }
+        async fn members_h(
+            State(s): State<Stub>,
+            Path(id): Path<String>,
+        ) -> (StatusCode, Json<Value>) {
+            s.requests.lock().unwrap().push(format!("members/{id}"));
+            let (code, body) = s.members.lock().unwrap().clone();
+            (StatusCode::from_u16(code).unwrap(), Json(body))
+        }
+        async fn player_h(
+            State(s): State<Stub>,
+            Path(id): Path<String>,
+        ) -> (StatusCode, Json<Value>) {
+            s.requests.lock().unwrap().push(format!("players/{id}"));
+            let found = s
+                .players
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|p| p["Id"] == id)
+                .cloned();
+            match found {
+                Some(p) => (StatusCode::OK, Json(p)),
+                None => (StatusCode::NOT_FOUND, Json(json!({}))),
+            }
+        }
+        let app = Router::new()
+            .route("/search", get(search_h))
+            .route("/guilds/{id}/members", get(members_h))
+            .route("/players/{id}", get(player_h))
+            .with_state(stub.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let base = format!("http://{}", listener.local_addr().expect("addr"));
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (base, stub)
+    }
+
+    fn svc(base: String) -> AlbionService {
+        AlbionService::with_client(AlbionApiClient::with_base_url(base), "guild".to_owned())
+    }
+
+    fn up_player(id: &str, name: &str, guild: &str) -> Value {
+        json!({ "Id": id, "Name": name, "GuildId": guild, "GuildName": guild })
+    }
+
+    #[tokio::test]
+    async fn search_all_players_queries_albion_with_a_normalized_term_and_merges() {
+        let (base, stub) = serve_stub(
+            (
+                200,
+                json!({ "guilds": [], "players": [up_player("o1", "Galvdon", "")] }),
+            ),
+            (
+                200,
+                json!([{ "Id": "g1", "Name": "Galvdon", "GuildId": "guild" }]),
+            ),
+            vec![],
+        )
+        .await;
+        let found = svc(base)
+            .search_all_players("  Gálvdon ")
+            .await
+            .expect("search");
+        // Guild member first, then the guildless namesake; both visible.
+        assert_eq!(ids(&found), ["g1", "o1"]);
+        assert!(found.players[0].in_guild);
+        assert!(stub.requests().contains(&"search?q=galvdon".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn search_all_players_finds_non_guild_players_when_the_roster_is_empty() {
+        let (base, _stub) = serve_stub(
+            (
+                200,
+                json!({ "guilds": [], "players": [up_player("o1", "Outsider", "Elsewhere")] }),
+            ),
+            (200, json!([])),
+            vec![],
+        )
+        .await;
+        let found = svc(base)
+            .search_all_players("outsider")
+            .await
+            .expect("search");
+        assert_eq!(ids(&found), ["o1"]);
+        assert!(!found.players[0].in_guild);
+    }
+
+    #[tokio::test]
+    async fn search_all_players_degrades_when_albion_returns_an_error() {
+        let (base, _stub) = serve_stub(
+            (503, json!({})),
+            (
+                200,
+                json!([{ "Id": "g1", "Name": "Kay", "GuildId": "guild" }]),
+            ),
+            vec![],
+        )
+        .await;
+        let found = svc(base).search_all_players("kay").await.expect("degraded");
+        assert_eq!(ids(&found), ["g1"]);
+        assert!(found.partial);
+    }
+
+    #[tokio::test]
+    async fn search_all_players_tolerates_a_malformed_albion_body() {
+        let (base, _stub) = serve_stub(
+            (200, json!("not an object")),
+            (
+                200,
+                json!([{ "Id": "g1", "Name": "Kay", "GuildId": "guild" }]),
+            ),
+            vec![],
+        )
+        .await;
+        let found = svc(base).search_all_players("kay").await.expect("degraded");
+        assert!(found.partial);
+    }
+
+    #[tokio::test]
+    async fn search_all_players_blank_query_skips_the_network() {
+        let (base, stub) = serve_stub((200, json!({})), (200, json!([])), vec![]).await;
+        let found = svc(base).search_all_players("   ").await.expect("blank");
+        assert!(found.players.is_empty());
+        assert!(stub.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn resolve_link_target_falls_back_to_albion_for_a_non_guild_id() {
+        let (base, stub) = serve_stub(
+            (200, json!({ "guilds": [], "players": [] })),
+            (
+                200,
+                json!([{ "Id": "g1", "Name": "Kay", "GuildId": "guild" }]),
+            ),
+            vec![up_player("o1", "Outsider", "Elsewhere")],
+        )
+        .await;
+        let service = svc(base);
+        let outsider = service
+            .resolve_link_target(Some("o1"), None)
+            .await
+            .expect("outsider");
+        assert_eq!(outsider.name, "Outsider");
+        assert!(stub.requests().contains(&"players/o1".to_owned()));
+        let member = service
+            .resolve_link_target(Some("g1"), None)
+            .await
+            .expect("member");
+        assert_eq!(member.name, "Kay");
+        let missing = service.resolve_link_target(Some("nope"), None).await;
+        assert!(matches!(missing, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn resolve_link_target_by_name_searches_all_players() {
+        let (base, _stub) = serve_stub(
+            (
+                200,
+                json!({ "guilds": [], "players": [up_player("o1", "Outsider", "Elsewhere")] }),
+            ),
+            (200, json!([])),
+            vec![],
+        )
+        .await;
+        let found = svc(base)
+            .resolve_link_target(None, Some("outsider"))
+            .await
+            .expect("by name");
+        assert_eq!(found.id, "o1");
+    }
+
+    // ------------------------------------------------------------------ link ownership + audit
+
+    async fn audit_actions(db: &DatabaseConnection) -> Vec<String> {
+        use crate::modules::audit::entities as audit;
+        use sea_orm::QueryOrder;
+        audit::Entity::find()
+            .order_by_asc(audit::Column::Id)
+            .all(db)
+            .await
+            .expect("audit rows")
+            .into_iter()
+            .map(|row| row.action)
+            .collect()
+    }
+
+    async fn insert_user(db: &DatabaseConnection, username: &str, discord_id: &str) -> i64 {
+        crate::modules::users::entities::ActiveModel {
+            username: Set(username.to_owned()),
+            email: Set(format!("{username}@example.test")),
+            role: Set("User".to_owned()),
+            discord_id: Set(Some(discord_id.to_owned())),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert user")
+        .id
+    }
+
+    #[tokio::test]
+    async fn link_and_unlink_are_audited_with_the_actor() {
+        let db = setup_db().await;
+        let actor = insert_user(&db, "actor", "discord_a").await;
+        let service = AlbionLinkService::new();
+        let audit = LinkAudit {
+            actor_user_id: Some(actor),
+            via: "self",
+        };
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", audit)
+            .await
+            .expect("link");
+        service
+            .delete_link(&db, "discord_a", audit)
+            .await
+            .expect("unlink");
+        assert_eq!(audit_actions(&db).await, [AUDIT_LINK, AUDIT_UNLINK]);
+
+        use crate::modules::audit::entities as audit_rows;
+        let first = audit_rows::Entity::find().one(&db).await.unwrap().unwrap();
+        assert_eq!(first.user_id, Some(actor));
+        assert_eq!(
+            first.details.unwrap()["link"]["albion_player_id"],
+            "player_1"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_claim_leaves_no_link_and_no_audit_row() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
+            .await
+            .unwrap();
+        let hijack = service
+            .create_link(&db, "discord_b", "player_1", "PlayerOne", SELF_AUDIT)
+            .await;
+        assert!(matches!(hijack, Err(AppError::Conflict(_))));
+        assert!(
+            service
+                .get_link_for_discord_user(&db, "discord_b")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(audit_actions(&db).await, [AUDIT_LINK]);
+        let owner = service
+            .get_link_for_discord_user(&db, "discord_a")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner.albion_player_id, "player_1");
+    }
+
+    #[tokio::test]
+    async fn the_database_itself_rejects_a_second_claim_on_a_character() {
+        let db = setup_db().await;
+        let service = AlbionLinkService::new();
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
+            .await
+            .unwrap();
+        // Bypasses the service's pre-checks, as a concurrent request would.
+        let raced = albion_link::ActiveModel {
+            discord_id: Set("discord_b".to_owned()),
+            albion_player_id: Set("player_1".to_owned()),
+            albion_player_name: Set("PlayerOne".to_owned()),
+            linked_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await;
+        // `AppError::Database` is classified into a status when it becomes a response, which is
+        // where a unique violation turns into 409.
+        let error: AppError = raced.err().expect("unique constraint").into();
+        let status = axum::response::IntoResponse::into_response(error).status();
+        assert_eq!(status, axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn admin_relink_takes_over_a_claimed_character_and_audits_both_sides() {
+        let db = setup_db().await;
+        let manager = insert_user(&db, "manager", "discord_m").await;
+        let owner = insert_user(&db, "owner", "discord_a").await;
+        let rightful = insert_user(&db, "rightful", "discord_b").await;
+        let service = AlbionLinkService::new();
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne", SELF_AUDIT)
+            .await
+            .unwrap();
+        let _ = owner;
+
+        let outcome = service
+            .admin_link_user(&db, rightful, "player_1", "PlayerOne", manager)
+            .await
+            .expect("relink");
+        assert_eq!(outcome.link.discord_id, "discord_b");
+        assert_eq!(outcome.displaced_discord_id.as_deref(), Some("discord_a"));
+        assert!(
+            service
+                .get_link_for_discord_user(&db, "discord_a")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(audit_actions(&db).await, [AUDIT_LINK, AUDIT_RELINK]);
+
+        use crate::modules::audit::entities as audit_rows;
+        use sea_orm::QueryOrder;
+        let last = audit_rows::Entity::find()
+            .order_by_desc(audit_rows::Column::Id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(last.user_id, Some(manager));
+        let details = last.details.unwrap();
+        assert_eq!(details["displaced_other_link"]["discord_id"], "discord_a");
+        assert_eq!(details["target_user_id"], rightful);
+    }
+
+    #[tokio::test]
+    async fn admin_first_link_is_a_plain_link_and_unlink_is_audited() {
+        let db = setup_db().await;
+        let manager = insert_user(&db, "manager", "discord_m").await;
+        let target = insert_user(&db, "target", "discord_t").await;
+        let service = AlbionLinkService::new();
+        let outcome = service
+            .admin_link_user(&db, target, "player_9", "Nine", manager)
+            .await
+            .unwrap();
+        assert!(outcome.displaced_discord_id.is_none());
+        let removed = service
+            .admin_unlink_user(&db, target, manager)
+            .await
+            .unwrap();
+        assert_eq!(removed.as_deref(), Some("discord_t"));
+        // Unlinking an already-unlinked user is a silent no-op, not an audit row.
+        assert!(
+            service
+                .admin_unlink_user(&db, target, manager)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(audit_actions(&db).await, [AUDIT_LINK, AUDIT_UNLINK]);
     }
 }

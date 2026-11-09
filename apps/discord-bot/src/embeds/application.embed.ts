@@ -142,7 +142,7 @@ export function buildApplicationReopenedEmbed(
 
 /** Reports what the automatic Albion link did, inside the ticket itself. */
 export function buildApplicationLinkEmbed(
-  outcome: 'linked' | 'already-linked' | 'not-found' | 'failed',
+  outcome: 'linked' | 'already-linked' | 'not-found' | 'ambiguous' | 'failed',
   ingameName: string,
 ): APIEmbed {
   if (outcome === 'linked') {
@@ -166,6 +166,14 @@ export function buildApplicationLinkEmbed(
       'warning',
       'Personaggio non trovato',
       `Non ho trovato **${ingameName}** su Albion. L'application resta aperta: un manager può collegarti a mano.`,
+      'APPLICATIONS',
+    ).toJSON();
+  }
+  if (outcome === 'ambiguous') {
+    return createResponseEmbed(
+      'warning',
+      'Più personaggi con questo nome',
+      `Su Albion esistono più personaggi chiamati **${ingameName}** e non so quale sia il tuo. L'application resta aperta: un manager può collegarti a mano.`,
       'APPLICATIONS',
     ).toJSON();
   }

@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
@@ -154,6 +154,68 @@ describe('Users new member', () => {
       albion_player_id: 'p1',
       albion_player_name: 'Kay',
     });
+  });
+
+  it('searches every Albion player, not only the guild roster, and keeps the chosen name', async () => {
+    const baseline = apiGet.getMockImplementation() as (path: string) => unknown;
+    apiGet.mockImplementation((path: string) => {
+      if (path === 'api/albion/search') {
+        return of({
+          guilds: [],
+          players: [
+            { id: 'p1', name: 'Kay', guild_name: 'Weaklings', in_guild: true },
+            { id: 'o9', name: 'Kayla', guild_name: 'Elsewhere', in_guild: false },
+          ],
+        });
+      }
+      return baseline(path);
+    });
+    const cmp = fixture.componentInstance as unknown as {
+      openCreate: () => void;
+      onAlbionSearch: (text: string) => void;
+      albionOptions: () => { id: string; label: string; hint?: string }[];
+      selectedDiscordId: { set: (id: string) => void };
+      selectedAlbionId: { set: (id: string) => void };
+      createMember: (event: Event) => Promise<void>;
+    };
+    cmp.openCreate();
+    await fixture.whenStable();
+    expect(cmp.albionOptions().map((o) => o.id)).toEqual(['p1']);
+
+    cmp.onAlbionSearch('kay');
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    expect(apiGet).toHaveBeenCalledWith('api/albion/search', { q: 'kay' });
+    expect(cmp.albionOptions().map((o) => o.id)).toEqual(['p1', 'o9']);
+    expect(cmp.albionOptions()[1].hint).toBe('Elsewhere');
+
+    cmp.selectedDiscordId.set('111');
+    cmp.selectedAlbionId.set('o9');
+    cmp.onAlbionSearch('');
+    // The picked outsider stays selectable and named after the search is cleared.
+    expect(cmp.albionOptions().map((o) => o.id)).toEqual(['o9', 'p1']);
+    await cmp.createMember(new Event('submit'));
+    expect(apiPost).toHaveBeenCalledWith('api/users', {
+      discord_id: '111',
+      albion_player_id: 'o9',
+      albion_player_name: 'Kayla',
+    });
+  });
+
+  it('falls back to the guild roster when the global search fails', async () => {
+    const baseline = apiGet.getMockImplementation() as (path: string) => unknown;
+    apiGet.mockImplementation((path: string) =>
+      path === 'api/albion/search' ? throwError(() => new Error('down')) : baseline(path),
+    );
+    const cmp = fixture.componentInstance as unknown as {
+      openCreate: () => void;
+      onAlbionSearch: (text: string) => void;
+      albionOptions: () => { id: string }[];
+    };
+    cmp.openCreate();
+    await fixture.whenStable();
+    cmp.onAlbionSearch('kay');
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    expect(cmp.albionOptions().map((o) => o.id)).toEqual(['p1']);
   });
 
   it('marks both identity selectors as required and blocks an incomplete submission', async () => {

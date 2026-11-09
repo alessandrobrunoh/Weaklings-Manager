@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
@@ -11,6 +11,21 @@ import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { UserDetailPage } from './user-detail';
 
+function stubDialogApi(): void {
+  if (typeof HTMLDialogElement === 'undefined') {
+    return;
+  }
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+    Object.defineProperty(this, 'open', { configurable: true, get: () => true });
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    Object.defineProperty(this, 'open', { configurable: true, get: () => false });
+    this.dispatchEvent(new Event('close'));
+  };
+}
+
 describe('UserDetail Destiny Board', () => {
   let fixture: ComponentFixture<UserDetailPage>;
   let apiGet: ReturnType<typeof vi.fn>;
@@ -19,6 +34,7 @@ describe('UserDetail Destiny Board', () => {
   let hasPermission: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    stubDialogApi();
     apiGet = vi.fn().mockImplementation((path: string) => {
       if (path === 'api/users/42') {
         return of({ id: 42, username: 'Officer', email: 'o@x', role: 'Officer' });
@@ -161,5 +177,68 @@ describe('UserDetail Destiny Board', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(apiDelete).toHaveBeenCalledWith('api/users/42/roles/officer');
+  });
+
+  it('lets an officer link a character from outside the guild found through the global search', async () => {
+    const previous = apiGet.getMockImplementation() as (path: string) => unknown;
+    apiGet.mockImplementation((path: string, params?: Record<string, unknown>) => {
+      if (path === 'api/albion/guild/roster') {
+        return of({ items: [{ id: 'g1', name: 'Gálvdon' }], total_items: 1 });
+      }
+      if (path === 'api/albion/search') {
+        return of({
+          guilds: [],
+          players: [
+            { id: 'g1', name: 'Gálvdon', guild_name: 'Weaklings', in_guild: true },
+            { id: 'o1', name: 'Galvdon', guild_name: 'Elsewhere', in_guild: false },
+          ],
+          q: params?.['q'],
+        });
+      }
+      return previous(path);
+    });
+    const cmp = fixture.componentInstance as unknown as {
+      openLinkDialog: () => Promise<void>;
+      onRosterSearchInput: (event: Event) => void;
+      filteredRoster: () => { id: string; name: string }[];
+      confirmLink: (player: { id: string; name: string }) => Promise<void>;
+    };
+    await cmp.openLinkDialog();
+    const input = { target: { value: 'galv' } } as unknown as Event;
+    cmp.onRosterSearchInput(input);
+    // Roster hit shows immediately, diacritic-insensitively.
+    expect(cmp.filteredRoster().map((p) => p.id)).toEqual(['g1']);
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    expect(apiGet).toHaveBeenCalledWith('api/albion/search', { q: 'galv' });
+    // Non-guild namesake is listed after the guild member, once.
+    expect(cmp.filteredRoster().map((p) => p.id)).toEqual(['g1', 'o1']);
+
+    await cmp.confirmLink({ id: 'o1', name: 'Galvdon' });
+    expect(apiPost).toHaveBeenCalledWith('api/albion/link/users/42', {
+      albion_player_id: 'o1',
+      albion_player_name: 'Galvdon',
+    });
+  });
+
+  it('keeps the guild roster hits when the global search fails', async () => {
+    const previous = apiGet.getMockImplementation() as (path: string) => unknown;
+    apiGet.mockImplementation((path: string) => {
+      if (path === 'api/albion/guild/roster') {
+        return of({ items: [{ id: 'g1', name: 'Kay' }], total_items: 1 });
+      }
+      if (path === 'api/albion/search') {
+        return throwError(() => new Error('upstream down'));
+      }
+      return previous(path);
+    });
+    const cmp = fixture.componentInstance as unknown as {
+      openLinkDialog: () => Promise<void>;
+      onRosterSearchInput: (event: Event) => void;
+      filteredRoster: () => { id: string }[];
+    };
+    await cmp.openLinkDialog();
+    cmp.onRosterSearchInput({ target: { value: 'kay' } } as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    expect(cmp.filteredRoster().map((p) => p.id)).toEqual(['g1']);
   });
 });
