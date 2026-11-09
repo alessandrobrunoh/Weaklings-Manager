@@ -37,7 +37,8 @@ pub struct Config {
     ///
     /// When set, HTTP requests carrying the `X-Bot-Secret` header with this value are
     /// treated as authenticated bot requests and resolved to a local user via the
-    /// `X-Discord-Id` header. Leave unset to disable bot header auth entirely.
+    /// `X-Discord-Id` header. Leave unset (or blank) to disable bot header auth entirely;
+    /// always read it through [`Config::bot_secret`], which treats a blank value as unset.
     ///
     /// This is a platform-wide master key, not an ordinary API token: a request that
     /// presents it correctly but omits `X-Discord-Id` runs as `bot_system` with
@@ -202,6 +203,19 @@ impl Config {
         envy::from_env()
     }
 
+    /// The shared bot secret, or `None` when bot header auth is disabled.
+    ///
+    /// A blank value counts as unset. `envy` turns `BOT_API_SECRET=` (set but empty, which is
+    /// what `docker-compose` passes for an undefined `${BOT_API_SECRET}`) into `Some("")`, and
+    /// an empty `X-Bot-Secret:` header would then match it and run as `bot_system` superadmin.
+    /// Every bot-auth check must read the secret through this accessor, never the raw field.
+    #[must_use]
+    pub fn bot_secret(&self) -> Option<&str> {
+        self.bot_api_secret
+            .as_deref()
+            .filter(|secret| !secret.trim().is_empty())
+    }
+
     /// DSN used to open the control-plane pool.
     ///
     /// Falls back to [`Self::database_url`] so existing deployments keep a
@@ -348,6 +362,18 @@ mod tests {
         let mut cfg = stub();
         cfg.control_database_url = Some("   ".to_string());
         assert_eq!(cfg.control_plane_url(), "postgres://localhost/weaklings");
+    }
+
+    #[test]
+    fn bot_secret_treats_blank_as_unset() {
+        let mut cfg = stub();
+        assert_eq!(cfg.bot_secret(), None);
+        for blank in ["", "   ", "\t\n"] {
+            cfg.bot_api_secret = Some(blank.to_owned());
+            assert_eq!(cfg.bot_secret(), None, "{blank:?} must disable bot auth");
+        }
+        cfg.bot_api_secret = Some("real-secret".to_owned());
+        assert_eq!(cfg.bot_secret(), Some("real-secret"));
     }
 
     /// A stray `{cfg:?}` in a log line, panic message, or error wrapper must
