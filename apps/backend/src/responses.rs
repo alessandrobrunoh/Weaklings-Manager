@@ -148,6 +148,16 @@ pub struct ApiResponseAlbionLinkStatus {
     pub data: crate::modules::albion::service::AlbionLinkStatus,
 }
 
+/// `OpenAPI` schema wrapper for the list of pending Albion link requests.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseAlbionLinkRequests {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Open requests, oldest first.
+    pub data: Vec<crate::modules::albion::service::AlbionLinkRequestView>,
+}
+
 /// `OpenAPI` schema wrapper for Paginated `AlbionGuildMember` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedAlbionGuildMembers {

@@ -142,9 +142,9 @@ mod m20261103_000001_add_alliance_distribution_key;
 mod m20261105_000001_regear_self_report_unique;
 mod m20261106_000001_add_split_needs_resync;
 mod m20261106_000002_add_split_roster_locked;
+mod m20261106_000003_index_event_battles_albionbb_battle_id;
 mod m20261106_000003_users_member_lifecycle;
 mod m20261106_000004_users_provisioned_via_data_fix;
-mod m20261106_000003_index_event_battles_albionbb_battle_id;
 mod m20261107_000001_create_discord_delivery;
 mod m20261107_000001_create_sync_tables;
 mod m20261107_000002_add_event_mass_notified_at;
@@ -153,6 +153,7 @@ mod m20261107_000002_seed_sync_permissions;
 mod m20261107_000003_add_event_reminder_notified_at;
 mod m20261107_000004_backfill_event_discord_stamps;
 mod m20261109_000001_grant_comp_build_manage_to_editors;
+mod m20261109_000002_create_albion_link_requests;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -310,6 +311,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_000003_add_event_reminder_notified_at::Migration),
             Box::new(m20261107_000004_backfill_event_discord_stamps::Migration),
             Box::new(m20261109_000001_grant_comp_build_manage_to_editors::Migration),
+            Box::new(m20261109_000002_create_albion_link_requests::Migration),
         ]
     }
 }

@@ -5,14 +5,16 @@
 
 use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult};
 use super::service::{
-    AlbionLinkService, AlbionLinkStatus, AlbionService, LinkAudit, pick_exact_player,
+    AlbionLinkRequestView, AlbionLinkService, AlbionLinkStatus, AlbionService, LinkAudit,
+    pick_exact_player,
 };
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedAlbionGuildMember, PaginationParams};
 use crate::responses::{
-    ApiResponse, ApiResponseAlbionLinkStatus, ApiResponsePaginatedAlbionGuildMembers,
+    ApiResponse, ApiResponseAlbionLinkRequests, ApiResponseAlbionLinkStatus,
+    ApiResponsePaginatedAlbionGuildMembers,
 };
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 use axum::{
@@ -32,6 +34,15 @@ pub fn router() -> Router {
         .route("/link/me", get(get_link_status))
         .route("/link", post(link_player).delete(unlink_player))
         .route("/register", post(register_by_ign))
+        .route("/link/requests", get(list_link_requests))
+        .route(
+            "/link/requests/{request_id}/approve",
+            post(approve_link_request),
+        )
+        .route(
+            "/link/requests/{request_id}/reject",
+            post(reject_link_request),
+        )
         .route(
             "/link/users/{user_id}",
             get(get_user_link_status)
@@ -256,7 +267,15 @@ pub async fn get_link_status(
         &control.0, &registry, &cfg, &user, &tenant.0, &kind.0, &db,
     )
     .await?;
-    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(link))))
+    let status = match link {
+        Some(link) => AlbionLinkStatus::from(Some(link)),
+        None => {
+            AlbionLinkService::new()
+                .status_for_discord_user(&db, &user.id)
+                .await?
+        }
+    };
+    Ok(Json(ApiResponse::new(status)))
 }
 
 /// Request body for linking the current Discord account to an Albion player.
@@ -274,7 +293,134 @@ pub struct LinkPlayerRequest {
     pub _albion_player_name: String,
 }
 
-/// Links the current Discord user to any existing Albion player.
+/// Everything that must happen once a link really exists: nickname, Guild base role and the
+/// copy to paired alliance/guild tenants. All best effort — Discord failures never undo a link.
+///
+/// `account` is the linked account, which is *not* the caller when an officer approves a claim.
+#[allow(clippy::too_many_arguments)]
+async fn apply_link_effects(
+    db: &sea_orm::DatabaseConnection,
+    cfg: &Config,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    tenant: &CurrentTenantId,
+    kind: &CurrentTenantKind,
+    account: &UserContext,
+    player_id: &str,
+    player_name: &str,
+    player_guild_id: Option<&str>,
+) -> Result<(), AppError> {
+    super::discord_nick::sync_guild_nickname(cfg, &tenant.0, &account.id, player_name).await;
+    let configured_guild = crate::albion_scope::load_albion_scope(&control.0, &tenant.0)
+        .await?
+        .guild_id;
+    if kind.0 != "alliance"
+        && super::discord_guild_role::belongs_to_configured_guild(
+            player_guild_id,
+            &configured_guild,
+        )
+    {
+        super::discord_guild_role::assign_guild_role(db, cfg, &tenant.0, &account.id).await;
+    }
+
+    super::alliance_fanout::after_successful_link(
+        &control.0,
+        registry,
+        cfg,
+        account,
+        &tenant.0,
+        &kind.0,
+        player_id,
+        player_name,
+        player_guild_id,
+    )
+    .await;
+    Ok(())
+}
+
+/// The approval gate. A caller without `roles.manage` only files a claim — nothing is linked —
+/// and gets the pending status back; a manager gets `None` and links at once.
+async fn file_request_unless_manager(
+    user: &UserContext,
+    perms: &Permissions,
+    db: &sea_orm::DatabaseConnection,
+    player: &AlbionPlayer,
+    via: &'static str,
+) -> Result<Option<AlbionLinkStatus>, AppError> {
+    if user.has_permission(perms, Permission::RolesManage).await {
+        return Ok(None);
+    }
+    let request = AlbionLinkService::new()
+        .request_link(
+            db,
+            &user.id,
+            &player.id,
+            &player.name,
+            player.guild_name.as_deref(),
+            LinkAudit {
+                actor_user_id: Some(user.user_id),
+                via,
+            },
+        )
+        .await?;
+    Ok(Some(AlbionLinkStatus::pending(request)))
+}
+
+/// Shared tail of `POST /albion/link` and `POST /albion/register`.
+///
+/// A caller holding `roles.manage` links immediately. Everyone else only files a claim, because
+/// Albion has no way to prove who owns a character: nothing keyed on the character happens until
+/// an officer approves it.
+#[allow(clippy::too_many_arguments)]
+async fn claim_character(
+    user: &UserContext,
+    perms: &Permissions,
+    db: &sea_orm::DatabaseConnection,
+    cfg: &Config,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    tenant: &CurrentTenantId,
+    kind: &CurrentTenantKind,
+    player: &AlbionPlayer,
+    via: &'static str,
+) -> Result<AlbionLinkStatus, AppError> {
+    super::alliance_fanout::assert_register_allowed(
+        &control.0,
+        &tenant.0,
+        &kind.0,
+        player.guild_id.as_deref(),
+    )
+    .await?;
+
+    if let Some(pending) = file_request_unless_manager(user, perms, db, player, via).await? {
+        return Ok(pending);
+    }
+
+    let link_service = AlbionLinkService::new();
+    let audit = LinkAudit {
+        actor_user_id: Some(user.user_id),
+        via,
+    };
+    let link = link_service
+        .create_link(db, &user.id, &player.id, &player.name, audit)
+        .await?;
+    apply_link_effects(
+        db,
+        cfg,
+        control,
+        registry,
+        tenant,
+        kind,
+        user,
+        &player.id,
+        &player.name,
+        player.guild_id.as_deref(),
+    )
+    .await?;
+    Ok(AlbionLinkStatus::from(Some(link)))
+}
+
+/// Asks to link the current Discord user to an Albion player.
 ///
 /// # Errors
 ///
@@ -284,20 +430,24 @@ pub struct LinkPlayerRequest {
     post,
     path = "/api/albion/link",
     tag = "albion",
-    summary = "Self-link the caller's Discord account to one Albion character",
-    description = "Strictly 1:1 in both directions: one Discord account can hold at most one link, \
-        and one Albion character can be claimed by at most one Discord account — enforced by unique \
-        constraints in the database, not just application logic. The server resolves the selected \
-        player from Albion and persists that authoritative name, so callers may link characters in \
-        any guild or without a guild. There is no \"re-link\"/\"force\" option: `DELETE /albion/link` \
-        first, then call this again. After a successful link the backend best-effort sets the caller's \
-        Discord guild nickname to the Albion character name and assigns the configured Guild base \
-        role only when the live player profile belongs to the configured Albion guild. Discord \
-        failures never roll back the link.",
+    summary = "Ask to link the caller's Discord account to one Albion character",
+    description = "Albion offers no way to prove who owns a character, so a self-service link is a \
+        *request* until an officer approves it. The response is `200` with `pending: true` and \
+        `linked: false`: no guild role, nickname change, alliance copy or loot/regear attribution \
+        happens until `POST /albion/link/requests/{id}/approve`. Asking again replaces the \
+        account's open request. A caller holding `roles.manage` is linked immediately, with the \
+        effects below. Strictly 1:1 once linked: one Discord account holds at most one link, and one \
+        Albion character belongs to at most one account — enforced by unique constraints in the \
+        database. The server resolves the selected player from Albion and persists that \
+        authoritative name, so callers may claim characters in any guild or without a guild. On \
+        approval the backend best-effort sets the account's Discord guild nickname to the \
+        character name and assigns the configured Guild base role only when the live player \
+        profile belongs to the configured Albion guild. Discord failures never roll back the link. \
+        To withdraw a request, `DELETE /albion/link`.",
     security(("session_cookie" = [])),
     request_body(content = LinkPlayerRequest, description = "The Albion character to claim, as picked from GET /albion/search."),
     responses(
-        (status = 200, description = "Player linked successfully; linked is now true", body = ApiResponseAlbionLinkStatus),
+        (status = 200, description = "Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true)", body = ApiResponseAlbionLinkStatus),
         (status = 404, description = "No Albion player exists for the given albion_player_id", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 409, description = "Conflict - the caller's Discord account already has a link, or this Albion character is already linked to a different Discord account", body = ProblemDetails)
@@ -306,6 +456,7 @@ pub struct LinkPlayerRequest {
 #[allow(clippy::too_many_arguments)]
 pub async fn link_player(
     user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
@@ -318,56 +469,11 @@ pub async fn link_player(
         .await?
         .get_player(&body.albion_player_id)
         .await?;
-
-    super::alliance_fanout::assert_register_allowed(
-        &control.0,
-        &tenant.0,
-        &kind.0,
-        player.guild_id.as_deref(),
+    let status = claim_character(
+        &user, &perms, &db, &cfg, &control, &registry, &tenant, &kind, &player, "self",
     )
     .await?;
-
-    let link_service = AlbionLinkService::new();
-    let link = link_service
-        .create_link(
-            &db,
-            &user.id,
-            &player.id,
-            &player.name,
-            LinkAudit {
-                actor_user_id: Some(user.user_id),
-                via: "self",
-            },
-        )
-        .await?;
-
-    super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
-    let configured_guild = crate::albion_scope::load_albion_scope(&control.0, &tenant.0)
-        .await?
-        .guild_id;
-    if kind.0 != "alliance"
-        && super::discord_guild_role::belongs_to_configured_guild(
-            player.guild_id.as_deref(),
-            &configured_guild,
-        )
-    {
-        super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
-    }
-
-    super::alliance_fanout::after_successful_link(
-        &control.0,
-        &registry,
-        &cfg,
-        &user,
-        &tenant.0,
-        &kind.0,
-        &player.id,
-        &player.name,
-        player.guild_id.as_deref(),
-    )
-    .await;
-
-    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
+    Ok(Json(ApiResponse::new(status)))
 }
 
 /// Body for `POST /api/albion/register`.
@@ -377,22 +483,22 @@ pub struct RegisterByIgnRequest {
     pub ign: String,
 }
 
-/// Links the caller by Albion in-game name (unique exact match).
+/// Asks to link the caller by Albion in-game name (unique exact match).
 #[utoipa::path(
     post,
     path = "/api/albion/register",
     tag = "albion",
-    summary = "Self-link by Albion IGN",
-    description = "Searches Albion for `ign`, requires a unique exact name match, then performs the \
-        same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. \
-        Guild-role assignment follows the same rule as `/link`. The name is matched \
-        case- and diacritic-insensitively against the guild roster and Albion's global search; \
-        when several players share the name, the single one in the configured guild wins, \
-        otherwise the call is rejected as ambiguous.",
+    summary = "Ask to link by Albion IGN",
+    description = "Searches Albion for `ign`, requires a unique exact name match, then behaves \
+        exactly like `POST /api/albion/link`: a request an officer must approve (`pending: true`), \
+        or an immediate link for a caller with `roles.manage`. Zero hits are 404; two or more exact \
+        hits are 400. The name is matched case- and diacritic-insensitively against the guild \
+        roster and Albion's global search; when several players share the name, the single one in \
+        the configured guild wins, otherwise the call is rejected as ambiguous.",
     security(("session_cookie" = [])),
     request_body(content = RegisterByIgnRequest),
     responses(
-        (status = 200, description = "Player linked successfully", body = ApiResponseAlbionLinkStatus),
+        (status = 200, description = "Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true)", body = ApiResponseAlbionLinkStatus),
         (status = 400, description = "Empty or ambiguous IGN", body = ProblemDetails),
         (status = 404, description = "No player with that exact name", body = ProblemDetails),
         (status = 409, description = "Already linked", body = ProblemDetails)
@@ -401,6 +507,7 @@ pub struct RegisterByIgnRequest {
 #[allow(clippy::too_many_arguments)]
 pub async fn register_by_ign(
     user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
@@ -413,56 +520,11 @@ pub async fn register_by_ign(
     let search = service.search_all_players(&body.ign).await?;
     let summary = pick_exact_player(&search.players, &body.ign)?;
     let player = service.get_player(&summary.id).await?;
-
-    super::alliance_fanout::assert_register_allowed(
-        &control.0,
-        &tenant.0,
-        &kind.0,
-        player.guild_id.as_deref(),
+    let status = claim_character(
+        &user, &perms, &db, &cfg, &control, &registry, &tenant, &kind, &player, "register",
     )
     .await?;
-
-    let link_service = AlbionLinkService::new();
-    let link = link_service
-        .create_link(
-            &db,
-            &user.id,
-            &player.id,
-            &player.name,
-            LinkAudit {
-                actor_user_id: Some(user.user_id),
-                via: "register",
-            },
-        )
-        .await?;
-
-    super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
-    let configured_guild = crate::albion_scope::load_albion_scope(&control.0, &tenant.0)
-        .await?
-        .guild_id;
-    if kind.0 != "alliance"
-        && super::discord_guild_role::belongs_to_configured_guild(
-            player.guild_id.as_deref(),
-            &configured_guild,
-        )
-    {
-        super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
-    }
-
-    super::alliance_fanout::after_successful_link(
-        &control.0,
-        &registry,
-        &cfg,
-        &user,
-        &tenant.0,
-        &kind.0,
-        &player.id,
-        &player.name,
-        player.guild_id.as_deref(),
-    )
-    .await;
-
-    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
+    Ok(Json(ApiResponse::new(status)))
 }
 
 /// Unlinks the current Discord user from their Albion player.
@@ -476,14 +538,15 @@ pub async fn register_by_ign(
     tag = "albion",
     summary = "Unlink the caller's Discord account from its Albion character",
     description = "No request body. Frees the Albion character up so it (or a different one) can be \
-        linked again, by this account or another. Not idempotent-by-design: calling this when \
-        there's no active link returns `404`, so a naive \"always call unlink then re-link\" client \
-        pattern must handle that case (or check `GET /albion/link/me` first).",
+        linked again, by this account or another. When the account has only an open request (not \
+        yet approved), this withdraws it. Not idempotent-by-design: calling this when there's \
+        neither a link nor a request returns `404`, so a naive \"always call unlink then re-link\" \
+        client pattern must handle that case (or check `GET /albion/link/me` first).",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Link removed successfully; data is null"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 404, description = "No active link exists for this account", body = ProblemDetails)
+        (status = 404, description = "No link and no open request exist for this account", body = ProblemDetails)
     )
 )]
 pub async fn unlink_player(
@@ -495,16 +558,24 @@ pub async fn unlink_player(
     Extension(registry): Extension<TenantRegistry>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     let link_service = AlbionLinkService::new();
-    link_service
-        .delete_link(
-            &db,
-            &user.id,
-            LinkAudit {
-                actor_user_id: Some(user.user_id),
-                via: "self",
-            },
-        )
-        .await?;
+    let audit = LinkAudit {
+        actor_user_id: Some(user.user_id),
+        via: "self",
+    };
+    if link_service
+        .get_link_for_discord_user(&db, &user.id)
+        .await?
+        .is_none()
+        && link_service
+            .get_request_for_discord_user(&db, &user.id)
+            .await?
+            .is_some()
+    {
+        // Nothing was linked yet, so there is no role or alliance copy to undo.
+        link_service.cancel_request(&db, &user.id, audit).await?;
+        return Ok(Json(ApiResponse::new(())));
+    }
+    link_service.delete_link(&db, &user.id, audit).await?;
     super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, &user.id).await;
     super::alliance_fanout::after_successful_unlink(
         &control.0, &registry, &cfg, &user.id, &tenant.0,
@@ -546,8 +617,9 @@ pub async fn get_user_link_status(
         user.require(&perms, Permission::RolesManage).await?;
     }
     let link_service = AlbionLinkService::new();
-    let link = link_service.get_link_for_user_id(&db, user_id).await?;
-    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(link))))
+    Ok(Json(ApiResponse::new(
+        link_service.status_for_user_id(&db, user_id).await?,
+    )))
 }
 
 /// Admin endpoint to link any user to an Albion player.
@@ -655,4 +727,251 @@ pub async fn admin_unlink_user_handler(
         super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, &discord_id).await;
     }
     Ok(Json(ApiResponse::new(())))
+}
+
+/// Lists the self-service link claims waiting for an officer.
+#[utoipa::path(
+    get,
+    path = "/api/albion/link/requests",
+    tag = "albion",
+    summary = "Officer: list pending Albion link requests",
+    description = "Requires `roles.manage`. Oldest first. `competing_requests` counts other open \
+        claims on the same character and `character_already_linked` warns that approving would \
+        fail with `409` until that link is removed.",
+    security(("session_cookie" = ["roles.manage"])),
+    responses(
+        (status = 200, description = "Open requests", body = ApiResponseAlbionLinkRequests),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires roles.manage", body = ProblemDetails)
+    )
+)]
+pub async fn list_link_requests(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<AlbionLinkRequestView>>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let requests = AlbionLinkService::new().list_requests(&db).await?;
+    Ok(Json(ApiResponse::new(requests)))
+}
+
+/// Approves a pending claim, turning it into a real link.
+#[utoipa::path(
+    post,
+    path = "/api/albion/link/requests/{request_id}/approve",
+    tag = "albion",
+    summary = "Officer: approve a pending Albion link request",
+    description = "Requires `roles.manage`. Creates the link, drops competing claims on the same \
+        character, then best-effort applies what the self-service link used to do at once: the \
+        Discord nickname, the Guild base role (only when the live character is in the configured \
+        Albion guild) and the copy to paired alliance/guild tenants. Never replaces an existing \
+        link: `409` if the account or the character got linked meanwhile (remove that link first). \
+        Audited as `ALBION_LINK` with `via: approval`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("request_id" = i64, Path, description = "Link request id")),
+    responses(
+        (status = 200, description = "Linked; the body is the requester's new link status", body = ApiResponseAlbionLinkStatus),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires roles.manage", body = ProblemDetails),
+        (status = 404, description = "The request no longer exists", body = ProblemDetails),
+        (status = 409, description = "The account or the character is already linked", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn approve_link_request(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Path(request_id): Path<i64>,
+) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let link_service = AlbionLinkService::new();
+
+    // Resolve the live character first: if Albion is down nothing has changed and the officer
+    // can simply retry. Its guild decides the role, and may differ from the one at request time.
+    let pending = link_service.get_request(&db, request_id).await?;
+    let player = build_service(&cfg, &control.0, &tenant.0)
+        .await?
+        .get_player(&pending.albion_player_id)
+        .await?;
+    super::alliance_fanout::assert_register_allowed(
+        &control.0,
+        &tenant.0,
+        &kind.0,
+        player.guild_id.as_deref(),
+    )
+    .await?;
+
+    let link = link_service
+        .approve_request(&db, request_id, user.user_id)
+        .await?;
+
+    let account = requester_context(&db, &link.discord_id).await?;
+    apply_link_effects(
+        &db,
+        &cfg,
+        &control,
+        &registry,
+        &tenant,
+        &kind,
+        &account,
+        &link.albion_player_id,
+        &link.albion_player_name,
+        player.guild_id.as_deref(),
+    )
+    .await?;
+    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
+}
+
+/// Rejects a pending claim.
+#[utoipa::path(
+    post,
+    path = "/api/albion/link/requests/{request_id}/reject",
+    tag = "albion",
+    summary = "Officer: reject a pending Albion link request",
+    description = "Requires `roles.manage`. Discards the claim; the account can ask again. Audited \
+        as `ALBION_LINK_REJECT`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("request_id" = i64, Path, description = "Link request id")),
+    responses(
+        (status = 200, description = "Rejected; data is null"),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires roles.manage", body = ProblemDetails),
+        (status = 404, description = "The request no longer exists", body = ProblemDetails)
+    )
+)]
+pub async fn reject_link_request(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(request_id): Path<i64>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    AlbionLinkService::new()
+        .reject_request(&db, request_id, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(())))
+}
+
+/// The requesting account as the alliance fan-out expects it: only the identity fields matter,
+/// the caller's roles do not (they belong to the officer, not to the requester).
+async fn requester_context(
+    db: &sea_orm::DatabaseConnection,
+    discord_id: &str,
+) -> Result<UserContext, AppError> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let row = crate::modules::users::entities::Entity::find()
+        .filter(crate::modules::users::entities::Column::DiscordId.eq(discord_id))
+        .one(db)
+        .await?;
+    Ok(UserContext {
+        id: discord_id.to_owned(),
+        username: row
+            .as_ref()
+            .map_or_else(|| discord_id.to_owned(), |u| u.username.clone()),
+        email: row.as_ref().map(|u| u.email.clone()),
+        avatar: None,
+        roles: Vec::new(),
+        highest_role: row.as_ref().map(|u| u.role.clone()).unwrap_or_default(),
+        user_id: row.as_ref().map_or(0, |u| u.id),
+        super_admin_id: None,
+        is_tenant_owner: false,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::migration::MigratorTrait;
+    use sea_orm::{Database, EntityTrait};
+
+    async fn setup_db() -> sea_orm::DatabaseConnection {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+        db
+    }
+
+    fn account(discord_id: &str, is_tenant_owner: bool) -> UserContext {
+        UserContext {
+            id: discord_id.to_owned(),
+            username: "someone".to_owned(),
+            email: None,
+            avatar: None,
+            roles: Vec::new(),
+            highest_role: "User".to_owned(),
+            user_id: 7,
+            super_admin_id: None,
+            is_tenant_owner,
+        }
+    }
+
+    fn player() -> AlbionPlayer {
+        AlbionPlayer {
+            id: "player_1".to_owned(),
+            name: "PlayerOne".to_owned(),
+            guild_id: Some("guild_1".to_owned()),
+            guild_name: Some("Weaklings".to_owned()),
+            kill_fame: None,
+            death_fame: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_member_without_roles_manage_only_files_a_request() {
+        let db = setup_db().await;
+        let perms = Permissions::new_empty();
+
+        let status = file_request_unless_manager(
+            &account("discord_a", false),
+            &perms,
+            &db,
+            &player(),
+            "self",
+        )
+        .await
+        .unwrap()
+        .expect("a plain member must not be linked at once");
+
+        assert!(status.pending && !status.linked);
+        assert_eq!(status.pending_albion_player_id.as_deref(), Some("player_1"));
+        // The claim must not reach `albion_links`, which loot, regears and splits read.
+        assert!(
+            crate::modules::albion::entities::albion_link::Entity::find()
+                .all(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_manager_skips_the_queue_and_files_nothing() {
+        let db = setup_db().await;
+        let perms = Permissions::new_empty();
+
+        let outcome = file_request_unless_manager(
+            &account("discord_m", true),
+            &perms,
+            &db,
+            &player(),
+            "self",
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.is_none(), "a manager links immediately");
+        assert!(
+            AlbionLinkService::new()
+                .list_requests(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

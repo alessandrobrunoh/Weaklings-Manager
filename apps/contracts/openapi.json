@@ -950,6 +950,74 @@
         ],
         "type": "object"
       },
+      "AlbionLinkRequestView": {
+        "description": "One open claim as an officer sees it.",
+        "properties": {
+          "albion_guild_name": {
+            "description": "The character's Albion guild when the claim was made, if it had one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "albion_player_id": {
+            "description": "The character being claimed.",
+            "type": "string"
+          },
+          "albion_player_name": {
+            "description": "The character's name when the claim was made.",
+            "type": "string"
+          },
+          "character_already_linked": {
+            "description": "`true` when the character is already linked to an account, so approving would fail with\n`409` until that link is removed.",
+            "type": "boolean"
+          },
+          "competing_requests": {
+            "description": "How many *other* open claims name the same character; the officer must pick the real owner.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "discord_id": {
+            "description": "Discord id of the account asking for the link.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Request id, as used by the approve/reject endpoints.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "requested_at": {
+            "description": "RFC 3339 timestamp.",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "Internal user id of that account, when it has a row in this tenant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "username": {
+            "description": "Username of that account, when it has a row in this tenant.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "discord_id",
+          "albion_player_id",
+          "albion_player_name",
+          "requested_at",
+          "competing_requests",
+          "character_already_linked"
+        ],
+        "type": "object"
+      },
       "AlbionLinkStatus": {
         "description": "The current Discord-to-Albion-player link status for a user, as returned by\n`GET /albion/link/me` and `POST /albion/link`.\n\nWhen `linked` is `false`, the other three fields are entirely absent from the JSON (not sent\nas `null`) — check `linked` first before reading them.",
         "example": {
@@ -986,10 +1054,39 @@
               "string",
               "null"
             ]
+          },
+          "pending": {
+            "description": "`true` while a self-service claim waits for an officer. A pending claim is **not** a link:\n`linked` stays `false` and nothing keyed on the character (guild role, loot, regears)\napplies until it is approved.",
+            "type": "boolean"
+          },
+          "pending_albion_player_id": {
+            "description": "Present only when `pending` is `true`: the character the account asked to link.",
+            "example": "aPngkjfLT2CGiZoWXLr8UQ",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending_albion_player_name": {
+            "description": "Present only when `pending` is `true`.",
+            "example": "Kay",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested_at": {
+            "description": "Present only when `pending` is `true`. RFC 3339 timestamp.",
+            "example": "2026-07-08T02:15:00.631376+00:00",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "linked"
+          "linked",
+          "pending"
         ],
         "type": "object"
       },
@@ -1495,6 +1592,28 @@
             "description": "The current market rows returned by Albion Online Data.",
             "items": {
               "$ref": "#/components/schemas/AlbionDataMarketPrice"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\".",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseAlbionLinkRequests": {
+        "description": "`OpenAPI` schema wrapper for the list of pending Albion link requests.",
+        "properties": {
+          "data": {
+            "description": "Open requests, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/AlbionLinkRequestView"
             },
             "type": "array"
           },
@@ -26938,7 +27057,7 @@
     },
     "/api/albion/link": {
       "delete": {
-        "description": "No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. Not idempotent-by-design: calling this when there's no active link returns `404`, so a naive \"always call unlink then re-link\" client pattern must handle that case (or check `GET /albion/link/me` first).",
+        "description": "No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. When the account has only an open request (not yet approved), this withdraws it. Not idempotent-by-design: calling this when there's neither a link nor a request returns `404`, so a naive \"always call unlink then re-link\" client pattern must handle that case (or check `GET /albion/link/me` first).",
         "operationId": "unlink_player",
         "responses": {
           "200": {
@@ -26962,7 +27081,7 @@
                 }
               }
             },
-            "description": "No active link exists for this account"
+            "description": "No link and no open request exist for this account"
           }
         },
         "security": [
@@ -26976,7 +27095,7 @@
         ]
       },
       "post": {
-        "description": "Strictly 1:1 in both directions: one Discord account can hold at most one link, and one Albion character can be claimed by at most one Discord account — enforced by unique constraints in the database, not just application logic. The server resolves the selected player from Albion and persists that authoritative name, so callers may link characters in any guild or without a guild. There is no \"re-link\"/\"force\" option: `DELETE /albion/link` first, then call this again. After a successful link the backend best-effort sets the caller's Discord guild nickname to the Albion character name and assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild. Discord failures never roll back the link.",
+        "description": "Albion offers no way to prove who owns a character, so a self-service link is a *request* until an officer approves it. The response is `200` with `pending: true` and `linked: false`: no guild role, nickname change, alliance copy or loot/regear attribution happens until `POST /albion/link/requests/{id}/approve`. Asking again replaces the account's open request. A caller holding `roles.manage` is linked immediately, with the effects below. Strictly 1:1 once linked: one Discord account holds at most one link, and one Albion character belongs to at most one account — enforced by unique constraints in the database. The server resolves the selected player from Albion and persists that authoritative name, so callers may claim characters in any guild or without a guild. On approval the backend best-effort sets the account's Discord guild nickname to the character name and assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild. Discord failures never roll back the link. To withdraw a request, `DELETE /albion/link`.",
         "operationId": "link_player",
         "requestBody": {
           "content": {
@@ -26998,7 +27117,7 @@
                 }
               }
             },
-            "description": "Player linked successfully; linked is now true"
+            "description": "Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true)"
           },
           "401": {
             "content": {
@@ -27036,7 +27155,7 @@
             "session_cookie": []
           }
         ],
-        "summary": "Self-link the caller's Discord account to one Albion character",
+        "summary": "Ask to link the caller's Discord account to one Albion character",
         "tags": [
           "albion"
         ]
@@ -27074,6 +27193,200 @@
           }
         ],
         "summary": "Check whether the caller's Discord account is linked to an Albion character",
+        "tags": [
+          "albion"
+        ]
+      }
+    },
+    "/api/albion/link/requests": {
+      "get": {
+        "description": "Requires `roles.manage`. Oldest first. `competing_requests` counts other open claims on the same character and `character_already_linked` warns that approving would fail with `409` until that link is removed.",
+        "operationId": "list_link_requests",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlbionLinkRequests"
+                }
+              }
+            },
+            "description": "Open requests"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - requires roles.manage"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "roles.manage"
+            ]
+          }
+        ],
+        "summary": "Officer: list pending Albion link requests",
+        "tags": [
+          "albion"
+        ]
+      }
+    },
+    "/api/albion/link/requests/{request_id}/approve": {
+      "post": {
+        "description": "Requires `roles.manage`. Creates the link, drops competing claims on the same character, then best-effort applies what the self-service link used to do at once: the Discord nickname, the Guild base role (only when the live character is in the configured Albion guild) and the copy to paired alliance/guild tenants. Never replaces an existing link: `409` if the account or the character got linked meanwhile (remove that link first). Audited as `ALBION_LINK` with `via: approval`.",
+        "operationId": "approve_link_request",
+        "parameters": [
+          {
+            "description": "Link request id",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlbionLinkStatus"
+                }
+              }
+            },
+            "description": "Linked; the body is the requester's new link status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - requires roles.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The request no longer exists"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The account or the character is already linked"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "roles.manage"
+            ]
+          }
+        ],
+        "summary": "Officer: approve a pending Albion link request",
+        "tags": [
+          "albion"
+        ]
+      }
+    },
+    "/api/albion/link/requests/{request_id}/reject": {
+      "post": {
+        "description": "Requires `roles.manage`. Discards the claim; the account can ask again. Audited as `ALBION_LINK_REJECT`.",
+        "operationId": "reject_link_request",
+        "parameters": [
+          {
+            "description": "Link request id",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rejected; data is null"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - requires roles.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The request no longer exists"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "roles.manage"
+            ]
+          }
+        ],
+        "summary": "Officer: reject a pending Albion link request",
         "tags": [
           "albion"
         ]
@@ -27370,7 +27683,7 @@
     },
     "/api/albion/register": {
       "post": {
-        "description": "Searches Albion for `ign`, requires a unique exact name match, then performs the same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. Guild-role assignment follows the same rule as `/link`. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.",
+        "description": "Searches Albion for `ign`, requires a unique exact name match, then behaves exactly like `POST /api/albion/link`: a request an officer must approve (`pending: true`), or an immediate link for a caller with `roles.manage`. Zero hits are 404; two or more exact hits are 400. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.",
         "operationId": "register_by_ign",
         "requestBody": {
           "content": {
@@ -27391,7 +27704,7 @@
                 }
               }
             },
-            "description": "Player linked successfully"
+            "description": "Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true)"
           },
           "400": {
             "content": {
@@ -27429,7 +27742,7 @@
             "session_cookie": []
           }
         ],
-        "summary": "Self-link by Albion IGN",
+        "summary": "Ask to link by Albion IGN",
         "tags": [
           "albion"
         ]
