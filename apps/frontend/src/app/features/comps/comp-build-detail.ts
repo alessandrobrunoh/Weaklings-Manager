@@ -74,6 +74,7 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { canChangeAuthored } from './comp-access';
 
 const SLOT_LABELS: Record<BuildSlot, string> = {
   weapon: 'equipment.slot.weapon',
@@ -170,7 +171,7 @@ const ITEM_TIERS = [
           <app-version-switcher
             [versions]="current.versions ?? []"
             [currentId]="current.id"
-            [canManage]="canManage()"
+            [canManage]="canVersion()"
             [busy]="saving()"
             [label]="t('comps.version')"
             [createLabel]="t('comps.newVersion')"
@@ -832,8 +833,20 @@ export class CompBuildDetailPage {
   /** Exposed for the Item Power breakdown template, which rounds figures inline. */
   protected readonly Math = Math;
 
-  protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.edit'));
-  protected readonly canDelete = computed(() => this.auth.hasPermission('comps.builds.delete'));
+  /** Edit and delete apply to builds the caller authored; `comps.builds.manage` covers anyone's. */
+  private canChange(own: string): boolean {
+    return canChangeAuthored(
+      this.build(),
+      this.auth.profile()?.user_id,
+      this.auth.hasPermission(own),
+      this.auth.hasPermission('comps.builds.manage'),
+    );
+  }
+
+  protected readonly canManage = computed(() => this.canChange('comps.builds.edit'));
+  protected readonly canDelete = computed(() => this.canChange('comps.builds.delete'));
+  /** A new version joins its author's group, so it follows the same author-or-manage rule. */
+  protected readonly canVersion = computed(() => this.canChange('comps.builds.create'));
   protected readonly isGuildTenant = computed(
     () => this.auth.profile()?.tenant_kind !== 'alliance',
   );

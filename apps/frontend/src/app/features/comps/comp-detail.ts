@@ -54,6 +54,7 @@ import type { AbilitySlotView } from '../../shared/data/albion-abilities';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { canChangeAuthored } from './comp-access';
 import { COMP_PARTY_SIZE, simulateCompParties, type CompPartyView } from './comp-parties';
 
 const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
@@ -174,7 +175,7 @@ interface BuildOptionGroup {
           <app-version-switcher
             [versions]="current.versions ?? []"
             [currentId]="current.id"
-            [canManage]="canManage()"
+            [canManage]="canVersion()"
             [busy]="saving()"
             [label]="t('comps.version')"
             [createLabel]="t('comps.newVersion')"
@@ -1554,8 +1555,20 @@ export class CompDetailPage {
   protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
-  protected readonly canManage = computed(() => this.auth.hasPermission('comps.comps.edit'));
-  protected readonly canDelete = computed(() => this.auth.hasPermission('comps.comps.delete'));
+  /** Edit and delete apply to comps the caller authored; `comps.comps.manage` covers anyone's. */
+  private canChange(own: string): boolean {
+    return canChangeAuthored(
+      this.comp(),
+      this.auth.profile()?.user_id,
+      this.auth.hasPermission(own),
+      this.auth.hasPermission('comps.comps.manage'),
+    );
+  }
+
+  protected readonly canManage = computed(() => this.canChange('comps.comps.edit'));
+  protected readonly canDelete = computed(() => this.canChange('comps.comps.delete'));
+  /** A new version joins its author's group, so it follows the same author-or-manage rule. */
+  protected readonly canVersion = computed(() => this.canChange('comps.comps.create'));
   protected readonly isGuildTenant = computed(
     () => this.auth.profile()?.tenant_kind !== 'alliance',
   );

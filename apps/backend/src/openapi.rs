@@ -906,8 +906,8 @@ Current permissions:
 | `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |
 | `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |
 | `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |
-| `comps.builds.manage`    | Admin, Officer    | build CRUD endpoints                       |
-| `comps.comps.manage`     | Admin, Officer    | comp CRUD endpoints                        |
+| `comps.builds.manage`    | Admin, Officer    | edit/delete/archive/version any build (create/edit/delete alone: own builds only) |
+| `comps.comps.manage`     | Admin, Officer    | edit/delete/archive/version any comp (create/edit/delete alone: own comps only) |
 
 A `403 Forbidden` (`ProblemDetails`) means the session is valid but the caller's roles don't
 grant the required permission.

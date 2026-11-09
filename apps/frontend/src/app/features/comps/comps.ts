@@ -86,6 +86,7 @@ import {
   flattenCompForest,
   type CompTreeNode,
 } from './comp-tree';
+import { canChangeAuthored } from './comp-access';
 
 const PAGE_SIZE = 10;
 const OPTIONS_LIMIT = 500;
@@ -660,7 +661,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                       <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
                         {{ t('common.open') }}
                       </a>
-                      @if (canArchiveComps()) {
+                      @if (canArchiveComp(item.comp)) {
                         @if (item.comp.archived_at) {
                           <button
                             type="button"
@@ -765,7 +766,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
               <a class="btn btn--tonal btn--sm" [routerLink]="['/builds', row.id]">{{
                 t('common.open')
               }}</a>
-              @if (canArchiveBuilds()) {
+              @if (canArchiveBuild(row)) {
                 @if (row.archived_at) {
                   <button
                     type="button"
@@ -1374,15 +1375,41 @@ export class Comps {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly canCreateComps = computed(() => this.auth.hasPermission('comps.comps.create'));
-  protected readonly canArchiveComps = computed(() =>
-    this.auth.hasPermission('comps.comps.delete'),
+  /** Whether the caller may archive any comp at all; per-row checks use `canArchiveComp`. */
+  protected readonly canArchiveComps = computed(
+    () =>
+      this.auth.hasPermission('comps.comps.delete') ||
+      this.auth.hasPermission('comps.comps.manage'),
   );
   protected readonly canCreateBuilds = computed(() =>
     this.auth.hasPermission('comps.builds.create'),
   );
-  protected readonly canArchiveBuilds = computed(() =>
-    this.auth.hasPermission('comps.builds.delete'),
+  /** Whether the caller may archive any build at all; per-row checks use `canArchiveBuild`. */
+  protected readonly canArchiveBuilds = computed(
+    () =>
+      this.auth.hasPermission('comps.builds.delete') ||
+      this.auth.hasPermission('comps.builds.manage'),
   );
+
+  /** Archiving follows author-or-manage: your own comp with `delete`, anyone's with `manage`. */
+  protected canArchiveComp(comp: { readonly created_by_id: number }): boolean {
+    return canChangeAuthored(
+      comp,
+      this.auth.profile()?.user_id,
+      this.auth.hasPermission('comps.comps.delete'),
+      this.auth.hasPermission('comps.comps.manage'),
+    );
+  }
+
+  /** Archiving follows author-or-manage: your own build with `delete`, anyone's with `manage`. */
+  protected canArchiveBuild(build: { readonly created_by_id: number }): boolean {
+    return canChangeAuthored(
+      build,
+      this.auth.profile()?.user_id,
+      this.auth.hasPermission('comps.builds.delete'),
+      this.auth.hasPermission('comps.builds.manage'),
+    );
+  }
   protected readonly canCreateCurrentCategory = computed(() =>
     this.categoryKind() === 'build'
       ? this.auth.hasPermission('comps.build_categories.create')

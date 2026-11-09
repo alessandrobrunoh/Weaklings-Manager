@@ -1766,7 +1766,7 @@ export const es: TranslationDict = {
   'admin.permissions.clearGroup': 'Ninguno',
   'admin.permissions.title': 'Permisos por rol',
   'admin.permissions.hint':
-    'Marca las capacidades de cada rol del gestional. La pertenencia sigue en Discord. Los cambios se aplican al instante.',
+    'Marca las capacidades de cada rol del gestional. La pertenencia sigue en Discord. Los cambios se aplican al instante. En comps y builds, editar y eliminar solo se aplican a lo que el miembro creó; manage cubre los de todos.',
   'admin.permissions.permission': 'Permiso',
   'admin.permissions.priority': 'prioridad',
   'admin.permissions.searchPlaceholder': 'Filtrar permisos...',

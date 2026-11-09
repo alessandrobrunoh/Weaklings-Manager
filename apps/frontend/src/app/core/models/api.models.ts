@@ -1404,6 +1404,8 @@ export interface BuildSummary {
   /** Version within the `(name, category)` group. Starts at 1. */
   version: number;
   category_name: string | null;
+  /** Internal id of the author; compare with `DiscordUserProfile.user_id`. */
+  created_by_id: number;
   created_by_username: string;
   updated_at: string;
   item_count: number;
@@ -1826,6 +1828,8 @@ export interface CompSummary {
   /** Version within the `(name, category)` group. Starts at 1. */
   version: number;
   category_name: string | null;
+  /** Internal id of the author; compare with `DiscordUserProfile.user_id`. */
+  created_by_id: number;
   created_by_username: string;
   created_at: string;
   build_count: number;
