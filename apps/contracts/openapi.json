@@ -46452,7 +46452,7 @@
     },
     "/api/utils/ocr": {
       "post": {
-        "description": "Generic, reusable OCR passthrough with no domain-specific logic. Accepts a single image as `multipart/form-data` (any field name — the first field carrying a non-empty file is used), forwards it to Mistral's OCR API as a base64 data URI, and returns both the raw concatenated text and it split into non-empty, trimmed lines. Consumers needing to match extracted lines against application data (e.g. the splits module matching Albion Online character names via `POST /splits/match-participants`) do that matching themselves against this endpoint's output — this endpoint has no knowledge of players, users, or splits.",
+        "description": "Generic, reusable OCR passthrough with no domain-specific logic. Accepts a single image as `multipart/form-data` (any field name — the first field carrying a non-empty file is used), forwards it to Mistral's OCR API as a base64 data URI, and returns both the raw concatenated text and it split into non-empty, trimmed lines. Consumers needing to match extracted lines against application data (e.g. the splits module matching Albion Online character names via `POST /splits/match-participants`) do that matching themselves against this endpoint's output — this endpoint has no knowledge of players, users, or splits. Every call is forwarded to a paid third-party API, so it requires `splits.create` (the only feature that uses it is reading participant names from a loot-split screenshot).",
         "operationId": "ocr_image",
         "responses": {
           "200": {
@@ -46485,6 +46485,16 @@
             },
             "description": "Unauthorized - no active session"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - requires splits.create"
+          },
           "502": {
             "content": {
               "application/json": {
@@ -46498,7 +46508,9 @@
         },
         "security": [
           {
-            "session_cookie": []
+            "session_cookie": [
+              "splits.create"
+            ]
           }
         ],
         "summary": "OCR an uploaded image via Mistral AI",
