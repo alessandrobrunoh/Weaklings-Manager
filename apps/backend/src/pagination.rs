@@ -195,6 +195,22 @@ pub struct PaginatedTransactionView {
     /// The number of items per page.
     #[schema(example = 10)]
     pub limit: u64,
+    /// Member guilds left out of an alliance listing because their ledger was unreachable.
+    /// When non-empty the list and its totals are incomplete. Absent on complete results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<crate::modules::bank::models::UnavailableGuild>,
+}
+
+impl PaginatedTransactionView {
+    /// Marks this page as incomplete because the listed member guilds could not be read.
+    #[must_use]
+    pub fn with_unavailable_guilds(
+        mut self,
+        unavailable_guilds: Vec<crate::modules::bank::models::UnavailableGuild>,
+    ) -> Self {
+        self.unavailable_guilds = unavailable_guilds;
+        self
+    }
 }
 
 impl From<PaginatedData<TransactionView>> for PaginatedTransactionView {
@@ -205,6 +221,7 @@ impl From<PaginatedData<TransactionView>> for PaginatedTransactionView {
             total_pages: data.total_pages,
             current_page: data.current_page,
             limit: data.limit,
+            unavailable_guilds: Vec::new(),
         }
     }
 }

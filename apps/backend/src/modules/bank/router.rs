@@ -302,9 +302,7 @@ async fn list_transactions(
             &query.filters,
         )
         .await?;
-        return Ok(Json(ApiResponse::new(PaginatedTransactionView::from(
-            paginated,
-        ))));
+        return Ok(Json(ApiResponse::new(paginated)));
     }
 
     let target = if lists_across_users {

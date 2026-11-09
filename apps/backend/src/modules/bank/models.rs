@@ -130,6 +130,23 @@ pub struct BalanceSummary {
     /// Per-guild totals when this summary is an alliance aggregate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub guilds: Vec<GuildBalanceBreakdown>,
+    /// Member guilds whose ledger could not be read. When non-empty, the totals above are
+    /// **incomplete**: they leave these guilds out. Absent on complete and single-guild results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<UnavailableGuild>,
+}
+
+/// A member guild an alliance aggregate could not include because its ledger was unreachable.
+///
+/// Alliance totals are computed live from every active member guild. A guild that cannot be
+/// opened is left out rather than failing the whole request, so the response lists it here
+/// instead of presenting a partial total as if it were complete.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct UnavailableGuild {
+    /// Discord tenant id of the member guild.
+    pub guild_tenant_id: String,
+    /// Display name of the member guild.
+    pub guild_name: String,
 }
 
 /// One member guild's contribution to an alliance [`BalanceSummary`].
@@ -163,6 +180,10 @@ pub struct GuildBankSummary {
     /// Number of `withdrawn` transactions contributing to `paid_total`.
     #[schema(example = 87)]
     pub paid_count: u64,
+    /// Member guilds left out of an alliance aggregate because their ledger was unreachable.
+    /// When non-empty the totals are incomplete. Absent on complete results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<UnavailableGuild>,
 }
 
 /// One grouped money-flow line in the administrator bank report.
@@ -207,6 +228,10 @@ pub struct BankAnalyticsSummary {
     pub destinations: Vec<BankBreakdown>,
     /// Aggregation by transaction type.
     pub transaction_types: Vec<BankBreakdown>,
+    /// Member guilds left out of an alliance aggregate because their ledger was unreachable.
+    /// When non-empty the totals are incomplete. Absent on complete results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<UnavailableGuild>,
 }
 
 /// Filters that can be applied when listing transactions.
@@ -354,4 +379,61 @@ pub struct RejectWithdrawalRequest {
     /// Member guild whose ledger to mutate when the current tenant is an alliance.
     #[serde(default)]
     pub guild_tenant_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn balance(unavailable_guilds: Vec<UnavailableGuild>) -> BalanceSummary {
+        BalanceSummary {
+            user_id: 1,
+            pending_total: Decimal::ZERO,
+            pending_count: 0,
+            requested_total: Decimal::ZERO,
+            requested_count: 0,
+            guilds: Vec::new(),
+            unavailable_guilds,
+        }
+    }
+
+    #[test]
+    fn complete_aggregates_do_not_carry_the_coverage_field() {
+        let json = serde_json::to_value(balance(Vec::new())).unwrap();
+        assert!(json.get("unavailable_guilds").is_none());
+    }
+
+    #[test]
+    fn incomplete_aggregates_name_the_missing_guilds() {
+        let json = serde_json::to_value(balance(vec![UnavailableGuild {
+            guild_tenant_id: "guild-c".to_owned(),
+            guild_name: "Guild C".to_owned(),
+        }]))
+        .unwrap();
+        assert_eq!(
+            json["unavailable_guilds"],
+            serde_json::json!([{ "guild_tenant_id": "guild-c", "guild_name": "Guild C" }])
+        );
+    }
+
+    #[test]
+    fn paginated_transactions_report_the_coverage_gap() {
+        let page = crate::pagination::PaginatedTransactionView::from(
+            crate::pagination::PaginatedData::new(Vec::new(), 0, 0, 1, 10),
+        );
+        assert!(
+            serde_json::to_value(&page)
+                .unwrap()
+                .get("unavailable_guilds")
+                .is_none()
+        );
+        let page = page.with_unavailable_guilds(vec![UnavailableGuild {
+            guild_tenant_id: "guild-c".to_owned(),
+            guild_name: "Guild C".to_owned(),
+        }]);
+        assert_eq!(
+            serde_json::to_value(&page).unwrap()["unavailable_guilds"][0]["guild_tenant_id"],
+            "guild-c"
+        );
+    }
 }
