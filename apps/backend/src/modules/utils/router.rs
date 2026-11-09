@@ -10,7 +10,7 @@ use super::models::OcrResult;
 use super::service::OcrService;
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::UserContext;
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::responses::{ApiResponse, ApiResponseOcrResult};
 
 /// Creates the router for the utils module.
@@ -42,20 +42,27 @@ fn build_service(cfg: &Config) -> OcrService {
         Consumers needing to match extracted lines against application data (e.g. the splits \
         module matching Albion Online character names via \
         `POST /splits/match-participants`) do that matching themselves against this endpoint's \
-        output — this endpoint has no knowledge of players, users, or splits.",
-    security(("session_cookie" = [])),
+        output — this endpoint has no knowledge of players, users, or splits. Every call is \
+        forwarded to a paid third-party API, so it requires `splits.create` (the only feature \
+        that uses it is reading participant names from a loot-split screenshot).",
+    security(("session_cookie" = ["splits.create"])),
     responses(
         (status = 200, description = "OCR completed successfully", body = ApiResponseOcrResult),
         (status = 400, description = "Validation error - no image file was provided in the multipart body", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires splits.create", body = ProblemDetails),
         (status = 502, description = "Upstream Mistral OCR API error - the OCR request failed or timed out", body = ProblemDetails)
     )
 )]
 pub async fn ocr_image(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
     multipart: Multipart,
 ) -> Result<Json<ApiResponse<OcrResult>>, AppError> {
+    // Checked before the body is read: an unauthorized caller must not cost an upload parse or
+    // a paid OCR call.
+    user.require(&perms, Permission::SplitsCreate).await?;
     let (mime, bytes) = extract_supported_image(multipart).await?;
 
     let encoded = BASE64.encode(&bytes);
@@ -119,6 +126,37 @@ mod tests {
     use axum::http::{Request, header};
 
     const BOUNDARY: &str = "X-TEST-BOUNDARY";
+
+    fn member() -> UserContext {
+        UserContext {
+            id: "member".to_string(),
+            username: "Member".to_string(),
+            email: None,
+            avatar: None,
+            roles: vec![],
+            highest_role: "Member".to_string(),
+            user_id: 7,
+            super_admin_id: None,
+            is_tenant_owner: false,
+        }
+    }
+
+    /// OCR is a paid upstream call: a signed-in member without `splits.create` must be refused
+    /// before anything is parsed or forwarded.
+    #[tokio::test]
+    async fn ocr_requires_the_splits_create_permission() {
+        let multipart = multipart_with_one_field(Some("image/png"), b"png-bytes").await;
+        let err = ocr_image(
+            member(),
+            Extension(Permissions::new_empty()),
+            Extension(Config::for_tests()),
+            multipart,
+        )
+        .await
+        .err()
+        .expect("a member without splits.create must not reach the OCR provider");
+        assert!(matches!(err, AppError::Forbidden(_)), "got {err:?}");
+    }
 
     /// Builds a `Multipart` extractor over one field, the way a real
     /// `multipart/form-data` request would carry it.
