@@ -11,8 +11,10 @@ pub mod permissions;
 pub mod rbac;
 pub mod router;
 pub mod service;
+pub mod session_store;
 
 pub use permission_cache::Permissions;
 pub use permissions::Permission;
 pub use rbac::{BotDiscordUser, BotSecret, UserContext};
 pub use router::router;
+pub use session_store::SessionStore;

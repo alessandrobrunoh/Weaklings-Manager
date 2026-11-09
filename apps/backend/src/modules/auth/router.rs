@@ -7,6 +7,7 @@ use super::service::{
     AuthService, DiscordGuild, DiscordUserProfile, OauthPending, RegisterableGuild, TenantChoice,
     login_roles, matching_tenants,
 };
+use super::session_store::{SESSION_COOKIE, SessionCookie, SessionStore, require_session};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::admin::models::BrandColorsView;
@@ -52,6 +53,7 @@ pub fn router() -> Router {
         .route("/switch-tenant", post(switch_tenant))
         .route("/me", get(get_me))
         .route("/logout", post(logout))
+        .route("/logout-all", post(logout_all))
 }
 
 /// Optional `next` path after Discord OAuth (must be a relative path).
@@ -173,6 +175,7 @@ pub async fn discord_callback(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
     headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
 ) -> Result<(PrivateCookieJar, Redirect), AppError> {
@@ -216,9 +219,10 @@ pub async fn discord_callback(
         .as_deref()
         .is_some_and(|path| path.starts_with("/register-tenant"))
     {
+        let sid = start_session(&sessions, &headers, &key, &profile.id).await?;
         let private_jar = remove_oauth_cookies(with_registerable_guilds(
             PrivateCookieJar::from_headers(&headers, key)
-                .add(session_cookie(&profile)?)
+                .add(session_cookie(&profile, &sid)?)
                 .remove(pending_cookie_tombstone()),
             &user_guilds,
         )?);
@@ -244,9 +248,10 @@ pub async fn discord_callback(
             tenant,
         )
         .await?;
+        let sid = start_session(&sessions, &headers, &key, &profile.id).await?;
         let private_jar = remove_oauth_cookies(with_registerable_guilds(
             PrivateCookieJar::from_headers(&headers, key)
-                .add(session_cookie(&profile)?)
+                .add(session_cookie(&profile, &sid)?)
                 .remove(pending_cookie_tombstone()),
             &user_guilds,
         )?);
@@ -257,9 +262,10 @@ pub async fn discord_callback(
     }
 
     if matches.is_empty() {
+        let sid = start_session(&sessions, &headers, &key, &profile.id).await?;
         let private_jar = remove_oauth_cookies(with_registerable_guilds(
             PrivateCookieJar::from_headers(&headers, key)
-                .add(session_cookie(&profile)?)
+                .add(session_cookie(&profile, &sid)?)
                 .remove(pending_cookie_tombstone()),
             &user_guilds,
         )?);
@@ -331,6 +337,7 @@ pub async fn select_tenant(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
     Json(body): Json<SelectTenantBody>,
 ) -> Result<(PrivateCookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
     let pending = read_pending(&headers, key.clone())?;
@@ -352,8 +359,9 @@ pub async fn select_tenant(
         &tenant,
     )
     .await?;
+    let sid = start_session(&sessions, &headers, &key, &profile.id).await?;
     let jar = PrivateCookieJar::from_headers(&headers, key)
-        .add(session_cookie(&profile)?)
+        .add(session_cookie(&profile, &sid)?)
         .remove(pending_cookie_tombstone());
     Ok((jar, Json(ApiResponse::new(profile))))
 }
@@ -371,8 +379,9 @@ pub async fn list_session_tenants(
     Extension(admins): Extension<PlatformAdmins>,
     Extension(cfg): Extension<Config>,
     Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
 ) -> Result<Json<ApiResponse<Vec<TenantChoice>>>, AppError> {
-    let profile = read_session_profile(&headers, key)?;
+    let profile = require_session(&headers, &key, &sessions).await?.profile;
     let all = admins.contains(&profile.id);
     let mut tenants = crate::modules::platform::service::PlatformService::list_memberships(
         &control.0,
@@ -421,9 +430,11 @@ pub async fn switch_tenant(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
     Json(body): Json<SelectTenantBody>,
 ) -> Result<(PrivateCookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
-    let profile = read_session_profile(&headers, key.clone())?;
+    let session = require_session(&headers, &key, &sessions).await?;
+    let profile = session.profile;
     let allowed = admins.contains(&profile.id)
         || crate::modules::platform::service::PlatformService::is_member(
             &control.0,
@@ -448,7 +459,9 @@ pub async fn switch_tenant(
         .ok_or_else(|| AppError::NotFound(format!("tenant {} not found", body.tenant_id)))?;
     let profile =
         finalize_session(&cfg, &registry, &admins, &control.0, "", profile, &tenant).await?;
-    let jar = PrivateCookieJar::from_headers(&headers, key).add(session_cookie(&profile)?);
+    // Same server-side session: switching server re-scopes it, it is not a new login.
+    let jar =
+        PrivateCookieJar::from_headers(&headers, key).add(session_cookie(&profile, &session.sid)?);
     Ok((jar, Json(ApiResponse::new(profile))))
 }
 
@@ -463,8 +476,9 @@ pub async fn list_registerable_guilds(
     headers: HeaderMap,
     Extension(control): Extension<ControlDb>,
     Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
 ) -> Result<Json<ApiResponse<Vec<RegisterableGuild>>>, AppError> {
-    let _profile = read_session_profile(&headers, key.clone())?;
+    require_session(&headers, &key, &sessions).await?;
     let jar = PrivateCookieJar::from_headers(&headers, key);
     let stored = jar
         .get("registerable_guilds")
@@ -645,13 +659,20 @@ fn with_registerable_guilds(
     ))
 }
 
-fn read_session_profile(headers: &HeaderMap, key: Key) -> Result<DiscordUserProfile, AppError> {
-    let jar = PrivateCookieJar::from_headers(headers, key);
-    let cookie = jar
-        .get("session_user")
-        .ok_or_else(|| AppError::Unauthorized("No active session".to_owned()))?;
-    serde_json::from_str(cookie.value())
-        .map_err(|e| AppError::Unauthorized(format!("Invalid session cookie format: {e}")))
+/// Opens a server-side session for a completed login and returns its id.
+///
+/// A browser that logs in while still holding a session cookie gives that old session up, so
+/// the previous login cannot outlive the new one on a shared machine.
+async fn start_session(
+    sessions: &SessionStore,
+    headers: &HeaderMap,
+    key: &Key,
+    discord_id: &str,
+) -> Result<String, AppError> {
+    if let Some(previous) = SessionCookie::from_headers(headers, key) {
+        sessions.revoke(&previous.sid).await?;
+    }
+    sessions.create(discord_id).await
 }
 
 fn safe_next_path(raw: Option<&str>) -> Option<String> {
@@ -812,10 +833,13 @@ async fn finalize_session(
     Ok(profile)
 }
 
-fn session_cookie(profile: &DiscordUserProfile) -> Result<Cookie<'static>, AppError> {
-    let profile_json = serde_json::to_string(profile)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize session: {e}")))?;
-    Ok(Cookie::build(("session_user", profile_json))
+fn session_cookie(profile: &DiscordUserProfile, sid: &str) -> Result<Cookie<'static>, AppError> {
+    let profile_json = serde_json::to_string(&SessionCookie {
+        sid: sid.to_owned(),
+        profile: profile.clone(),
+    })
+    .map_err(|e| AppError::Internal(format!("Failed to serialize session: {e}")))?;
+    Ok(Cookie::build((SESSION_COOKIE, profile_json))
         .path("/")
         .http_only(true)
         .secure(true)
@@ -875,6 +899,7 @@ pub async fn get_me(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
 ) -> Result<
     (
         PrivateCookieJar,
@@ -883,13 +908,12 @@ pub async fn get_me(
     ),
     AppError,
 > {
+    let session = require_session(&headers, &key, &sessions).await?;
     let jar = PrivateCookieJar::from_headers(&headers, key);
-    let session_cookie = jar
-        .get("session_user")
-        .ok_or_else(|| AppError::Unauthorized("No active session".to_string()))?;
-
-    let mut profile: DiscordUserProfile = serde_json::from_str(session_cookie.value())
-        .map_err(|e| AppError::Unauthorized(format!("Invalid session cookie format: {e}")))?;
+    // Sliding lifetime: an active user keeps their session, written at most once a day.
+    sessions.renew(&session).await?;
+    let sid = session.sid;
+    let mut profile: DiscordUserProfile = session.profile;
 
     // The cookie caches the Discord username from login time; re-resolve here so a display
     // name change (e.g. linking an Albion Online character after logging in) shows up without
@@ -982,16 +1006,7 @@ pub async fn get_me(
         )
         .await;
 
-    let profile_json = serde_json::to_string(&profile)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize session: {e}")))?;
-    let jar = jar.add(
-        Cookie::build(("session_user", profile_json))
-            .path("/")
-            .http_only(true)
-            .secure(true)
-            .same_site(SameSite::Lax)
-            .max_age(time::Duration::days(7)),
-    );
+    let jar = jar.add(session_cookie(&profile, &sid)?);
 
     Ok((
         jar,
@@ -1022,26 +1037,14 @@ async fn persist_session_highest_role(
     Ok(())
 }
 
-/// Logs out the user by deleting the `session_user` cookie.
-#[utoipa::path(
-    post,
-    path = "/api/auth/logout",
-    tag = "auth",
-    summary = "Log out",
-    description = "Clears the `session_user` cookie. No request body. Always succeeds, even if there \
-        was no active session. After calling this, redirect the user to the landing/login page — \
-        `GET /api/auth/me` will now return `401`.",
-    responses(
-        (status = 200, description = "Logout succeeded (cookie cleared); data is null")
-    )
-)]
-pub async fn logout(jar: CookieJar) -> (CookieJar, Json<ApiResponse<()>>) {
+/// Expires the session cookie and the auth helper cookies in the browser.
+fn clear_auth_cookies(jar: CookieJar) -> CookieJar {
     // The removal cookie must match the attributes used when the session was created
     // (see `discord_callback`). Browsers only delete a cookie when path/domain/samesite
     // align — omitting path here would default to the request path (`/api/auth/logout`)
     // and leave the real cookie on `/` intact, so logout would silently no-op.
     let jar = jar.remove(
-        Cookie::build(("session_user", ""))
+        Cookie::build((SESSION_COOKIE, ""))
             .path("/")
             .http_only(true)
             .secure(true)
@@ -1049,14 +1052,62 @@ pub async fn logout(jar: CookieJar) -> (CookieJar, Json<ApiResponse<()>>) {
             .max_age(time::Duration::ZERO),
     );
     let jar = jar.remove(pending_cookie_tombstone());
-    let jar = jar.remove(
+    jar.remove(
         Cookie::build(("registerable_guilds", ""))
             .path("/api/auth")
             .http_only(true)
             .secure(true)
             .same_site(SameSite::Lax),
-    );
-    (jar, Json(ApiResponse::new(())))
+    )
+}
+
+/// Logs out: revokes this browser's session server-side and deletes the cookies.
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    tag = "auth",
+    summary = "Log out",
+    description = "Revokes the caller's session server-side (the cookie stops working immediately,         even if it was copied elsewhere) and clears the `session_user` cookie. No request body.         Succeeds when there was no active session. After calling this, redirect the user to the         landing/login page — `GET /api/auth/me` will now return `401`.",
+    responses(
+        (status = 200, description = "Logout succeeded (session revoked, cookie cleared); data is null")
+    )
+)]
+pub async fn logout(
+    headers: HeaderMap,
+    Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Json<ApiResponse<()>>), AppError> {
+    // Revoke on possession of a cookie that decrypts, even one whose record already
+    // expired: revoking is idempotent and needs no further proof. If the revocation itself
+    // fails the error is surfaced rather than reporting a logout that did not happen.
+    if let Some(cookie) = SessionCookie::from_headers(&headers, &key) {
+        sessions.revoke(&cookie.sid).await?;
+    }
+    Ok((clear_auth_cookies(jar), Json(ApiResponse::new(()))))
+}
+
+/// Logs out of every device: revokes all of the caller's sessions.
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout-all",
+    tag = "auth",
+    summary = "Log out everywhere",
+    description = "Revokes every session belonging to the caller's Discord account (this browser         and all others) and clears the `session_user` cookie here. Other accounts are not         affected. Requires an active session.",
+    responses(
+        (status = 200, description = "All sessions revoked, cookie cleared; data is null"),
+        (status = 401, description = "No active session", body = ProblemDetails)
+    )
+)]
+pub async fn logout_all(
+    headers: HeaderMap,
+    Extension(key): Extension<Key>,
+    Extension(sessions): Extension<SessionStore>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Json<ApiResponse<()>>), AppError> {
+    let session = require_session(&headers, &key, &sessions).await?;
+    sessions.revoke_all(&session.profile.id).await?;
+    Ok((clear_auth_cookies(jar), Json(ApiResponse::new(()))))
 }
 
 #[cfg(test)]
@@ -1247,7 +1298,7 @@ mod tests {
 
     #[test]
     fn session_cookie_is_secure() {
-        let cookie = session_cookie(&stub_profile()).expect("builds");
+        let cookie = session_cookie(&stub_profile(), "sid-1").expect("builds");
         assert_secure(&cookie);
     }
 
@@ -1279,7 +1330,15 @@ mod tests {
         );
         let incoming = CookieJar::from_headers(&headers);
 
-        let response = logout(incoming).await.into_response();
+        let response = logout(
+            headers,
+            Extension(Key::generate()),
+            Extension(crate::modules::auth::session_store::test_store().await),
+            incoming,
+        )
+        .await
+        .expect("logout")
+        .into_response();
         let set_cookie_headers: Vec<_> = response
             .headers()
             .get_all(axum::http::header::SET_COOKIE)
@@ -1303,6 +1362,161 @@ mod tests {
                 cookie.name()
             );
         }
+    }
+
+    fn stub_profile_json(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id, "username": "bob", "email": null, "avatar": null,
+            "roles": [], "highest_role": "User", "user_id": 1,
+        })
+    }
+
+    /// Request headers for a browser holding `sid` as `discord_id`.
+    fn browser(key: &Key, sid: &str, discord_id: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            crate::modules::auth::session_store::test_cookie_header(
+                key,
+                sid,
+                &stub_profile_json(discord_id),
+            )
+            .parse()
+            .expect("header value"),
+        );
+        headers
+    }
+
+    async fn is_live(store: &SessionStore, key: &Key, sid: &str, discord_id: &str) -> bool {
+        store
+            .authenticate(&browser(key, sid, discord_id), key)
+            .await
+            .expect("db")
+            .is_some()
+    }
+
+    #[test]
+    fn session_cookie_round_trips_the_sid_next_to_the_profile() {
+        let key = Key::generate();
+        let cookie = session_cookie(&stub_profile(), "sid-1").expect("builds");
+        let response = PrivateCookieJar::new(key.clone())
+            .add(cookie)
+            .into_response();
+        let pair = response.headers()[axum::http::header::SET_COOKIE]
+            .to_str()
+            .expect("ascii")
+            .split(';')
+            .next()
+            .expect("pair")
+            .to_owned();
+        let mut headers = HeaderMap::new();
+        headers.insert(axum::http::header::COOKIE, pair.parse().expect("header"));
+        let parsed = SessionCookie::from_headers(&headers, &key).expect("parses");
+        assert_eq!(parsed.sid, "sid-1");
+        assert_eq!(parsed.profile.id, "111");
+    }
+
+    #[tokio::test]
+    async fn logout_revokes_the_session_server_side() {
+        let (sessions, key) = (
+            crate::modules::auth::session_store::test_store().await,
+            Key::generate(),
+        );
+        let mine = sessions.create("111").await.expect("mine");
+        let other_device = sessions.create("111").await.expect("other device");
+        assert!(is_live(&sessions, &key, &mine, "111").await);
+
+        let headers = browser(&key, &mine, "111");
+        let jar = CookieJar::from_headers(&headers);
+        logout(
+            headers,
+            Extension(key.clone()),
+            Extension(sessions.clone()),
+            jar,
+        )
+        .await
+        .expect("logout");
+
+        // A copied cookie no longer works, but this user's other login is untouched.
+        assert!(!is_live(&sessions, &key, &mine, "111").await);
+        assert!(is_live(&sessions, &key, &other_device, "111").await);
+    }
+
+    #[tokio::test]
+    async fn logout_without_a_session_still_succeeds() {
+        let sessions = crate::modules::auth::session_store::test_store().await;
+        let result = logout(
+            HeaderMap::new(),
+            Extension(Key::generate()),
+            Extension(sessions),
+            CookieJar::new(),
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn logout_all_revokes_every_session_of_the_caller_and_nobody_elses() {
+        let (sessions, key) = (
+            crate::modules::auth::session_store::test_store().await,
+            Key::generate(),
+        );
+        let laptop = sessions.create("111").await.expect("laptop");
+        let phone = sessions.create("111").await.expect("phone");
+        let stranger = sessions.create("222").await.expect("stranger");
+
+        let headers = browser(&key, &laptop, "111");
+        let jar = CookieJar::from_headers(&headers);
+        logout_all(
+            headers,
+            Extension(key.clone()),
+            Extension(sessions.clone()),
+            jar,
+        )
+        .await
+        .expect("logout-all");
+
+        assert!(!is_live(&sessions, &key, &laptop, "111").await);
+        assert!(!is_live(&sessions, &key, &phone, "111").await);
+        assert!(is_live(&sessions, &key, &stranger, "222").await);
+    }
+
+    #[tokio::test]
+    async fn logout_all_requires_a_live_session() {
+        let (sessions, key) = (
+            crate::modules::auth::session_store::test_store().await,
+            Key::generate(),
+        );
+        let victim = sessions.create("111").await.expect("victim");
+        for headers in [HeaderMap::new(), browser(&key, "never-issued", "111")] {
+            let jar = CookieJar::from_headers(&headers);
+            let err = logout_all(
+                headers,
+                Extension(key.clone()),
+                Extension(sessions.clone()),
+                jar,
+            )
+            .await
+            .expect_err("no session");
+            assert!(matches!(err, AppError::Unauthorized(_)));
+        }
+        assert!(is_live(&sessions, &key, &victim, "111").await);
+    }
+
+    #[tokio::test]
+    async fn logging_in_again_gives_up_the_previous_session_of_that_browser() {
+        let (sessions, key) = (
+            crate::modules::auth::session_store::test_store().await,
+            Key::generate(),
+        );
+        let old = sessions.create("111").await.expect("old");
+        let headers = browser(&key, &old, "111");
+        let fresh = start_session(&sessions, &headers, &key, "111")
+            .await
+            .expect("new login");
+        assert_ne!(old, fresh);
+        assert!(!is_live(&sessions, &key, &old, "111").await);
+        assert!(is_live(&sessions, &key, &fresh, "111").await);
     }
 
     /// A forged `oauth_state` — right cookie name, attacker-chosen value, no

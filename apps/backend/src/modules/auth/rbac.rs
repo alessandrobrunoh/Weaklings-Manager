@@ -8,7 +8,7 @@
 
 use super::permission_cache::Permissions;
 use super::permissions::Permission;
-use super::service::DiscordUserProfile;
+use super::session_store::SessionStore;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::platform_admins::PlatformAdmins;
@@ -16,7 +16,7 @@ use axum::{
     extract::{FromRequestParts, OptionalFromRequestParts},
     http::request::Parts,
 };
-use axum_extra::extract::cookie::{Key, PrivateCookieJar};
+use axum_extra::extract::cookie::Key;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
@@ -99,7 +99,7 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // ── Path 1: session cookie (browser / frontend) ──────────────────────
-        if let Some(ctx) = try_from_session_cookie(parts).await {
+        if let Some(ctx) = try_from_session_cookie(parts).await? {
             return Ok(ctx);
         }
 
@@ -114,16 +114,27 @@ where
 
 /// Attempts to build a `UserContext` from the `session_user` cookie.
 ///
-/// Returns `None` if the cookie is absent (not an error — bot requests have no cookie), if the
-/// server has no `Key` configured, or if the cookie fails to decrypt/authenticate (tampered,
-/// forged, or signed with a different key) — we treat all of these as "no session" rather than
-/// hard-failing so bot auth can still succeed.
-async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
-    let key = parts.extensions.get::<Key>()?;
-    let jar = PrivateCookieJar::from_headers(&parts.headers, key.clone());
-    let session_cookie = jar.get("session_user")?;
-
-    let profile: DiscordUserProfile = serde_json::from_str(session_cookie.value()).ok()?;
+/// Returns `Ok(None)` if the cookie is absent (not an error — bot requests have no cookie), if
+/// the server has no `Key` or [`SessionStore`] configured, if the cookie fails to
+/// decrypt/authenticate (tampered, forged, or signed with a different key), or if its session id
+/// is missing, unknown, revoked or expired. All of these read as "no session" so bot auth can
+/// still succeed; a store that is missing fails closed.
+///
+/// # Errors
+///
+/// Returns `AppError::Database` when the session record cannot be read: that is an outage, not
+/// a logout, and must not be answered with a `401` the client would treat as one.
+async fn try_from_session_cookie(parts: &mut Parts) -> Result<Option<UserContext>, AppError> {
+    let (Some(key), Some(store)) = (
+        parts.extensions.get::<Key>(),
+        parts.extensions.get::<SessionStore>(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(session) = store.authenticate(&parts.headers, key).await? else {
+        return Ok(None);
+    };
+    let profile = session.profile;
 
     let super_admin_id = parts
         .extensions
@@ -156,7 +167,7 @@ async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         is_tenant_owner,
     };
     apply_live_guild_roles(parts, &mut ctx).await;
-    Some(ctx)
+    Ok(Some(ctx))
 }
 
 async fn tenant_owner_for_request(parts: &Parts, discord_id: &str) -> bool {
@@ -618,6 +629,7 @@ mod tests {
     use super::*;
     use axum::http::Request;
     use axum::response::IntoResponse;
+    use axum_extra::extract::cookie::PrivateCookieJar;
 
     #[tokio::test]
     async fn tenant_owner_bypasses_grantable_permissions_without_becoming_platform_admin() {
@@ -693,33 +705,35 @@ mod tests {
         assert!(admin.bypasses_priority());
     }
 
-    /// Encrypts `profile_json` into a `session_user` cookie the way `discord_callback`/`get_me`
-    /// do, and returns just the `name=value` pair as a browser would send it back on `Cookie`.
-    fn encrypt_session_cookie(key: &Key, profile_json: String) -> String {
-        let response = PrivateCookieJar::new(key.clone())
-            .add(("session_user", profile_json))
-            .into_response();
-        let set_cookie = response
-            .headers()
-            .get(axum::http::header::SET_COOKIE)
+    use crate::modules::auth::session_store::{test_cookie_header, test_store};
+
+    fn admin_profile() -> serde_json::Value {
+        serde_json::json!({
+            "id": "386488773351047168", "username": "admin_user", "email": "admin@example.com",
+            "avatar": null, "roles": ["Admin"], "highest_role": "Admin", "user_id": 0,
+        })
+    }
+
+    /// Request parts carrying a live session for `profile`, with its key and store attached.
+    async fn session_parts(profile: &serde_json::Value) -> (Parts, SessionStore, Key, String) {
+        let store = test_store().await;
+        let key = Key::generate();
+        let id = profile["id"].as_str().expect("id");
+        let sid = store.create(id).await.expect("create session");
+        let cookie = test_cookie_header(&key, &sid, profile);
+        let (mut parts, ()) = Request::builder()
+            .header("Cookie", cookie)
+            .body(())
             .unwrap()
-            .to_str()
-            .unwrap();
-        set_cookie.split(';').next().unwrap().to_string()
+            .into_parts();
+        parts.extensions.insert(key.clone());
+        parts.extensions.insert(store.clone());
+        (parts, store, key, sid)
     }
 
     #[tokio::test]
     async fn test_user_context_extraction_success() {
-        let profile_json = r#"{"id":"386488773351047168","username":"admin_user","email":"admin@example.com","avatar":null,"roles":["Admin"],"highest_role":"Admin","user_id":0}"#;
-        let key = Key::generate();
-        let cookie_str = encrypt_session_cookie(&key, profile_json.to_string());
-
-        let req = Request::builder()
-            .header("Cookie", cookie_str)
-            .body(())
-            .unwrap();
-        let (mut parts, ()) = req.into_parts();
-        parts.extensions.insert(key);
+        let (mut parts, ..) = session_parts(&admin_profile()).await;
 
         let context = UserContext::from_request_parts(&mut parts, &())
             .await
@@ -733,24 +747,88 @@ mod tests {
 
     #[tokio::test]
     async fn session_cookie_is_superadmin_when_listed_in_platform_admins() {
-        let profile_json = r#"{"id":"386488773351047168","username":"admin_user","email":"admin@example.com","avatar":null,"roles":["Admin"],"highest_role":"Admin","user_id":0}"#;
-        let key = Key::generate();
-        let cookie_str = encrypt_session_cookie(&key, profile_json.to_string());
+        let (mut parts, ..) = session_parts(&admin_profile()).await;
         let admins = crate::platform_admins::PlatformAdmins::new_empty();
         admins.insert_for_test("386488773351047168");
-
-        let req = Request::builder()
-            .header("Cookie", cookie_str)
-            .body(())
-            .unwrap();
-        let (mut parts, ()) = req.into_parts();
-        parts.extensions.insert(key);
         parts.extensions.insert(admins);
 
         let context = UserContext::from_request_parts(&mut parts, &())
             .await
             .expect("extract");
         assert!(context.is_superadmin());
+    }
+
+    #[tokio::test]
+    async fn revoked_session_is_rejected_by_the_extractor() {
+        let (mut parts, store, _, sid) = session_parts(&admin_profile()).await;
+        UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect("live session");
+        store.revoke(&sid).await.expect("revoke");
+        let err = UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect_err("revoked");
+        assert!(matches!(err, AppError::Unauthorized(_)));
+    }
+
+    #[tokio::test]
+    async fn unknown_and_sidless_cookies_are_rejected_by_the_extractor() {
+        let (mut parts, store, key, _) = session_parts(&admin_profile()).await;
+        let forged = test_cookie_header(&key, "never-issued", &admin_profile());
+        parts
+            .headers
+            .insert("Cookie", forged.parse().expect("header"));
+        assert!(matches!(
+            UserContext::from_request_parts(&mut parts, &()).await,
+            Err(AppError::Unauthorized(_))
+        ));
+
+        // A cookie minted before sessions were server-side: valid encryption, no `sid`.
+        let sidless = PrivateCookieJar::new(key.clone())
+            .add(("session_user", admin_profile().to_string()))
+            .into_response();
+        let pair = sidless.headers()[axum::http::header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        parts
+            .headers
+            .insert("Cookie", pair.parse().expect("header"));
+        assert!(matches!(
+            UserContext::from_request_parts(&mut parts, &()).await,
+            Err(AppError::Unauthorized(_))
+        ));
+        drop(store);
+    }
+
+    #[tokio::test]
+    async fn bot_header_auth_is_independent_of_the_session_store() {
+        let (mut parts, store, _, sid) = session_parts(&admin_profile()).await;
+        store.revoke(&sid).await.expect("revoke");
+        let mut config = crate::config::Config::for_tests();
+        config.bot_api_secret = Some("bot-secret".to_string());
+        parts.extensions.insert(config);
+        parts.headers.insert(
+            crate::tenant::BOT_SECRET_HEADER,
+            "bot-secret".parse().unwrap(),
+        );
+        let ctx = UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect("bot request authenticates despite a dead session cookie");
+        assert_eq!(ctx.id, "bot_system");
+    }
+
+    #[tokio::test]
+    async fn a_valid_cookie_without_a_session_store_fails_closed() {
+        let (mut parts, ..) = session_parts(&admin_profile()).await;
+        parts.extensions.remove::<SessionStore>();
+        assert!(matches!(
+            UserContext::from_request_parts(&mut parts, &()).await,
+            Err(AppError::Unauthorized(_))
+        ));
     }
 
     #[tokio::test]
@@ -787,18 +865,11 @@ mod tests {
         .id;
         assert_ne!(alice, bob);
 
-        let profile_json = format!(
-            r#"{{"id":"222","username":"bob","email":"bob@example.com","avatar":null,"roles":["User"],"highest_role":"User","user_id":{alice}}}"#
-        );
-        let key = Key::generate();
-        let cookie_str = encrypt_session_cookie(&key, profile_json);
-
-        let req = Request::builder()
-            .header("Cookie", cookie_str)
-            .body(())
-            .unwrap();
-        let (mut parts, ()) = req.into_parts();
-        parts.extensions.insert(key);
+        let (mut parts, ..) = session_parts(&serde_json::json!({
+            "id": "222", "username": "bob", "email": "bob@example.com", "avatar": null,
+            "roles": ["User"], "highest_role": "User", "user_id": alice,
+        }))
+        .await;
         parts.extensions.insert(db);
 
         let context = UserContext::from_request_parts(&mut parts, &())
@@ -947,6 +1018,7 @@ mod tests {
         let req = Request::builder().body(()).unwrap();
         let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(Key::generate());
+        parts.extensions.insert(test_store().await);
         let result = UserContext::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());
     }
@@ -965,6 +1037,7 @@ mod tests {
             .unwrap();
         let (mut parts, ()) = req.into_parts();
         parts.extensions.insert(Key::generate());
+        parts.extensions.insert(test_store().await);
 
         let result = UserContext::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());

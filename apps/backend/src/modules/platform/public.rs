@@ -590,12 +590,15 @@ where
             .get::<Key>()
             .cloned()
             .ok_or_else(|| AppError::Internal("session key missing".to_owned()))?;
-        let jar = PrivateCookieJar::from_headers(&parts.headers, key);
-        let cookie = jar
-            .get("session_user")
-            .ok_or_else(|| AppError::Unauthorized("No active session".to_owned()))?;
-        let profile: DiscordUserProfile = serde_json::from_str(cookie.value())
-            .map_err(|_| AppError::Unauthorized("Invalid session cookie format".to_owned()))?;
+        let store = parts
+            .extensions
+            .get::<crate::modules::auth::SessionStore>()
+            .cloned()
+            .ok_or_else(|| AppError::Internal("session store missing".to_owned()))?;
+        let profile =
+            crate::modules::auth::session_store::require_session(&parts.headers, &key, &store)
+                .await?
+                .profile;
         Ok(Self { profile })
     }
 }
