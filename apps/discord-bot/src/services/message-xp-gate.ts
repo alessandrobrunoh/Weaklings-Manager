@@ -14,6 +14,15 @@ interface MessageXpSettings {
 /** How long a fetched (or failed) settings answer is reused. */
 export const SETTINGS_TTL_MS = 60_000;
 
+/** Tracked authors above which expired cooldowns are swept out of the map. */
+export const COOLDOWN_SWEEP_THRESHOLD = 1_000;
+
+/** Hard ceiling on tracked authors per guild; the least recently awarded are dropped first. */
+export const MAX_TRACKED_AUTHORS = 20_000;
+
+/** How long an award is remembered while the guild's cooldown is not known (settings unfetched). */
+const UNKNOWN_COOLDOWN_RETENTION_MS = 3_600_000;
+
 interface CachedSettings {
   settings: MessageXpSettings | null;
   fetchedAt: number;
@@ -76,15 +85,25 @@ export function shouldSkipMessageAwardLocally(
  */
 export class MessageXpGate {
   private cachedSettings: CachedSettings | null = null;
+  /**
+   * Last award time per author, kept in least-recently-awarded-first order (see
+   * {@link recordAward}) so expired entries can be swept from the front.
+   */
   private readonly lastAwardedAt = new Map<string, number>();
 
   constructor(
     private readonly api: ApiClient,
     private readonly ttlMs = SETTINGS_TTL_MS,
+    private readonly clock: () => number = Date.now,
   ) {}
 
+  /** Number of authors whose last award is currently remembered. */
+  get trackedAuthors(): number {
+    return this.lastAwardedAt.size;
+  }
+
   private async settings(): Promise<MessageXpSettings | null> {
-    const now = Date.now();
+    const now = this.clock();
     if (this.cachedSettings && now - this.cachedSettings.fetchedAt < this.ttlMs) {
       return this.cachedSettings.settings;
     }
@@ -107,7 +126,7 @@ export class MessageXpGate {
    */
   async shouldAward(discordId: string, channelId: string, length: number): Promise<boolean> {
     const settings = await this.settings();
-    const now = Date.now();
+    const now = this.clock();
     const skip = shouldSkipMessageAwardLocally(
       settings,
       length,
@@ -120,7 +139,38 @@ export class MessageXpGate {
 
   /** Records a real `awarded: true` response so the next cooldown check has it. */
   recordAward(discordId: string): void {
-    this.lastAwardedAt.set(discordId, Date.now());
+    const now = this.clock();
+    // Delete first so a re-awarded author moves to the back: the map stays ordered by recency,
+    // which is what lets `sweep` stop at the first entry that is still inside its cooldown.
+    this.lastAwardedAt.delete(discordId);
+    this.lastAwardedAt.set(discordId, now);
+    if (this.lastAwardedAt.size > COOLDOWN_SWEEP_THRESHOLD) {
+      this.sweep(now);
+    }
+  }
+
+  /**
+   * Drops awards whose cooldown has already elapsed (they can no longer cause a skip, so keeping
+   * them only grows the map) and enforces {@link MAX_TRACKED_AUTHORS}. Forgetting an award only
+   * ever costs one extra backend call, never a wrong answer, so this is safe to be approximate.
+   */
+  private sweep(now: number): void {
+    const settings = this.cachedSettings?.settings;
+    const retentionMs = settings
+      ? settings.message_cooldown_secs * 1000
+      : UNKNOWN_COOLDOWN_RETENTION_MS;
+    for (const [discordId, awardedAt] of this.lastAwardedAt) {
+      if (now - awardedAt < retentionMs) {
+        break;
+      }
+      this.lastAwardedAt.delete(discordId);
+    }
+    for (const discordId of this.lastAwardedAt.keys()) {
+      if (this.lastAwardedAt.size <= MAX_TRACKED_AUTHORS) {
+        break;
+      }
+      this.lastAwardedAt.delete(discordId);
+    }
   }
 }
 
