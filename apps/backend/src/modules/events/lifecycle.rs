@@ -965,6 +965,7 @@ mod tests {
             discord_role_ids: Vec::new(),
             create_split: false,
             island_tab_id: None,
+            origin_guild_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: false,
             discord_delivery: "message".to_owned(),

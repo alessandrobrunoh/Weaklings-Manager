@@ -54,6 +54,83 @@ use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::alliance_share::ShareActor;
 use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable, copy_role};
 
+/// The member-guild island locator carried by an event request: `(origin guild, tab id)`.
+///
+/// Islands exist only in guild tenants (D-12). A guild request names a tab of its own catalog and
+/// must not carry `origin_guild_id`; an alliance request that creates a split names the member
+/// guild that owns the tab and must carry it.
+fn island_locator(
+    alliance_origin: bool,
+    create_split: bool,
+    island_tab_id: Option<i64>,
+    origin_guild_id: Option<&str>,
+) -> Result<Option<(String, i64)>, AppError> {
+    let origin = origin_guild_id.map(str::trim).filter(|id| !id.is_empty());
+    if !alliance_origin {
+        if origin_guild_id.is_some() {
+            return Err(AppError::Validation(
+                "origin_guild_id is only valid on an alliance tenant".to_owned(),
+            ));
+        }
+        return Ok(None);
+    }
+    match (create_split, origin) {
+        (false, None) => Ok(None),
+        (false, Some(_)) => Err(AppError::Validation(
+            "origin_guild_id is only valid together with create_split".to_owned(),
+        )),
+        (true, None) => Err(AppError::Validation(
+            "origin_guild_id is required when an alliance event creates a split: islands \
+             belong to member guilds"
+                .to_owned(),
+        )),
+        (true, Some(guild)) => {
+            let tab_id = island_tab_id.ok_or_else(|| {
+                AppError::Validation(
+                    "island_tab_id is required when create_split is true".to_owned(),
+                )
+            })?;
+            Ok(Some((guild.to_owned(), tab_id)))
+        }
+    }
+}
+
+/// Rewrites an alliance request's `(origin_guild_id, island_tab_id)` into the alliance-local tab id.
+///
+/// The tab id the client sends comes from a member guild's catalog, so it is resolved against that
+/// guild's database (which must be an active member) and mirrored into the alliance catalog
+/// before the event service looks it up locally. No-op for requests without a locator.
+async fn localize_island_locator(
+    control: &sea_orm::DatabaseConnection,
+    registry: &TenantRegistry,
+    tenant_id: &str,
+    db: &sea_orm::DatabaseConnection,
+    alliance_origin: bool,
+    req: &mut CreateEventRequest,
+) -> Result<(), AppError> {
+    let Some((guild_id, source_tab_id)) = island_locator(
+        alliance_origin,
+        req.create_split,
+        req.island_tab_id,
+        req.origin_guild_id.as_deref(),
+    )?
+    else {
+        return Ok(());
+    };
+    let local_tab_id = crate::modules::alliance_share::resolve_member_island_tab(
+        control,
+        registry,
+        tenant_id,
+        db,
+        &guild_id,
+        source_tab_id,
+    )
+    .await?;
+    req.island_tab_id = Some(local_tab_id);
+    req.origin_guild_id = None;
+    Ok(())
+}
+
 /// Rejects a write on a read-only copy of another tenant's event (403 + `origin`).
 ///
 /// Detached copies (sync link disabled) stay locally managed and pass.
@@ -1120,6 +1197,16 @@ async fn create_event(
         }
         assert_active_alliance(&control.0, &tenant.0).await?;
     }
+    let mut req = req;
+    localize_island_locator(
+        &control.0,
+        &registry,
+        &tenant.0,
+        &db,
+        alliance_origin,
+        &mut req,
+    )
+    .await?;
     let service = EventService::new();
     let event = service.create_event(&db, user.user_id, req).await?;
     if alliance_origin {
@@ -2822,5 +2909,31 @@ mod tests {
         let copied_admin = authorization_test_user(member_id, "Admin");
         let view = event_authority_view(copied_admin, permissions, &db, event_id).await;
         assert!(!view.can_manage);
+    }
+
+    #[test]
+    fn island_locator_alliance_requires_an_origin_guild_for_a_split() {
+        use super::island_locator;
+        let located = island_locator(true, true, Some(7), Some("guild-1")).expect("valid locator");
+        assert_eq!(located, Some(("guild-1".to_owned(), 7)));
+        assert_eq!(island_locator(true, false, None, None).unwrap(), None);
+        for (create_split, tab, origin, what) in [
+            (true, Some(7), None, "missing origin"),
+            (true, Some(7), Some("  "), "blank origin"),
+            (true, None, Some("guild-1"), "missing tab"),
+            (false, None, Some("guild-1"), "origin without split"),
+        ] {
+            let err = island_locator(true, create_split, tab, origin).expect_err(what);
+            assert!(matches!(err, AppError::Validation(_)), "{what}: {err:?}");
+        }
+    }
+
+    #[test]
+    fn island_locator_guild_tenants_keep_their_own_catalog() {
+        use super::island_locator;
+        assert_eq!(island_locator(false, true, Some(7), None).unwrap(), None);
+        let err = island_locator(false, true, Some(7), Some("guild-1"))
+            .expect_err("guilds do not name an origin guild");
+        assert!(matches!(err, AppError::Validation(_)), "{err:?}");
     }
 }

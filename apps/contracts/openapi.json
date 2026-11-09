@@ -11199,7 +11199,7 @@
             ]
           },
           "island_tab_id": {
-            "description": "Island tab for the correlated split. Required when `create_split` is true.",
+            "description": "Island tab for the correlated split. Required when `create_split` is true.\n\nOn a guild tenant this is a tab of the guild's own catalog. On an alliance tenant it is a\ntab of the member guild named by `origin_guild_id` (islands exist only in guilds).",
             "example": 10,
             "format": "int64",
             "type": [
@@ -11209,6 +11209,14 @@
           },
           "mass_time_utc": {
             "description": "The mass announcement date/time (UTC, RFC3339).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin_guild_id": {
+            "description": "Discord guild tenant id that owns `island_tab_id`. Alliance tenants only.\n\nRequired with `create_split` on an alliance tenant, where the tab is resolved in that\nmember guild's catalog (the guild must be an active member of the alliance). Rejected on\na guild tenant, whose tab always comes from its own catalog.",
+            "example": "123456789012345678",
             "type": [
               "string",
               "null"
