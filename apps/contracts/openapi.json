@@ -7085,6 +7085,78 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_ExhaustedTarget": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "items": {
+              "description": "A target parked in the terminal `exhausted` state, for operators.",
+              "properties": {
+                "attempts": {
+                  "description": "Attempts consumed.",
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "exhausted_at": {
+                  "description": "When the target was parked.",
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "job_id": {
+                  "description": "Fanout job id.",
+                  "type": "string"
+                },
+                "last_error": {
+                  "description": "Last failure detail.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "operation": {
+                  "description": "`publish`, `update`, or `archive`.",
+                  "type": "string"
+                },
+                "source_event_id": {
+                  "description": "Source event primary key.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "source_tenant_id": {
+                  "description": "Source (alliance) tenant id.",
+                  "type": "string"
+                },
+                "tenant_id": {
+                  "description": "Destination tenant id.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "job_id",
+                "source_tenant_id",
+                "source_event_id",
+                "operation",
+                "tenant_id",
+                "attempts"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_FeatureCatalogItem": {
         "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
         "properties": {
@@ -13561,7 +13633,7 @@
             "type": "string"
           },
           "state": {
-            "description": "`pending`, `processing`, `complete`, or `failed`.",
+            "description": "`pending`, `processing`, `complete`, `failed`, or `exhausted` (only\ntargets that need an operator remain).",
             "type": "string"
           },
           "targets": {
@@ -14240,6 +14312,61 @@
           "vod_forum_post_enabled",
           "vod_forum_post_status",
           "is_synchronized_copy"
+        ],
+        "type": "object"
+      },
+      "ExhaustedTarget": {
+        "description": "A target parked in the terminal `exhausted` state, for operators.",
+        "properties": {
+          "attempts": {
+            "description": "Attempts consumed.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "exhausted_at": {
+            "description": "When the target was parked.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "description": "Fanout job id.",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "Last failure detail.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "description": "`publish`, `update`, or `archive`.",
+            "type": "string"
+          },
+          "source_event_id": {
+            "description": "Source event primary key.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "source_tenant_id": {
+            "description": "Source (alliance) tenant id.",
+            "type": "string"
+          },
+          "tenant_id": {
+            "description": "Destination tenant id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "source_tenant_id",
+          "source_event_id",
+          "operation",
+          "tenant_id",
+          "attempts"
         ],
         "type": "object"
       },
@@ -22824,7 +22951,7 @@
             "type": "string"
           },
           "state": {
-            "description": "`pending`, `processing`, `complete`, `failed`, or `inactive`.",
+            "description": "`pending`, `processing`, `complete`, `failed`, `inactive`, or `exhausted`\n(retries used up; an operator must requeue it).",
             "type": "string"
           },
           "tenant_id": {
@@ -41205,6 +41332,91 @@
           }
         },
         "summary": "Revoke platform roles from a Discord user.",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/platform/fanout/exhausted": {
+      "get": {
+        "operationId": "list_exhausted_fanout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ExhaustedTarget"
+                }
+              }
+            },
+            "description": "Exhausted fanout targets, newest first"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a platform admin"
+          }
+        },
+        "summary": "List event fanout targets that used up their retries.",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/platform/fanout/exhausted/{job_id}/{tenant_id}/requeue": {
+      "post": {
+        "operationId": "requeue_exhausted_fanout",
+        "parameters": [
+          {
+            "description": "Fanout job id",
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Destination tenant id",
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Target requeued"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a platform admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No exhausted target for that job and tenant"
+          }
+        },
+        "summary": "Re-arm one exhausted fanout target (attempts reset, due immediately).",
         "tags": [
           "platform"
         ]
