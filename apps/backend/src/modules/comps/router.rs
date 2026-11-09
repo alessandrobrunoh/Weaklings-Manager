@@ -22,6 +22,7 @@ use crate::responses::{
     ApiResponsePaginatedComps,
 };
 
+use super::authority::{Authored, require_author_or_manage};
 use super::models::{
     AddCompBuildRequest, BuildFilters, BuildItemSpells, CompFilters, CreateBuildCategoryRequest,
     CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest,
@@ -471,20 +472,20 @@ async fn list_builds(
 
 /// Creates a new build.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.create` permission.
 #[utoipa::path(
     post,
     path = "/api/comps/builds",
     tag = "comps",
     summary = "Create a new build",
-    description = "Creates a new build with optional items. Requires `comps.builds.manage` permission.",
+    description = "Creates a new build with optional items. Requires `comps.builds.create` permission.",
     security(("session_cookie" = [])),
     request_body(content = CreateBuildRequest, description = "Build details"),
     responses(
         (status = 200, description = "Build created successfully", body = ApiResponseBuildDetail),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.builds.create permission", body = ProblemDetails),
         (status = 404, description = "Build category not found", body = ProblemDetails)
     )
 )]
@@ -533,13 +534,13 @@ async fn get_build(
 
 /// Updates a build.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     patch,
     path = "/api/comps/builds/{id}",
     tag = "comps",
     summary = "Update a build",
-    description = "Updates an existing build. Requires `comps.builds.manage` permission.",
+    description = "Updates an existing build. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID")
@@ -549,7 +550,7 @@ async fn get_build(
         (status = 200, description = "Build updated successfully", body = ApiResponseBuildDetail),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
@@ -560,7 +561,15 @@ async fn update_build(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateBuildRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsEdit,
+    )
+    .await?;
     let service = CompService::new();
     let build = service.update_build(&db, id, req).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -568,14 +577,14 @@ async fn update_build(
 
 /// Deletes a build.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.
 /// Fails with 409 Conflict if any `comp_builds` reference this build.
 #[utoipa::path(
     delete,
     path = "/api/comps/builds/{id}",
     tag = "comps",
     summary = "Delete a build",
-    description = "Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.manage` permission.",
+    description = "Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID")
@@ -583,7 +592,7 @@ async fn update_build(
     responses(
         (status = 204, description = "Build deleted successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails),
         (status = 409, description = "Conflict - comp_builds reference this build", body = ProblemDetails)
     )
@@ -596,7 +605,15 @@ async fn delete_build(
     Extension(cache): Extension<PriceCache>,
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsBuildsDelete).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsDelete,
+    )
+    .await?;
     let service = CompService::new();
     service.delete_build(&db, id).await?;
     cache.invalidate_build(&tenant.0, id);
@@ -605,13 +622,13 @@ async fn delete_build(
 
 /// Upserts a build item (insert or update on slot).
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     put,
     path = "/api/comps/builds/{id}/items/{slot}",
     tag = "comps",
     summary = "Upsert a build item",
-    description = "Inserts or updates a build item for a specific slot. Requires `comps.builds.manage` permission.",
+    description = "Inserts or updates a build item for a specific slot. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID"),
@@ -623,7 +640,7 @@ async fn delete_build(
         (status = 200, description = "Build item upserted successfully", body = ApiResponseBuildDetail),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
@@ -638,7 +655,15 @@ async fn upsert_build_item(
     Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpsertBuildItemRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsEdit,
+    )
+    .await?;
     let slot =
         crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
@@ -650,13 +675,13 @@ async fn upsert_build_item(
 
 /// Removes a build item.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     delete,
     path = "/api/comps/builds/{id}/items/{slot}",
     tag = "comps",
     summary = "Remove a build item",
-    description = "Removes a build item from a specific slot. Requires `comps.builds.manage` permission.",
+    description = "Removes a build item from a specific slot. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID"),
@@ -666,7 +691,7 @@ async fn upsert_build_item(
     responses(
         (status = 204, description = "Build item removed successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails)
+        (status = 403, description = "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage", body = ProblemDetails)
     )
 )]
 async fn remove_build_item(
@@ -678,7 +703,15 @@ async fn remove_build_item(
     Extension(cache): Extension<PriceCache>,
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsBuildsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsEdit,
+    )
+    .await?;
     let slot =
         crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
@@ -691,7 +724,7 @@ async fn remove_build_item(
 
 /// Replaces the abilities chosen on one equipped item.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     put,
     path = "/api/comps/builds/{id}/items/{slot}/spells",
@@ -700,7 +733,7 @@ async fn remove_build_item(
     description = "Replaces every ability chosen on the item in this slot. A slot the body omits is \
                    cleared, so the result is atomic. Each choice is validated against what the \
                    equipped item actually offers — see `GET /api/openalbion/abilities`. Requires \
-                   `comps.builds.manage` permission.",
+                   Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID"),
@@ -712,7 +745,7 @@ async fn remove_build_item(
         (status = 200, description = "Abilities saved", body = ApiResponseBuildDetail),
         (status = 400, description = "An ability the item does not offer", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "The slot holds no item", body = ProblemDetails)
     )
 )]
@@ -727,7 +760,15 @@ async fn set_build_item_spells(
     Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<BuildItemSpells>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsEdit,
+    )
+    .await?;
     let slot =
         crate::modules::comps::status::BuildSlot::from_str(&slot).map_err(AppError::Validation)?;
     let loadout = loadout.resolve()?;
@@ -741,7 +782,7 @@ async fn set_build_item_spells(
 
 /// Creates the next version of a build.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.create` and authorship of the source (a version joins its author's version group), or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     post,
     path = "/api/comps/builds/{id}/versions",
@@ -749,14 +790,13 @@ async fn set_build_item_spells(
     summary = "Create the next version of a build",
     description = "Copies the build — both loadouts, every item and every ability choice — into a \
                    new version that can be edited independently. Name and category are inherited, \
-                   since they identify the version group. Requires `comps.builds.manage` \
-                   permission.",
+                   since they identify the version group. Requires `comps.builds.create` and authorship of the source (a version joins its author's version group), or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "The build version to copy")),
     responses(
         (status = 200, description = "The new version", body = ApiResponseBuildDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the source's author with comps.builds.create, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails),
         (status = 409, description = "A concurrent request claimed the version number", body = ProblemDetails)
     )
@@ -767,7 +807,15 @@ async fn create_build_version(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsCreate).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsCreate,
+    )
+    .await?;
     let service = CompService::new();
     let build = service.create_build_version(&db, id, user.user_id).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -775,7 +823,7 @@ async fn create_build_version(
 
 /// Archives a build, taking it out of pickers without touching anything that already uses it.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     post,
     path = "/api/comps/builds/{id}/archive",
@@ -784,13 +832,13 @@ async fn create_build_version(
     description = "Marks a build archived: it drops out of the default `list_builds` results and \
                    every picker, but the row and everything already referencing it (comps, event \
                    rosters, past participations) is untouched. Unlike delete, this never fails on \
-                   references. Requires `comps.builds.manage` permission.",
+                   references. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Build ID")),
     responses(
         (status = 200, description = "Build archived successfully", body = ApiResponseBuildDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
@@ -800,7 +848,15 @@ pub(crate) async fn archive_build(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsDelete).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsDelete,
+    )
+    .await?;
     let service = CompService::new();
     let build = service.archive_build(&db, id).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -808,20 +864,20 @@ pub(crate) async fn archive_build(
 
 /// Unarchives a build, making it selectable again.
 ///
-/// Requires `comps.builds.manage` permission.
+/// Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.
 #[utoipa::path(
     post,
     path = "/api/comps/builds/{id}/unarchive",
     tag = "comps",
     summary = "Unarchive a build",
     description = "Reverses archiving: the build reappears in `list_builds` and every picker. \
-                   Requires `comps.builds.manage` permission.",
+                   Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Build ID")),
     responses(
         (status = 200, description = "Build unarchived successfully", body = ApiResponseBuildDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
 )]
@@ -831,7 +887,15 @@ pub(crate) async fn unarchive_build(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsDelete).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Build,
+        id,
+        Permission::CompsBuildsDelete,
+    )
+    .await?;
     let service = CompService::new();
     let build = service.unarchive_build(&db, id).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -871,20 +935,20 @@ async fn list_comps(
 
 /// Creates a new comp.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.create` permission.
 #[utoipa::path(
     post,
     path = "/api/comps",
     tag = "comps",
     summary = "Create a new comp",
-    description = "Creates a new comp with its associated builds. Requires `comps.comps.manage` permission.",
+    description = "Creates a new comp with its associated builds. Requires `comps.comps.create` permission.",
     security(("session_cookie" = [])),
     request_body(content = CreateCompRequest, description = "Comp details"),
     responses(
         (status = 200, description = "Comp created successfully", body = ApiResponseCompDetail),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.comps.create permission", body = ProblemDetails),
         (status = 404, description = "Comp category or build not found", body = ProblemDetails)
     )
 )]
@@ -963,13 +1027,13 @@ async fn get_comp_performance(
 
 /// Updates a comp.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     patch,
     path = "/api/comps/{id}",
     tag = "comps",
     summary = "Update a comp",
-    description = "Updates an existing comp. Requires `comps.comps.manage` permission.",
+    description = "Updates an existing comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Comp ID")
@@ -979,7 +1043,7 @@ async fn get_comp_performance(
         (status = 200, description = "Comp updated successfully", body = ApiResponseCompDetail),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails)
     )
 )]
@@ -992,7 +1056,15 @@ async fn update_comp(
     Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpdateCompRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsEdit,
+    )
+    .await?;
     let service = CompService::new();
     let result = service.update_comp(&db, id, req).await;
     cache.invalidate_comp(&tenant.0, id);
@@ -1001,13 +1073,13 @@ async fn update_comp(
 
 /// Deletes a comp (cascades to `comp_builds` via FK).
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     delete,
     path = "/api/comps/{id}",
     tag = "comps",
     summary = "Delete a comp",
-    description = "Deletes a comp. Cascades to comp_builds via FK. Requires `comps.comps.manage` permission.",
+    description = "Deletes a comp. Cascades to comp_builds via FK. Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Comp ID")
@@ -1015,7 +1087,7 @@ async fn update_comp(
     responses(
         (status = 204, description = "Comp deleted successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails),
         (status = 409, description = "Comp is still linked to one or more events", body = ProblemDetails)
     )
@@ -1028,7 +1100,15 @@ async fn delete_comp(
     Extension(cache): Extension<PriceCache>,
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsCompsDelete).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsDelete,
+    )
+    .await?;
     let service = CompService::new();
     service.delete_comp(&db, id).await?;
     cache.invalidate_comp(&tenant.0, id);
@@ -1037,14 +1117,14 @@ async fn delete_comp(
 
 /// Adds a build to a comp (upsert on (`comp_id`, `build_id`)).
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
 /// If the build already exists in the comp, its quantity is updated to the new value.
 #[utoipa::path(
     post,
     path = "/api/comps/{id}/builds",
     tag = "comps",
     summary = "Add a build to a comp",
-    description = "Adds a build to a comp. If the build already exists, its quantity is updated to the new value. Requires `comps.comps.manage` permission.",
+    description = "Adds a build to a comp. If the build already exists, its quantity is updated to the new value. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Comp ID")
@@ -1054,7 +1134,7 @@ async fn delete_comp(
         (status = 200, description = "Build added successfully", body = ApiResponseCompDetail),
         (status = 400, description = "Validation error - quantity must be >= 1", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp or build not found", body = ProblemDetails)
     )
 )]
@@ -1067,7 +1147,15 @@ async fn add_comp_build(
     Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<AddCompBuildRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsEdit,
+    )
+    .await?;
     let service = CompService::new();
     let result = service.add_comp_build(&db, id, req).await;
     cache.invalidate_comp(&tenant.0, id);
@@ -1076,13 +1164,13 @@ async fn add_comp_build(
 
 /// Updates a comp build quantity.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     patch,
     path = "/api/comps/{id}/builds/{build_id}",
     tag = "comps",
     summary = "Update comp build quantity",
-    description = "Updates the quantity of a build within a comp. Requires `comps.comps.manage` permission.",
+    description = "Updates the quantity of a build within a comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Comp ID"),
@@ -1093,7 +1181,7 @@ async fn add_comp_build(
         (status = 200, description = "Quantity updated successfully", body = ApiResponseCompDetail),
         (status = 400, description = "Validation error - quantity must be >= 1", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp build not found", body = ProblemDetails)
     )
 )]
@@ -1106,7 +1194,15 @@ async fn update_comp_build_quantity(
     Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpdateCompBuildQuantityRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsEdit,
+    )
+    .await?;
     let service = CompService::new();
     let result = service
         .update_comp_build_quantity(&db, id, build_id, req)
@@ -1117,13 +1213,13 @@ async fn update_comp_build_quantity(
 
 /// Removes a build from a comp.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     delete,
     path = "/api/comps/{id}/builds/{build_id}",
     tag = "comps",
     summary = "Remove a build from a comp",
-    description = "Removes a build from a comp. Requires `comps.comps.manage` permission.",
+    description = "Removes a build from a comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Comp ID"),
@@ -1132,7 +1228,7 @@ async fn update_comp_build_quantity(
     responses(
         (status = 204, description = "Build removed successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp build not found", body = ProblemDetails)
     )
 )]
@@ -1144,7 +1240,15 @@ async fn remove_comp_build(
     Extension(cache): Extension<PriceCache>,
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsCompsEdit).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsEdit,
+    )
+    .await?;
     let service = CompService::new();
     let result = service.remove_comp_build(&db, id, build_id).await;
     cache.invalidate_comp(&tenant.0, id);
@@ -1154,7 +1258,7 @@ async fn remove_comp_build(
 
 /// Creates the next version of a comp.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.create` and authorship of the source (a version joins its author's version group), or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     post,
     path = "/api/comps/{id}/versions",
@@ -1164,13 +1268,13 @@ async fn remove_comp_build(
                    version that can be edited independently. `parent_id` is preserved, so a \
                    version of a variant stays a variant of the same parent. Each version's \
                    statistics come from `GET /api/comps/{id}/performance` for that version's id. \
-                   Requires `comps.comps.manage` permission.",
+                   Requires `comps.comps.create` and authorship of the source (a version joins its author's version group), or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "The comp version to copy")),
     responses(
         (status = 200, description = "The new version", body = ApiResponseCompDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the source's author with comps.comps.create, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails),
         (status = 409, description = "A concurrent request claimed the version number", body = ProblemDetails)
     )
@@ -1181,7 +1285,15 @@ async fn create_comp_version(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsCreate).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsCreate,
+    )
+    .await?;
     let service = CompService::new();
     let comp = service.create_comp_version(&db, id, user.user_id).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -1189,7 +1301,7 @@ async fn create_comp_version(
 
 /// Archives a comp, taking it out of pickers without touching anything that already uses it.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     post,
     path = "/api/comps/{id}/archive",
@@ -1198,13 +1310,13 @@ async fn create_comp_version(
     description = "Marks a comp archived: it drops out of the default `list_comps` results and \
                    every picker, but the row and everything already referencing it (events, child \
                    variants) is untouched. Unlike delete, this never fails on references. Requires \
-                   `comps.comps.manage` permission.",
+                   Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Comp ID")),
     responses(
         (status = 200, description = "Comp archived successfully", body = ApiResponseCompDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails)
     )
 )]
@@ -1214,7 +1326,15 @@ pub(crate) async fn archive_comp(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsDelete).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsDelete,
+    )
+    .await?;
     let service = CompService::new();
     let comp = service.archive_comp(&db, id).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -1222,20 +1342,20 @@ pub(crate) async fn archive_comp(
 
 /// Unarchives a comp, making it selectable again.
 ///
-/// Requires `comps.comps.manage` permission.
+/// Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.
 #[utoipa::path(
     post,
     path = "/api/comps/{id}/unarchive",
     tag = "comps",
     summary = "Unarchive a comp",
     description = "Reverses archiving: the comp reappears in `list_comps` and every picker. \
-                   Requires `comps.comps.manage` permission.",
+                   Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Comp ID")),
     responses(
         (status = 200, description = "Comp unarchived successfully", body = ApiResponseCompDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails)
     )
 )]
@@ -1245,7 +1365,15 @@ pub(crate) async fn unarchive_comp(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsDelete).await?;
+    require_author_or_manage(
+        &user,
+        &perms,
+        &db,
+        Authored::Comp,
+        id,
+        Permission::CompsCompsDelete,
+    )
+    .await?;
     let service = CompService::new();
     let comp = service.unarchive_comp(&db, id).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -1495,4 +1623,154 @@ async fn get_comp_price(
     let settings = crate::modules::regear::service::load_settings(&db).await?;
     let view = cached_comp_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::comps::authority::test_support::{AUTHOR, NOBODY, OTHER, caller, fixture};
+    use crate::modules::comps::models::AddCompBuildRequest;
+
+    const OWN_ROWS: &[&str] = &[
+        "comps.builds.create",
+        "comps.builds.edit",
+        "comps.builds.delete",
+        "comps.comps.create",
+        "comps.comps.edit",
+        "comps.comps.delete",
+    ];
+
+    fn rename(name: &str) -> UpdateBuildRequest {
+        UpdateBuildRequest {
+            name: Some(name.to_string()),
+            description: None,
+            role: None,
+            category_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn update_build_is_author_or_manage() {
+        let (db, perms) = fixture(&[
+            ("Member", OWN_ROWS),
+            ("Manager", &["comps.builds.manage"]),
+            ("Viewer", &["comps.builds.view"]),
+        ])
+        .await;
+
+        let call = |user: UserContext, name: &'static str| {
+            let (db, perms) = (db.clone(), perms.clone());
+            async move {
+                update_build(
+                    user,
+                    Extension(perms),
+                    Path(10),
+                    Extension(db),
+                    Json(rename(name)),
+                )
+                .await
+            }
+        };
+
+        let renamed = call(caller(AUTHOR, "Member"), "By author")
+            .await
+            .expect("the author edits their own build");
+        assert_eq!(renamed.0.data.summary.name, "By author");
+        assert!(matches!(
+            call(caller(OTHER, "Member"), "By other").await,
+            Err(AppError::Forbidden(_))
+        ));
+        let renamed = call(caller(OTHER, "Manager"), "By manager")
+            .await
+            .expect("a manager edits anyone's build");
+        assert_eq!(renamed.0.data.summary.name, "By manager");
+        assert!(matches!(
+            call(caller(AUTHOR, "Viewer"), "By viewer").await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_comp_is_author_or_manage() {
+        let (db, perms) =
+            fixture(&[("Member", OWN_ROWS), ("Manager", &["comps.comps.manage"])]).await;
+        let delete = |user: UserContext| {
+            let (db, perms) = (db.clone(), perms.clone());
+            async move {
+                delete_comp(
+                    user,
+                    Extension(perms),
+                    Path(20),
+                    Extension(db),
+                    Extension(PriceCache::new()),
+                    Extension(CurrentTenantId("tenant".to_string())),
+                )
+                .await
+            }
+        };
+
+        assert!(matches!(
+            delete(caller(NOBODY, "Member")).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert_eq!(
+            delete(caller(OTHER, "Manager")).await.expect("manager"),
+            StatusCode::NO_CONTENT
+        );
+        // Gone now, so the author gets a 404 rather than a silent success.
+        assert!(matches!(
+            delete(caller(AUTHOR, "Member")).await,
+            Err(AppError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn sub_resource_and_archive_routes_apply_the_same_rule() {
+        let (db, perms) = fixture(&[("Member", OWN_ROWS)]).await;
+        let other = caller(OTHER, "Member");
+
+        let add = add_comp_build(
+            other.clone(),
+            Extension(perms.clone()),
+            Path(20),
+            Extension(db.clone()),
+            Extension(PriceCache::new()),
+            Extension(CurrentTenantId("tenant".to_string())),
+            Json(AddCompBuildRequest {
+                build_id: 10,
+                quantity: 1,
+            }),
+        )
+        .await;
+        assert!(matches!(add, Err(AppError::Forbidden(_))));
+
+        let archive = archive_build(
+            other.clone(),
+            Extension(perms.clone()),
+            Path(10),
+            Extension(db.clone()),
+        )
+        .await;
+        assert!(matches!(archive, Err(AppError::Forbidden(_))));
+
+        let version = create_comp_version(other, Extension(perms), Path(20), Extension(db)).await;
+        assert!(matches!(version, Err(AppError::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn create_build_requires_the_create_permission() {
+        let (db, perms) = fixture(&[("Editor", &["comps.builds.edit"])]).await;
+        let request: CreateBuildRequest = serde_json::from_value(serde_json::json!({
+            "name": "New", "role": "tank", "category_id": 1
+        }))
+        .expect("create build request");
+        let created = create_build(
+            caller(AUTHOR, "Editor"),
+            Extension(perms),
+            Extension(db),
+            Json(request),
+        )
+        .await;
+        assert!(matches!(created, Err(AppError::Forbidden(_))));
+    }
 }

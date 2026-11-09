@@ -1850,7 +1850,7 @@ export const fr: TranslationDict = {
   'admin.permissions.grantGroup': 'Tous',
   'admin.permissions.clearGroup': 'Aucun',
   'admin.permissions.title': 'Permissions du rôle',
-  'admin.permissions.hint': 'Cochez les capacités accordées par chaque rôle. L\'appartenance reste gérée sur Discord. Les changements s\'appliquent immédiatement.',
+  'admin.permissions.hint': 'Cochez les capacités accordées par chaque rôle. L\'appartenance reste gérée sur Discord. Les changements s\'appliquent immédiatement. Pour les comps et builds, modifier et supprimer ne s\'appliquent qu\'à ce que le membre a créé ; manage couvre ceux de tous.',
   'admin.permissions.permission': 'Permission',
   'admin.permissions.priority': 'priorité',
   'admin.permissions.searchPlaceholder': 'Filtrer les permissions...',

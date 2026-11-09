@@ -43,6 +43,24 @@ impl PermissionCache {
                             | Permission::SplitsEdit
                             | Permission::SplitsDelete
                     ))
+                // `manage` is the "does everything, on anyone's rows" grant: it covers the
+                // own-rows view/create/edit/delete permissions of the same resource.
+                || (permissions.contains(&Permission::CompsBuildsManage)
+                    && matches!(
+                        perm,
+                        Permission::CompsBuildsView
+                            | Permission::CompsBuildsCreate
+                            | Permission::CompsBuildsEdit
+                            | Permission::CompsBuildsDelete
+                    ))
+                || (permissions.contains(&Permission::CompsCompsManage)
+                    && matches!(
+                        perm,
+                        Permission::CompsCompsView
+                            | Permission::CompsCompsCreate
+                            | Permission::CompsCompsEdit
+                            | Permission::CompsCompsDelete
+                    ))
         })
     }
 
@@ -229,5 +247,48 @@ mod tests {
         assert!(cache.role_has("Split editor", Permission::SplitsEdit));
         assert!(!cache.role_has("Split editor", Permission::SplitsDelete));
         assert!(!cache.role_has("Split editor", Permission::SplitsManage));
+    }
+
+    #[test]
+    fn comps_and_builds_manage_cover_their_own_resource_only() {
+        let cache = PermissionCache {
+            inner: HashMap::from([
+                (
+                    "Comp manager".to_string(),
+                    HashSet::from([Permission::CompsCompsManage]),
+                ),
+                (
+                    "Build manager".to_string(),
+                    HashSet::from([Permission::CompsBuildsManage]),
+                ),
+                (
+                    "Build author".to_string(),
+                    HashSet::from([Permission::CompsBuildsEdit]),
+                ),
+            ]),
+        };
+
+        for permission in [
+            Permission::CompsCompsView,
+            Permission::CompsCompsCreate,
+            Permission::CompsCompsEdit,
+            Permission::CompsCompsDelete,
+        ] {
+            assert!(cache.role_has("Comp manager", permission));
+            assert!(!cache.role_has("Build manager", permission));
+        }
+        for permission in [
+            Permission::CompsBuildsView,
+            Permission::CompsBuildsCreate,
+            Permission::CompsBuildsEdit,
+            Permission::CompsBuildsDelete,
+        ] {
+            assert!(cache.role_has("Build manager", permission));
+            assert!(!cache.role_has("Comp manager", permission));
+        }
+        // One way: an author-level `edit` never grants `manage` or `delete`.
+        assert!(cache.role_has("Build author", Permission::CompsBuildsEdit));
+        assert!(!cache.role_has("Build author", Permission::CompsBuildsDelete));
+        assert!(!cache.role_has("Build author", Permission::CompsBuildsManage));
     }
 }

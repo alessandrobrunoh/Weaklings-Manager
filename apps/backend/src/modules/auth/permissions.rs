@@ -135,38 +135,40 @@ pub enum Permission {
     /// Delete a comp category. Officer+.
     #[strum(serialize = "comps.comp_categories.delete")]
     CompsCompCategoriesDelete,
-    /// Manage builds (create, edit, delete). Superseded by the split
-    /// permissions below — kept so existing `role_permissions` rows keep
-    /// resolving.
+    /// Manage every build, whoever authored it: edit, delete, archive and version
+    /// anyone's build. Implies the four own-build permissions below. Officer+.
     #[strum(serialize = "comps.builds.manage")]
     CompsBuildsManage,
     /// View builds. Member+.
     #[strum(serialize = "comps.builds.view")]
     CompsBuildsView,
-    /// Create a build (and new versions of an existing build). Officer+.
+    /// Create a build. Officer+.
     #[strum(serialize = "comps.builds.create")]
     CompsBuildsCreate,
-    /// Edit a build: details, items, spells. Officer+.
+    /// Edit builds the caller authored: details, items, spells. Others' builds
+    /// need `comps.builds.manage`. Officer+.
     #[strum(serialize = "comps.builds.edit")]
     CompsBuildsEdit,
-    /// Delete a build. Officer+.
+    /// Delete or archive builds the caller authored. Others' builds need
+    /// `comps.builds.manage`. Officer+.
     #[strum(serialize = "comps.builds.delete")]
     CompsBuildsDelete,
-    /// Manage comps (create, edit, delete). Superseded by the split
-    /// permissions below — kept so existing `role_permissions` rows keep
-    /// resolving.
+    /// Manage every comp, whoever authored it: edit, delete, archive and version
+    /// anyone's comp. Implies the four own-comp permissions below. Officer+.
     #[strum(serialize = "comps.comps.manage")]
     CompsCompsManage,
     /// View comps. Member+.
     #[strum(serialize = "comps.comps.view")]
     CompsCompsView,
-    /// Create a comp (and new versions of an existing comp). Officer+.
+    /// Create a comp. Officer+.
     #[strum(serialize = "comps.comps.create")]
     CompsCompsCreate,
-    /// Edit a comp: details, build entries and quantities. Officer+.
+    /// Edit comps the caller authored: details, build entries and quantities.
+    /// Others' comps need `comps.comps.manage`. Officer+.
     #[strum(serialize = "comps.comps.edit")]
     CompsCompsEdit,
-    /// Delete a comp. Officer+.
+    /// Delete or archive comps the caller authored. Others' comps need
+    /// `comps.comps.manage`. Officer+.
     #[strum(serialize = "comps.comps.delete")]
     CompsCompsDelete,
     /// Manage events (create, edit, delete). Superseded by the split

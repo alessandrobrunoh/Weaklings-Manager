@@ -124,6 +124,10 @@ pub struct BuildSummary {
     pub version: i32,
     /// The category name (if available).
     pub category_name: Option<String>,
+    /// The internal id of the user who created the build. Clients compare it with the session's
+    /// `user_id` to tell which builds the caller authored (author-or-manage permissions).
+    #[schema(example = 1)]
+    pub created_by_id: i64,
     /// The username of the user who created the build.
     pub created_by_username: String,
     /// The timestamp when the build was last updated.
@@ -187,6 +191,10 @@ pub struct CompSummary {
     pub version: i32,
     /// The category name (if available).
     pub category_name: Option<String>,
+    /// The internal id of the user who created the comp. Clients compare it with the session's
+    /// `user_id` to tell which comps the caller authored (author-or-manage permissions).
+    #[schema(example = 1)]
+    pub created_by_id: i64,
     /// The username of the user who created the comp.
     pub created_by_username: String,
     /// The timestamp when the comp was created.

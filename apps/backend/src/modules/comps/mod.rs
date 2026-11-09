@@ -3,6 +3,7 @@
 //! Provides the routes, services, and schemas for managing build categories, comp categories,
 //! builds, build items, comps, and `comp_builds` (compositions of builds for Albion Online).
 
+pub(crate) mod authority;
 pub mod entities;
 pub mod models;
 pub mod price_cache;

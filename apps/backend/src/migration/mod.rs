@@ -152,6 +152,7 @@ mod m20261107_000002_create_action_log;
 mod m20261107_000002_seed_sync_permissions;
 mod m20261107_000003_add_event_reminder_notified_at;
 mod m20261107_000004_backfill_event_discord_stamps;
+mod m20261109_000001_grant_comp_build_manage_to_editors;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -308,6 +309,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_000002_seed_sync_permissions::Migration),
             Box::new(m20261107_000003_add_event_reminder_notified_at::Migration),
             Box::new(m20261107_000004_backfill_event_discord_stamps::Migration),
+            Box::new(m20261109_000001_grant_comp_build_manage_to_editors::Migration),
         ]
     }
 }
