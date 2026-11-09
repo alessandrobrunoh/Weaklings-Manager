@@ -1390,6 +1390,9 @@ impl BankService {
     ///   `to_user_id`/`from_user_id`/`split_id`, don't exist.
     /// * Returns `AppError::Validation` if a provided `amount` is zero. Negative
     ///   input is normalized as a donation to the Guild Bank.
+    /// * Returns `AppError::Conflict` if the transaction is already settled (`withdrawn` or
+    ///   `donated`): those rows record money that has left the Guild Bank, so they are not
+    ///   editable. Record a new manual transaction to correct them.
     /// * Returns `AppError::Database` if the query fails.
     pub async fn update_transaction(
         &self,
@@ -1398,30 +1401,38 @@ impl BankService {
         req: &UpdateTransactionRequest,
         actor_user_id: i64,
     ) -> Result<TransactionView, AppError> {
+        // One transaction with the row locked: the status check below must still hold when the
+        // update lands, so a concurrent accept/donate cannot slip in between the two.
+        let txn = db.begin().await?;
         let existing = TransactionEntity::find_by_id(id)
-            .one(db)
+            .lock_exclusive()
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Transaction {id} not found")))?;
+        ensure_not_settled(&existing, "edited")?;
 
         let debit = req.amount.is_some_and(|amount| amount < Decimal::ZERO);
         if req.amount == Some(Decimal::ZERO) {
             return Err(AppError::Validation("amount must be non-zero".to_string()));
         }
         if let Some(to_user_id) = req.to_user_id
-            && UserEntity::find_by_id(to_user_id).one(db).await?.is_none()
+            && UserEntity::find_by_id(to_user_id)
+                .one(&txn)
+                .await?
+                .is_none()
         {
             return Err(AppError::NotFound(format!("User {to_user_id} not found")));
         }
         if let Some(Some(from_user_id)) = req.from_user_id
             && UserEntity::find_by_id(from_user_id)
-                .one(db)
+                .one(&txn)
                 .await?
                 .is_none()
         {
             return Err(AppError::NotFound(format!("User {from_user_id} not found")));
         }
         if let Some(Some(split_id)) = req.split_id
-            && SplitEntity::find_by_id(split_id).one(db).await?.is_none()
+            && SplitEntity::find_by_id(split_id).one(&txn).await?.is_none()
         {
             return Err(AppError::NotFound(format!("Split {split_id} not found")));
         }
@@ -1465,13 +1476,14 @@ impl BankService {
         }
         active.updated_at = Set(chrono::Utc::now().into());
 
-        let updated = active.update(db).await?;
+        let updated = active.update(&txn).await?;
 
         let mut touched_splits: Vec<i64> = old_split_id.into_iter().collect();
         touched_splits.extend(updated.split_id);
         touched_splits.sort_unstable();
         touched_splits.dedup();
-        touch_split_ids(db, &touched_splits).await?;
+        touch_split_ids(&txn, &touched_splits).await?;
+        txn.commit().await?;
 
         crate::modules::audit::service::AuditService::log(
             db,
@@ -1502,6 +1514,9 @@ impl BankService {
     /// # Errors
     ///
     /// * Returns `AppError::NotFound` if the transaction doesn't exist.
+    /// * Returns `AppError::Conflict` if the transaction is already settled (`withdrawn` or
+    ///   `donated`): deleting it would erase the record of money that has already left the
+    ///   Guild Bank.
     /// * Returns `AppError::Database` if the query fails.
     pub async fn delete_transaction(
         &self,
@@ -1509,16 +1524,22 @@ impl BankService {
         id: i64,
         actor_user_id: i64,
     ) -> Result<(), AppError> {
+        // Lock the row for the whole check-then-delete so a concurrent accept cannot settle it
+        // between the status check and the delete.
+        let txn = db.begin().await?;
         let existing = TransactionEntity::find_by_id(id)
-            .one(db)
+            .lock_exclusive()
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Transaction {id} not found")))?;
+        ensure_not_settled(&existing, "deleted")?;
 
-        TransactionEntity::delete_by_id(id).exec(db).await?;
+        TransactionEntity::delete_by_id(id).exec(&txn).await?;
 
         if let Some(split_id) = existing.split_id {
-            touch_split_ids(db, &[split_id]).await?;
+            touch_split_ids(&txn, &[split_id]).await?;
         }
+        txn.commit().await?;
 
         crate::modules::audit::service::AuditService::log(
             db,
@@ -1530,6 +1551,7 @@ impl BankService {
                 "to_user_id": existing.to_user_id,
                 "amount": existing.amount,
                 "type": existing.r#type,
+                "status": existing.status,
                 "split_id": existing.split_id
             })),
         )
@@ -1537,6 +1559,26 @@ impl BankService {
 
         Ok(())
     }
+}
+
+/// Refuses to touch a settled transaction (`withdrawn` or `donated`).
+///
+/// Those rows are the record of silver that already left the Guild Bank (or was given back to
+/// it). Editing or deleting one silently rewrites that history, so it is rejected; a correction
+/// is a new manual transaction instead. `action` is the past participle used in the message.
+fn ensure_not_settled(existing: &Model, action: &str) -> Result<(), AppError> {
+    let settled = matches!(
+        existing.status.parse::<TransactionStatus>(),
+        Ok(TransactionStatus::Withdrawn | TransactionStatus::Donated)
+    );
+    if settled {
+        return Err(AppError::Conflict(format!(
+            "transaction {} is already {} and cannot be {action}; record a new manual \
+             transaction to correct it",
+            existing.id, existing.status
+        )));
+    }
+    Ok(())
 }
 
 fn add_breakdown(groups: &mut HashMap<String, (u64, Decimal)>, label: String, amount: Decimal) {
@@ -2455,6 +2497,92 @@ mod tests {
                 .is_none()
         );
         assert_split_was_touched(&db, split_id, old).await;
+    }
+
+    fn status_only_update(status: TransactionStatus) -> UpdateTransactionRequest {
+        UpdateTransactionRequest {
+            to_user_id: None,
+            from_user_id: None,
+            amount: Some("99.00".parse().unwrap()),
+            status: Some(status),
+            r#type: None,
+            split_id: None,
+            to_guild_bank: None,
+            guild_tenant_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn settled_transactions_cannot_be_edited_or_deleted() {
+        let service = BankService::new();
+        for settled in [TransactionStatus::Withdrawn, TransactionStatus::Donated] {
+            let db = seed_db().await;
+            let alice = insert_user(&db, "alice", "alice@example.com").await;
+            let admin = insert_user(&db, "admin", "admin@example.com").await;
+            let id = insert_transaction(&db, alice, "10.00", settled).await;
+
+            let edit_error = service
+                .update_transaction(
+                    &db,
+                    id,
+                    &status_only_update(TransactionStatus::Pending),
+                    admin,
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(edit_error, AppError::Conflict(_)),
+                "{settled}: edit must be a conflict, got {edit_error:?}"
+            );
+
+            let delete_error = service
+                .delete_transaction(&db, id, admin)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(delete_error, AppError::Conflict(_)),
+                "{settled}: delete must be a conflict, got {delete_error:?}"
+            );
+
+            // The refused calls changed nothing: same row, same amount, same status.
+            let row = TransactionEntity::find_by_id(id)
+                .one(&db)
+                .await
+                .unwrap()
+                .expect("row must survive a refused delete");
+            assert_eq!(row.amount, "10.00".parse().unwrap());
+            assert_eq!(row.status, settled.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn unsettled_transactions_stay_editable_and_deletable() {
+        let service = BankService::new();
+        for open in [
+            TransactionStatus::Pending,
+            TransactionStatus::Requested,
+            TransactionStatus::Rejected,
+        ] {
+            let db = seed_db().await;
+            let alice = insert_user(&db, "alice", "alice@example.com").await;
+            let admin = insert_user(&db, "admin", "admin@example.com").await;
+            let id = insert_transaction(&db, alice, "10.00", open).await;
+
+            let updated = service
+                .update_transaction(&db, id, &status_only_update(open), admin)
+                .await
+                .unwrap();
+            assert_eq!(updated.amount, "99.00".parse().unwrap());
+
+            service.delete_transaction(&db, id, admin).await.unwrap();
+            assert!(
+                TransactionEntity::find_by_id(id)
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
     }
 
     #[tokio::test]
