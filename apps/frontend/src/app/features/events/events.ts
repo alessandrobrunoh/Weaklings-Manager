@@ -422,8 +422,8 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                 <span class="label">{{ t('splits.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
                 <select class="select" required [value]="draftIslandId()" (change)="onIslandChange($event)">
                   <option value="">{{ t('splits.pick_island') }}</option>
-                  @for (island of islands(); track island.id) {
-                    <option [value]="island.id">{{ cityLabel(island.city) }} · {{ island.name }}</option>
+                  @for (island of islands(); track islandKey(island)) {
+                    <option [value]="islandKey(island)">{{ cityLabel(island.city) }} · {{ island.name }}@if (island.source_guild_name) { ({{ island.source_guild_name }}) }</option>
                   }
                 </select>
               </label>
@@ -612,10 +612,20 @@ export class Events {
   protected readonly islands = signal<SplitIsland[]>([]);
   protected readonly draftIslandId = signal('');
   protected readonly draftTabId = signal('');
-  protected readonly draftTabs = computed(() => {
-    const id = Number(this.draftIslandId());
-    return this.islands().find((island) => island.id === id)?.tabs ?? [];
-  });
+  protected readonly draftIsland = computed(() =>
+    this.islands().find((island) => this.islandKey(island) === this.draftIslandId()),
+  );
+  protected readonly draftTabs = computed(() => this.draftIsland()?.tabs ?? []);
+
+  /**
+   * Island ids are only unique inside one guild's catalog, and an alliance lists every member
+   * guild's islands together, so the guild is part of the key there.
+   */
+  protected islandKey(island: SplitIsland): string {
+    return island.source_guild_tenant_id
+      ? `${island.source_guild_tenant_id}|${island.id}`
+      : String(island.id);
+  }
   protected readonly compError = signal<string | null>(null);
 
   protected readonly pendingArchive = signal<EventView | null>(null);
@@ -921,6 +931,12 @@ export class Events {
       create_split: this.draftCreateSplit(),
       island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
     };
+    const originGuildId = this.draftCreateSplit()
+      ? this.draftIsland()?.source_guild_tenant_id
+      : undefined;
+    if (originGuildId) {
+      request.origin_guild_id = originGuildId;
+    }
     const description = this.draftDescription().trim();
     if (description) {
       request.description = description;

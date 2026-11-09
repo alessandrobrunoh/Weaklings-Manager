@@ -3519,6 +3519,14 @@ impl EventService {
             }
         }
 
+        if req.origin_guild_id.is_some() {
+            // The router turns a member-guild locator into a local tab id; reaching the service
+            // with one still set would resolve a foreign id against this tenant's catalog.
+            return Err(AppError::Validation(
+                "origin_guild_id must be resolved before the event is created".to_owned(),
+            ));
+        }
+
         let linked_split_tab = if req.create_split {
             let Some(island_tab_id) = req.island_tab_id else {
                 return Err(AppError::Validation(
@@ -5742,6 +5750,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -5827,6 +5836,7 @@ mod tests {
             discord_role_ids: vec![],
             create_split: false,
             island_tab_id: None,
+            origin_guild_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: true,
             discord_delivery: "message".to_string(),
@@ -7711,6 +7721,7 @@ mod tests {
                     discord_role_ids: vec!["111111111111111111".to_string()],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -7759,6 +7770,7 @@ mod tests {
                     ],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -7963,6 +7975,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: true,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8198,6 +8211,7 @@ mod tests {
                     discord_role_ids: vec!["111111111111111111".to_string()],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8243,6 +8257,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8332,6 +8347,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8379,6 +8395,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8387,6 +8404,52 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_event_rejects_an_unresolved_origin_guild_locator() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Main Comp", cat, None, vec![]).await;
+        let island = crate::modules::splits::service::SplitService::new()
+            .create_island(
+                &db,
+                crate::modules::splits::models::CreateIslandRequest {
+                    name: "HQ".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let err = EventService::new()
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "ZvZ Castle Fight".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    event_kind: None,
+                    comp_id: Some(comp_id),
+                    player_cap: None,
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec![],
+                    create_split: true,
+                    island_tab_id: Some(island.tabs[0].id),
+                    origin_guild_id: Some("member-guild".to_string()),
+                    ping_alliance: false,
+                    vod_forum_post_enabled: true,
+                    discord_delivery: "message".to_string(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
     }
 
     #[tokio::test]
@@ -8425,6 +8488,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: Some(tab_id),
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8499,6 +8563,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8594,6 +8659,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8709,6 +8775,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8763,6 +8830,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8829,6 +8897,7 @@ mod tests {
             discord_role_ids: vec![],
             create_split: false,
             island_tab_id: None,
+            origin_guild_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: true,
             discord_delivery: "message".to_string(),
@@ -8904,6 +8973,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -8967,6 +9037,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -9037,6 +9108,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -9062,6 +9134,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),
@@ -9270,6 +9343,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    origin_guild_id: None,
                     ping_alliance: false,
                     vod_forum_post_enabled: true,
                     discord_delivery: "message".to_string(),

@@ -664,8 +664,19 @@ pub struct CreateEventRequest {
     #[serde(default)]
     pub create_split: bool,
     /// Island tab for the correlated split. Required when `create_split` is true.
+    ///
+    /// On a guild tenant this is a tab of the guild's own catalog. On an alliance tenant it is a
+    /// tab of the member guild named by `origin_guild_id` (islands exist only in guilds).
     #[schema(example = 10)]
     pub island_tab_id: Option<i64>,
+    /// Discord guild tenant id that owns `island_tab_id`. Alliance tenants only.
+    ///
+    /// Required with `create_split` on an alliance tenant, where the tab is resolved in that
+    /// member guild's catalog (the guild must be an active member of the alliance). Rejected on
+    /// a guild tenant, whose tab always comes from its own catalog.
+    #[serde(default)]
+    #[schema(example = "123456789012345678")]
+    pub origin_guild_id: Option<String>,
     /// Also ping the alliance Discord events channel (guild events only; default off).
     #[serde(default)]
     pub ping_alliance: bool,
