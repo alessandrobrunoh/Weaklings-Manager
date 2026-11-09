@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApiClient } from "../api/client.js";
 import {
+  COOLDOWN_SWEEP_THRESHOLD,
+  MAX_TRACKED_AUTHORS,
   MessageXpGate,
   SETTINGS_TTL_MS,
   forgetMessageXpGate,
@@ -125,4 +127,55 @@ test("the gate registry keeps one gate per guild, and forgetting drops it", () =
 
   forgetMessageXpGate("111");
   assert.notEqual(getMessageXpGate("111"), first, "forgetting drops the cache");
+});
+
+test("MessageXpGate forgets authors whose cooldown has elapsed so the map does not grow forever", async () => {
+  const api = { get: async () => settings } as unknown as ApiClient;
+  let now = 1_000_000;
+  const gate = new MessageXpGate(api, SETTINGS_TTL_MS, () => now);
+  await gate.shouldAward("warmup", "general", 50); // fetch + cache the settings
+
+  // A burst of distinct authors, all of whom then fall silent.
+  for (let i = 0; i <= COOLDOWN_SWEEP_THRESHOLD; i += 1) {
+    gate.recordAward(`user-${i}`);
+  }
+  assert.equal(gate.trackedAuthors, COOLDOWN_SWEEP_THRESHOLD + 1);
+
+  // Once the 60s cooldown has passed for all of them, the next award sweeps them out.
+  now += 61_000;
+  gate.recordAward("latecomer");
+  assert.equal(gate.trackedAuthors, 1, "only the author still inside a cooldown is kept");
+});
+
+test("MessageXpGate keeps an author who is still inside the cooldown while sweeping others", async () => {
+  const api = { get: async () => settings } as unknown as ApiClient;
+  let now = 1_000_000;
+  const gate = new MessageXpGate(api, SETTINGS_TTL_MS, () => now);
+  await gate.shouldAward("warmup", "general", 50);
+
+  for (let i = 0; i < COOLDOWN_SWEEP_THRESHOLD; i += 1) {
+    gate.recordAward(`old-${i}`);
+  }
+  now += 61_000;
+  gate.recordAward("fresh"); // size is past the threshold, so this award sweeps the old batch
+  gate.recordAward("second");
+
+  assert.equal(gate.trackedAuthors, 2);
+  // "fresh" is within its cooldown, so the gate still skips the backend call for them.
+  now += 10_000;
+  assert.equal(await gate.shouldAward("fresh", "general", 50), false);
+  assert.equal(await gate.shouldAward("old-0", "general", 50), true);
+});
+
+test("MessageXpGate never tracks more than MAX_TRACKED_AUTHORS even if nobody's cooldown expires", async () => {
+  // Cooldown far longer than the test, so the expiry sweep alone cannot shrink the map.
+  const longCooldown = { ...settings, message_cooldown_secs: 365 * 24 * 3600 };
+  const api = { get: async () => longCooldown } as unknown as ApiClient;
+  const gate = new MessageXpGate(api, SETTINGS_TTL_MS, () => 1_000_000);
+  await gate.shouldAward("warmup", "general", 50);
+
+  for (let i = 0; i < MAX_TRACKED_AUTHORS + 50; i += 1) {
+    gate.recordAward(`user-${i}`);
+  }
+  assert.ok(gate.trackedAuthors <= MAX_TRACKED_AUTHORS, `tracked ${gate.trackedAuthors}`);
 });
