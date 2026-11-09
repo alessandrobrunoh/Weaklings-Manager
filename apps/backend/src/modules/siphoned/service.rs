@@ -427,6 +427,7 @@ impl SiphonedService {
                 break;
             }
         }
+        ensure_not_settlement_entry(&txn, entry_id, "edited").await?;
         let mut active = model.into_active_model();
         active.occurred_at = Set(req.occurred_at);
         active.player_name = Set(req.player_name.trim().to_string());
@@ -449,7 +450,8 @@ impl SiphonedService {
     ///
     /// # Errors
     ///
-    /// Returns `AppError::NotFound` when the row does not exist or `AppError::Database` when the
+    /// Returns `AppError::NotFound` when the row does not exist, `AppError::Conflict` when the
+    /// row is the ledger entry of a confirmed settlement, or `AppError::Database` when the
     /// delete fails.
     pub async fn delete_entry(
         &self,
@@ -468,6 +470,7 @@ impl SiphonedService {
                 break;
             }
         }
+        ensure_not_settlement_entry(&txn, entry_id, "deleted").await?;
         let result = SiphonedEntryEntity::delete_by_id(entry_id)
             .exec(&txn)
             .await?;
@@ -838,6 +841,29 @@ async fn lock_player_names<C: ConnectionTrait>(db: &C, names: &[String]) -> Resu
             [name.into()],
         ))
         .await?;
+    }
+    Ok(())
+}
+
+/// Refuses to change the ledger row that a confirmed settlement created.
+///
+/// Confirming a settlement writes a balancing ledger entry and, in the same transaction, a bank
+/// row for the silver the guild paid out. Deleting or editing that entry would make the player's
+/// debt reappear while the payout stays on the books, so the entry is frozen. `action` is the
+/// past participle used in the message.
+async fn ensure_not_settlement_entry<C: ConnectionTrait>(
+    db: &C,
+    entry_id: i64,
+    action: &str,
+) -> Result<(), AppError> {
+    let settlements = QuoteEntity::find()
+        .filter(QuoteColumn::SiphonedEntryId.eq(entry_id))
+        .count(db)
+        .await?;
+    if settlements > 0 {
+        return Err(AppError::Conflict(format!(
+            "siphoned entry {entry_id} records a confirmed settlement and cannot be {action}"
+        )));
     }
     Ok(())
 }
@@ -1686,6 +1712,85 @@ mod tests {
             siphoned_net(&db, "GALVDON").await.expect("net"),
             Decimal::ZERO
         );
+    }
+
+    #[tokio::test]
+    async fn a_confirmed_settlement_entry_cannot_be_edited_or_deleted() {
+        let db = seed_db().await;
+        let user_id = insert_settlement_user(&db).await;
+        insert_entry(&db, ts(1), "Galvdon", "Withdrawal", "-10", None).await;
+        insert_settlement_quote(
+            &db,
+            "quote-frozen",
+            user_id,
+            Utc::now() + chrono::Duration::minutes(1),
+        )
+        .await;
+        let service = SiphonedService::new();
+        let settled = service
+            .confirm_settlement(&db, "quote-frozen", 900)
+            .await
+            .expect("confirm");
+        let entry_id = settled.siphoned_entry_id;
+
+        let delete_error = service
+            .delete_entry(&db, entry_id)
+            .await
+            .err()
+            .expect("settlement entry must not be deletable");
+        assert!(
+            matches!(delete_error, AppError::Conflict(_)),
+            "{delete_error:?}"
+        );
+
+        let edit_error = service
+            .update_entry(
+                &db,
+                entry_id,
+                &EntryMutationRequest {
+                    occurred_at: DateTime::parse_from_rfc3339("2026-08-10T20:37:41Z").unwrap(),
+                    player_name: "Galvdon".to_string(),
+                    reason: "Siphoned debt settlement".to_string(),
+                    amount: Decimal::from(5),
+                },
+            )
+            .await
+            .err()
+            .expect("settlement entry must not be editable");
+        assert!(
+            matches!(edit_error, AppError::Conflict(_)),
+            "{edit_error:?}"
+        );
+
+        // Nothing changed: the debt is still settled and the entry is still there.
+        assert_eq!(
+            siphoned_net(&db, "GALVDON").await.expect("net"),
+            Decimal::ZERO
+        );
+        assert!(
+            SiphonedEntryEntity::find_by_id(entry_id)
+                .one(&db)
+                .await
+                .expect("lookup")
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn ordinary_ledger_entries_stay_deletable() {
+        let db = seed_db().await;
+        insert_entry(&db, ts(1), "Galvdon", "Withdrawal", "-10", None).await;
+        let entry = SiphonedEntryEntity::find()
+            .one(&db)
+            .await
+            .expect("lookup")
+            .expect("entry");
+
+        SiphonedService::new()
+            .delete_entry(&db, entry.id)
+            .await
+            .expect("an entry no settlement points at can still be deleted");
+        assert_eq!(SiphonedEntryEntity::find().count(&db).await.unwrap(), 0);
     }
 
     #[tokio::test]
