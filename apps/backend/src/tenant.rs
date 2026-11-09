@@ -721,7 +721,7 @@ fn is_unscoped_auth_path(path: &str) -> bool {
 /// A browser session names its guild through the cookie instead, which the
 /// user cannot rewrite.
 fn is_bot_request(headers: &HeaderMap, cfg: Option<&Config>) -> bool {
-    let Some(expected) = cfg.and_then(|cfg| cfg.bot_api_secret.as_deref()) else {
+    let Some(expected) = cfg.and_then(Config::bot_secret) else {
         return false;
     };
     let Some(provided) = headers
@@ -1248,6 +1248,27 @@ mod tests {
         headers.insert(BOT_SECRET_HEADER, HeaderValue::from_static(""));
         assert!(!is_bot_request(&headers, Some(&cfg)));
         assert!(!is_bot_request(&headers, None));
+    }
+
+    /// `BOT_API_SECRET=` (set but empty) is what `envy` and an undefined
+    /// `${BOT_API_SECRET}` in docker-compose produce. It must disable bot auth,
+    /// not become a secret that an empty `X-Bot-Secret:` header matches.
+    #[test]
+    fn a_blank_configured_secret_never_matches_a_blank_header() {
+        for blank in ["", "   "] {
+            let cfg = cfg_with_bot_secret(Some(blank));
+            for header in ["", "   ", blank] {
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    BOT_SECRET_HEADER,
+                    HeaderValue::from_str(header).expect("header value"),
+                );
+                assert!(
+                    !is_bot_request(&headers, Some(&cfg)),
+                    "config {blank:?} + header {header:?} must not authenticate"
+                );
+            }
+        }
     }
 
     #[tokio::test]

@@ -265,7 +265,7 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         .get::<Config>()
         .ok_or_else(|| AppError::Internal("Config extension missing".to_string()))?;
 
-    let expected_secret = cfg.bot_api_secret.as_deref().ok_or_else(|| {
+    let expected_secret = cfg.bot_secret().ok_or_else(|| {
         AppError::Unauthorized(
             "Bot authentication is not configured on this server (BOT_API_SECRET not set)"
                 .to_string(),
@@ -478,7 +478,7 @@ where
             .get::<Config>()
             .ok_or_else(|| AppError::Internal("Config extension missing".to_string()))?;
 
-        let expected_secret = cfg.bot_api_secret.as_deref().ok_or_else(|| {
+        let expected_secret = cfg.bot_secret().ok_or_else(|| {
             AppError::Unauthorized(
                 "Bot authentication is not configured on this server (BOT_API_SECRET not set)"
                     .to_string(),
@@ -1002,6 +1002,27 @@ mod tests {
             .await
             .expect("migrate");
         db
+    }
+
+    /// A blank `BOT_API_SECRET` must not turn an empty `X-Bot-Secret:` header into a
+    /// `bot_system` superadmin context.
+    #[tokio::test]
+    async fn blank_configured_bot_secret_does_not_authenticate_a_blank_header() {
+        for blank in ["", "   "] {
+            let mut config = crate::config::Config::for_tests();
+            config.bot_api_secret = Some(blank.to_string());
+            let (mut parts, _) = axum::http::Request::builder()
+                .header(crate::tenant::BOT_SECRET_HEADER, blank)
+                .body(())
+                .expect("request")
+                .into_parts();
+            parts.extensions.insert(config);
+
+            let err = try_from_bot_headers(&mut parts)
+                .await
+                .expect_err("blank secret must be refused, not accepted as bot_system");
+            assert!(matches!(err, AppError::Unauthorized(_)));
+        }
     }
 
     #[tokio::test]
