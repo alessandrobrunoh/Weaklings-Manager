@@ -1349,6 +1349,52 @@ mod tests {
         world.close().await;
     }
 
+    #[tokio::test]
+    async fn worker_exhausts_a_permanently_failing_target_and_stops_retrying() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        // The source event does not exist, so every attempt fails.
+        let job_id = fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            987_654,
+            Operation::Update,
+            "update:never",
+            &["guild-a".to_owned()],
+        )
+        .await
+        .expect("enqueue");
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE event_fanout_targets SET attempts=$2 WHERE job_id=$1",
+                [job_id.into(), (fanout_outbox::MAX_ATTEMPTS - 1).into()],
+            ))
+            .await
+            .expect("spend all but the last attempt");
+
+        let processed =
+            super::super::fanout_worker::process_due_targets(&world.control, &world.registry)
+                .await
+                .expect("worker tick");
+        assert_eq!(processed, 1);
+        let status = fanout_outbox::target_statuses(&world.control, job_id)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(status.state, "exhausted");
+        assert!(status.last_error.is_some_and(|e| e.contains("987654")));
+
+        let again =
+            super::super::fanout_worker::process_due_targets(&world.control, &world.registry)
+                .await
+                .expect("second tick");
+        assert_eq!(again, 0, "an exhausted target is not retried");
+        world.close().await;
+    }
+
     async fn participation_count(db: &DatabaseConnection, event_id: i64) -> i64 {
         crate::modules::events::entities::event_participation::Entity::find()
             .filter(

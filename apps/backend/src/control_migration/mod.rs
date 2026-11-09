@@ -35,6 +35,7 @@ mod m20261106_000001_mirror_request_inactive_state;
 mod m20261106_000002_scrub_mirror_request_actor_email;
 mod m20261107_000001_discord_delivery;
 mod m20261107_000001_sync_engine;
+mod m20261109_000002_event_fanout_exhausted_state;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -89,6 +90,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261106_000002_scrub_mirror_request_actor_email::Migration),
             Box::new(m20261107_000001_discord_delivery::Migration),
             Box::new(m20261107_000001_sync_engine::Migration),
+            Box::new(m20261109_000002_event_fanout_exhausted_state::Migration),
         ]
     }
 }
