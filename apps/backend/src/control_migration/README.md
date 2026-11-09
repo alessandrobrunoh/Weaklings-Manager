@@ -16,6 +16,7 @@ This directory contains the SeaORM migration bundle for control-plane state, sep
 - Partial unique indexes limit default ranks and default tenants independently to at most one.
 - A guild can belong to at most one alliance; membership status is `pending` or `active`.
 - Alliance-share source keys and source/mirror event-link keys are unique in their respective records.
+- `auth_sessions` holds server-side browser sessions (id, Discord id, created/expires/revoked timestamps); revoked or expired ids are never accepted.
 - Rollback semantics are migration-specific; the artifact-type repair migration documents a no-op `down`.
 
 ## Side Effects

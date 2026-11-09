@@ -38,6 +38,7 @@ use utoipa::OpenApi;
         crate::modules::auth::router::switch_tenant,
         crate::modules::auth::router::get_me,
         crate::modules::auth::router::logout,
+        crate::modules::auth::router::logout_all,
         crate::modules::bank::router::get_balance,
         crate::modules::bank::router::get_guild_summary,
         crate::modules::bank::router::get_admin_summary,
@@ -875,7 +876,8 @@ There is no `Authorization` header and no JWT. Login is a server-side Discord OA
 4. From then on, the browser sends the cookie automatically on every same-site request. Call \
    `GET /api/auth/me` on app load to check whether a session exists and to get the logged-in user's \
    profile (id, username, avatar, roles). A `401` means \"not logged in\" — show the login button.
-5. `POST /api/auth/logout` clears the cookie.
+5. `POST /api/auth/logout` revokes the session server-side and clears the cookie; \
+   `POST /api/auth/logout-all` revokes every session of the caller's account.
 
 Every endpoint below other than the four `auth` ones requires this cookie to already be set; they are \
 all annotated with the `session_cookie` security requirement. Because it's a cookie, `fetch()` calls \

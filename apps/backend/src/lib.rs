@@ -204,6 +204,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             registry.clone(),
             tenant::resolve_tenant,
         ))
+        .layer(axum::Extension(modules::auth::SessionStore::new(
+            control_db.clone(),
+        )))
         .layer(axum::Extension(tenant::ControlDb(control_db)))
         .layer(axum::Extension(registry.clone()))
         .layer(axum::Extension(cfg.clone()))

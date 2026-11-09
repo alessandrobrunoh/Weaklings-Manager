@@ -14,7 +14,7 @@ use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::Response;
-use axum_extra::extract::cookie::{Key, PrivateCookieJar};
+use axum_extra::extract::cookie::Key;
 use dashmap::DashMap;
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
@@ -26,7 +26,6 @@ use crate::migration::Migrator;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
-use crate::modules::auth::service::DiscordUserProfile;
 use crate::modules::capabilities::{self, Enforcement};
 use crate::postgres::{self, connect_tenant_pool, list_active_tenants};
 use crate::{albion_scope, battle_sync, event_sessions};
@@ -769,11 +768,12 @@ pub fn resolve_tenant_id(
 }
 
 fn cookie_tenant_id(headers: &HeaderMap, key: Option<&Key>) -> Option<String> {
-    let key = key?;
-    let jar = PrivateCookieJar::from_headers(headers, key.clone());
-    let cookie = jar.get("session_user")?;
-    let profile: DiscordUserProfile = serde_json::from_str(cookie.value()).ok()?;
-    profile
+    // Only picks which tenant's pool the request runs against. It deliberately does not
+    // consult the session store: authentication is the extractors' job, and an unauthenticated
+    // request with a stale cookie is refused there.
+    let session = crate::modules::auth::session_store::SessionCookie::from_headers(headers, key?)?;
+    session
+        .profile
         .tenant_id
         .map(|id| id.trim().to_owned())
         .filter(|id| !id.is_empty())
@@ -1174,19 +1174,7 @@ mod tests {
             "user_id": 1,
             "tenant_id": tenant_id,
         });
-        let response = PrivateCookieJar::new(key.clone())
-            .add(("session_user", profile.to_string()))
-            .into_response();
-        response
-            .headers()
-            .get(axum::http::header::SET_COOKIE)
-            .expect("set-cookie")
-            .to_str()
-            .expect("ascii cookie")
-            .split(';')
-            .next()
-            .expect("cookie pair")
-            .to_owned()
+        crate::modules::auth::session_store::test_cookie_header(key, "test-sid", &profile)
     }
 
     /// The bot keeps working: its header still selects the guild it serves.
