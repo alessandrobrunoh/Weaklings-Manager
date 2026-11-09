@@ -432,6 +432,11 @@ export interface AlbionLinkStatus {
   albion_player_id?: string;
   albion_player_name?: string;
   linked_at?: string;
+  /** A claim is waiting for an officer. It is not a link: `linked` stays false. */
+  pending?: boolean;
+  pending_albion_player_id?: string;
+  pending_albion_player_name?: string;
+  requested_at?: string;
 }
 
 export interface AlbionPlayerSummary {

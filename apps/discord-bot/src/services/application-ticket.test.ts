@@ -289,3 +289,16 @@ test('linkIngameName reports an account that already has a character', async () 
   } as unknown as ApiClient;
   assert.equal(await linkIngameName(client, '42', 'Galvdon'), 'already-linked');
 });
+
+/** Albion cannot prove who owns a character, so for a member the answer is a request, not a link. */
+test('linkIngameName reports a pending request when an officer still has to approve', async () => {
+  const outcome = await linkIngameName(
+    api({
+      'api/albion/search': { players: [{ id: 'p1', name: 'Galvdon' }], guilds: [] },
+      'api/albion/link': { linked: false, pending: true },
+    }),
+    '42',
+    'Galvdon',
+  );
+  assert.equal(outcome, 'pending');
+});

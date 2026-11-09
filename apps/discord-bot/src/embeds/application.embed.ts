@@ -142,7 +142,7 @@ export function buildApplicationReopenedEmbed(
 
 /** Reports what the automatic Albion link did, inside the ticket itself. */
 export function buildApplicationLinkEmbed(
-  outcome: 'linked' | 'already-linked' | 'not-found' | 'ambiguous' | 'failed',
+  outcome: 'linked' | 'pending' | 'already-linked' | 'not-found' | 'ambiguous' | 'failed',
   ingameName: string,
 ): APIEmbed {
   if (outcome === 'linked') {
@@ -150,6 +150,14 @@ export function buildApplicationLinkEmbed(
       'success',
       'Personaggio collegato',
       `**${ingameName}** è stato collegato a questo account: nickname e ruolo sono già stati sistemati.`,
+      'APPLICATIONS',
+    ).toJSON();
+  }
+  if (outcome === 'pending') {
+    return createResponseEmbed(
+      'info',
+      'Collegamento in attesa',
+      `Ho inviato la richiesta per **${ingameName}**: un officer deve approvarla dalla pagina Membri. Nickname e ruolo arrivano subito dopo l'approvazione.`,
       'APPLICATIONS',
     ).toJSON();
   }
