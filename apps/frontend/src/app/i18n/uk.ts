@@ -1847,7 +1847,7 @@ export const uk: TranslationDict = {
   'admin.permissions.grantGroup': 'Всі',
   'admin.permissions.clearGroup': 'Немає',
   'admin.permissions.title': 'Дозволи ролі',
-  'admin.permissions.hint': 'Позначте можливості, які надає кожна роль управління. Членство залишається в Discord. Зміни застосовуються одразу.',
+  'admin.permissions.hint': 'Позначте можливості, які надає кожна роль управління. Членство залишається в Discord. Зміни застосовуються одразу. Для комп і білдів редагування та видалення діють лише для створеного учасником; manage охоплює всіх.',
   'admin.permissions.permission': 'Дозвіл',
   'admin.permissions.priority': 'пріоритет',
   'admin.permissions.searchPlaceholder': 'Фільтрувати дозволи...',

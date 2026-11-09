@@ -361,4 +361,22 @@ describe('Events', () => {
     expect((component as any).canPingAlliance()).toBe(true);
     expect((component as any).draftPingAlliance()).toBe(false);
   });
+  it('keys alliance islands by member guild so equal ids from two guilds stay distinct', () => {
+    const island = (guild: string | null, name: string) => ({
+      id: 1,
+      name,
+      city: 'lymhurst',
+      tabs: [{ id: 5, name: 'Loot', sort_order: 0 }],
+      source_guild_tenant_id: guild,
+    });
+    (component as any).islands.set([island('guild-a', 'HQ A'), island('guild-b', 'HQ B')]);
+    (component as any).draftIslandId.set('guild-b|1');
+    expect((component as any).draftIsland().name).toBe('HQ B');
+    expect((component as any).draftIsland().source_guild_tenant_id).toBe('guild-b');
+
+    (component as any).islands.set([island(null, 'Own HQ')]);
+    (component as any).draftIslandId.set('1');
+    expect((component as any).draftIsland().name).toBe('Own HQ');
+    expect((component as any).draftTabs()).toHaveLength(1);
+  });
 });

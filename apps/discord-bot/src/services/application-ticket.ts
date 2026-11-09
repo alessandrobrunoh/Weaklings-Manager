@@ -15,7 +15,7 @@ import type {
 } from '../api/types.js';
 
 /** What the automatic Albion link managed to do for the applicant. */
-export type LinkOutcome = 'linked' | 'already-linked' | 'not-found' | 'failed';
+export type LinkOutcome = 'linked' | 'already-linked' | 'not-found' | 'ambiguous' | 'failed';
 
 /** Whether the applicant landed in a brand new ticket or their old one. */
 export interface TicketResult {
@@ -201,6 +201,35 @@ export async function reopenTicket(
   return application;
 }
 
+/** Lower-cases and strips diacritics so `Gálvdon` and `galvdon` are the same name. */
+export function foldName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase();
+}
+
+/**
+ * The search hit whose name equals `name` (case- and diacritic-insensitive). Albion names are not
+ * unique, so namesakes are resolved only when exactly one of them belongs to the configured
+ * guild (`in_guild`, set by the backend); otherwise `'ambiguous'` and nothing is linked.
+ */
+export function pickExactPlayer<T extends { name: string; in_guild?: boolean }>(
+  players: readonly T[],
+  name: string,
+): T | 'ambiguous' | null {
+  const wanted = foldName(name.trim());
+  const exact = players.filter((candidate) => foldName(candidate.name) === wanted);
+  if (exact.length === 0) {
+    return null;
+  }
+  if (exact.length === 1) {
+    return exact[0];
+  }
+  const inGuild = exact.filter((candidate) => candidate.in_guild === true);
+  return inGuild.length === 1 ? inGuild[0] : 'ambiguous';
+}
+
 /**
  * Links the applicant's Albion character, which also renames them in Discord
  * and grants the guild role — all of that already happens backend-side on
@@ -216,10 +245,11 @@ export async function linkIngameName(
     const results = await api.get<AlbionSearchResult>('api/albion/search', discordId, {
       q: ingameName,
     });
-    const wanted = ingameName.trim().toLowerCase();
-    player =
-      results.players.find((candidate) => candidate.name.toLowerCase() === wanted) ??
-      undefined;
+    const picked = pickExactPlayer(results.players, ingameName);
+    if (picked === 'ambiguous') {
+      return 'ambiguous';
+    }
+    player = picked ?? undefined;
   } catch {
     return 'failed';
   }

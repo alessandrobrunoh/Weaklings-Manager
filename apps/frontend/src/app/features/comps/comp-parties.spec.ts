@@ -12,6 +12,7 @@ function build(id: number, name: string, role: BuildRole): BuildSummary {
     category_id: 1,
     version: 1,
     category_name: 'ZvZ',
+    created_by_id: 1,
     created_by_username: 'officer',
     updated_at: '2026-09-01T00:00:00Z',
     item_count: 1,

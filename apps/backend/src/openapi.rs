@@ -278,6 +278,8 @@ use utoipa::OpenApi;
         crate::modules::platform::router::assign_admin,
         crate::modules::platform::router::revoke_admin,
         crate::modules::platform::router::reload_admins,
+        crate::modules::platform::router::list_exhausted_fanout,
+        crate::modules::platform::router::requeue_exhausted_fanout,
         crate::modules::platform::public::tenant_status,
         crate::modules::platform::public::register_tenant,
         crate::modules::platform::public::albion_search,
@@ -752,6 +754,7 @@ use utoipa::OpenApi;
             crate::modules::platform::models::TenantFeaturesView,
             crate::modules::platform::models::PutTenantFeaturesRequest,
             crate::modules::platform::models::PlatformAdminView,
+            crate::modules::events::fanout_outbox::ExhaustedTarget,
             crate::modules::platform::models::AssignAdminRequest,
             crate::modules::platform::models::RegisterTenantRequest,
             crate::modules::platform::models::TenantStatusView,
@@ -908,8 +911,8 @@ Current permissions:
 | `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |
 | `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |
 | `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |
-| `comps.builds.manage`    | Admin, Officer    | build CRUD endpoints                       |
-| `comps.comps.manage`     | Admin, Officer    | comp CRUD endpoints                        |
+| `comps.builds.manage`    | Admin, Officer    | edit/delete/archive/version any build (create/edit/delete alone: own builds only) |
+| `comps.comps.manage`     | Admin, Officer    | edit/delete/archive/version any comp (create/edit/delete alone: own comps only) |
 
 A `403 Forbidden` (`ProblemDetails`) means the session is valid but the caller's roles don't
 grant the required permission.

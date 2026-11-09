@@ -965,6 +965,7 @@ mod tests {
             discord_role_ids: Vec::new(),
             create_split: false,
             island_tab_id: None,
+            origin_guild_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: false,
             discord_delivery: "message".to_owned(),
@@ -1348,6 +1349,52 @@ mod tests {
         world.close().await;
     }
 
+    #[tokio::test]
+    async fn worker_exhausts_a_permanently_failing_target_and_stops_retrying() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        // The source event does not exist, so every attempt fails.
+        let job_id = fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            987_654,
+            Operation::Update,
+            "update:never",
+            &["guild-a".to_owned()],
+        )
+        .await
+        .expect("enqueue");
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE event_fanout_targets SET attempts=$2 WHERE job_id=$1",
+                [job_id.into(), (fanout_outbox::MAX_ATTEMPTS - 1).into()],
+            ))
+            .await
+            .expect("spend all but the last attempt");
+
+        let processed =
+            super::super::fanout_worker::process_due_targets(&world.control, &world.registry)
+                .await
+                .expect("worker tick");
+        assert_eq!(processed, 1);
+        let status = fanout_outbox::target_statuses(&world.control, job_id)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(status.state, "exhausted");
+        assert!(status.last_error.is_some_and(|e| e.contains("987654")));
+
+        let again =
+            super::super::fanout_worker::process_due_targets(&world.control, &world.registry)
+                .await
+                .expect("second tick");
+        assert_eq!(again, 0, "an exhausted target is not retried");
+        world.close().await;
+    }
+
     async fn participation_count(db: &DatabaseConnection, event_id: i64) -> i64 {
         crate::modules::events::entities::event_participation::Entity::find()
             .filter(
@@ -1543,6 +1590,42 @@ mod tests {
             participation_count(&world.tenant_dbs[2], copy_b.id).await,
             0,
             "sibling guild copy must not receive the signup"
+        );
+        world.close().await;
+    }
+
+    /// A selected build that was never shared with the linked tenant cannot be mapped there. The
+    /// caller's own signup is already saved by then, so the sync must log and skip that copy
+    /// instead of failing the call (the route used to answer with an error for a signup that had
+    /// in fact succeeded).
+    #[tokio::test]
+    async fn an_unmappable_build_does_not_fail_the_sync_of_a_saved_signup() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Unshared build event").await;
+        let copy_a = world.guild_copy(1, source.id).await;
+
+        let unshared_build = ParticipateEventRequest {
+            primary_build_id: Some(987_654),
+            secondary_build_id: None,
+        };
+        sync_participation(
+            &world.control,
+            &world.registry,
+            "guild-a",
+            copy_a.id,
+            &actor("discord-9"),
+            Some(unshared_build),
+            Some("guild-a"),
+        )
+        .await
+        .expect("a copy that cannot map the build is skipped, not an error");
+
+        assert_eq!(
+            participation_count(&world.tenant_dbs[0], source.id).await,
+            0,
+            "the copy that could not take the build is left untouched"
         );
         world.close().await;
     }

@@ -1073,6 +1073,11 @@
             "example": "aPngkjfLT2CGiZoWXLr8UQ",
             "type": "string"
           },
+          "in_guild": {
+            "description": "`true` when this player belongs to the tenant's configured Albion guild. Set by this app\n(never by Albion): `GET /albion/search` ranks these first. Absent upstream, so it\ndeserializes as `false`.",
+            "example": false,
+            "type": "boolean"
+          },
           "kill_fame": {
             "description": "Lifetime `PvP` kill fame. Sometimes `null` upstream for low-activity players.",
             "example": 102244.0,
@@ -1103,7 +1108,12 @@
             },
             "type": "array"
           },
+          "partial": {
+            "description": "`true` when Albion's global search could not be reached and only the configured guild's\nroster answered, so players outside the guild may be missing. Omitted when `false`.",
+            "type": "boolean"
+          },
           "players": {
+            "description": "Matching players. On `GET /albion/search` members of the configured guild come first,\nfollowed by every other Albion player the global search returned.",
             "items": {
               "$ref": "#/components/schemas/AlbionPlayerSummary"
             },
@@ -3291,7 +3301,12 @@
                 },
                 "type": "array"
               },
+              "partial": {
+                "description": "`true` when Albion's global search could not be reached and only the configured guild's\nroster answered, so players outside the guild may be missing. Omitted when `false`.",
+                "type": "boolean"
+              },
               "players": {
+                "description": "Matching players. On `GET /albion/search` members of the configured guild come first,\nfollowed by every other Albion player the global search returned.",
                 "items": {
                   "$ref": "#/components/schemas/AlbionPlayerSummary"
                 },
@@ -7085,6 +7100,78 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_ExhaustedTarget": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "items": {
+              "description": "A target parked in the terminal `exhausted` state, for operators.",
+              "properties": {
+                "attempts": {
+                  "description": "Attempts consumed.",
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "exhausted_at": {
+                  "description": "When the target was parked.",
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "job_id": {
+                  "description": "Fanout job id.",
+                  "type": "string"
+                },
+                "last_error": {
+                  "description": "Last failure detail.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "operation": {
+                  "description": "`publish`, `update`, or `archive`.",
+                  "type": "string"
+                },
+                "source_event_id": {
+                  "description": "Source event primary key.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "source_tenant_id": {
+                  "description": "Source (alliance) tenant id.",
+                  "type": "string"
+                },
+                "tenant_id": {
+                  "description": "Destination tenant id.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "job_id",
+                "source_tenant_id",
+                "source_event_id",
+                "operation",
+                "tenant_id",
+                "attempts"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_FeatureCatalogItem": {
         "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
         "properties": {
@@ -9668,6 +9755,12 @@
               "null"
             ]
           },
+          "created_by_id": {
+            "description": "The internal id of the user who created the build. Clients compare it with the session's\n`user_id` to tell which builds the caller authored (author-or-manage permissions).",
+            "example": 1,
+            "format": "int64",
+            "type": "integer"
+          },
           "created_by_username": {
             "description": "The username of the user who created the build.",
             "type": "string"
@@ -9724,6 +9817,7 @@
           "role",
           "category_id",
           "version",
+          "created_by_id",
           "created_by_username",
           "updated_at",
           "item_count",
@@ -10665,6 +10759,12 @@
             "description": "The timestamp when the comp was created.",
             "type": "string"
           },
+          "created_by_id": {
+            "description": "The internal id of the user who created the comp. Clients compare it with the session's\n`user_id` to tell which comps the caller authored (author-or-manage permissions).",
+            "example": 1,
+            "format": "int64",
+            "type": "integer"
+          },
           "created_by_username": {
             "description": "The username of the user who created the comp.",
             "type": "string"
@@ -10712,6 +10812,7 @@
           "name",
           "category_id",
           "version",
+          "created_by_id",
           "created_by_username",
           "created_at",
           "build_count",
@@ -11170,7 +11271,7 @@
             ]
           },
           "island_tab_id": {
-            "description": "Island tab for the correlated split. Required when `create_split` is true.",
+            "description": "Island tab for the correlated split. Required when `create_split` is true.\n\nOn a guild tenant this is a tab of the guild's own catalog. On an alliance tenant it is a\ntab of the member guild named by `origin_guild_id` (islands exist only in guilds).",
             "example": 10,
             "format": "int64",
             "type": [
@@ -11180,6 +11281,14 @@
           },
           "mass_time_utc": {
             "description": "The mass announcement date/time (UTC, RFC3339).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin_guild_id": {
+            "description": "Discord guild tenant id that owns `island_tab_id`. Alliance tenants only.\n\nRequired with `create_split` on an alliance tenant, where the tab is resolved in that\nmember guild's catalog (the guild must be an active member of the alliance). Rejected on\na guild tenant, whose tab always comes from its own catalog.",
+            "example": "123456789012345678",
             "type": [
               "string",
               "null"
@@ -13561,7 +13670,7 @@
             "type": "string"
           },
           "state": {
-            "description": "`pending`, `processing`, `complete`, or `failed`.",
+            "description": "`pending`, `processing`, `complete`, `failed`, or `exhausted` (only\ntargets that need an operator remain).",
             "type": "string"
           },
           "targets": {
@@ -14240,6 +14349,61 @@
           "vod_forum_post_enabled",
           "vod_forum_post_status",
           "is_synchronized_copy"
+        ],
+        "type": "object"
+      },
+      "ExhaustedTarget": {
+        "description": "A target parked in the terminal `exhausted` state, for operators.",
+        "properties": {
+          "attempts": {
+            "description": "Attempts consumed.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "exhausted_at": {
+            "description": "When the target was parked.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "description": "Fanout job id.",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "Last failure detail.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "description": "`publish`, `update`, or `archive`.",
+            "type": "string"
+          },
+          "source_event_id": {
+            "description": "Source event primary key.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "source_tenant_id": {
+            "description": "Source (alliance) tenant id.",
+            "type": "string"
+          },
+          "tenant_id": {
+            "description": "Destination tenant id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "source_tenant_id",
+          "source_event_id",
+          "operation",
+          "tenant_id",
+          "attempts"
         ],
         "type": "object"
       },
@@ -22824,7 +22988,7 @@
             "type": "string"
           },
           "state": {
-            "description": "`pending`, `processing`, `complete`, `failed`, or `inactive`.",
+            "description": "`pending`, `processing`, `complete`, `failed`, `inactive`, or `exhausted`\n(retries used up; an operator must requeue it).",
             "type": "string"
           },
           "tenant_id": {
@@ -25625,7 +25789,7 @@
     }
   },
   "info": {
-    "description": "# Weaklings Gateway API\n\nBackend REST API for the Weaklings guild management app: Discord OAuth2 login, a database-backed Guild Bank ledger, loot splits, and Albion Online integrations. This description is the map — read it once before touching any endpoint below.\n\n## Base URL and routing\n\nEvery path documented here is already prefixed with `/api` (e.g. the `auth` tag's login endpoint is served at `/api/auth/discord/login`). The frontend should never need any other prefix.\n\n## Authentication: it's a cookie, not a bearer token\n\nThere is no `Authorization` header and no JWT. Login is a server-side Discord OAuth2 redirect flow:\n\n1. Send the browser to `GET /api/auth/discord/login`. It redirects to Discord, which redirects back to `GET /api/auth/discord/callback` on this server.\n2. The callback exchanges the code, resolves the user's Discord guild roles against the local `roles` table, upserts a local `users` row, and sets an **httponly** `session_user` cookie (7-day expiry) containing the serialized profile — the frontend never reads or parses this cookie directly.\n3. The server then redirects the browser to the frontend's `/dashboard`.\n4. From then on, the browser sends the cookie automatically on every same-site request. Call `GET /api/auth/me` on app load to check whether a session exists and to get the logged-in user's profile (id, username, avatar, roles). A `401` means \"not logged in\" — show the login button.\n5. `POST /api/auth/logout` revokes the session server-side and clears the cookie; `POST /api/auth/logout-all` revokes every session of the caller's account.\n\nEvery endpoint below other than the four `auth` ones requires this cookie to already be set; they are all annotated with the `session_cookie` security requirement. Because it's a cookie, `fetch()` calls from the frontend need `credentials: \"include\"` (or same-origin, if proxied).\n\n## Roles and authorization\n\nAuthorization is **permission-based**: each protected endpoint declares a fine-grained\n`Permission` (e.g. `bank.withdraw.accept`, `splits.manage`) via a `Require(...)` extractor,\nand the request is rejected with `403` if the caller's roles don't grant it.\n\nThe mapping **role → permission** lives in the `role_permissions` database table and is\nloaded into an in-memory cache at startup. To change who can do what:\n\n1. Create a gestionale role with `POST /api/admin/roles` and link it to a Discord snowflake.\n2. Grant or revoke keys on that role with `PUT /api/admin/roles/{id}/permissions` (applies immediately).\n3. `POST /api/admin/permissions/reload` still exists for out-of-band SQL edits.\n\nThe configured `super_admin_discord_id` (env) bypasses every permission check.\n\nCurrent permissions:\n\n| Permission               | Granted to        | Used by                                    |\n|--------------------------|-------------------|--------------------------------------------|\n| `bank.withdraw.accept`   | Admin, Officer    | `POST /bank/transactions/withdraw/accept`  |\n| `bank.view_others`       | Admin             | `GET /bank/balance?user_id=`, `GET /bank/transactions?user_id=` |\n| `splits.manage`          | Admin, Officer    | split edit/close endpoints                 |\n| `splits.islands.manage`  | Admin             | island/tab catalog CRUD                    |\n| `users.create`           | Admin             | `POST /users`, `GET /admin/discord/members` |\n| `permissions.reload`     | Admin             | `POST /admin/permissions/reload`           |\n| `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |\n| `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |\n| `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |\n| `comps.builds.manage`    | Admin, Officer    | build CRUD endpoints                       |\n| `comps.comps.manage`     | Admin, Officer    | comp CRUD endpoints                        |\n\nA `403 Forbidden` (`ProblemDetails`) means the session is valid but the caller's roles don't\ngrant the required permission.\n\n## Response envelope\n\nEvery successful (2xx) JSON response — except the two endpoints that stream a raw array or object directly (`openalbion` weapon stats/categories) — is wrapped JSend-style:\n\n```json\n{ \"status\": \"success\", \"data\": { /* the documented body schema */ } }\n```\n\nAlways read the payload from `.data`, not the top level.\n\n## Error format (RFC 7807)\n\nEvery non-2xx response is `application/problem+json`:\n\n```json\n{\n  \"type\": \"/errors/validation-error\",\n  \"title\": \"Validation Error\",\n  \"status\": 400,\n  \"detail\": \"human-readable explanation, safe to show the user\"\n}\n```\n\nCommon `status`/`type` pairs you'll see across this API: `400` validation-error, `401` unauthorized (no/invalid session), `403` forbidden (valid session, wrong role, or acting on someone else's resource), `404` not-found, `409` conflict (e.g. an Albion player already linked to another account), `502` upstream-service-error (a third-party API — Albion Online or OpenAlbion — failed or timed out).\n\n## The two-step Guild Bank withdrawal flow\n\nMoney owed to a member never gets marked paid in one step. `bank.TransactionStatus` moves strictly forward: `pending` (owed, untouched) -> `requested` (the member asked to withdraw it, via `POST /bank/transactions/withdraw`) -> `withdrawn` (an officer accepted and paid it, via `POST /bank/transactions/withdraw/accept`, which stamps that officer's user id onto the transaction's `from_user_id` as the recorded payer). `GET /bank/balance` reports `pending_total`/`pending_count` and `requested_total`/`requested_count` separately so the UI can distinguish \"owed\" from \"already asked for, awaiting payout\".\n\n## The loot split lifecycle\n\nA split is requested by any member together with its participants and their relative weights up front (`POST /splits` — there is no separate \"add participants later\" step required to make a split valid, though `POST /splits/{id}/participants` still exists for an officer to adjust the roster while it's pending). `splits.SplitStatus` starts at `pending` and an officer closes it out exactly once, into one of three terminal-ish states: `completed` (`POST /splits/{id}/complete` — computes `net_value = estimated_market_value - repair_value + bags_value` and generates one `pending` Guild Bank transaction per participant, split proportionally by weight with remainder correction so the sum is exact), `not_completed` (the split didn't happen; no transactions), or `lost` (`POST /splits/{id}/lost` — the loot itself was never recovered; no transactions). Only `pending` splits can be edited or closed; every closing action is a one-way door.\n\n## Albion Online vs. OpenAlbion — two unrelated third-party integrations\n\nDon't confuse these tags: `albion` calls Sandbox Interactive's own (unofficial, undocumented) `gameinfo` API — live player/guild data for the configured in-game guild, plus the Discord-account-to- Albion-character self-link feature. `openalbion` calls the separate, community-run OpenAlbion item database — static reference data (weapon catalog, categories, per-quality stats) used by the composition/loadout builder, with the full weapon list cached server-side for an hour. Neither requires or shares any credentials; both simply require a valid session cookie like everything else.\n",
+    "description": "# Weaklings Gateway API\n\nBackend REST API for the Weaklings guild management app: Discord OAuth2 login, a database-backed Guild Bank ledger, loot splits, and Albion Online integrations. This description is the map — read it once before touching any endpoint below.\n\n## Base URL and routing\n\nEvery path documented here is already prefixed with `/api` (e.g. the `auth` tag's login endpoint is served at `/api/auth/discord/login`). The frontend should never need any other prefix.\n\n## Authentication: it's a cookie, not a bearer token\n\nThere is no `Authorization` header and no JWT. Login is a server-side Discord OAuth2 redirect flow:\n\n1. Send the browser to `GET /api/auth/discord/login`. It redirects to Discord, which redirects back to `GET /api/auth/discord/callback` on this server.\n2. The callback exchanges the code, resolves the user's Discord guild roles against the local `roles` table, upserts a local `users` row, and sets an **httponly** `session_user` cookie (7-day expiry) containing the serialized profile — the frontend never reads or parses this cookie directly.\n3. The server then redirects the browser to the frontend's `/dashboard`.\n4. From then on, the browser sends the cookie automatically on every same-site request. Call `GET /api/auth/me` on app load to check whether a session exists and to get the logged-in user's profile (id, username, avatar, roles). A `401` means \"not logged in\" — show the login button.\n5. `POST /api/auth/logout` revokes the session server-side and clears the cookie; `POST /api/auth/logout-all` revokes every session of the caller's account.\n\nEvery endpoint below other than the four `auth` ones requires this cookie to already be set; they are all annotated with the `session_cookie` security requirement. Because it's a cookie, `fetch()` calls from the frontend need `credentials: \"include\"` (or same-origin, if proxied).\n\n## Roles and authorization\n\nAuthorization is **permission-based**: each protected endpoint declares a fine-grained\n`Permission` (e.g. `bank.withdraw.accept`, `splits.manage`) via a `Require(...)` extractor,\nand the request is rejected with `403` if the caller's roles don't grant it.\n\nThe mapping **role → permission** lives in the `role_permissions` database table and is\nloaded into an in-memory cache at startup. To change who can do what:\n\n1. Create a gestionale role with `POST /api/admin/roles` and link it to a Discord snowflake.\n2. Grant or revoke keys on that role with `PUT /api/admin/roles/{id}/permissions` (applies immediately).\n3. `POST /api/admin/permissions/reload` still exists for out-of-band SQL edits.\n\nThe configured `super_admin_discord_id` (env) bypasses every permission check.\n\nCurrent permissions:\n\n| Permission               | Granted to        | Used by                                    |\n|--------------------------|-------------------|--------------------------------------------|\n| `bank.withdraw.accept`   | Admin, Officer    | `POST /bank/transactions/withdraw/accept`  |\n| `bank.view_others`       | Admin             | `GET /bank/balance?user_id=`, `GET /bank/transactions?user_id=` |\n| `splits.manage`          | Admin, Officer    | split edit/close endpoints                 |\n| `splits.islands.manage`  | Admin             | island/tab catalog CRUD                    |\n| `users.create`           | Admin             | `POST /users`, `GET /admin/discord/members` |\n| `permissions.reload`     | Admin             | `POST /admin/permissions/reload`           |\n| `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |\n| `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |\n| `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |\n| `comps.builds.manage`    | Admin, Officer    | edit/delete/archive/version any build (create/edit/delete alone: own builds only) |\n| `comps.comps.manage`     | Admin, Officer    | edit/delete/archive/version any comp (create/edit/delete alone: own comps only) |\n\nA `403 Forbidden` (`ProblemDetails`) means the session is valid but the caller's roles don't\ngrant the required permission.\n\n## Response envelope\n\nEvery successful (2xx) JSON response — except the two endpoints that stream a raw array or object directly (`openalbion` weapon stats/categories) — is wrapped JSend-style:\n\n```json\n{ \"status\": \"success\", \"data\": { /* the documented body schema */ } }\n```\n\nAlways read the payload from `.data`, not the top level.\n\n## Error format (RFC 7807)\n\nEvery non-2xx response is `application/problem+json`:\n\n```json\n{\n  \"type\": \"/errors/validation-error\",\n  \"title\": \"Validation Error\",\n  \"status\": 400,\n  \"detail\": \"human-readable explanation, safe to show the user\"\n}\n```\n\nCommon `status`/`type` pairs you'll see across this API: `400` validation-error, `401` unauthorized (no/invalid session), `403` forbidden (valid session, wrong role, or acting on someone else's resource), `404` not-found, `409` conflict (e.g. an Albion player already linked to another account), `502` upstream-service-error (a third-party API — Albion Online or OpenAlbion — failed or timed out).\n\n## The two-step Guild Bank withdrawal flow\n\nMoney owed to a member never gets marked paid in one step. `bank.TransactionStatus` moves strictly forward: `pending` (owed, untouched) -> `requested` (the member asked to withdraw it, via `POST /bank/transactions/withdraw`) -> `withdrawn` (an officer accepted and paid it, via `POST /bank/transactions/withdraw/accept`, which stamps that officer's user id onto the transaction's `from_user_id` as the recorded payer). `GET /bank/balance` reports `pending_total`/`pending_count` and `requested_total`/`requested_count` separately so the UI can distinguish \"owed\" from \"already asked for, awaiting payout\".\n\n## The loot split lifecycle\n\nA split is requested by any member together with its participants and their relative weights up front (`POST /splits` — there is no separate \"add participants later\" step required to make a split valid, though `POST /splits/{id}/participants` still exists for an officer to adjust the roster while it's pending). `splits.SplitStatus` starts at `pending` and an officer closes it out exactly once, into one of three terminal-ish states: `completed` (`POST /splits/{id}/complete` — computes `net_value = estimated_market_value - repair_value + bags_value` and generates one `pending` Guild Bank transaction per participant, split proportionally by weight with remainder correction so the sum is exact), `not_completed` (the split didn't happen; no transactions), or `lost` (`POST /splits/{id}/lost` — the loot itself was never recovered; no transactions). Only `pending` splits can be edited or closed; every closing action is a one-way door.\n\n## Albion Online vs. OpenAlbion — two unrelated third-party integrations\n\nDon't confuse these tags: `albion` calls Sandbox Interactive's own (unofficial, undocumented) `gameinfo` API — live player/guild data for the configured in-game guild, plus the Discord-account-to- Albion-character self-link feature. `openalbion` calls the separate, community-run OpenAlbion item database — static reference data (weapon catalog, categories, per-quality stats) used by the composition/loadout builder, with the full weapon list cached server-side for an hour. Neither requires or shares any credentials; both simply require a valid session cookie like everything else.\n",
     "license": {
       "name": ""
     },
@@ -27046,7 +27210,7 @@
         ]
       },
       "post": {
-        "description": "Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always succeeds in replacing any existing link: it deletes the target user's current link (if any) and any other account's claim on the requested Albion character before creating the new link, all in a single transaction. The server resolves the selected player from Albion and persists that authoritative name. After a successful link the backend best-effort sets the target user's Discord guild nickname to the Albion character name.",
+        "description": "Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always succeeds in replacing any existing link: it deletes the target user's current link (if any) and any other account's claim on the requested Albion character before creating the new link, all in a single transaction, and writes an `ALBION_RELINK` (or `ALBION_LINK`) audit row naming both replaced links; an account that lost its claim has its guild role revoked. The server resolves the selected player from Albion and persists that authoritative name. After a successful link the backend best-effort sets the target user's Discord guild nickname to the Albion character name.",
         "operationId": "admin_link_user_handler",
         "parameters": [
           {
@@ -27206,7 +27370,7 @@
     },
     "/api/albion/register": {
       "post": {
-        "description": "Searches Albion for `ign`, requires a unique exact name match, then performs the same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. Guild-role assignment follows the same rule as `/link`.",
+        "description": "Searches Albion for `ign`, requires a unique exact name match, then performs the same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. Guild-role assignment follows the same rule as `/link`. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.",
         "operationId": "register_by_ign",
         "requestBody": {
           "content": {
@@ -27273,7 +27437,7 @@
     },
     "/api/albion/search": {
       "get": {
-        "description": "Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across every guild, not just the one configured server-side. Returns two separate arrays — `guilds` and `players` — both possibly empty. Use this for general lookups (e.g. \"who is this enemy guild\"); use the roster endpoint specifically for the self-link participant picker. `q` requires at least 1 character.",
+        "description": "Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across every guild, not just the one configured server-side. Returns two separate arrays — `guilds` and `players` — both possibly empty. `players` lists members of the configured guild first (`in_guild: true`, matched case- and diacritic-insensitively as a substring against the guild roster, which is cached for 60 s), followed by every other player Albion's global search returned (Albion itself caps that at 10 players per query and returns nothing for a query with leading/trailing spaces or accents, so the query is trimmed and accent-folded before it is forwarded). A player found by both sources appears once. If Albion's global search is down but the roster answered, the call still succeeds with `partial: true`; it only fails with 502 when neither source answered. This is the endpoint every player picker and link flow should use. `q` requires at least 1 character.",
         "operationId": "search",
         "parameters": [
           {
@@ -31362,7 +31526,7 @@
         ]
       },
       "post": {
-        "description": "Creates a new comp with its associated builds. Requires `comps.comps.manage` permission.",
+        "description": "Creates a new comp with its associated builds. Requires `comps.comps.create` permission.",
         "operationId": "create_comp",
         "requestBody": {
           "content": {
@@ -31414,7 +31578,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - lacks comps.comps.create permission"
           },
           "404": {
             "content": {
@@ -31777,7 +31941,7 @@
         ]
       },
       "post": {
-        "description": "Creates a new build with optional items. Requires `comps.builds.manage` permission.",
+        "description": "Creates a new build with optional items. Requires `comps.builds.create` permission.",
         "operationId": "create_build",
         "requestBody": {
           "content": {
@@ -31829,7 +31993,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - lacks comps.builds.create permission"
           },
           "404": {
             "content": {
@@ -31855,7 +32019,7 @@
     },
     "/api/comps/builds/{id}": {
       "delete": {
-        "description": "Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.manage` permission.",
+        "description": "Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "delete_build",
         "parameters": [
           {
@@ -31891,7 +32055,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -31982,7 +32146,7 @@
         ]
       },
       "patch": {
-        "description": "Updates an existing build. Requires `comps.builds.manage` permission.",
+        "description": "Updates an existing build. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "update_build",
         "parameters": [
           {
@@ -32046,7 +32210,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -32072,7 +32236,7 @@
     },
     "/api/comps/builds/{id}/archive": {
       "post": {
-        "description": "Marks a build archived: it drops out of the default `list_builds` results and every picker, but the row and everything already referencing it (comps, event rosters, past participations) is untouched. Unlike delete, this never fails on references. Requires `comps.builds.manage` permission.",
+        "description": "Marks a build archived: it drops out of the default `list_builds` results and every picker, but the row and everything already referencing it (comps, event rosters, past participations) is untouched. Unlike delete, this never fails on references. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "archive_build",
         "parameters": [
           {
@@ -32115,7 +32279,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -32264,7 +32428,7 @@
     },
     "/api/comps/builds/{id}/items/{slot}": {
       "delete": {
-        "description": "Removes a build item from a specific slot. Requires `comps.builds.manage` permission.",
+        "description": "Removes a build item from a specific slot. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "remove_build_item",
         "parameters": [
           {
@@ -32321,7 +32485,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage"
           }
         },
         "security": [
@@ -32335,7 +32499,7 @@
         ]
       },
       "put": {
-        "description": "Inserts or updates a build item for a specific slot. Requires `comps.builds.manage` permission.",
+        "description": "Inserts or updates a build item for a specific slot. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "upsert_build_item",
         "parameters": [
           {
@@ -32420,7 +32584,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -32446,7 +32610,7 @@
     },
     "/api/comps/builds/{id}/items/{slot}/spells": {
       "put": {
-        "description": "Replaces every ability chosen on the item in this slot. A slot the body omits is cleared, so the result is atomic. Each choice is validated against what the equipped item actually offers — see `GET /api/openalbion/abilities`. Requires `comps.builds.manage` permission.",
+        "description": "Replaces every ability chosen on the item in this slot. A slot the body omits is cleared, so the result is atomic. Each choice is validated against what the equipped item actually offers — see `GET /api/openalbion/abilities`. Requires Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "set_build_item_spells",
         "parameters": [
           {
@@ -32530,7 +32694,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -32809,7 +32973,7 @@
     },
     "/api/comps/builds/{id}/unarchive": {
       "post": {
-        "description": "Reverses archiving: the build reappears in `list_builds` and every picker. Requires `comps.builds.manage` permission.",
+        "description": "Reverses archiving: the build reappears in `list_builds` and every picker. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.",
         "operationId": "unarchive_build",
         "parameters": [
           {
@@ -32852,7 +33016,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -32878,7 +33042,7 @@
     },
     "/api/comps/builds/{id}/versions": {
       "post": {
-        "description": "Copies the build — both loadouts, every item and every ability choice — into a new version that can be edited independently. Name and category are inherited, since they identify the version group. Requires `comps.builds.manage` permission.",
+        "description": "Copies the build — both loadouts, every item and every ability choice — into a new version that can be edited independently. Name and category are inherited, since they identify the version group. Requires `comps.builds.create` and authorship of the source (a version joins its author's version group), or `comps.builds.manage` for anyone's.",
         "operationId": "create_build_version",
         "parameters": [
           {
@@ -32921,7 +33085,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.builds.manage permission"
+            "description": "Forbidden - not the source's author with comps.builds.create, and lacks comps.builds.manage"
           },
           "404": {
             "content": {
@@ -33220,7 +33384,7 @@
     },
     "/api/comps/{id}": {
       "delete": {
-        "description": "Deletes a comp. Cascades to comp_builds via FK. Requires `comps.comps.manage` permission.",
+        "description": "Deletes a comp. Cascades to comp_builds via FK. Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "delete_comp",
         "parameters": [
           {
@@ -33256,7 +33420,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -33347,7 +33511,7 @@
         ]
       },
       "patch": {
-        "description": "Updates an existing comp. Requires `comps.comps.manage` permission.",
+        "description": "Updates an existing comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "update_comp",
         "parameters": [
           {
@@ -33411,7 +33575,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -33437,7 +33601,7 @@
     },
     "/api/comps/{id}/archive": {
       "post": {
-        "description": "Marks a comp archived: it drops out of the default `list_comps` results and every picker, but the row and everything already referencing it (events, child variants) is untouched. Unlike delete, this never fails on references. Requires `comps.comps.manage` permission.",
+        "description": "Marks a comp archived: it drops out of the default `list_comps` results and every picker, but the row and everything already referencing it (events, child variants) is untouched. Unlike delete, this never fails on references. Requires Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "archive_comp",
         "parameters": [
           {
@@ -33480,7 +33644,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -33506,7 +33670,7 @@
     },
     "/api/comps/{id}/builds": {
       "post": {
-        "description": "Adds a build to a comp. If the build already exists, its quantity is updated to the new value. Requires `comps.comps.manage` permission.",
+        "description": "Adds a build to a comp. If the build already exists, its quantity is updated to the new value. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "add_comp_build",
         "parameters": [
           {
@@ -33570,7 +33734,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -33596,7 +33760,7 @@
     },
     "/api/comps/{id}/builds/{build_id}": {
       "delete": {
-        "description": "Removes a build from a comp. Requires `comps.comps.manage` permission.",
+        "description": "Removes a build from a comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "remove_comp_build",
         "parameters": [
           {
@@ -33642,7 +33806,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -33666,7 +33830,7 @@
         ]
       },
       "patch": {
-        "description": "Updates the quantity of a build within a comp. Requires `comps.comps.manage` permission.",
+        "description": "Updates the quantity of a build within a comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "update_comp_build_quantity",
         "parameters": [
           {
@@ -33740,7 +33904,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -33978,7 +34142,7 @@
     },
     "/api/comps/{id}/unarchive": {
       "post": {
-        "description": "Reverses archiving: the comp reappears in `list_comps` and every picker. Requires `comps.comps.manage` permission.",
+        "description": "Reverses archiving: the comp reappears in `list_comps` and every picker. Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.",
         "operationId": "unarchive_comp",
         "parameters": [
           {
@@ -34021,7 +34185,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -34047,7 +34211,7 @@
     },
     "/api/comps/{id}/versions": {
       "post": {
-        "description": "Copies the composition and every build entry with its quantity into a new version that can be edited independently. `parent_id` is preserved, so a version of a variant stays a variant of the same parent. Each version's statistics come from `GET /api/comps/{id}/performance` for that version's id. Requires `comps.comps.manage` permission.",
+        "description": "Copies the composition and every build entry with its quantity into a new version that can be edited independently. `parent_id` is preserved, so a version of a variant stays a variant of the same parent. Each version's statistics come from `GET /api/comps/{id}/performance` for that version's id. Requires `comps.comps.create` and authorship of the source (a version joins its author's version group), or `comps.comps.manage` for anyone's.",
         "operationId": "create_comp_version",
         "parameters": [
           {
@@ -34090,7 +34254,7 @@
                 }
               }
             },
-            "description": "Forbidden - lacks comps.comps.manage permission"
+            "description": "Forbidden - not the source's author with comps.comps.create, and lacks comps.comps.manage"
           },
           "404": {
             "content": {
@@ -41235,6 +41399,91 @@
         ]
       }
     },
+    "/api/platform/fanout/exhausted": {
+      "get": {
+        "operationId": "list_exhausted_fanout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ExhaustedTarget"
+                }
+              }
+            },
+            "description": "Exhausted fanout targets, newest first"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a platform admin"
+          }
+        },
+        "summary": "List event fanout targets that used up their retries.",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/platform/fanout/exhausted/{job_id}/{tenant_id}/requeue": {
+      "post": {
+        "operationId": "requeue_exhausted_fanout",
+        "parameters": [
+          {
+            "description": "Fanout job id",
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Destination tenant id",
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Target requeued"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a platform admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No exhausted target for that job and tenant"
+          }
+        },
+        "summary": "Re-arm one exhausted fanout target (attempts reset, due immediately).",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
     "/api/platform/features": {
       "get": {
         "operationId": "list_catalog",
@@ -46013,7 +46262,7 @@
         ]
       },
       "post": {
-        "description": "Creates a `users` row for a Discord guild member who is not yet in the directory, then links the selected Albion character from the configured guild roster. The Discord snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). Email is stored as a placeholder until first login. Requires `users.create`.",
+        "description": "Creates a `users` row for a Discord guild member who is not yet in the directory, then links the selected Albion character: looked up in the configured guild roster first, then in Albion at large, so a character outside the guild can be linked too. The Discord snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). Email is stored as a placeholder until first login. Requires `users.create`.",
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -46064,7 +46313,7 @@
                 }
               }
             },
-            "description": "Albion character is not on the guild roster"
+            "description": "No Albion character exists for the given id or name"
           },
           "409": {
             "content": {
@@ -46084,7 +46333,7 @@
             ]
           }
         ],
-        "summary": "Provision a Discord member and link an Albion roster character",
+        "summary": "Provision a Discord member and link an Albion character",
         "tags": [
           "users"
         ]

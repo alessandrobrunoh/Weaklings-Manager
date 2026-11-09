@@ -217,6 +217,68 @@ test('linkIngameName reports a name Albion does not know', async () => {
   assert.equal(outcome, 'not-found');
 });
 
+test('linkIngameName matches names regardless of case and diacritics', async () => {
+  const calls: string[] = [];
+  const outcome = await linkIngameName(
+    api(
+      {
+        'api/albion/search': { players: [{ id: 'p1', name: 'Gálvdon' }], guilds: [] },
+        'api/albion/link': { linked: true },
+      },
+      calls,
+    ),
+    '42',
+    'galvdon',
+  );
+  assert.equal(outcome, 'linked');
+});
+
+test('linkIngameName links the guild member among namesakes', async () => {
+  const calls: string[] = [];
+  const outcome = await linkIngameName(
+    api(
+      {
+        'api/albion/search': {
+          players: [
+            { id: 'guild', name: 'Galvdon', in_guild: true },
+            { id: 'other', name: 'Galvdon', in_guild: false },
+          ],
+          guilds: [],
+        },
+        'api/albion/link': { linked: true },
+      },
+      calls,
+    ),
+    '42',
+    'Galvdon',
+  );
+  assert.equal(outcome, 'linked');
+  assert.ok(calls.some((call) => call.includes('"albion_player_id":"guild"')));
+});
+
+test('linkIngameName refuses to guess between namesakes the guild cannot tell apart', async () => {
+  const calls: string[] = [];
+  const outcome = await linkIngameName(
+    api(
+      {
+        'api/albion/search': {
+          players: [
+            { id: 'a', name: 'Galvdon' },
+            { id: 'b', name: 'Galvdon' },
+          ],
+          guilds: [],
+        },
+        'api/albion/link': { linked: true },
+      },
+      calls,
+    ),
+    '42',
+    'Galvdon',
+  );
+  assert.equal(outcome, 'ambiguous');
+  assert.ok(!calls.some((call) => call.includes('POST api/albion/link')));
+});
+
 test('linkIngameName reports an account that already has a character', async () => {
   const client = {
     guildId: GUILD_ID,

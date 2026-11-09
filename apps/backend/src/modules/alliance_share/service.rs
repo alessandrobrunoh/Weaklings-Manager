@@ -469,6 +469,83 @@ impl AllianceShareService {
     }
 }
 
+/// Resolve a tab picked from a member guild's island catalog into the alliance tenant's own
+/// catalog, returning the alliance-local tab id.
+///
+/// Islands exist only in guild tenants (design decision D-12), so an alliance-side request that
+/// references one must name the guild that owns it: `source_tab_id` is an id in that guild's
+/// database, never in the alliance's. The guild must be an *active* member of
+/// `alliance_tenant_id`; the tab and its island are read from the guild's database, then mirrored
+/// into `alliance_db` the same way `share_split` mirrors a split's location (find-or-create by
+/// city, island name and tab name), so the alliance row points at a tab that really exists there.
+///
+/// # Errors
+///
+/// - 403 when `origin_guild_id` is not an active member of the alliance
+/// - 404 when the tab (or its island) does not exist in that guild's catalog
+pub async fn resolve_member_island_tab(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+    alliance_tenant_id: &str,
+    alliance_db: &DatabaseConnection,
+    origin_guild_id: &str,
+    source_tab_id: i64,
+) -> Result<i64, AppError> {
+    assert_active_member(control, alliance_tenant_id, origin_guild_id).await?;
+    let guild = registry.get_or_load(origin_guild_id).await?;
+    if guild.kind != "guild" {
+        return Err(AppError::Validation(format!(
+            "tenant {origin_guild_id} is not a guild and owns no islands"
+        )));
+    }
+    mirror_member_island_tab(&guild.db, alliance_db, source_tab_id).await
+}
+
+/// Strictly read `source_tab_id` from the owning guild's database and mirror it into `dest`.
+async fn mirror_member_island_tab(
+    guild_db: &DatabaseConnection,
+    dest: &DatabaseConnection,
+    source_tab_id: i64,
+) -> Result<i64, AppError> {
+    let not_found = || {
+        AppError::NotFound(format!(
+            "island tab {source_tab_id} not found in the origin guild"
+        ))
+    };
+    let tab = split_tab::Entity::find_by_id(source_tab_id)
+        .one(guild_db)
+        .await?
+        .ok_or_else(not_found)?;
+    split_island::Entity::find_by_id(tab.island_id)
+        .one(guild_db)
+        .await?
+        .ok_or_else(not_found)?;
+    ensure_island_tab(guild_db, dest, Some(source_tab_id))
+        .await?
+        .ok_or_else(not_found)
+}
+
+async fn assert_active_member(
+    control: &DatabaseConnection,
+    alliance_tenant_id: &str,
+    guild_tenant_id: &str,
+) -> Result<(), AppError> {
+    let row = control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT 1 FROM alliance_memberships \
+             WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2 AND status = 'active'",
+            [alliance_tenant_id.into(), guild_tenant_id.into()],
+        ))
+        .await?;
+    if row.is_none() {
+        return Err(AppError::Forbidden(format!(
+            "guild {guild_tenant_id} is not an active member of this alliance"
+        )));
+    }
+    Ok(())
+}
+
 async fn artifact_share_status(
     control: &DatabaseConnection,
     source_tenant_id: &str,
@@ -2695,6 +2772,270 @@ mod tests {
         drop_schema(&admin, &alliance.schema_name)
             .await
             .expect("drop alliance");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    async fn seed_island(
+        db: &DatabaseConnection,
+        name: &str,
+        city: &str,
+        tabs: &[&str],
+    ) -> crate::modules::splits::models::SplitIslandView {
+        use crate::modules::splits::models::CreateIslandRequest;
+        crate::modules::splits::service::SplitService::new()
+            .create_island(
+                db,
+                CreateIslandRequest {
+                    name: name.to_owned(),
+                    city: city.to_owned(),
+                    tabs: tabs.iter().map(|tab| (*tab).to_owned()).collect(),
+                },
+            )
+            .await
+            .expect("island")
+    }
+
+    async fn tab_label(db: &DatabaseConnection, tab_id: i64) -> (String, String) {
+        let tab = split_tab::Entity::find_by_id(tab_id)
+            .one(db)
+            .await
+            .expect("tab query")
+            .expect("tab exists");
+        let island = split_island::Entity::find_by_id(tab.island_id)
+            .one(db)
+            .await
+            .expect("island query")
+            .expect("island exists");
+        (island.name, tab.name)
+    }
+
+    #[tokio::test]
+    async fn member_island_tab_resolves_in_the_guild_catalog_not_the_alliance_one() {
+        let guild = seed_sqlite().await;
+        let alliance = seed_sqlite().await;
+        // The alliance catalog already holds an unrelated row that reuses the guild's ids.
+        let unrelated = seed_island(&alliance, "Unrelated", "bridgewatch", &["A", "B"]).await;
+        let guild_island = seed_island(&guild, "Guild HQ", "lymhurst", &["Loot", "Gear"]).await;
+        let guild_tab = guild_island.tabs[1].id;
+        assert!(
+            unrelated.tabs.iter().any(|tab| tab.id == guild_tab),
+            "fixture must make the guild tab id collide with an unrelated alliance tab"
+        );
+
+        let local = mirror_member_island_tab(&guild, &alliance, guild_tab)
+            .await
+            .expect("mirror");
+
+        assert_eq!(
+            tab_label(&alliance, local).await,
+            ("Guild HQ".to_owned(), "Gear".to_owned())
+        );
+        assert!(
+            !unrelated.tabs.iter().any(|tab| tab.id == local),
+            "must not resolve to the unrelated alliance row"
+        );
+        // Idempotent, and the unrelated island is untouched.
+        let again = mirror_member_island_tab(&guild, &alliance, guild_tab)
+            .await
+            .expect("mirror again");
+        assert_eq!(again, local);
+        assert_eq!(
+            split_island::Entity::find()
+                .all(&alliance)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            split_tab::Entity::find()
+                .all(&alliance)
+                .await
+                .unwrap()
+                .len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn member_island_tab_unknown_to_the_guild_is_rejected_even_if_the_alliance_has_it() {
+        let guild = seed_sqlite().await;
+        let alliance = seed_sqlite().await;
+        seed_island(&guild, "Guild HQ", "lymhurst", &["Loot"]).await;
+        let other = seed_island(&alliance, "Alliance only", "bridgewatch", &["A", "B", "C"]).await;
+        let foreign = other.tabs[2].id;
+
+        let err = mirror_member_island_tab(&guild, &alliance, foreign)
+            .await
+            .expect_err("tab that is not in the guild catalog");
+        assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+        assert_eq!(
+            split_island::Entity::find()
+                .all(&alliance)
+                .await
+                .unwrap()
+                .len(),
+            1,
+            "a rejected locator must not mirror anything"
+        );
+    }
+
+    #[tokio::test]
+    async fn alliance_tenant_split_creation_rejects_before_any_island_lookup() {
+        use crate::modules::splits::models::{CreateSplitRequest, UpsertParticipantRequest};
+        use crate::modules::splits::service::SplitService;
+        use sea_orm::prelude::Decimal;
+        let guild = seed_sqlite().await;
+        let alliance = seed_sqlite().await;
+        let creator = insert_user(&alliance, "officer", "officer@example.com").await;
+        let guild_island = seed_island(&guild, "Guild HQ", "lymhurst", &["Loot"]).await;
+
+        let err = SplitService::for_tenant("alliance")
+            .create_split(
+                &alliance,
+                creator,
+                CreateSplitRequest {
+                    estimated_market_value: "1.00".parse().unwrap(),
+                    fee: Some(Decimal::new(20, 0)),
+                    repair_value: Decimal::ZERO,
+                    bags_value: Decimal::ZERO,
+                    bags: vec![],
+                    note: None,
+                    event_id: None,
+                    island_tab_id: guild_island.tabs[0].id,
+                    participants: vec![UpsertParticipantRequest {
+                        user_id: creator,
+                        weight: Decimal::ONE,
+                    }],
+                },
+            )
+            .await
+            .expect_err("alliance tenants own no splits to create");
+        assert!(matches!(err, AppError::Forbidden(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn resolve_member_island_tab_requires_an_active_member_guild() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_isl");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        ControlMigrator::up(&control, None).await.expect("migrate");
+        let registry = TenantRegistry::new(url, control.clone());
+        let member_id = unique_schema("gm");
+        let outsider_id = unique_schema("go");
+        let alliance_id = unique_schema("aid");
+        let member = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&member_id, "Member Guild"),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("member");
+        let outsider = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&outsider_id, "Outsider Guild"),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("outsider");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![member_id.clone()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("alliance");
+        let member_ctx = registry.get_or_load(&member_id).await.expect("member ctx");
+        let outsider_ctx = registry
+            .get_or_load(&outsider_id)
+            .await
+            .expect("outsider ctx");
+        let alliance_ctx = registry
+            .get_or_load(&alliance_id)
+            .await
+            .expect("alliance ctx");
+        let unrelated =
+            seed_island(&alliance_ctx.db, "Unrelated", "bridgewatch", &["A", "B"]).await;
+        let member_island = seed_island(&member_ctx.db, "Guild HQ", "lymhurst", &["Loot"]).await;
+        let outsider_island =
+            seed_island(&outsider_ctx.db, "Outsider HQ", "martlock", &["Vault"]).await;
+
+        // Active member: resolved against the member's catalog, mirrored locally.
+        let local = resolve_member_island_tab(
+            &control,
+            &registry,
+            &alliance_id,
+            &alliance_ctx.db,
+            &member_id,
+            member_island.tabs[0].id,
+        )
+        .await
+        .expect("active member resolves");
+        assert_eq!(
+            tab_label(&alliance_ctx.db, local).await,
+            ("Guild HQ".to_owned(), "Loot".to_owned())
+        );
+        assert!(!unrelated.tabs.iter().any(|tab| tab.id == local));
+
+        // A guild that is not a member is refused, and nothing of it is mirrored.
+        let err = resolve_member_island_tab(
+            &control,
+            &registry,
+            &alliance_id,
+            &alliance_ctx.db,
+            &outsider_id,
+            outsider_island.tabs[0].id,
+        )
+        .await
+        .expect_err("non-member");
+        assert!(matches!(err, AppError::Forbidden(_)), "got {err:?}");
+        assert_eq!(
+            split_island::Entity::find()
+                .all(&alliance_ctx.db)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+
+        // A member that left is refused as well.
+        control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE alliance_memberships SET status = 'left' \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2",
+                [alliance_id.clone().into(), member_id.clone().into()],
+            ))
+            .await
+            .expect("leave");
+        let err = resolve_member_island_tab(
+            &control,
+            &registry,
+            &alliance_id,
+            &alliance_ctx.db,
+            &member_id,
+            member_island.tabs[0].id,
+        )
+        .await
+        .expect_err("left member");
+        assert!(matches!(err, AppError::Forbidden(_)), "got {err:?}");
+
+        for tenant in [&member, &outsider, &alliance] {
+            drop_schema(&admin, &tenant.schema_name)
+                .await
+                .expect("drop tenant");
+        }
         drop_schema(&admin, &schema).await.expect("drop");
     }
 }

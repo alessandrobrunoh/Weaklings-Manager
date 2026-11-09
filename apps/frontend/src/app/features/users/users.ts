@@ -27,6 +27,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { searchAlbionPlayers } from '../../shared/albion/albion-player-search';
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -340,6 +341,8 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               [emptyOptionsLabel]="t('users.create.albionEmpty')"
               [ariaLabel]="t('users.create.albion')"
               [required]="true"
+              [remote]="true"
+              (searchChange)="onAlbionSearch($event)"
               (valueChange)="selectedAlbionId.set($event)"
             />
           </label>
@@ -452,7 +455,14 @@ export class Users {
   protected readonly discordLoading = signal(false);
   protected readonly albionLoading = signal(false);
   protected readonly discordMembers = signal<DiscordMemberView[]>([]);
+  /** The guild roster, shown while the search box is empty. */
   protected readonly albionMembers = signal<AlbionGuildMember[]>([]);
+  /** Matches from the all-players search; `null` while the box is empty. */
+  private readonly albionMatches = signal<AlbionGuildMember[] | null>(null);
+  /** Every character seen in this dialog, so the chosen one keeps its name when the list changes. */
+  private readonly albionNames = new Map<string, string>();
+  private albionSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  private albionSearchRequest = 0;
   protected readonly selectedDiscordId = signal('');
   protected readonly selectedAlbionId = signal('');
 
@@ -464,12 +474,20 @@ export class Users {
     })),
   );
 
-  protected readonly albionOptions = computed(() =>
-    this.albionMembers().map((member) => ({
+  protected readonly albionOptions = computed(() => {
+    const shown = this.albionMatches() ?? this.albionMembers();
+    const selected = this.selectedAlbionId();
+    const options = shown.map((member) => ({
       id: member.id,
       label: member.name,
-    })),
-  );
+      hint: member.guild_name ? member.guild_name : undefined,
+    }));
+    const name = selected ? this.albionNames.get(selected) : undefined;
+    if (selected && name && !options.some((option) => option.id === selected)) {
+      options.unshift({ id: selected, label: name, hint: undefined });
+    }
+    return options;
+  });
 
   constructor() {
     void this.load();
@@ -505,12 +523,58 @@ export class Users {
     this.createOpen.set(true);
     this.selectedDiscordId.set('');
     this.selectedAlbionId.set('');
+    this.albionMatches.set(null);
     void this.loadCreateOptions();
   }
 
   protected closeCreate(): void {
     this.createOpen.set(false);
     this.creating.set(false);
+    clearTimeout(this.albionSearchTimer);
+  }
+
+  /**
+   * Searches every Albion player, not just the guild roster, so a recruit who has not joined the
+   * guild yet can still be provisioned. The roster stays as the list for an empty box.
+   */
+  protected onAlbionSearch(text: string): void {
+    clearTimeout(this.albionSearchTimer);
+    const query = text.trim();
+    const request = ++this.albionSearchRequest;
+    if (!query) {
+      this.albionMatches.set(null);
+      this.albionLoading.set(false);
+      return;
+    }
+    this.albionSearchTimer = setTimeout(() => {
+      this.albionLoading.set(true);
+      void searchAlbionPlayers(this.api, query)
+        .then((players) => {
+          if (request !== this.albionSearchRequest) {
+            return;
+          }
+          for (const player of players) {
+            this.albionNames.set(player.id, player.name);
+          }
+          this.albionMatches.set(
+            players.map((player) => ({
+              id: player.id,
+              name: player.name,
+              guild_name: player.guild_name,
+            })),
+          );
+        })
+        .catch((error: unknown) => {
+          if (request === this.albionSearchRequest) {
+            this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+          }
+        })
+        .finally(() => {
+          if (request === this.albionSearchRequest) {
+            this.albionLoading.set(false);
+          }
+        });
+    }, 250);
   }
 
   protected async createMember(event: Event): Promise<void> {
@@ -524,17 +588,19 @@ export class Users {
       this.toasts.error(this.t('validation.required'));
       return;
     }
-    const albion = this.albionMembers().find((member) => member.id === albionId);
+    const albionName =
+      this.albionNames.get(albionId) ??
+      this.albionMembers().find((member) => member.id === albionId)?.name;
     this.creating.set(true);
     try {
       await firstValueFrom(
         this.api.post<UserProfile>('api/users', {
           discord_id: discordId,
           albion_player_id: albionId,
-          albion_player_name: albion?.name,
+          albion_player_name: albionName,
         }),
       );
-      this.toasts.success(this.t('users.create.success', { name: albion?.name ?? albionId }));
+      this.toasts.success(this.t('users.create.success', { name: albionName ?? albionId }));
       this.closeCreate();
       await this.load();
     } catch (error) {
@@ -560,7 +626,11 @@ export class Users {
         ),
       ]);
       this.discordMembers.set(discord ?? []);
-      this.albionMembers.set(Array.isArray(roster) ? roster : (roster.items ?? []));
+      const members = Array.isArray(roster) ? roster : (roster.items ?? []);
+      for (const member of members) {
+        this.albionNames.set(member.id, member.name);
+      }
+      this.albionMembers.set(members);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
       this.discordMembers.set([]);

@@ -69,6 +69,29 @@ describe('SearchableSelect', () => {
     expect(emitted).toEqual(['b']);
   });
 
+  it('in remote mode emits the typed text and shows the options the parent supplies unfiltered', async () => {
+    const searches: string[] = [];
+    fixture.componentInstance.searchChange.subscribe((text) => searches.push(text));
+    fixture.componentRef.setInput('remote', true);
+    const trigger = fixture.nativeElement.querySelector('.ss__trigger') as HTMLButtonElement;
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const search = fixture.nativeElement.querySelector('input[type="search"]') as HTMLInputElement;
+    search.value = 'zzz';
+    search.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(searches).toEqual(['', 'zzz']);
+    const labels = [...fixture.nativeElement.querySelectorAll('.ss__option')].map((el) =>
+      (el as HTMLElement).textContent?.trim(),
+    );
+    expect(labels).toContain('Announcements');
+    expect(labels).toContain('Officers');
+  });
+
   it('filters options from the search field', async () => {
     const trigger = fixture.nativeElement.querySelector('.ss__trigger') as HTMLButtonElement;
     trigger.click();

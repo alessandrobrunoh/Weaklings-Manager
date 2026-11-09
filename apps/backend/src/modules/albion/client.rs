@@ -67,6 +67,12 @@ pub struct AlbionPlayerSummary {
     #[serde(alias = "DeathFame", default)]
     #[schema(example = 570792.0)]
     pub death_fame: Option<f64>,
+    /// `true` when this player belongs to the tenant's configured Albion guild. Set by this app
+    /// (never by Albion): `GET /albion/search` ranks these first. Absent upstream, so it
+    /// deserializes as `false`.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub in_guild: bool,
 }
 
 /// A guild entry as returned by the global `/search` endpoint.
@@ -98,8 +104,14 @@ pub struct AlbionGuildSummary {
 pub struct AlbionSearchResult {
     #[serde(default)]
     pub guilds: Vec<AlbionGuildSummary>,
+    /// Matching players. On `GET /albion/search` members of the configured guild come first,
+    /// followed by every other Albion player the global search returned.
     #[serde(default)]
     pub players: Vec<AlbionPlayerSummary>,
+    /// `true` when Albion's global search could not be reached and only the configured guild's
+    /// roster answered, so players outside the guild may be missing. Omitted when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
 }
 
 /// A single member entry as returned by `GET /albion/guild/roster` (this app's wrapper around
@@ -195,7 +207,7 @@ pub struct AlbionAlliance {
 #[derive(Clone)]
 pub struct AlbionApiClient {
     http: reqwest::Client,
-    base_url: &'static str,
+    base_url: String,
 }
 
 impl AlbionApiClient {
@@ -205,8 +217,25 @@ impl AlbionApiClient {
         // per call reuses connections instead of opening new TLS sessions.
         Self {
             http: crate::http_client::shared(),
-            base_url: region.base_url(),
+            base_url: region.base_url().to_owned(),
         }
+    }
+
+    /// Points the client at another gameinfo-compatible server. Test seam: tests run a loopback
+    /// stub instead of reaching the real Albion API.
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_base_url(base_url: String) -> Self {
+        Self {
+            http: crate::http_client::shared(),
+            base_url,
+        }
+    }
+
+    /// The gameinfo base URL this client talks to (also the roster cache key).
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, AppError> {

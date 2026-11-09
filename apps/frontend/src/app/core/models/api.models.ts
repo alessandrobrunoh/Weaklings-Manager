@@ -1067,6 +1067,8 @@ export interface CreateEventRequest {
   /** Also create an empty loot split already linked to this event. */
   create_split?: boolean;
   island_tab_id?: number;
+  /** Member guild that owns `island_tab_id`. Required on alliance tenants, rejected on guilds. */
+  origin_guild_id?: string;
   ping_alliance?: boolean;
   /** Create a VOD forum post for members to reply to with video links. Defaults on. */
   vod_forum_post_enabled?: boolean;
@@ -1218,6 +1220,7 @@ export interface BattleDetail extends BattleSummary {
 export interface AlbionGuildMember {
   id: string;
   name: string;
+  guild_name?: string | null;
 }
 
 export interface AlbionPlayer {
@@ -1227,6 +1230,8 @@ export interface AlbionPlayer {
   guild_name: string | null;
   kill_fame: number;
   death_fame: number;
+  /** True for members of the configured guild; the search lists them first. */
+  in_guild?: boolean;
 }
 
 export interface AlbionGuild {
@@ -1239,6 +1244,8 @@ export interface AlbionGuild {
 export interface AlbionSearchResult {
   guilds: AlbionGuild[];
   players: AlbionPlayer[];
+  /** True when Albion's global search was unreachable and only the guild roster answered. */
+  partial?: boolean;
 }
 
 export interface AlbionAllianceChoice {
@@ -1404,6 +1411,8 @@ export interface BuildSummary {
   /** Version within the `(name, category)` group. Starts at 1. */
   version: number;
   category_name: string | null;
+  /** Internal id of the author; compare with `DiscordUserProfile.user_id`. */
+  created_by_id: number;
   created_by_username: string;
   updated_at: string;
   item_count: number;
@@ -1826,6 +1835,8 @@ export interface CompSummary {
   /** Version within the `(name, category)` group. Starts at 1. */
   version: number;
   category_name: string | null;
+  /** Internal id of the author; compare with `DiscordUserProfile.user_id`. */
+  created_by_id: number;
   created_by_username: string;
   created_at: string;
   build_count: number;

@@ -14,7 +14,7 @@ use crate::{
         alliance_share::{ShareActor, copy_alliance_comp_to_tenant},
         events::{
             entities::{event, event_roster_role},
-            fanout_outbox::{self, ClaimedTarget},
+            fanout_outbox::{self, ClaimedTarget, FailureDisposition},
             models::CreateEventRequest,
             service::EventService,
         },
@@ -57,25 +57,37 @@ pub async fn process_due_targets(
                 .await?;
             }
             Err(error) => {
-                let retry_delay = retry_delay_seconds(target.attempts);
-                tracing::warn!(
-                    job_id = %target.job_id,
-                    source_tenant_id = %target.source_tenant_id,
-                    source_event_id = target.source_event_id,
-                    target_tenant_id = %target.tenant_id,
-                    attempt = target.attempts,
-                    error = %error,
-                    "event fanout target failed; scheduled for retry"
-                );
-                fanout_outbox::mark_retryable(
+                let message = error.to_string();
+                let disposition = fanout_outbox::mark_failed(
                     control,
-                    target.job_id,
-                    &target.tenant_id,
-                    target.lease_token,
-                    &error.to_string(),
-                    retry_delay,
+                    &target,
+                    &message,
+                    retry_delay_seconds(target.attempts),
                 )
                 .await?;
+                match disposition {
+                    FailureDisposition::Retry => tracing::warn!(
+                        job_id = %target.job_id,
+                        source_tenant_id = %target.source_tenant_id,
+                        source_event_id = target.source_event_id,
+                        target_tenant_id = %target.tenant_id,
+                        attempt = target.attempts,
+                        max_attempts = fanout_outbox::MAX_ATTEMPTS,
+                        error = %message,
+                        "event fanout target failed; scheduled for retry"
+                    ),
+                    FailureDisposition::Exhausted => tracing::error!(
+                        job_id = %target.job_id,
+                        source_tenant_id = %target.source_tenant_id,
+                        source_event_id = target.source_event_id,
+                        target_tenant_id = %target.tenant_id,
+                        operation = %target.operation,
+                        attempt = target.attempts,
+                        error = %message,
+                        "event fanout target exhausted its attempts; \
+                         requeue it from the platform API once the cause is fixed"
+                    ),
+                }
             }
         }
     }
@@ -203,6 +215,7 @@ async fn process_target(
             discord_role_ids: Vec::new(),
             create_split: false,
             island_tab_id: None,
+            origin_guild_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: source.vod_forum_post_enabled,
             discord_delivery: local_settings.discord_event_delivery,
@@ -594,6 +607,7 @@ mod tests {
             discord_role_ids: Vec::new(),
             create_split: false,
             island_tab_id: None,
+            origin_guild_id: None,
             ping_alliance: false,
             vod_forum_post_enabled: false,
             discord_delivery: "message".to_owned(),

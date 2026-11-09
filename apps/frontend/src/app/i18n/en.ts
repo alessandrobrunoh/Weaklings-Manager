@@ -1978,7 +1978,7 @@ export const en = {
   'admin.permissions.clearGroup': 'None',
   'admin.permissions.title': 'Role permissions',
   'admin.permissions.hint':
-    'Tick the capabilities each gestionale role grants. Membership still lives on Discord. Changes apply immediately.',
+    'Tick the capabilities each gestionale role grants. Membership still lives on Discord. Changes apply immediately. For comps and builds, edit and delete apply only to what the member created; manage covers everyone\'s.',
   'admin.permissions.permission': 'Permission',
   'admin.permissions.priority': 'priority',
   'admin.permissions.searchPlaceholder': 'Filter permissions...',
