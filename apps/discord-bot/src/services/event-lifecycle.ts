@@ -52,15 +52,19 @@ export function nextEmptyLiveVoiceCheck(
   };
 }
 
-const massLocks = new Map<number, Promise<MassedDiscordEvent>>();
-const startLocks = new Map<number, Promise<StartedDiscordEvent>>();
+// Process-wide, so the key carries the server: the same event number exists in every tenant.
+const massLocks = new Map<string, Promise<MassedDiscordEvent>>();
+const startLocks = new Map<string, Promise<StartedDiscordEvent>>();
+
+const lockKey = (api: ApiClient, eventId: number): string => `${api.guildId ?? ""}:${eventId}`;
 
 /** Performs the pre-event Mass: notify participants and provision/bind voice, leaving scheduled. */
 export function massDiscordEvent(client: Client, api: ApiClient, discordUserId: string, eventId: number, thread?: ThreadChannel): Promise<MassedDiscordEvent> {
-  const inFlight = massLocks.get(eventId);
+  const key = lockKey(api, eventId);
+  const inFlight = massLocks.get(key);
   if (inFlight) return inFlight;
-  const run = massDiscordEventLocked(client, api, discordUserId, eventId, thread).finally(() => massLocks.delete(eventId));
-  massLocks.set(eventId, run);
+  const run = massDiscordEventLocked(client, api, discordUserId, eventId, thread).finally(() => massLocks.delete(key));
+  massLocks.set(key, run);
   return run;
 }
 
@@ -87,10 +91,11 @@ async function massDiscordEventLocked(client: Client, api: ApiClient, discordUse
 
 /** Starts an event, reusing the Mass voice channel when one exists. */
 export async function startDiscordEvent(client: Client, api: ApiClient, discordUserId: string, eventId: number, thread?: ThreadChannel): Promise<StartedDiscordEvent> {
-  const inFlight = startLocks.get(eventId);
+  const key = lockKey(api, eventId);
+  const inFlight = startLocks.get(key);
   if (inFlight) return inFlight;
-  const run = startDiscordEventLocked(client, api, discordUserId, eventId, thread).finally(() => startLocks.delete(eventId));
-  startLocks.set(eventId, run);
+  const run = startDiscordEventLocked(client, api, discordUserId, eventId, thread).finally(() => startLocks.delete(key));
+  startLocks.set(key, run);
   return run;
 }
 

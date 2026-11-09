@@ -3,7 +3,7 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
 } from "discord.js";
-import type { ApiClient } from "../api/client.js";
+import { ApiError, type ApiClient } from "../api/client.js";
 import { fetchTenantStatus } from "./tenant-gate.js";
 import { eventJoinCopy } from "./event-join-copy.js";
 
@@ -46,10 +46,17 @@ export async function resolveJoinGuilds(
   if (status.kind?.toLowerCase() !== "alliance") {
     return { kind: "fixed" };
   }
-  const guilds = await api.get<ParticipationGuildOption[]>(
-    `api/events/${eventId}/participation-guilds`,
-    discordId,
-  );
+  let guilds: ParticipationGuildOption[] | null | undefined;
+  try {
+    guilds = await api.get<ParticipationGuildOption[]>(
+      `api/events/${eventId}/participation-guilds`,
+      discordId,
+    );
+  } catch (error) {
+    // The backend answers 409 when the caller belongs to no active member guild.
+    if (error instanceof ApiError && error.status === 409) return { kind: "none" };
+    throw error;
+  }
   if (!guilds || guilds.length === 0) {
     return { kind: "none" };
   }
