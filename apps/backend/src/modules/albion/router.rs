@@ -393,6 +393,8 @@ async fn claim_character(
     .await?;
 
     if let Some(pending) = file_request_unless_manager(user, perms, db, player, via).await? {
+        // Nothing else tells the officers the request exists.
+        super::notify::announce_link_request(db, cfg, &user.id, &user.username, player).await;
         return Ok(pending);
     }
 

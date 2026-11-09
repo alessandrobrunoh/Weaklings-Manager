@@ -24,6 +24,7 @@ Albion has no way to prove who owns a character, so a self-service link (`POST /
   `POST /albion/link/requests/{id}/approve` or `/reject`. Approval creates the link, drops
   competing claims on the same character, then applies the nickname, Guild role and alliance
   fan-out (`apply_link_effects`). It never displaces an existing link (`409`).
+- When a member files a request, `notify.rs` posts it to the guild's audit-log channel (`discord_audit_log_channel_id`) with a link to the Members page. Best-effort and in the background; no role is pinged, and with no channel or bot token configured it does nothing.
 - `DELETE /albion/link` on an account with only a request withdraws it.
 - Audited as `ALBION_LINK_REQUEST`, `ALBION_LINK` (`via: approval`), `ALBION_LINK_REJECT` and
   `ALBION_LINK_REQUEST_CANCEL`. Creating a real link (admin or fan-out) clears the account's
