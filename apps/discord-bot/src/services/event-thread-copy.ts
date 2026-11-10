@@ -4,7 +4,7 @@ const eventThreadText = {
   en: {
     wrongLocationTitle: "Use Inside An Event Thread",
     wrongLocationBody:
-      "This command only works inside an event's discussion thread or forum post. Open one from the event calendar, or use `/event-join`, `/event-leave`, `/event-start` and friends with an event ID.",
+      "This command only works inside an event's discussion thread or forum post. Open one from the event calendar, or use `/event-join` or `/event-leave` with an event ID.",
     buildNoMatchTitle: "Build Not Found",
     buildNoMatchBody:
       "No signup build matches \"{query}\". Available builds: {builds}.",
@@ -15,7 +15,7 @@ const eventThreadText = {
   it: {
     wrongLocationTitle: "Usa dentro un thread evento",
     wrongLocationBody:
-      "Questo comando funziona solo dentro il thread o il post di discussione di un evento. Aprilo dal calendario eventi, oppure usa `/event-join`, `/event-leave`, `/event-start` e simili con un ID evento.",
+      "Questo comando funziona solo dentro il thread o il post di discussione di un evento. Aprilo dal calendario eventi, oppure usa `/event-join` o `/event-leave` con un ID evento.",
     buildNoMatchTitle: "Build non trovata",
     buildNoMatchBody:
       "Nessuna build di iscrizione corrisponde a \"{query}\". Build disponibili: {builds}.",

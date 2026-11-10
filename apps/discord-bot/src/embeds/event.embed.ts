@@ -128,30 +128,6 @@ export function buildEventMassMessage(
   };
 }
 
-/** Builds the manual pre-event reminder without enabling broad Discord mention parsing. */
-export function buildEventReminderMessage(
-  event: EventView,
-  locale?: string | null,
-): EventReminderMessage {
-  const timestamp = eventTimestamp(event, "start");
-  const roleIds = [...new Set(event.discord_role_ids ?? [])];
-  const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
-  const prefix = roleMentions ? `${roleMentions} ` : "";
-
-  return {
-    content: event.event_kind === "flash"
-      ? flashCopy(locale, "reminder", {
-          prefix,
-          title: event.title,
-          timestamp,
-        })
-      : `🔔 ${prefix}Reminder: **${event.title}** starts <t:${timestamp}:R>. Use **Join / Change Build** to sign up!`,
-    allowedMentions: roleIds.length > 0
-      ? { parse: [], roles: roleIds }
-      : { parse: [] },
-  };
-}
-
 /** Builds the live-event notice without allowing arbitrary user or role mentions. */
 export function buildEventStartMessage(
   event: EventView,
@@ -657,69 +633,31 @@ export function buildEventManageActionRow(
   return row;
 }
 
-/** Builds the shared event control rows shown inside an event announcement thread. */
+/**
+ * The control row shown inside an event announcement thread: Join and Leave only.
+ * Managing an event (ping, start, stop, cancel, reopen) is done on the site or with
+ * the thread slash commands, never from a button on a message everyone can click.
+ */
 export function buildEventThreadActionRows(
   event: EventView,
   locale?: string | null,
 ): ActionRowBuilder<ButtonBuilder>[] {
   const isScheduled = event.status === "scheduled";
-  const isLive = event.status === "live";
-  const isCancelled = event.status === "cancelled";
   const isFlash = event.event_kind === "flash";
-  const buttons = [
-    new ButtonBuilder()
-      .setCustomId(`event:join:${event.id}`)
-      .setLabel(isFlash ? flashCopy(locale, "join") : "Join / Change Build")
-      .setEmoji("✅")
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(!isScheduled),
-    new ButtonBuilder()
-      .setCustomId(`event:leave:${event.id}`)
-      .setLabel(isFlash ? flashCopy(locale, "leave") : "Leave")
-      .setEmoji("🚪")
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(!isScheduled),
-    new ButtonBuilder()
-      .setCustomId(`event:ping:${event.id}`)
-      .setLabel(isFlash ? flashCopy(locale, "ping") : "Ping")
-      .setEmoji("🔔")
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(!isScheduled),
-    new ButtonBuilder()
-      .setCustomId(`event:start:${event.id}`)
-      .setLabel(isFlash ? flashCopy(locale, "startAction") : "Start")
-      .setEmoji("▶️")
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(!isScheduled),
-    new ButtonBuilder()
-      .setCustomId(`event:stop:${event.id}`)
-      .setLabel(isFlash ? flashCopy(locale, "stop") : "Stop")
-      .setEmoji("⏹️")
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isLive),
-    isCancelled
-      ? new ButtonBuilder()
-          .setCustomId(`event:uncancel:${event.id}`)
-          .setLabel(isFlash ? flashCopy(locale, "reopen") : "Reopen")
-          .setEmoji("♻️")
-          .setStyle(ButtonStyle.Primary)
-      : new ButtonBuilder()
-          .setCustomId(`event:cancel:${event.id}`)
-          .setLabel(isFlash ? flashCopy(locale, "cancel") : "Cancel")
-          .setEmoji("❌")
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(!(isScheduled || isLive)),
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`event:join:${event.id}`)
+        .setLabel(isFlash ? flashCopy(locale, "join") : "Join / Change Build")
+        .setEmoji("✅")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!isScheduled),
+      new ButtonBuilder()
+        .setCustomId(`event:leave:${event.id}`)
+        .setLabel(isFlash ? flashCopy(locale, "leave") : "Leave")
+        .setEmoji("🚪")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!isScheduled),
+    ),
   ];
-
-  // Synchronized copies are participant-facing, not event-management
-  // authorities. Hide Ping/Start/Stop/Cancel/Reopen here; backend authority
-  // checks still reject those actions if a stale client tries them.
-  const isSynchronizedCopy =
-    event.is_synchronized_copy ?? event.source_event_id != null;
-  const visible = isSynchronizedCopy ? buttons.slice(0, 2) : buttons;
-  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  for (let index = 0; index < visible.length; index += 5) {
-    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...visible.slice(index, index + 5)));
-  }
-  return rows;
 }

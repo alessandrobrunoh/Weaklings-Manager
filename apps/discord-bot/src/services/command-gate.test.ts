@@ -36,8 +36,6 @@ const GUILD_ONLY_COMMANDS = [
   'leaderboard',
   'xp',
   'event-create',
-  'event-start',
-  'event-stop',
   'event-calendar-refresh',
   'event-roster',
 ] as const;

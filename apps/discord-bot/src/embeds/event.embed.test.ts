@@ -8,7 +8,6 @@ import {
   buildEventCalendarMessages,
   buildEventEmbed,
   buildEventMassMessage,
-  buildEventReminderMessage,
   buildEventStartMessage,
   buildEventThreadActionRows,
   shouldPingAllianceDiscord,
@@ -213,7 +212,7 @@ test("flash card and controls use Italian when the Discord guild locale is Itali
   assert.match(embed.description ?? "", /\*\*Mass\*\*/);
   assert.match(embed.description ?? "", /\*\*Stato\*\* — PROGRAMMATA/);
   assert.equal(embed.description?.includes("Roster"), false);
-  assert.deepEqual(labels, ["Partecipa", "Esci", "Avvisa", "Inizia", "Ferma", "Annulla"]);
+  assert.deepEqual(labels, ["Partecipa", "Esci"]);
 });
 
 test("event embed renders every active comp build and marks empty seats", () => {
@@ -253,81 +252,42 @@ test("event embed renders every active comp build and marks empty seats", () => 
   ]);
 });
 
-test("thread action rows expose six state-aware event controls within Discord limits", () => {
-  const scheduledRows = buildEventThreadActionRows(event()).map((row) => row.toJSON().components);
-  const scheduled = scheduledRows.flat();
+test("thread action rows offer only Join and Leave, enabled while the event is scheduled", () => {
+  const ids = (rows: ReturnType<typeof buildEventThreadActionRows>) =>
+    rows
+      .flatMap((row) => row.toJSON().components)
+      .map((component) => ("custom_id" in component ? component.custom_id : undefined));
+  const disabled = (rows: ReturnType<typeof buildEventThreadActionRows>) =>
+    rows.flatMap((row) => row.toJSON().components).map((component) => component.disabled ?? false);
 
-  assert.deepEqual(scheduledRows.map((row) => row.length), [5, 1]);
-  assert.deepEqual(
-    scheduled.map((component) =>
-      "custom_id" in component ? component.custom_id : undefined,
-    ),
-    [
-      "event:join:42",
-      "event:leave:42",
-      "event:ping:42",
-      "event:start:42",
-      "event:stop:42",
-      "event:cancel:42",
-    ],
-  );
-  assert.deepEqual(
-    scheduled.map((component) => component.disabled ?? false),
-    [false, false, false, false, true, false],
-  );
+  const scheduled = buildEventThreadActionRows(event());
+  assert.equal(scheduled.length, 1);
+  assert.deepEqual(ids(scheduled), ["event:join:42", "event:leave:42"]);
+  assert.deepEqual(disabled(scheduled), [false, false]);
 
-  const live = buildEventThreadActionRows(event({ status: "live" })).flatMap((row) => row.toJSON().components);
-  assert.deepEqual(
-    live.map((component) => component.disabled ?? false),
-    [true, true, true, true, false, false],
-  );
-
-  const stopped = buildEventThreadActionRows(event({ status: "stopped" })).flatMap((row) => row.toJSON().components);
-  assert.ok(stopped.every((component) => component.disabled));
-
-  const cancelled = buildEventThreadActionRows(event({ status: "cancelled" })).flatMap((row) => row.toJSON().components);
-  assert.deepEqual(
-    cancelled.map((component) =>
-      "custom_id" in component ? component.custom_id : undefined,
-    ),
-    [
-      "event:join:42",
-      "event:leave:42",
-      "event:ping:42",
-      "event:start:42",
-      "event:stop:42",
-      "event:uncancel:42",
-    ],
-  );
-  assert.deepEqual(
-    cancelled.map((component) => component.disabled ?? false),
-    [true, true, true, true, true, false],
-  );
+  for (const status of ["live", "stopped", "cancelled"] as const) {
+    const rows = buildEventThreadActionRows(event({ status }));
+    assert.deepEqual(ids(rows), ["event:join:42", "event:leave:42"], status);
+    assert.deepEqual(disabled(rows), [true, true], status);
+  }
 });
 
-test("synchronized event copies expose participation controls but not owner actions", () => {
-  const components = buildEventThreadActionRows(
-    event({
-      source_tenant_id: "alliance",
-      source_event_id: 8,
-      is_synchronized_copy: true,
-    }),
-  ).flatMap((row) => row.toJSON().components);
-  assert.deepEqual(
-    components.map((component) =>
-      "custom_id" in component ? component.custom_id : undefined,
-    ),
-    ["event:join:42", "event:leave:42"],
-  );
-
-  const detached = buildEventThreadActionRows(
-    event({
-      source_tenant_id: "alliance",
-      source_event_id: 8,
-      is_synchronized_copy: false,
-    }),
-  ).flatMap((row) => row.toJSON().components);
-  assert.equal(detached.length, 6);
+test("synchronized event copies and detached events show the same Join and Leave controls", () => {
+  for (const isCopy of [true, false]) {
+    const components = buildEventThreadActionRows(
+      event({
+        source_tenant_id: "alliance",
+        source_event_id: 8,
+        is_synchronized_copy: isCopy,
+      }),
+    ).flatMap((row) => row.toJSON().components);
+    assert.deepEqual(
+      components.map((component) =>
+        "custom_id" in component ? component.custom_id : undefined,
+      ),
+      ["event:join:42", "event:leave:42"],
+    );
+  }
 });
 
 test("event embed renders distinct Mass and Start timestamps", () => {
@@ -353,26 +313,6 @@ test("Mass notice pings linked participants and points at the pre-created voice 
   });
 });
 
-test("reminder uses stable per-event role mentions and a relative event timestamp", () => {
-  const message = buildEventReminderMessage(
-    event({
-      discord_role_ids: [
-        "111111111111111111",
-        "111111111111111111",
-        "222222222222222222",
-      ],
-    }),
-  );
-
-  assert.match(message.content, /<@&111111111111111111> <@&222222222222222222>/);
-  assert.match(message.content, /<t:1788292800:R>/);
-  assert.match(message.content, /Join \/ Change Build/);
-  assert.deepEqual(message.allowedMentions, {
-    parse: [],
-    roles: ["111111111111111111", "222222222222222222"],
-  });
-});
-
 test("start notice mentions linked participants and its voice channel without generic parsing", () => {
   const message = buildEventStartMessage(
     event(),
@@ -391,13 +331,6 @@ test("start notice mentions linked participants and its voice channel without ge
     parse: [],
     users: ["333333333333333333"],
   });
-});
-
-test("reminder without roles disables generic mentions", () => {
-  const message = buildEventReminderMessage(event({ discord_role_ids: [] }));
-
-  assert.doesNotMatch(message.content, /<@&/);
-  assert.deepEqual(message.allowedMentions, { parse: [] });
 });
 
 test("parent announcement payload is text-only and never includes roster controls", () => {

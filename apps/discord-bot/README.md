@@ -12,8 +12,6 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 | Refresh event calendars | `/event-calendar-refresh` (`events.edit`) |
 | Join Event by Role | `/event-join [event_id]` + role/build select menus |
 | Leave Event | `/event-leave [event_id]` |
-| Start Event | `/event-start [event_id]` (Officer+) |
-| Stop Event | `/event-stop [event_id]` (Officer+) |
 | View Balance | `/balance` |
 | Request Withdrawal | `/balance-request` |
 | View Battles | `/battles [page]` |

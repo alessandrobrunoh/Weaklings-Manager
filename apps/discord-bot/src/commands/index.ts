@@ -24,8 +24,6 @@ import * as events from './events.js';
 import * as eventCreate from './event-create.js';
 import * as eventJoin from './event-join.js';
 import * as eventLeave from './event-leave.js';
-import * as eventStart from './event-start.js';
-import * as eventStop from './event-stop.js';
 import * as eventCalendarRefresh from './event-calendar-refresh.js';
 import * as flash from './flash.js';
 import * as balance from './balance.js';
@@ -58,8 +56,6 @@ export const commands = new Map<string, BotCommand>([
   ['event-create', eventCreate],
   ['event-join', eventJoin],
   ['event-leave', eventLeave],
-  ['event-start', eventStart],
-  ['event-stop', eventStop],
   ['event-calendar-refresh', eventCalendarRefresh],
   ['flash', flash],
   ['balance', balance],

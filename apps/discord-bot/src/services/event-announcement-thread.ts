@@ -340,22 +340,3 @@ export async function refreshEventSignupCard(
     return null;
   }
 }
-
-/**
- * Reminder, signup controls, and lifecycle notices belong in the event discussion thread.
- *
- * A leftover Ping button on the parent starter message still resolves to that thread instead of
- * posting a second reminder in the events channel.
- */
-export function resolveEventReminderThread(interaction: {
-  channel: { isThread(): boolean } | null;
-  message: { thread?: ThreadChannel | null };
-}): ThreadChannel {
-  if (interaction.channel?.isThread()) {
-    return interaction.channel as ThreadChannel;
-  }
-  if (interaction.message.thread) {
-    return interaction.message.thread;
-  }
-  throw new Error("Event reminders can only be sent from the event thread.");
-}
