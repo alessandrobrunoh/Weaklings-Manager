@@ -17,7 +17,7 @@ This directory defines the bot's slash-command interface plus registered message
 - Command executors commonly include the invoking Discord user ID on user-scoped API requests.
 - Only `applications-panel` sets `ManageGuild` as builder-level default permission in this directory. Descriptions such as “Officer+” are not themselves permission enforcement; additional authorization may occur outside this module.
 - `event-join` displays signup controls; participation is submitted later by the interaction handler.
-- `/join`, `/leave`, `/ping`, `/start`, `/stop`, `/reopen`, and `/cancel` (see `event-thread-actions.ts`) are button twins: they only work inside an event's discussion thread or forum post, where the poller's thread mapping resolves the event. They reuse the button handlers' gates and responses — including `ensureEventManagementAllowed` for officer actions — and `/join` accepts an optional `build` argument for organized events.
+- `/join` and `/leave` (see `event-thread-actions.ts`) are button twins: they only work inside an event's discussion thread or forum post, where the poller's thread mapping resolves the event. `/join` accepts an optional `build` argument for organized events. Starting, stopping, cancelling, reopening and pinging an event are not available from Discord; they are done on the site, where the backend allows only the creator or an administrator.
 - `event-create` creates the backend event and delegates announcement work to the poller rather than posting its own announcement or thread.
 - `/flash` creates a comp-less binary event. Backend `events.create` permission controls launch access; the poller is still the sole announcement owner, gives the author 30 seconds to undo before the role ping, and retries delivery failures from its checkpoint.
 
@@ -25,7 +25,7 @@ This directory defines the bot's slash-command interface plus registered message
 
 - Commands respond to Discord interactions and may call backend APIs or mutate Discord messages and channels.
 - `applications-panel` sends the configured panel and persists its message ID through the API.
-- Event calendar refresh/start/stop commands delegate to poller or event-lifecycle services; balance, moderation, and progression commands submit their corresponding API operations. Discord event-management actions require an explicit affirmative response from the management-authority endpoint; missing, forbidden, or malformed authority responses block the action. Automated poller lifecycle jobs remain bot-driven and do not use this interactive authorization check.
+- Event calendar refresh delegates to the poller; balance, moderation, and progression commands submit their corresponding API operations. Automated poller lifecycle jobs remain bot-driven.
 - A warning is persisted before its best-effort direct message; failure to DM does not undo the warning.
 
 ## Verification

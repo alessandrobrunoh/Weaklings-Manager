@@ -23,15 +23,11 @@ import {
 } from "../embeds/giveaway.embed.js";
 import {
   buildEventEmbed,
-  buildEventReminderMessage,
   buildEventSummaryEmbed,
-  buildEventThreadActionRows,
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { formatSilver } from '../format.js';
-import { ensureEventManagementAllowed } from "../services/event-authority.js";
-import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "../services/event-lifecycle.js";
 import { FLASH_UNDO_WINDOW_MS, getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 import {
@@ -42,11 +38,6 @@ import {
   resolveJoinGuilds,
 } from "../services/event-join-guild.js";
 import { eventJoinCopy } from "../services/event-join-copy.js";
-import {
-  closeEventAnnouncementThread,
-  resolveEventReminderThread,
-} from "../services/event-announcement-thread.js";
-import { unlockAndUnarchiveThread } from "../services/discord-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import { flashCopy } from "../services/flash-copy.js";
 import {
@@ -806,195 +797,6 @@ async function handleEventButton(
       embeds: [infoEmbed],
       components: [row],
     });
-    return;
-  }
-
-  if (action === "ping") {
-    const [eventIdStr] = rest;
-    const eventId = Number(eventIdStr);
-
-    await interaction.deferReply({ flags: ["Ephemeral"] });
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
-      throw new Error("Invalid event ID.");
-    }
-    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
-      return;
-    }
-    const thread = resolveEventReminderThread(interaction);
-
-    const event = await api.post<EventView>(
-      `api/events/${eventId}/remind`,
-      {},
-      interaction.user.id,
-    );
-    await thread.send(
-      buildEventReminderMessage(event, interaction.guild?.preferredLocale),
-    );
-
-    const successEmbed = createResponseEmbed(
-      "success",
-      "Reminder Sent",
-      `The reminder for event **#${eventId}** was posted in this thread.`,
-      "GUILD EVENT",
-    );
-    await interaction.editReply({ embeds: [successEmbed] });
-    return;
-  }
-
-  if (action === "start") {
-    const [eventIdStr] = rest;
-    const eventId = Number(eventIdStr);
-
-    await interaction.deferReply({ flags: ["Ephemeral"] });
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
-      throw new Error("Invalid event ID.");
-    }
-    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
-      return;
-    }
-    const result = await startDiscordEvent(
-      interaction.client,
-      api,
-      interaction.user.id,
-      eventId,
-      interaction.channel?.isThread() ? interaction.channel : undefined,
-    );
-    await interaction.message.edit({
-      embeds: [buildEventEmbed(result.event, interaction.guild?.preferredLocale)],
-      components: buildEventThreadActionRows(
-        result.event,
-        interaction.guild?.preferredLocale,
-      ),
-    });
-    const successEmbed = createResponseEmbed(
-      "success",
-      "Event Live",
-      `Event **#${eventId}** is now **LIVE** in <#${result.voiceChannelId}>.`,
-      "GUILD EVENT",
-    );
-    await interaction.editReply({ embeds: [successEmbed] });
-    return;
-  }
-
-  if (action === "cancel") {
-    const [eventIdStr] = rest;
-    const eventId = Number(eventIdStr);
-    await interaction.deferReply({ flags: ["Ephemeral"] });
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
-    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) return;
-    let event = await api.post<EventDetailView>(`api/events/${eventId}/cancel`, {}, interaction.user.id);
-    // Cancellation may leave a Mass-created voice behind. Remove it only when empty; occupied
-    // channels remain available for members to leave safely.
-    if (event.discord_voice_channel_id) {
-      try {
-        const channel = await interaction.client.channels.fetch(event.discord_voice_channel_id);
-        if (channel?.isVoiceBased() && voiceChannelOccupantCount(channel) === 0) {
-          await channel.delete(`Event #${eventId} cancelled and voice channel was empty`);
-          event = await api.delete<EventDetailView>(
-            `api/events/${eventId}/discord-voice-channel`,
-            interaction.user.id,
-          ) ?? event;
-        }
-      } catch (error) {
-        console.warn(`[Button] Could not clean up cancelled event #${eventId} voice channel:`, error);
-      }
-    }
-    await interaction.message.edit({
-      embeds: [buildEventEmbed(event, interaction.guild?.preferredLocale)],
-      components: buildEventThreadActionRows(event, interaction.guild?.preferredLocale),
-    });
-    const poller = getPoller(api.guildId);
-    const closed = await poller?.closeEventThread(eventId, { keepMapping: true });
-    if (!closed && interaction.channel?.isThread()) {
-      await closeEventAnnouncementThread(interaction.channel, eventId, "Cancel button");
-    }
-    if (interaction.channel?.isThread()) {
-      poller?.rememberEventThread(
-        eventId,
-        interaction.channel.id,
-        interaction.message.id,
-        `${event.roster_version ?? 0}:${event.status}`,
-      );
-    }
-    const successEmbed = createResponseEmbed(
-      "warning",
-      "Event Cancelled",
-      `Event **#${eventId}** has been cancelled. Use **Reopen** if you need it back.`,
-      "GUILD EVENT",
-    );
-    await interaction.editReply({ embeds: [successEmbed] });
-    return;
-  }
-
-  if (action === "uncancel") {
-    const [eventIdStr] = rest;
-    const eventId = Number(eventIdStr);
-    await interaction.deferReply({ flags: ["Ephemeral"] });
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
-    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) return;
-    const event = await api.post<EventDetailView>(
-      `api/events/${eventId}/uncancel`,
-      {},
-      interaction.user.id,
-    );
-    const thread = interaction.channel?.isThread() ? interaction.channel : null;
-    if (thread) {
-      await unlockAndUnarchiveThread(thread, `Event #${eventId} reopened`);
-      getPoller(api.guildId)?.rememberEventThread(
-        eventId,
-        thread.id,
-        interaction.message.id,
-        `${event.roster_version ?? 0}:${event.status}`,
-      );
-    }
-    await interaction.message.edit({
-      embeds: [buildEventEmbed(event, interaction.guild?.preferredLocale)],
-      components: buildEventThreadActionRows(event, interaction.guild?.preferredLocale),
-    });
-    const successEmbed = createResponseEmbed(
-      "success",
-      "Event Reopened",
-      `Event **#${eventId}** is scheduled again. Join, ping, and start are available.`,
-      "GUILD EVENT",
-    );
-    await interaction.editReply({ embeds: [successEmbed] });
-    return;
-  }
-
-  if (action === "stop") {
-    const [eventIdStr] = rest;
-    const eventId = Number(eventIdStr);
-
-    await interaction.deferReply({ flags: ["Ephemeral"] });
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
-      throw new Error("Invalid event ID.");
-    }
-    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
-      return;
-    }
-    const result = await stopDiscordEvent(
-      interaction.client,
-      api,
-      interaction.user.id,
-      eventId,
-    );
-    // Render the final card before archiving: Discord rejects edits to messages
-    // inside an archived thread, which would leave the card stuck on LIVE.
-    await interaction.message.edit({
-      embeds: [buildEventEmbed(result.event, interaction.guild?.preferredLocale)],
-      components: buildEventThreadActionRows(
-        result.event,
-        interaction.guild?.preferredLocale,
-      ),
-    });
-    await getPoller(api.guildId)?.closeEventThread(eventId);
-    const message = result.voiceChannelOccupied
-      ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
-      : result.voiceChannelDeleted
-        ? `Event **#${eventId}** stopped and its empty voice channel was deleted.`
-        : `Event **#${eventId}** has been stopped. ⏹️`;
-    const warnEmbed = createResponseEmbed("warning", "Event Stopped", message, "GUILD EVENT");
-    await interaction.editReply({ embeds: [warnEmbed] });
     return;
   }
 

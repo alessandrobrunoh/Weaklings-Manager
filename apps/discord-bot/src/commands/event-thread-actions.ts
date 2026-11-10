@@ -26,31 +26,6 @@ const THREAD_ACTION_SPECS: ThreadActionSpec[] = [
     description: "🚪 Leave the event this thread belongs to",
     action: "leave",
   },
-  {
-    name: "ping",
-    description: "🔔 Post a reminder in this event's thread (Officer+ only)",
-    action: "ping",
-  },
-  {
-    name: "start",
-    description: "▶️ Start the event this thread belongs to (Officer+ only)",
-    action: "start",
-  },
-  {
-    name: "stop",
-    description: "⏹️ Stop the event this thread belongs to (Officer+ only)",
-    action: "stop",
-  },
-  {
-    name: "reopen",
-    description: "🔁 Reopen the cancelled event this thread belongs to (Officer+ only)",
-    action: "reopen",
-  },
-  {
-    name: "cancel",
-    description: "❌ Cancel the event this thread belongs to (Officer+ only)",
-    action: "cancel",
-  },
 ];
 
 /**

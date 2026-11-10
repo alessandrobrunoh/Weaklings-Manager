@@ -3,7 +3,6 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   type ChatInputCommandInteraction,
-  type ThreadChannel,
 } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type {
@@ -11,12 +10,8 @@ import type {
   EventParticipant,
   EventSignupBuildOption,
   EventSignupOptionsView,
-  EventView,
 } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
-import { buildEventReminderMessage } from "../embeds/event.embed.js";
-import { ensureEventManagementAllowed } from "./event-authority.js";
-import { startDiscordEvent, stopDiscordEvent, voiceChannelOccupantCount } from "./event-lifecycle.js";
 import { getPoller, type Poller } from "./poller.js";
 import { buildSignupRoleOptions, signupRoles } from "./event-signup.js";
 import {
@@ -30,19 +25,8 @@ import {
 import { eventJoinCopy } from "./event-join-copy.js";
 import { eventThreadCopy } from "./event-thread-copy.js";
 import { flashCopy } from "./flash-copy.js";
-import {
-  closeEventAnnouncementThread,
-} from "./event-announcement-thread.js";
-import { unlockAndUnarchiveThread } from "./discord-thread.js";
 
-export type EventThreadAction =
-  | "join"
-  | "leave"
-  | "ping"
-  | "start"
-  | "stop"
-  | "reopen"
-  | "cancel";
+export type EventThreadAction = "join" | "leave";
 
 /** The part of a channel the thread lookup needs — threads and forum posts both satisfy it. */
 export interface ThreadLikeChannel {
@@ -132,157 +116,11 @@ export async function executeEventThreadAction(
     return;
   }
 
-  const thread = interaction.channel as ThreadChannel;
-
   if (action === "join") {
     await joinEvent(interaction, api, poller, eventId);
     return;
   }
-  if (action === "leave") {
-    await leaveEvent(interaction, api, eventId);
-    return;
-  }
-
-  // Officer actions share the button path's fail-closed authority check.
-  if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
-    return;
-  }
-
-  if (action === "ping") {
-    // The command already had to run inside the event thread, so that thread is
-    // the reminder target (the button path uses resolveEventReminderThread for
-    // the parent-channel starter-message case, which cannot happen here).
-    const event = await api.post<EventView>(
-      `api/events/${eventId}/remind`,
-      {},
-      interaction.user.id,
-    );
-    await thread.send(
-      buildEventReminderMessage(event, interaction.guild?.preferredLocale),
-    );
-    await interaction.editReply({
-      embeds: [
-        createResponseEmbed(
-          "success",
-          "Reminder Sent",
-          `The reminder for event **#${eventId}** was posted in this thread.`,
-          "GUILD EVENT",
-        ),
-      ],
-    });
-    return;
-  }
-
-  if (action === "start") {
-    const result = await startDiscordEvent(
-      interaction.client,
-      api,
-      interaction.user.id,
-      eventId,
-      thread,
-    );
-    await refreshThreadCards(api, eventId, "Start command");
-    await interaction.editReply({
-      embeds: [
-        createResponseEmbed(
-          "success",
-          "Event Live",
-          `Event **#${eventId}** is now **LIVE** in <#${result.voiceChannelId}>.`,
-          "GUILD EVENT",
-        ),
-      ],
-    });
-    return;
-  }
-
-  if (action === "stop") {
-    const result = await stopDiscordEvent(
-      interaction.client,
-      api,
-      interaction.user.id,
-      eventId,
-    );
-    await poller?.finalizeStoppedEventThread(eventId);
-    const message = result.voiceChannelOccupied
-      ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
-      : result.voiceChannelDeleted
-        ? `Event **#${eventId}** stopped and its empty voice channel was deleted.`
-        : `Event **#${eventId}** has been stopped. ⏹️`;
-    await interaction.editReply({
-      embeds: [createResponseEmbed("warning", "Event Stopped", message, "GUILD EVENT")],
-    });
-    return;
-  }
-
-  if (action === "cancel") {
-    let event = await api.post<EventDetailView>(
-      `api/events/${eventId}/cancel`,
-      {},
-      interaction.user.id,
-    );
-    // Cancellation may leave a Mass-created voice behind. Remove it only when empty; occupied
-    // channels remain available for members to leave safely.
-    if (event.discord_voice_channel_id) {
-      try {
-        const channel = await interaction.client.channels.fetch(event.discord_voice_channel_id);
-        if (channel?.isVoiceBased() && voiceChannelOccupantCount(channel) === 0) {
-          await channel.delete(`Event #${eventId} cancelled and voice channel was empty`);
-          event = await api.delete<EventDetailView>(
-            `api/events/${eventId}/discord-voice-channel`,
-            interaction.user.id,
-          ) ?? event;
-        }
-      } catch (error) {
-        console.warn(`[Cancel command] Could not clean up cancelled event #${eventId} voice channel:`, error);
-      }
-    }
-    const closed = await poller?.closeEventThread(eventId, { keepMapping: true });
-    if (!closed) {
-      await closeEventAnnouncementThread(thread, eventId, "Cancel command");
-    }
-    poller?.rememberEventThread(
-      eventId,
-      thread.id,
-      poller?.eventSignupMessageIdFor(eventId) ?? undefined,
-      `${event.roster_version ?? 0}:${event.status}`,
-    );
-    await interaction.editReply({
-      embeds: [
-        createResponseEmbed(
-          "warning",
-          "Event Cancelled",
-          `Event **#${eventId}** has been cancelled. Use **Reopen** if you need it back.`,
-          "GUILD EVENT",
-        ),
-      ],
-    });
-    return;
-  }
-
-  // action === "reopen"
-  const event = await api.post<EventDetailView>(
-    `api/events/${eventId}/uncancel`,
-    {},
-    interaction.user.id,
-  );
-  await unlockAndUnarchiveThread(thread, `Event #${eventId} reopened`);
-  poller?.rememberEventThread(
-    eventId,
-    thread.id,
-    poller?.eventSignupMessageIdFor(eventId) ?? undefined,
-    `${event.roster_version ?? 0}:${event.status}`,
-  );
-  await refreshThreadCards(api, eventId, "Reopen command");
-  await interaction.editReply({
-    embeds: [
-      createResponseEmbed(
-        "success",
-        "Event Reopened",
-        `Event **#${eventId}** is scheduled again. Join, ping, and start are available.`,
-        "GUILD EVENT",
-      ),
-    ],
-  });
+  await leaveEvent(interaction, api, eventId);
 }
 
 async function joinEvent(
