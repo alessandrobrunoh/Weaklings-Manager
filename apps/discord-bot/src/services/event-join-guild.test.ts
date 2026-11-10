@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { StringSelectMenuInteraction } from "discord.js";
-import type { ApiClient } from "../api/client.js";
+import { ApiError, type ApiClient } from "../api/client.js";
 import {
   execute as executeEventJoin,
 } from "../commands/event-join.js";
@@ -128,6 +128,17 @@ test("resolveJoinGuilds: guild tenant fixes attribution without asking the backe
 
 test("resolveJoinGuilds: alliance tenant with zero guilds reports none", async () => {
   const api = guildStatusApi("alliance", []);
+  assert.equal((await resolveJoinGuilds(api, api.guildId, 5, "424242")).kind, "none");
+});
+
+test("resolveJoinGuilds: a 409 (caller in no active guild) reports none instead of failing", async () => {
+  const api = makeApi({
+    get: (path) => {
+      if (path.includes("/status")) return { id: "t", registered: true, status: "active", name: "T", kind: "alliance" };
+      if (path.endsWith("/participation-guilds")) throw new ApiError(409, "no active guild");
+      return undefined;
+    },
+  });
   assert.equal((await resolveJoinGuilds(api, api.guildId, 5, "424242")).kind, "none");
 });
 

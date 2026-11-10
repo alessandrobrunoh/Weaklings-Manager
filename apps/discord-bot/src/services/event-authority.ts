@@ -20,8 +20,8 @@ interface ManagementReply {
 
 /**
  * Refuses start/stop/cancel/reopen/ping unless the caller created the event
- * or holds a role that grants `events.edit` (including the legacy
- * `events.manage` permission, which implies it).
+ * or holds `events.manage` (administrators). `events.edit` / `events.delete`
+ * only cover events the caller created, so they never authorize this.
  *
  * Returns true only when the caller-scoped authority endpoint explicitly
  * authorizes the caller. Older backends cannot safely authorize Discord actions.
@@ -68,7 +68,7 @@ export async function ensureEventManagementAllowed(
       createResponseEmbed(
         "warning",
         "Not Allowed",
-        "Only the event organizer, or a role with the Events Manage permission, can start, stop, cancel, reopen, or ping this event.",
+        "Only the event organizer, or an administrator (Events Manage permission), can start, stop, cancel, reopen, or ping this event.",
         "GUILD EVENT",
       ),
     ],

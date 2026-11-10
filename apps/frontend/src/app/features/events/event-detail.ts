@@ -2590,7 +2590,7 @@ export class EventDetailPage {
     if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
     const userId = this.auth.profile()?.user_id;
     return (
-      this.auth.hasPermission('events.edit') ||
+      this.auth.hasPermission('events.manage') ||
       (userId !== undefined && event?.created_by === userId)
     );
   });
@@ -2599,7 +2599,7 @@ export class EventDetailPage {
     if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
     const userId = this.auth.profile()?.user_id;
     return (
-      this.auth.hasPermission('events.delete') ||
+      this.auth.hasPermission('events.manage') ||
       (userId !== undefined && event?.created_by === userId)
     );
   });
@@ -4865,10 +4865,14 @@ export class EventDetailPage {
       this.participationGuilds.set(guilds);
       this.selectedGuildTenantId.set(guilds.length === 1 ? guilds[0].tenant_id : '');
       this.participationGuildsState.set('ready');
-    } catch {
+    } catch (error) {
       this.participationGuilds.set([]);
       this.selectedGuildTenantId.set('');
-      this.participationGuildsState.set('error');
+      // The backend answers 409 when the caller belongs to no active member guild: that is a
+      // definite "no guild" answer, not a failure a retry could fix.
+      this.participationGuildsState.set(
+        error instanceof ApiError && error.status === 409 ? 'ready' : 'error',
+      );
     }
   }
 
@@ -4972,7 +4976,7 @@ export class EventDetailPage {
       const updated = await firstValueFrom(
         this.api.post<EventDetailView>(path, request),
       );
-      this.event.set(updated);
+      this.event.set(this.keepCopyMarkers(detail, updated));
       await this.loadRosterSnapshot();
       this.showJoinConfirm.set(false);
       this.toasts.success(this.t('events.detail.joined'));
@@ -4983,13 +4987,29 @@ export class EventDetailPage {
     }
   }
 
+  /**
+   * The participate/leave responses are not hydrated with the cross-tenant relationship, so
+   * `is_synchronized_copy` comes back `false` even for a copy. Keep the markers of the detail
+   * already on screen, or a read-only copy would show the management controls until the next
+   * reload.
+   */
+  private keepCopyMarkers(previous: EventDetailView, updated: EventDetailView): EventDetailView {
+    return {
+      ...updated,
+      is_synchronized_copy: previous.is_synchronized_copy ?? updated.is_synchronized_copy,
+      source_event_id: previous.source_event_id ?? updated.source_event_id,
+      source_tenant_id: previous.source_tenant_id ?? updated.source_tenant_id,
+    };
+  }
+
   protected async leave(id: number): Promise<void> {
     try {
       const updated = await firstValueFrom(
         this.api.delete<EventDetailView>(`api/events/${id}/participate`),
       );
       if (updated) {
-        this.event.set(updated);
+        const previous = this.event();
+        this.event.set(previous ? this.keepCopyMarkers(previous, updated) : updated);
         await this.loadRosterSnapshot(true);
       } else {
         await this.load(true);

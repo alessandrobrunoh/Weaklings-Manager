@@ -1670,16 +1670,18 @@ export class Poller {
           this.forgetEventThread(eventId);
           continue;
         }
+        // A cancelled event keeps its locked card. A copy of a cancelled origin is also archived
+        // by the backend, so test the cancellation first or the guild would lose the card.
+        if (event.status === "cancelled") {
+          await this.closeCancelledEvent(event, threadId);
+          continue;
+        }
         if (event.archived_at) {
           if (!this.state.archivedEventIds.includes(event.id)) {
             this.state.archivedEventIds.push(event.id);
             this.save();
           }
           if (threadId) await this.deleteEventThread(event.id);
-          continue;
-        }
-        if (event.status === "cancelled") {
-          await this.closeCancelledEvent(event, threadId);
           continue;
         }
         if (!terminalStatuses.has(event.status)) continue;
@@ -1941,6 +1943,11 @@ export class Poller {
         if (seenEventIds.has(event.id)) continue;
         seenEventIds.add(event.id);
         if (event.status === "scheduled") {
+          // A synchronized copy is read-only here: mass, start and the voice channel belong to
+          // the origin server (the backend answers 403 copy_read_only), and the copy converges
+          // to the origin's status on its own. Trying would create and delete a voice channel
+          // on every poll.
+          if (event.is_synchronized_copy) continue;
           const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(startAt) && now - startAt > LIFECYCLE_MAX_OVERDUE_MS) continue;
           const massAt = new Date(event.mass_time_utc ?? event.event_date_utc).getTime();

@@ -450,10 +450,10 @@ pub async fn sync_participation(
     actor: &ShareActor,
     request: Option<ParticipateEventRequest>,
     attributed_guild: Option<&str>,
-) -> Result<(), AppError> {
+) -> Result<Vec<(String, i64)>, AppError> {
     let peers = linked_event_peers(control, tenant_id, event_id).await?;
     if peers.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let (origin_tenant, origin_event) =
         canonical_event_origin(control, tenant_id, event_id).await?;
@@ -478,11 +478,12 @@ pub async fn sync_participation(
     };
     let peers = filter_peers_by_attribution(control, peers, attribution.as_deref()).await?;
     if peers.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let current = registry.get_or_load(tenant_id).await?;
+    let mut synced = Vec::with_capacity(peers.len());
     for (peer_tenant, peer_id) in peers {
-        if let Err(error) = sync_participation_to_peer(
+        match sync_participation_to_peer(
             control,
             registry,
             tenant_id,
@@ -494,7 +495,8 @@ pub async fn sync_participation(
         )
         .await
         {
-            tracing::error!(
+            Ok(()) => synced.push((peer_tenant, peer_id)),
+            Err(error) => tracing::error!(
                 tenant_id = %tenant_id,
                 event_id,
                 peer_tenant = %peer_tenant,
@@ -502,7 +504,7 @@ pub async fn sync_participation(
                 discord_id = %actor.discord_id,
                 %error,
                 "participation was saved but could not be copied to the linked event"
-            );
+            ),
         }
     }
     // Event-linked splits use the event roster as their participant source.
@@ -510,7 +512,7 @@ pub async fn sync_participation(
     crate::modules::splits::service::SplitService::new()
         .sync_event_participants(&current.db, event_id)
         .await?;
-    Ok(())
+    Ok(synced)
 }
 
 pub async fn canonical_event_origin(

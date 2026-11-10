@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
-    QueryFilter, Set, Statement, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
 };
 
 use crate::{
@@ -94,6 +94,137 @@ pub async fn process_due_targets(
     Ok(count)
 }
 
+/// How far back a scheduled alliance event still counts as upcoming for the catch-up sweep.
+const RECONCILE_GRACE_HOURS: i64 = 12;
+/// Upper bound of alliance events examined per alliance in one sweep.
+const RECONCILE_EVENT_LIMIT: u64 = 200;
+
+/// Catch-up sweep: gives every active member guild a copy of the alliance's upcoming and live
+/// events it does not have yet.
+///
+/// A fanout job snapshots the member guilds at the moment the event is created or edited, so a
+/// guild that joins (or rejoins) afterwards, or whose publish was lost, would otherwise see
+/// nothing until an unrelated edit happened to enqueue an update. The job key carries the
+/// membership's acceptance time, so a guild that leaves and rejoins is served again, and a
+/// repeated sweep writes nothing while a job for the same guild and event already exists.
+///
+/// # Errors
+///
+/// Returns a database error when the control plane cannot be queried; one unreadable alliance
+/// tenant is logged and skipped.
+pub async fn reconcile_missing_copies(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+) -> Result<usize, AppError> {
+    let members = control
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT alliance_tenant_id, guild_tenant_id, \
+                    COALESCE(EXTRACT(EPOCH FROM accepted_at), 0)::bigint \
+             FROM alliance_memberships WHERE status = 'active' \
+             ORDER BY alliance_tenant_id, guild_tenant_id",
+            [],
+        ))
+        .await?;
+    let mut by_alliance: Vec<(String, Vec<(String, i64)>)> = Vec::new();
+    for row in members {
+        let alliance: String = row.try_get_by_index(0)?;
+        let guild: String = row.try_get_by_index(1)?;
+        let accepted: i64 = row.try_get_by_index(2)?;
+        match by_alliance.last_mut() {
+            Some((id, guilds)) if *id == alliance => guilds.push((guild, accepted)),
+            _ => by_alliance.push((alliance, vec![(guild, accepted)])),
+        }
+    }
+
+    let mut enqueued = 0;
+    for (alliance_id, guilds) in by_alliance {
+        let context = match registry.get_or_load(&alliance_id).await {
+            Ok(context) if context.kind == "alliance" => context,
+            Ok(_) => continue,
+            Err(error) => {
+                tracing::warn!(alliance_id, error = %error, "event catch-up skipped an unreadable alliance");
+                continue;
+            }
+        };
+        let now = chrono::Utc::now();
+        let upcoming = event::Entity::find()
+            .filter(event::Column::SourceEventId.is_null())
+            .filter(event::Column::ArchivedAt.is_null())
+            .filter(
+                sea_orm::Condition::any()
+                    .add(event::Column::Status.eq("live"))
+                    .add(
+                        sea_orm::Condition::all()
+                            .add(event::Column::Status.eq("scheduled"))
+                            .add(
+                                event::Column::EventDateUtc
+                                    .gte(now - chrono::Duration::hours(RECONCILE_GRACE_HOURS)),
+                            ),
+                    ),
+            )
+            .order_by_desc(event::Column::Id)
+            .limit(RECONCILE_EVENT_LIMIT)
+            .all(&context.db)
+            .await?;
+        let Some(oldest) = upcoming.iter().map(|event| event.id).min() else {
+            continue;
+        };
+        let linked = control
+            .query_all(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT source_event_id, mirror_tenant_id FROM event_sync_links \
+                 WHERE source_tenant_id = $1 AND source_event_id >= $2 AND sync_enabled",
+                [alliance_id.clone().into(), oldest.into()],
+            ))
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get_by_index::<i64>(0)?,
+                    row.try_get_by_index::<String>(1)?,
+                ))
+            })
+            .collect::<Result<std::collections::HashSet<_>, sea_orm::DbErr>>()?;
+
+        for event in upcoming {
+            for (guild, accepted) in &guilds {
+                if linked.contains(&(event.id, guild.clone())) {
+                    continue;
+                }
+                let key = format!("join:{}:{guild}:{accepted}", event.id);
+                let known = control
+                    .query_one(Statement::from_sql_and_values(
+                        DbBackend::Postgres,
+                        "SELECT 1 FROM event_fanout_jobs \
+                         WHERE source_tenant_id = $1 AND source_event_id = $2 \
+                           AND operation = 'publish' AND idempotency_key = $3",
+                        [
+                            alliance_id.clone().into(),
+                            event.id.into(),
+                            key.clone().into(),
+                        ],
+                    ))
+                    .await?;
+                if known.is_some() {
+                    continue;
+                }
+                fanout_outbox::enqueue(
+                    control,
+                    &alliance_id,
+                    event.id,
+                    fanout_outbox::Operation::Publish,
+                    &key,
+                    std::slice::from_ref(guild),
+                )
+                .await?;
+                enqueued += 1;
+            }
+        }
+    }
+    Ok(enqueued)
+}
+
 fn retry_delay_seconds(attempt: i32) -> i64 {
     crate::runtime::backoff::retry_delay_seconds(attempt)
 }
@@ -177,6 +308,7 @@ async fn process_target(
         (None, HashMap::new())
     };
 
+    let existing_copy_id = existing_copy.as_ref().map(|copy| copy.id);
     let target_event_id = if let Some(copy) = existing_copy {
         // Every operation converges an existing copy to the current source
         // state, which makes update, archive, and publish retries idempotent.
@@ -230,6 +362,16 @@ async fn process_target(
             .await?
             .id
     };
+    if existing_copy_id.is_none() && source.status != "scheduled" {
+        // A copy created after the source went live or stopped (a late or requeued target) must
+        // not start as `scheduled`.
+        crate::modules::events::lifecycle::converge_copy_to_source(
+            &target_context.db,
+            &source,
+            target_event_id,
+        )
+        .await?;
+    }
 
     sync_roster_roles(
         &source_context.db,
@@ -322,7 +464,10 @@ async fn link_copy_if_membership_active(
         DbBackend::Postgres,
         "INSERT INTO event_sync_links \
          (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
-         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (mirror_tenant_id, mirror_event_id) DO NOTHING",
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (mirror_tenant_id, mirror_event_id) \
+         DO UPDATE SET sync_enabled = true \
+         WHERE event_sync_links.source_tenant_id = EXCLUDED.source_tenant_id \
+           AND event_sync_links.source_event_id = EXCLUDED.source_event_id",
         [
             uuid::Uuid::new_v4().into(),
             alliance_id.into(),
@@ -419,12 +564,23 @@ async fn load_build_id_map(
     control: &DatabaseConnection,
     target: &ClaimedTarget,
 ) -> Result<HashMap<i64, i64>, AppError> {
+    // Every update is a new job, so the map must span the jobs of this event and tenant: the
+    // newest mapping per source build wins. Reading only this job's rows would start every
+    // update with an empty map and copy each build again, orphaning the previous copies.
     let rows = control
         .query_all(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "SELECT source_id, destination_id FROM event_fanout_assets \
-             WHERE job_id=$1 AND tenant_id=$2 AND asset_type='build'",
-            [target.job_id.into(), target.tenant_id.clone().into()],
+            "SELECT DISTINCT ON (a.source_id) a.source_id, a.destination_id \
+             FROM event_fanout_assets a \
+             JOIN event_fanout_jobs j ON j.id = a.job_id \
+             WHERE j.source_tenant_id=$1 AND j.source_event_id=$2 \
+               AND a.tenant_id=$3 AND a.asset_type='build' \
+             ORDER BY a.source_id, j.created_at DESC",
+            [
+                target.source_tenant_id.clone().into(),
+                target.source_event_id.into(),
+                target.tenant_id.clone().into(),
+            ],
         ))
         .await?;
     rows.into_iter()
@@ -956,6 +1112,170 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(statuses[0].state, "complete");
+
+        // A later edit is a NEW job with its own idempotency key. It must reuse the guild's
+        // build instead of copying it again, or the catalog collects orphans on every edit.
+        EventService::new()
+            .start_event(alliance_db, source_event.id)
+            .await
+            .expect("start the source event");
+        let update_job = fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            source_event.id,
+            Operation::Update,
+            "update:after-start",
+            &["guild-a".to_owned()],
+        )
+        .await
+        .expect("enqueue update");
+        let update_claim = fanout_outbox::claim_due(&world.control, 1, 60)
+            .await
+            .expect("claim update target")
+            .pop()
+            .expect("one update target");
+        assert_eq!(update_claim.job_id, update_job);
+        let updated_copy_id = process_target(&world.control, &world.registry, &update_claim)
+            .await
+            .expect("update copy")
+            .expect("active target");
+        assert_eq!(updated_copy_id, first_copy_id);
+        let healer_builds = crate::modules::comps::entities::build::Entity::find()
+            .filter(crate::modules::comps::entities::build::Column::Name.eq("Fanout healer"))
+            .all(guild_db)
+            .await
+            .unwrap();
+        assert_eq!(
+            healer_builds.len(),
+            1,
+            "an update must not duplicate the build"
+        );
+        let roles_after = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(first_copy_id))
+            .all(guild_db)
+            .await
+            .unwrap();
+        assert_eq!(roles_after.len(), 1);
+        assert_eq!(roles_after[0].build_id, healer_builds[0].id);
+        let live_copy = event::Entity::find_by_id(first_copy_id)
+            .one(guild_db)
+            .await
+            .unwrap()
+            .expect("copy still exists");
+        assert_eq!(
+            live_copy.status, "live",
+            "the copy follows the source start"
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn catch_up_gives_a_late_guild_the_upcoming_events_exactly_once() {
+        let Some(world) = TestWorld::new(&["forum"]).await else {
+            return;
+        };
+        let alliance_db = &world.tenant_dbs[0];
+        let creator_id = upsert_discord_user(
+            alliance_db,
+            "catchup-creator",
+            "Catch-up creator",
+            "catchup-creator@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("create source event owner");
+        // Created while no fanout job exists for the guild: it joined later, or the publish
+        // was lost.
+        let mut request = flash_event("Created before the guild joined");
+        request.event_date_utc =
+            Some((chrono::Utc::now() + chrono::Duration::days(2)).to_rfc3339());
+        let source_event = EventService::new()
+            .create_event(alliance_db, creator_id, request)
+            .await
+            .expect("create canonical event");
+
+        assert_eq!(
+            reconcile_missing_copies(&world.control, &world.registry)
+                .await
+                .expect("first sweep"),
+            1
+        );
+        assert_eq!(
+            process_due_targets(&world.control, &world.registry)
+                .await
+                .expect("drain"),
+            1
+        );
+        let copy = event::Entity::find()
+            .filter(event::Column::SourceTenantId.eq("alliance"))
+            .filter(event::Column::SourceEventId.eq(source_event.id))
+            .one(&world.tenant_dbs[1])
+            .await
+            .unwrap()
+            .expect("the guild now has a copy");
+        assert_eq!(copy.title, "Created before the guild joined");
+
+        // Nothing is missing any more, and nothing is written again.
+        assert_eq!(
+            reconcile_missing_copies(&world.control, &world.registry)
+                .await
+                .expect("second sweep"),
+            0
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_copy_created_after_the_source_went_live_is_not_left_scheduled() {
+        let Some(world) = TestWorld::new(&["forum"]).await else {
+            return;
+        };
+        let alliance_db = &world.tenant_dbs[0];
+        let creator_id = upsert_discord_user(
+            alliance_db,
+            "late-creator",
+            "Late creator",
+            "late-creator@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("create source event owner");
+        let source_event = EventService::new()
+            .create_event(alliance_db, creator_id, flash_event("Already live"))
+            .await
+            .expect("create canonical event");
+        EventService::new()
+            .start_event(alliance_db, source_event.id)
+            .await
+            .expect("start the source before any copy exists");
+        fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            source_event.id,
+            Operation::Publish,
+            &format!("publish:{}", source_event.id),
+            &["guild-a".to_owned()],
+        )
+        .await
+        .expect("enqueue publish");
+        let claimed = fanout_outbox::claim_due(&world.control, 1, 60)
+            .await
+            .expect("claim target")
+            .pop()
+            .expect("one target");
+        let copy_id = process_target(&world.control, &world.registry, &claimed)
+            .await
+            .expect("copy attempt")
+            .expect("active target");
+        let copy = event::Entity::find_by_id(copy_id)
+            .one(&world.tenant_dbs[1])
+            .await
+            .unwrap()
+            .expect("copy exists");
+        assert_eq!(copy.status, "live");
+        assert!(copy.started_at.is_some());
         world.close().await;
     }
 }

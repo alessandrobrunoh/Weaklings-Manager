@@ -134,6 +134,37 @@ async fn localize_island_locator(
 /// Rejects a write on a read-only copy of another tenant's event (403 + `origin`).
 ///
 /// Detached copies (sync link disabled) stay locally managed and pass.
+/// Tells the viewers of the other tenants that a participation change reached their copy of the
+/// event. The hub is keyed by tenant and event, so without this an officer watching the origin
+/// would see a join made on a guild copy only after a manual reload.
+async fn publish_to_peers(
+    hub: &RosterHub,
+    registry: &TenantRegistry,
+    peers: &[(String, i64)],
+    change_kind: &'static str,
+) {
+    for (peer_tenant, peer_event_id) in peers {
+        let version = match registry.get_or_load(peer_tenant).await {
+            Ok(context) => super::entities::event::Entity::find_by_id(*peer_event_id)
+                .one(&context.db)
+                .await
+                .ok()
+                .flatten()
+                .map(|event| event.roster_version),
+            Err(_) => None,
+        };
+        if let Some(version) = version {
+            hub.publish(
+                peer_tenant.clone(),
+                *peer_event_id,
+                version,
+                change_kind,
+                Vec::new(),
+            );
+        }
+    }
+}
+
 async fn assert_event_writable(
     db: &sea_orm::DatabaseConnection,
     control: &ControlDb,
@@ -804,7 +835,7 @@ async fn assign_roster_seat(
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
@@ -833,7 +864,7 @@ async fn clear_roster_seat(
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .clear_roster_seat(&db, id, &seat_key, request)
@@ -862,7 +893,7 @@ async fn swap_roster_seats(
     Path(id): Path<i64>,
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let keys = vec![
         request.source_seat_key.clone(),
@@ -894,7 +925,7 @@ async fn auto_fill_roster(
     Path(id): Path<i64>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let (version, changed) = EventService::new()
         .auto_fill_roster(&db, id, request, user.user_id)
@@ -1046,7 +1077,7 @@ async fn list_event_roster_roles(
     responses(
         (status = 200, description = "Roster role added", body = ApiResponse<EventRosterRoleView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event or build not found", body = ProblemDetails),
         (status = 409, description = "Build is already an extra roster role", body = ProblemDetails)
     )
@@ -1062,7 +1093,7 @@ async fn create_event_roster_role(
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
@@ -1085,7 +1116,7 @@ async fn create_event_roster_role(
     responses(
         (status = 204, description = "Roster role removed"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event roster role not found", body = ProblemDetails)
     )
 )]
@@ -1098,7 +1129,7 @@ async fn delete_event_roster_role(
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
@@ -1147,7 +1178,7 @@ async fn notify_roster_roles_changed(
         (status = 200, description = "Event created successfully", body = ApiResponseEventView),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails)
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails)
     )
 )]
 #[allow(clippy::too_many_arguments)]
@@ -1323,7 +1354,7 @@ async fn get_event_fanout_status(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<super::fanout_outbox::EventFanoutStatus>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     let status = super::fanout_outbox::status_for_event(&control.0, &tenant_id, id)
         .await?
         .ok_or_else(|| AppError::NotFound("event fanout status not found".to_owned()))?;
@@ -1353,7 +1384,7 @@ async fn get_event_mirror_status(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<super::mirror_retry::MirrorRequestStatus>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     let status = super::mirror_retry::status_for_event(&control.0, &tenant_id, id)
         .await?
         .ok_or_else(|| AppError::NotFound("event mirror request not found".to_owned()))?;
@@ -1393,7 +1424,7 @@ async fn retry_event_mirror(
             "alliance mirror retries are available only in guild tenants".to_owned(),
         ));
     }
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     super::sync::assert_active_alliance(&control.0, &tenant_id).await?;
     super::mirror_retry::requeue(&control.0, &tenant_id, id).await?;
@@ -1433,13 +1464,13 @@ async fn list_event_discord_roles(
 
 /// Updates an existing event.
 ///
-/// Requires `events.edit` permission.
+/// Requires being the event creator or holding `events.manage`.
 #[utoipa::path(
     patch,
     path = "/api/events/{id}",
     tag = "events",
     summary = "Update an event",
-    description = "Updates an event. Requires `events.edit` permission.",
+    description = "Updates an event. Requires being the event creator or holding `events.manage`.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Event ID")
@@ -1449,7 +1480,7 @@ async fn list_event_discord_roles(
         (status = 200, description = "Event updated successfully", body = ApiResponseEventView),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
@@ -1464,7 +1495,7 @@ async fn update_event(
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     if req.ping_alliance == Some(true) {
         assert_active_alliance(&control.0, &tenant_id).await?;
@@ -1556,13 +1587,13 @@ const fn lifecycle_cause(bot: Option<&BotSecret>) -> Cause {
 
 /// Deletes an event.
 ///
-/// Requires `events.delete` permission.
+/// Requires being the event creator or holding `events.manage`.
 #[utoipa::path(
     delete,
     path = "/api/events/{id}",
     tag = "events",
     summary = "Archive an event",
-    description = "Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires `events.delete` permission.",
+    description = "Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires being the event creator or holding `events.manage`.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Event ID")
@@ -1570,7 +1601,7 @@ const fn lifecycle_cause(bot: Option<&BotSecret>) -> Cause {
     responses(
         (status = 204, description = "Event archived successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
@@ -1583,7 +1614,7 @@ async fn delete_event(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     run_transition(
         &user,
@@ -1623,7 +1654,7 @@ async fn archive_event(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, _) = run_transition(
         &user,
@@ -1663,7 +1694,7 @@ async fn unarchive_event(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsDelete).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, _) = run_transition(
         &user,
@@ -1736,7 +1767,7 @@ async fn participate(
     let (detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
-    if let Err(error) = sync_participation(
+    match sync_participation(
         &control.0,
         &registry,
         &tenant.0,
@@ -1751,9 +1782,12 @@ async fn participate(
     )
     .await
     {
+        Ok(synced) => publish_to_peers(&hub, &registry, &synced, "participation_changed").await,
         // The signup above is already committed; surfacing an error here would tell the caller it
         // failed when it did not, and would skip the roster broadcast below.
-        tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        Err(error) => {
+            tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        }
     }
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
@@ -1789,7 +1823,7 @@ async fn cancel_participation(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let (detail, version, seat_key) = service.cancel_participation(&db, id, user.user_id).await?;
-    if let Err(error) = sync_participation(
+    match sync_participation(
         &control.0,
         &registry,
         &tenant.0,
@@ -1804,8 +1838,11 @@ async fn cancel_participation(
     )
     .await
     {
+        Ok(synced) => publish_to_peers(&hub, &registry, &synced, "participant_left").await,
         // See `participate`: the cancellation is already committed locally.
-        tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        Err(error) => {
+            tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        }
     }
     tracing::info!(
         event_id = id,
@@ -1879,19 +1916,21 @@ async fn event_creator_id(
         .created_by)
 }
 
-/// Guard for an event-specific management mutation. The creator may manage
-/// their own event; everyone else needs the permission for the requested action.
+/// Guard for an event-specific management mutation (start, stop, cancel, edit, roster, delete…).
 ///
-/// We intentionally avoid `UserContext::require` here because the policy is an
-/// OR between a role-based permission and ownership of the row.
+/// Only the event's creator may change it. The one exception is a holder of `events.manage`
+/// (administrators): `events.edit` and `events.delete` cover the caller's own events, never
+/// somebody else's, exactly like `comps.*` (decision D-09).
+///
+/// We intentionally avoid `UserContext::require` here because the policy is an OR between a
+/// role-based permission and ownership of the row.
 async fn require_event_management_authority(
     user: &UserContext,
     perms: &Permissions,
     db: &sea_orm::DatabaseConnection,
     event_id: i64,
-    permission: Permission,
 ) -> Result<(), AppError> {
-    if user.has_permission(perms, permission).await {
+    if user.has_permission(perms, Permission::EventsManage).await {
         return Ok(());
     }
 
@@ -1900,14 +1939,14 @@ async fn require_event_management_authority(
     }
 
     Err(AppError::Forbidden(format!(
-        "Only the event creator or users with {} may manage this event",
-        permission.as_str()
+        "Only the event creator or users with {} may change this event",
+        Permission::EventsManage.as_str()
     )))
 }
 
 /// Adds or updates a participant on behalf of an arbitrary guild member.
 ///
-/// Restricted to the event creator or users holding `events.edit`.
+/// Restricted to the event creator or users holding `events.manage`.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/participants",
@@ -1921,7 +1960,7 @@ async fn require_event_management_authority(
         (status = 200, description = "Member added", body = ApiResponseEventDetail),
         (status = 400, description = "Validation error (e.g. comp full, build not allowed)", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - caller is not creator and lacks events.edit", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not the creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
@@ -1936,7 +1975,7 @@ async fn add_event_member(
     Path(id): Path<i64>,
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
@@ -1952,7 +1991,7 @@ async fn add_event_member(
 
 /// Inserts or updates a participant on behalf of an arbitrary guild member.
 ///
-/// Restricted to the event creator or users holding `events.edit`. This URL form is retained for
+/// Restricted to the event creator or users holding `events.manage`. This URL form is retained for
 /// clients that already send the target user ID as a path parameter.
 #[utoipa::path(
     put,
@@ -1974,7 +2013,7 @@ async fn add_event_member(
         (status = 200, description = "Participant upserted", body = ApiResponseEventDetail),
         (status = 400, description = "Validation error (e.g. comp full, build not allowed)", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - caller is not creator and lacks events.edit", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not the creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
@@ -1989,7 +2028,7 @@ pub(crate) async fn set_participant(
     Path((id, target_user_id)): Path<(i64, i64)>,
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version) = service
@@ -2001,7 +2040,7 @@ pub(crate) async fn set_participant(
 
 /// Removes a participant from an event on behalf of an arbitrary guild member.
 ///
-/// Restricted to the event creator or users holding `events.edit`.
+/// Restricted to the event creator or users holding `events.manage`.
 #[utoipa::path(
     delete,
     path = "/api/events/{id}/participants/{user_id}",
@@ -2017,7 +2056,7 @@ pub(crate) async fn set_participant(
     responses(
         (status = 200, description = "Participant removed", body = ApiResponseEventDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - caller is not creator and lacks events.edit", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not the creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event / participation not found", body = ProblemDetails)
     )
 )]
@@ -2030,7 +2069,7 @@ pub(crate) async fn remove_participant(
     Extension(tenant): Extension<CurrentTenantId>,
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (detail, version, seat_key) = service
@@ -2055,7 +2094,7 @@ pub(crate) async fn remove_participant(
 
 /// Authorizes a manual Discord reminder for a scheduled event.
 ///
-/// Requires `events.edit` permission. Discord delivery remains the bot's responsibility.
+/// Requires being the event creator or holding `events.manage`. Discord delivery remains the bot's responsibility.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/remind",
@@ -2067,7 +2106,7 @@ pub(crate) async fn remove_participant(
     responses(
         (status = 200, description = "Reminder authorized", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not scheduled", body = ProblemDetails)
     )
@@ -2080,7 +2119,7 @@ async fn remind_event(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
     let effects = emit_manual_reminder(&db, id).await?;
@@ -2107,7 +2146,7 @@ async fn remind_event(
     path = "/api/events/{id}/management-authority",
     tag = "events",
     summary = "Check whether the caller may manage this event",
-    description = "Returns the same organizer-or-`events.edit` decision that guards \
+    description = "Returns the same organizer-or-`events.manage` decision that guards \
          start/stop/cancel/uncancel/remind. Requires `events.view`.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
@@ -2136,17 +2175,17 @@ async fn get_event_management_authority(
         .is_read_only();
     let is_organizer = !is_copy && event_creator_id(&db, id).await? == user.user_id;
     let can_manage =
-        !is_copy && (is_organizer || user.has_permission(&perms, Permission::EventsEdit).await);
+        !is_copy && (is_organizer || user.has_permission(&perms, Permission::EventsManage).await);
     Ok(Json(ApiResponse::new(EventManagementAuthorityView {
         is_organizer,
         can_manage,
-        required_permission: Permission::EventsEdit.as_str().to_string(),
+        required_permission: Permission::EventsManage.as_str().to_string(),
     })))
 }
 
 /// Associates the Discord voice channel created by the bot at Mass or Start.
 ///
-/// Requires `events.edit` permission.
+/// Requires being the event creator or holding `events.manage`.
 #[utoipa::path(
     put,
     path = "/api/events/{id}/discord-voice-channel",
@@ -2159,7 +2198,7 @@ async fn get_event_management_authority(
         (status = 200, description = "Voice channel bound", body = ApiResponseEventView),
         (status = 400, description = "Invalid Discord channel ID", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not scheduled/live or has another voice channel", body = ProblemDetails)
     )
@@ -2173,7 +2212,7 @@ async fn set_event_voice_channel(
     Path(id): Path<i64>,
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
@@ -2192,7 +2231,7 @@ async fn set_event_voice_channel(
 
 /// Clears the persisted Discord voice channel after a stopped event's cleanup.
 ///
-/// Requires `events.edit` permission.
+/// Requires being the event creator or holding `events.manage`.
 #[utoipa::path(
     delete,
     path = "/api/events/{id}/discord-voice-channel",
@@ -2203,7 +2242,7 @@ async fn set_event_voice_channel(
     responses(
         (status = 200, description = "Voice channel binding cleared", body = ApiResponseEventView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not stopped, auto-stopped, or cancelled", body = ProblemDetails)
     )
@@ -2216,7 +2255,7 @@ async fn clear_event_voice_channel(
     Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
@@ -2235,7 +2274,7 @@ async fn clear_event_voice_channel(
 
 /// Starts an event session (status -> live).
 ///
-/// Requires `events.edit` permission.
+/// Requires being the event creator or holding `events.manage`.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/start",
@@ -2247,7 +2286,7 @@ async fn clear_event_voice_channel(
     responses(
         (status = 200, description = "Session started", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event already live", body = ProblemDetails)
     )
@@ -2263,7 +2302,7 @@ async fn start_event(
     bot: Option<BotSecret>,
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, effects) = run_transition(
         &user,
@@ -2281,7 +2320,7 @@ async fn start_event(
 
 /// Cancels an event (status -> cancelled).
 ///
-/// Requires `events.edit` permission. Repeating the request for an already cancelled event is safe.
+/// Requires being the event creator or holding `events.manage`. Repeating the request for an already cancelled event is safe.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/cancel",
@@ -2293,7 +2332,7 @@ async fn start_event(
     responses(
         (status = 200, description = "Event cancelled", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is already completed", body = ProblemDetails)
     )
@@ -2309,7 +2348,7 @@ async fn cancel_event(
     bot: Option<BotSecret>,
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, effects) = run_transition(
         &user,
@@ -2327,7 +2366,7 @@ async fn cancel_event(
 
 /// Restores a cancelled event (status -> scheduled).
 ///
-/// Requires `events.edit` permission. Use this to undo a mistaken cancellation.
+/// Requires being the event creator or holding `events.manage`. Use this to undo a mistaken cancellation.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/uncancel",
@@ -2339,7 +2378,7 @@ async fn cancel_event(
     responses(
         (status = 200, description = "Event restored", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not cancelled", body = ProblemDetails)
     )
@@ -2355,7 +2394,7 @@ async fn uncancel_event(
     bot: Option<BotSecret>,
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, effects) = run_transition(
         &user,
@@ -2373,7 +2412,7 @@ async fn uncancel_event(
 
 /// Stops an event session (status -> stopped).
 ///
-/// Requires `events.edit` permission. Auto-stops (`status=auto_stopped`) are
+/// Requires being the event creator or holding `events.manage`. Auto-stops (`status=auto_stopped`) are
 /// handled by the background worker.
 #[utoipa::path(
     post,
@@ -2386,7 +2425,7 @@ async fn uncancel_event(
     responses(
         (status = 200, description = "Session stopped", body = EventEffectsResponse),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not live", body = ProblemDetails)
     )
@@ -2402,7 +2441,7 @@ async fn stop_event(
     bot: Option<BotSecret>,
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     // Only a detached copy reaches this point; it still awards nothing, exactly as
     // before (progression belongs to the origin tenant).
@@ -2470,7 +2509,7 @@ async fn list_event_battles(
 
 /// Replaces the complete set of battles linked to an event.
 ///
-/// Requires `events.edit` permission. Passing an empty `battle_ids` array is valid and removes
+/// Requires being the event creator or holding `events.manage`. Passing an empty `battle_ids` array is valid and removes
 /// every linked battle, so an event can explicitly have zero battles.
 #[utoipa::path(
     put,
@@ -2485,7 +2524,7 @@ async fn list_event_battles(
         (status = 200, description = "Linked battles replaced", body = ApiResponseEventDetail),
         (status = 400, description = "Invalid battle list or battle outside configured guild", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
         (status = 404, description = "Event or battle not found", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
@@ -2502,7 +2541,7 @@ async fn replace_event_battles(
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    require_event_management_authority(&user, &perms, &db, id, Permission::EventsEdit).await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant_id, id).await?;
     let service = EventService::new();
     let scope = crate::albion_scope::load_albion_scope(&control.0, &tenant_id)
@@ -2732,16 +2771,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn event_management_allows_owners_and_requires_matching_permission_for_other_events() {
+    async fn only_the_creator_or_an_events_manager_may_change_an_event() {
         let db = authorization_test_db().await;
         let owner_id = insert_authorization_test_user(&db, "owner").await;
         let other_owner_id = insert_authorization_test_user(&db, "other-owner").await;
         let editor_id = insert_authorization_test_user(&db, "editor").await;
         let deleter_id = insert_authorization_test_user(&db, "deleter").await;
+        let manager_id = insert_authorization_test_user(&db, "manager").await;
         let first_event = insert_authorization_test_event(&db, "first", owner_id).await;
         let second_event = insert_authorization_test_event(&db, "second", other_owner_id).await;
         insert_test_role_with_permission(&db, "test-events-editor", Permission::EventsEdit).await;
         insert_test_role_with_permission(&db, "test-events-deleter", Permission::EventsDelete)
+            .await;
+        insert_test_role_with_permission(&db, "test-events-manager", Permission::EventsManage)
             .await;
         let permissions = Permissions::new_empty();
         permissions
@@ -2749,111 +2791,70 @@ mod tests {
             .await
             .expect("test permissions should load");
 
+        // The creator may change their own event, and only that one.
         let owner = authorization_test_user(owner_id, "User");
         assert!(
-            require_event_management_authority(
-                &owner,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsEdit
-            )
-            .await
-            .is_ok()
-        );
-        assert!(
-            require_event_management_authority(
-                &owner,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsDelete
-            )
-            .await
-            .is_ok()
+            require_event_management_authority(&owner, &permissions, &db, first_event)
+                .await
+                .is_ok()
         );
         assert!(matches!(
-            require_event_management_authority(
-                &owner,
-                &permissions,
-                &db,
-                second_event,
-                Permission::EventsEdit
-            )
-            .await,
+            require_event_management_authority(&owner, &permissions, &db, second_event).await,
             Err(AppError::Forbidden(_))
         ));
 
+        // `events.edit` / `events.delete` apply to the holder's own events: they do not let
+        // anybody start, stop or edit an event somebody else created.
         let editor = authorization_test_user(editor_id, "Test test-events-editor");
-        assert!(
-            require_event_management_authority(
-                &editor,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsEdit
-            )
-            .await
-            .is_ok()
-        );
         assert!(matches!(
-            require_event_management_authority(
-                &editor,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsDelete
-            )
-            .await,
+            require_event_management_authority(&editor, &permissions, &db, first_event).await,
             Err(AppError::Forbidden(_))
         ));
-
         let deleter = authorization_test_user(deleter_id, "Test test-events-deleter");
-        assert!(
-            require_event_management_authority(
-                &deleter,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsDelete
-            )
-            .await
-            .is_ok()
-        );
         assert!(matches!(
-            require_event_management_authority(
-                &deleter,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsEdit
-            )
-            .await,
+            require_event_management_authority(&deleter, &permissions, &db, first_event).await,
             Err(AppError::Forbidden(_))
         ));
 
+        // `events.manage` is the administrator override, on any event.
+        let manager = authorization_test_user(manager_id, "Test test-events-manager");
+        assert!(
+            require_event_management_authority(&manager, &permissions, &db, first_event)
+                .await
+                .is_ok()
+        );
+        assert!(
+            require_event_management_authority(&manager, &permissions, &db, second_event)
+                .await
+                .is_ok()
+        );
+
+        // An unrelated member has nothing.
         let member = authorization_test_user(other_owner_id, "User");
         assert!(matches!(
-            require_event_management_authority(
-                &member,
-                &permissions,
-                &db,
-                first_event,
-                Permission::EventsEdit
-            )
-            .await,
+            require_event_management_authority(&member, &permissions, &db, first_event).await,
             Err(AppError::Forbidden(_))
         ));
     }
 
     #[tokio::test]
-    async fn management_authority_reports_organizer_or_events_edit_decision() {
+    async fn management_authority_reports_organizer_or_events_manage_decision() {
         let db = authorization_test_db().await;
         let owner_id = insert_authorization_test_user(&db, "authority-owner").await;
         let member_id = insert_authorization_test_user(&db, "authority-member").await;
         let event_id = insert_authorization_test_event(&db, "authority", owner_id).await;
         insert_test_role_with_permission(&db, "test-events-manager", Permission::EventsManage)
             .await;
+        insert_test_role_with_permission(&db, "test-events-editor", Permission::EventsEdit).await;
+        // The authority endpoint itself needs `events.view`; give the editor that too so the
+        // test reaches the decision instead of failing at the view check.
+        role_permission::ActiveModel {
+            role_id: Set("test-events-editor".to_string()),
+            permission: Set(Permission::EventsView.as_str().to_string()),
+        }
+        .insert(&db)
+        .await
+        .expect("editor view permission should be inserted");
         let permissions = Permissions::new_empty();
         permissions
             .reload(&db)
@@ -2865,7 +2866,7 @@ mod tests {
         let view = event_authority_view(owner, permissions.clone(), &db, event_id).await;
         assert!(view.is_organizer);
         assert!(view.can_manage);
-        assert_eq!(view.required_permission, "events.edit");
+        assert_eq!(view.required_permission, "events.manage");
 
         // A plain member may neither — ownership belongs to someone else.
         let member = authorization_test_user(member_id, "User");
@@ -2887,11 +2888,16 @@ mod tests {
         assert!(!view.is_organizer);
         assert!(!view.can_manage);
 
-        // The legacy events.manage permission still implies the granular one.
+        // `events.manage` is the override for events the caller did not create.
         let manager = authorization_test_user(member_id, "Test test-events-manager");
         let view = event_authority_view(manager, permissions.clone(), &db, event_id).await;
         assert!(!view.is_organizer);
         assert!(view.can_manage);
+
+        // `events.edit` alone covers the holder's own events, never somebody else's.
+        let editor = authorization_test_user(member_id, "Test test-events-editor");
+        let view = event_authority_view(editor, permissions.clone(), &db, event_id).await;
+        assert!(!view.can_manage);
 
         db.execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
