@@ -2173,6 +2173,558 @@ mod tests {
         world.close().await;
     }
 
+    /// An organized alliance event (one comp with a two-seat build) published to both guilds.
+    struct Organized {
+        world: TestWorld,
+        source: event::Model,
+        copies: Vec<event::Model>,
+        /// The alliance build, and each guild copy's own build.
+        build: i64,
+        copy_builds: Vec<i64>,
+    }
+
+    async fn publish_organized_alliance_event(title: &str) -> Option<Organized> {
+        use crate::modules::comps::{
+            entities::comp_build,
+            models::{
+                AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
+                CreateCompCategoryRequest, CreateCompRequest,
+            },
+            service::CompService,
+            status::BuildRole,
+        };
+        let world = TestWorld::new().await?;
+        let alliance_db = &world.tenant_dbs[0];
+        let creator_id = upsert_discord_user(
+            alliance_db,
+            "discord-creator",
+            "Creator",
+            "creator@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("create owner");
+        let comps = CompService::new();
+        let build_category = comps
+            .create_build_category(
+                alliance_db,
+                CreateBuildCategoryRequest {
+                    name: "Officer builds".to_owned(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("build category");
+        let comp_category = comps
+            .create_comp_category(
+                alliance_db,
+                CreateCompCategoryRequest {
+                    name: "Officer comps".to_owned(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("comp category");
+        // Skew the alliance's build ids so a copy's build id cannot match by coincidence.
+        for filler in 0..3 {
+            comps
+                .create_build(
+                    alliance_db,
+                    creator_id,
+                    CreateBuildRequest {
+                        name: format!("Officer filler {filler}"),
+                        description: None,
+                        role: BuildRole::Healer,
+                        category_id: build_category.id,
+                        items: None,
+                    },
+                )
+                .await
+                .expect("filler build");
+        }
+        let build = comps
+            .create_build(
+                alliance_db,
+                creator_id,
+                CreateBuildRequest {
+                    name: "Officer healer".to_owned(),
+                    description: None,
+                    role: BuildRole::Healer,
+                    category_id: build_category.id,
+                    items: None,
+                },
+            )
+            .await
+            .expect("build");
+        let comp = comps
+            .create_comp(
+                alliance_db,
+                creator_id,
+                CreateCompRequest {
+                    name: "Officer comp".to_owned(),
+                    description: None,
+                    category_id: comp_category.id,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 2,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("comp");
+        let mut request = flash_event(title);
+        request.event_kind = Some("organized".to_owned());
+        request.comp_id = Some(comp.summary.id);
+        let created = EventService::new()
+            .create_event(alliance_db, creator_id, request)
+            .await
+            .expect("create source event");
+        fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            created.id,
+            Operation::Publish,
+            &format!("publish:{}", created.id),
+            &["guild-a".to_owned(), "guild-b".to_owned()],
+        )
+        .await
+        .expect("enqueue publish");
+        super::super::fanout_worker::process_due_targets(&world.control, &world.registry)
+            .await
+            .expect("process publish");
+        let source = event::Entity::find_by_id(created.id)
+            .one(alliance_db)
+            .await
+            .expect("reload source")
+            .expect("source row");
+        let mut copies = Vec::new();
+        let mut copy_builds = Vec::new();
+        for index in [1, 2] {
+            let copy = world.guild_copy(index, source.id).await;
+            let rows = comp_build::Entity::find()
+                .filter(comp_build::Column::CompId.eq(copy.comp_id.expect("copy comp")))
+                .all(&world.tenant_dbs[index])
+                .await
+                .expect("copy comp builds");
+            assert_eq!(rows.len(), 1);
+            assert_ne!(rows[0].build_id, build.summary.id);
+            copy_builds.push(rows[0].build_id);
+            copies.push(copy);
+        }
+        Some(Organized {
+            world,
+            source,
+            copies,
+            build: build.summary.id,
+            copy_builds,
+        })
+    }
+
+    impl Organized {
+        /// An officer puts a member on the alliance event's roster and the change is forwarded.
+        async fn officer_adds(&self, discord_id: &str) -> i64 {
+            let alliance_db = &self.world.tenant_dbs[0];
+            let user_id = upsert_discord_user(
+                alliance_db,
+                discord_id,
+                discord_id,
+                "member@example.invalid",
+                "User",
+                false,
+            )
+            .await
+            .expect("alliance member");
+            EventService::new()
+                .set_participant_with_roster_version(
+                    alliance_db,
+                    self.source.id,
+                    user_id,
+                    crate::modules::events::models::SetParticipantRequest {
+                        primary_build_id: Some(self.build),
+                        secondary_build_id: None,
+                    },
+                )
+                .await
+                .expect("officer adds");
+            let synced = crate::modules::events::officer_sync::sync_officer_participation(
+                &self.world.control,
+                &self.world.registry,
+                alliance_db,
+                "alliance",
+                self.source.id,
+                user_id,
+                Some(ParticipateEventRequest {
+                    primary_build_id: Some(self.build),
+                    secondary_build_id: None,
+                }),
+            )
+            .await
+            .expect("forward add");
+            assert_eq!(synced.len(), 2);
+            user_id
+        }
+
+        async fn roster_version(&self, tenant_index: usize, event_id: i64) -> i64 {
+            event::Entity::find_by_id(event_id)
+                .one(&self.world.tenant_dbs[tenant_index])
+                .await
+                .expect("event")
+                .expect("event row")
+                .roster_version
+        }
+
+        async fn forward_seats(&self, keys: &[String]) -> Vec<(String, i64)> {
+            crate::modules::events::officer_sync::sync_roster_seats(
+                &self.world.control,
+                &self.world.registry,
+                "alliance",
+                self.source.id,
+                &actor("discord-creator"),
+                keys,
+            )
+            .await
+            .expect("forward seats")
+        }
+
+        fn seat(&self, ordinal: u32) -> String {
+            format!("build:{}:{ordinal}", self.build)
+        }
+
+        /// `(seat key, discord id)` for every seated participant, with the key rewritten to the
+        /// alliance build so every tenant can be compared to the origin.
+        async fn seated(&self, tenant_index: usize, event_id: i64) -> Vec<(String, String)> {
+            let db = &self.world.tenant_dbs[tenant_index];
+            let build = if tenant_index == 0 {
+                self.build
+            } else {
+                self.copy_builds[tenant_index - 1]
+            };
+            let mut seated = Vec::new();
+            for row in crate::modules::events::entities::event_roster_assignment::Entity::find()
+                .filter(
+                    crate::modules::events::entities::event_roster_assignment::Column::EventId
+                        .eq(event_id),
+                )
+                .all(db)
+                .await
+                .expect("assignments")
+            {
+                let discord_id = crate::modules::users::entities::Entity::find_by_id(row.user_id)
+                    .one(db)
+                    .await
+                    .expect("user")
+                    .and_then(|user| user.discord_id)
+                    .expect("discord id");
+                seated.push((
+                    row.seat_key.replace(
+                        &format!("build:{build}:"),
+                        &format!("build:{}:", self.build),
+                    ),
+                    discord_id,
+                ));
+            }
+            seated.sort();
+            seated
+        }
+
+        async fn assert_copies_match_the_origin(&self) {
+            let origin = self.seated(0, self.source.id).await;
+            for (offset, copy) in self.copies.iter().enumerate() {
+                assert_eq!(
+                    self.seated(offset + 1, copy.id).await,
+                    origin,
+                    "guild copy {offset} seats"
+                );
+            }
+        }
+
+        async fn copy_versions(&self) -> Vec<i64> {
+            let mut versions = Vec::new();
+            for (offset, copy) in self.copies.iter().enumerate() {
+                versions.push(self.roster_version(offset + 1, copy.id).await);
+            }
+            versions
+        }
+
+        /// Forwards `keys` and asserts a repeat changes nothing.
+        async fn forward_seats_twice(&self, keys: &[String]) {
+            let synced = self.forward_seats(keys).await;
+            assert_eq!(synced.len(), 2, "both copies take the change");
+            self.assert_copies_match_the_origin().await;
+            let versions = self.copy_versions().await;
+            self.forward_seats(keys).await;
+            self.assert_copies_match_the_origin().await;
+            assert_eq!(
+                self.copy_versions().await,
+                versions,
+                "a repeated forward writes nothing"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn officer_participant_changes_reach_every_guild_copy_idempotently() {
+        let Some(case) = publish_organized_alliance_event("Officer participants").await else {
+            return;
+        };
+        let alliance_db = &case.world.tenant_dbs[0];
+        let user_id = case.officer_adds("discord-21").await;
+        // Adding the same member again updates in place everywhere.
+        case.officer_adds("discord-21").await;
+        for (offset, copy) in case.copies.iter().enumerate() {
+            let participations =
+                crate::modules::events::entities::event_participation::Entity::find()
+                    .filter(
+                        crate::modules::events::entities::event_participation::Column::EventId
+                            .eq(copy.id),
+                    )
+                    .all(&case.world.tenant_dbs[offset + 1])
+                    .await
+                    .expect("copy participations");
+            assert_eq!(participations.len(), 1, "guild copy {offset}");
+            assert_eq!(
+                participations[0].primary_build_id,
+                Some(case.copy_builds[offset]),
+                "the copy signs the member up with its own build"
+            );
+        }
+
+        // Removing the member clears every copy, and repeating the removal is not an error.
+        EventService::new()
+            .cancel_participation(alliance_db, case.source.id, user_id)
+            .await
+            .expect("officer removes");
+        for _ in 0..2 {
+            let synced = crate::modules::events::officer_sync::sync_officer_participation(
+                &case.world.control,
+                &case.world.registry,
+                alliance_db,
+                "alliance",
+                case.source.id,
+                user_id,
+                None,
+            )
+            .await
+            .expect("forward removal");
+            assert_eq!(synced.len(), 2);
+            assert_eq!(participation_count(alliance_db, case.source.id).await, 0);
+            for (offset, copy) in case.copies.iter().enumerate() {
+                assert_eq!(
+                    participation_count(&case.world.tenant_dbs[offset + 1], copy.id).await,
+                    0
+                );
+            }
+        }
+        case.world.close().await;
+    }
+
+    #[tokio::test]
+    async fn officer_seat_commands_reach_every_guild_copy_idempotently() {
+        let Some(case) = publish_organized_alliance_event("Officer seats").await else {
+            return;
+        };
+        let alliance_db = &case.world.tenant_dbs[0];
+        let creator = case.source.created_by;
+        let first = case.officer_adds("discord-31").await;
+        let second = case.officer_adds("discord-32").await;
+        let service = EventService::new();
+        let version = || async { case.roster_version(0, case.source.id).await };
+
+        // Assign.
+        service
+            .assign_roster_seat(
+                alliance_db,
+                case.source.id,
+                &case.seat(1),
+                crate::modules::events::models::AssignRosterSeatRequest {
+                    user_id: first,
+                    expected_roster_version: version().await,
+                },
+                creator,
+            )
+            .await
+            .expect("assign first");
+        service
+            .assign_roster_seat(
+                alliance_db,
+                case.source.id,
+                &case.seat(2),
+                crate::modules::events::models::AssignRosterSeatRequest {
+                    user_id: second,
+                    expected_roster_version: version().await,
+                },
+                creator,
+            )
+            .await
+            .expect("assign second");
+        case.forward_seats_twice(&[case.seat(1), case.seat(2)])
+            .await;
+        assert_eq!(case.seated(1, case.copies[0].id).await.len(), 2);
+
+        // Swap: replaying a swap command would swap back, replaying the seat state does not.
+        service
+            .swap_roster_seats(
+                alliance_db,
+                case.source.id,
+                crate::modules::events::models::SwapRosterSeatsRequest {
+                    source_seat_key: case.seat(1),
+                    target_seat_key: case.seat(2),
+                    expected_roster_version: version().await,
+                },
+                creator,
+            )
+            .await
+            .expect("swap");
+        case.forward_seats_twice(&[case.seat(1), case.seat(2)])
+            .await;
+        assert_eq!(
+            case.seated(2, case.copies[1].id).await,
+            vec![
+                (case.seat(1), "discord-32".to_owned()),
+                (case.seat(2), "discord-31".to_owned()),
+            ]
+        );
+
+        // Clear.
+        service
+            .clear_roster_seat(
+                alliance_db,
+                case.source.id,
+                &case.seat(1),
+                crate::modules::events::models::RosterVersionRequest {
+                    expected_roster_version: version().await,
+                    strategy: None,
+                },
+            )
+            .await
+            .expect("clear");
+        case.forward_seats_twice(&[case.seat(1)]).await;
+        assert_eq!(case.seated(1, case.copies[0].id).await.len(), 1);
+
+        // Auto-fill seats the bench member again.
+        let (_, changed) = service
+            .auto_fill_roster(
+                alliance_db,
+                case.source.id,
+                crate::modules::events::models::RosterVersionRequest {
+                    expected_roster_version: version().await,
+                    strategy: None,
+                },
+                creator,
+            )
+            .await
+            .expect("auto-fill");
+        assert_eq!(changed.len(), 1);
+        case.forward_seats_twice(&changed).await;
+        assert_eq!(case.seated(1, case.copies[0].id).await.len(), 2);
+
+        // Removing a seated participant leaves no assignment behind on any copy.
+        service
+            .cancel_participation(alliance_db, case.source.id, first)
+            .await
+            .expect("officer removes a seated member");
+        crate::modules::events::officer_sync::sync_officer_participation(
+            &case.world.control,
+            &case.world.registry,
+            alliance_db,
+            "alliance",
+            case.source.id,
+            first,
+            None,
+        )
+        .await
+        .expect("forward removal");
+        case.assert_copies_match_the_origin().await;
+        assert_eq!(case.seated(2, case.copies[1].id).await.len(), 1);
+        case.world.close().await;
+    }
+
+    #[tokio::test]
+    async fn officer_roster_roles_reach_every_guild_copy_idempotently() {
+        use crate::modules::events::{
+            entities::event_roster_role,
+            officer_sync::{RosterRoleChange, sync_roster_role},
+        };
+        let Some(case) = publish_organized_alliance_event("Officer roles").await else {
+            return;
+        };
+        let alliance_db = &case.world.tenant_dbs[0];
+        let service = EventService::new();
+        let forward = |change: RosterRoleChange| {
+            let case = &case;
+            async move {
+                sync_roster_role(
+                    &case.world.control,
+                    &case.world.registry,
+                    "alliance",
+                    case.source.id,
+                    &actor("discord-creator"),
+                    change,
+                )
+                .await
+                .expect("forward role")
+            }
+        };
+        let copy_roles = |offset: usize| {
+            let case = &case;
+            async move {
+                event_roster_role::Entity::find()
+                    .filter(event_roster_role::Column::EventId.eq(case.copies[offset].id))
+                    .all(&case.world.tenant_dbs[offset + 1])
+                    .await
+                    .expect("copy roles")
+                    .into_iter()
+                    .map(|role| role.build_id)
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        let role = service
+            .create_event_roster_role(
+                alliance_db,
+                case.source.id,
+                crate::modules::events::models::CreateEventRosterRoleRequest {
+                    build_id: case.build,
+                },
+            )
+            .await
+            .expect("officer adds a role");
+        for _ in 0..2 {
+            assert_eq!(
+                forward(RosterRoleChange::Added {
+                    build_id: case.build
+                })
+                .await
+                .len(),
+                2
+            );
+            for offset in 0..2 {
+                assert_eq!(copy_roles(offset).await, vec![case.copy_builds[offset]]);
+            }
+        }
+
+        service
+            .delete_event_roster_role(alliance_db, case.source.id, role.id.expect("role id"))
+            .await
+            .expect("officer removes the role");
+        for _ in 0..2 {
+            assert_eq!(
+                forward(RosterRoleChange::Removed {
+                    build_id: case.build
+                })
+                .await
+                .len(),
+                2
+            );
+            for offset in 0..2 {
+                assert!(copy_roles(offset).await.is_empty());
+            }
+        }
+        case.world.close().await;
+    }
+
     #[tokio::test]
     async fn alliance_split_preflights_every_guild_and_retries_after_manual_roster_removal() {
         let Some(world) = TestWorld::new().await else {
