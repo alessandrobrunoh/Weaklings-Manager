@@ -1478,7 +1478,7 @@ mod tests {
             .participate_with_roster_version(alliance_db, source.id, user_id, request.clone())
             .await
             .expect("join canonical event");
-        sync_participation(
+        let synced = sync_participation(
             &world.control,
             &world.registry,
             "alliance",
@@ -1489,6 +1489,8 @@ mod tests {
         )
         .await
         .expect("attributed fanout");
+        // The caller broadcasts a roster change for exactly these copies.
+        assert_eq!(synced, vec![(attributed.clone(), copy_b.id)]);
 
         assert_eq!(participation_count(alliance_db, source.id).await, 1);
         assert_eq!(

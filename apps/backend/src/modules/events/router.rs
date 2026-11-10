@@ -134,6 +134,37 @@ async fn localize_island_locator(
 /// Rejects a write on a read-only copy of another tenant's event (403 + `origin`).
 ///
 /// Detached copies (sync link disabled) stay locally managed and pass.
+/// Tells the viewers of the other tenants that a participation change reached their copy of the
+/// event. The hub is keyed by tenant and event, so without this an officer watching the origin
+/// would see a join made on a guild copy only after a manual reload.
+async fn publish_to_peers(
+    hub: &RosterHub,
+    registry: &TenantRegistry,
+    peers: &[(String, i64)],
+    change_kind: &'static str,
+) {
+    for (peer_tenant, peer_event_id) in peers {
+        let version = match registry.get_or_load(peer_tenant).await {
+            Ok(context) => super::entities::event::Entity::find_by_id(*peer_event_id)
+                .one(&context.db)
+                .await
+                .ok()
+                .flatten()
+                .map(|event| event.roster_version),
+            Err(_) => None,
+        };
+        if let Some(version) = version {
+            hub.publish(
+                peer_tenant.clone(),
+                *peer_event_id,
+                version,
+                change_kind,
+                Vec::new(),
+            );
+        }
+    }
+}
+
 async fn assert_event_writable(
     db: &sea_orm::DatabaseConnection,
     control: &ControlDb,
@@ -1736,7 +1767,7 @@ async fn participate(
     let (detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
-    if let Err(error) = sync_participation(
+    match sync_participation(
         &control.0,
         &registry,
         &tenant.0,
@@ -1751,9 +1782,12 @@ async fn participate(
     )
     .await
     {
+        Ok(synced) => publish_to_peers(&hub, &registry, &synced, "participation_changed").await,
         // The signup above is already committed; surfacing an error here would tell the caller it
         // failed when it did not, and would skip the roster broadcast below.
-        tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        Err(error) => {
+            tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        }
     }
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
@@ -1789,7 +1823,7 @@ async fn cancel_participation(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let (detail, version, seat_key) = service.cancel_participation(&db, id, user.user_id).await?;
-    if let Err(error) = sync_participation(
+    match sync_participation(
         &control.0,
         &registry,
         &tenant.0,
@@ -1804,8 +1838,11 @@ async fn cancel_participation(
     )
     .await
     {
+        Ok(synced) => publish_to_peers(&hub, &registry, &synced, "participant_left").await,
         // See `participate`: the cancellation is already committed locally.
-        tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        Err(error) => {
+            tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
+        }
     }
     tracing::info!(
         event_id = id,
