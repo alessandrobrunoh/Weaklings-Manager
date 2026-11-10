@@ -893,6 +893,14 @@ export interface EventParticipant {
   assigned_build_id?: number | null;
   assigned_build_name?: string | null;
   specializations?: Record<string, number>;
+  /** Member guild the participant signed up for; `null` when unattributed or the event is not linked. */
+  guild?: ParticipantGuild | null;
+}
+
+/** Member guild a participant of a linked (alliance) event is attributed to. */
+export interface ParticipantGuild {
+  tenant_id: string;
+  name: string;
 }
 
 /** Participant fields included by the live roster snapshot. */
@@ -907,6 +915,7 @@ export interface EventRosterParticipant {
   assigned_build_id?: number | null;
   assigned_build_name?: string | null;
   specializations: Record<string, number>;
+  guild?: ParticipantGuild | null;
 }
 
 /** A concrete composition seat in the authoritative event roster. */

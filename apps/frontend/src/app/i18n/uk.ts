@@ -547,6 +547,7 @@ export const uk: TranslationDict = {
   'events.archiveSuccess': 'Подію заархівовано',
   'events.unarchiveSuccess': 'Подію відновлено',
   'events.detail.registered_as': 'Зареєстровано',
+  'events.detail.participant_guild': 'Зареєстровано від гільдії {name}',
   'events.detail.change_build': 'Змінити збірку',
   'events.detail.join_guild_label': 'Гільдія, за яку ви записуєтесь',
   'events.detail.join_guild_placeholder': 'Виберіть гільдію',

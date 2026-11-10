@@ -578,6 +578,7 @@ export const it: TranslationDict = {
   'events.archiveSuccess': 'Evento archiviato',
   'events.unarchiveSuccess': 'Evento riattivato',
   'events.detail.registered_as': 'Registrato',
+  'events.detail.participant_guild': 'Iscritto per la gilda {name}',
   'events.detail.change_build': 'Cambia build',
   'events.detail.join_guild_label': 'Gilda per cui ti iscrivi',
   'events.detail.join_guild_placeholder': 'Seleziona una gilda',

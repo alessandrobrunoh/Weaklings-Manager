@@ -14,6 +14,8 @@ pub mod fight_grouping;
 pub mod lifecycle;
 pub mod mirror_retry;
 pub mod models;
+pub mod officer_sync;
+pub mod participation_outbox;
 pub mod roster_hub;
 pub mod router;
 pub mod service;

@@ -89,6 +89,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import type { ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
 import { EventBattlesTab } from './detail/event-battles-tab';
+import { EventGuildBadge } from './detail/event-guild-badge';
 import { EventHeader } from './detail/event-header';
 import { EventOverviewTab } from './detail/event-overview-tab';
 import { EventSplitsTab } from './detail/event-splits-tab';
@@ -206,6 +207,7 @@ interface AddEventMemberRequest {
     TooltipDirective,
     OwnershipScopeToggle,
     EventBattlesTab,
+    EventGuildBadge,
     EventHeader,
     EventOverviewTab,
     EventSplitsTab,
@@ -563,6 +565,7 @@ interface AddEventMemberRequest {
                                 <span class="text-xs font-semibold text-white truncate">
                                   {{ member.username }}
                                 </span>
+                                <app-event-guild-badge [guild]="member.guild" />
                               </div>
 
                               @if (canManageParticipants() && rosterAssignTarget(); as target) {
@@ -947,6 +950,8 @@ interface AddEventMemberRequest {
                                         >
                                           {{ participant.username }}
                                         </span>
+
+                                        <app-event-guild-badge [guild]="participant.guild" />
 
                                         @if (selectedSpecializationKey()) {
                                           <span

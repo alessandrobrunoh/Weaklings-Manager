@@ -156,7 +156,17 @@ interface PollerState {
    * Discord: the bot spams its entire backlog.
    */
   initialized: boolean;
+  /**
+   * Optional modules whose list the backend refused (403) when the checkpoints
+   * were seeded, because the tenant's rank does not include them. Their cursor
+   * is still zero, so the first list the backend does answer is adopted as
+   * history instead of being announced; see {@link Poller.adoptLateModule}.
+   */
+  unseededModules: OptionalModule[];
 }
+
+/** Modules the poller can announce from, other than events. */
+type OptionalModule = "battles" | "giveaways";
 
 export interface EventCalendarRefreshResult {
   eventCount: number;
@@ -198,6 +208,16 @@ const VOICE_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 /** Do not sweep a just-created voice channel before the Mass joiners have arrived. */
 const VOICE_SWEEP_MIN_AGE_MS = 30 * 60 * 1000;
 
+/**
+ * True for the backend's definite "this tenant does not have that module"
+ * answer (the module is missing from its rank, or not offered to its kind).
+ * Anything else - a 5xx, a timeout, a malformed body - is a fault, not an
+ * entitlement, and must keep failing loudly.
+ */
+function isModuleRefusal(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403;
+}
+
 function flashUndoTimeRemaining(event: Pick<EventView, "event_kind" | "created_at">): number {
   if (event.event_kind !== "flash") return 0;
   const createdAt = Date.parse(event.created_at);
@@ -231,6 +251,7 @@ function createDefaultState(): PollerState {
     announcedGiveawayDraws: [],
     unackedGiveawayMessages: {},
     initialized: false,
+    unseededModules: [],
   };
 }
 
@@ -340,6 +361,7 @@ function normalizeState(parsedState: Partial<PollerState>): PollerState {
     // so it is initialized. Treating it as fresh would re-seed the cursors to
     // "now" and silently swallow anything created while the bot was down.
     initialized: parsedState.initialized ?? true,
+    unseededModules: parsedState.unseededModules ?? [],
   };
 }
 
@@ -789,6 +811,12 @@ export class Poller {
       // A failed list must fail the whole seed. Treating it as an empty page
       // would store a zero cursor and, once `initialized` is set, announce the
       // backlog on the next successful poll.
+      //
+      // Events are the one list the announcer cannot do without. Battles and
+      // giveaways are optional modules: a tenant whose rank lacks them (an
+      // alliance on the default rank, for one) gets a 403, which must not hold
+      // back its event announcements. Only that definite refusal is tolerated;
+      // any other failure still fails the whole seed.
       const [events, battles, giveaways] = await Promise.all([
         this.listSinceCheckpoint<EventView>(
           "api/events",
@@ -797,27 +825,42 @@ export class Poller {
           50,
           { sort: "created_at", order: "desc" },
         ),
-        this.listSinceCheckpoint<BattleSummary>(
-          "api/battles",
-          0,
-          (battle) => battle.battle_id,
-          10,
+        this.listOptionalModule(
+          "battles",
+          this.listSinceCheckpoint<BattleSummary>(
+            "api/battles",
+            0,
+            (battle) => battle.battle_id,
+            10,
+          ),
         ),
-        this.listSinceCheckpoint<GiveawayView>(
-          "api/giveaways",
-          0,
-          (giveaway) => giveaway.id,
-          50,
-          { sort: "created_at", order: "desc" },
+        this.listOptionalModule(
+          "giveaways",
+          this.listSinceCheckpoint<GiveawayView>(
+            "api/giveaways",
+            0,
+            (giveaway) => giveaway.id,
+            50,
+            { sort: "created_at", order: "desc" },
+          ),
         ),
       ]);
-      if (!events.complete || !battles.complete || !giveaways.complete) {
+      if (!events.complete || battles?.complete === false || giveaways?.complete === false) {
         throw new Error("checkpoint seed did not see every list page");
       }
 
       this.state.lastEventId = Math.max(this.state.lastEventId, events.newestId);
-      this.state.lastBattleId = Math.max(this.state.lastBattleId, battles.newestId);
-      this.state.lastGiveawayId = Math.max(this.state.lastGiveawayId, giveaways.newestId);
+      this.state.unseededModules = [];
+      if (battles) {
+        this.state.lastBattleId = Math.max(this.state.lastBattleId, battles.newestId);
+      } else {
+        this.state.unseededModules.push("battles");
+      }
+      if (giveaways) {
+        this.state.lastGiveawayId = Math.max(this.state.lastGiveawayId, giveaways.newestId);
+      } else {
+        this.state.unseededModules.push("giveaways");
+      }
       // The application panel announces transitions, not a current value, so
       // recording the current one here keeps the first real change as the first
       // message rather than announcing the status the bot booted into.
@@ -839,6 +882,59 @@ export class Poller {
         error,
       );
     }
+  }
+
+  /**
+   * Resolves an optional module's list, or `null` when the backend refuses it
+   * with 403 because the tenant is not entitled to that module.
+   */
+  private async listOptionalModule<T>(
+    module: OptionalModule,
+    listing: Promise<T>,
+  ): Promise<T | null> {
+    try {
+      return await listing;
+    } catch (error) {
+      if (!isModuleRefusal(error)) throw error;
+      this.noteModuleRefused(module, error);
+      return null;
+    }
+  }
+
+  private readonly refusedModulesLogged = new Set<OptionalModule>();
+
+  /** Says once per process why a module is skipped, so a tenant without it does not log every tick. */
+  private noteModuleRefused(module: OptionalModule, error: unknown): void {
+    if (this.refusedModulesLogged.has(module)) return;
+    this.refusedModulesLogged.add(module);
+    console.info(
+      `[Poller] Guild ${this.guildId} is not entitled to ${module} (${String(error)}); skipping ${module} announcements`,
+    );
+  }
+
+  /**
+   * A module that was refused at seed time is adopted from its first answered
+   * list: everything it holds is history, so the cursor jumps past it without
+   * announcing. Returns true while the caller must still not announce this
+   * cycle (the adoption cycle, or a partial scan that cannot set a cursor).
+   */
+  private adoptLateModule(
+    module: OptionalModule,
+    listing: { complete: boolean; newestId: number },
+  ): boolean {
+    if (!this.state.unseededModules.includes(module)) return false;
+    if (!listing.complete) return true;
+    if (module === "battles") {
+      this.state.lastBattleId = Math.max(this.state.lastBattleId, listing.newestId);
+    } else {
+      this.state.lastGiveawayId = Math.max(this.state.lastGiveawayId, listing.newestId);
+    }
+    this.state.unseededModules = this.state.unseededModules.filter((item) => item !== module);
+    this.save();
+    console.log(
+      `[Poller] ${module} became available for guild ${this.guildId}; adopted its existing items without announcing`,
+    );
+    return true;
   }
 
   /** Announces only real application availability transitions. */
@@ -902,7 +998,14 @@ export class Poller {
     const loadPage = (page: number) =>
       this.api.get<PaginatedData<T>>(path, undefined, { ...query, page, limit });
 
-    const first = await loadPage(1);
+    const first = await loadPage(1).catch((error: unknown) => {
+      // Name the endpoint: a bare "forbidden" from a seed or a poll step does
+      // not say which of the lists the backend refused.
+      if (error instanceof ApiError) {
+        throw new ApiError(error.status, `GET ${path}: ${error.message}`);
+      }
+      throw error;
+    });
     const knownTotal = Math.max(1, first.total_pages ?? 1);
     const maxPages = Math.min(knownTotal, 50);
     const selected: T[] = [];
@@ -2303,6 +2406,7 @@ export class Poller {
         (battle) => battle.battle_id,
         10,
       );
+      if (this.adoptLateModule("battles", listedBattles)) return;
       const newBattles = listedBattles.items.filter(
         (battle) => battle.battle_id > this.state.lastBattleId,
       );
@@ -2351,6 +2455,10 @@ export class Poller {
         this.save();
       }
     } catch (err) {
+      if (isModuleRefusal(err)) {
+        this.noteModuleRefused("battles", err);
+        return;
+      }
       console.error("[Poller] Failed to check battles:", err);
     }
   }
@@ -2366,6 +2474,7 @@ export class Poller {
         50,
         { sort: "created_at", order: "desc" },
       );
+      if (this.adoptLateModule("giveaways", listedGiveaways)) return;
       const giveaways = listedGiveaways.items;
       const newestId = listedGiveaways.complete ? listedGiveaways.newestId : 0;
       if (listedGiveaways.complete && newestId > 0 && newestId < this.state.lastGiveawayId) {
@@ -2421,6 +2530,10 @@ export class Poller {
         this.save();
       }
     } catch (error) {
+      if (isModuleRefusal(error)) {
+        this.noteModuleRefused("giveaways", error);
+        return;
+      }
       console.error("[Poller] Failed to check giveaways:", error);
     }
   }

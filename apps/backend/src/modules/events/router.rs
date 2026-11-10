@@ -31,7 +31,8 @@ use sea_orm::{ConnectionTrait, DbBackend, EntityTrait, Statement, Value};
 use std::collections::HashSet;
 
 use super::attribution::{
-    ParticipationGuild, eligible_participation_guilds, resolve_join_attribution,
+    ParticipationGuild, attribute_detail, attribute_roster, eligible_participation_guilds,
+    resolve_join_attribution,
 };
 use super::lifecycle::{
     AfterCommit, Cause, EffectRef, Transition, XpFilter, emit_manual_reminder,
@@ -44,6 +45,9 @@ use super::models::{
     EventSignupOptionsView, EventSummary, EventView, ParticipateEventRequest, RosterVersionRequest,
     SetEventVoiceChannelRequest, SetParticipantRequest, SwapRosterSeatsRequest,
     UpdateEventBattlesRequest, UpdateEventRequest,
+};
+use super::officer_sync::{
+    RosterRoleChange, sync_officer_participation, sync_roster_role, sync_roster_seats,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
@@ -165,6 +169,96 @@ async fn publish_to_peers(
     }
 }
 
+/// Copies an officer's seat change to every linked copy and tells their viewers.
+///
+/// The change is already committed on the edited event, so a copy that cannot take it is logged
+/// instead of failing the request (see [`sync_roster_seats`]).
+#[allow(clippy::too_many_arguments)]
+async fn forward_seats(
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    hub: &RosterHub,
+    tenant_id: &str,
+    event_id: i64,
+    user: &UserContext,
+    seat_keys: &[String],
+    change_kind: &'static str,
+) {
+    match sync_roster_seats(
+        &control.0,
+        registry,
+        tenant_id,
+        event_id,
+        &ShareActor::from_user(user),
+        seat_keys,
+    )
+    .await
+    {
+        Ok(synced) => publish_to_peers(hub, registry, &synced, change_kind).await,
+        Err(error) => {
+            tracing::error!(event_id, tenant_id, %error, "roster seat sync failed after commit");
+        }
+    }
+}
+
+/// Copies an officer's extra-roster-role change to every linked copy and tells their viewers.
+async fn forward_roster_role(
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    hub: &RosterHub,
+    tenant_id: &str,
+    event_id: i64,
+    user: &UserContext,
+    change: RosterRoleChange,
+) {
+    match sync_roster_role(
+        &control.0,
+        registry,
+        tenant_id,
+        event_id,
+        &ShareActor::from_user(user),
+        change,
+    )
+    .await
+    {
+        Ok(synced) => publish_to_peers(hub, registry, &synced, "roles_changed").await,
+        Err(error) => {
+            tracing::error!(event_id, tenant_id, %error, "roster role sync failed after commit");
+        }
+    }
+}
+
+/// Copies an officer's participant change to every linked copy and tells their viewers.
+#[allow(clippy::too_many_arguments)]
+async fn forward_officer_participation(
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    hub: &RosterHub,
+    db: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+    event_id: i64,
+    target_user_id: i64,
+    request: Option<ParticipateEventRequest>,
+    change_kind: &'static str,
+) {
+    match sync_officer_participation(
+        &control.0,
+        registry,
+        db,
+        tenant_id,
+        event_id,
+        target_user_id,
+        request,
+    )
+    .await
+    {
+        Ok(synced) => publish_to_peers(hub, registry, &synced, change_kind).await,
+        Err(error) => {
+            tracing::error!(event_id, tenant_id, target_user_id, %error, "participant sync failed after commit");
+        }
+    }
+}
+
 async fn assert_event_writable(
     db: &sea_orm::DatabaseConnection,
     control: &ControlDb,
@@ -222,6 +316,7 @@ async fn hydrate_event_detail(
     origin_guild_id: &str,
 ) -> EventDetailView {
     detail.event = hydrate_event_view(detail.event, control, registry, origin_guild_id).await;
+    attribute_detail(&control.0, origin_guild_id, &mut detail).await;
     detail
 }
 
@@ -779,13 +874,27 @@ pub(crate) async fn get_event_signup_options(
     Ok(Json(ApiResponse::new(options)))
 }
 
+/// The roster with every participant attributed to their guild on linked events.
+async fn load_attributed_roster(
+    db: &sea_orm::DatabaseConnection,
+    control: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+    event_id: i64,
+) -> Result<EventRosterView, AppError> {
+    let mut roster = EventService::new().get_roster(db, event_id).await?;
+    attribute_roster(control, tenant_id, &mut roster).await;
+    Ok(roster)
+}
+
 async fn get_roster(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     Ok(Json(ApiResponse::new(
-        EventService::new().get_roster(&db, id).await?,
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
     )))
 }
 
@@ -832,6 +941,7 @@ async fn assign_roster_seat(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -847,9 +957,20 @@ async fn assign_roster_seat(
         seat_key,
         "roster seat assigned"
     );
+    forward_seats(
+        &control,
+        &registry,
+        &hub,
+        &tenant.0,
+        id,
+        &user,
+        std::slice::from_ref(&seat_key),
+        "assigned",
+    )
+    .await;
     hub.publish(&tenant.0, id, version, "assigned", vec![seat_key]);
     Ok(Json(ApiResponse::new(
-        EventService::new().get_roster(&db, id).await?,
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
     )))
 }
 
@@ -861,6 +982,7 @@ async fn clear_roster_seat(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -876,9 +998,20 @@ async fn clear_roster_seat(
         seat_key,
         "roster seat cleared"
     );
+    forward_seats(
+        &control,
+        &registry,
+        &hub,
+        &tenant.0,
+        id,
+        &user,
+        std::slice::from_ref(&seat_key),
+        "cleared",
+    )
+    .await;
     hub.publish(&tenant.0, id, version, "cleared", vec![seat_key]);
     Ok(Json(ApiResponse::new(
-        EventService::new().get_roster(&db, id).await?,
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
     )))
 }
 
@@ -890,6 +1023,7 @@ async fn swap_roster_seats(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -908,9 +1042,13 @@ async fn swap_roster_seats(
         actor_id = user.user_id,
         "roster seats swapped"
     );
+    forward_seats(
+        &control, &registry, &hub, &tenant.0, id, &user, &keys, "swapped",
+    )
+    .await;
     hub.publish(&tenant.0, id, version, "swapped", keys);
     Ok(Json(ApiResponse::new(
-        EventService::new().get_roster(&db, id).await?,
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
     )))
 }
 
@@ -922,6 +1060,7 @@ async fn auto_fill_roster(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -937,9 +1076,20 @@ async fn auto_fill_roster(
         assignments = changed.len(),
         "roster auto-filled"
     );
+    forward_seats(
+        &control,
+        &registry,
+        &hub,
+        &tenant.0,
+        id,
+        &user,
+        &changed,
+        "auto_filled",
+    )
+    .await;
     hub.publish(&tenant.0, id, version, "auto_filled", changed);
     Ok(Json(ApiResponse::new(
-        EventService::new().get_roster(&db, id).await?,
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
     )))
 }
 
@@ -1090,6 +1240,7 @@ async fn create_event_roster_role(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
@@ -1098,6 +1249,18 @@ async fn create_event_roster_role(
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
+    if let Some(build_id) = role.build_id {
+        forward_roster_role(
+            &control,
+            &registry,
+            &hub,
+            &tenant.0,
+            id,
+            &user,
+            RosterRoleChange::Added { build_id },
+        )
+        .await;
+    }
     notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(Json(ApiResponse::new(role)))
 }
@@ -1127,13 +1290,33 @@ async fn delete_event_roster_role(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
+    // The copies hold their own role rows, so the removal is forwarded by build.
+    let removed_build = super::entities::event_roster_role::Entity::find_by_id(role_id)
+        .one(&db)
+        .await
+        .map_err(AppError::Database)?
+        .filter(|role| role.event_id == id)
+        .map(|role| role.build_id);
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
+    if let Some(build_id) = removed_build {
+        forward_roster_role(
+            &control,
+            &registry,
+            &hub,
+            &tenant.0,
+            id,
+            &user,
+            RosterRoleChange::Removed { build_id },
+        )
+        .await;
+    }
     notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1764,9 +1947,10 @@ async fn participate(
         query.guild_tenant_id.as_deref(),
     )
     .await?;
-    let (detail, version) = service
+    let (mut detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
+    attribute_detail(&control.0, &tenant.0, &mut detail).await;
     match sync_participation(
         &control.0,
         &registry,
@@ -1821,7 +2005,9 @@ async fn cancel_participation(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
-    let (detail, version, seat_key) = service.cancel_participation(&db, id, user.user_id).await?;
+    let (mut detail, version, seat_key) =
+        service.cancel_participation(&db, id, user.user_id).await?;
+    attribute_detail(&control.0, &tenant.0, &mut detail).await;
     match sync_participation(
         &control.0,
         &registry,
@@ -1970,13 +2156,32 @@ async fn add_event_member(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
-    let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
+    let target_user_id = req.user_id;
+    let request_for_sync = ParticipateEventRequest {
+        primary_build_id: req.primary_build_id,
+        secondary_build_id: req.secondary_build_id,
+    };
+    let (mut detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
+    forward_officer_participation(
+        &control,
+        &registry,
+        &hub,
+        &db,
+        &tenant.0,
+        id,
+        target_user_id,
+        Some(request_for_sync),
+        "participation_changed",
+    )
+    .await;
+    attribute_detail(&control.0, &tenant.0, &mut detail).await;
     tracing::info!(
         event_id = id,
         roster_version = version,
@@ -2023,15 +2228,33 @@ pub(crate) async fn set_participant(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path((id, target_user_id)): Path<(i64, i64)>,
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
-    let (detail, version) = service
+    let request_for_sync = ParticipateEventRequest {
+        primary_build_id: req.primary_build_id,
+        secondary_build_id: req.secondary_build_id,
+    };
+    let (mut detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
         .await?;
+    forward_officer_participation(
+        &control,
+        &registry,
+        &hub,
+        &db,
+        &tenant.0,
+        id,
+        target_user_id,
+        Some(request_for_sync),
+        "participation_changed",
+    )
+    .await;
+    attribute_detail(&control.0, &tenant.0, &mut detail).await;
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
@@ -2065,14 +2288,28 @@ pub(crate) async fn remove_participant(
     Extension(control): Extension<ControlDb>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(registry): Extension<TenantRegistry>,
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
-    let (detail, version, seat_key) = service
+    let (mut detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
         .await?;
+    forward_officer_participation(
+        &control,
+        &registry,
+        &hub,
+        &db,
+        &tenant.0,
+        id,
+        target_user_id,
+        None,
+        "participant_left",
+    )
+    .await;
+    attribute_detail(&control.0, &tenant.0, &mut detail).await;
     tracing::info!(
         event_id = id,
         roster_version = version,
@@ -2499,9 +2736,10 @@ async fn list_event_battles(
     let context = crate::albion_scope::load_event_read_scope(&control.0, &tenant_id)
         .await?
         .linking_context();
-    let detail = service
+    let mut detail = service
         .get_event_detail_with_context(&db, id, &context)
         .await?;
+    attribute_detail(&control.0, &tenant_id, &mut detail).await;
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -2547,9 +2785,10 @@ async fn replace_event_battles(
         .map_err(AppError::from)?;
     let server = scope.server();
     let context = scope.linking_context();
-    let detail = service
+    let mut detail = service
         .replace_event_battles(&db, &albionbb, &context, Some(&server), id, req)
         .await?;
+    attribute_detail(&control.0, &tenant_id, &mut detail).await;
     Ok(Json(ApiResponse::new(detail)))
 }
 

@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/actions/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List every registered action */
+        get: operations["get_action_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/autorole": {
         parameters: {
             query?: never;
@@ -322,13 +339,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Self-link the caller's Discord account to one Albion character
-         * @description Strictly 1:1 in both directions: one Discord account can hold at most one link, and one Albion character can be claimed by at most one Discord account — enforced by unique constraints in the database, not just application logic. The server resolves the selected player from Albion and persists that authoritative name, so callers may link characters in any guild or without a guild. There is no "re-link"/"force" option: `DELETE /albion/link` first, then call this again. After a successful link the backend best-effort sets the caller's Discord guild nickname to the Albion character name and assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild. Discord failures never roll back the link.
+         * Ask to link the caller's Discord account to one Albion character
+         * @description Albion offers no way to prove who owns a character, so a self-service link is a *request* until an officer approves it. The response is `200` with `pending: true` and `linked: false`: no guild role, nickname change, alliance copy or loot/regear attribution happens until `POST /albion/link/requests/{id}/approve`. Asking again replaces the account's open request. A caller holding `roles.manage` is linked immediately, with the effects below. Strictly 1:1 once linked: one Discord account holds at most one link, and one Albion character belongs to at most one account — enforced by unique constraints in the database. The server resolves the selected player from Albion and persists that authoritative name, so callers may claim characters in any guild or without a guild. On approval the backend best-effort sets the account's Discord guild nickname to the character name and assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild. Discord failures never roll back the link. To withdraw a request, `DELETE /albion/link`.
          */
         post: operations["link_player"];
         /**
          * Unlink the caller's Discord account from its Albion character
-         * @description No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. Not idempotent-by-design: calling this when there's no active link returns `404`, so a naive "always call unlink then re-link" client pattern must handle that case (or check `GET /albion/link/me` first).
+         * @description No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. When the account has only an open request (not yet approved), this withdraws it. Not idempotent-by-design: calling this when there's neither a link nor a request returns `404`, so a naive "always call unlink then re-link" client pattern must handle that case (or check `GET /albion/link/me` first).
          */
         delete: operations["unlink_player"];
         options?: never;
@@ -356,6 +373,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/albion/link/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Officer: list pending Albion link requests
+         * @description Requires `roles.manage`. Oldest first. `competing_requests` counts other open claims on the same character and `character_already_linked` warns that approving would fail with `409` until that link is removed.
+         */
+        get: operations["list_link_requests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albion/link/requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Officer: approve a pending Albion link request
+         * @description Requires `roles.manage`. Creates the link, drops competing claims on the same character, then best-effort applies what the self-service link used to do at once: the Discord nickname, the Guild base role (only when the live character is in the configured Albion guild) and the copy to paired alliance/guild tenants. Never replaces an existing link: `409` if the account or the character got linked meanwhile (remove that link first). Audited as `ALBION_LINK` with `via: approval`.
+         */
+        post: operations["approve_link_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/albion/link/requests/{request_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Officer: reject a pending Albion link request
+         * @description Requires `roles.manage`. Discards the claim; the account can ask again. Audited as `ALBION_LINK_REJECT`.
+         */
+        post: operations["reject_link_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/albion/link/users/{user_id}": {
         parameters: {
             query?: never;
@@ -371,7 +448,7 @@ export interface paths {
         put?: never;
         /**
          * Admin: link or re-link any user to an Albion character
-         * @description Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always succeeds in replacing any existing link: it deletes the target user's current link (if any) and any other account's claim on the requested Albion character before creating the new link, all in a single transaction. The server resolves the selected player from Albion and persists that authoritative name. After a successful link the backend best-effort sets the target user's Discord guild nickname to the Albion character name.
+         * @description Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always succeeds in replacing any existing link: it deletes the target user's current link (if any) and any other account's claim on the requested Albion character before creating the new link, all in a single transaction, and writes an `ALBION_RELINK` (or `ALBION_LINK`) audit row naming both replaced links; an account that lost its claim has its guild role revoked. The server resolves the selected player from Albion and persists that authoritative name. After a successful link the backend best-effort sets the target user's Discord guild nickname to the Albion character name.
          */
         post: operations["admin_link_user_handler"];
         /**
@@ -414,8 +491,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Self-link by Albion IGN
-         * @description Searches Albion for `ign`, requires a unique exact name match, then performs the same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. Guild-role assignment follows the same rule as `/link`.
+         * Ask to link by Albion IGN
+         * @description Searches Albion for `ign`, requires a unique exact name match, then behaves exactly like `POST /api/albion/link`: a request an officer must approve (`pending: true`), or an immediate link for a caller with `roles.manage`. Zero hits are 404; two or more exact hits are 400. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.
          */
         post: operations["register_by_ign"];
         delete?: never;
@@ -433,7 +510,7 @@ export interface paths {
         };
         /**
          * Global Albion Online search — any player/guild, not just the configured guild
-         * @description Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across every guild, not just the one configured server-side. Returns two separate arrays — `guilds` and `players` — both possibly empty. Use this for general lookups (e.g. "who is this enemy guild"); use the roster endpoint specifically for the self-link participant picker. `q` requires at least 1 character.
+         * @description Unlike `GET /albion/guild/roster`, this searches **all of Albion Online**, across every guild, not just the one configured server-side. Returns two separate arrays — `guilds` and `players` — both possibly empty. `players` lists members of the configured guild first (`in_guild: true`, matched case- and diacritic-insensitively as a substring against the guild roster, which is cached for 60 s), followed by every other player Albion's global search returned (Albion itself caps that at 10 players per query and returns nothing for a query with leading/trailing spaces or accents, so the query is trimmed and accent-folded before it is forwarded). A player found by both sources appears once. If Albion's global search is down but the roster answered, the call still succeeds with `partial: true`; it only fails with 502 when neither source answered. This is the endpoint every player picker and link flow should use. `q` requires at least 1 character.
          */
         get: operations["search"];
         put?: never;
@@ -868,9 +945,29 @@ export interface paths {
         put?: never;
         /**
          * Log out
-         * @description Clears the `session_user` cookie. No request body. Always succeeds, even if there was no active session. After calling this, redirect the user to the landing/login page — `GET /api/auth/me` will now return `401`.
+         * @description Revokes the caller's session server-side (the cookie stops working immediately,         even if it was copied elsewhere) and clears the `session_user` cookie. No request body.         Succeeds when there was no active session. After calling this, redirect the user to the         landing/login page — `GET /api/auth/me` will now return `401`.
          */
         post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log out everywhere
+         * @description Revokes every session belonging to the caller's Discord account (this browser         and all others) and clears the `session_user` cookie here. Other accounts are not         affected. Requires an active session.
+         */
+        post: operations["logout_all"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1526,7 +1623,7 @@ export interface paths {
         put?: never;
         /**
          * Create a new comp
-         * @description Creates a new comp with its associated builds. Requires `comps.comps.manage` permission.
+         * @description Creates a new comp with its associated builds. Requires `comps.comps.create` permission.
          */
         post: operations["create_comp"];
         delete?: never;
@@ -1598,7 +1695,7 @@ export interface paths {
         put?: never;
         /**
          * Create a new build
-         * @description Creates a new build with optional items. Requires `comps.builds.manage` permission.
+         * @description Creates a new build with optional items. Requires `comps.builds.create` permission.
          */
         post: operations["create_build"];
         delete?: never;
@@ -1623,14 +1720,14 @@ export interface paths {
         post?: never;
         /**
          * Delete a build
-         * @description Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.manage` permission.
+         * @description Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         delete: operations["delete_build"];
         options?: never;
         head?: never;
         /**
          * Update a build
-         * @description Updates an existing build. Requires `comps.builds.manage` permission.
+         * @description Updates an existing build. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         patch: operations["update_build"];
         trace?: never;
@@ -1646,7 +1743,7 @@ export interface paths {
         put?: never;
         /**
          * Archive a build
-         * @description Marks a build archived: it drops out of the default `list_builds` results and every picker, but the row and everything already referencing it (comps, event rosters, past participations) is untouched. Unlike delete, this never fails on references. Requires `comps.builds.manage` permission.
+         * @description Marks a build archived: it drops out of the default `list_builds` results and every picker, but the row and everything already referencing it (comps, event rosters, past participations) is untouched. Unlike delete, this never fails on references. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         post: operations["archive_build"];
         delete?: never;
@@ -1685,13 +1782,13 @@ export interface paths {
         get?: never;
         /**
          * Upsert a build item
-         * @description Inserts or updates a build item for a specific slot. Requires `comps.builds.manage` permission.
+         * @description Inserts or updates a build item for a specific slot. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         put: operations["upsert_build_item"];
         post?: never;
         /**
          * Remove a build item
-         * @description Removes a build item from a specific slot. Requires `comps.builds.manage` permission.
+         * @description Removes a build item from a specific slot. Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         delete: operations["remove_build_item"];
         options?: never;
@@ -1709,7 +1806,7 @@ export interface paths {
         get?: never;
         /**
          * Set the abilities on a build item
-         * @description Replaces every ability chosen on the item in this slot. A slot the body omits is cleared, so the result is atomic. Each choice is validated against what the equipped item actually offers — see `GET /api/openalbion/abilities`. Requires `comps.builds.manage` permission.
+         * @description Replaces every ability chosen on the item in this slot. A slot the body omits is cleared, so the result is atomic. Each choice is validated against what the equipped item actually offers — see `GET /api/openalbion/abilities`. Requires Requires `comps.builds.edit` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         put: operations["set_build_item_spells"];
         post?: never;
@@ -1790,7 +1887,7 @@ export interface paths {
         put?: never;
         /**
          * Unarchive a build
-         * @description Reverses archiving: the build reappears in `list_builds` and every picker. Requires `comps.builds.manage` permission.
+         * @description Reverses archiving: the build reappears in `list_builds` and every picker. Requires `comps.builds.delete` on a row you authored, or `comps.builds.manage` for anyone's.
          */
         post: operations["unarchive_build"];
         delete?: never;
@@ -1810,7 +1907,7 @@ export interface paths {
         put?: never;
         /**
          * Create the next version of a build
-         * @description Copies the build — both loadouts, every item and every ability choice — into a new version that can be edited independently. Name and category are inherited, since they identify the version group. Requires `comps.builds.manage` permission.
+         * @description Copies the build — both loadouts, every item and every ability choice — into a new version that can be edited independently. Name and category are inherited, since they identify the version group. Requires `comps.builds.create` and authorship of the source (a version joins its author's version group), or `comps.builds.manage` for anyone's.
          */
         post: operations["create_build_version"];
         delete?: never;
@@ -1883,14 +1980,14 @@ export interface paths {
         post?: never;
         /**
          * Delete a comp
-         * @description Deletes a comp. Cascades to comp_builds via FK. Requires `comps.comps.manage` permission.
+         * @description Deletes a comp. Cascades to comp_builds via FK. Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         delete: operations["delete_comp"];
         options?: never;
         head?: never;
         /**
          * Update a comp
-         * @description Updates an existing comp. Requires `comps.comps.manage` permission.
+         * @description Updates an existing comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         patch: operations["update_comp"];
         trace?: never;
@@ -1906,7 +2003,7 @@ export interface paths {
         put?: never;
         /**
          * Archive a comp
-         * @description Marks a comp archived: it drops out of the default `list_comps` results and every picker, but the row and everything already referencing it (events, child variants) is untouched. Unlike delete, this never fails on references. Requires `comps.comps.manage` permission.
+         * @description Marks a comp archived: it drops out of the default `list_comps` results and every picker, but the row and everything already referencing it (events, child variants) is untouched. Unlike delete, this never fails on references. Requires Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         post: operations["archive_comp"];
         delete?: never;
@@ -1926,7 +2023,7 @@ export interface paths {
         put?: never;
         /**
          * Add a build to a comp
-         * @description Adds a build to a comp. If the build already exists, its quantity is updated to the new value. Requires `comps.comps.manage` permission.
+         * @description Adds a build to a comp. If the build already exists, its quantity is updated to the new value. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         post: operations["add_comp_build"];
         delete?: never;
@@ -1947,14 +2044,14 @@ export interface paths {
         post?: never;
         /**
          * Remove a build from a comp
-         * @description Removes a build from a comp. Requires `comps.comps.manage` permission.
+         * @description Removes a build from a comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         delete: operations["remove_comp_build"];
         options?: never;
         head?: never;
         /**
          * Update comp build quantity
-         * @description Updates the quantity of a build within a comp. Requires `comps.comps.manage` permission.
+         * @description Updates the quantity of a build within a comp. Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         patch: operations["update_comp_build_quantity"];
         trace?: never;
@@ -2030,7 +2127,7 @@ export interface paths {
         put?: never;
         /**
          * Unarchive a comp
-         * @description Reverses archiving: the comp reappears in `list_comps` and every picker. Requires `comps.comps.manage` permission.
+         * @description Reverses archiving: the comp reappears in `list_comps` and every picker. Requires `comps.comps.delete` on a row you authored, or `comps.comps.manage` for anyone's.
          */
         post: operations["unarchive_comp"];
         delete?: never;
@@ -2050,7 +2147,7 @@ export interface paths {
         put?: never;
         /**
          * Create the next version of a composition
-         * @description Copies the composition and every build entry with its quantity into a new version that can be edited independently. `parent_id` is preserved, so a version of a variant stays a variant of the same parent. Each version's statistics come from `GET /api/comps/{id}/performance` for that version's id. Requires `comps.comps.manage` permission.
+         * @description Copies the composition and every build entry with its quantity into a new version that can be edited independently. `parent_id` is preserved, so a version of a variant stays a variant of the same parent. Each version's statistics come from `GET /api/comps/{id}/performance` for that version's id. Requires `comps.comps.create` and authorship of the source (a version joins its author's version group), or `comps.comps.manage` for anyone's.
          */
         post: operations["create_comp_version"];
         delete?: never;
@@ -2223,6 +2320,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the collection-level event actions */
+        get: operations["list_event_collection_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a collection-level event action */
+        post: operations["run_event_collection_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/calendar": {
         parameters: {
             query?: never;
@@ -2339,16 +2470,56 @@ export interface paths {
         post?: never;
         /**
          * Archive an event
-         * @description Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires `events.delete` permission.
+         * @description Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires being the event creator or holding `events.manage`.
          */
         delete: operations["delete_event"];
         options?: never;
         head?: never;
         /**
          * Update an event
-         * @description Updates an event. Requires `events.edit` permission.
+         * @description Updates an event. Requires being the event creator or holding `events.manage`.
          */
         patch: operations["update_event"];
+        trace?: never;
+    };
+    "/api/events/{id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the actions available on an event
+         * @description Every registered action with `allowed`, `visible` and the machine reason when refused. Clients render this list instead of re-deriving the rules.
+         */
+        get: operations["list_event_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{id}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an action on an event
+         * @description Applies the transition in one transaction with the action log row, or answers `noop` when the event is already in the target state. `expected_etag` guards against stale clients (409 `stale_entity`); `idempotency_key` (body or `Idempotency-Key` header) makes retries apply once.
+         */
+        post: operations["run_event_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/events/{id}/archive": {
@@ -2422,13 +2593,13 @@ export interface paths {
         get?: never;
         /**
          * Bind a Discord voice channel to a scheduled or live event
-         * @description Requires `events.edit` permission.
+         * @description Requires being the event creator or holding `events.manage`.
          */
         put: operations["set_event_voice_channel"];
         post?: never;
         /**
          * Clear a stopped event's Discord voice channel binding
-         * @description Requires `events.edit` permission.
+         * @description Requires being the event creator or holding `events.manage`.
          */
         delete: operations["clear_event_voice_channel"];
         options?: never;
@@ -2465,7 +2636,7 @@ export interface paths {
         };
         /**
          * Check whether the caller may manage this event
-         * @description Returns the same organizer-or-`events.edit` decision that guards start/stop/cancel/uncancel/remind. Requires `events.view`.
+         * @description Returns the same organizer-or-`events.manage` decision that guards start/stop/cancel/uncancel/remind. Requires `events.view`.
          */
         get: operations["get_event_management_authority"];
         put?: never;
@@ -3422,6 +3593,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the signed-in user may see and use in the current tenant.
+         * @description # Errors
+         *
+         *     Returns a database error if the tenant row, the alliance link or the
+         *     guild settings cannot be read.
+         */
+        get: operations["me_capabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/members/ensure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create or reactivate a member the bot verified is in this server
+         * @description Requires the configured X-Bot-Secret and X-Guild-Id. Idempotent; concurrent first calls converge on one row.
+         */
+        post: operations["ensure_member"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications": {
         parameters: {
             query?: never;
@@ -3699,6 +3913,40 @@ export interface paths {
         post?: never;
         /** Revoke platform roles from a Discord user. */
         delete: operations["revoke_admin"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/platform/fanout/exhausted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List event fanout targets that used up their retries. */
+        get: operations["list_exhausted_fanout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/platform/fanout/exhausted/{job_id}/{tenant_id}/requeue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-arm one exhausted fanout target (attempts reset, due immediately). */
+        post: operations["requeue_exhausted_fanout"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4892,6 +5140,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tenants/{id}/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The bot's view of a guild: modules and commands, no user, for command registration.
+         * @description # Errors
+         *
+         *     Returns `404` when the tenant is not registered, or a database error.
+         */
+        get: operations["tenant_capabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tenants/{id}/status": {
         parameters: {
             query?: never;
@@ -4923,8 +5193,8 @@ export interface paths {
         get: operations["list_users"];
         put?: never;
         /**
-         * Provision a Discord member and link an Albion roster character
-         * @description Creates a `users` row for a Discord guild member who is not yet in the directory, then links the selected Albion character from the configured guild roster. The Discord snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). Email is stored as a placeholder until first login. Requires `users.create`.
+         * Provision a Discord member and link an Albion character
+         * @description Creates a `users` row for a Discord guild member who is not yet in the directory, then links the selected Albion character: looked up in the configured guild roster first, then in Albion at large, so a character outside the guild can be linked too. The Discord snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). Email is stored as a placeholder until first login. Requires `users.create`.
          */
         post: operations["create_user"];
         delete?: never;
@@ -5048,7 +5318,7 @@ export interface paths {
         put?: never;
         /**
          * OCR an uploaded image via Mistral AI
-         * @description Generic, reusable OCR passthrough with no domain-specific logic. Accepts a single image as `multipart/form-data` (any field name — the first field carrying a non-empty file is used), forwards it to Mistral's OCR API as a base64 data URI, and returns both the raw concatenated text and it split into non-empty, trimmed lines. Consumers needing to match extracted lines against application data (e.g. the splits module matching Albion Online character names via `POST /splits/match-participants`) do that matching themselves against this endpoint's output — this endpoint has no knowledge of players, users, or splits.
+         * @description Generic, reusable OCR passthrough with no domain-specific logic. Accepts a single image as `multipart/form-data` (any field name — the first field carrying a non-empty file is used), forwards it to Mistral's OCR API as a base64 data URI, and returns both the raw concatenated text and it split into non-empty, trimmed lines. Consumers needing to match extracted lines against application data (e.g. the splits module matching Albion Online character names via `POST /splits/match-participants`) do that matching themselves against this endpoint's output — this endpoint has no knowledge of players, users, or splits. Every call is forwarded to a paid third-party API, so it requires `splits.create` (the only feature that uses it is reading participant names from a loot-split screenshot).
          */
         post: operations["ocr_image"];
         delete?: never;
@@ -5238,6 +5508,68 @@ export interface components {
              * @example 7
              */
             user_id?: number | null;
+        };
+        /** @description One action evaluated for one entity and one actor. */
+        ActionDescriptor: {
+            /** @description True when the action can run now. */
+            allowed: boolean;
+            confirm?: null | components["schemas"]["ConfirmBody"];
+            /** @description Action bar group. */
+            group: string;
+            /** @description Action id. */
+            id: string;
+            /** @description i18n key of the label. */
+            label_key: string;
+            /** @description JSON Schema of the parameters; `null` for actions without parameters. */
+            params_schema?: Record<string, never> | null;
+            /** @description English default text of the reason. */
+            reason?: string | null;
+            /** @description Machine reason when not allowed (`copy_read_only`, `wrong_state`, ...). */
+            reason_code?: string | null;
+            /** @description Values for the reason text. */
+            reason_params?: Record<string, never> | null;
+            /** @description True when the client must confirm first. */
+            requires_confirm: boolean;
+            /** @description Button style. */
+            style: components["schemas"]["Style"];
+            /** @description `action` or `direct`. */
+            transport: string;
+            /** @description False when clients should hide the action instead of showing it disabled. */
+            visible: boolean;
+        };
+        /** @description The actions available on one entity (or on a collection) for the caller. */
+        ActionList: {
+            /** @description One descriptor per registered action. */
+            actions: components["schemas"]["ActionDescriptor"][];
+            /** @description The entity the list is about. */
+            entity: components["schemas"]["EntityRef"];
+            /** @description Revision of the entity; send it back as `expected_etag`. Absent for collections. */
+            etag?: string | null;
+        };
+        /** @description Body of `POST .../actions/{action}`. Every field is optional. */
+        ActionRequest: {
+            /** @description Revision the caller saw; a different revision is refused with `stale_entity`. */
+            expected_etag?: string | null;
+            /** @description Makes a retried request apply once (also accepted as the `Idempotency-Key` header). */
+            idempotency_key?: string | null;
+            /** @description Action parameters, validated against the action's schema. */
+            params?: Record<string, never> | null;
+        };
+        /** @description Result of an executed (or replayed, or no-op) action. */
+        ActionResult: {
+            /** @description Action id. */
+            action: string;
+            /** @description Fresh descriptors, so the caller re-renders without another request. */
+            actions: components["schemas"]["ActionDescriptor"][];
+            /** @description Effects queued by the action (empty until the Discord outbox lands). */
+            effects: Record<string, never>[];
+            /** @description The entity as `GET /api/events/{id}` renders it. */
+            entity: Record<string, never>;
+            /** @description `applied` or `noop`. */
+            outcome: string;
+            /** @description Status before and after. */
+            state: components["schemas"]["StateChange"];
+            sync?: null | components["schemas"]["SyncInfo"];
         };
         /**
          * @description Request body to add a build to a comp.
@@ -5682,6 +6014,41 @@ export interface components {
              */
             name: string;
         };
+        /** @description One open claim as an officer sees it. */
+        AlbionLinkRequestView: {
+            /** @description The character's Albion guild when the claim was made, if it had one. */
+            albion_guild_name?: string | null;
+            /** @description The character being claimed. */
+            albion_player_id: string;
+            /** @description The character's name when the claim was made. */
+            albion_player_name: string;
+            /**
+             * @description `true` when the character is already linked to an account, so approving would fail with
+             *     `409` until that link is removed.
+             */
+            character_already_linked: boolean;
+            /**
+             * Format: int32
+             * @description How many *other* open claims name the same character; the officer must pick the real owner.
+             */
+            competing_requests: number;
+            /** @description Discord id of the account asking for the link. */
+            discord_id: string;
+            /**
+             * Format: int64
+             * @description Request id, as used by the approve/reject endpoints.
+             */
+            id: number;
+            /** @description RFC 3339 timestamp. */
+            requested_at: string;
+            /**
+             * Format: int64
+             * @description Internal user id of that account, when it has a row in this tenant.
+             */
+            user_id?: number | null;
+            /** @description Username of that account, when it has a row in this tenant. */
+            username?: string | null;
+        };
         /**
          * @description The current Discord-to-Albion-player link status for a user, as returned by
          *     `GET /albion/link/me` and `POST /albion/link`.
@@ -5713,6 +6080,27 @@ export interface components {
              * @example 2026-07-08T02:15:00.631376+00:00
              */
             linked_at?: string | null;
+            /**
+             * @description `true` while a self-service claim waits for an officer. A pending claim is **not** a link:
+             *     `linked` stays `false` and nothing keyed on the character (guild role, loot, regears)
+             *     applies until it is approved.
+             */
+            pending: boolean;
+            /**
+             * @description Present only when `pending` is `true`: the character the account asked to link.
+             * @example aPngkjfLT2CGiZoWXLr8UQ
+             */
+            pending_albion_player_id?: string | null;
+            /**
+             * @description Present only when `pending` is `true`.
+             * @example Kay
+             */
+            pending_albion_player_name?: string | null;
+            /**
+             * @description Present only when `pending` is `true`. RFC 3339 timestamp.
+             * @example 2026-07-08T02:15:00.631376+00:00
+             */
+            requested_at?: string | null;
         };
         /** @description Player profile as returned by `GET /albion/players/{id}`. */
         AlbionPlayer: {
@@ -5763,6 +6151,13 @@ export interface components {
              */
             id: string;
             /**
+             * @description `true` when this player belongs to the tenant's configured Albion guild. Set by this app
+             *     (never by Albion): `GET /albion/search` ranks these first. Absent upstream, so it
+             *     deserializes as `false`.
+             * @example false
+             */
+            in_guild?: boolean;
+            /**
              * Format: double
              * @description Lifetime `PvP` kill fame. Sometimes `null` upstream for low-activity players.
              * @example 102244
@@ -5780,7 +6175,25 @@ export interface components {
          */
         AlbionSearchResult: {
             guilds?: components["schemas"]["AlbionGuildSummary"][];
+            /**
+             * @description `true` when Albion's global search could not be reached and only the configured guild's
+             *     roster answered, so players outside the guild may be missing. Omitted when `false`.
+             */
+            partial?: boolean;
+            /**
+             * @description Matching players. On `GET /albion/search` members of the configured guild come first,
+             *     followed by every other Albion player the global search returned.
+             */
             players?: components["schemas"]["AlbionPlayerSummary"][];
+        };
+        /** @description Alliance link of a tenant. */
+        AllianceBlock: {
+            /** @description Alliance tenant id. */
+            id: string;
+            /** @description Alliance display name. */
+            name: string;
+            /** @description `member` for a guild in the alliance, `hub` for the alliance tenant itself. */
+            role: string;
         };
         /** @description Alliance settings context for the session tenant. */
         AllianceContextView: {
@@ -5842,6 +6255,36 @@ export interface components {
             source_tenant_id: string;
             /** @description Artifact kind (`build`, `comp`, or `split`). */
             type: string;
+        };
+        /** @description `ApiResponse` wrapper for the catalogue. */
+        ApiResponseActionCatalog: {
+            /** @description Every registered action. */
+            data: components["schemas"]["CatalogEntry"][];
+            /**
+             * @description Always `success`.
+             * @example success
+             */
+            status: string;
+        };
+        /** @description `ApiResponse` wrapper for an action list. */
+        ApiResponseActionList: {
+            /** @description The list. */
+            data: components["schemas"]["ActionList"];
+            /**
+             * @description Always `success`.
+             * @example success
+             */
+            status: string;
+        };
+        /** @description `ApiResponse` wrapper for an executed action. */
+        ApiResponseActionResult: {
+            /** @description The result. */
+            data: components["schemas"]["ActionResult"];
+            /**
+             * @description Always `success`.
+             * @example success
+             */
+            status: string;
         };
         /** @description `OpenAPI` schema wrapper for an `AlbionBB` battle detail response. */
         ApiResponseAlbionBbBattleDetail: {
@@ -5907,6 +6350,16 @@ export interface components {
         ApiResponseAlbionDataMarketPriceList: {
             /** @description The current market rows returned by Albion Online Data. */
             data: components["schemas"]["AlbionDataMarketPrice"][];
+            /**
+             * @description Indicates the outcome of the request, always "success".
+             * @example success
+             */
+            status: string;
+        };
+        /** @description `OpenAPI` schema wrapper for the list of pending Albion link requests. */
+        ApiResponseAlbionLinkRequests: {
+            /** @description Open requests, oldest first. */
+            data: components["schemas"]["AlbionLinkRequestView"][];
             /**
              * @description Indicates the outcome of the request, always "success".
              * @example success
@@ -6059,6 +6512,16 @@ export interface components {
             data: components["schemas"]["CalibrationView"];
             /**
              * @description Indicates the outcome of the request, always "success".
+             * @example success
+             */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper for the success envelope of [`Capabilities`]. */
+        ApiResponseCapabilities: {
+            /** @description The document. */
+            data: components["schemas"]["Capabilities"];
+            /**
+             * @description Always `success`.
              * @example success
              */
             status: string;
@@ -6830,6 +7293,15 @@ export interface components {
              */
             data: {
                 guilds?: components["schemas"]["AlbionGuildSummary"][];
+                /**
+                 * @description `true` when Albion's global search could not be reached and only the configured guild's
+                 *     roster answered, so players outside the guild may be missing. Omitted when `false`.
+                 */
+                partial?: boolean;
+                /**
+                 * @description Matching players. On `GET /albion/search` members of the configured guild come first,
+                 *     followed by every other Albion player the global search returned.
+                 */
                 players?: components["schemas"]["AlbionPlayerSummary"][];
             };
             /** @description Indicates the outcome of the request, always "success" for this envelope. */
@@ -7776,6 +8248,11 @@ export interface components {
                  * @example 5
                  */
                 total_pages: number;
+                /**
+                 * @description Member guilds left out of an alliance listing because their ledger was unreachable.
+                 *     When non-empty the list and its totals are incomplete. Absent on complete results.
+                 */
+                unavailable_guilds?: components["schemas"]["UnavailableGuild"][];
             };
             /** @description Indicates the outcome of the request, always "success" for this envelope. */
             status: string;
@@ -8597,6 +9074,42 @@ export interface components {
          *
          *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
          */
+        ApiResponse_Vec_ExhaustedTarget: {
+            data: {
+                /**
+                 * Format: int32
+                 * @description Attempts consumed.
+                 */
+                attempts: number;
+                /**
+                 * Format: date-time
+                 * @description When the target was parked.
+                 */
+                exhausted_at?: string | null;
+                /** @description Fanout job id. */
+                job_id: string;
+                /** @description Last failure detail. */
+                last_error?: string | null;
+                /** @description `publish`, `update`, or `archive`. */
+                operation: string;
+                /**
+                 * Format: int64
+                 * @description Source event primary key.
+                 */
+                source_event_id: number;
+                /** @description Source (alliance) tenant id. */
+                source_tenant_id: string;
+                /** @description Destination tenant id. */
+                tenant_id: string;
+            }[];
+            /** @description Indicates the outcome of the request, always "success" for this envelope. */
+            status: string;
+        };
+        /**
+         * @description The standard success wrapper envelope (`JSend` style) for generics.
+         *
+         *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+         */
         ApiResponse_Vec_FeatureCatalogItem: {
             data: {
                 /** @description Optional description. */
@@ -9114,6 +9627,11 @@ export interface components {
              */
             requested_total: string;
             /**
+             * @description Member guilds whose ledger could not be read. When non-empty, the totals above are
+             *     **incomplete**: they leave these guilds out. Absent on complete and single-guild results.
+             */
+            unavailable_guilds?: components["schemas"]["UnavailableGuild"][];
+            /**
              * Format: int64
              * @description The user this balance belongs to.
              * @example 7
@@ -9166,6 +9684,11 @@ export interface components {
             transaction_count: number;
             /** @description Aggregation by transaction type. */
             transaction_types: components["schemas"]["BankBreakdown"][];
+            /**
+             * @description Member guilds left out of an alliance aggregate because their ledger was unreachable.
+             *     When non-empty the totals are incomplete. Absent on complete results.
+             */
+            unavailable_guilds?: components["schemas"]["UnavailableGuild"][];
         };
         /** @description One grouped money-flow line in the administrator bank report. */
         BankBreakdown: {
@@ -10007,6 +10530,13 @@ export interface components {
             category_id: number;
             /** @description The category name (if available). */
             category_name?: string | null;
+            /**
+             * Format: int64
+             * @description The internal id of the user who created the build. Clients compare it with the session's
+             *     `user_id` to tell which builds the caller authored (author-or-manage permissions).
+             * @example 1
+             */
+            created_by_id: number;
             /** @description The username of the user who created the build. */
             created_by_username: string;
             /**
@@ -10162,6 +10692,24 @@ export interface components {
             /** @description How many (member, matched battle) observations went into the figures below. */
             sample_size: number;
         };
+        /** @description The capabilities document. */
+        Capabilities: {
+            /** @description Every catalogue command, enabled or not. */
+            commands: components["schemas"]["CommandEntry"][];
+            /** @description Digest of the enabled command names. Present on the bot document only. */
+            commands_hash?: string | null;
+            /** @description Modules offered to this tenant kind. Modules the kind does not support are not listed. */
+            modules: components["schemas"]["ModuleEntry"][];
+            /** @description Navigation. Present on the user document only. */
+            nav?: components["schemas"]["NavEntry"][] | null;
+            /** @description The tenant. */
+            tenant: components["schemas"]["TenantBlock"];
+            /** @description Validator for the tenant part only: the value of `X-Capabilities-Version`. */
+            tenant_version: string;
+            user?: null | components["schemas"]["UserBlock"];
+            /** @description Validator for the whole document: the `ETag` of `GET /api/me/capabilities`. */
+            version: string;
+        };
         /** @description One cast, fully resolved. */
         CastOutcome: {
             attribute_changes: components["schemas"]["ResolvedAttributeChange"][];
@@ -10189,6 +10737,31 @@ export interface components {
              *     forward unchanged.
              */
             unsupported: string[];
+        };
+        /** @description One entry of `GET /api/actions/catalog`. */
+        CatalogEntry: {
+            /** @description Entity kind. */
+            entity: string;
+            /** @description Allowed source states; empty means any. */
+            from: string[];
+            /** @description Action bar group. */
+            group: string;
+            /** @description Action id. */
+            id: string;
+            /** @description False while listed but not executable. */
+            implemented: boolean;
+            /** @description i18n key of the label. */
+            label_key: string;
+            /** @description Catalogue module the action needs. */
+            module: string;
+            /** @description True when the client must confirm first. */
+            requires_confirm: boolean;
+            /** @description Button style. */
+            style: components["schemas"]["Style"];
+            /** @description Target state, when the action changes status. */
+            to?: string | null;
+            /** @description `action` or `direct`. */
+            transport: string;
         };
         /** @description Item Power across a whole loadout. */
         CharacterIpBreakdown: {
@@ -10232,6 +10805,21 @@ export interface components {
             items: number;
             /** @description Spells reachable from those items. */
             spells: number;
+        };
+        /** @description One Discord command and whether this tenant gets it. */
+        CommandEntry: {
+            /** @description Enabled and the actor may use it. Absent for the bot document. */
+            accessible?: boolean | null;
+            /** @description The tenant gets the command. */
+            enabled: boolean;
+            /** @description Module that provides it. */
+            module: string;
+            /** @description Command name as registered with Discord. */
+            name: string;
+            /** @description Why the command is not enabled or not accessible. */
+            reason_code?: string | null;
+            /** @description The module's view permission, if it has one. */
+            required_permission?: string | null;
         };
         /** @description One build's contribution to a comp's total market price. */
         CompBuildPriceRow: {
@@ -10474,6 +11062,13 @@ export interface components {
             category_name?: string | null;
             /** @description The timestamp when the comp was created. */
             created_at: string;
+            /**
+             * Format: int64
+             * @description The internal id of the user who created the comp. Clients compare it with the session's
+             *     `user_id` to tell which comps the caller authored (author-or-manage permissions).
+             * @example 1
+             */
+            created_by_id: number;
             /** @description The username of the user who created the comp. */
             created_by_username: string;
             /**
@@ -10539,6 +11134,13 @@ export interface components {
              * @example 1250000
              */
             total_distributed: string;
+        };
+        /** @description Confirmation keys inside a descriptor. */
+        ConfirmBody: {
+            /** @description Key of the dialog body. */
+            body_key: string;
+            /** @description Key of the dialog title. */
+            title_key: string;
         };
         /** @description A recommended counter to a scouted composition. */
         CounterSuggestion: {
@@ -10784,11 +11386,23 @@ export interface components {
             /**
              * Format: int64
              * @description Island tab for the correlated split. Required when `create_split` is true.
+             *
+             *     On a guild tenant this is a tab of the guild's own catalog. On an alliance tenant it is a
+             *     tab of the member guild named by `origin_guild_id` (islands exist only in guilds).
              * @example 10
              */
             island_tab_id?: number | null;
             /** @description The mass announcement date/time (UTC, RFC3339). */
             mass_time_utc?: string | null;
+            /**
+             * @description Discord guild tenant id that owns `island_tab_id`. Alliance tenants only.
+             *
+             *     Required with `create_split` on an alliance tenant, where the tab is resolved in that
+             *     member guild's catalog (the guild must be an active member of the alliance). Rejected on
+             *     a guild tenant, whose tab always comes from its own catalog.
+             * @example 123456789012345678
+             */
+            origin_guild_id?: string | null;
             /** @description Also ping the alliance Discord events channel (guild events only; default off). */
             ping_alliance?: boolean;
             /**
@@ -11459,6 +12073,16 @@ export interface components {
             /** @description `processing`, `failed`, or `complete`. */
             state: string;
         };
+        /** @description Reference to an effect row written by a transition or a reminder (DO §5.2). */
+        EffectRef: {
+            /**
+             * Format: int64
+             * @description Outbox row id.
+             */
+            id: number;
+            /** @description Effect kind (`discord_delivery::kinds`), in its stored string form. */
+            kind: string;
+        };
         /**
          * @description Which side of the fight an effect lands on, as the dataset's own `target` vocabulary maps onto
          *     the two groups a caller reasons about — the fight has no geometry, so anything more specific
@@ -11712,6 +12336,20 @@ export interface components {
             threat_score: number;
             /** Format: int64 */
             wins: number;
+        };
+        /** @description Identity of the entity an action list describes. Collection lists carry no id. */
+        EntityRef: {
+            /** @description Archived flag; absent for collection lists. */
+            archived?: boolean | null;
+            /**
+             * Format: int64
+             * @description Entity id; absent for collection lists.
+             */
+            id?: number | null;
+            /** @description Current status; absent for collection lists. */
+            state?: string | null;
+            /** @description Entity kind (`event`). */
+            type: string;
         };
         /** @description Filters that can be applied when listing entries via `GET /entries`. */
         EntryFilters: {
@@ -12008,11 +12646,27 @@ export interface components {
              */
             regear_requested_total: string;
         };
+        /**
+         * @description Response of the lifecycle routes (start, stop, cancel, uncancel, remind): the event as the
+         *     API renders it after the request, plus the Discord effects this request wrote. The effects
+         *     are what the bot executes; an empty list means the request changed nothing.
+         */
+        EventEffectsResponse: {
+            /** @description The event as the API renders it after the request. */
+            data: components["schemas"]["EventView"];
+            /** @description Discord effects written by this request, in the order they were written. */
+            effects: components["schemas"]["EffectRef"][];
+            /** @description Indicates the outcome of the request, always "success". */
+            status: string;
+        };
         /** @description Latest publish-job state and per-guild results for a canonical event. */
         EventFanoutStatus: {
             /** @description Control-plane job id. */
             job_id: string;
-            /** @description `pending`, `processing`, `complete`, or `failed`. */
+            /**
+             * @description `pending`, `processing`, `complete`, `failed`, or `exhausted` (only
+             *     targets that need an operator remain).
+             */
             state: string;
             /** @description Per-target delivery state. */
             targets: components["schemas"]["TargetStatus"][];
@@ -12072,6 +12726,7 @@ export interface components {
              *     `user_id` neither side already has in hand.
              */
             discord_id?: string | null;
+            guild?: null | components["schemas"]["ParticipationGuild"];
             /**
              * Format: int64
              * @description The primary build ID chosen by the participant, or `None` for the unlimited `Fill` role.
@@ -12369,6 +13024,34 @@ export interface components {
             vod_forum_post_status: string;
             /** @description Discord thread ID when the VOD forum post was recorded as created. */
             vod_forum_thread_id?: string | null;
+        };
+        /** @description A target parked in the terminal `exhausted` state, for operators. */
+        ExhaustedTarget: {
+            /**
+             * Format: int32
+             * @description Attempts consumed.
+             */
+            attempts: number;
+            /**
+             * Format: date-time
+             * @description When the target was parked.
+             */
+            exhausted_at?: string | null;
+            /** @description Fanout job id. */
+            job_id: string;
+            /** @description Last failure detail. */
+            last_error?: string | null;
+            /** @description `publish`, `update`, or `archive`. */
+            operation: string;
+            /**
+             * Format: int64
+             * @description Source event primary key.
+             */
+            source_event_id: number;
+            /** @description Source (alliance) tenant id. */
+            source_tenant_id: string;
+            /** @description Destination tenant id. */
+            tenant_id: string;
         };
         /** @description Result of an extraction run. */
         ExtractionReport: {
@@ -13210,6 +13893,11 @@ export interface components {
              * @example 12_480.50
              */
             paid_total: string;
+            /**
+             * @description Member guilds left out of an alliance aggregate because their ledger was unreachable.
+             *     When non-empty the totals are incomplete. Absent on complete results.
+             */
+            unavailable_guilds?: components["schemas"]["UnavailableGuild"][];
         };
         /** @description Per-guild loss estimate for one battle. */
         GuildLossEstimate: {
@@ -13936,6 +14624,23 @@ export interface components {
             /** @description `pending`, `processing`, `complete`, `failed`, or `inactive`. */
             state: string;
         };
+        /** @description One module as seen by the actor (or by the bot, without `accessible`). */
+        ModuleEntry: {
+            /** @description Enabled and the actor holds the view permission. Absent for the bot document. */
+            accessible?: boolean | null;
+            /** @description Tenant kind and feature flags allow the module. */
+            enabled: boolean;
+            /** @description UI grants the actor holds (`view`, `create`, `edit`, ...). Empty for the bot document. */
+            grants: string[];
+            /** @description Module key from the catalogue. */
+            key: string;
+            /** @description Read-only for this tenant kind. */
+            read_only: boolean;
+            /** @description Why the module is not enabled or not accessible. */
+            reason_code?: string | null;
+            /** @description `own`, or `aggregate` for alliances seeing member-guild data. */
+            scope: string;
+        };
         /** @description Request to move one Battle segment from the fight in the path to another fight. */
         MoveBattleRequest: {
             /**
@@ -13948,6 +14653,17 @@ export interface components {
              * @description Destination fight. It must belong to the same Event as the source fight (or neither may).
              */
             target_fight_id: number;
+        };
+        /** @description One navigation entry. Presentation (icon, label, path) stays in the client. */
+        NavEntry: {
+            /** @description Navigation group. */
+            group: string;
+            /** @description Navigation key the client maps to a route. */
+            key: string;
+            /** @description Module that owns the entry. */
+            module: string;
+            /** @description Shown to the actor. */
+            visible: boolean;
         };
         /**
          * @description Kind of in-app notification. Stored as the `snake_case` string.
@@ -14935,6 +15651,11 @@ export interface components {
              * @example 5
              */
             total_pages: number;
+            /**
+             * @description Member guilds left out of an alliance listing because their ledger was unreachable.
+             *     When non-empty the list and its totals are incomplete. Absent on complete results.
+             */
+            unavailable_guilds?: components["schemas"]["UnavailableGuild"][];
         };
         /** @description Concrete paginated user profile response schema for `OpenAPI`. */
         PaginatedUserProfile: {
@@ -16728,6 +17449,18 @@ export interface components {
             /** @description Monotonic change timestamp used by incremental bot synchronization. */
             updated_at: string;
         };
+        /** @description Status change of an executed action. */
+        StateChange: {
+            /** @description Status before the action. */
+            from: string;
+            /** @description Status after the action. */
+            to: string;
+        };
+        /**
+         * @description Visual weight of an action button.
+         * @enum {string}
+         */
+        Style: "primary" | "neutral" | "danger";
         /** @description Body of `POST /api/vods`. */
         SubmitVodRequest: {
             /** @description Discord message id associated with the claim. */
@@ -16740,6 +17473,16 @@ export interface components {
             thread_owner_discord_id: string;
             /** @description Raw VOD URL (normalized server-side). */
             url: string;
+        };
+        /** @description Outbox row written for delivery; absent until the outbox slices land. */
+        SyncInfo: {
+            /**
+             * Format: int64
+             * @description Queue row id.
+             */
+            outbox_id?: number | null;
+            /** @description True when a row was queued. */
+            queued: boolean;
         };
         /**
          * @description Entity kinds that take part in synchronization (F2 covers the two that have
@@ -16766,10 +17509,27 @@ export interface components {
              * @description Earliest next retry time.
              */
             next_attempt_at: string;
-            /** @description `pending`, `processing`, `complete`, `failed`, or `inactive`. */
+            /**
+             * @description `pending`, `processing`, `complete`, `failed`, `inactive`, or `exhausted`
+             *     (retries used up; an operator must requeue it).
+             */
             state: string;
             /** @description Destination tenant id. */
             tenant_id: string;
+        };
+        /** @description The tenant block of the document. */
+        TenantBlock: {
+            alliance?: null | components["schemas"]["AllianceBlock"];
+            /** @description Discord guild id / `tenants.id`. */
+            id: string;
+            /** @description `guild` or `alliance`. */
+            kind: string;
+            /** @description Display name. */
+            name: string;
+            /** @description Tenant lifecycle status. */
+            status: string;
+            /** @description IANA timezone, present on authenticated documents. */
+            timezone?: string | null;
         };
         /** @description A registered tenant the user may enter after OAuth. */
         TenantChoice: {
@@ -17056,6 +17816,19 @@ export interface components {
             week_start: string;
             /** Format: int64 */
             wins: number;
+        };
+        /**
+         * @description A member guild an alliance aggregate could not include because its ledger was unreachable.
+         *
+         *     Alliance totals are computed live from every active member guild. A guild that cannot be
+         *     opened is left out rather than failing the whole request, so the response lists it here
+         *     instead of presenting a partial total as if it were complete.
+         */
+        UnavailableGuild: {
+            /** @description Display name of the member guild. */
+            guild_name: string;
+            /** @description Discord tenant id of the member guild. */
+            guild_tenant_id: string;
         };
         /** @description One group of identical units — "5 Polehammers", "1 Great Holy Staff". */
         UnitGroup: {
@@ -17738,6 +18511,20 @@ export interface components {
              */
             weight: string;
         };
+        /** @description The user block, present on `GET /api/me/capabilities` only. */
+        UserBlock: {
+            /** @description Owner of the tenant. */
+            is_owner: boolean;
+            /** @description Platform admin. */
+            is_platform_admin: boolean;
+            /** @description Stable permission keys the user holds in this tenant, sorted. */
+            permissions: string[];
+            /**
+             * Format: int64
+             * @description Local `users.id`.
+             */
+            user_id: number;
+        };
         /** @description Filters that can be applied when listing users. */
         UserFilters: {
             /** @description Sort direction: `asc` or `desc`. Defaults to `desc` when `sort` is set. */
@@ -18115,6 +18902,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_action_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Action catalogue */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseActionCatalog"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     get_autorole: {
         parameters: {
             query?: never;
@@ -18939,7 +19755,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Player linked successfully; linked is now true */
+            /** @description Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -19002,7 +19818,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description No active link exists for this account */
+            /** @description No link and no open request exist for this account */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19033,6 +19849,151 @@ export interface operations {
             };
             /** @description Unauthorized - no active session */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_link_requests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseAlbionLinkRequests"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - requires roles.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    approve_link_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Link request id */
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Linked; the body is the requester's new link status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseAlbionLinkStatus"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - requires roles.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The request no longer exists */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The account or the character is already linked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reject_link_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Link request id */
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rejected; data is null */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - requires roles.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The request no longer exists */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -19267,7 +20228,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Player linked successfully */
+            /** @description Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -20514,12 +21475,39 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Logout succeeded (cookie cleared); data is null */
+            /** @description Logout succeeded (session revoked, cookie cleared); data is null */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    logout_all: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All sessions revoked, cookie cleared; data is null */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -22056,7 +23044,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - lacks comps.comps.create permission */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22355,7 +23343,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - lacks comps.builds.create permission */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22444,7 +23432,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22517,7 +23505,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22567,7 +23555,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22693,7 +23681,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22745,7 +23733,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22803,7 +23791,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.edit, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23002,7 +23990,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the author with comps.builds.delete, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23052,7 +24040,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.builds.manage permission */
+            /** @description Forbidden - not the source's author with comps.builds.create, and lacks comps.builds.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23352,7 +24340,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23425,7 +24413,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23475,7 +24463,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23539,7 +24527,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23589,7 +24577,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23655,7 +24643,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.edit, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23848,7 +24836,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the author with comps.comps.delete, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23898,7 +24886,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks comps.comps.manage permission */
+            /** @description Forbidden - not the source's author with comps.comps.create, and lacks comps.comps.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24395,8 +25383,60 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_event_collection_actions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Collection actions for events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseActionList"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    run_event_collection_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Action id */
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unknown action */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -24668,7 +25708,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24732,7 +25772,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24748,6 +25788,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_event_actions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Event ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Action descriptors for the event */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseActionList"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    run_event_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Event ID */
+                id: number;
+                /** @description Action id, e.g. `start` */
+                action: string;
+            };
+            cookie?: never;
+        };
+        /** @description Optional parameters, revision and idempotency key */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Action applied, replayed or no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseActionResult"];
+                };
+            };
+            /** @description Invalid request body or action not executable yet */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Refused: the denied descriptor */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionDescriptor"];
+                };
+            };
+            /** @description Event or action not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Refused by state, archive or a stale revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionDescriptor"];
                 };
             };
         };
@@ -24896,7 +26052,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24943,7 +26099,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponseEventView"];
+                    "application/json": components["schemas"]["EventEffectsResponse"];
                 };
             };
             /** @description Unauthorized - no active session */
@@ -24955,7 +26111,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25027,7 +26183,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25086,7 +26242,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25341,7 +26497,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - caller is not creator and lacks events.edit */
+            /** @description Forbidden - caller is not the creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25407,7 +26563,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - caller is not creator and lacks events.edit */
+            /** @description Forbidden - caller is not the creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25459,7 +26615,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - caller is not creator and lacks events.edit */
+            /** @description Forbidden - caller is not the creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25646,7 +26802,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponseEventView"];
+                    "application/json": components["schemas"]["EventEffectsResponse"];
                 };
             };
             /** @description Unauthorized - no active session */
@@ -25658,7 +26814,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25762,7 +26918,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25821,7 +26977,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25950,7 +27106,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponseEventView"];
+                    "application/json": components["schemas"]["EventEffectsResponse"];
                 };
             };
             /** @description Unauthorized - no active session */
@@ -25962,7 +27118,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26009,7 +27165,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponseEventView"];
+                    "application/json": components["schemas"]["EventEffectsResponse"];
                 };
             };
             /** @description Unauthorized - no active session */
@@ -26021,7 +27177,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26118,7 +27274,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponseEventView"];
+                    "application/json": components["schemas"]["EventEffectsResponse"];
                 };
             };
             /** @description Unauthorized - no active session */
@@ -26130,7 +27286,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Forbidden - lacks events.edit permission */
+            /** @description Forbidden - not the event creator and lacks events.manage */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27789,6 +28945,69 @@ export interface operations {
             };
         };
     };
+    me_capabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Modules, commands and navigation for the signed-in user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseCapabilities"];
+                };
+            };
+            /** @description The If-None-Match ETag still matches; no body */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ensure_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member row ensured */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid Discord id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid or missing bot secret */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_notifications: {
         parameters: {
             query?: never;
@@ -28313,6 +29532,76 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_exhausted_fanout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exhausted fanout targets, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_Vec_ExhaustedTarget"];
+                };
+            };
+            /** @description Not a platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    requeue_exhausted_fanout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Fanout job id */
+                job_id: string;
+                /** @description Destination tenant id */
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Target requeued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a platform admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No exhausted target for that job and tenant */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -31535,6 +32824,36 @@ export interface operations {
             };
         };
     };
+    tenant_capabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Discord guild id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Modules and commands of the tenant, for the bot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseCapabilities"];
+                };
+            };
+            /** @description The If-None-Match ETag still matches; no body */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     tenant_status: {
         parameters: {
             query?: never;
@@ -31634,7 +32953,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Albion character is not on the guild roster */
+            /** @description No Albion character exists for the given id or name */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31956,6 +33275,15 @@ export interface operations {
             };
             /** @description Unauthorized - no active session */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - requires splits.create */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

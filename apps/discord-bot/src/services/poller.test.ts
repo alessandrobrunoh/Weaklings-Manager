@@ -1847,6 +1847,123 @@ test("a failed checkpoint seed does not persist empty cursors", async () => {
   }
 });
 
+/**
+ * A tenant whose rank does not include the battles or giveaways module (an
+ * alliance on the default rank, typically) gets 403 from those lists. Events
+ * are the only list the announcer cannot do without.
+ */
+function fullBattle(battleId: number) {
+  return {
+    battle_id: battleId,
+    start_time: "2030-01-02T00:00:00Z",
+    end_time: "2030-01-02T00:00:00Z",
+    total_players: 0,
+    total_kills: 0,
+    total_fame: 0,
+    guilds: [],
+  };
+}
+
+function modulesRefusedHarness(refused: { battles: boolean; giveaways: boolean }, sent: string[]) {
+  const base = backlogHarness([]);
+  const battles = [900, 901].map(fullBattle);
+  const api = {
+    guildId: "100000000000000002",
+    get: async (path: string, discordId?: string, params?: Record<string, string | number>) => {
+      if (path === "api/battles") {
+        if (refused.battles) throw new ApiError(403, "the battles module is not enabled for this guild");
+        return { items: battles, total_items: battles.length, total_pages: 1, current_page: 1, limit: 10 };
+      }
+      if (path === "api/giveaways" && refused.giveaways) {
+        throw new ApiError(403, "the giveaways module is not enabled for this guild");
+      }
+      return (base.api as unknown as { get: (...args: unknown[]) => Promise<unknown> }).get(
+        path,
+        discordId,
+        params,
+      );
+    },
+  } as unknown as ApiClient;
+  const channel = {
+    id: "events-channel",
+    isTextBased: () => true,
+    isDMBased: () => false,
+    send: async (payload: { content?: string; embeds?: Array<{ data?: { footer?: { text?: string } } }> }) => {
+      const battle = /Battle #(\d+)/.exec(payload.embeds?.[0]?.data?.footer?.text ?? "");
+      sent.push(battle ? `battle:${battle[1]}` : `event:${payload.content ?? ""}`);
+      return {
+        id: "message",
+        startThread: async () => ({
+          id: "thread",
+          isThread: () => true,
+          send: async () => ({ id: "signup" }),
+        }),
+      };
+    },
+  };
+  const client = { channels: { fetch: async () => channel } } as unknown as Client;
+  return { api, settings: base.settings, client, events: base.events, battles };
+}
+
+test("a tenant without the battles and giveaways modules still seeds and announces events", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const sent: string[] = [];
+    const { api, settings, client, events } = modulesRefusedHarness(
+      { battles: true, giveaways: true },
+      sent,
+    );
+    const poller = new Poller(client, api, settings, 60_000, directory);
+
+    await poller.pollNow();
+    const file = join(directory, "poller-state-100000000000000002.json");
+    assert.equal(
+      existsSync(file),
+      true,
+      "a 403 from an optional module must not keep the whole poller unseeded",
+    );
+    assert.deepEqual(sent, [], "the seed never replays the backlog");
+
+    events.push({
+      id: 14,
+      title: "Alliance mass",
+      status: "scheduled",
+      call_to_arms: false,
+      archived_at: null,
+    });
+    await poller.pollNow();
+
+    const posts: string[] = sent;
+    assert.equal(posts.length, 1);
+    assert.match(posts[0] ?? "", /^event:.*Alliance mass/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a module that becomes available later is adopted silently, then announced from there", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const sent: string[] = [];
+    const refused = { battles: true, giveaways: false };
+    const { api, settings, client, battles } = modulesRefusedHarness(refused, sent);
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    // The platform grants the module. Battles 900 and 901 already exist and
+    // belong to history, so nothing is replayed into the channel.
+    refused.battles = false;
+    await poller.pollNow();
+    assert.deepEqual(sent, []);
+
+    battles.push(fullBattle(902));
+    await poller.pollNow();
+    assert.deepEqual(sent, ["battle:902"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("an event page that is not the oldest does not skip older unannounced ids", async () => {
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {

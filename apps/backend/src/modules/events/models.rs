@@ -378,6 +378,10 @@ pub struct EventParticipantView {
     pub assigned_build_name: Option<String>,
     /// Combat specialization levels keyed by `weapon:<id>` or `armor:<id>`.
     pub specializations: std::collections::HashMap<String, i32>,
+    /// The member guild this participant signed up for. Only set on linked (alliance) events,
+    /// identically on the origin and every copy; `None` for legacy or unattributed signups and on
+    /// events that are not linked.
+    pub guild: Option<super::attribution::ParticipationGuild>,
 }
 
 /// A battle linked to an event session.
