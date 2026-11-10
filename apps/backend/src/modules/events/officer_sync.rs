@@ -247,7 +247,7 @@ async fn sync_seats_to_peer(
     }
     for (seat_key, occupant) in &wanted {
         let Some(user_id) = occupant else { continue };
-        if held(seat_key)
+        if held(&peer.db, peer_id, seat_key)
             .await?
             .is_some_and(|assignment| assignment.user_id == *user_id)
         {
