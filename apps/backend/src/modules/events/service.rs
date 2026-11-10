@@ -1667,6 +1667,8 @@ impl EventService {
                     specializations: specializations_by_user
                         .remove(&participation.user_id)
                         .unwrap_or_default(),
+                    // Attributed by the router, which owns the control-plane connection.
+                    guild: None,
                 },
             );
         }
@@ -2972,6 +2974,8 @@ impl EventService {
                 specializations: specializations_by_user
                     .remove(&p.user_id)
                     .unwrap_or_default(),
+                // Attributed by the router, which owns the control-plane connection.
+                guild: None,
             });
         }
 
