@@ -37,6 +37,7 @@ mod m20261107_000001_discord_delivery;
 mod m20261107_000001_sync_engine;
 mod m20261109_000001_auth_sessions;
 mod m20261109_000002_event_fanout_exhausted_state;
+mod m20261110_000001_event_participation_forwards;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -93,6 +94,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_000001_sync_engine::Migration),
             Box::new(m20261109_000001_auth_sessions::Migration),
             Box::new(m20261109_000002_event_fanout_exhausted_state::Migration),
+            Box::new(m20261110_000001_event_participation_forwards::Migration),
         ]
     }
 }
@@ -197,6 +199,7 @@ mod tests {
             "event_fanout_jobs",
             "event_fanout_targets",
             "event_fanout_assets",
+            "event_participation_forwards",
             "event_participant_attributions",
             "alliance_split_distribution_batches",
             "alliance_split_distribution_items",
@@ -263,6 +266,7 @@ mod tests {
             "event_fanout_jobs",
             "event_fanout_targets",
             "event_fanout_assets",
+            "event_participation_forwards",
             "event_participant_attributions",
             "alliance_split_distribution_batches",
             "alliance_split_distribution_items",

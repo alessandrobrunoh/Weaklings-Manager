@@ -19,6 +19,7 @@ use crate::{
         },
         events::{
             models::{CreateEventRequest, EventView, ParticipateEventRequest},
+            participation_outbox::{self, FailureDisposition, ForwardKey, Intent},
             service::EventService,
         },
         splits::entities::split,
@@ -442,11 +443,14 @@ async fn sync_participation_to_peer(
 /// recorded (for splits and guild credit); it never limits who sees the signup.
 ///
 /// The caller's own signup is already committed when this runs, so a copy that
-/// cannot take the change (for example a selected build that was never shared
-/// with that tenant) is logged and skipped instead of failing the whole call:
-/// reporting an error for a signup that did succeed is misleading and would
-/// also stop the remaining copies from being updated. Only failing to resolve
-/// the peers at all is returned.
+/// cannot take the change (an unavailable peer, or a selected build that was never
+/// shared with that tenant) never fails the call: the intended state is written to
+/// the `event_participation_forwards` outbox first, delivered inline, and removed on
+/// success. A delivery that fails stays there and [`process_due_forwards`] retries it
+/// with backoff until the copy takes it or its attempts are spent. Only failing to
+/// resolve the peers at all is returned.
+///
+/// Returns the copies that took the change inline, for the caller's realtime broadcast.
 pub async fn sync_participation(
     control: &DatabaseConnection,
     registry: &TenantRegistry,
@@ -462,21 +466,39 @@ pub async fn sync_participation(
     let (origin_tenant, origin_event) =
         canonical_event_origin(control, tenant_id, event_id).await?;
     let current = registry.get_or_load(tenant_id).await?;
+    let intent = Intent::from_request(request.as_ref());
     let mut synced = Vec::with_capacity(peers.len());
     for (peer_tenant, peer_id) in peers {
-        match sync_participation_to_peer(
+        let key = ForwardKey {
+            origin_tenant_id: origin_tenant.clone(),
+            origin_event_id: origin_event,
+            peer_tenant_id: peer_tenant.clone(),
+            discord_id: actor.discord_id.clone(),
+        };
+        if let Err(error) = participation_outbox::record_intent(
             control,
-            registry,
-            tenant_id,
-            &peer_tenant,
+            &key,
             peer_id,
-            actor,
-            request.as_ref(),
-            (&origin_tenant, origin_event),
+            &actor.username,
+            tenant_id,
+            &intent,
         )
         .await
         {
-            Ok(()) => synced.push((peer_tenant, peer_id)),
+            tracing::error!(
+                tenant_id = %tenant_id,
+                event_id,
+                peer_tenant = %peer_tenant,
+                peer_event_id = peer_id,
+                discord_id = %actor.discord_id,
+                %error,
+                "participation was saved but its forward could not be recorded"
+            );
+            continue;
+        }
+        match deliver_forward(control, registry, &key, actor.email.as_deref(), false).await {
+            Ok(Delivery::Delivered) => synced.push((peer_tenant, peer_id)),
+            Ok(Delivery::Failed | Delivery::Skipped) => {}
             Err(error) => tracing::error!(
                 tenant_id = %tenant_id,
                 event_id,
@@ -484,7 +506,8 @@ pub async fn sync_participation(
                 peer_event_id = peer_id,
                 discord_id = %actor.discord_id,
                 %error,
-                "participation was saved but could not be copied to the linked event"
+                "participation was saved but its forward could not be attempted; \
+                 it stays queued"
             ),
         }
     }
@@ -494,6 +517,150 @@ pub async fn sync_participation(
         .sync_event_participants(&current.db, event_id)
         .await?;
     Ok(synced)
+}
+
+/// Outcome of one delivery attempt.
+enum Delivery {
+    /// The peer took the latest intent; the entry is gone.
+    Delivered,
+    /// The attempt failed; the entry is scheduled for retry or parked.
+    Failed,
+    /// Nothing to do: the entry is gone, leased by another delivery, or not due.
+    Skipped,
+}
+
+/// Delivers the latest recorded intent for one participant on one peer.
+///
+/// Reads the intent from the outbox rather than trusting the caller, so concurrent changes
+/// to the same participant converge on the newest one. `due_only` is the retry worker's claim.
+async fn deliver_forward(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+    key: &ForwardKey,
+    actor_email: Option<&str>,
+    due_only: bool,
+) -> Result<Delivery, AppError> {
+    let Some(entry) = participation_outbox::claim_entry(control, key, due_only).await? else {
+        return Ok(Delivery::Skipped);
+    };
+    // The guild may have left the alliance since the change was queued.
+    if due_only && !peer_still_linked(control, key).await? {
+        participation_outbox::discard(control, key).await?;
+        return Ok(Delivery::Skipped);
+    }
+    let actor = ShareActor {
+        discord_id: key.discord_id.clone(),
+        username: entry.username.clone(),
+        email: actor_email.map(str::to_owned),
+    };
+    let request = match entry.intent {
+        Intent::Join {
+            primary_build_id,
+            secondary_build_id,
+        } => Some(ParticipateEventRequest {
+            primary_build_id,
+            secondary_build_id,
+        }),
+        Intent::Leave => None,
+    };
+    let result = sync_participation_to_peer(
+        control,
+        registry,
+        &entry.from_tenant_id,
+        &key.peer_tenant_id,
+        entry.peer_event_id,
+        &actor,
+        request.as_ref(),
+        (&key.origin_tenant_id, key.origin_event_id),
+    )
+    .await;
+    match result {
+        Ok(()) => {
+            participation_outbox::mark_delivered(control, &entry).await?;
+            Ok(Delivery::Delivered)
+        }
+        Err(error) => {
+            let message = error.to_string();
+            let disposition = participation_outbox::mark_failed(
+                control,
+                &entry,
+                &message,
+                crate::runtime::backoff::retry_delay_seconds,
+            )
+            .await?;
+            match disposition {
+                FailureDisposition::Retry => tracing::warn!(
+                    origin_tenant = %key.origin_tenant_id,
+                    origin_event_id = key.origin_event_id,
+                    peer_tenant = %key.peer_tenant_id,
+                    peer_event_id = entry.peer_event_id,
+                    discord_id = %key.discord_id,
+                    attempt = entry.attempts + 1,
+                    max_attempts = participation_outbox::MAX_ATTEMPTS,
+                    error = %message,
+                    "participation could not be copied to the linked event; scheduled for retry"
+                ),
+                FailureDisposition::Exhausted => tracing::error!(
+                    origin_tenant = %key.origin_tenant_id,
+                    origin_event_id = key.origin_event_id,
+                    peer_tenant = %key.peer_tenant_id,
+                    peer_event_id = entry.peer_event_id,
+                    discord_id = %key.discord_id,
+                    attempt = entry.attempts + 1,
+                    error = %message,
+                    "participation could not be copied to the linked event; attempts spent"
+                ),
+            }
+            Ok(Delivery::Failed)
+        }
+    }
+}
+
+/// Whether sync is still enabled between the origin event and the peer copy.
+async fn peer_still_linked(
+    control: &DatabaseConnection,
+    key: &ForwardKey,
+) -> Result<bool, AppError> {
+    Ok(control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT 1 FROM event_sync_links \
+             WHERE sync_enabled AND source_tenant_id = $1 AND source_event_id = $2 \
+               AND ($3 = $1 OR mirror_tenant_id = $3) LIMIT 1",
+            [
+                key.origin_tenant_id.clone().into(),
+                key.origin_event_id.into(),
+                key.peer_tenant_id.clone().into(),
+            ],
+        ))
+        .await?
+        .is_some())
+}
+
+/// Retries the participation forwards that are due. Called from the periodic fanout worker.
+///
+/// Returns how many entries were attempted.
+pub async fn process_due_forwards(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+) -> Result<usize, AppError> {
+    let keys = participation_outbox::due_keys(control, participation_outbox::MAX_FORWARDS_PER_TICK)
+        .await?;
+    let mut attempted = 0;
+    for key in keys {
+        match deliver_forward(control, registry, &key, None, true).await {
+            Ok(Delivery::Delivered | Delivery::Failed) => attempted += 1,
+            Ok(Delivery::Skipped) => {}
+            Err(error) => tracing::warn!(
+                origin_tenant = %key.origin_tenant_id,
+                origin_event_id = key.origin_event_id,
+                peer_tenant = %key.peer_tenant_id,
+                %error,
+                "participation forward retry could not run"
+            ),
+        }
+    }
+    Ok(attempted)
 }
 
 /// One signup read from a copy's roster while reconciling.
@@ -507,10 +674,10 @@ struct RosterSignup {
 const RECONCILE_GROUP_LIMIT: i64 = 200;
 
 /// Catch-up for rosters that drifted apart: a signup is copied to every linked copy that lacks
-/// it. Covers signups made before every join was forwarded to every copy, and forwards that were
-/// lost (forwarding is best-effort). It only ever adds signups, so a leave is never undone for
-/// anyone who is still on a copy's roster; a leave whose forward was lost is the one case it
-/// cannot tell apart from a missing join.
+/// it. Covers signups made before every join was forwarded to every copy. It only ever adds
+/// signups, so a leave is never undone for anyone who is still on a copy's roster. A leave whose
+/// forward has not landed yet looks exactly like a missing join, so participants with an entry in
+/// the participation outbox are skipped: the outbox owns their state until it is delivered.
 ///
 /// Only upcoming and live events are touched. Returns how many signups were added.
 pub async fn reconcile_rosters(
@@ -611,6 +778,21 @@ async fn reconcile_group(
                 {
                     continue;
                 }
+                // The rosters were read a moment ago. A leave that is queued, or that landed
+                // since, must not be undone from that stale picture: ask again right before
+                // writing.
+                if participation_outbox::is_blocked(
+                    control,
+                    origin_tenant,
+                    origin_event,
+                    &signup.discord_id,
+                )
+                .await?
+                    || !holder_still_has_signup(registry, &members[holder], &signup.discord_id)
+                        .await?
+                {
+                    continue;
+                }
                 let actor = ShareActor {
                     discord_id: signup.discord_id.clone(),
                     username: signup.username.clone(),
@@ -645,6 +827,24 @@ async fn reconcile_group(
         }
     }
     Ok(added)
+}
+
+async fn holder_still_has_signup(
+    registry: &TenantRegistry,
+    (tenant, event_id): &(String, i64),
+    discord_id: &str,
+) -> Result<bool, AppError> {
+    let context = registry.get_or_load(tenant).await?;
+    Ok(context
+        .db
+        .query_one(Statement::from_sql_and_values(
+            context.db.get_database_backend(),
+            "SELECT 1 FROM event_participations p JOIN users u ON u.id = p.user_id \
+             WHERE p.event_id = $1 AND u.discord_id = $2",
+            [(*event_id).into(), discord_id.into()],
+        ))
+        .await?
+        .is_some())
 }
 
 pub async fn canonical_event_origin(
