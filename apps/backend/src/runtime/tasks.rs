@@ -86,11 +86,33 @@ impl LoopTask for EventFanout {
         {
             tracing::warn!(error = %error, "event fanout catch-up failed");
         }
+        // Roster drift is rare and the scan reads every linked copy, so it runs on a slower cadence.
+        if roster_reconcile_due() {
+            match crate::modules::events::sync::reconcile_rosters(&cx.control, &cx.registry).await {
+                Ok(0) => {}
+                Ok(added) => tracing::info!(added, "event rosters reconciled"),
+                Err(error) => tracing::warn!(error = %error, "event roster reconcile failed"),
+            }
+        }
         crate::modules::events::fanout_worker::process_due_targets(&cx.control, &cx.registry)
             .await
             .map(|_| ())
     }
 }
+
+/// True at most once per [`ROSTER_RECONCILE_SECS`], however often the fanout loop ticks.
+fn roster_reconcile_due() -> bool {
+    use std::sync::atomic::{AtomicI64, Ordering};
+    static LAST: AtomicI64 = AtomicI64::new(0);
+    let now = chrono::Utc::now().timestamp();
+    let last = LAST.load(Ordering::Relaxed);
+    now - last >= ROSTER_RECONCILE_SECS
+        && LAST
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+}
+
+const ROSTER_RECONCILE_SECS: i64 = 300;
 
 /// Retry queue of alliance event mirrors.
 struct EventMirrorRetry;

@@ -419,9 +419,15 @@ async fn sync_participation_to_peer(
             .participate_with_roster_version(&peer.db, peer_id, peer_user, mapped)
             .await?;
     } else {
-        service
+        // Leaving a copy where the user never signed up (a roster that diverged
+        // before every signup was forwarded everywhere) is already the wanted state.
+        match service
             .cancel_participation(&peer.db, peer_id, peer_user)
-            .await?;
+            .await
+        {
+            Ok(_) | Err(AppError::NotFound(_)) => {}
+            Err(error) => return Err(error),
+        }
     }
     crate::modules::splits::service::SplitService::new()
         .sync_event_participants(&peer.db, peer_id)
@@ -429,12 +435,11 @@ async fn sync_participation_to_peer(
     Ok(())
 }
 
-/// Fan out a self-service participation mutation to the linked event.
+/// Fan out a self-service participation mutation to every other copy of the event.
 ///
-/// The mutation reaches the canonical event, every non-guild copy (such as an
-/// alliance mirror of a guild event), and — when a guild attribution is known —
-/// only the copy in the attributed guild. Legacy joins recorded before
-/// attribution existed keep the previous propagate-to-all-peers behavior.
+/// The roster is one roster: the mutation reaches the canonical event and every
+/// copy, whichever guild the participant is attributed to. Attribution is only
+/// recorded (for splits and guild credit); it never limits who sees the signup.
 ///
 /// The caller's own signup is already committed when this runs, so a copy that
 /// cannot take the change (for example a selected build that was never shared
@@ -449,7 +454,6 @@ pub async fn sync_participation(
     event_id: i64,
     actor: &ShareActor,
     request: Option<ParticipateEventRequest>,
-    attributed_guild: Option<&str>,
 ) -> Result<Vec<(String, i64)>, AppError> {
     let peers = linked_event_peers(control, tenant_id, event_id).await?;
     if peers.is_empty() {
@@ -457,29 +461,6 @@ pub async fn sync_participation(
     }
     let (origin_tenant, origin_event) =
         canonical_event_origin(control, tenant_id, event_id).await?;
-    let attribution = if let Some(guild) = attributed_guild {
-        Some(guild.to_owned())
-    } else {
-        let stored = crate::modules::events::attribution::stored_attribution(
-            control,
-            &origin_tenant,
-            origin_event,
-            &actor.discord_id,
-        )
-        .await?;
-        if stored.is_none() && request.is_some() {
-            // Joins must always carry a resolved attribution; without one
-            // (for example a guild-tenant join of an unlinked-local event)
-            // fall back to the caller's tenant.
-            Some(tenant_id.to_owned())
-        } else {
-            stored
-        }
-    };
-    let peers = filter_peers_by_attribution(control, peers, attribution.as_deref()).await?;
-    if peers.is_empty() {
-        return Ok(Vec::new());
-    }
     let current = registry.get_or_load(tenant_id).await?;
     let mut synced = Vec::with_capacity(peers.len());
     for (peer_tenant, peer_id) in peers {
@@ -515,6 +496,157 @@ pub async fn sync_participation(
     Ok(synced)
 }
 
+/// One signup read from a copy's roster while reconciling.
+struct RosterSignup {
+    discord_id: String,
+    username: String,
+    primary_build_id: Option<i64>,
+    secondary_build_id: Option<i64>,
+}
+
+const RECONCILE_GROUP_LIMIT: i64 = 200;
+
+/// Catch-up for rosters that drifted apart: a signup is copied to every linked copy that lacks
+/// it. Covers signups made before every join was forwarded to every copy, and forwards that were
+/// lost (forwarding is best-effort). It only ever adds signups, so a leave is never undone for
+/// anyone who is still on a copy's roster; a leave whose forward was lost is the one case it
+/// cannot tell apart from a missing join.
+///
+/// Only upcoming and live events are touched. Returns how many signups were added.
+pub async fn reconcile_rosters(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+) -> Result<usize, AppError> {
+    let groups = control
+        .query_all(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT source_tenant_id, source_event_id FROM event_sync_links \
+             WHERE sync_enabled GROUP BY source_tenant_id, source_event_id \
+             HAVING COUNT(*) > 0 \
+             ORDER BY source_event_id DESC LIMIT $1",
+            [RECONCILE_GROUP_LIMIT.into()],
+        ))
+        .await?;
+    let mut added = 0;
+    for group in groups {
+        let origin_tenant: String = group.try_get_by_index(0)?;
+        let origin_event: i64 = group.try_get_by_index(1)?;
+        match reconcile_group(control, registry, &origin_tenant, origin_event).await {
+            Ok(count) => added += count,
+            Err(error) => tracing::warn!(
+                origin_tenant,
+                origin_event,
+                %error,
+                "roster reconcile skipped an event"
+            ),
+        }
+    }
+    Ok(added)
+}
+
+async fn reconcile_group(
+    control: &DatabaseConnection,
+    registry: &TenantRegistry,
+    origin_tenant: &str,
+    origin_event: i64,
+) -> Result<usize, AppError> {
+    let mut members = vec![(origin_tenant.to_owned(), origin_event)];
+    members.extend(linked_event_peers(control, origin_tenant, origin_event).await?);
+    if members.len() < 2 {
+        return Ok(0);
+    }
+    let mut rosters = Vec::with_capacity(members.len());
+    for (tenant, event_id) in &members {
+        let context = registry.get_or_load(tenant).await?;
+        let state = context
+            .db
+            .query_one(Statement::from_sql_and_values(
+                context.db.get_database_backend(),
+                "SELECT status, archived_at IS NULL FROM events WHERE id = $1",
+                [(*event_id).into()],
+            ))
+            .await?;
+        let Some(state) = state else { return Ok(0) };
+        let status: String = state.try_get_by_index(0)?;
+        let open: bool = state.try_get_by_index(1)?;
+        if !open || !matches!(status.as_str(), "scheduled" | "live") {
+            return Ok(0);
+        }
+        let signups = context
+            .db
+            .query_all(Statement::from_sql_and_values(
+                context.db.get_database_backend(),
+                "SELECT u.discord_id, u.username, p.primary_build_id, p.secondary_build_id \
+                 FROM event_participations p JOIN users u ON u.id = p.user_id \
+                 WHERE p.event_id = $1 AND u.discord_id IS NOT NULL \
+                 ORDER BY p.created_at, p.id",
+                [(*event_id).into()],
+            ))
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(RosterSignup {
+                    discord_id: row.try_get_by_index(0)?,
+                    username: row.try_get_by_index(1)?,
+                    primary_build_id: row.try_get_by_index(2)?,
+                    secondary_build_id: row.try_get_by_index(3)?,
+                })
+            })
+            .collect::<Result<Vec<_>, sea_orm::DbErr>>()?;
+        rosters.push(signups);
+    }
+
+    let mut added = 0;
+    for (holder, signups) in rosters.iter().enumerate() {
+        for signup in signups {
+            for (target, (peer_tenant, peer_id)) in members.iter().enumerate() {
+                if target == holder
+                    || rosters[target]
+                        .iter()
+                        .any(|other| other.discord_id == signup.discord_id)
+                    // Another holder earlier in the list is already copying this signup.
+                    || rosters[..holder]
+                        .iter()
+                        .any(|r| r.iter().any(|other| other.discord_id == signup.discord_id))
+                {
+                    continue;
+                }
+                let actor = ShareActor {
+                    discord_id: signup.discord_id.clone(),
+                    username: signup.username.clone(),
+                    email: None,
+                };
+                let request = ParticipateEventRequest {
+                    primary_build_id: signup.primary_build_id,
+                    secondary_build_id: signup.secondary_build_id,
+                };
+                match sync_participation_to_peer(
+                    control,
+                    registry,
+                    &members[holder].0,
+                    peer_tenant,
+                    *peer_id,
+                    &actor,
+                    Some(&request),
+                    (origin_tenant, origin_event),
+                )
+                .await
+                {
+                    Ok(()) => added += 1,
+                    Err(error) => tracing::warn!(
+                        peer_tenant = %peer_tenant,
+                        peer_event_id = peer_id,
+                        discord_id = %signup.discord_id,
+                        %error,
+                        "roster reconcile could not add a signup"
+                    ),
+                }
+            }
+        }
+    }
+    Ok(added)
+}
+
 pub async fn canonical_event_origin(
     control: &DatabaseConnection,
     tenant_id: &str,
@@ -534,27 +666,32 @@ pub async fn canonical_event_origin(
     }
 }
 
-/// Keeps the canonical event and non-guild copies, plus only the attributed
-/// guild's copy among guild copies.
-async fn filter_peers_by_attribution(
+async fn fanout_asset_id(
     control: &DatabaseConnection,
-    peers: Vec<(String, i64)>,
-    attribution: Option<&str>,
-) -> Result<Vec<(String, i64)>, AppError> {
-    let Some(guild) = attribution else {
-        return Ok(peers);
-    };
-    let mut kept = Vec::with_capacity(peers.len());
-    for (peer_tenant, peer_id) in peers {
-        let kind = crate::modules::events::attribution::tenant_kind(control, &peer_tenant).await?;
-        if kind != "guild" || peer_tenant == guild {
-            kept.push((peer_tenant, peer_id));
-        }
-    }
-    Ok(kept)
+    sql: &str,
+    origin_tenant: &str,
+    origin_event: i64,
+    tenant: &str,
+    build_id: i64,
+) -> Result<Option<i64>, AppError> {
+    control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            sql,
+            [
+                origin_tenant.into(),
+                origin_event.into(),
+                tenant.into(),
+                build_id.into(),
+            ],
+        ))
+        .await?
+        .map(|row| row.try_get_by_index::<i64>(0))
+        .transpose()
+        .map_err(AppError::Database)
 }
 
-async fn map_build(
+pub(super) async fn map_build(
     control: &DatabaseConnection,
     from_tenant: &str,
     to_tenant: &str,
@@ -568,44 +705,43 @@ async fn map_build(
     if from_tenant == to_tenant {
         return Ok(Some(build_id));
     }
-    let event_copy_mapping = if from_tenant == origin_tenant {
-        control
-            .query_one(Statement::from_sql_and_values(
-                control.get_database_backend(),
+    // Copies are linked through the origin's builds: translate to the origin's id first
+    // (a copy-to-copy hop for sibling guilds), then on to the destination tenant.
+    let origin_build = if from_tenant == origin_tenant {
+        Some(build_id)
+    } else {
+        fanout_asset_id(
+            control,
+            "SELECT a.source_id FROM event_fanout_assets a \
+             JOIN event_fanout_jobs j ON j.id=a.job_id \
+             WHERE j.source_tenant_id=$1 AND j.source_event_id=$2 \
+               AND a.tenant_id=$3 AND a.asset_type='build' AND a.destination_id=$4 \
+             ORDER BY j.created_at DESC LIMIT 1",
+            origin_tenant,
+            origin_event,
+            from_tenant,
+            build_id,
+        )
+        .await?
+    };
+    let event_copy_mapping = match origin_build {
+        Some(origin_build) if to_tenant == origin_tenant => Some(origin_build),
+        Some(origin_build) => {
+            fanout_asset_id(
+                control,
                 "SELECT a.destination_id FROM event_fanout_assets a \
                  JOIN event_fanout_jobs j ON j.id=a.job_id \
                  WHERE j.source_tenant_id=$1 AND j.source_event_id=$2 \
                    AND a.tenant_id=$3 AND a.asset_type='build' AND a.source_id=$4 \
                  ORDER BY j.created_at DESC LIMIT 1",
-                [
-                    origin_tenant.into(),
-                    origin_event.into(),
-                    to_tenant.into(),
-                    build_id.into(),
-                ],
-            ))
+                origin_tenant,
+                origin_event,
+                to_tenant,
+                origin_build,
+            )
             .await?
-            .map(|row| row.try_get_by_index::<i64>(0))
-            .transpose()?
-    } else {
-        control
-            .query_one(Statement::from_sql_and_values(
-                control.get_database_backend(),
-                "SELECT a.source_id FROM event_fanout_assets a \
-                 JOIN event_fanout_jobs j ON j.id=a.job_id \
-                 WHERE j.source_tenant_id=$1 AND j.source_event_id=$2 \
-                   AND a.tenant_id=$3 AND a.asset_type='build' AND a.destination_id=$4 \
-                 ORDER BY j.created_at DESC LIMIT 1",
-                [
-                    origin_tenant.into(),
-                    origin_event.into(),
-                    from_tenant.into(),
-                    build_id.into(),
-                ],
-            ))
-            .await?
-            .map(|row| row.try_get_by_index::<i64>(0))
-            .transpose()?
+        }
+        None => None,
     };
     if let Some(mapped_id) = event_copy_mapping {
         return Ok(Some(mapped_id));

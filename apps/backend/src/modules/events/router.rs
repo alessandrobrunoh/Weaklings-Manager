@@ -1756,7 +1756,7 @@ async fn participate(
     let request_for_sync = req.clone();
     // Resolve and persist guild attribution before touching any roster so an
     // invalid or ambiguous choice cannot leave a partial signup behind.
-    let attributed_guild = resolve_join_attribution(
+    resolve_join_attribution(
         &control.0,
         &tenant.0,
         id,
@@ -1778,7 +1778,6 @@ async fn participate(
             email: user.email.clone(),
         },
         Some(request_for_sync),
-        Some(&attributed_guild),
     )
     .await
     {
@@ -1833,7 +1832,6 @@ async fn cancel_participation(
             username: user.username.clone(),
             email: user.email.clone(),
         },
-        None,
         None,
     )
     .await

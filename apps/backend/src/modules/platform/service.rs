@@ -3426,7 +3426,6 @@ mod tests {
                 email: None,
             },
             None,
-            None,
         )
         .await
         .expect("disabled sync link does not fan out");
@@ -3687,7 +3686,6 @@ mod tests {
                 username: "user".into(),
                 email: None,
             },
-            None,
             None,
         )
         .await

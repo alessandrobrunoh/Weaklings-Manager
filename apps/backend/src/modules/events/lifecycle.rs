@@ -1425,7 +1425,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn alliance_join_attributed_to_one_guild_copy_and_leave_from_any_copy() {
+    async fn alliance_join_reaches_every_guild_copy_and_leave_from_any_copy() {
         let Some(world) = TestWorld::new().await else {
             return;
         };
@@ -1485,12 +1485,17 @@ mod tests {
             source.id,
             &actor("discord-7"),
             Some(request),
-            Some(&attributed),
         )
         .await
-        .expect("attributed fanout");
+        .expect("fanout");
         // The caller broadcasts a roster change for exactly these copies.
-        assert_eq!(synced, vec![(attributed.clone(), copy_b.id)]);
+        assert_eq!(
+            synced,
+            vec![
+                ("guild-a".to_owned(), copy_a.id),
+                ("guild-b".to_owned(), copy_b.id)
+            ]
+        );
 
         assert_eq!(participation_count(alliance_db, source.id).await, 1);
         assert_eq!(
@@ -1500,8 +1505,8 @@ mod tests {
         );
         assert_eq!(
             participation_count(&world.tenant_dbs[1], copy_a.id).await,
-            0,
-            "sibling guild copy must not receive the signup"
+            1,
+            "the sibling guild copy shows the same roster"
         );
 
         // Leave from the attributed guild copy removes the canonical signup too.
@@ -1526,7 +1531,6 @@ mod tests {
             copy_b.id,
             &actor("discord-7"),
             None,
-            None,
         )
         .await
         .expect("leave fanout");
@@ -1543,7 +1547,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guild_tenant_join_attributes_to_itself_and_skips_sibling_guilds() {
+    async fn guild_tenant_join_attributes_to_itself_and_reaches_sibling_guilds() {
         let Some(world) = TestWorld::new().await else {
             return;
         };
@@ -1588,7 +1592,6 @@ mod tests {
             copy_a.id,
             &actor("discord-9"),
             Some(request),
-            Some(&attributed),
         )
         .await
         .expect("guild join fanout");
@@ -1601,9 +1604,164 @@ mod tests {
         );
         assert_eq!(
             participation_count(&world.tenant_dbs[2], copy_b.id).await,
-            0,
-            "sibling guild copy must not receive the signup"
+            1,
+            "the sibling guild copy shows the same roster"
         );
+
+        // Leaving from the sibling copy clears it everywhere, and a copy the
+        // user never joined (diverged roster) is not an error.
+        let guild_b_user = upsert_discord_user(
+            &world.tenant_dbs[2],
+            "discord-9",
+            "Member",
+            "discord-9@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("guild-b user");
+        EventService::new()
+            .cancel_participation(&world.tenant_dbs[2], copy_b.id, guild_b_user)
+            .await
+            .expect("leave sibling copy");
+        // Simulate a roster that diverged before this fix: the origin has no signup.
+        EventService::new()
+            .cancel_participation(
+                &world.tenant_dbs[0],
+                source.id,
+                upsert_discord_user(
+                    &world.tenant_dbs[0],
+                    "discord-9",
+                    "Member",
+                    "discord-9@example.invalid",
+                    "User",
+                    false,
+                )
+                .await
+                .expect("alliance user"),
+            )
+            .await
+            .expect("diverge the origin");
+        let synced = sync_participation(
+            &world.control,
+            &world.registry,
+            "guild-b",
+            copy_b.id,
+            &actor("discord-9"),
+            None,
+        )
+        .await
+        .expect("leave fanout");
+        assert_eq!(
+            synced.len(),
+            2,
+            "peers lacking the signup still count as synced"
+        );
+        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 0);
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn the_reconcile_sweep_gives_every_copy_a_signup_it_missed_exactly_once() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Diverged roster").await;
+        let copy_a = world.guild_copy(1, source.id).await;
+        let copy_b = world.guild_copy(2, source.id).await;
+
+        // A signup that was only ever saved on guild A's copy.
+        let guild_a_db = &world.tenant_dbs[1];
+        let user_id = upsert_discord_user(
+            guild_a_db,
+            "discord-11",
+            "Early bird",
+            "discord-11@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("guild-a user");
+        EventService::new()
+            .participate_with_roster_version(
+                guild_a_db,
+                copy_a.id,
+                user_id,
+                ParticipateEventRequest {
+                    primary_build_id: None,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("local signup");
+
+        let added = super::super::sync::reconcile_rosters(&world.control, &world.registry)
+            .await
+            .expect("sweep");
+        assert_eq!(added, 2, "the origin and the sibling copy each gain it");
+        assert_eq!(
+            participation_count(&world.tenant_dbs[0], source.id).await,
+            1
+        );
+        assert_eq!(
+            participation_count(&world.tenant_dbs[2], copy_b.id).await,
+            1
+        );
+        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 1);
+
+        let again = super::super::sync::reconcile_rosters(&world.control, &world.registry)
+            .await
+            .expect("second sweep");
+        assert_eq!(again, 0, "nothing is written once the rosters agree");
+        world.close().await;
+    }
+
+    /// A build picked on one guild's copy must resolve to the sibling guild's own build, not to
+    /// the origin's id.
+    #[tokio::test]
+    async fn builds_map_between_sibling_copies_through_the_origin() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Sibling builds").await;
+        let job_id: uuid::Uuid = world
+            .control
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT id FROM event_fanout_jobs WHERE source_event_id = $1 LIMIT 1",
+                [source.id.into()],
+            ))
+            .await
+            .expect("job")
+            .expect("job row")
+            .try_get_by_index(0)
+            .expect("job id");
+        for (tenant, destination) in [("guild-a", 110_i64), ("guild-b", 210_i64)] {
+            world
+                .control
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO event_fanout_assets \
+                     (job_id, tenant_id, asset_type, source_id, destination_id) \
+                     VALUES ($1,$2,'build',10,$3)",
+                    [job_id.into(), tenant.into(), destination.into()],
+                ))
+                .await
+                .expect("asset");
+        }
+        let map = |from: &'static str, to: &'static str, id: i64| {
+            let control = &world.control;
+            let origin = source.id;
+            async move {
+                super::super::sync::map_build(control, from, to, Some(id), "alliance", origin)
+                    .await
+                    .expect("map")
+            }
+        };
+        assert_eq!(map("guild-a", "guild-b", 110).await, Some(210));
+        assert_eq!(map("guild-b", "guild-a", 210).await, Some(110));
+        assert_eq!(map("guild-a", "alliance", 110).await, Some(10));
+        assert_eq!(map("alliance", "guild-b", 10).await, Some(210));
         world.close().await;
     }
 
@@ -1630,7 +1788,6 @@ mod tests {
             copy_a.id,
             &actor("discord-9"),
             Some(unshared_build),
-            Some("guild-a"),
         )
         .await
         .expect("a copy that cannot map the build is skipped, not an error");
