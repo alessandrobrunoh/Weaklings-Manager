@@ -94,6 +94,12 @@ impl LoopTask for EventFanout {
                 Err(error) => tracing::warn!(error = %error, "event roster reconcile failed"),
             }
         }
+        // Participation changes whose forward to a linked copy failed, retried with backoff.
+        if let Err(error) =
+            crate::modules::events::sync::process_due_forwards(&cx.control, &cx.registry).await
+        {
+            tracing::warn!(error = %error, "participation forward retry failed");
+        }
         crate::modules::events::fanout_worker::process_due_targets(&cx.control, &cx.registry)
             .await
             .map(|_| ())

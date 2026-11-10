@@ -831,8 +831,9 @@ mod tests {
     use crate::modules::events::{
         fanout_outbox::{self, Operation},
         models::{CreateEventRequest, ParticipateEventRequest},
+        participation_outbox,
         service::EventService,
-        sync::sync_participation,
+        sync::{process_due_forwards, sync_participation},
     };
     use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable};
     use crate::modules::users::identity::upsert_discord_user;
@@ -1765,6 +1766,367 @@ mod tests {
         world.close().await;
     }
 
+    /// Archiving a copy makes it refuse every roster change, which is how these tests make one
+    /// peer unavailable and then fix it.
+    async fn set_copy_archived(db: &DatabaseConnection, event_id: i64, archived: bool) {
+        db.execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            if archived {
+                "UPDATE events SET archived_at = NOW() WHERE id = $1"
+            } else {
+                "UPDATE events SET archived_at = NULL WHERE id = $1"
+            },
+            [event_id.into()],
+        ))
+        .await
+        .expect("toggle archived copy");
+    }
+
+    async fn make_forwards_due(world: &TestWorld) {
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE event_participation_forwards \
+                 SET next_attempt_at = NOW() - INTERVAL '1 second'",
+                [],
+            ))
+            .await
+            .expect("make forwards due");
+    }
+
+    /// Saves the alliance-side change, then forwards it, like the route handlers do.
+    async fn change_participation_on_alliance(
+        world: &TestWorld,
+        event_id: i64,
+        discord_id: &str,
+        join: bool,
+    ) -> Vec<(String, i64)> {
+        let alliance_db = &world.tenant_dbs[0];
+        let user_id = upsert_discord_user(
+            alliance_db,
+            discord_id,
+            "Participant",
+            &format!("{discord_id}@example.invalid"),
+            "User",
+            false,
+        )
+        .await
+        .expect("alliance user");
+        let request = ParticipateEventRequest {
+            primary_build_id: None,
+            secondary_build_id: None,
+        };
+        let forwarded = if join {
+            EventService::new()
+                .participate_with_roster_version(alliance_db, event_id, user_id, request.clone())
+                .await
+                .expect("join canonical event");
+            Some(request)
+        } else {
+            EventService::new()
+                .cancel_participation(alliance_db, event_id, user_id)
+                .await
+                .expect("leave canonical event");
+            None
+        };
+        sync_participation(
+            &world.control,
+            &world.registry,
+            "alliance",
+            event_id,
+            &actor(discord_id),
+            forwarded,
+        )
+        .await
+        .expect("forward")
+    }
+
+    #[tokio::test]
+    async fn a_forward_that_fails_is_retried_and_delivered_exactly_once() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Retried join").await;
+        let copy_a = world.guild_copy(1, source.id).await;
+        let copy_b = world.guild_copy(2, source.id).await;
+        let guild_b_db = &world.tenant_dbs[2];
+
+        set_copy_archived(guild_b_db, copy_b.id, true).await;
+        let synced = change_participation_on_alliance(&world, source.id, "discord-21", true).await;
+        assert_eq!(
+            synced,
+            vec![("guild-a".to_owned(), copy_a.id)],
+            "the fast path stays synchronous for the copies that took the change"
+        );
+        assert_eq!(
+            participation_count(&world.tenant_dbs[1], copy_a.id).await,
+            1
+        );
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
+        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            queued.len(),
+            1,
+            "only the failed copy is queued: {queued:?}"
+        );
+        assert_eq!(queued[0].peer_tenant_id, "guild-b");
+        assert_eq!(queued[0].operation, "join");
+        assert_eq!(queued[0].state, "failed");
+        assert_eq!(queued[0].attempts, 1);
+        assert!(queued[0].last_error.is_some());
+
+        // Not due yet: backoff holds the retry back.
+        assert_eq!(
+            process_due_forwards(&world.control, &world.registry)
+                .await
+                .unwrap(),
+            0
+        );
+
+        // Still failing: another attempt is spent, nothing is delivered.
+        make_forwards_due(&world).await;
+        assert_eq!(
+            process_due_forwards(&world.control, &world.registry)
+                .await
+                .unwrap(),
+            1
+        );
+        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
+            .await
+            .unwrap();
+        assert_eq!(queued[0].attempts, 2);
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
+
+        // The peer is fixed: the next retry delivers once and clears the entry.
+        set_copy_archived(guild_b_db, copy_b.id, false).await;
+        make_forwards_due(&world).await;
+        assert_eq!(
+            process_due_forwards(&world.control, &world.registry)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
+        assert!(
+            participation_outbox::statuses(&world.control, "alliance", source.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        make_forwards_due(&world).await;
+        assert_eq!(
+            process_due_forwards(&world.control, &world.registry)
+                .await
+                .unwrap(),
+            0,
+            "a delivered entry is never replayed"
+        );
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
+        assert_eq!(
+            participation_count(&world.tenant_dbs[0], source.id).await,
+            1
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_lost_leave_converges_and_the_sweep_does_not_resurrect_the_user() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Lost leave").await;
+        let copy_a = world.guild_copy(1, source.id).await;
+        let copy_b = world.guild_copy(2, source.id).await;
+        let guild_a_db = &world.tenant_dbs[1];
+        let guild_b_db = &world.tenant_dbs[2];
+
+        let synced = change_participation_on_alliance(&world, source.id, "discord-22", true).await;
+        assert_eq!(synced.len(), 2);
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
+
+        // The user leaves while guild B's copy cannot take the change.
+        set_copy_archived(guild_b_db, copy_b.id, true).await;
+        let synced = change_participation_on_alliance(&world, source.id, "discord-22", false).await;
+        assert_eq!(synced, vec![("guild-a".to_owned(), copy_a.id)]);
+        assert_eq!(
+            participation_count(&world.tenant_dbs[0], source.id).await,
+            0
+        );
+        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 0);
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
+
+        // Guild B is reachable again but the retry has not run: the sweep sees a signup that
+        // only guild B holds and must leave it alone instead of copying it back.
+        set_copy_archived(guild_b_db, copy_b.id, false).await;
+        let added = super::super::sync::reconcile_rosters(&world.control, &world.registry)
+            .await
+            .expect("sweep");
+        assert_eq!(added, 0, "a queued leave is not undone by the sweep");
+        assert_eq!(
+            participation_count(&world.tenant_dbs[0], source.id).await,
+            0
+        );
+        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 0);
+
+        make_forwards_due(&world).await;
+        process_due_forwards(&world.control, &world.registry)
+            .await
+            .unwrap();
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
+        assert!(
+            participation_outbox::statuses(&world.control, "alliance", source.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let added = super::super::sync::reconcile_rosters(&world.control, &world.registry)
+            .await
+            .expect("sweep after convergence");
+        assert_eq!(added, 0);
+        for (db, event_id) in [
+            (&world.tenant_dbs[0], source.id),
+            (guild_a_db, copy_a.id),
+            (guild_b_db, copy_b.id),
+        ] {
+            assert_eq!(participation_count(db, event_id).await, 0);
+        }
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn the_latest_intent_replaces_a_queued_one() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Join then leave").await;
+        let copy_b = world.guild_copy(2, source.id).await;
+        let guild_b_db = &world.tenant_dbs[2];
+
+        set_copy_archived(guild_b_db, copy_b.id, true).await;
+        change_participation_on_alliance(&world, source.id, "discord-23", true).await;
+        change_participation_on_alliance(&world, source.id, "discord-23", false).await;
+        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
+            .await
+            .unwrap();
+        assert_eq!(queued.len(), 1, "one entry per participant and peer");
+        assert_eq!(queued[0].operation, "leave");
+        assert_eq!(queued[0].attempts, 1, "a new intent re-arms the attempts");
+
+        set_copy_archived(guild_b_db, copy_b.id, false).await;
+        make_forwards_due(&world).await;
+        process_due_forwards(&world.control, &world.registry)
+            .await
+            .unwrap();
+        assert_eq!(
+            participation_count(guild_b_db, copy_b.id).await,
+            0,
+            "the queued join never lands after the leave"
+        );
+        assert!(
+            participation_outbox::statuses(&world.control, "alliance", source.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn forward_attempts_are_capped_and_a_new_change_rearms_them() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Capped forward").await;
+        let copy_b = world.guild_copy(2, source.id).await;
+        let guild_b_db = &world.tenant_dbs[2];
+
+        set_copy_archived(guild_b_db, copy_b.id, true).await;
+        change_participation_on_alliance(&world, source.id, "discord-24", true).await;
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE event_participation_forwards SET attempts = $1",
+                [(participation_outbox::MAX_ATTEMPTS - 1).into()],
+            ))
+            .await
+            .unwrap();
+        make_forwards_due(&world).await;
+        assert_eq!(
+            process_due_forwards(&world.control, &world.registry)
+                .await
+                .unwrap(),
+            1
+        );
+        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
+            .await
+            .unwrap();
+        assert_eq!(queued[0].state, "exhausted");
+        assert_eq!(queued[0].attempts, participation_outbox::MAX_ATTEMPTS);
+
+        // An exhausted entry is parked: the peer recovering does not revive it by itself.
+        set_copy_archived(guild_b_db, copy_b.id, false).await;
+        make_forwards_due(&world).await;
+        assert_eq!(
+            process_due_forwards(&world.control, &world.registry)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
+
+        // A fresh change from the user re-arms the entry and, the peer being healthy, lands.
+        let synced = change_participation_on_alliance(&world, source.id, "discord-24", true).await;
+        assert_eq!(synced.len(), 2);
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
+        assert!(
+            participation_outbox::statuses(&world.control, "alliance", source.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        world.close().await;
+    }
+
+    /// A guild that left the alliance no longer takes forwards; its queued entry is dropped.
+    #[tokio::test]
+    async fn a_queued_forward_to_a_guild_that_left_is_dropped() {
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Departed peer").await;
+        let copy_b = world.guild_copy(2, source.id).await;
+        let guild_b_db = &world.tenant_dbs[2];
+
+        set_copy_archived(guild_b_db, copy_b.id, true).await;
+        change_participation_on_alliance(&world, source.id, "discord-25", true).await;
+        world
+            .control
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "UPDATE event_sync_links SET sync_enabled = false WHERE mirror_tenant_id = 'guild-b'",
+                [],
+            ))
+            .await
+            .unwrap();
+        set_copy_archived(guild_b_db, copy_b.id, false).await;
+        make_forwards_due(&world).await;
+        process_due_forwards(&world.control, &world.registry)
+            .await
+            .unwrap();
+        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
+        assert!(
+            participation_outbox::statuses(&world.control, "alliance", source.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        world.close().await;
+    }
+
     /// A selected build that was never shared with the linked tenant cannot be mapped there. The
     /// caller's own signup is already saved by then, so the sync must log and skip that copy
     /// instead of failing the call (the route used to answer with an error for a signup that had
@@ -1796,6 +2158,17 @@ mod tests {
             participation_count(&world.tenant_dbs[0], source.id).await,
             0,
             "the copy that could not take the build is left untouched"
+        );
+        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            queued
+                .iter()
+                .map(|entry| entry.peer_tenant_id.as_str())
+                .collect::<Vec<_>>(),
+            ["alliance", "guild-b"],
+            "each copy that could not take the signup is queued for retry"
         );
         world.close().await;
     }
