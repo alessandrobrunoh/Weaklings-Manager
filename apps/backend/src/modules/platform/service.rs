@@ -2596,6 +2596,122 @@ mod tests {
         drop_schema(&admin, &schema).await.expect("drop");
     }
 
+    /// The bot polls three lists for every tenant it serves: events, battles
+    /// and giveaways. An alliance created with the default rank holds only the
+    /// features that rank grants, so the module endpoints it was never granted
+    /// answer 403 - and the bot has to cope with that, because events work.
+    #[tokio::test]
+    async fn bot_reads_an_alliance_events_but_is_refused_modules_its_rank_lacks() {
+        use axum::body::Body;
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_bal");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+        let registry = TenantRegistry::new(url, control.clone());
+
+        let free = PlatformService::create_rank(
+            &control,
+            CreateRankRequest {
+                name: "Free".into(),
+                description: None,
+            },
+        )
+        .await
+        .expect("free");
+        PlatformService::put_rank_features(
+            &control,
+            &registry,
+            &free.id,
+            PutRankFeaturesRequest {
+                keys: vec!["events".into()],
+            },
+            "admin",
+        )
+        .await
+        .expect("free features");
+        PlatformService::patch_rank(
+            &control,
+            &free.id,
+            PatchRankRequest {
+                is_default: Some(true),
+                ..PatchRankRequest::default()
+            },
+        )
+        .await
+        .expect("mark default");
+
+        let id = unique_schema("alid");
+        let alliance = PlatformService::create_tenant_of_kind(
+            &control,
+            &registry,
+            CreateTenantRequest {
+                id: id.clone(),
+                name: "The Alliance".into(),
+                slug: None,
+                albion_guild_id: None,
+                albion_api_region: None,
+            },
+            "registrar-9",
+            "alliance",
+        )
+        .await
+        .expect("create alliance");
+        assert_eq!(alliance.kind, "alliance");
+
+        let mut cfg = crate::config::Config::for_tests();
+        cfg.bot_api_secret = Some("s3cret".to_owned());
+        let status_of = |path: &'static str| {
+            let app = axum::Router::new()
+                .route(path, get(|| async { "ok" }))
+                .layer(axum::middleware::from_fn_with_state(
+                    registry.clone(),
+                    crate::tenant::resolve_tenant,
+                ))
+                .layer(axum::Extension(crate::tenant::ControlDb(control.clone())))
+                .layer(axum::Extension(cfg.clone()));
+            let request = axum::http::Request::builder()
+                .uri(path)
+                .header(crate::tenant::BOT_SECRET_HEADER, "s3cret")
+                .header("X-Guild-Id", id.as_str())
+                .body(Body::empty())
+                .expect("request");
+            async move {
+                app.oneshot(request)
+                    .await
+                    .expect("router responds")
+                    .status()
+            }
+        };
+
+        assert_eq!(status_of("/api/events").await, axum::http::StatusCode::OK);
+        assert_eq!(
+            status_of("/api/admin/settings").await,
+            axum::http::StatusCode::OK
+        );
+        // Not granted by the rank: the bot must treat these as "module absent".
+        assert_eq!(
+            status_of("/api/battles").await,
+            axum::http::StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status_of("/api/giveaways").await,
+            axum::http::StatusCode::FORBIDDEN
+        );
+
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop tenant schema");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
     #[tokio::test]
     async fn marking_a_rank_default_clears_the_previous_holder() {
         let Some((url, admin)) = try_admin_db().await else {
