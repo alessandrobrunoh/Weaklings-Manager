@@ -13906,6 +13906,17 @@
               "null"
             ]
           },
+          "guild": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ParticipationGuild",
+                "description": "The member guild this participant signed up for. Only set on linked (alliance) events,\nidentically on the origin and every copy; `None` for legacy or unattributed signups and on\nevents that are not linked."
+              }
+            ]
+          },
           "primary_build_id": {
             "description": "The primary build ID chosen by the participant, or `None` for the unlimited `Fill` role.",
             "example": 5,
