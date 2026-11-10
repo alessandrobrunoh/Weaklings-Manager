@@ -696,7 +696,18 @@ pub async fn converge_copy_to_source(
     let copy_archived = copy.archived_at.is_some();
     let requeue_deleted_vod =
         source.vod_forum_post_enabled && copy.vod_forum_post_status == "deleted";
+    // A schedule moved into the future re-arms the mass notice and the reminder on the origin;
+    // the copy must follow or its Discord server never announces the postponed event again.
+    let rescheduled = (copy.mass_time_utc != source.mass_time_utc
+        || copy.start_time_utc != source.start_time_utc)
+        && source
+            .start_time_utc
+            .is_some_and(|start| start.to_utc() > chrono::Utc::now());
     let mut active: event::ActiveModel = copy.into();
+    if rescheduled {
+        active.mass_notified_at = Set(None);
+        active.reminder_notified_at = Set(None);
+    }
     active.title = Set(source.title.clone());
     active.description = Set(source.description.clone());
     active.call_to_arms = Set(source.call_to_arms);

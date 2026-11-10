@@ -177,6 +177,7 @@ async fn process_target(
         (None, HashMap::new())
     };
 
+    let existing_copy_id = existing_copy.as_ref().map(|copy| copy.id);
     let target_event_id = if let Some(copy) = existing_copy {
         // Every operation converges an existing copy to the current source
         // state, which makes update, archive, and publish retries idempotent.
@@ -230,6 +231,16 @@ async fn process_target(
             .await?
             .id
     };
+    if existing_copy_id.is_none() && source.status != "scheduled" {
+        // A copy created after the source went live or stopped (a late or requeued target) must
+        // not start as `scheduled`.
+        crate::modules::events::lifecycle::converge_copy_to_source(
+            &target_context.db,
+            &source,
+            target_event_id,
+        )
+        .await?;
+    }
 
     sync_roster_roles(
         &source_context.db,
@@ -419,12 +430,23 @@ async fn load_build_id_map(
     control: &DatabaseConnection,
     target: &ClaimedTarget,
 ) -> Result<HashMap<i64, i64>, AppError> {
+    // Every update is a new job, so the map must span the jobs of this event and tenant: the
+    // newest mapping per source build wins. Reading only this job's rows would start every
+    // update with an empty map and copy each build again, orphaning the previous copies.
     let rows = control
         .query_all(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "SELECT source_id, destination_id FROM event_fanout_assets \
-             WHERE job_id=$1 AND tenant_id=$2 AND asset_type='build'",
-            [target.job_id.into(), target.tenant_id.clone().into()],
+            "SELECT DISTINCT ON (a.source_id) a.source_id, a.destination_id \
+             FROM event_fanout_assets a \
+             JOIN event_fanout_jobs j ON j.id = a.job_id \
+             WHERE j.source_tenant_id=$1 AND j.source_event_id=$2 \
+               AND a.tenant_id=$3 AND a.asset_type='build' \
+             ORDER BY a.source_id, j.created_at DESC",
+            [
+                target.source_tenant_id.clone().into(),
+                target.source_event_id.into(),
+                target.tenant_id.clone().into(),
+            ],
         ))
         .await?;
     rows.into_iter()
@@ -956,6 +978,113 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(statuses[0].state, "complete");
+
+        // A later edit is a NEW job with its own idempotency key. It must reuse the guild's
+        // build instead of copying it again, or the catalog collects orphans on every edit.
+        EventService::new()
+            .start_event(alliance_db, source_event.id)
+            .await
+            .expect("start the source event");
+        let update_job = fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            source_event.id,
+            Operation::Update,
+            "update:after-start",
+            &["guild-a".to_owned()],
+        )
+        .await
+        .expect("enqueue update");
+        let update_claim = fanout_outbox::claim_due(&world.control, 1, 60)
+            .await
+            .expect("claim update target")
+            .pop()
+            .expect("one update target");
+        assert_eq!(update_claim.job_id, update_job);
+        let updated_copy_id = process_target(&world.control, &world.registry, &update_claim)
+            .await
+            .expect("update copy")
+            .expect("active target");
+        assert_eq!(updated_copy_id, first_copy_id);
+        let healer_builds = crate::modules::comps::entities::build::Entity::find()
+            .filter(crate::modules::comps::entities::build::Column::Name.eq("Fanout healer"))
+            .all(guild_db)
+            .await
+            .unwrap();
+        assert_eq!(
+            healer_builds.len(),
+            1,
+            "an update must not duplicate the build"
+        );
+        let roles_after = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(first_copy_id))
+            .all(guild_db)
+            .await
+            .unwrap();
+        assert_eq!(roles_after.len(), 1);
+        assert_eq!(roles_after[0].build_id, healer_builds[0].id);
+        let live_copy = event::Entity::find_by_id(first_copy_id)
+            .one(guild_db)
+            .await
+            .unwrap()
+            .expect("copy still exists");
+        assert_eq!(
+            live_copy.status, "live",
+            "the copy follows the source start"
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_copy_created_after_the_source_went_live_is_not_left_scheduled() {
+        let Some(world) = TestWorld::new(&["forum"]).await else {
+            return;
+        };
+        let alliance_db = &world.tenant_dbs[0];
+        let creator_id = upsert_discord_user(
+            alliance_db,
+            "late-creator",
+            "Late creator",
+            "late-creator@example.invalid",
+            "User",
+            false,
+        )
+        .await
+        .expect("create source event owner");
+        let source_event = EventService::new()
+            .create_event(alliance_db, creator_id, flash_event("Already live"))
+            .await
+            .expect("create canonical event");
+        EventService::new()
+            .start_event(alliance_db, source_event.id)
+            .await
+            .expect("start the source before any copy exists");
+        fanout_outbox::enqueue(
+            &world.control,
+            "alliance",
+            source_event.id,
+            Operation::Publish,
+            &format!("publish:{}", source_event.id),
+            &["guild-a".to_owned()],
+        )
+        .await
+        .expect("enqueue publish");
+        let claimed = fanout_outbox::claim_due(&world.control, 1, 60)
+            .await
+            .expect("claim target")
+            .pop()
+            .expect("one target");
+        let copy_id = process_target(&world.control, &world.registry, &claimed)
+            .await
+            .expect("copy attempt")
+            .expect("active target");
+        let copy = event::Entity::find_by_id(copy_id)
+            .one(&world.tenant_dbs[1])
+            .await
+            .unwrap()
+            .expect("copy exists");
+        assert_eq!(copy.status, "live");
+        assert!(copy.started_at.is_some());
         world.close().await;
     }
 }
