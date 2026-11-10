@@ -584,6 +584,7 @@ export const en = {
   'events.archiveSuccess': 'Event archived',
   'events.unarchiveSuccess': 'Event restored',
   'events.detail.registered_as': 'Registered',
+  'events.detail.participant_guild': 'Signed up for guild {name}',
   'events.detail.change_build': 'Change build',
   'events.detail.join_guild_label': 'Guild you are signing up for',
   'events.detail.join_guild_placeholder': 'Select a guild',
