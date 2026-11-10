@@ -6,12 +6,15 @@
 //! persisted in the control plane keyed by the canonical event and the stable
 //! Discord identity, never by display name.
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use std::collections::HashMap;
+
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::errors::AppError;
 
+use super::models::{EventDetailView, EventParticipantView, EventRosterView};
 use super::sync::canonical_event_origin;
 
 /// One guild a caller may be attributed to for a linked event.
@@ -89,6 +92,119 @@ pub async fn stored_attribution(
     row.map(|row| row.try_get_by_index(0))
         .transpose()
         .map_err(AppError::Database)
+}
+
+/// The attributed guild of every given participant on a linked event, keyed by Discord id.
+///
+/// Attributions live under the canonical origin, so the origin, the alliance mirror and every
+/// guild copy resolve to the same rows. Two control-plane queries regardless of roster size: the
+/// canonical lookup, then one batched read of the whole roster. Participants without a stored
+/// attribution (legacy signups) are simply absent from the map, and so is everybody on an event
+/// that is not linked to another tenant.
+pub async fn participant_guilds(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+    event_id: i64,
+    discord_ids: &[&str],
+) -> Result<HashMap<String, ParticipationGuild>, AppError> {
+    if discord_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let (origin_tenant, origin_event) =
+        canonical_event_origin(control, tenant_id, event_id).await?;
+    let placeholders = (3..discord_ids.len() + 3)
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT a.discord_id, a.guild_tenant_id, t.name \
+         FROM event_participant_attributions a \
+         JOIN tenants t ON t.id = a.guild_tenant_id \
+         WHERE a.source_tenant_id = $1 AND a.source_event_id = $2 \
+           AND a.discord_id IN ({placeholders}) \
+           AND EXISTS (SELECT 1 FROM event_sync_links l \
+                       WHERE l.sync_enabled AND l.source_tenant_id = $1 AND l.source_event_id = $2)"
+    );
+    let mut values = vec![Value::from(origin_tenant), Value::from(origin_event)];
+    values.extend(discord_ids.iter().map(|id| Value::from((*id).to_owned())));
+    let rows = control
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            &sql,
+            values,
+        ))
+        .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get_by_index::<String>(0)?,
+                ParticipationGuild {
+                    tenant_id: row.try_get_by_index(1)?,
+                    name: row.try_get_by_index(2)?,
+                },
+            ))
+        })
+        .collect::<Result<HashMap<_, _>, sea_orm::DbErr>>()
+        .map_err(Into::into)
+}
+
+/// Fills `guild` on every participant. Cosmetic, so a control-plane failure is logged and the
+/// participants are left unattributed rather than failing the whole read.
+async fn attribute_participants(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+    event_id: i64,
+    mut participants: Vec<&mut EventParticipantView>,
+) {
+    let discord_ids: Vec<&str> = participants
+        .iter()
+        .filter_map(|participant| participant.discord_id.as_deref())
+        .collect();
+    let guilds = match participant_guilds(control, tenant_id, event_id, &discord_ids).await {
+        Ok(guilds) => guilds,
+        Err(error) => {
+            tracing::warn!(%error, event_id, "could not resolve participant guild attribution");
+            return;
+        }
+    };
+    for participant in &mut participants {
+        participant.guild = participant
+            .discord_id
+            .as_ref()
+            .and_then(|discord_id| guilds.get(discord_id))
+            .cloned();
+    }
+}
+
+/// Attributes every participant of an event detail to their guild.
+pub async fn attribute_detail(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+    detail: &mut EventDetailView,
+) {
+    let event_id = detail.event.id;
+    attribute_participants(
+        control,
+        tenant_id,
+        event_id,
+        detail.participants.iter_mut().collect(),
+    )
+    .await;
+}
+
+/// Attributes every seated and benched participant of a roster to their guild.
+pub async fn attribute_roster(
+    control: &DatabaseConnection,
+    tenant_id: &str,
+    roster: &mut EventRosterView,
+) {
+    let event_id = roster.event_id;
+    let seated = roster
+        .seats
+        .iter_mut()
+        .filter_map(|seat| seat.participant.as_mut());
+    let participants = seated.chain(roster.bench.iter_mut()).collect();
+    attribute_participants(control, tenant_id, event_id, participants).await;
 }
 
 /// Resolves and durably records the guild attribution for a join.
@@ -264,6 +380,55 @@ mod tests {
                 .expect("user membership");
         }
 
+        async fn link(&self, source: (&str, i64), mirror: (&str, i64)) {
+            self.control
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO event_sync_links \
+                     (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
+                     VALUES ($1,$2,$3,$4,$5)",
+                    [
+                        uuid::Uuid::new_v4().into(),
+                        source.0.into(),
+                        source.1.into(),
+                        mirror.0.into(),
+                        mirror.1.into(),
+                    ],
+                ))
+                .await
+                .expect("event sync link");
+        }
+
+        async fn attribute(&self, source: (&str, i64), discord_id: &str, guild: &str) {
+            self.control
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO event_participant_attributions \
+                     (id, source_tenant_id, source_event_id, discord_id, guild_tenant_id) \
+                     VALUES ($1,$2,$3,$4,$5)",
+                    [
+                        uuid::Uuid::new_v4().into(),
+                        source.0.into(),
+                        source.1.into(),
+                        discord_id.into(),
+                        guild.into(),
+                    ],
+                ))
+                .await
+                .expect("attribution");
+        }
+
+        async fn rename(&self, tenant_id: &str, name: &str) {
+            self.control
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "UPDATE tenants SET name = $2 WHERE id = $1",
+                    [tenant_id.into(), name.into()],
+                ))
+                .await
+                .expect("rename tenant");
+        }
+
         async fn close(self) {
             self.control.close().await.expect("close control");
             drop_schema(&self.admin, &self.schema)
@@ -401,6 +566,91 @@ mod tests {
         .await
         .expect("rejoin reuses the stored attribution");
         assert_eq!(unchanged, "guild-a");
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn participant_guilds_are_identical_on_the_origin_and_every_copy() {
+        let Some(world) = ControlWorld::new().await else {
+            return;
+        };
+        world.rename("guild-a", "Guild A").await;
+        world.rename("guild-b", "Guild B").await;
+        world.link(("alliance", 7), ("guild-a", 70)).await;
+        world.link(("alliance", 7), ("guild-b", 71)).await;
+        world.attribute(("alliance", 7), "d-a", "guild-a").await;
+        world.attribute(("alliance", 7), "d-b", "guild-b").await;
+
+        let asked = ["d-a", "d-b", "d-legacy"];
+        let mut seen = Vec::new();
+        for (tenant, event) in [("alliance", 7), ("guild-a", 70), ("guild-b", 71)] {
+            let guilds = participant_guilds(&world.control, tenant, event, &asked)
+                .await
+                .expect("participant guilds");
+            assert_eq!(guilds.len(), 2, "{tenant}: unattributed signups are absent");
+            assert!(!guilds.contains_key("d-legacy"));
+            seen.push(guilds);
+        }
+        assert_eq!(seen[0], seen[1]);
+        assert_eq!(seen[0], seen[2]);
+        assert_eq!(
+            seen[0]["d-b"],
+            ParticipationGuild {
+                tenant_id: "guild-b".to_owned(),
+                name: "Guild B".to_owned(),
+            }
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn participant_guilds_are_absent_on_an_event_that_is_not_linked() {
+        let Some(world) = ControlWorld::new().await else {
+            return;
+        };
+        // A plain guild event still records the signup against its own guild, but nothing
+        // links it to another tenant, so there is no guild to tell apart.
+        world.attribute(("guild-a", 5), "d-a", "guild-a").await;
+        let guilds = participant_guilds(&world.control, "guild-a", 5, &["d-a"])
+            .await
+            .expect("participant guilds");
+        assert!(guilds.is_empty());
+        assert!(
+            participant_guilds(&world.control, "guild-a", 5, &[])
+                .await
+                .expect("empty roster")
+                .is_empty()
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
+    async fn participant_guilds_use_a_constant_number_of_control_queries() {
+        let Some(mut world) = ControlWorld::new().await else {
+            return;
+        };
+        world.link(("alliance", 7), ("guild-a", 70)).await;
+        let ids: Vec<String> = (0..40).map(|index| format!("d-{index}")).collect();
+        for (index, id) in ids.iter().enumerate() {
+            let guild = if index % 2 == 0 { "guild-a" } else { "guild-b" };
+            world.attribute(("alliance", 7), id, guild).await;
+        }
+        let queries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = queries.clone();
+        world.control.set_metric_callback(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        let asked: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let guilds = participant_guilds(&world.control, "guild-a", 70, &asked)
+            .await
+            .expect("participant guilds");
+        assert_eq!(guilds.len(), 40);
+        assert_eq!(
+            queries.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "one canonical-origin lookup plus one batched read, whatever the roster size"
+        );
         world.close().await;
     }
 }

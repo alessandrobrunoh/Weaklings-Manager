@@ -1663,6 +1663,160 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn roster_views_attribute_each_participant_to_a_guild_on_origin_and_copies() {
+        use super::super::attribution::{attribute_detail, attribute_roster};
+        use crate::modules::events::models::{EventRosterSeatView, EventRosterView};
+
+        let Some(world) = TestWorld::new().await else {
+            return;
+        };
+        let source = publish_alliance_event(&world, "Guild badge event").await;
+        let copy_a = world.guild_copy(1, source.id).await;
+        let copy_b = world.guild_copy(2, source.id).await;
+        world.add_user_membership("discord-b", "guild-b").await;
+        let request = ParticipateEventRequest {
+            primary_build_id: None,
+            secondary_build_id: None,
+        };
+
+        // discord-a joins on guild A's copy, discord-b joins on the alliance event (their only
+        // guild is B), discord-legacy signed up before attributions existed.
+        let joins = [
+            ("discord-a", 1_usize, "guild-a", copy_a.id),
+            ("discord-b", 0, "alliance", source.id),
+            ("discord-legacy", 2, "guild-b", copy_b.id),
+        ];
+        for (discord_id, index, tenant, event_id) in joins {
+            if discord_id != "discord-legacy" {
+                super::super::attribution::resolve_join_attribution(
+                    &world.control,
+                    tenant,
+                    event_id,
+                    discord_id,
+                    None,
+                )
+                .await
+                .expect("attribute join");
+            }
+            let db = &world.tenant_dbs[index];
+            let user_id = upsert_discord_user(
+                db,
+                discord_id,
+                discord_id,
+                &format!("{discord_id}@example.invalid"),
+                "User",
+                false,
+            )
+            .await
+            .expect("user");
+            EventService::new()
+                .participate_with_roster_version(db, event_id, user_id, request.clone())
+                .await
+                .expect("join");
+            sync_participation(
+                &world.control,
+                &world.registry,
+                tenant,
+                event_id,
+                &actor(discord_id),
+                Some(request.clone()),
+            )
+            .await
+            .expect("fanout");
+        }
+
+        let mut details = Vec::new();
+        for (index, tenant, event_id) in [
+            (0_usize, "alliance", source.id),
+            (1, "guild-a", copy_a.id),
+            (2, "guild-b", copy_b.id),
+        ] {
+            let mut detail = EventService::new()
+                .get_event_detail(&world.tenant_dbs[index], event_id)
+                .await
+                .expect("detail");
+            assert_eq!(
+                detail.participants.len(),
+                3,
+                "{tenant} shows the full roster"
+            );
+            attribute_detail(&world.control, tenant, &mut detail).await;
+            let mut guilds: Vec<(String, Option<String>)> = detail
+                .participants
+                .iter()
+                .map(|participant| {
+                    (
+                        participant.discord_id.clone().expect("discord id"),
+                        participant
+                            .guild
+                            .as_ref()
+                            .map(|guild| guild.tenant_id.clone()),
+                    )
+                })
+                .collect();
+            guilds.sort();
+            assert_eq!(
+                guilds,
+                vec![
+                    ("discord-a".to_owned(), Some("guild-a".to_owned())),
+                    ("discord-b".to_owned(), Some("guild-b".to_owned())),
+                    ("discord-legacy".to_owned(), None),
+                ],
+                "{tenant} attributes participants like every other copy"
+            );
+            assert!(
+                detail
+                    .participants
+                    .iter()
+                    .filter_map(|participant| participant.guild.as_ref())
+                    .all(|guild| guild.name == guild.tenant_id),
+                "the display name comes from the tenant row"
+            );
+            details.push(detail);
+        }
+
+        // The roster view takes the same path for seated and benched participants.
+        let participants = details[1].participants.clone();
+        let mut roster = EventRosterView {
+            event_id: copy_a.id,
+            roster_version: 1,
+            active_comp_id: 0,
+            seats: vec![EventRosterSeatView {
+                key: "seat".to_owned(),
+                party_number: 1,
+                position: 1,
+                build_id: 1,
+                build_name: "Build".to_owned(),
+                build_version: 1,
+                role: "dps".to_owned(),
+                participant: Some(participants[0].clone()),
+            }],
+            bench: participants[1..].to_vec(),
+        };
+        for participant in roster
+            .seats
+            .iter_mut()
+            .filter_map(|seat| seat.participant.as_mut())
+            .chain(roster.bench.iter_mut())
+        {
+            participant.guild = None;
+        }
+        attribute_roster(&world.control, "guild-a", &mut roster).await;
+        let attributed = roster
+            .seats
+            .iter()
+            .filter_map(|seat| seat.participant.as_ref())
+            .chain(roster.bench.iter())
+            .filter(|participant| participant.guild.is_some())
+            .count();
+        assert_eq!(
+            attributed, 2,
+            "seated and benched members are both attributed; the legacy signup is not"
+        );
+        world.close().await;
+    }
+
+    #[tokio::test]
     async fn the_reconcile_sweep_gives_every_copy_a_signup_it_missed_exactly_once() {
         let Some(world) = TestWorld::new().await else {
             return;
