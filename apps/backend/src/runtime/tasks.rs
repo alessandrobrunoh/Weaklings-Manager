@@ -76,6 +76,16 @@ impl LoopTask for EventFanout {
     }
 
     async fn run_once(&self, cx: &TaskContext) -> Result<(), AppError> {
+        // Queue the copies a guild missed (it joined later, or a publish was lost) before
+        // draining, so they go out in this tick.
+        if let Err(error) = crate::modules::events::fanout_worker::reconcile_missing_copies(
+            &cx.control,
+            &cx.registry,
+        )
+        .await
+        {
+            tracing::warn!(error = %error, "event fanout catch-up failed");
+        }
         crate::modules::events::fanout_worker::process_due_targets(&cx.control, &cx.registry)
             .await
             .map(|_| ())
