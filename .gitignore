@@ -1,4 +1,5 @@
 /target
+/apps/backend/target
 
 # Environment
 .env
