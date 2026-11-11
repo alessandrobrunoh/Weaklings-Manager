@@ -839,7 +839,7 @@ mod tests {
         use crate::modules::users::entities as user_entities;
         use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         let alice = user_entities::ActiveModel {
             username: Set("alice".into()),
             email: Set("alice@example.com".into()),
@@ -929,7 +929,7 @@ mod tests {
             UserContext::from_request_parts(&mut parts, &()).await
         }
 
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         user_entities::ActiveModel {
             username: Set("bot-user".into()),
             email: Set("bot-user@example.com".into()),
@@ -1063,7 +1063,7 @@ mod tests {
     }
 
     async fn tenant_db() -> sea_orm::DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     /// A blank `BOT_API_SECRET` must not turn an empty `X-Bot-Secret:` header into a

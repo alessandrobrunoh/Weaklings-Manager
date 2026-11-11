@@ -348,7 +348,7 @@ mod tests {
     use crate::modules::intel::entities::scouted_comp;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn ts() -> sea_orm::prelude::DateTimeWithTimeZone {

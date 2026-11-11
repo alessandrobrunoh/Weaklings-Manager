@@ -219,7 +219,7 @@ mod tests {
     use crate::modules::admin::service::AdminService;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         AdminService::update_guild_settings(
             &db,
             1,

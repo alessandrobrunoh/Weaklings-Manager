@@ -113,7 +113,7 @@ mod tests {
     use sea_orm::Database;
 
     async fn tenant_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn request(discord_id: &str) -> EnsureMemberRequest {

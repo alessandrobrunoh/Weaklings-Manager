@@ -3812,7 +3812,7 @@ mod transition_tests {
     const FAIL_TRIGGER: &str = "fail_split_participants";
 
     pub(super) async fn sqlite_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, name: &str) -> i64 {

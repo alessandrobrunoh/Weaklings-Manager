@@ -11,9 +11,9 @@
 //! behaviour (row locks, `SKIP LOCKED`) stays behind `TEST_DATABASE_URL`.
 
 pub mod discord_stub;
-mod tenant_schema;
+pub mod tenant_schema;
 
-pub use tenant_schema::{apply_tenant_schema, migrated_sqlite};
+use crate::testkit::tenant_schema::migrated_sqlite;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

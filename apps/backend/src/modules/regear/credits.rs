@@ -332,7 +332,7 @@ mod tests {
     use sea_orm::DatabaseConnection;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn set_pools(db: &DatabaseConnection, user_id: i64, weekly: i32, bonus: i32) {

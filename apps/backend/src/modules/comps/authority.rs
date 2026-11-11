@@ -97,7 +97,7 @@ pub(crate) mod test_support {
     pub(crate) async fn fixture(
         role_grants: &[(&str, &[&str])],
     ) -> (DatabaseConnection, Permissions) {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         let backend = db.get_database_backend();
         let mut statements = vec![
             "INSERT INTO users (id, username, email, role, created_at) VALUES (1, 'author', 'a@x', \

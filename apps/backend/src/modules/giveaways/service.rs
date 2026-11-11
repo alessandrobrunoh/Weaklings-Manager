@@ -821,7 +821,7 @@ mod tests {
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str) -> i64 {

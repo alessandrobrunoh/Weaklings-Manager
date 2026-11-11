@@ -279,7 +279,7 @@ mod tests {
     use crate::modules::comps::entities::build_category;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn ts(rfc3339: &str) -> DateTimeWithTimeZone {

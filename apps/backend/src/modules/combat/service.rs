@@ -1415,7 +1415,7 @@ mod comp_readiness_tests {
     use crate::modules::users::specializations;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     /// One comp with a single seat requiring a Polehammer.
@@ -1759,7 +1759,7 @@ mod scenario_tests {
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn seed_user(db: &DatabaseConnection, username: &str) -> i64 {
@@ -2092,7 +2092,7 @@ mod calibration_tests {
     use crate::modules::users::specializations;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     /// One member, fully trained, with a Polehammer build and an event sign-up naming it.

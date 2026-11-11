@@ -793,7 +793,7 @@ mod tests {
     #[tokio::test]
     async fn listing_ignores_an_email_probe() {
         use crate::modules::users::entities::ActiveModel;
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         for (name, email) in [("alice", "alice@example.com"), ("bob", "bob@example.com")] {
             ActiveModel {
                 username: Set(name.to_string()),
@@ -826,7 +826,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pagination_and_filtering() {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
 
         use crate::modules::users::entities::ActiveModel;
 
@@ -990,7 +990,7 @@ mod tests {
     }
 
     async fn seed_specializations_user() -> (DatabaseConnection, i64) {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
 
         use crate::modules::users::entities::ActiveModel;
         let user = ActiveModel {
@@ -1143,7 +1143,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_linked_member_inserts_user_and_albion_link() {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         let service = UserService::new();
 
         let profile = service
@@ -1200,7 +1200,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_linked_member_rejects_claimed_albion_character() {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         let service = UserService::new();
         service
             .create_linked_member(

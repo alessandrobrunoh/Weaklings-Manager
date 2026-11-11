@@ -230,7 +230,7 @@ mod tests {
     use sea_orm::PaginatorTrait;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn guild_row(id: &str, name: &str) -> GuildStatRow {

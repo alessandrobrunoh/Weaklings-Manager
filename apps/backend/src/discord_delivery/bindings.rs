@@ -406,7 +406,7 @@ mod tests {
     use super::*;
 
     async fn sqlite() -> sea_orm::DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn at(seconds: i64) -> DateTime<Utc> {

@@ -1190,7 +1190,7 @@ mod tests {
     use chrono::TimeZone;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn ts(minute: u32) -> DateTime<FixedOffset> {

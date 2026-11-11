@@ -639,7 +639,7 @@ mod tests {
     use sea_orm::ActiveModelTrait;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn pending_split(db: &DatabaseConnection, creator: i64, user: i64) -> i64 {

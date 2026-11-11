@@ -893,7 +893,7 @@ mod tests {
     use sea_orm::EntityTrait;
 
     async fn setup_db() -> sea_orm::DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn account(discord_id: &str, is_tenant_owner: bool) -> UserContext {

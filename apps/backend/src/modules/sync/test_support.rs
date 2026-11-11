@@ -14,7 +14,7 @@ use crate::modules::users::entities as users;
 
 /// Migrated tenant schema plus the control stand-in tables.
 pub(crate) async fn sqlite_db() -> DatabaseConnection {
-    let db = crate::testkit::migrated_sqlite().await;
+    let db = crate::testkit::tenant_schema::migrated_sqlite().await;
     db.execute_unprepared(
         "CREATE TABLE event_sync_links (
             source_tenant_id TEXT NOT NULL,

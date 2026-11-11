@@ -327,7 +327,7 @@ mod tests {
     use crate::modules::users::entities as user_entities;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_fight(

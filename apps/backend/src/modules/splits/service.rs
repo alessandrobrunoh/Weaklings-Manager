@@ -2719,7 +2719,7 @@ mod tests {
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {
@@ -3762,7 +3762,7 @@ mod tests {
     #[tokio::test]
     async fn island_list_query_count_does_not_grow_with_islands() {
         let counted = crate::testkit::queries::CountedDb::sqlite_memory().await;
-        crate::testkit::apply_tenant_schema(&counted.connection()).await;
+        crate::testkit::tenant_schema::apply_tenant_schema(&counted.connection()).await;
         let db = counted.connection();
         let service = SplitService::new();
         let cities = [

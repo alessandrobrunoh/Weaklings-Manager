@@ -99,7 +99,7 @@ mod tests {
     use crate::modules::applications::ApplicationService;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn configure_trial(db: &DatabaseConnection, role_id: Option<&str>, days: Option<i32>) {

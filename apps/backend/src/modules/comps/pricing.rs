@@ -361,7 +361,7 @@ mod tests {
     use crate::modules::comps::entities::{build_category, comp, comp_category};
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection) -> i64 {

@@ -2819,7 +2819,7 @@ mod tests {
     };
 
     async fn authorization_test_db() -> DatabaseConnection {
-        let db = crate::testkit::migrated_sqlite().await;
+        let db = crate::testkit::tenant_schema::migrated_sqlite().await;
         db.execute_unprepared(
             "CREATE TABLE event_sync_links (
                 source_tenant_id TEXT NOT NULL,

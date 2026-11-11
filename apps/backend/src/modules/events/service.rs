@@ -5030,13 +5030,13 @@ mod tests {
     use crate::testkit::queries::CountedDb;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     /// [`seed_db`] with every statement counted, for the query-count regressions.
     async fn seed_counted_db() -> CountedDb {
         let counted = CountedDb::sqlite_memory().await;
-        crate::testkit::apply_tenant_schema(&counted.connection()).await;
+        crate::testkit::tenant_schema::apply_tenant_schema(&counted.connection()).await;
         counted
     }
 

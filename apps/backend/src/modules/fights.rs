@@ -2357,7 +2357,7 @@ mod tests {
     use crate::testkit::{ALBION_GUILDS, GUILDS, World};
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn timestamp(offset_hours: i64) -> sea_orm::prelude::DateTimeWithTimeZone {

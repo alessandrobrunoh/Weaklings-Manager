@@ -127,7 +127,7 @@ mod tests {
     use crate::modules::events::entities::fight;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_fight(db: &DatabaseConnection) -> i64 {

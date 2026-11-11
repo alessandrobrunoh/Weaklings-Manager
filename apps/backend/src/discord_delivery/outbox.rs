@@ -907,7 +907,7 @@ mod tests {
     use rand::{SeedableRng, rngs::StdRng};
 
     async fn sqlite() -> sea_orm::DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     fn at(seconds: i64) -> DateTime<Utc> {

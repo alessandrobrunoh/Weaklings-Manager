@@ -131,7 +131,7 @@ mod tests {
     use serde_json::json;
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     #[allow(clippy::too_many_arguments)]

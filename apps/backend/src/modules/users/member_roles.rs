@@ -568,7 +568,7 @@ mod tests {
     }
 
     async fn seed_db() -> DatabaseConnection {
-        crate::testkit::migrated_sqlite().await
+        crate::testkit::tenant_schema::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, discord_id: Option<&str>) -> i64 {
