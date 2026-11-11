@@ -38,6 +38,9 @@ pub(crate) mod pagination;
 pub(crate) mod responses;
 pub(crate) mod serde_helpers;
 
+pub(crate) mod app_runtime;
+pub(crate) mod tenant_workers;
+
 use axum::Router;
 use axum::extract::MatchedPath;
 use sea_orm_migration::MigratorTrait;
@@ -133,15 +136,15 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
     // Workers reload guild/region from the tenant row. Set the dependencies
     // before the boot loop so `ensure_sync_workers` can see them.
-    registry.set_workers(crate::tenant::TenantWorkers {
+    registry.set_workers(std::sync::Arc::new(crate::tenant_workers::TenantWorkers {
         albionbb_service: albionbb_service.clone(),
         albiondata_service: albiondata_service.clone(),
-    });
+    }));
     // The one spawn point for periodic loops (fanout and mirror retry today).
     let runtime = crate::runtime::spawn_all(
         control_db.clone(),
         registry.clone(),
-        crate::runtime::RuntimeDeps::production(),
+        crate::app_runtime::production_deps(),
     );
     for ctx in &tenant_contexts {
         if !crate::tenant::starts_sync_workers(&ctx.kind) {

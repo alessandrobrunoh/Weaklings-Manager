@@ -26,23 +26,13 @@ pub use wake::{Wake, WakeSet, WakeTarget};
 
 use crate::tenant::TenantRegistry;
 
-/// What `spawn_all` needs besides the connections.
+/// What `spawn_all` needs besides the connections. The app builds the
+/// production set (`app_runtime::production_deps`).
 pub struct RuntimeDeps {
     /// Supervisor tunables.
     pub settings: SupervisorSettings,
     /// Loops to run.
     pub tasks: Vec<Arc<dyn LoopTask>>,
-}
-
-impl RuntimeDeps {
-    /// The production set: every loop in [`tasks::registered_tasks`].
-    #[must_use]
-    pub fn production() -> Self {
-        Self {
-            settings: SupervisorSettings::default(),
-            tasks: tasks::registered_tasks(),
-        }
-    }
 }
 
 /// Handle to the running loops; cheap to clone and shared through an

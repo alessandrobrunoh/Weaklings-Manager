@@ -24,12 +24,9 @@ use crate::albion_scope;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::migration::Migrator;
-use crate::modules::albionbb::service::AlbionBbService;
-use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
 use crate::modules::capabilities::{self, Enforcement};
 use crate::postgres::{self, connect_tenant_pool, list_active_tenants};
-use crate::{battle_sync, event_sessions};
 
 /// Header the Discord bot sends to select a guild/tenant.
 ///
@@ -86,46 +83,25 @@ pub fn starts_sync_workers(kind: &str) -> bool {
     kind != "alliance"
 }
 
-/// The background workers every tenant needs (`event_sessions`, `battle_sync`),
-/// bundled with what starting them takes.
+/// Starts the background workers every guild tenant needs (event sessions and
+/// battle sync).
 ///
 /// `run_server` starts these itself for every tenant found `active` at boot,
 /// by iterating [`TenantRegistry::warmup`]'s result — that loop has no reason
-/// to move into the registry. This bundle exists for the tenant that shows up
-/// *after* boot: [`TenantRegistry::provision`] needs the same four
-/// dependencies to do the same thing for it, and can only reach them if the
-/// registry is holding onto a copy.
-#[derive(Clone)]
-pub struct TenantWorkers {
-    pub albionbb_service: AlbionBbService,
-    pub albiondata_service: AlbionDataService,
-}
-
-impl TenantWorkers {
+/// to move into the registry. The spawner exists for the tenant that shows up
+/// *after* boot: [`TenantRegistry::provision`] needs to do the same thing for
+/// it, and can only do so if the registry is holding onto a spawner. The app
+/// supplies the implementation, because the workers and their dependencies
+/// live above this module.
+pub trait TenantWorkerSpawner: Send + Sync {
+    /// Starts the workers of `tenant_id`. They exit once `stop` is set.
     fn spawn_for(
         &self,
         db: DatabaseConnection,
         tenant_id: &str,
         control: DatabaseConnection,
         stop: Arc<AtomicBool>,
-    ) {
-        event_sessions::spawn(
-            db.clone(),
-            self.albionbb_service.clone(),
-            self.albiondata_service.clone(),
-            tenant_id.to_owned(),
-            control.clone(),
-            stop.clone(),
-        );
-        battle_sync::spawn(
-            db,
-            self.albionbb_service.clone(),
-            self.albiondata_service.clone(),
-            tenant_id.to_owned(),
-            control,
-            stop,
-        );
-    }
+    );
 }
 
 /// Lazy cache of [`TenantContext`] keyed by Discord guild id.
@@ -141,8 +117,8 @@ pub struct TenantRegistry {
     /// Set once by `run_server` before it starts serving traffic. `OnceLock`
     /// rather than a mutable field: every clone of the registry — one per
     /// request, via the `Extension` layer — shares the same slot, and nothing
-    /// after startup ever needs to change which services `provision` uses.
-    workers: Arc<OnceLock<TenantWorkers>>,
+    /// after startup ever needs to change which spawner `provision` uses.
+    workers: Arc<OnceLock<Arc<dyn TenantWorkerSpawner>>>,
     /// Tenants whose sync tasks are already running. The flag stops them when
     /// the tenant is suspended; reactivation starts a new pair.
     running_sync: Arc<DashMap<String, Arc<AtomicBool>>>,
@@ -237,7 +213,7 @@ impl TenantRegistry {
         }
     }
 
-    /// Supplies the dependencies [`Self::provision`] needs to start a freshly
+    /// Supplies the spawner [`Self::provision`] needs to start a freshly
     /// registered tenant's background workers.
     ///
     /// A tenant that registers today has no reason to wait for a restart
@@ -246,7 +222,7 @@ impl TenantRegistry {
     /// dependencies at all, so it silently never started them. Call once,
     /// before the server accepts its first request; later calls are ignored
     /// (see [`OnceLock::set`]).
-    pub fn set_workers(&self, workers: TenantWorkers) {
+    pub fn set_workers(&self, workers: Arc<dyn TenantWorkerSpawner>) {
         let _ = self.workers.set(workers);
     }
 
