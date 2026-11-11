@@ -15,6 +15,8 @@ This directory contains fight-analytics aggregation, persistence, and read API c
 - Player counts deduplicate by `player_key`; combat contributions sum across appearances.
 - (Details pending/documentation failed) Remaining aggregation and persistence rules require a compliant bounded review.
 
+- `service::FightOutcomeView` (built from the stored `fights.outcome`/`outcome_method`) and `service::FightAggregateStats` (friendly-side totals from `fight_stats`) are the shared view types for the fights list and the event page. Stored outcomes keep the method but not the exact resolved-segment count, so `evidence_count` is exact for full coverage and a lower bound of 1 for `_partial_coverage`.
+
 ## Side Effects
 
 The bounded excerpts show a read path for fight/stats data and a recompute path that transactionally writes the fight and stats row.

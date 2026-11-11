@@ -13,9 +13,10 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{Duration, Utc};
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    QueryFilter, QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -31,6 +32,7 @@ use backend_core::errors::AppError;
 use backend_core::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
+use backend_core::ratios::ratio_percent;
 use backend_core::responses::ApiResponse;
 use backend_entities::albion::albion_link;
 use backend_entities::battles::{
@@ -66,18 +68,9 @@ pub struct FightSegmentSummary {
     pub total_fame: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct FightOutcomeView {
-    /// Deterministic Fight-level outcome derived from persisted segment evidence.
-    pub outcome: FightOutcome,
-    /// Segments that produced a decided outcome. Compare against `segment_count`
-    /// to see how much of the fight the verdict actually rests on.
-    pub evidence_count: i64,
-    /// How the outcome was resolved: `unanimous_segments`, `mixed_segments`,
-    /// `no_resolved_segments` or `no_segments`. The first two gain a
-    /// `_partial_coverage` suffix when some segments could not be classified.
-    pub method: String,
-}
+/// The shared Fight outcome view; defined next to the analytics that persist it so the event
+/// page and this module return the same shape.
+pub use backend_battles::fight_analytics::service::FightOutcomeView;
 
 /// A canonical Fight's outcome from the configured guild's perspective.
 ///
@@ -251,6 +244,8 @@ pub struct FightTrendPeriod {
     pub win_sample_size: i64,
     pub wins: i64,
     pub losses: i64,
+    /// Win percentage in the `0..=100` range, the same scale as every other `win_rate` in the
+    /// API. `None` when no fight has winner data.
     pub win_rate: Option<f64>,
     pub kills: i64,
     pub deaths: i64,
@@ -461,6 +456,12 @@ impl FightListQuery {
 ///
 /// The tie-breaker on `id` makes pages deterministic when several fights share
 /// the same start timestamp.
+///
+/// `outcome` is the stored `fights.outcome` (the same value the event page reports);
+/// `total_players`, `total_kills` and `total_fame` are battle-wide figures (both sides) summed
+/// from the segments' snapshots. Sorting by start time or id paginates in SQL and reads only
+/// the requested page; sorting by a derived value or filtering on `min_players` has to read every
+/// matching fight's aggregates (scalar snapshot columns only) before paginating.
 #[utoipa::path(
     get,
     path = "/api/fights",
@@ -477,82 +478,174 @@ pub async fn list_fights(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
-    Extension(ControlDb(control)): Extension<ControlDb>,
-    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Query(query): Query<FightListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedFightList>>, AppError> {
     user.require(&perms, Permission::FightsView).await?;
-    let side = tenant_friendly_side(&control, &tenant_id).await?;
     let pagination = query.pagination();
-    // Outcome and combat values are derived from every Fight's persisted segments, so pagination
-    // must happen after hydration, filtering, and sorting rather than on the raw `fights` rows.
+    let sort = resolve_fight_list_sort(&query)?;
+    let outcome = query
+        .outcome
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(parse_fight_outcome)
+        .transpose()?;
+
+    // Everything the common sorts need is a column of `fights`, so the page is cut in SQL and
+    // only that page's segments and snapshot totals are loaded.
+    if query.min_players.is_none() && matches!(sort, FightListSort::StartTime | FightListSort::Id) {
+        let find = filtered_fights_select(&db, &query, outcome, true).await?;
+        let find = match (sort, SortOrder::from_query(query.order.as_deref())) {
+            (FightListSort::StartTime, SortOrder::Asc) => find
+                .order_by_asc(fight::Column::StartedAt)
+                .order_by_asc(fight::Column::Id),
+            (FightListSort::StartTime, SortOrder::Desc) => find
+                .order_by_desc(fight::Column::StartedAt)
+                .order_by_desc(fight::Column::Id),
+            (_, SortOrder::Asc) => find.order_by_asc(fight::Column::Id),
+            (_, SortOrder::Desc) => find.order_by_desc(fight::Column::Id),
+        };
+        let limit = pagination.limit();
+        let page = pagination.offset_page();
+        let paginator = find.paginate(&db, limit);
+        let total_items = paginator.num_items().await.map_err(AppError::Database)?;
+        let models = paginator.fetch_page(page).await.map_err(AppError::Database)?;
+        let items = hydrate_fight_list_items(&db, models).await?;
+        let paginated = PaginatedData::new(
+            items,
+            total_items,
+            total_items.div_ceil(limit).max(1),
+            page + 1,
+            limit,
+        );
+        return Ok(Json(ApiResponse::new(PaginatedFightList::from(paginated))));
+    }
+
+    // Sorting by a derived value (kills, fame, players, segments, outcome rank) or filtering by
+    // `min_players` needs every matching fight's aggregates, so those requests hydrate all of
+    // them. Only scalar snapshot columns are read, never the players/kills JSON.
+    let models = filtered_fights_select(&db, &query, outcome, false)
+        .await?
+        .all(&db)
+        .await
+        .map_err(AppError::Database)?;
+    let items = hydrate_fight_list_items(&db, models).await?;
+    let items = filter_sort_fights(items, &query)?;
+    let paginated = paginate_vec(items, &pagination);
+
+    Ok(Json(ApiResponse::new(PaginatedFightList::from(paginated))))
+}
+
+/// How many ids go into one `IN (...)` list, keeping bind parameters well under every backend's
+/// limit.
+const ID_CHUNK: usize = 1_000;
+
+/// Builds the `fights` query with every filter that SQL can answer: `needs_review`, `event_id`,
+/// the stored outcome and, when `include_search` is set, the id / event-title search.
+///
+/// `min_players` is derived from snapshots and is never applied here; the caller either skips it
+/// or filters in memory.
+async fn filtered_fights_select(
+    db: &DatabaseConnection,
+    query: &FightListQuery,
+    outcome: Option<FightOutcome>,
+    include_search: bool,
+) -> Result<Select<fight::Entity>, AppError> {
     let mut find = fight::Entity::find();
     if let Some(needs_review) = query.needs_review {
         find = find.filter(fight::Column::NeedsReview.eq(needs_review));
     }
-    let fights = find.all(&db).await.map_err(AppError::Database)?;
-    let fight_ids = fights.iter().map(|model| model.id).collect::<Vec<_>>();
-    let segments = if fight_ids.is_empty() {
-        Vec::new()
-    } else {
-        fight_battle::Entity::find()
-            .filter(fight_battle::Column::FightId.is_in(fight_ids))
-            .all(&db)
+    if let Some(event_id) = query.event_id {
+        find = find.filter(fight::Column::EventId.eq(event_id));
+    }
+    if let Some(outcome) = outcome {
+        find = find.filter(fight::Column::Outcome.eq(outcome.as_str()));
+    }
+    let search = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if include_search && let Some(search) = search {
+        let pattern = format!("%{}%", search.to_ascii_lowercase());
+        let matching_event_ids = event::Entity::find()
+            .select_only()
+            .column(event::Column::Id)
+            .filter(Expr::expr(Func::lower(Expr::col(event::Column::Title))).like(pattern.clone()))
+            .into_tuple::<i64>()
+            .all(db)
             .await
-            .map_err(AppError::Database)?
-    };
-    let mut segment_counts = HashMap::<i64, i64>::new();
+            .map_err(AppError::Database)?;
+        let mut matches = Condition::any()
+            .add(Expr::cust("CAST(\"fights\".\"id\" AS TEXT)").like(pattern));
+        if !matching_event_ids.is_empty() {
+            matches = matches.add(fight::Column::EventId.is_in(matching_event_ids));
+        }
+        find = find.filter(matches);
+    }
+    Ok(find)
+}
+
+/// Turns fight rows into list items, in the order given.
+///
+/// Loads only what the items need: the fights' segment rows, the snapshots' scalar totals (never
+/// `players_json` / `kills_json` / `guilds_json`) and the linked events' titles. The outcome is
+/// the stored `fights.outcome`, the same source the event page uses.
+async fn hydrate_fight_list_items(
+    db: &DatabaseConnection,
+    fights: Vec<fight::Model>,
+) -> Result<Vec<FightListItem>, AppError> {
+    let fight_ids = fights.iter().map(|model| model.id).collect::<Vec<_>>();
     let mut segments_by_fight = HashMap::<i64, Vec<fight_battle::Model>>::new();
-    for segment in segments {
-        *segment_counts.entry(segment.fight_id).or_default() += 1;
-        segments_by_fight
-            .entry(segment.fight_id)
-            .or_default()
-            .push(segment);
+    for chunk in fight_ids.chunks(ID_CHUNK) {
+        let segments = fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.is_in(chunk.to_vec()))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        for segment in segments {
+            segments_by_fight
+                .entry(segment.fight_id)
+                .or_default()
+                .push(segment);
+        }
     }
     let battle_ids = segments_by_fight
         .values()
         .flatten()
         .map(|segment| segment.battle_id)
         .collect::<Vec<_>>();
-    let snapshots = if battle_ids.is_empty() {
-        Vec::new()
-    } else {
-        GuildBattleSnapshotEntity::find()
-            .filter(GuildBattleSnapshotColumn::BattleId.is_in(battle_ids.clone()))
-            .all(&db)
-            .await
-            .map_err(AppError::Database)?
-    };
-    let snapshots_by_battle = snapshots
-        .into_iter()
-        .map(|snapshot| (snapshot.battle_id, snapshot))
-        .collect::<HashMap<_, _>>();
+    let totals_by_battle = load_segment_totals(db, &battle_ids).await?;
 
     let event_ids = fights
         .iter()
         .filter_map(|model| model.event_id)
-        .collect::<Vec<_>>();
-    let event_titles = if event_ids.is_empty() {
-        HashMap::new()
-    } else {
-        event::Entity::find()
-            .filter(event::Column::Id.is_in(event_ids.clone()))
-            .all(&db)
-            .await
-            .map_err(AppError::Database)?
-            .into_iter()
-            .map(|model| (model.id, model.title))
-            .collect()
-    };
-    let items = fights
+        .collect::<HashSet<_>>()
         .into_iter()
-        .map(|model| -> Result<FightListItem, AppError> {
+        .collect::<Vec<_>>();
+    let mut event_titles = HashMap::<i64, String>::new();
+    for chunk in event_ids.chunks(ID_CHUNK) {
+        let rows = event::Entity::find()
+            .select_only()
+            .column(event::Column::Id)
+            .column(event::Column::Title)
+            .filter(event::Column::Id.is_in(chunk.to_vec()))
+            .into_tuple::<(i64, String)>()
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        event_titles.extend(rows);
+    }
+
+    Ok(fights
+        .into_iter()
+        .map(|model| {
             let fight_segments = segments_by_fight
                 .get(&model.id)
                 .map_or(&[][..], Vec::as_slice);
-            let summary = summarize_fight_segments(fight_segments, &snapshots_by_battle);
-            Ok(FightListItem {
+            let summary = summarize_fight_segments(fight_segments, &totals_by_battle);
+            let segment_count = i64::try_from(fight_segments.len()).unwrap_or(i64::MAX);
+            FightListItem {
                 id: model.id,
                 event_id: model.event_id,
                 event_title: model
@@ -563,18 +656,59 @@ pub async fn list_fights(
                 grouping_method: model.grouping_method,
                 grouping_confidence: model.grouping_confidence,
                 needs_review: model.needs_review,
-                segment_count: segment_counts.get(&model.id).copied().unwrap_or_default(),
+                segment_count,
                 total_players: summary.total_players,
                 total_kills: summary.total_kills,
                 total_fame: summary.total_fame,
-                outcome: resolve_fight_outcome(fight_segments, &snapshots_by_battle, &side)?,
-            })
+                outcome: FightOutcomeView::from_stored(
+                    &model.outcome,
+                    model.outcome_method.as_deref(),
+                    segment_count,
+                ),
+            }
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    let items = filter_sort_fights(items, &query)?;
-    let paginated = paginate_vec(items, &pagination);
+        .collect())
+}
 
-    Ok(Json(ApiResponse::new(PaginatedFightList::from(paginated))))
+/// The numeric columns of one battle snapshot that the fights list aggregates.
+#[derive(Debug, Clone, Copy, Default)]
+struct SegmentTotals {
+    total_players: i64,
+    total_kills: i64,
+    total_fame: i64,
+}
+
+/// Loads [`SegmentTotals`] for the given battles with a column-restricted query, so the
+/// snapshots' large JSON columns are never read.
+async fn load_segment_totals(
+    db: &DatabaseConnection,
+    battle_ids: &[i64],
+) -> Result<HashMap<i64, SegmentTotals>, AppError> {
+    let mut totals = HashMap::new();
+    for chunk in battle_ids.chunks(ID_CHUNK) {
+        let rows = GuildBattleSnapshotEntity::find()
+            .select_only()
+            .column(GuildBattleSnapshotColumn::BattleId)
+            .column(GuildBattleSnapshotColumn::TotalPlayers)
+            .column(GuildBattleSnapshotColumn::TotalKills)
+            .column(GuildBattleSnapshotColumn::TotalFame)
+            .filter(GuildBattleSnapshotColumn::BattleId.is_in(chunk.to_vec()))
+            .into_tuple::<(i64, i64, i64, i64)>()
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        for (battle_id, total_players, total_kills, total_fame) in rows {
+            totals.insert(
+                battle_id,
+                SegmentTotals {
+                    total_players,
+                    total_kills,
+                    total_fame,
+                },
+            );
+        }
+    }
+    Ok(totals)
 }
 
 #[derive(Debug, Default)]
@@ -586,18 +720,20 @@ struct FightListSummary {
 
 /// Aggregates the summary values that are safe to expose from hydrated segment snapshots.
 /// Segments without a snapshot remain part of `segment_count`, but do not fabricate combat data.
+///
+/// These are battle-wide totals (both sides), unlike the friendly-side figures on the event page.
 fn summarize_fight_segments(
     fight_segments: &[fight_battle::Model],
-    snapshots_by_battle: &HashMap<i64, backend_entities::battles::Model>,
+    totals_by_battle: &HashMap<i64, SegmentTotals>,
 ) -> FightListSummary {
     let mut summary = FightListSummary::default();
     for segment in fight_segments {
-        let Some(snapshot) = snapshots_by_battle.get(&segment.battle_id) else {
+        let Some(totals) = totals_by_battle.get(&segment.battle_id) else {
             continue;
         };
-        summary.total_players = summary.total_players.max(snapshot.total_players);
-        summary.total_kills += snapshot.total_kills;
-        summary.total_fame += snapshot.total_fame;
+        summary.total_players = summary.total_players.max(totals.total_players);
+        summary.total_kills += totals.total_kills;
+        summary.total_fame += totals.total_fame;
     }
     summary
 }
@@ -640,7 +776,15 @@ fn filter_sort_fights(
         items.retain(|fight| fight.outcome.outcome == expected);
     }
 
-    let sort = resolve_sort_key(
+    let sort = resolve_fight_list_sort(query)?;
+    let order = SortOrder::from_query(query.order.as_deref());
+    items.sort_by(|left, right| compare_fight_list_items(left, right, sort, order));
+    Ok(items)
+}
+
+/// Resolves the requested `sort` column, defaulting to the start time.
+fn resolve_fight_list_sort(query: &FightListQuery) -> Result<FightListSort, AppError> {
+    resolve_sort_key(
         query.sort.as_deref(),
         &[
             ("start_time", FightListSort::StartTime),
@@ -653,10 +797,7 @@ fn filter_sort_fights(
             ("outcome", FightListSort::Outcome),
         ],
         FightListSort::StartTime,
-    )?;
-    let order = SortOrder::from_query(query.order.as_deref());
-    items.sort_by(|left, right| compare_fight_list_items(left, right, sort, order));
-    Ok(items)
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -1740,7 +1881,7 @@ fn build_fight_trend_period(
         win_sample_size,
         wins,
         losses: win_sample_size - wins,
-        win_rate: (win_sample_size > 0).then(|| wins as f64 / win_sample_size as f64),
+        win_rate: (win_sample_size > 0).then(|| ratio_percent(wins, win_sample_size)),
         kills,
         deaths,
         kd_ratio: (deaths > 0).then(|| kills as f64 / deaths as f64),
@@ -3331,13 +3472,10 @@ mod tests {
         insert_fight(&db, timestamp(1)).await; // needs_review defaults to true
         insert_fight(&db, timestamp(2)).await; // needs_review defaults to true
 
-        let (control, tenant) = tenant_extensions(&world, GUILDS[0]).await;
         let Json(response) = list_fights(
             test_admin(),
             Extension(Permissions::new_empty()),
             Extension(db.clone()),
-            control,
-            tenant,
             Query(FightListQuery {
                 page: None,
                 limit: None,
@@ -3579,38 +3717,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_and_trends_use_the_requesting_tenants_side() {
+    async fn trends_use_the_requesting_tenants_side() {
         let world = seeded_world().await;
         seed_rival_fight(&world.guild(1).db).await;
 
-        for (tenant_id, outcome, kills, deaths, wins) in [
-            (GUILDS[0], FightOutcome::Victory, 6, 2, 1),
-            (GUILDS[1], FightOutcome::Defeat, 4, 2, 0),
-            (GUILDS[2], FightOutcome::Unknown, 0, 0, 0),
+        for (tenant_id, win_rate, kills, deaths, wins) in [
+            (GUILDS[0], Some(100.0), 6, 2, 1),
+            (GUILDS[1], Some(0.0), 4, 2, 0),
+            (GUILDS[2], None, 0, 0, 0),
         ] {
-            let (control, tenant) = tenant_extensions(&world, tenant_id).await;
-            let Json(list) = list_fights(
-                test_admin(),
-                Extension(Permissions::new_empty()),
-                Extension(world.guild(1).db.clone()),
-                control,
-                tenant,
-                Query(FightListQuery {
-                    page: None,
-                    limit: None,
-                    search: None,
-                    event_id: None,
-                    needs_review: None,
-                    min_players: None,
-                    outcome: None,
-                    sort: None,
-                    order: None,
-                }),
-            )
-            .await
-            .expect("list fights");
-            assert_eq!(list.data.items[0].outcome.outcome, outcome, "{tenant_id}");
-
             let (control, tenant) = tenant_extensions(&world, tenant_id).await;
             let Json(trends) = get_fight_trends(
                 test_admin(),
@@ -3625,6 +3740,241 @@ mod tests {
             assert_eq!(period.kills, kills, "{tenant_id} kills");
             assert_eq!(period.deaths, deaths, "{tenant_id} deaths");
             assert_eq!(period.wins, wins, "{tenant_id} wins");
+            // Percent (0..=100), like every other `win_rate` in the API.
+            assert_eq!(period.win_rate, win_rate, "{tenant_id} win rate");
         }
+    }
+
+    fn list_query() -> FightListQuery {
+        FightListQuery {
+            page: None,
+            limit: None,
+            search: None,
+            event_id: None,
+            needs_review: None,
+            min_players: None,
+            outcome: None,
+            sort: None,
+            order: None,
+        }
+    }
+
+    async fn run_list_fights(db: &DatabaseConnection, query: FightListQuery) -> PaginatedFightList {
+        let Json(response) = list_fights(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Query(query),
+        )
+        .await
+        .expect("list fights");
+        response.data
+    }
+
+    #[tokio::test]
+    async fn list_fights_reports_the_stored_outcome() {
+        let db = seed_db().await;
+        let started = timestamp(-2);
+        let fight = insert_fight(&db, started).await;
+        let mut active: fight::ActiveModel = fight.clone().into();
+        active.outcome = Set("victory".to_string());
+        active.outcome_method = Set(Some("unanimous_segments".to_string()));
+        active.update(&db).await.expect("store the outcome");
+        insert_snapshot(
+            &db,
+            910,
+            started,
+            None,
+            30,
+            7,
+            700_000,
+            Vec::new(),
+            Vec::new(),
+            BattleLossEstimate::default(),
+        )
+        .await;
+        insert_segment(&db, fight.id, 910, 1).await;
+
+        let list = run_list_fights(&db, list_query()).await;
+
+        assert_eq!(list.items.len(), 1);
+        let item = &list.items[0];
+        assert_eq!(item.outcome.outcome, FightOutcome::Victory);
+        assert_eq!(item.outcome.method, "unanimous_segments");
+        assert_eq!(item.outcome.evidence_count, 1);
+        assert_eq!(item.segment_count, 1);
+        assert_eq!(item.total_players, 30);
+        assert_eq!(item.total_kills, 7);
+        assert_eq!(item.total_fame, 700_000);
+
+        let defeats = run_list_fights(
+            &db,
+            FightListQuery {
+                outcome: Some("defeat".to_string()),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(defeats.total_items, 0, "the stored outcome is what filters");
+    }
+
+    #[tokio::test]
+    async fn list_fights_paginates_in_sql_and_only_hydrates_the_requested_page() {
+        let db = seed_db().await;
+        let mut fight_ids = Vec::new();
+        for index in 0..5_i64 {
+            let started = timestamp(index);
+            let fight = insert_fight(&db, started).await;
+            // A snapshot whose JSON columns cannot be parsed proves the list never reads them.
+            backend_entities::battles::ActiveModel {
+                battle_id: Set(920 + index),
+                start_time: Set(started),
+                end_time: Set(None),
+                total_players: Set(10 + index),
+                total_kills: Set(index),
+                total_fame: Set(index * 1_000),
+                guilds_json: Set("not json".to_string()),
+                players_json: Set("not json".to_string()),
+                kills_json: Set("not json".to_string()),
+                losses_json: Set("not json".to_string()),
+                fetched_at: Set(started),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("insert unparseable snapshot");
+            insert_segment(&db, fight.id, 920 + index, 1).await;
+            fight_ids.push(fight.id);
+        }
+
+        let first = run_list_fights(
+            &db,
+            FightListQuery {
+                limit: Some(2),
+                page: Some(1),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(first.total_items, 5);
+        assert_eq!(first.total_pages, 3);
+        assert_eq!(first.current_page, 1);
+        assert_eq!(first.limit, 2);
+        // Newest first by default.
+        assert_eq!(
+            first.items.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![fight_ids[4], fight_ids[3]]
+        );
+
+        let last = run_list_fights(
+            &db,
+            FightListQuery {
+                limit: Some(2),
+                page: Some(3),
+                order: Some("asc".to_string()),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(last.items.len(), 1);
+        assert_eq!(last.items[0].id, fight_ids[4]);
+        assert_eq!(last.items[0].total_players, 14);
+
+        let beyond = run_list_fights(
+            &db,
+            FightListQuery {
+                limit: Some(2),
+                page: Some(9),
+                ..list_query()
+            },
+        )
+        .await;
+        assert!(beyond.items.is_empty());
+        assert_eq!(beyond.total_items, 5);
+    }
+
+    #[tokio::test]
+    async fn list_fights_filters_by_event_search_and_derived_values() {
+        let db = seed_db().await;
+        let event_id = insert_event_for_backfill(&db, "Roads Of Avalon").await;
+        let started = timestamp(-3);
+        let linked = insert_fight(&db, started).await;
+        let mut active: fight::ActiveModel = linked.clone().into();
+        active.event_id = Set(Some(event_id));
+        active.update(&db).await.expect("link the fight to its event");
+        let orphan = insert_fight(&db, timestamp(-2)).await;
+        for (battle_id, fight_id, players) in [(930, linked.id, 40), (931, orphan.id, 12)] {
+            insert_snapshot(
+                &db,
+                battle_id,
+                started,
+                None,
+                players,
+                1,
+                1,
+                Vec::new(),
+                Vec::new(),
+                BattleLossEstimate::default(),
+            )
+            .await;
+            insert_segment(&db, fight_id, battle_id, 1).await;
+        }
+
+        let by_event = run_list_fights(
+            &db,
+            FightListQuery {
+                event_id: Some(event_id),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(by_event.items.len(), 1);
+        assert_eq!(by_event.items[0].id, linked.id);
+        assert_eq!(by_event.items[0].event_title.as_deref(), Some("Roads Of Avalon"));
+
+        let by_title = run_list_fights(
+            &db,
+            FightListQuery {
+                search: Some("avalon".to_string()),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(by_title.total_items, 1);
+        assert_eq!(by_title.items[0].id, linked.id);
+
+        let by_id = run_list_fights(
+            &db,
+            FightListQuery {
+                search: Some(orphan.id.to_string()),
+                ..list_query()
+            },
+        )
+        .await;
+        assert!(by_id.items.iter().any(|item| item.id == orphan.id));
+
+        let big = run_list_fights(
+            &db,
+            FightListQuery {
+                min_players: Some(20),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(big.total_items, 1);
+        assert_eq!(big.items[0].id, linked.id);
+
+        let by_players = run_list_fights(
+            &db,
+            FightListQuery {
+                sort: Some("players".to_string()),
+                order: Some("asc".to_string()),
+                limit: Some(1),
+                ..list_query()
+            },
+        )
+        .await;
+        assert_eq!(by_players.total_items, 2);
+        assert_eq!(by_players.items[0].id, orphan.id);
     }
 }

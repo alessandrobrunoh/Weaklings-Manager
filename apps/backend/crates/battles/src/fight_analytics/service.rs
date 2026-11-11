@@ -13,9 +13,91 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use backend_core::errors::AppError;
+use backend_core::ratios::kill_death_ratio;
 use backend_entities::events::fight;
 
+use crate::battles::outcome::BattleOutcome;
 use backend_entities::fight_analytics::fight_stat;
+
+/// Suffix `battles::outcome::combine_segments` appends to an outcome's method
+/// when some segments could not be classified.
+const PARTIAL_COVERAGE_SUFFIX: &str = "_partial_coverage";
+
+/// A canonical Fight's outcome from the configured guild's perspective.
+///
+/// The one outcome shape every Fight-level API returns (fights list/detail and
+/// the event page). The verdict itself is `fights.outcome`, persisted by
+/// [`super::writer::recompute_fight_analytics`].
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct FightOutcomeView {
+    /// Deterministic Fight-level outcome derived from persisted segment evidence.
+    pub outcome: BattleOutcome,
+    /// Segments that produced a decided outcome. Compare against `segment_count`
+    /// to see how much of the fight the verdict actually rests on.
+    ///
+    /// Built from the stored verdict, which keeps the method but not the exact
+    /// count: it is `0` for an `unknown` outcome, the full segment count when
+    /// the method has no `_partial_coverage` suffix, and `1` (a lower bound)
+    /// when it has one.
+    pub evidence_count: i64,
+    /// How the outcome was resolved: `unanimous_segments`, `mixed_segments`,
+    /// `no_resolved_segments` or `no_segments`. The first two gain a
+    /// `_partial_coverage` suffix when some segments could not be classified.
+    /// `not_computed` when the fight was never recomputed.
+    pub method: String,
+}
+
+impl FightOutcomeView {
+    /// Builds the view from the `fights.outcome` / `fights.outcome_method`
+    /// columns. `segment_count` is the fight's persisted segment count.
+    #[must_use]
+    pub fn from_stored(outcome: &str, method: Option<&str>, segment_count: i64) -> Self {
+        let outcome = BattleOutcome::from_query(outcome).unwrap_or(BattleOutcome::Unknown);
+        let evidence_count = if outcome == BattleOutcome::Unknown {
+            0
+        } else if method.is_some_and(|method| method.ends_with(PARTIAL_COVERAGE_SUFFIX)) {
+            segment_count.min(1)
+        } else {
+            segment_count
+        };
+        Self {
+            outcome,
+            evidence_count,
+            method: method.unwrap_or("not_computed").to_string(),
+        }
+    }
+}
+
+/// Compact combat totals for one Fight, from the persisted `fight_stats` row.
+///
+/// Every figure is for the *friendly* side (the tenant's own guild plus its
+/// allies, summed) and players are deduplicated across segments. Absent
+/// entirely when the fight has not been recomputed yet.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct FightAggregateStats {
+    /// Distinct friendly players across every segment.
+    pub total_players: i64,
+    /// Friendly kills summed across segments.
+    pub total_kills: i64,
+    /// Friendly deaths summed across segments.
+    pub total_deaths: i64,
+    /// Friendly kill fame summed across segments.
+    pub total_fame: i64,
+    /// Friendly kill/death ratio; equals the kill count when there are no deaths.
+    pub kill_death_ratio: f64,
+}
+
+impl From<&fight_stat::Model> for FightAggregateStats {
+    fn from(stats: &fight_stat::Model) -> Self {
+        Self {
+            total_players: i64::from(stats.unique_friendly_players),
+            total_kills: stats.friendly_kills,
+            total_deaths: stats.friendly_deaths,
+            total_fame: stats.friendly_kill_fame,
+            kill_death_ratio: kill_death_ratio(stats.friendly_kills, stats.friendly_deaths),
+        }
+    }
+}
 
 /// One fight's persisted analytics: its decided outcome, plus the
 /// `fight_stats` rollup when one has been computed.
@@ -199,5 +281,25 @@ mod tests {
         let result = get_fight_analytics(&db, 999_999).await;
 
         assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    /// The stored verdict keeps its method, and a partial-coverage method only
+    /// claims a lower bound of one decided segment.
+    #[test]
+    fn outcome_view_from_stored_derives_the_evidence_count() {
+        let full = FightOutcomeView::from_stored("victory", Some("unanimous_segments"), 3);
+        assert_eq!(full.outcome, BattleOutcome::Victory);
+        assert_eq!(full.evidence_count, 3);
+        assert_eq!(full.method, "unanimous_segments");
+
+        let partial =
+            FightOutcomeView::from_stored("draw", Some("mixed_segments_partial_coverage"), 3);
+        assert_eq!(partial.outcome, BattleOutcome::Draw);
+        assert_eq!(partial.evidence_count, 1);
+
+        let never = FightOutcomeView::from_stored("unknown", None, 2);
+        assert_eq!(never.outcome, BattleOutcome::Unknown);
+        assert_eq!(never.evidence_count, 0);
+        assert_eq!(never.method, "not_computed");
     }
 }
