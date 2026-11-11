@@ -11,7 +11,7 @@ use std::sync::Arc;
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tokio::sync::RwLock;
 
-use super::entities::{role, role_permission};
+use crate::modules::auth::entities::{role, role_permission};
 use super::permissions::Permission;
 
 /// Immutable snapshot of the role→permission mapping, keyed by role **name**

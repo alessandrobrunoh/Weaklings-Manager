@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use crate::errors::AppError;
 use crate::modules::admin::entities::Entity as GuildSettingsEntity;
 
-use super::entities::{ActiveModel, Model};
+use crate::modules::trials::entities::{ActiveModel, Model};
 
 /// The configured trial policy a trial row is created from.
 #[derive(Debug)]
@@ -168,7 +168,7 @@ mod tests {
             .expect_err("no role");
         assert!(matches!(error, AppError::Conflict(_)));
 
-        let stored = super::super::entities::Entity::find()
+        let stored = crate::modules::trials::entities::Entity::find()
             .all(&db)
             .await
             .expect("list");

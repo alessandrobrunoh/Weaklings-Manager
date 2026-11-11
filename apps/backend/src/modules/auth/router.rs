@@ -729,7 +729,7 @@ async fn admit_member(
     tenant_id: &str,
     tenant_kind: &str,
     lookup: &super::service::GuildMemberLookup,
-    db_roles: &[super::entities::role::Model],
+    db_roles: &[crate::modules::auth::entities::role::Model],
 ) -> Result<(Vec<String>, String), AppError> {
     use super::service::GuildMemberLookup;
     let lookup = match lookup {

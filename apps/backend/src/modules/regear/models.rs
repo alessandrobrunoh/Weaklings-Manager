@@ -9,8 +9,8 @@ use utoipa::ToSchema;
 
 use crate::modules::comps::status::BuildSlot;
 
-use super::entities::RegearDeathModel;
-use super::status::{RegearSource, RegearStatus};
+use crate::modules::regear::entities::RegearDeathModel;
+use crate::modules::regear::status::{RegearSource, RegearStatus};
 
 /// One slot's pricing inside a regear breakdown. Stored as JSON in
 /// `regear_deaths.auto_estimate_breakdown_json` and `final_breakdown_json`.
@@ -176,7 +176,7 @@ pub struct RegearSettingsView {
 impl RegearSettingsView {
     /// Builds a view from the singleton model row.
     #[must_use]
-    pub fn from_model(model: super::entities::RegearSettingModel) -> Self {
+    pub fn from_model(model: crate::modules::regear::entities::RegearSettingModel) -> Self {
         Self {
             weekly_request_topup_amount: model.weekly_request_topup_amount,
             weekly_request_cap: model.weekly_request_cap,

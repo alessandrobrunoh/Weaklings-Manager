@@ -4,7 +4,7 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::GiveawayStatus;
+use crate::modules::giveaways::status::GiveawayStatus;
 
 /// Body of `POST /api/giveaways`.
 #[derive(Debug, Clone, Deserialize, ToSchema)]

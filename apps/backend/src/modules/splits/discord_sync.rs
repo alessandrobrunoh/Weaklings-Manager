@@ -16,7 +16,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::{
+use crate::modules::splits::{
     entities::{
         split::{Column as SplitColumn, Entity as SplitEntity},
         split_discord_sync::{ActiveModel as SyncActiveModel, Entity as SyncEntity},

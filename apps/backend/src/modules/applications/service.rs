@@ -6,7 +6,7 @@ use sea_orm::{
 
 use crate::errors::AppError;
 
-use super::entities::{ActiveModel, Column, Entity, Model};
+use crate::modules::applications::entities::{ActiveModel, Column, Entity, Model};
 
 /// Trims an in-game name and drops it when there is nothing left.
 ///

@@ -29,10 +29,10 @@ use crate::modules::openalbion::service::aodp_identifier_for_stored_item;
 use crate::modules::regear::entities::RegearSettingModel;
 use crate::modules::regear::pricing::PricingFallback;
 
-use super::entities::{build, build_item, comp_build};
 use super::models::{BuildPriceView, CompBuildPriceRow, CompPriceView, ItemPriceRow};
 use super::price_cache::PriceCache;
-use super::status::{BuildLoadout, BuildSlot};
+use crate::modules::comps::entities::{build, build_item, comp_build};
+use crate::modules::comps::status::{BuildLoadout, BuildSlot};
 
 /// Where market prices come from. Production uses [`AlbionDataService`]; tests substitute a stub
 /// so the failure paths can be exercised without a network.
@@ -135,7 +135,7 @@ pub async fn price_comp(
     settings: &RegearSettingModel,
     server: Option<&str>,
 ) -> Result<CompPriceView, AppError> {
-    use super::entities::comp;
+    use crate::modules::comps::entities::comp;
     if comp::Entity::find_by_id(comp_id).one(db).await?.is_none() {
         return Err(AppError::NotFound(format!("comp {comp_id} not found")));
     }

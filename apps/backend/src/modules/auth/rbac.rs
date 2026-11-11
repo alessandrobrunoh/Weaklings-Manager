@@ -210,7 +210,10 @@ async fn apply_live_guild_roles(parts: &Parts, ctx: &mut UserContext) {
     if matches!(lookup, super::service::GuildMemberLookup::Unavailable) {
         return;
     }
-    let Ok(db_roles) = super::entities::role::Entity::find().all(db).await else {
+    let Ok(db_roles) = crate::modules::auth::entities::role::Entity::find()
+        .all(db)
+        .await
+    else {
         return;
     };
     let (roles, highest) = super::service::roles_after_member_lookup(

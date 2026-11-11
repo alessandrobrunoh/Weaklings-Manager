@@ -49,7 +49,7 @@ pub mod notification {
         pub id: i64,
         /// Recipient.
         pub user_id: i64,
-        /// [`NotificationKind`](super::super::status::NotificationKind) as a stable string.
+        /// [`NotificationKind`](crate::modules::notifications::status::NotificationKind) as a stable string.
         pub kind: String,
         /// Short title shown in the bell panel.
         pub title: String,
@@ -65,7 +65,7 @@ pub mod notification {
         pub created_by_user_id: Option<i64>,
         /// When the recipient marked it read.
         pub read_at: Option<DateTimeWithTimeZone>,
-        /// [`super::super::status::DiscordDmStatus`] as a stable string.
+        /// [`crate::modules::notifications::status::DiscordDmStatus`] as a stable string.
         pub discord_dm_status: String,
         /// Delivery attempts by the DM worker.
         pub discord_dm_attempts: i32,

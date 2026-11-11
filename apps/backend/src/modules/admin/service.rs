@@ -17,13 +17,13 @@ use crate::modules::discord_api::{
 };
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 
-use super::entities::{
-    ActiveModel as GuildSettingActiveModel, Entity as GuildSettingEntity, Model,
-};
 use super::models::{
     BrandColorsView, CreateRoleRequest, GuildSettingsView, PermissionCatalogEntry,
     PermissionMatrix, RolePermissionsView, UpdateBrandColorsRequest, UpdateGuildSettingsRequest,
     UpdateRoleRequest,
+};
+use crate::modules::admin::entities::{
+    ActiveModel as GuildSettingActiveModel, Entity as GuildSettingEntity, Model,
 };
 
 pub struct AdminService;

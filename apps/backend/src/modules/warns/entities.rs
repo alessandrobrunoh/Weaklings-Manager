@@ -23,7 +23,7 @@ pub mod user_warn {
         pub issued_by_user_id: i64,
         /// Required reason text.
         pub reason: String,
-        /// [`super::super::status::WarnSeverity`] as a stable string.
+        /// [`crate::modules::warns::status::WarnSeverity`] as a stable string.
         pub severity: String,
         /// Optional XP multiplier applied to the covering-season account.
         pub multiplier: Option<Decimal>,

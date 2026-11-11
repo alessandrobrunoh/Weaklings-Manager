@@ -29,13 +29,13 @@ use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
 
-use super::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
 use super::models::{
     AcceptWithdrawalRequest, BalanceSummary, CreateTransactionRequest, GuildBankSummary,
     RejectWithdrawalRequest, TransactionFilters, TransactionView, UpdateTransactionRequest,
     WithdrawRequest,
 };
-use super::status::TransactionStatus;
+use crate::modules::bank::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
+use crate::modules::bank::status::TransactionStatus;
 
 /// The transaction type generated when a split is completed.
 pub const TYPE_SPLIT_CREDIT: &str = "split_credit";
@@ -836,7 +836,10 @@ impl BankService {
         }
         let needs_user_join = sort_key == "to_username";
         if needs_user_join {
-            query = query.join(JoinType::InnerJoin, super::entities::Relation::ToUser.def());
+            query = query.join(
+                JoinType::InnerJoin,
+                crate::modules::bank::entities::Relation::ToUser.def(),
+            );
         }
 
         let order = SortOrder::from_query(filters.order.as_deref());

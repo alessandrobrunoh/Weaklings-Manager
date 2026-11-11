@@ -151,7 +151,7 @@ pub mod progression_xp_ledger {
         pub user_id: i64,
         /// Season of the award.
         pub season_id: i64,
-        /// [`super::super::status::XpSource`] as a stable string.
+        /// [`crate::modules::progression::status::XpSource`] as a stable string.
         pub source: String,
         /// Rate before the multiplier.
         pub base_amount: i64,

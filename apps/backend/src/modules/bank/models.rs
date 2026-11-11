@@ -7,8 +7,8 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::entities::Model;
-use super::status::TransactionStatus;
+use crate::modules::bank::entities::Model;
+use crate::modules::bank::status::TransactionStatus;
 
 /// A single transaction as seen by a client.
 #[derive(Debug, Serialize, Clone, ToSchema)]

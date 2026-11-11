@@ -25,7 +25,7 @@ use crate::modules::users::entities::{
 };
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
-use super::entities::{
+use crate::modules::giveaways::entities::{
     GiveawayActiveModel, GiveawayColumn, GiveawayEntity, GiveawayEntryActiveModel,
     GiveawayEntryColumn, GiveawayEntryEntity, GiveawayModel, GiveawayPrizeActiveModel,
     GiveawayPrizeColumn, GiveawayPrizeEntity, GiveawayPrizeModel,
@@ -34,7 +34,7 @@ use super::models::{
     CreateGiveawayPrizeRequest, CreateGiveawayRequest, GiveawayDetailView, GiveawayEntryView,
     GiveawayFilters, GiveawayPrizeView, GiveawayView, SetGiveawayDiscordMessageRequest,
 };
-use super::status::GiveawayStatus;
+use crate::modules::giveaways::status::GiveawayStatus;
 
 /// Guild Bank ledger type written when a silver prize is awarded.
 pub const TYPE_GIVEAWAY_CREDIT: &str = "giveaway_credit";

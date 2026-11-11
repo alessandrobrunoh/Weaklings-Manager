@@ -13,7 +13,7 @@ use crate::modules::trials::service::TrialService;
 use crate::responses::ApiResponse;
 use serde::Deserialize;
 
-use super::entities::{Column, Entity, Model};
+use crate::modules::applications::entities::{Column, Entity, Model};
 use super::service::ApplicationService;
 
 #[derive(Debug, Serialize)]

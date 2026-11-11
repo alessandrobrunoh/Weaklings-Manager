@@ -4,7 +4,7 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::XpSource;
+use crate::modules::progression::status::XpSource;
 
 /// Public view of a season.
 #[derive(Debug, Clone, Serialize, ToSchema)]

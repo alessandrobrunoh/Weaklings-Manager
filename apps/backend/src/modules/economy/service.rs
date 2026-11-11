@@ -28,7 +28,7 @@ use crate::modules::regear::status::RegearStatus;
 use crate::modules::splits::entities::split;
 use crate::modules::splits::status::SplitStatus;
 
-use super::entities::battle_loss_estimate;
+use crate::modules::economy::entities::battle_loss_estimate;
 use super::models::{BattleEconomyView, EventEconomyView, FightEconomyView};
 
 /// Stateless economy read operations.

@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use super::data_types::{CombatItem, CombatRules, DatasetVersion, SpecNode};
+use crate::modules::combat::data_types::{CombatItem, CombatRules, DatasetVersion, SpecNode};
 
 /// Every equippable base, keyed by tier-stripped identifier (`2H_POLEHAMMER`).
 ///

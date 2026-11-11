@@ -44,7 +44,7 @@ use super::compute::{
     BuildCandidate, ComputedFingerprint, FingerprintMode, KillItemSource, MatchStatus,
     compute_and_match,
 };
-use super::entities::{battle_loadout_observation, fingerprint};
+use crate::modules::fingerprints::entities::{battle_loadout_observation, fingerprint};
 
 /// Persists one battle's equipment fingerprints, in one transaction:
 ///

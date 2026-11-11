@@ -11,11 +11,6 @@ use sea_orm::{
     PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 
-use super::dataset::{combat_items, combat_rules, combat_spells, dataset_version, spec_node};
-use super::entities::combat_run;
-use super::entities::combat_run::Column as CombatRunColumn;
-use super::entities::combat_scenario;
-use super::entities::combat_scenario::Column as CombatScenarioColumn;
 use super::fit;
 use super::ip::{self, EquippedItem, SpecLevels};
 use super::models::{
@@ -25,6 +20,13 @@ use super::models::{
     ScenarioDetail, ScenarioSummary, ScenarioVersionRef, SpecSource, UpdateScenarioRequest,
 };
 use crate::errors::AppError;
+use crate::modules::combat::dataset::{
+    combat_items, combat_rules, combat_spells, dataset_version, spec_node,
+};
+use crate::modules::combat::entities::combat_run;
+use crate::modules::combat::entities::combat_run::Column as CombatRunColumn;
+use crate::modules::combat::entities::combat_scenario;
+use crate::modules::combat::entities::combat_scenario::Column as CombatScenarioColumn;
 use crate::modules::comps::entities::build_item::{
     Column as BuildItemColumn, Entity as BuildItemEntity,
 };

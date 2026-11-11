@@ -92,7 +92,7 @@ impl UserProfile {
     /// Albion Online character name if they have one, falling back to their Discord username.
     async fn from_model(
         db: &sea_orm::DatabaseConnection,
-        model: super::entities::Model,
+        model: crate::modules::users::entities::Model,
     ) -> Result<Self, AppError> {
         let username = super::display_name::resolve(db, &model).await?;
         Ok(Self {
@@ -185,7 +185,7 @@ impl UserService {
         db: &DatabaseConnection,
         user_id: u64,
     ) -> Result<Option<UserProfile>, AppError> {
-        use super::entities::Entity as UserEntity;
+        use crate::modules::users::entities::Entity as UserEntity;
         let user = UserEntity::find_by_id(user_id as i64).one(db).await?;
         match user {
             Some(model) => Ok(Some(UserProfile::from_model(db, model).await?)),
@@ -528,7 +528,7 @@ impl UserService {
         db: &DatabaseConnection,
         user_id: i64,
     ) -> Result<Option<String>, AppError> {
-        use super::entities::Entity as UserEntity;
+        use crate::modules::users::entities::Entity as UserEntity;
 
         let Some(user) = UserEntity::find_by_id(user_id).one(db).await? else {
             return Ok(None);
@@ -553,7 +553,7 @@ impl UserService {
         pagination: &PaginationParams,
         filters: &UserFilters,
     ) -> Result<PaginatedData<UserProfile>, AppError> {
-        use super::entities::{Column as UserColumn, Entity as UserEntity};
+        use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 
         let mut query = UserEntity::find();
 
@@ -653,7 +653,7 @@ impl UserService {
         db: &DatabaseConnection,
         input: CreateLinkedMember,
     ) -> Result<UserProfile, AppError> {
-        use super::entities::{Column as UserColumn, Entity as UserEntity};
+        use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
         use crate::modules::albion::entities::albion_link;
 
         let discord_id = input.discord_id.trim();
@@ -701,7 +701,7 @@ impl UserService {
             ));
         }
 
-        let inserted = super::entities::ActiveModel {
+        let inserted = crate::modules::users::entities::ActiveModel {
             username: Set(input.username.clone()),
             email: Set(provisional_discord_email(discord_id)),
             role: Set(input.role.clone()),
@@ -792,7 +792,7 @@ mod tests {
 
     #[tokio::test]
     async fn listing_ignores_an_email_probe() {
-        use super::super::entities::ActiveModel;
+        use crate::modules::users::entities::ActiveModel;
         let db = crate::testkit::migrated_sqlite().await;
         for (name, email) in [("alice", "alice@example.com"), ("bob", "bob@example.com")] {
             ActiveModel {
@@ -828,7 +828,7 @@ mod tests {
     async fn test_pagination_and_filtering() {
         let db = crate::testkit::migrated_sqlite().await;
 
-        use super::super::entities::ActiveModel;
+        use crate::modules::users::entities::ActiveModel;
 
         let user_a = ActiveModel {
             username: Set("alice".to_string()),
@@ -992,7 +992,7 @@ mod tests {
     async fn seed_specializations_user() -> (DatabaseConnection, i64) {
         let db = crate::testkit::migrated_sqlite().await;
 
-        use super::super::entities::ActiveModel;
+        use crate::modules::users::entities::ActiveModel;
         let user = ActiveModel {
             username: Set("specializer".to_string()),
             email: Set("specializer@example.com".to_string()),

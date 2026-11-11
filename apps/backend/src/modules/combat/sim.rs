@@ -22,7 +22,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::dataset::combat_rules;
+use crate::modules::combat::dataset::combat_rules;
 use super::spell::{self, EffectSide};
 
 /// Which auto-attack category a target's incoming damage is measured against for focus fire — the
@@ -281,7 +281,7 @@ fn zerg_cc_multiplier(_side: EffectSide, sides: SideCounts) -> f64 {
     zerg_row(sides.ally_count).map_or(1.0, |row| row.cc_duration)
 }
 
-fn zerg_row(count: u32) -> Option<&'static super::data_types::ZergDebuffRow> {
+fn zerg_row(count: u32) -> Option<&'static crate::modules::combat::data_types::ZergDebuffRow> {
     combat_rules()
         .zerg_debuff
         .allies

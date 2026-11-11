@@ -22,10 +22,10 @@ use crate::modules::events::entities::{
 };
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
-use super::entities::{
+use crate::modules::comps::entities::{
     build, build_category, build_item, build_item_spell, comp, comp_build, comp_category,
 };
-use super::entities::{
+use crate::modules::comps::entities::{
     build::Column as BuildColumn, build_category::Column as BuildCategoryColumn,
     build_item::Column as BuildItemColumn, build_item_spell::Column as BuildItemSpellColumn,
     comp::Column as CompColumn, comp_build::Column as CompBuildColumn,
@@ -38,7 +38,7 @@ use super::models::{
     UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
     UpsertBuildItemRequest,
 };
-use super::status::{
+use crate::modules::comps::status::{
     BuildLoadout, BuildRole, BuildSlot, icon_url_with_quality, parse_item_enchantment,
     parse_item_quality,
 };
@@ -2412,7 +2412,7 @@ mod tests {
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
     use crate::pagination::PaginationParams;
 
-    use super::super::entities::{
+    use crate::modules::comps::entities::{
         build::ActiveModel as BuildActiveModel,
         build_category::ActiveModel as BuildCategoryActiveModel,
         comp::ActiveModel as CompActiveModel,
@@ -2671,7 +2671,7 @@ mod tests {
         // Enchantment and quality are independent axes: setting one must not disturb the other.
         assert_eq!(
             stored.openalbion_item_quality,
-            super::super::status::DEFAULT_ITEM_QUALITY
+            crate::modules::comps::status::DEFAULT_ITEM_QUALITY
         );
     }
 

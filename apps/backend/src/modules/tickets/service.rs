@@ -5,7 +5,7 @@ use sea_orm::{
 
 use crate::errors::AppError;
 
-use super::entities::{ActiveModel, Column, Entity, Model};
+use crate::modules::tickets::entities::{ActiveModel, Column, Entity, Model};
 
 pub struct TicketService;
 

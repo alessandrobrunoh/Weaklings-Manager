@@ -1147,6 +1147,8 @@ mod tests {
                 .filter(|_| tail.contains("::router()"))
             {
                 let module = module.trim_start_matches(|c: char| c == ',' || c.is_whitespace());
+                // `crate::modules::users` and `users` name the same module.
+                let module = module.rsplit("::").next().unwrap_or(module);
                 prefixes.insert(module.to_owned(), prefix.to_owned());
             }
         }

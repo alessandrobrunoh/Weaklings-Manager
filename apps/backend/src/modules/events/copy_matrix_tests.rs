@@ -9,7 +9,7 @@ use axum::http::StatusCode;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
 use serde_json::{Value, json};
 
-use super::entities::event;
+use crate::modules::events::entities::event;
 use crate::modules::sync::test_support::{
     call, insert_user, link_event, matrix_app, register_tenant, sqlite_db,
 };

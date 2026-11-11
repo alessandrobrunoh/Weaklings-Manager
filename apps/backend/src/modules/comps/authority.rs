@@ -11,7 +11,7 @@ use sea_orm::{DatabaseConnection, EntityTrait};
 use crate::errors::AppError;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 
-use super::entities::{build, comp};
+use crate::modules::comps::entities::{build, comp};
 
 /// Which authored resource a guard applies to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

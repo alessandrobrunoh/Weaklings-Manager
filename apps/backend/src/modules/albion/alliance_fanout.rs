@@ -9,7 +9,7 @@ use crate::modules::platform::service::PlatformService;
 use crate::tenant::TenantRegistry;
 
 use super::discord_guild_role::{self, assign_discord_role, revoke_discord_role};
-use super::entities::albion_link;
+use crate::modules::albion::entities::albion_link;
 use super::service::AlbionLinkService;
 
 /// One active alliance membership row plus the guild's Albion id.

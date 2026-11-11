@@ -22,7 +22,7 @@ pub mod giveaway {
         pub description: Option<String>,
         /// Instant after which entries are refused and a draw is due.
         pub ends_at: DateTimeWithTimeZone,
-        /// [`super::super::status::GiveawayStatus`] as a stable string.
+        /// [`crate::modules::giveaways::status::GiveawayStatus`] as a stable string.
         pub status: String,
         /// Officer who created the giveaway.
         pub created_by: i64,

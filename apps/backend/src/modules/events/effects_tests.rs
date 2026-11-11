@@ -10,7 +10,7 @@ use sea_orm::{
 };
 use serde_json::{Value, json};
 
-use super::entities::event;
+use crate::modules::events::entities::event;
 use super::lifecycle::{Cause, Transition, transition_in_txn};
 use crate::modules::sync::test_support::{call, insert_user, matrix_app, sqlite_db};
 use sea_orm::TransactionTrait;

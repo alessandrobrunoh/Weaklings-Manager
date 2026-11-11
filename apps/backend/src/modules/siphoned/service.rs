@@ -19,15 +19,15 @@ use uuid::Uuid;
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
-use super::entities::{
-    ActiveModel, Column, Entity as SiphonedEntryEntity, Model as SiphonedEntryModel,
-};
 use super::models::{
     BalanceSort, BatchSummary, DeletedCount, EntryFilters, EntryMutationRequest, EntryView,
     IngestRequest, IngestResponse, IngestRow, PlayerBalance, PlayerBalanceDetail,
     SettlementQuoteView, SettlementResult,
 };
-use super::quote_entities::{
+use crate::modules::siphoned::entities::{
+    ActiveModel, Column, Entity as SiphonedEntryEntity, Model as SiphonedEntryModel,
+};
+use crate::modules::siphoned::quote_entities::{
     ActiveModel as QuoteActiveModel, Column as QuoteColumn, Entity as QuoteEntity,
 };
 
@@ -869,7 +869,7 @@ async fn ensure_not_settlement_entry<C: ConnectionTrait>(
 }
 
 fn settlement_result(
-    quote: &super::quote_entities::Model,
+    quote: &crate::modules::siphoned::quote_entities::Model,
     siphoned_entry_id: i64,
     transaction_id: i64,
     replayed: bool,

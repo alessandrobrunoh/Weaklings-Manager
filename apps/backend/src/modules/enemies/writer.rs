@@ -51,7 +51,9 @@ use sea_orm::{
 use crate::errors::AppError;
 
 use super::aggregate::{BattleEnemyFacts, EnemyGuildFact, EnemyPlayerFact};
-use super::entities::{enemy_guild, enemy_guild_alias, enemy_player, enemy_player_battle};
+use crate::modules::enemies::entities::{
+    enemy_guild, enemy_guild_alias, enemy_player, enemy_player_battle,
+};
 
 /// Persists one battle's enemy facts into the identity tables, in one
 /// transaction. See the [module docs](self) for the full "current pointer

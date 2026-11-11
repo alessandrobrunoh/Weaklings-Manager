@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::NotificationKind;
+use crate::modules::notifications::status::NotificationKind;
 
 /// Body of `POST /api/notifications/broadcast`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

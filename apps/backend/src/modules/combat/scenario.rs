@@ -28,9 +28,9 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::dataset::combat_rules;
 use super::sim::{self, AttackerStyle, SideCounts};
 use super::spell;
+use crate::modules::combat::dataset::combat_rules;
 
 /// Which side of the fight a unit group belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

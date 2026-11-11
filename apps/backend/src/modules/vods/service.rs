@@ -13,8 +13,10 @@ use crate::modules::progression::models::AwardSpec;
 use crate::modules::progression::service::ProgressionService;
 use crate::modules::progression::status::XpSource;
 
-use super::entities::{VodReviewActiveModel, VodReviewColumn, VodReviewEntity, VodReviewModel};
 use super::models::{SubmitVodRequest, VodReviewView};
+use crate::modules::vods::entities::{
+    VodReviewActiveModel, VodReviewColumn, VodReviewEntity, VodReviewModel,
+};
 
 /// Hosts a claimed VOD URL may point at (the host itself or any of its subdomains).
 pub const VOD_HOST_ALLOWLIST: &[&str] = &[

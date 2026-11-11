@@ -16,7 +16,7 @@ use super::models::{
     SetGiveawayDiscordMessageRequest,
 };
 use super::service::GiveawayService;
-use super::status::GiveawayStatus;
+use crate::modules::giveaways::status::GiveawayStatus;
 
 /// Query for `GET /api/giveaways`.
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]

@@ -438,7 +438,7 @@ pub enum GuildMemberLookup {
 #[must_use]
 pub fn login_roles(
     lookup: &GuildMemberLookup,
-    db_roles: &[super::entities::role::Model],
+    db_roles: &[crate::modules::auth::entities::role::Model],
 ) -> Option<(Vec<String>, String)> {
     match lookup {
         GuildMemberLookup::Present(ids) => Some(resolve_linked_roles(ids, db_roles)),
@@ -464,7 +464,7 @@ pub fn roles_after_member_lookup(
     lookup: &GuildMemberLookup,
     cached_roles: &[String],
     cached_highest: &str,
-    db_roles: &[super::entities::role::Model],
+    db_roles: &[crate::modules::auth::entities::role::Model],
     is_superadmin: bool,
 ) -> (Vec<String>, String) {
     if is_superadmin {
@@ -524,12 +524,12 @@ fn member_lookup_cache()
 #[must_use]
 pub fn resolve_linked_roles(
     member_discord_role_ids: &[String],
-    db_roles: &[super::entities::role::Model],
+    db_roles: &[crate::modules::auth::entities::role::Model],
 ) -> (Vec<String>, String) {
     let held: std::collections::HashSet<&str> =
         member_discord_role_ids.iter().map(String::as_str).collect();
 
-    let mut matched: Vec<&super::entities::role::Model> = db_roles
+    let mut matched: Vec<&crate::modules::auth::entities::role::Model> = db_roles
         .iter()
         .filter(|role| {
             role.discord_role_id
@@ -564,7 +564,7 @@ pub async fn resolve_bot_role_ids(
         return Ok((vec![fallback_role.to_string()], fallback_role.to_string()));
     };
     let role_ids = parse_bot_role_ids_header(header)?;
-    let db_roles = super::entities::role::Entity::find()
+    let db_roles = crate::modules::auth::entities::role::Entity::find()
         .all(db)
         .await
         .map_err(|_| {
@@ -608,7 +608,9 @@ fn parse_bot_role_ids_header(header: &str) -> Result<Vec<String>, AppError> {
     Ok(role_ids)
 }
 
-fn fallback_unmatched_roles(db_roles: &[super::entities::role::Model]) -> (Vec<String>, String) {
+fn fallback_unmatched_roles(
+    db_roles: &[crate::modules::auth::entities::role::Model],
+) -> (Vec<String>, String) {
     if let Some(default) = db_roles.iter().find(|role| role.is_default) {
         return (vec![default.name.clone()], default.name.clone());
     }

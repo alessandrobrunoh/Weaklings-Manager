@@ -20,7 +20,6 @@ use crate::pagination::{
 };
 use crate::tenant::{TenantContext, TenantRegistry};
 
-use super::entities::{Column as TransactionColumn, Entity as TransactionEntity};
 use super::models::{
     AcceptWithdrawalRequest, BalanceSummary, BankAnalyticsSummary, BankBreakdown,
     CreateTransactionRequest, GuildBalanceBreakdown, GuildBankSummary, RejectWithdrawalRequest,
@@ -28,6 +27,7 @@ use super::models::{
     WithdrawRequest,
 };
 use super::service::BankService;
+use crate::modules::bank::entities::{Column as TransactionColumn, Entity as TransactionEntity};
 
 /// Identity of the caller on the alliance tenant, used to match member-guild users.
 pub(super) struct AllianceCaller {
@@ -668,9 +668,9 @@ pub(super) async fn delete_transaction(
 
 #[cfg(test)]
 mod tests {
-    use super::super::status::TransactionStatus;
     use super::*;
     use crate::control_migration::Migrator;
+    use crate::modules::bank::status::TransactionStatus;
     use crate::modules::platform::models::RegisterTenantRequest;
     use crate::postgres::{
         connect_with_search_path, drop_schema, ensure_schema,

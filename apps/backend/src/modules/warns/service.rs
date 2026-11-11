@@ -17,12 +17,12 @@ use crate::modules::progression::service::ProgressionService;
 use crate::modules::users::entities::Entity as UserEntity;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
-use super::entities::{
+use crate::modules::warns::entities::{
     UserWarnActiveModel, UserWarnColumn, UserWarnEntity, UserWarnModel, WarnEscalationActiveModel,
     WarnEscalationColumn, WarnEscalationEntity, WarnEscalationModel,
 };
 use super::models::{IssueWarnRequest, WarnEscalationView, WarnFilters, WarnView};
-use super::status::WarnSeverity;
+use crate::modules::warns::status::WarnSeverity;
 
 /// Reason stamped when a revoke drops the active count under the threshold.
 const CLOSED_REVOKED_UNDER_THRESHOLD: &str = "revoked_under_threshold";

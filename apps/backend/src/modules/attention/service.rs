@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 use crate::errors::AppError;
 
-use super::entities::attention_finding;
+use crate::modules::attention::entities::attention_finding;
 
 /// One persisted attention finding, verbatim.
 #[derive(Debug, Clone, Serialize, ToSchema)]

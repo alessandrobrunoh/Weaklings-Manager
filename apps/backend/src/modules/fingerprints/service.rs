@@ -25,11 +25,11 @@ use crate::errors::AppError;
 use crate::modules::comps::entities::build;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
-use super::entities::{battle_loadout_observation, fingerprint};
 use super::models::{
     BuildObservationSummary, FingerprintDetail, FingerprintObservationEntry, FingerprintRollup,
     FingerprintSummary, MetaEntry,
 };
+use crate::modules::fingerprints::entities::{battle_loadout_observation, fingerprint};
 
 /// Stateless equipment-fingerprint read operations.
 pub struct FingerprintsService;

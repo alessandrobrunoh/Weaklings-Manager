@@ -4,7 +4,7 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::WarnSeverity;
+use crate::modules::warns::status::WarnSeverity;
 
 /// Body of `POST /api/warns`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::data_types::DatasetVersion;
+use crate::modules::combat::data_types::DatasetVersion;
 use super::ip::CharacterIpBreakdown;
 use crate::modules::comps::status::BuildSlot;
 

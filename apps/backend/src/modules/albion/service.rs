@@ -8,7 +8,7 @@ use super::client::{
     AlbionAlliance, AlbionApiClient, AlbionGuild, AlbionGuildMember, AlbionPlayer,
     AlbionPlayerSummary, AlbionRegion, AlbionSearchResult,
 };
-use super::entities::{albion_link, albion_link_request};
+use crate::modules::albion::entities::{albion_link, albion_link_request};
 use crate::errors::AppError;
 use crate::modules::audit::service::AuditService;
 use crate::pagination::{PaginatedData, PaginationParams};

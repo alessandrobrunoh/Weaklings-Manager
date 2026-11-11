@@ -14,9 +14,9 @@ use crate::errors::AppError;
 use crate::modules::albiondata::service::{AlbionDataService, cheapest_price_index};
 use crate::modules::comps::status::BuildSlot;
 
-use super::entities::RegearSettingModel;
 use super::models::BreakdownRow;
 use super::slots::{is_slot_enabled, slot_from_albionbb_key};
+use crate::modules::regear::entities::RegearSettingModel;
 
 /// The fallback strategy for choosing a price when the configured city has no listing.
 #[derive(Debug, Clone, Copy)]

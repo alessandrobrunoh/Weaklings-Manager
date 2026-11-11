@@ -13,7 +13,7 @@ use sea_orm::{
     sea_query::OnConflict,
 };
 
-use super::entities::{self as user_entities, Entity as UserEntity};
+use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
 use crate::errors::AppError;
 
 /// Suffix of the placeholder address derived from a Discord snowflake.

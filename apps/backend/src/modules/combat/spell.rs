@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
-use super::dataset::combat_spells;
+use crate::modules::combat::dataset::combat_spells;
 
 /// How deep an `applyspell` chain is followed before giving up. Six covers every chain observed in
 /// the bundled dataset with room to spare; a spell that recurses past this is reported as
@@ -76,7 +76,7 @@ pub struct AttributeChange {
     /// `"physical"` or `"magic"`, when the dataset states one.
     pub effect_type: Option<String>,
     /// Area escalation coefficient: extra fraction of `change` per target beyond the first, capped
-    /// by [`super::data_types::AoeEscalation::threshold_max`].
+    /// by [`crate::modules::combat::data_types::AoeEscalation::threshold_max`].
     pub target_count_bonus_factor: Option<f64>,
 }
 

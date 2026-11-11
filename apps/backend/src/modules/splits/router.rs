@@ -56,7 +56,7 @@ async fn authorize_split_lifecycle(
     split_id: i64,
     global_permission: Permission,
 ) -> Result<(), AppError> {
-    let split = super::entities::split::Entity::find_by_id(split_id)
+    let split = crate::modules::splits::entities::split::Entity::find_by_id(split_id)
         .one(db)
         .await?;
     authorize_split_owner_or_global(

@@ -15,7 +15,7 @@ use sea_orm::{ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, Query
 
 use crate::errors::AppError;
 
-use super::entities::{
+use crate::modules::regear::entities::{
     RegearRequestBalanceActiveModel, RegearRequestBalanceColumn, RegearRequestBalanceEntity,
     RegearRequestBalanceModel, RegearSettingModel,
 };

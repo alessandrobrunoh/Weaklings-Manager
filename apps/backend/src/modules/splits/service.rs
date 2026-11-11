@@ -36,21 +36,21 @@ use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort
 
 use super::alliance_distribution::distribution_batch_exists;
 use super::city::SplitIslandCity;
-use super::entities::split::{
+use crate::modules::splits::entities::split::{
     ActiveModel as SplitActiveModel, Column as SplitColumn, Entity as SplitEntity,
     Model as SplitModel,
 };
-use super::entities::split_bag::{
+use crate::modules::splits::entities::split_bag::{
     ActiveModel as SplitBagActiveModel, Column as SplitBagColumn, Entity as SplitBagEntity,
 };
-use super::entities::split_island::{
+use crate::modules::splits::entities::split_island::{
     ActiveModel as IslandActiveModel, Column as IslandColumn, Entity as IslandEntity,
     Model as IslandModel,
 };
-use super::entities::split_island_tab::{
+use crate::modules::splits::entities::split_island_tab::{
     ActiveModel as TabActiveModel, Column as TabColumn, Entity as TabEntity, Model as TabModel,
 };
-use super::entities::split_participant::{
+use crate::modules::splits::entities::split_participant::{
     ActiveModel as ParticipantActiveModel, Column as ParticipantColumn, Entity as ParticipantEntity,
 };
 use super::models::{
@@ -59,7 +59,7 @@ use super::models::{
     SplitIslandView, SplitKpiSummary, SplitParticipantView, SplitSummary, UpdateIslandRequest,
     UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
-use super::status::{SplitStatus, allows};
+use crate::modules::splits::status::{SplitStatus, allows};
 
 /// Parses a split model's stored status string into a [`SplitStatus`].
 ///

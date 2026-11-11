@@ -15,7 +15,7 @@ use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity
 use crate::pagination::{PaginatedData, PaginationParams};
 
 use super::curve::{apply_multiplier, level_for_xp, threshold, xp_to_next};
-use super::entities::{
+use crate::modules::progression::entities::{
     ProgressionAccountActiveModel, ProgressionAccountColumn, ProgressionAccountEntity,
     ProgressionAccountModel, ProgressionSeasonActiveModel, ProgressionSeasonColumn,
     ProgressionSeasonEntity, ProgressionSeasonModel, ProgressionSettingActiveModel,
@@ -28,7 +28,7 @@ use super::models::{
     ProgressionMeView, ProgressionSettingsView, SeasonView, UpdateProgressionSettingsRequest,
     UpdateSeasonRequest, XpLedgerEntryView,
 };
-use super::status::XpSource;
+use crate::modules::progression::status::XpSource;
 
 /// Stateless progression operations.
 pub struct ProgressionService;

@@ -1,7 +1,7 @@
-use super::entities::{self, ActiveModel};
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::admin::service::AdminService;
+use crate::modules::audit::entities::{self, ActiveModel};
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 use reqwest::Client;
 use sea_orm::{

@@ -37,7 +37,7 @@ use crate::modules::battles::outcome::FriendlySide;
 use crate::modules::regear::pricing::PricingFallback;
 use crate::modules::regear::service::load_settings;
 
-use super::entities::battle_loss_estimate;
+use crate::modules::economy::entities::battle_loss_estimate;
 use super::estimate::{self, KillLossSource, LossItemSource};
 
 /// Computes and persists this battle's priced silver-loss estimate.

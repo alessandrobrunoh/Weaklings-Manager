@@ -226,7 +226,7 @@ pub struct GuildSettingsView {
 impl GuildSettingsView {
     /// Builds a view from the singleton model row.
     #[must_use]
-    pub fn from_model(model: super::entities::Model) -> Self {
+    pub fn from_model(model: crate::modules::admin::entities::Model) -> Self {
         Self {
             discord_events_channel_id: model.discord_events_channel_id,
             discord_battles_channel_id: model.discord_battles_channel_id,

@@ -62,7 +62,7 @@ use crate::modules::economy::entities::battle_loss_estimate;
 use crate::modules::events::entities::{fight, fight_battle};
 
 use super::compute::{self, FightSegment, PlayerAppearance, SegmentGuildLine, SegmentLossEstimate};
-use super::entities::fight_stat;
+use crate::modules::fight_analytics::entities::fight_stat;
 
 /// Recomputes and persists `fight_id`'s outcome and `fight_stats` rollup from
 /// its currently-persisted segment evidence.

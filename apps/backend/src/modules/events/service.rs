@@ -11,10 +11,6 @@ use sea_orm::{
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
-use super::entities::{
-    event, event_battle, event_completion_xp, event_discord_role, event_participation,
-    event_roster_assignment, event_roster_role, fight, fight_battle,
-};
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats,
     BuildPerformanceView, CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest,
@@ -23,6 +19,10 @@ use super::models::{
     EventSignupOptionsView, EventSplitStats, EventSummary, EventView, OpponentPerformanceView,
     ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest,
     UpdateEventBattlesRequest, UpdateEventRequest,
+};
+use crate::modules::events::entities::{
+    event, event_battle, event_completion_xp, event_discord_role, event_participation,
+    event_roster_assignment, event_roster_role, fight, fight_battle,
 };
 
 use super::fight_grouping::{

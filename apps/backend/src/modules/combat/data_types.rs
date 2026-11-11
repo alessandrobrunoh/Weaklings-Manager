@@ -206,7 +206,7 @@ pub struct BonusRule {
     pub min_tier: u8,
     /// Highest tier the rule applies to, inclusive.
     pub max_tier: u8,
-    /// Item-name globs the rule grants to, matched by [`super::pattern::matches`].
+    /// Item-name globs the rule grants to, matched by [`crate::modules::combat::pattern::matches`].
     pub patterns: Vec<String>,
 }
 

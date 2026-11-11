@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 use crate::errors::AppError;
 use crate::modules::events::entities::fight;
 
-use super::entities::fight_stat;
+use crate::modules::fight_analytics::entities::fight_stat;
 
 /// One fight's persisted analytics: its decided outcome, plus the
 /// `fight_stats` rollup when one has been computed.

@@ -65,7 +65,7 @@ pub mod regear_death {
         /// The bank row created on accept, for audit.
         pub bank_transaction_id: Option<i64>,
         /// `extracted` (born from the kill-feed extractor) or `self_reported` (member-initiated,
-        /// see [`super::super::status::RegearSource`]).
+        /// see [`crate::modules::regear::status::RegearSource`]).
         pub source: String,
         /// The loadout actually priced, when it differs from `loadout_json` because the member
         /// edited individual slots for a self-reported request. `None` when unedited.

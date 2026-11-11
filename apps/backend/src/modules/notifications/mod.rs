@@ -6,7 +6,7 @@ pub mod router;
 pub mod service;
 pub mod status;
 
+pub use crate::modules::notifications::status::NotificationKind;
 pub use models::NotifySpec;
 pub use router::router;
 pub use service::notify_best_effort;
-pub use status::NotificationKind;

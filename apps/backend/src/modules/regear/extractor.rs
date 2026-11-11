@@ -22,9 +22,11 @@ use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as Snap
 use crate::modules::events::entities::{event, event_battle, event_participation};
 use crate::modules::users::entities as user_entities;
 
-use super::entities::{RegearDeathActiveModel, RegearDeathEntity, RegearSettingEntity};
 use super::models::ExtractionReport;
 use super::pricing;
+use crate::modules::regear::entities::{
+    RegearDeathActiveModel, RegearDeathEntity, RegearSettingEntity,
+};
 
 /// The configured-guild context the extractor needs to scope victim matching.
 ///

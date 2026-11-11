@@ -9,10 +9,12 @@ use std::collections::HashMap;
 
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use super::entities::{Column as UserColumn, Entity as UserEntity, Model as UserModel};
 use crate::errors::AppError;
 use crate::modules::albion::entities::albion_link::{
     Column as AlbionLinkColumn, Entity as AlbionLinkEntity,
+};
+use crate::modules::users::entities::{
+    Column as UserColumn, Entity as UserEntity, Model as UserModel,
 };
 
 /// Fetches `albion_player_name` for every given `discord_id`, keyed by `discord_id`.

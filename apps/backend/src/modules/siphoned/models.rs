@@ -10,8 +10,8 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::entities::Model;
-use super::status::SiphonedEntrySource;
+use crate::modules::siphoned::entities::Model;
+use crate::modules::siphoned::status::SiphonedEntrySource;
 
 /// One ledger row, as seen by a client.
 #[derive(Debug, Serialize, Clone, ToSchema)]

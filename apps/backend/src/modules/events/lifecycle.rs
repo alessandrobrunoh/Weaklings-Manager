@@ -31,7 +31,7 @@ use crate::{
     tenant::TenantRegistry,
 };
 
-use super::{
+use crate::modules::events::{
     entities::event,
     fanout_outbox,
     models::EventView,

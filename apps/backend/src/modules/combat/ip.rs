@@ -31,8 +31,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::dataset::{combat_item, combat_rules, spec_node};
-use super::pattern;
+use crate::modules::combat::dataset::{combat_item, combat_rules, spec_node};
+use crate::modules::combat::pattern;
 use crate::modules::comps::status::BuildSlot;
 
 /// The six slots whose Item Power the character sheet averages.

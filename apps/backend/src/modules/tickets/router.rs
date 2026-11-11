@@ -1,4 +1,4 @@
-use super::{
+use crate::modules::tickets::{
     entities::{Column, Entity, Model},
     service::TicketService,
 };

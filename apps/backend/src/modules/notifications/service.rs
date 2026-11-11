@@ -11,7 +11,7 @@ use crate::errors::AppError;
 use crate::modules::users::entities::Entity as UserEntity;
 use crate::pagination::{PaginatedData, PaginationParams};
 
-use super::entities::{
+use crate::modules::notifications::entities::{
     NotificationActiveModel, NotificationBroadcastActiveModel, NotificationColumn,
     NotificationEntity, NotificationModel,
 };
@@ -19,7 +19,7 @@ use super::models::{
     BroadcastRequest, BroadcastResult, NotificationFilters, NotificationView, NotifySpec,
     ReadAllResult, UnreadCountView,
 };
-use super::status::{DiscordDmStatus, NotificationKind};
+use crate::modules::notifications::status::{DiscordDmStatus, NotificationKind};
 
 const TITLE_MAX: usize = 120;
 const BODY_MAX: usize = 2000;

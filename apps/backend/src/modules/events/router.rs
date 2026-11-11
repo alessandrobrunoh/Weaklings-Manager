@@ -149,12 +149,14 @@ async fn publish_to_peers(
 ) {
     for (peer_tenant, peer_event_id) in peers {
         let version = match registry.get_or_load(peer_tenant).await {
-            Ok(context) => super::entities::event::Entity::find_by_id(*peer_event_id)
-                .one(&context.db)
-                .await
-                .ok()
-                .flatten()
-                .map(|event| event.roster_version),
+            Ok(context) => {
+                crate::modules::events::entities::event::Entity::find_by_id(*peer_event_id)
+                    .one(&context.db)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|event| event.roster_version)
+            }
             Err(_) => None,
         };
         if let Some(version) = version {
@@ -1106,7 +1108,7 @@ async fn roster_live(
     Path(id): Path<i64>,
     websocket: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
-    super::entities::event::Entity::find_by_id(id)
+    crate::modules::events::entities::event::Entity::find_by_id(id)
         .one(&db)
         .await
         .map_err(AppError::Database)?
@@ -1130,7 +1132,7 @@ async fn roster_socket(
     event_id: i64,
 ) {
     let mut receiver = hub.subscribe();
-    let roster_version = match super::entities::event::Entity::find_by_id(event_id)
+    let roster_version = match crate::modules::events::entities::event::Entity::find_by_id(event_id)
         .one(&db)
         .await
     {
@@ -1296,12 +1298,13 @@ async fn delete_event_roster_role(
     require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     // The copies hold their own role rows, so the removal is forwarded by build.
-    let removed_build = super::entities::event_roster_role::Entity::find_by_id(role_id)
-        .one(&db)
-        .await
-        .map_err(AppError::Database)?
-        .filter(|role| role.event_id == id)
-        .map(|role| role.build_id);
+    let removed_build =
+        crate::modules::events::entities::event_roster_role::Entity::find_by_id(role_id)
+            .one(&db)
+            .await
+            .map_err(AppError::Database)?
+            .filter(|role| role.event_id == id)
+            .map(|role| role.build_id);
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
@@ -1335,7 +1338,7 @@ async fn notify_roster_roles_changed(
     tenant_id: &str,
     event_id: i64,
 ) {
-    let version = super::entities::event::Entity::find_by_id(event_id)
+    let version = crate::modules::events::entities::event::Entity::find_by_id(event_id)
         .one(db)
         .await
         .ok()
@@ -1722,7 +1725,7 @@ async fn sync_source_change(
     tenant_id: &str,
     event_id: i64,
 ) -> Result<(), AppError> {
-    let Some(model) = super::entities::event::Entity::find_by_id(event_id)
+    let Some(model) = crate::modules::events::entities::event::Entity::find_by_id(event_id)
         .one(db)
         .await
         .map_err(AppError::Database)?
@@ -2073,7 +2076,7 @@ async fn get_participation_guilds(
 ) -> Result<Json<ApiResponse<Vec<ParticipationGuild>>>, AppError> {
     // Fail closed on unknown events so the endpoint cannot be used to probe
     // guild membership for arbitrary ids.
-    super::entities::event::Entity::find_by_id(id)
+    crate::modules::events::entities::event::Entity::find_by_id(id)
         .one(&db)
         .await
         .map_err(AppError::Database)?
@@ -2092,12 +2095,14 @@ async fn event_creator_id(
     db: &sea_orm::DatabaseConnection,
     event_id: i64,
 ) -> Result<i64, AppError> {
-    Ok(super::entities::event::Entity::find_by_id(event_id)
-        .one(db)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
-        .created_by)
+    Ok(
+        crate::modules::events::entities::event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+            .created_by,
+    )
 }
 
 /// Guard for an event-specific management mutation (start, stop, cancel, edit, roster, delete…).

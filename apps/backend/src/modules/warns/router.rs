@@ -24,7 +24,7 @@ pub struct ListWarnsQuery {
     /// Restrict to one member.
     pub user_id: Option<i64>,
     /// Restrict to one severity (`note`, `warn`, `strike`).
-    pub severity: Option<super::status::WarnSeverity>,
+    pub severity: Option<crate::modules::warns::status::WarnSeverity>,
     /// `true` = only revoked, `false` = only active.
     pub revoked: Option<bool>,
     /// Case-insensitive substring match on reason.

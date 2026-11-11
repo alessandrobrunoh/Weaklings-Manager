@@ -257,7 +257,7 @@ async fn list_pending_requests(
     user.require(&perms, Permission::RegearAdjudicate).await?;
     let mut filters = query.filters.clone();
     // Force the status filter to pending; ignore whatever the client sent.
-    filters.status = Some(super::status::RegearStatus::Pending);
+    filters.status = Some(crate::modules::regear::status::RegearStatus::Pending);
     let service = RegearService::new();
     let paginated = service
         .list_deaths(&db, user.user_id, true, &query.pagination(), &filters)

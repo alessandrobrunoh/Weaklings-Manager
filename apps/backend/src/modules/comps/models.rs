@@ -7,7 +7,7 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::{BuildLoadout, BuildRole, BuildSlot};
+use crate::modules::comps::status::{BuildLoadout, BuildRole, BuildSlot};
 
 /// A build category view model.
 #[derive(Debug, Serialize, Clone, ToSchema)]

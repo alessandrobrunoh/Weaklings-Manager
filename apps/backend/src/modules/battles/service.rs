@@ -28,16 +28,16 @@ use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
 
-use super::entities::Entity as GuildBattleSnapshotEntity;
-use super::entities::{
-    ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
-};
 use super::models::{
     BattleDetail, BattleFightMetadata, BattleGuildSummary, BattleLossEstimate, BattleSummary,
     GuildLossEstimate, LinkedEvent, PlayerLossEstimate,
 };
 use super::outcome::{self, BattleOutcome, FriendlySide, GuildLine};
 use super::{evidence, evidence_writer};
+use crate::modules::battles::entities::Entity as GuildBattleSnapshotEntity;
+use crate::modules::battles::entities::{
+    ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
+};
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
 /// giving up. Keeps the endpoint from scanning `AlbionBB`'s entire history.

@@ -1,4 +1,4 @@
-use super::entities;
+use crate::modules::audit::entities;
 use super::service::{AuditListFilters, AuditService};
 use crate::{
     errors::AppError,

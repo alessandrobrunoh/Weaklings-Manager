@@ -15,7 +15,6 @@ use crate::responses::{
     ApiResponse, ApiResponseCombatDataset, ApiResponseItemPower, ApiResponseMasteryGroups,
 };
 
-use super::dataset::dataset_version;
 use super::models::{
     CalibrationView, CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView,
     MasteryGroupsView, RunDetail, ScenarioDetail, ScenarioSummary, SimulateRequest, SimulateView,
@@ -23,6 +22,7 @@ use super::models::{
 };
 use super::service::CombatService;
 use super::sim;
+use crate::modules::combat::dataset::dataset_version;
 
 /// Builds the combat router.
 pub fn router() -> Router {

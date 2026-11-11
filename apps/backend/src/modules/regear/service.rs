@@ -26,10 +26,6 @@ use crate::modules::users::entities as user_entities;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::credits::{consume_request_credit, get_or_create_balance};
-use super::entities::{
-    RegearDeathActiveModel, RegearDeathColumn, RegearDeathEntity, RegearDeathModel,
-    RegearSettingActiveModel, RegearSettingEntity, RegearSettingModel,
-};
 use super::extractor::{ExtractionGuildContext, RegearExtractor};
 use super::models::{
     AcceptRegearRequest, BreakdownRow, CreateSelfServiceRegearRequest, DeathFilters, DeathView,
@@ -37,7 +33,11 @@ use super::models::{
     SelfServiceCompBuildOption, SelfServiceEventOption, UpdateRegearSettingsRequest,
 };
 use super::slots::albionbb_key_for_slot;
-use super::status::{RegearSource, RegearStatus};
+use crate::modules::regear::entities::{
+    RegearDeathActiveModel, RegearDeathColumn, RegearDeathEntity, RegearDeathModel,
+    RegearSettingActiveModel, RegearSettingEntity, RegearSettingModel,
+};
+use crate::modules::regear::status::{RegearSource, RegearStatus};
 
 /// The transaction type written into the Guild Bank when a regear is accepted.
 pub const TYPE_REGEAR_CREDIT: &str = "regear_credit";
@@ -1081,7 +1081,7 @@ mod tests {
     use sea_orm::entity::prelude::DateTimeWithTimeZone;
     use sea_orm::{ActiveModelTrait, DatabaseConnection};
 
-    use super::super::entities::{
+    use crate::modules::regear::entities::{
         RegearRequestBalanceActiveModel, RegearRequestBalanceColumn, RegearRequestBalanceEntity,
     };
 

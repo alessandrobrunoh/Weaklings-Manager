@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::city::SplitIslandCity;
-use super::status::SplitStatus;
+use crate::modules::splits::status::SplitStatus;
 use crate::modules::bank::status::TransactionStatus;
 
 /// A participant's weight-based share within a split.

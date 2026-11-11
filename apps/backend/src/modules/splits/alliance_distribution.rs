@@ -33,7 +33,7 @@ use crate::{
     tenant::TenantRegistry,
 };
 
-use super::status::SplitStatus;
+use crate::modules::splits::status::SplitStatus;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Projection {
@@ -593,7 +593,7 @@ async fn finalize_source_split(
     let update = SplitEntity::update_many()
         .filter(SplitColumn::Id.eq(split_id))
         .filter(SplitColumn::Status.is_in(["pending", "awaiting_event"]))
-        .set(super::entities::split::ActiveModel {
+        .set(crate::modules::splits::entities::split::ActiveModel {
             status: Set(SplitStatus::Completed.to_string()),
             net_value: Set(Some(net_value)),
             finalized_at: Set(Some(chrono::Utc::now().into())),

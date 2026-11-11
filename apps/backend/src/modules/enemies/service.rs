@@ -49,11 +49,13 @@ use crate::errors::AppError;
 use crate::modules::events::entities::fight_battle;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
-use super::entities::{enemy_guild, enemy_guild_alias, enemy_player, enemy_player_battle};
 use super::models::{
     EnemyAliasGroup, EnemyAliasValue, EnemyGuildDossier, EnemyGuildRosterPlayer, EnemyGuildSummary,
     EnemyPlayerBattleEntry, EnemyPlayerDossier, EnemyPlayerSummary, EnemyRollup,
     WeaponHistogramEntry,
+};
+use crate::modules::enemies::entities::{
+    enemy_guild, enemy_guild_alias, enemy_player, enemy_player_battle,
 };
 
 /// Stateless enemy-dossier read operations.

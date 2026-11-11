@@ -30,7 +30,7 @@ use crate::modules::enemies::entities::{enemy_guild, enemy_player_battle};
 use crate::modules::events::entities::{fight, fight_battle};
 use crate::modules::fight_analytics::entities::fight_stat;
 
-use super::entities::attention_finding;
+use crate::modules::attention::entities::attention_finding;
 use super::rules::{self, Finding};
 
 /// Recomputes every attention finding and replaces `attention_findings`

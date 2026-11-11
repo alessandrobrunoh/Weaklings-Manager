@@ -58,7 +58,7 @@ use sea_orm::{
 use crate::errors::AppError;
 
 use super::evidence::NormalizedEvidence;
-use super::evidence_entities::{
+use crate::modules::battles::evidence_entities::{
     battle_guild_stat, battle_kill, battle_kill_item, battle_player_stat,
 };
 
