@@ -29,10 +29,12 @@ import type {
   EventBattleSummary,
   EventDetailView,
   EventParticipant,
+  EventParty,
   EventRosterRole,
   EventRosterSeat,
   EventRosterView,
   EventSignupOptions,
+  EventSignupPartyGroup,
   OpenAlbionItemAbilities,
   OpponentPerformanceView,
   PaginatedData,
@@ -94,20 +96,24 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { Select, type SelectOption } from '../../shared/components/select/select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import type { ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
 import { EventBattlesTab } from './detail/event-battles-tab';
 import { EventGuildBadge } from './detail/event-guild-badge';
 import { EventHeader } from './detail/event-header';
 import { EventOverviewTab } from './detail/event-overview-tab';
 import { EventMySpot } from './detail/event-my-spot';
+import { EventPartyStructure } from './detail/event-party-structure';
 import { EventRoleBoard } from './detail/event-role-board';
 import {
   compareSeatsByRole,
+  partyForBoardNumber,
+  partyHeading,
   partyRoleCounts,
   roleColorVar,
   roleGlyph as lobbyRoleGlyph,
   roleLabelKey,
+  seatPartyLabel,
   type PartyRoleCount,
 } from './detail/roster-lobby';
 import { EventSplitsTab } from './detail/event-splits-tab';
@@ -183,7 +189,16 @@ export interface CompPartyGroup {
 
 interface EventRosterParty {
   readonly partyNumber: number;
+  /** The event party these seats belong to; several board parties can share one. */
+  readonly eventParty: EventParty | null;
   readonly seats: readonly EventRosterSeat[];
+}
+
+/** One group of builds in the signup dialog; `title` is `null` when there is a single party. */
+interface JoinBuildSection {
+  readonly key: string;
+  readonly title: string | null;
+  readonly entries: readonly CompBuildEntry[];
 }
 
 interface AddEventMemberRequest {
@@ -240,7 +255,9 @@ const BENCH_FIT_CHIP: Readonly<
     EventHeader,
     EventOverviewTab,
     EventMySpot,
+    EventPartyStructure,
     EventRoleBoard,
+    ViewToggle,
     EventSplitsTab,
   ],
   template: `
@@ -398,7 +415,7 @@ const BENCH_FIT_CHIP: Readonly<
             >
               <span class="my-status__label">{{ t('events.lobby.yourSpot') }}</span>
               <span class="my-status__value">
-                {{ t('events.lobby.statusSeated', { role: rosterSeatRoleLabel(seat), party: seat.party_number, position: seat.position }) }}
+                {{ t('events.lobby.statusSeated', { role: rosterSeatRoleLabel(seat), party: seatPartyName(seat), position: seat.position }) }}
               </span>
             </button>
           } @else if (currentParticipant()) {
@@ -441,6 +458,7 @@ const BENCH_FIT_CHIP: Readonly<
                 <app-event-my-spot
                   [participant]="currentParticipant()"
                   [seat]="ownRosterSeat()"
+                  [parties]="roster.parties"
                   [canJoin]="!detail.archived_at"
                   [archived]="!!detail.archived_at"
                   [weaponIcon]="mySpotWeaponIcon()"
@@ -454,6 +472,7 @@ const BENCH_FIT_CHIP: Readonly<
                 />
                 <app-event-role-board
                   [seats]="roster.seats"
+                  [parties]="roster.parties"
                   [bench]="roster.bench"
                   [currentUserId]="currentUserId()"
                   [buildIcons]="buildIconMap()"
@@ -466,6 +485,25 @@ const BENCH_FIT_CHIP: Readonly<
           <!-- ================= TAB 2: PARTIES — the live board ================= -->
           @case ('parties') {
             @if (rosterSnapshotState() === 'ready' && rosterSnapshot(); as roster) {
+              @if (canManageParticipants()) {
+                <div class="party-mode-switch">
+                  <app-view-toggle
+                    [options]="partiesModeOptions()"
+                    [active]="partiesMode()"
+                    (activeChange)="setPartiesMode($event)"
+                  />
+                </div>
+              }
+              @if (partiesMode() === 'structure' && canManageParticipants()) {
+                <app-event-party-structure
+                  [eventId]="detail.id"
+                  [roster]="roster"
+                  [extraRoles]="extraRosterRoles()"
+                  (changed)="load(true)"
+                  (addRole)="openRosterRoleManager($event)"
+                  (removeRole)="removeRosterRole($event)"
+                />
+              } @else {
               <div class="party-room">
                 <p class="sr-only" aria-live="polite" aria-atomic="true">{{ rosterAnnouncement() }}</p>
 
@@ -548,7 +586,7 @@ const BENCH_FIT_CHIP: Readonly<
                   <div class="party-mode" role="status">
                     <app-icon name="plus" size="1rem" />
                     <p class="party-mode__title min-w-0 flex-1">
-                      {{ t('events.detail.pick_bench_member', { party: target.party_number, position: target.position, build: target.build_name }) }}
+                      {{ t('events.detail.pick_bench_member', { party: seatPartyName(target), position: target.position, build: target.build_name }) }}
                     </p>
                     <button type="button" class="btn btn--outline btn--sm" (click)="cancelRosterCommandMode()">
                       {{ t('events.detail.cancel_swap') }}
@@ -637,7 +675,7 @@ const BENCH_FIT_CHIP: Readonly<
                                 [disabled]="rosterCommandSaving()"
                                 (click)="assignBenchMemberToServerSeat(member.user_id)"
                               >
-                                {{ t('events.lobby.placeHere', { party: target.party_number, position: target.position }) }}
+                                {{ t('events.lobby.placeHere', { party: seatPartyName(target), position: target.position }) }}
                               </button>
                             } @else {
                               <button
@@ -666,8 +704,11 @@ const BENCH_FIT_CHIP: Readonly<
                         <header class="party-card__head">
                           <div class="party-card__title-row">
                             <h3 class="party-card__title" [id]="'party-heading-' + party.partyNumber">
-                              {{ t('events.lobby.party', { number: party.partyNumber }) }}
+                              {{ rosterPartyHeading(party) }}
                             </h3>
+                            @if (party.eventParty; as eventParty) {
+                              <span class="party-card__comp">{{ eventParty.comp_name }}</span>
+                            }
                             <span class="party-card__count">
                               {{ t('events.lobby.seatsCount', { filled: rosterPartyFilledSeats(party), total: party.seats.length }) }}
                             </span>
@@ -686,7 +727,7 @@ const BENCH_FIT_CHIP: Readonly<
                           </ul>
                         </header>
 
-                        <ol class="party-card__seats" [attr.aria-label]="t('events.lobby.party', { number: party.partyNumber })">
+                        <ol class="party-card__seats" [attr.aria-label]="rosterPartyHeading(party)">
                           @for (seat of party.seats; track seat.key + ':' + (seat.participant?.user_id ?? 'open')) {
                             <li
                               class="seat"
@@ -826,6 +867,7 @@ const BENCH_FIT_CHIP: Readonly<
                   </div>
                 </div>
               </div>
+              }
             }
           }
 
@@ -1094,7 +1136,11 @@ const BENCH_FIT_CHIP: Readonly<
                     <small>Partecipa senza build</small>
                   </span>
                 </button>
-                @for (entry of availableBuilds(); track entry.build_id) {
+                @for (section of joinBuildSections(); track section.key) {
+                @if (section.title) {
+                  <p class="build-choice-party">{{ section.title }}</p>
+                }
+                @for (entry of section.entries; track entry.build_id) {
                   <button
                     type="button"
                     class="build-choice-card"
@@ -1119,6 +1165,7 @@ const BENCH_FIT_CHIP: Readonly<
                       }
                     </span>
                   </button>
+                }
                 }
               </div>
             </section>
@@ -1156,7 +1203,11 @@ const BENCH_FIT_CHIP: Readonly<
                       <small>{{ t('events.detail.no_secondary') }}</small>
                     </span>
                   </button>
-                  @for (entry of availableBuilds(); track entry.build_id) {
+                  @for (section of joinBuildSections(); track section.key) {
+                  @if (section.title) {
+                    <p class="build-choice-party">{{ section.title }}</p>
+                  }
+                  @for (entry of section.entries; track entry.build_id) {
                     <button
                       type="button"
                       class="build-choice-card"
@@ -1181,6 +1232,7 @@ const BENCH_FIT_CHIP: Readonly<
                         }
                       </span>
                     </button>
+                  }
                   }
                 </div>
               </section>
@@ -1373,6 +1425,20 @@ const BENCH_FIT_CHIP: Readonly<
           </section>
 
           <form class="grid gap-2" (submit)="addRosterRole($event)">
+            @if ((rosterSnapshot()?.parties?.length ?? 0) > 1) {
+              <label for="extra-roster-party" class="label">{{ t('events.parties.rolePartyLabel') }}</label>
+              <select
+                id="extra-roster-party"
+                name="party_id"
+                class="select"
+                [value]="draftRosterRolePartyId()"
+                (change)="onDraftRosterRolePartyChange($event)"
+              >
+                @for (party of rosterSnapshot()?.parties ?? []; track party.id) {
+                  <option [value]="party.id">{{ eventPartyName(party) }}</option>
+                }
+              </select>
+            }
             <label for="extra-roster-build" class="label">{{ t('events.detail.add_roster_build') }}</label>
             <app-ownership-scope-toggle
               [scope]="rosterBuildScope()"
@@ -1416,7 +1482,9 @@ const BENCH_FIT_CHIP: Readonly<
                 <div class="surface flex min-h-11 items-center justify-between gap-3 px-3.5 py-2">
                   <span class="text-xs font-semibold text-[var(--color-text)]">{{
                     role.name
-                  }}</span>
+                  }}@if ((rosterSnapshot()?.parties?.length ?? 0) > 1) {
+                    <span class="font-normal text-[var(--color-text-secondary)]"> · {{ extraRolePartyName(role) }}</span>
+                  }</span>
                   <button
                     type="button"
                     class="btn btn--danger btn--sm text-xs py-0.5 px-2"
@@ -2487,6 +2555,25 @@ const BENCH_FIT_CHIP: Readonly<
         text-transform: uppercase;
         color: var(--color-text);
       }
+      .party-card__comp {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .build-choice-party {
+        grid-column: 1 / -1;
+        margin: 0.25rem 0 0;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--color-text-secondary);
+      }
+      .party-mode-switch {
+        display: flex;
+        margin-bottom: 0.75rem;
+      }
       .party-card__count {
         font-family: var(--font-mono);
         font-size: 0.8125rem;
@@ -2796,6 +2883,17 @@ export class EventDetailPage {
 
   // Roster Builder Interactive Signals
   protected readonly rosterView = signal<'parties' | 'roles' | 'table'>('parties');
+  /** Parties tab mode: seat players, or edit the parties themselves (managers only). */
+  protected readonly partiesMode = signal<'assign' | 'structure'>('assign');
+  protected readonly partiesModeOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'assign', label: this.t('events.parties.modeAssign') },
+    { id: 'structure', label: this.t('events.parties.modeStructure') },
+  ]);
+  /** Party grouping of the signup builds, from the server's signup options. */
+  protected readonly signupParties = computed<readonly EventSignupPartyGroup[]>(
+    () => this.signupOptions()?.parties ?? [],
+  );
+  protected readonly draftRosterRolePartyId = signal('');
   protected readonly benchFilter = signal<'all' | 'unassigned'>('all');
   protected readonly benchSearch = signal('');
   protected readonly swapSourceSlot = signal<CompSlotRow | null>(null);
@@ -3140,6 +3238,7 @@ export class EventDetailPage {
       .sort(([left], [right]) => left - right)
       .map(([partyNumber, seats]) => ({
         partyNumber,
+        eventParty: partyForBoardNumber(this.rosterSnapshot()?.parties ?? [], partyNumber),
         seats: [...seats].sort(compareSeatsByRole),
       }));
   });
@@ -3281,6 +3380,28 @@ export class EventDetailPage {
             (m.secondary_build_name?.toLowerCase().includes(query) ?? false),
         );
     return sortBenchForWeapon(matching, this.assignWeaponKey());
+  });
+
+  /**
+   * Builds the member can sign up with, one section per party when the event has several. A
+   * build shows under every party that has a seat for it.
+   */
+  protected readonly joinBuildSections = computed<readonly JoinBuildSection[]>(() => {
+    const entries = this.availableBuilds();
+    const groups = this.signupParties();
+    if (groups.length <= 1) return [{ key: 'all', title: null, entries }];
+    const sections = groups
+      .map((group) => {
+        const ids = new Set(group.builds.map((build) => build.build_id));
+        const label = group.name?.trim() || this.partyDefaultName(group.position);
+        return {
+          key: `party-${group.party_id}`,
+          title: `${label} · ${group.comp_name}`,
+          entries: entries.filter((entry) => ids.has(entry.build_id)),
+        };
+      })
+      .filter((section) => section.entries.length > 0);
+    return sections.length > 0 ? sections : [{ key: 'all', title: null, entries }];
   });
 
   protected readonly extraRosterRoles = computed<readonly EventRosterRole[]>(() =>
@@ -3780,9 +3901,13 @@ export class EventDetailPage {
     });
   }
 
-  protected openRosterRoleManager(): void {
+  protected openRosterRoleManager(partyId?: number): void {
     this.rosterRoleError.set(null);
     this.draftRosterRoleBuildId.set('');
+    const parties = this.rosterSnapshot()?.parties ?? [];
+    // The server puts a role without a party on the last one; preselect the same.
+    const preselected = partyId ?? parties[parties.length - 1]?.id;
+    this.draftRosterRolePartyId.set(preselected === undefined ? '' : String(preselected));
     this.rosterBuildScope.set('mine');
     this.rosterRoleManagerOpen.set(true);
     void this.loadAllBuilds(true);
@@ -3811,16 +3936,24 @@ export class EventDetailPage {
     this.draftRosterRoleBuildId.set((event.target as HTMLSelectElement).value);
   }
 
+  protected onDraftRosterRolePartyChange(event: Event): void {
+    this.draftRosterRolePartyId.set((event.target as HTMLSelectElement).value);
+  }
+
   protected async addRosterRole(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     const buildId = Number(this.draftRosterRoleBuildId());
     if (!Number.isInteger(buildId) || buildId <= 0) return;
+    const partyId = Number(this.draftRosterRolePartyId());
 
     this.rosterRoleSaving.set(true);
     this.rosterRoleError.set(null);
     try {
       await firstValueFrom(
-        this.api.post(`api/events/${this.eventId}/roster-roles`, { build_id: buildId }),
+        this.api.post(`api/events/${this.eventId}/roster-roles`, {
+          build_id: buildId,
+          ...(Number.isInteger(partyId) && partyId > 0 ? { party_id: partyId } : {}),
+        }),
       );
       this.draftRosterRoleBuildId.set('');
       // Silent: adding a role reshapes the seats, but the page must not blink back to the top.
@@ -3880,8 +4013,40 @@ export class EventDetailPage {
     return partyRoleCounts(party.seats);
   }
 
-  protected rosterPartyName(party: EventRosterParty): string {
-    return `Party ${party.partyNumber}`;
+  /** "Party 2" for an unnamed party. */
+  protected partyDefaultName(position: number): string {
+    return this.t('events.lobby.party', { number: position });
+  }
+
+  protected eventPartyName(party: EventParty): string {
+    return party.name?.trim() || this.partyDefaultName(party.position);
+  }
+
+  /** Name of the party an extra role extends. */
+  protected extraRolePartyName(role: EventRosterRole): string {
+    const party = (this.rosterSnapshot()?.parties ?? []).find((entry) => entry.id === role.party_id);
+    return party ? this.eventPartyName(party) : '';
+  }
+
+  /** Heading of a board party: the party's name, with "1/2" when its comp spans several. */
+  protected rosterPartyHeading(party: EventRosterParty): string {
+    return party.eventParty
+      ? partyHeading(party.eventParty, party.partyNumber, (position) =>
+          this.partyDefaultName(position),
+        )
+      : this.partyDefaultName(party.partyNumber);
+  }
+
+  /** Name of a seat's party for "your spot" style sentences. */
+  protected seatPartyName(seat: EventRosterSeat): string {
+    const party = partyForBoardNumber(this.rosterSnapshot()?.parties ?? [], seat.party_number);
+    return party
+      ? partyHeading(party, seat.party_number, (position) => this.partyDefaultName(position))
+      : seatPartyLabel(seat, (position) => this.partyDefaultName(position));
+  }
+
+  protected setPartiesMode(mode: string): void {
+    this.partiesMode.set(mode === 'structure' ? 'structure' : 'assign');
   }
 
   protected selectRosterParty(partyNumber: number): void {
@@ -4462,7 +4627,7 @@ export class EventDetailPage {
       const parties = this.rosterParties();
       parties.forEach((party) => {
         const filled = this.rosterPartyFilledSeats(party);
-        md += `**PARTY ${party.partyNumber} (${filled}/${party.seats.length})**\n`;
+        md += `**${this.rosterPartyHeading(party).toUpperCase()} (${filled}/${party.seats.length})**\n`;
         party.seats.forEach((seat) => {
           const roleName = this.rosterSeatRoleLabel(seat);
           if (seat.participant) {
@@ -5546,7 +5711,7 @@ export class EventDetailPage {
       ownSeat
         ? this.t('events.detail.roster_updated_seat', {
             role: this.rosterSeatRoleLabel(ownSeat),
-            party: this.rosterSeatPartyNumber(ownSeat),
+            party: this.seatPartyName(ownSeat),
             position: ownSeat.position,
           })
         : this.isCurrentUserOnRosterBench()
@@ -5575,12 +5740,27 @@ export class EventDetailPage {
   private async loadActiveComp(): Promise<void> {
     const detail = this.event();
     if (!detail) return;
-    const compId = detail.active_comp_id || detail.comp_id;
-    if (!compId) return;
+    // Every party can use another comp, so the signup builds are the union of all of them.
+    const compIds = [
+      ...new Set(
+        (detail.parties ?? []).length > 0
+          ? detail.parties.map((party) => party.active_comp_id)
+          : [detail.active_comp_id || detail.comp_id],
+      ),
+    ].filter((id): id is number => typeof id === 'number' && id > 0);
+    if (compIds.length === 0) return;
 
     this.compLoading.set(true);
     try {
-      const comp = await firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`));
+      const comps = await Promise.all(
+        compIds.map((id) => firstValueFrom(this.api.get<CompDetail>(`api/comps/${id}`))),
+      );
+      const seenBuilds = new Set<number>();
+      const comp = {
+        builds: comps
+          .flatMap((entry) => entry.builds ?? [])
+          .filter((entry) => !seenBuilds.has(entry.build_id) && !!seenBuilds.add(entry.build_id)),
+      };
       const extraBuildIds = (detail.roster_roles ?? [])
         .filter((role) => !role.is_fill && role.build_id !== null)
         .map((role) => role.build_id as number);

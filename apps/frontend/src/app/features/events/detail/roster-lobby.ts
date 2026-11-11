@@ -1,4 +1,4 @@
-import type { EventRosterSeat } from '../../../core/models/api.models';
+import type { EventParty, EventRosterSeat } from '../../../core/models/api.models';
 import type { TranslationKey } from '../../../i18n/en';
 
 /** Display order of roles on the roster lobby: frontline first, mounts last. */
@@ -134,4 +134,65 @@ export interface PartyRoleCount {
 
 export function partyRoleCounts(seats: readonly EventRosterSeat[]): PartyRoleCount[] {
   return groupSeatsByRole(seats).map(({ role, filled, total }) => ({ role, filled, total }));
+}
+
+/** The slice of an event party the display helpers need. */
+export type PartyLabelSource = Pick<EventParty, 'name' | 'position' | 'board_party_numbers'>;
+
+/** The event party whose seats sit on board party `boardNumber`, if the roster lists it. */
+export function partyForBoardNumber<T extends PartyLabelSource>(
+  parties: readonly T[],
+  boardNumber: number,
+): T | null {
+  return parties.find((party) => party.board_party_numbers.includes(boardNumber)) ?? null;
+}
+
+/**
+ * Heading of one board party: the party's name (or `defaultName(position)`), plus "1/2" style
+ * suffix when a comp over 20 seats spans several board parties.
+ */
+export function partyHeading(
+  party: PartyLabelSource,
+  boardNumber: number,
+  defaultName: (position: number) => string,
+): string {
+  const base = party.name?.trim() ? party.name.trim() : defaultName(party.position);
+  const total = party.board_party_numbers.length;
+  if (total <= 1) return base;
+  const index = party.board_party_numbers.indexOf(boardNumber);
+  return index === -1 ? base : `${base} ${index + 1}/${total}`;
+}
+
+/** Label of a seat's party from the seat itself ("Brawl", or "Party 2" for an unnamed party). */
+export function seatPartyLabel(
+  seat: Pick<EventRosterSeat, 'party_name' | 'party_position'>,
+  defaultName: (position: number) => string,
+): string {
+  return seat.party_name?.trim() ? seat.party_name.trim() : defaultName(seat.party_position);
+}
+
+/** Moves `id` one place up (`-1`) or down (`1`) in `ids`; returns `null` at either end. */
+export function movedPartyOrder(
+  ids: readonly number[],
+  id: number,
+  direction: -1 | 1,
+): number[] | null {
+  const from = ids.indexOf(id);
+  const to = from + direction;
+  if (from === -1 || to < 0 || to >= ids.length) return null;
+  const next = [...ids];
+  [next[from], next[to]] = [next[to], next[from]];
+  return next;
+}
+
+/** Roles and counts summary of a party, e.g. "2 Tank, 4 Healer"; roles come in lobby order. */
+export function sortedRoleCounts(
+  counts: readonly { role: string; count: number }[],
+): { role: string; count: number }[] {
+  return [...counts]
+    .filter((entry) => entry.count > 0)
+    .sort(
+      (left, right) =>
+        roleRank(left.role) - roleRank(right.role) || left.role.localeCompare(right.role),
+    );
 }

@@ -385,7 +385,10 @@ export interface EventSignupOptions {
   is_already_registered: boolean;
   /** False while the member has declared no weapon: any build is then allowed (except locked ones). */
   has_declared_weapons: boolean;
+  /** Every party's builds in one list (quantities summed), as the bot reads it. */
   builds: EventSignupBuild[];
+  /** The same builds grouped by party, in party order. */
+  parties: EventSignupPartyGroup[];
 }
 
 export interface UserMetrics {
@@ -776,6 +779,8 @@ export interface EventRosterRole {
   is_fill: boolean;
   /** Weapon of the role's build; `null` for Fill and for builds without a main-loadout weapon. */
   weapon_key: string | null;
+  /** Party whose seats the role extends; `null` for the virtual Fill role. */
+  party_id: number | null;
 }
 
 export interface EventFight {
@@ -947,6 +952,8 @@ export interface EventDetailView extends EventView {
   active_comp_capacity: number | null;
   /** Fill is always present; all remaining entries are event-specific extra build roles. */
   roster_roles: EventRosterRole[];
+  /** The event's parties in order; empty for flash masses. */
+  parties: EventParty[];
   participants: EventParticipant[];
   /** Canonical real-world fights; raw segments remain available in `battles`. */
   fights: EventFight[];
@@ -997,9 +1004,41 @@ export interface EventRosterParticipant {
   guild?: ParticipantGuild | null;
 }
 
+/** How many seats of one role a party has. */
+export interface EventPartyRoleCount {
+  role: string;
+  count: number;
+}
+
+/** One party of an event: a comp, an optional label and its seat summary. */
+export interface EventParty {
+  id: number;
+  /** 1-based order inside the event. */
+  position: number;
+  /** Optional label ("Clap", "Brawl"). */
+  name: string | null;
+  /** The comp stored on the party. */
+  comp_id: number;
+  /** The comp whose seats the party has now; differs from `comp_id` only for a single-party event. */
+  active_comp_id: number;
+  /** Name of the effective comp. */
+  comp_name: string;
+  /** Comp seats plus the party's extra roles. */
+  seat_count: number;
+  filled_count: number;
+  /** Board party numbers the party spans (more than one when its comp has over 20 seats). */
+  board_party_numbers: number[];
+  role_counts: EventPartyRoleCount[];
+}
+
 /** A concrete composition seat in the authoritative event roster. */
 export interface EventRosterSeat {
+  /** Stable key `party:{party_id}:build:{build_id}:{n}`. */
   key: string;
+  party_id: number;
+  party_name: string | null;
+  /** 1-based order of the seat's party inside the event. */
+  party_position: number;
   party_number: number;
   position: number;
   build_id: number;
@@ -1019,8 +1058,50 @@ export interface EventRosterView {
   event_id: number;
   roster_version: number;
   active_comp_id: number;
+  parties: EventParty[];
   seats: EventRosterSeat[];
   bench: EventRosterBenchParticipant[];
+}
+
+/** Add a party, last in order, built from a comp. */
+export interface CreateEventPartyRequest {
+  comp_id: number;
+  name?: string;
+  expected_roster_version: number;
+}
+
+/** Change a party's comp and/or label; an empty `name` clears the label. */
+export interface UpdateEventPartyRequest {
+  comp_id?: number;
+  name?: string;
+  expected_roster_version: number;
+}
+
+/** Remove a party. */
+export interface DeleteEventPartyRequest {
+  expected_roster_version: number;
+}
+
+/** Reorder the parties; `party_ids` lists every party of the event. */
+export interface ReorderEventPartiesRequest {
+  party_ids: number[];
+  expected_roster_version: number;
+}
+
+/** The roster after changing or removing a party, with the members it put back on the waiting list. */
+export interface EventPartyChange {
+  roster: EventRosterView;
+  unseated_count: number;
+}
+
+/** The builds one party offers a member signing up. */
+export interface EventSignupPartyGroup {
+  party_id: number;
+  position: number;
+  name: string | null;
+  comp_name: string;
+  /** That party's builds with its own quantities; availability as in the flat list. */
+  builds: EventSignupBuild[];
 }
 
 /** Assign a registered participant to a concrete roster seat. */

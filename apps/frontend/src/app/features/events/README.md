@@ -6,8 +6,10 @@ This directory contains the events list and an event detail page with Overview, 
 
 - **Overview** is the member view: "your spot" (`detail/event-my-spot.ts`: join, waiting for a seat, or party/seat/role with the build's equipment and abilities) and the role board (`detail/event-role-board.ts`: every role and build, who holds each seat, how many are open, and who is waiting).
 - **Parties** is the live board: the waiting list beside every party side by side. Officers drag players between seats, parties and the waiting list, or use Assign / Swap / Move to bench; the socket keeps every viewer in sync.
+- **Parties** has a manager-only "Assign players" / "Structure" switch. Structure (`detail/event-party-structure.ts`) is one card per party (label, comp, role counts, its extra roles, move up/down, Remove with a confirm, never the last party) plus an "Add party" card; each write sends the roster version, then the page reloads, and a comp change or removal toasts how many members went back to the waiting list.
+- Every event party has its own comp, and a comp over 20 seats spans several board parties: headings read "Brawl 1/2". Seat keys are `party:{party_id}:build:{build_id}:{n}`; the UI treats them as opaque. The signup dialog offers the union of the parties' builds, grouped per party using `GET /api/events/{id}/signup-options`.
 - **Battles** shows the performance and intel cards above the linked battles.
-- `detail/roster-lobby.ts` holds the pure seat grouping (by role, then build) and role colours/labels shared by both views.
+- `detail/roster-lobby.ts` holds the pure seat grouping (by role, then build), role colours/labels, and the party heading / reorder helpers shared by the views.
 
 ## Interface
 
