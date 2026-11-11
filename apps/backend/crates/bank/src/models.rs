@@ -1,0 +1,445 @@
+//! Request/response DTOs and view models for the bank module.
+//!
+//! Business logic lives in `service.rs`; this module only defines the shapes exchanged over
+//! the API and their `OpenAPI` schemas.
+
+use sea_orm::prelude::Decimal;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+use backend_entities::bank::Model;
+use backend_entities::status::bank::TransactionStatus;
+
+/// A single transaction as seen by a client.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TransactionView {
+    /// The unique identifier of the transaction.
+    #[schema(example = 1)]
+    pub id: i64,
+    /// The user id of the officer who paid this out, or `None` until withdrawn.
+    pub from_user_id: Option<i64>,
+    /// A human-readable label for the payer ("Guild Bank" until withdrawn, then the payer's user id).
+    #[schema(example = "Guild Bank")]
+    pub from_label: String,
+    /// The user id who is owed / receives the amount.
+    #[schema(example = 7)]
+    pub to_user_id: i64,
+    /// The username of the user who is owed / receives the amount.
+    #[schema(example = "Alice")]
+    pub to_username: String,
+    /// The display label for the actual destination. This is `Guild Bank` for donations.
+    #[schema(example = "Guild Bank")]
+    pub to_label: String,
+    /// Whether this row represents a movement to the virtual Guild Bank.
+    pub to_guild_bank: bool,
+    /// The transaction amount.
+    #[schema(value_type = String, example = "42.50")]
+    pub amount: Decimal,
+    /// The lifecycle status of the transaction.
+    pub status: TransactionStatus,
+    /// The kind of transaction, e.g. `"split_credit"`.
+    #[schema(example = "split_credit")]
+    pub r#type: String,
+    /// The split that generated this transaction, if any.
+    #[schema(example = 3)]
+    pub split_id: Option<i64>,
+    /// Alliance-owned source split when this is a guild-local projection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_alliance_split_id: Option<i64>,
+    /// The timestamp when the transaction was created.
+    pub created_at: String,
+    /// The timestamp when the recipient last requested withdrawal, if the request is active.
+    pub requested_at: Option<String>,
+    /// The timestamp when the withdrawal was accepted/paid, if it has been.
+    pub withdrawn_at: Option<String>,
+    /// Source guild tenant when this row is served from an alliance aggregate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_tenant_id: Option<String>,
+    /// Display name of that source guild.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_name: Option<String>,
+}
+
+impl TransactionView {
+    pub(super) fn from_model(
+        model: Model,
+        status: TransactionStatus,
+        from_username: Option<String>,
+        to_username: String,
+    ) -> Self {
+        let from_label = from_username.unwrap_or_else(|| {
+            model
+                .from_user_id
+                .map_or_else(|| "Guild Bank".to_string(), |id| id.to_string())
+        });
+        let to_label = if model.to_guild_bank {
+            "Guild Bank".to_string()
+        } else {
+            to_username.clone()
+        };
+        Self {
+            id: model.id,
+            from_user_id: model.from_user_id,
+            from_label,
+            to_user_id: model.to_user_id,
+            to_username,
+            to_label,
+            to_guild_bank: model.to_guild_bank,
+            amount: model.amount,
+            status,
+            r#type: model.r#type,
+            split_id: model.split_id,
+            source_alliance_split_id: model.source_alliance_split_id,
+            created_at: model.created_at.to_rfc3339(),
+            requested_at: model.requested_at.map(|dt| dt.to_rfc3339()),
+            withdrawn_at: model.withdrawn_at.map(|dt| dt.to_rfc3339()),
+            guild_tenant_id: None,
+            guild_name: None,
+        }
+    }
+
+    pub(super) fn with_guild(
+        mut self,
+        tenant_id: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        self.guild_tenant_id = Some(tenant_id.into());
+        self.guild_name = Some(name.into());
+        self
+    }
+}
+
+/// A user's derived Guild Bank balance.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BalanceSummary {
+    /// The user this balance belongs to.
+    #[schema(example = 7)]
+    pub user_id: i64,
+    /// The total amount still owed and currently requestable for withdrawal.
+    #[schema(value_type = String, example = "128.75")]
+    pub pending_total: Decimal,
+    /// The number of pending or rejected transactions contributing to `pending_total`.
+    #[schema(example = 3)]
+    pub pending_count: u64,
+    /// The total amount requested for withdrawal, awaiting officer acceptance.
+    #[schema(value_type = String, example = "40.00")]
+    pub requested_total: Decimal,
+    /// The number of requested transactions contributing to `requested_total`.
+    #[schema(example = 1)]
+    pub requested_count: u64,
+    /// Per-guild totals when this summary is an alliance aggregate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guilds: Vec<GuildBalanceBreakdown>,
+    /// Member guilds whose ledger could not be read. When non-empty, the totals above are
+    /// **incomplete**: they leave these guilds out. Absent on complete and single-guild results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<UnavailableGuild>,
+}
+
+/// A member guild an alliance aggregate could not include because its ledger was unreachable.
+///
+/// Alliance totals are computed live from every active member guild. A guild that cannot be
+/// opened is left out rather than failing the whole request, so the response lists it here
+/// instead of presenting a partial total as if it were complete.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct UnavailableGuild {
+    /// Discord tenant id of the member guild.
+    pub guild_tenant_id: String,
+    /// Display name of the member guild.
+    pub guild_name: String,
+}
+
+/// One member guild's contribution to an alliance [`BalanceSummary`].
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct GuildBalanceBreakdown {
+    /// Discord tenant id of the member guild.
+    pub guild_tenant_id: String,
+    /// Display name of the member guild.
+    pub guild_name: String,
+    /// Requestable (pending + rejected) total in this guild.
+    #[schema(value_type = String, example = "80.00")]
+    pub pending_total: Decimal,
+    pub pending_count: u64,
+    /// Requested-but-unpaid total in this guild.
+    #[schema(value_type = String, example = "20.00")]
+    pub requested_total: Decimal,
+    pub requested_count: u64,
+}
+
+/// Guild-wide aggregate of paid-out Guild Bank transactions.
+///
+/// Lives apart from `BalanceSummary` because the latter is per-user and only covers
+/// `pending`/`requested` states — it intentionally excludes the `withdrawn` ledger
+/// that officers have already settled. This struct surfaces that hidden total so the
+/// dashboard can show "how much the guild has actually paid out".
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct GuildBankSummary {
+    /// Total silver the Guild Bank has paid out across all members (status `withdrawn`).
+    #[schema(value_type = String, example = "12_480.50")]
+    pub paid_total: Decimal,
+    /// Number of `withdrawn` transactions contributing to `paid_total`.
+    #[schema(example = 87)]
+    pub paid_count: u64,
+    /// Member guilds left out of an alliance aggregate because their ledger was unreachable.
+    /// When non-empty the totals are incomplete. Absent on complete results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<UnavailableGuild>,
+}
+
+/// One grouped money-flow line in the administrator bank report.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BankBreakdown {
+    /// Human-readable group label, such as a username, `Guild Bank`, or transaction type.
+    pub label: String,
+    /// Number of ledger rows in this group.
+    pub transaction_count: u64,
+    /// Sum of the positive amounts represented by this group.
+    #[schema(value_type = String, example = "1250.00")]
+    pub total_amount: Decimal,
+}
+
+/// Guild-wide bank statistics for the administrator panel.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BankAnalyticsSummary {
+    /// Number of ledger rows, regardless of current status.
+    pub transaction_count: u64,
+    /// Sum of all ledger row amounts.
+    #[schema(value_type = String, example = "12500.00")]
+    pub ledger_volume: Decimal,
+    /// Rows that are still available to request or request again.
+    #[schema(value_type = String, example = "3000.00")]
+    pub outstanding_total: Decimal,
+    pub outstanding_count: u64,
+    /// Rows whose withdrawal was requested but not yet paid.
+    #[schema(value_type = String, example = "800.00")]
+    pub requested_total: Decimal,
+    pub requested_count: u64,
+    /// Rows already paid out by an officer.
+    #[schema(value_type = String, example = "9000.00")]
+    pub paid_out_total: Decimal,
+    pub paid_out_count: u64,
+    /// Rows donated back to the Guild Bank.
+    #[schema(value_type = String, example = "500.00")]
+    pub donated_total: Decimal,
+    pub donated_count: u64,
+    /// Aggregation by recorded source.
+    pub sources: Vec<BankBreakdown>,
+    /// Aggregation by actual destination.
+    pub destinations: Vec<BankBreakdown>,
+    /// Aggregation by transaction type.
+    pub transaction_types: Vec<BankBreakdown>,
+    /// Member guilds left out of an alliance aggregate because their ledger was unreachable.
+    /// When non-empty the totals are incomplete. Absent on complete results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_guilds: Vec<UnavailableGuild>,
+}
+
+/// Filters that can be applied when listing transactions.
+#[derive(Debug, Clone, Deserialize, ToSchema, Default)]
+pub struct TransactionFilters {
+    /// Filter by transaction status.
+    pub status: Option<TransactionStatus>,
+    /// Case-insensitive substring match on the recipient display name. This is
+    /// the linked Albion character name when available, otherwise the username.
+    pub search: Option<String>,
+    /// Sort column. Allowed: `created_at` (default), `amount`, `status`, `to_username`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
+    /// Restrict to transactions linked to a single split. Since this can span every
+    /// participant's own transactions, listing with this set requires the same permission as
+    /// `?global=true` (`bank.view_others` or `bank.withdraw.accept`).
+    #[serde(
+        default,
+        deserialize_with = "backend_core::serde_helpers::optional_i64_from_string_or_number"
+    )]
+    pub split_id: Option<i64>,
+}
+
+/// Request body to manually create a bank transaction (e.g. a one-off bonus or correction).
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateTransactionRequest {
+    /// The user who is owed / receives the amount.
+    #[schema(example = 7)]
+    pub to_user_id: i64,
+    /// Signed input amount. Positive values credit the recipient; negative values
+    /// are normalized as a donation back to the Guild Bank.
+    #[schema(value_type = String, example = "42.50")]
+    pub amount: Decimal,
+    /// The lifecycle status to create the row in. Defaults to `pending`.
+    pub status: Option<TransactionStatus>,
+    /// The kind of transaction. Defaults to `"manual_adjustment"`.
+    #[schema(example = "manual_adjustment")]
+    pub r#type: Option<String>,
+    /// Link this transaction to an existing split.
+    #[schema(example = 3)]
+    pub split_id: Option<i64>,
+    /// Whether the destination is the virtual Guild Bank. Defaults to `false`.
+    pub to_guild_bank: Option<bool>,
+    /// The user recorded as having paid this out, if any. Defaults to unset (Guild Bank).
+    #[schema(example = 1)]
+    pub from_user_id: Option<i64>,
+    /// Member guild whose ledger to write when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
+}
+
+/// Request body to update an existing bank transaction. Every field is optional and only
+/// provided fields are changed; omit a field to leave it as-is.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateTransactionRequest {
+    /// The new recipient.
+    #[schema(example = 7)]
+    pub to_user_id: Option<i64>,
+    /// The new payer. `null` explicitly clears it back to the virtual Guild Bank; omitting the
+    /// field leaves the current payer unchanged.
+    #[serde(
+        default,
+        deserialize_with = "backend_core::serde_helpers::double_option"
+    )]
+    pub from_user_id: Option<Option<i64>>,
+    /// Signed input amount. Positive values credit the recipient; negative values
+    /// normalize the row as a donation back to the Guild Bank.
+    #[schema(value_type = Option<String>, example = "42.50")]
+    pub amount: Option<Decimal>,
+    /// The new lifecycle status.
+    pub status: Option<TransactionStatus>,
+    /// The new transaction type.
+    #[schema(example = "manual_adjustment")]
+    pub r#type: Option<String>,
+    /// The new linked split. `null` explicitly unlinks it from any split; omitting the field
+    /// leaves the current linkage unchanged.
+    #[serde(
+        default,
+        deserialize_with = "backend_core::serde_helpers::double_option"
+    )]
+    pub split_id: Option<Option<i64>>,
+    /// Whether the destination is the virtual Guild Bank.
+    pub to_guild_bank: Option<bool>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
+}
+
+/// Request body to request withdrawal of one, several, or all of the caller's requestable
+/// transactions.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct WithdrawRequest {
+    /// The specific transaction ids to request withdrawal for. Each must belong to the caller and
+    /// currently be `pending` or `rejected`. Omit this and set `all: true` instead to request
+    /// everything at once.
+    #[schema(example = json!([12, 13]))]
+    pub transaction_ids: Option<Vec<i64>>,
+    /// If `true`, request withdrawal of every one of the caller's currently-requestable transactions
+    /// instead of listing `transaction_ids` individually.
+    #[schema(example = true)]
+    pub all: Option<bool>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    ///
+    /// Omit to default to the unique member guild that currently has rows for this Discord user.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
+}
+
+/// Request body for an officer to accept (and pay out) requested withdrawals.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct AcceptWithdrawalRequest {
+    /// The specific transaction ids to accept. Each must currently be `requested` (any member's,
+    /// not just the caller's). Omit this and set `all: true` instead to accept everything at once.
+    #[schema(example = json!([12, 13]))]
+    pub transaction_ids: Option<Vec<i64>>,
+    /// If `true`, accept every currently-requested transaction guild-wide (across all members)
+    /// instead of listing `transaction_ids` individually.
+    #[schema(example = true)]
+    pub all: Option<bool>,
+    /// Restrict `all` to a single member.
+    ///
+    /// Without it `all: true` sweeps the whole guild, which is the wrong tool
+    /// when an officer wants to settle up with one person: they would have to
+    /// list that member's transaction ids by hand.
+    #[schema(example = 7)]
+    pub user_id: Option<i64>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
+}
+
+/// Request body for an officer to reject requested withdrawals.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct RejectWithdrawalRequest {
+    /// The specific transaction ids to reject. Each must currently be `requested`. Omit this and
+    /// set `all: true` instead to reject everything at once.
+    #[schema(example = json!([12, 13]))]
+    pub transaction_ids: Option<Vec<i64>>,
+    /// If `true`, reject every currently-requested transaction guild-wide (across all members)
+    /// instead of listing `transaction_ids` individually.
+    #[schema(example = true)]
+    pub all: Option<bool>,
+    /// Restrict `all` to a single member.
+    ///
+    /// Without it `all: true` sweeps the whole guild, which is the wrong tool
+    /// when an officer wants to settle up with one person: they would have to
+    /// list that member's transaction ids by hand.
+    #[schema(example = 7)]
+    pub user_id: Option<i64>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn balance(unavailable_guilds: Vec<UnavailableGuild>) -> BalanceSummary {
+        BalanceSummary {
+            user_id: 1,
+            pending_total: Decimal::ZERO,
+            pending_count: 0,
+            requested_total: Decimal::ZERO,
+            requested_count: 0,
+            guilds: Vec::new(),
+            unavailable_guilds,
+        }
+    }
+
+    #[test]
+    fn complete_aggregates_do_not_carry_the_coverage_field() {
+        let json = serde_json::to_value(balance(Vec::new())).unwrap();
+        assert!(json.get("unavailable_guilds").is_none());
+    }
+
+    #[test]
+    fn incomplete_aggregates_name_the_missing_guilds() {
+        let json = serde_json::to_value(balance(vec![UnavailableGuild {
+            guild_tenant_id: "guild-c".to_owned(),
+            guild_name: "Guild C".to_owned(),
+        }]))
+        .unwrap();
+        assert_eq!(
+            json["unavailable_guilds"],
+            serde_json::json!([{ "guild_tenant_id": "guild-c", "guild_name": "Guild C" }])
+        );
+    }
+
+    #[test]
+    fn paginated_transactions_report_the_coverage_gap() {
+        let page = crate::schemas::PaginatedTransactionView::from(
+            backend_core::pagination::PaginatedData::new(Vec::new(), 0, 0, 1, 10),
+        );
+        assert!(
+            serde_json::to_value(&page)
+                .unwrap()
+                .get("unavailable_guilds")
+                .is_none()
+        );
+        let page = page.with_unavailable_guilds(vec![UnavailableGuild {
+            guild_tenant_id: "guild-c".to_owned(),
+            guild_name: "Guild C".to_owned(),
+        }]);
+        assert_eq!(
+            serde_json::to_value(&page).unwrap()["unavailable_guilds"][0]["guild_tenant_id"],
+            "guild-c"
+        );
+    }
+}

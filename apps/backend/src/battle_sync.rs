@@ -16,13 +16,13 @@ use sea_orm::{
 };
 use tokio::time::interval;
 
-use crate::albion_scope::{self, AlbionScope};
-use crate::modules::albionbb::service::AlbionBbService;
-use crate::modules::albiondata::service::AlbionDataService;
-use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as SnapshotEntity};
-use crate::modules::battles::service::BattlesService;
-use crate::modules::events::service::BattleLinkingContext;
-use crate::pagination::{PaginationParams, SortOrder};
+use backend_albion_data::albionbb::service::AlbionBbService;
+use backend_albion_data::albiondata::service::AlbionDataService;
+use backend_battles::battles::service::BattlesService;
+use backend_core::albion_common::BattleLinkingContext;
+use backend_core::pagination::{PaginationParams, SortOrder};
+use backend_entities::battles::{Column as SnapshotColumn, Entity as SnapshotEntity};
+use backend_identity::albion_scope::{self, AlbionScope};
 
 /// Tick interval for the sync worker. Battles that fall off page 1 between
 /// ticks are already covered by whichever tick first saw them.
@@ -77,7 +77,7 @@ pub fn spawn(
 async fn prepare_cycle(
     control: &DatabaseConnection,
     tenant_id: &str,
-) -> Result<Option<AlbionScope>, crate::errors::AppError> {
+) -> Result<Option<AlbionScope>, backend_core::errors::AppError> {
     let row = control
         .query_one(Statement::from_sql_and_values(
             control.get_database_backend(),
@@ -85,16 +85,16 @@ async fn prepare_cycle(
             [tenant_id.into()],
         ))
         .await
-        .map_err(crate::errors::AppError::Database)?;
+        .map_err(backend_core::errors::AppError::Database)?;
     let Some(row) = row else {
         return Ok(None);
     };
     let status: String = row
         .try_get_by_index(0)
-        .map_err(crate::errors::AppError::Database)?;
+        .map_err(backend_core::errors::AppError::Database)?;
     let kind: String = row
         .try_get_by_index(1)
-        .map_err(crate::errors::AppError::Database)?;
+        .map_err(backend_core::errors::AppError::Database)?;
     if kind.is_empty() || !albion_scope::sync_cycle_should_run(&status, &kind) {
         return Ok(None);
     }
@@ -102,7 +102,7 @@ async fn prepare_cycle(
         Ok(scope) => Ok(Some(scope)),
         Err(albion_scope::AlbionScopeError::NotConfigured) => Ok(None),
         Err(albion_scope::AlbionScopeError::Database(err)) => {
-            Err(crate::errors::AppError::Database(err))
+            Err(backend_core::errors::AppError::Database(err))
         }
     }
 }
@@ -114,7 +114,7 @@ async fn run_cycle(
     battles: &BattlesService,
     albiondata: &AlbionDataService,
     guild_ctx: &BattleLinkingContext,
-) -> Result<(), crate::errors::AppError> {
+) -> Result<(), backend_core::errors::AppError> {
     let page = battles
         .list_guild_battles(
             db,
@@ -135,7 +135,7 @@ async fn run_cycle(
             .filter(SnapshotColumn::BattleId.eq(summary.battle_id))
             .one(db)
             .await
-            .map_err(crate::errors::AppError::Database)?
+            .map_err(backend_core::errors::AppError::Database)?
             .is_some();
 
         if already_saved {
@@ -158,7 +158,7 @@ async fn run_cycle(
     // so a battle's snapshot is guaranteed to exist before we try to read it.
     // Failures are logged, never propagated — scouting must not be able to
     // stall snapshot persistence.
-    match crate::modules::intel::auto_scout::scout_recent_snapshots(db, guild_ctx).await {
+    match backend_intel::auto_scout::scout_recent_snapshots(db, guild_ctx).await {
         Ok(0) => {}
         Ok(count) => tracing::info!(battles = count, "battle-sync: scouted new battles"),
         Err(e) => tracing::warn!(error = %e, "battle-sync: intel scouting pass failed"),
@@ -167,7 +167,7 @@ async fn run_cycle(
     // Third phase: group any fights the sync worker seeded without an event attached.
     // Same best-effort, logged-not-propagated style as scouting above — a failed grouping
     // pass must not be able to stall snapshot persistence or scouting on the next tick.
-    match crate::modules::events::service::group_orphan_fights(db, guild_ctx, chrono::Utc::now())
+    match backend_events::events::service::group_orphan_fights(db, guild_ctx, chrono::Utc::now())
         .await
     {
         Ok(0) => {}

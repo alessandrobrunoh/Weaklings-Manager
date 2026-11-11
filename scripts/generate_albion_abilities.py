@@ -6,7 +6,7 @@ bundled and refreshed by hand when Albion patches. Run this after a patch:
 
     python3 scripts/generate_albion_abilities.py
 
-It writes `apps/backend/src/modules/openalbion/abilities.json`, keyed by the tier-stripped base
+It writes `apps/backend/crates/albion-data/src/openalbion/abilities.json`, keyed by the tier-stripped base
 identifier so one entry serves all eight tiers (a T4 and a T8 Broadsword offer the same spells).
 
 Three source files, three separate reasons:
@@ -44,8 +44,8 @@ from albion_dumps import (
     resolve_spell_list,
 )
 
-CATALOG = REPO_ROOT / "apps/backend/src/modules/openalbion/catalog.json"
-OUTPUT = REPO_ROOT / "apps/backend/src/modules/openalbion/abilities.json"
+CATALOG = REPO_ROOT / "apps/backend/crates/albion-data/src/openalbion/catalog.json"
+OUTPUT = REPO_ROOT / "apps/backend/crates/albion-data/src/openalbion/abilities.json"
 
 
 def main() -> int:

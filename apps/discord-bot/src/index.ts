@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   // Unscoped API client. Every call that touches tenant data must go through a
   // `withGuild(...)` copy of it: the backend resolves the tenant database from
   // the `X-Guild-Id` header and rejects an unscoped request with a 400 (see
-  // apps/backend/src/tenant.rs). Only the tenant-status lookup and the
+  // apps/backend/crates/identity/src/tenant.rs). Only the tenant-status lookup and the
   // onboarding endpoints are safe to call unscoped.
   const api = new ApiClient(config.BACKEND_URL, config.BOT_API_SECRET);
   // Channel/role IDs now live in the backend's admin Settings instead of this

@@ -2,46 +2,8 @@
 //!
 //! Exposes and aggregates all functional modules (users, auth, etc.) in the backend.
 
-pub mod actions;
-pub mod admin;
-pub mod albion;
-pub mod albionbb;
-pub mod albiondata;
-pub mod alliance_share;
-pub mod applications;
-pub mod attention;
-pub mod audit;
-pub mod auth;
-pub mod bank;
-pub mod battles;
-pub mod capabilities;
-pub mod combat;
-pub mod comps;
-pub mod discord_api;
-pub mod economy;
-pub mod enemies;
-pub mod events;
-pub mod fight_analytics;
-pub mod fights;
-pub mod fingerprints;
-pub mod giveaways;
 pub mod health;
-pub mod intel;
-pub mod members;
-pub mod notifications;
-pub mod openalbion;
-pub mod platform;
-pub mod progression;
-pub mod regear;
-pub mod siphoned;
-pub mod splits;
-pub mod sync;
-pub mod tickets;
-pub mod trials;
-pub mod users;
 pub mod utils;
-pub mod vods;
-pub mod warns;
 
 use axum::Router;
 
@@ -51,40 +13,48 @@ use axum::Router;
 pub fn router() -> Router {
     Router::new()
         .nest("/health", health::router())
-        .nest("/users", users::router())
-        .nest("/members", members::router())
-        .nest("/auth", auth::router())
-        .nest("/bank", bank::router())
-        .nest("/splits", splits::router())
-        .nest("/albion", albion::router())
-        .nest("/albionbb", albionbb::router())
-        .nest("/applications", applications::router())
-        .nest("/tickets", tickets::router())
-        .nest("/albiondata", albiondata::router())
-        .nest("/battles", battles::router())
-        .nest("/attention", attention::router())
-        .nest("/enemies", enemies::router())
-        .nest("/fingerprints", fingerprints::router())
-        .nest("/economy", economy::router())
-        .nest("/fight-analytics", fight_analytics::router())
-        .nest("/openalbion", openalbion::router())
-        .nest("/combat", combat::router())
-        .nest("/comps", comps::router())
-        .nest("/events", events::router())
-        .nest("/actions", actions::router())
-        .nest("/fights", fights::router())
-        .nest("/giveaways", giveaways::router())
-        .nest("/siphoned", siphoned::router())
-        .nest("/regear", regear::router())
-        .nest("/alliance", alliance_share::router())
-        .nest("/sync", sync::router::router())
-        .nest("/me", capabilities::router())
-        .nest("/admin", admin::router())
+        .nest("/users", backend_identity::users::router())
+        .nest("/members", backend_identity::members::router())
+        .nest("/auth", backend_identity::auth::router())
+        .nest("/bank", backend_bank::router())
+        .nest("/splits", backend_splits::router())
+        .nest("/albion", backend_identity::albion::router())
+        .nest("/albionbb", backend_albion_data::albionbb::router())
+        .nest("/applications", backend_community::applications::router())
+        .nest("/tickets", backend_community::tickets::router())
+        .nest("/albiondata", backend_albion_data::albiondata::router())
+        .nest("/battles", backend_battles::battles::router())
+        .nest("/attention", backend_fights::attention::router())
+        .nest("/enemies", backend_battles::enemies::router())
+        .nest("/fingerprints", backend_battles::fingerprints::router())
+        .nest("/economy", backend_battles::economy::router())
+        .nest(
+            "/fight-analytics",
+            backend_battles::fight_analytics::router(),
+        )
+        .nest("/openalbion", backend_albion_data::openalbion::router())
+        .nest("/combat", backend_combat::router())
+        .nest(
+            "/comps",
+            backend_comps::router()
+                .merge(backend_combat::comp_routes::comp_routes())
+                .merge(backend_events::events::comp_routes::comp_routes()),
+        )
+        .nest("/events", backend_events::events::router())
+        .nest("/actions", backend_events::actions::router())
+        .nest("/fights", backend_fights::fights::router())
+        .nest("/giveaways", backend_rewards::giveaways::router())
+        .nest("/siphoned", backend_rewards::siphoned::router())
+        .nest("/regear", backend_regear::router())
+        .nest("/alliance", backend_events::alliance_share::router())
+        .nest("/sync", backend_runtime::sync::router::router())
+        .nest("/me", backend_identity::capabilities::router())
+        .nest("/admin", backend_identity::admin::router())
         .nest("/utils", utils::router())
-        .nest("/audit", audit::router())
-        .nest("/intel", intel::router())
-        .nest("/progression", progression::router())
-        .nest("/vods", vods::router())
-        .nest("/warns", warns::router())
-        .nest("/notifications", notifications::router())
+        .nest("/audit", backend_identity::audit::router())
+        .nest("/intel", backend_intel::router())
+        .nest("/progression", backend_progression::router())
+        .nest("/vods", backend_community::vods::router())
+        .nest("/warns", backend_community::warns::router())
+        .nest("/notifications", backend_identity::notifications::router())
 }

@@ -34,6 +34,6 @@ workflows.
 
 Run the component checks from the repository root:
 
-- `cargo test -p backend`
+- `cargo test --workspace`
 - `npm test --prefix apps/frontend`
 - `npm test --prefix apps/discord-bot`

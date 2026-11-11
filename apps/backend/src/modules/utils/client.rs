@@ -4,7 +4,7 @@
 //! Sends a base64 data-URI-encoded image and returns the concatenated extracted text across
 //! every page Mistral reports back.
 
-use crate::errors::AppError;
+use backend_core::errors::AppError;
 use serde::{Deserialize, Serialize};
 
 /// Base URL of the Mistral OCR API.
@@ -48,7 +48,7 @@ impl MistralOcrClient {
     #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
-            http: crate::http_client::shared(),
+            http: backend_core::http_client::shared(),
             api_key,
         }
     }

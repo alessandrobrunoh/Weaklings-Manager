@@ -8,10 +8,11 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 
 use super::models::OcrResult;
 use super::service::OcrService;
-use crate::config::Config;
-use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{ApiResponse, ApiResponseOcrResult};
+use crate::modules::utils::schemas::ApiResponseOcrResult;
+use backend_core::config::Config;
+use backend_core::errors::{AppError, ProblemDetails};
+use backend_core::responses::ApiResponse;
+use backend_identity::auth::{Permission, Permissions, UserContext};
 
 /// Creates the router for the utils module.
 pub fn router() -> Router {
@@ -153,8 +154,7 @@ mod tests {
             multipart,
         )
         .await
-        .err()
-        .expect("a member without splits.create must not reach the OCR provider");
+        .expect_err("a member without splits.create must not reach the OCR provider");
         assert!(matches!(err, AppError::Forbidden(_)), "got {err:?}");
     }
 

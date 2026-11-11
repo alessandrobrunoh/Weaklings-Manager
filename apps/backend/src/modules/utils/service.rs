@@ -6,7 +6,7 @@
 
 use super::client::MistralOcrClient;
 use super::models::OcrResult;
-use crate::errors::AppError;
+use backend_core::errors::AppError;
 
 /// Service exposing generic OCR operations.
 pub struct OcrService {

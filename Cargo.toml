@@ -1,6 +1,68 @@
 [workspace]
 resolver = "2"
-members = ["apps/backend"]
+members = ["apps/backend", "apps/backend/crates/*"]
+
+[workspace.package]
+version = "0.0.3"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+axum = { version = "0.8", features = ["multipart", "ws"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+async-trait = "0.1"
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "timeout", "limit"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
+tracing-opentelemetry = { version = "0.34", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dotenvy = "0.15"
+envy = "0.4"
+utoipa = { version = "5.2.0", features = ["chrono"] }
+utoipa-scalar = { version = "0.3.0", features = ["axum"] }
+sea-orm = { version = "1.1.0", default-features = false, features = ["sqlx-postgres", "sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-json", "with-chrono", "with-rust_decimal", "with-uuid"] }
+sea-orm-migration = { version = "1.1.0", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
+rust_decimal = "1.42"
+chrono = "0.4"
+thiserror = "1"
+strum = { version = "0.27", features = ["derive"] }
+reqwest = { version = "0.12.0", default-features = false, features = ["json", "rustls-tls"] }
+rand = "0.8"
+axum-extra = { version = "0.10.0", features = ["cookie-private"] }
+urlencoding = "2.1.3"
+unicode-normalization = "0.1"
+time = "0.3"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+subtle = "2.6"
+dashmap = "6"
+serde_urlencoded = "0.7"
+tower = { version = "0.5.3", features = ["util"] }
+
+backend-core = { path = "apps/backend/crates/core" }
+backend-gamedata = { path = "apps/backend/crates/gamedata" }
+backend-migration = { path = "apps/backend/crates/migration" }
+backend-entities = { path = "apps/backend/crates/entities" }
+backend-identity = { path = "apps/backend/crates/identity" }
+backend-runtime = { path = "apps/backend/crates/runtime" }
+backend-albion-data = { path = "apps/backend/crates/albion-data" }
+backend-progression = { path = "apps/backend/crates/progression" }
+backend-community = { path = "apps/backend/crates/community" }
+backend-battles = { path = "apps/backend/crates/battles" }
+backend-comps = { path = "apps/backend/crates/comps" }
+backend-combat = { path = "apps/backend/crates/combat" }
+backend-intel = { path = "apps/backend/crates/intel" }
+backend-bank = { path = "apps/backend/crates/bank" }
+backend-splits = { path = "apps/backend/crates/splits" }
+backend-regear = { path = "apps/backend/crates/regear" }
+backend-events = { path = "apps/backend/crates/events" }
+backend-fights = { path = "apps/backend/crates/fights" }
+backend-rewards = { path = "apps/backend/crates/rewards" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

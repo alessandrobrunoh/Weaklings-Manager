@@ -1,0 +1,16 @@
+//! Albion Online integration module.
+//!
+//! Provides a reusable client for the public Albion Online gameinfo API, guild roster
+//! browsing for the operator's configured guild, and self-service Discord <-> Albion
+//! player account linking.
+
+pub mod alliance_fanout;
+pub mod client;
+pub mod discord_guild_role;
+pub mod discord_nick;
+pub mod notify;
+pub mod router;
+pub mod schemas;
+pub mod service;
+
+pub use router::router;

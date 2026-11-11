@@ -245,17 +245,268 @@ dependencies = [
 name = "backend"
 version = "0.0.3"
 dependencies = [
- "async-trait",
  "axum",
- "axum-extra",
+ "backend-albion-data",
+ "backend-bank",
+ "backend-battles",
+ "backend-combat",
+ "backend-community",
+ "backend-comps",
+ "backend-core",
+ "backend-entities",
+ "backend-events",
+ "backend-fights",
+ "backend-gamedata",
+ "backend-identity",
+ "backend-intel",
+ "backend-migration",
+ "backend-progression",
+ "backend-regear",
+ "backend-rewards",
+ "backend-runtime",
+ "backend-splits",
  "base64",
  "chrono",
- "dashmap",
  "dotenvy",
- "envy",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "reqwest",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "utoipa",
+ "utoipa-scalar",
+]
+
+[[package]]
+name = "backend-albion-data"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-runtime",
+ "chrono",
+ "rand 0.8.6",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "urlencoding",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-bank"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-battles"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-albion-data",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "rust_decimal",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-combat"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-albion-data",
+ "backend-core",
+ "backend-entities",
+ "backend-gamedata",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-community"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "backend-progression",
+ "chrono",
+ "reqwest",
+ "rust_decimal",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-comps"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-albion-data",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-core"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "dotenvy",
+ "envy",
+ "reqwest",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "backend-entities"
+version = "0.0.3"
+dependencies = [
+ "backend-core",
+ "sea-orm",
+ "serde",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-events"
+version = "0.0.3"
+dependencies = [
+ "async-trait",
+ "axum",
+ "backend-albion-data",
+ "backend-battles",
+ "backend-combat",
+ "backend-comps",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "backend-progression",
+ "backend-runtime",
+ "backend-splits",
+ "chrono",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "backend-fights"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-battles",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "backend-runtime",
+ "chrono",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-gamedata"
+version = "0.0.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-identity"
+version = "0.0.3"
+dependencies = [
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "backend-core",
+ "backend-entities",
+ "backend-gamedata",
+ "backend-migration",
+ "base64",
+ "chrono",
+ "dashmap",
  "rand 0.8.6",
  "reqwest",
  "rust_decimal",
@@ -269,16 +520,150 @@ dependencies = [
  "thiserror 1.0.69",
  "time",
  "tokio",
- "tokio-stream",
  "tower",
- "tower-http",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "unicode-normalization",
  "urlencoding",
  "utoipa",
- "utoipa-scalar",
+ "uuid",
+]
+
+[[package]]
+name = "backend-intel"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-battles",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "rust_decimal",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "backend-migration"
+version = "0.0.3"
+dependencies = [
+ "async-trait",
+ "backend-core",
+ "sea-orm",
+ "sea-orm-migration",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "backend-progression"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "rust_decimal",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "backend-regear"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-albion-data",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "backend-rewards"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-albion-data",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "backend-regear",
+ "chrono",
+ "rand 0.8.6",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "backend-runtime"
+version = "0.0.3"
+dependencies = [
+ "async-trait",
+ "axum",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "chrono",
+ "rand 0.8.6",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tower",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "backend-splits"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "backend-bank",
+ "backend-core",
+ "backend-entities",
+ "backend-identity",
+ "backend-migration",
+ "backend-runtime",
+ "chrono",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
+ "tracing",
+ "utoipa",
  "uuid",
 ]
 

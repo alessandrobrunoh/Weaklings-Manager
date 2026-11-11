@@ -1,0 +1,747 @@
+//! Intel routing module.
+//!
+//! Exposes enemy scouting: browsing the scout library, scouting a battle,
+//! similarity comparisons, counter recommendations and the matchup matrix.
+
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Query},
+    routing::{get, post},
+};
+
+use chrono::{DateTime, Utc};
+
+use crate::auto_scout::{BackfillOutcome, scout_snapshots_before};
+use crate::cache::ReportCache;
+use crate::matchups::{MatchupReport, matchups};
+use crate::models::{
+    CounterSuggestion, ScoutFilters, ScoutOutcome, ScoutedCompDetail, SimilarityHit,
+    UpdateScoutRequest,
+};
+use crate::report::{
+    DateRange, GuildReport, PlayerReport, ReportLeaderboards, ReportParams, build_guild_report,
+    build_player_report,
+};
+use crate::schemas::{ApiResponseScoutBackfillOutcome, PaginatedScoutedComp};
+use crate::service::IntelService;
+use backend_core::albion_common::BattleLinkingContext;
+use backend_core::config::Config;
+use backend_core::errors::{AppError, ProblemDetails};
+use backend_core::pagination::PaginationParams;
+use backend_core::responses::ApiResponse;
+use backend_identity::auth::{Permission, Permissions, UserContext};
+use backend_identity::tenant::CurrentTenantId;
+
+/// Default page size for `POST /scouts/backfill` when `limit` is omitted.
+const DEFAULT_BACKFILL_LIMIT: u64 = 200;
+
+/// Default number of entries returned by the similarity and counter endpoints.
+const DEFAULT_SUGGESTION_LIMIT: usize = 5;
+/// Hard ceiling so a client cannot ask for an unbounded comparison sweep.
+const MAX_SUGGESTION_LIMIT: usize = 50;
+
+/// Query parameters for `GET /scouts`.
+///
+/// Pagination fields are declared inline rather than flattened, since axum's
+/// `Query` extractor cannot deserialize non-string fields through a flattened
+/// struct — the same constraint documented in the regear router.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct ListScoutsQuery {
+    /// The page number to fetch (1-indexed). Defaults to 1.
+    pub page: Option<u64>,
+    /// The maximum number of items per page.
+    pub limit: Option<u64>,
+    /// The filter query parameters.
+    #[serde(flatten)]
+    pub filters: ScoutFilters,
+}
+
+impl ListScoutsQuery {
+    fn pagination(&self) -> PaginationParams {
+        PaginationParams {
+            page: self.page,
+            limit: self.limit,
+        }
+    }
+}
+
+/// Query parameters for `POST /scouts/from-battle/{battle_id}`.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct ScoutBattleQuery {
+    /// Compute the drafts and return them without writing anything.
+    pub dry_run: Option<bool>,
+}
+
+/// Query parameters for `POST /scouts/backfill`.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct ScoutBackfillQuery {
+    /// Only consider snapshots strictly older than this. Defaults to now.
+    /// Pass the previous response's `oldest_considered_start_time` here to
+    /// keep paging backward through history.
+    pub before: Option<DateTime<Utc>>,
+    /// Maximum snapshots to consider in this page. Defaults to
+    /// [`DEFAULT_BACKFILL_LIMIT`], capped server-side regardless of what is
+    /// requested.
+    pub limit: Option<u64>,
+}
+
+/// Query parameters for the similarity and counter endpoints.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct SuggestionQuery {
+    /// Maximum entries to return.
+    pub limit: Option<usize>,
+}
+
+impl SuggestionQuery {
+    fn resolved(&self) -> usize {
+        self.limit
+            .unwrap_or(DEFAULT_SUGGESTION_LIMIT)
+            .clamp(1, MAX_SUGGESTION_LIMIT)
+    }
+}
+
+/// Query parameters for `GET /matchups`.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct MatchupQuery {
+    /// Restrict the matrix to one scouted comp.
+    pub scout_id: Option<i64>,
+}
+
+/// Creates the router for the intel module.
+///
+/// `/scouts/from-battle/{battle_id}` is registered before `/scouts/{id}` so the
+/// literal segment always wins; the same ordering caveat applies here as in the
+/// battles router.
+pub fn router() -> Router {
+    Router::new()
+        .route("/scouts", get(list_scouts))
+        .route("/scouts/from-battle/{battle_id}", post(scout_battle))
+        .route("/scouts/backfill", post(scout_snapshots_backfill))
+        .route(
+            "/scouts/{id}",
+            get(get_scout).patch(update_scout).delete(delete_scout),
+        )
+        .route("/scouts/{id}/similar", get(similar_scouts))
+        .route("/scouts/{id}/counters", get(counters))
+        .route("/comps/{comp_id}/threats", get(threats_to_comp))
+        .route("/matchups", get(matchup_matrix))
+        .route("/leaderboards", get(leaderboards))
+        .route("/report", get(guild_report))
+        .route("/report/refresh", post(refresh_guild_report))
+        .route("/players/{user_id}", get(player_report))
+}
+
+/// Builds the friendly-guild classifier from configuration.
+///
+/// Guild identity is always configuration-driven; no guild name is ever
+/// hardcoded in this module.
+async fn guild_context(
+    _cfg: &Config,
+    control: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+) -> Result<BattleLinkingContext, AppError> {
+    Ok(
+        backend_identity::albion_scope::load_albion_scope(control, tenant_id)
+            .await?
+            .linking_context(),
+    )
+}
+
+/// Paginated list of scouted enemy compositions.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `intel.view`, or `400` if an
+/// unknown `category` is supplied.
+#[utoipa::path(
+    get,
+    path = "/api/intel/scouts",
+    tag = "intel",
+    summary = "List scouted enemy compositions",
+    description = "Browse the scout library. Supports free-text search over scout and guild \
+        name, filtering by engagement bracket and opponent guild, and sorting by `saved_at` \
+        (default), `threat` or `battles`. Archived scouts are hidden unless requested.",
+    security(("session_cookie" = ["intel.view"])),
+    params(ListScoutsQuery),
+    responses(
+        (status = 200, description = "Scouts retrieved", body = ApiResponse<PaginatedScoutedComp>),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn list_scouts(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(query): Query<ListScoutsQuery>,
+) -> Result<Json<ApiResponse<PaginatedScoutedComp>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let service = IntelService::new();
+    let paginated = service
+        .list_scouts(&db, &query.pagination(), &query.filters)
+        .await?;
+    Ok(Json(ApiResponse::new(PaginatedScoutedComp::from(
+        paginated,
+    ))))
+}
+
+/// Full dossier for one scouted composition.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, `404` if the scout is unknown.
+#[utoipa::path(
+    get,
+    path = "/api/intel/scouts/{id}",
+    tag = "intel",
+    summary = "Get one scouted enemy composition",
+    description = "Returns the roster, role and weapon histograms, source battles and the \
+        win/loss record of our comps against this scout. `weapon_sample_size` reports how many \
+        of the observed players actually contributed a weapon.",
+    security(("session_cookie" = ["intel.view"])),
+    params(("id" = i64, Path, description = "Scouted comp id")),
+    responses(
+        (status = 200, description = "Scout retrieved", body = ApiResponse<ScoutedCompDetail>),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
+        (status = 404, description = "Scout not found", body = ProblemDetails)
+    )
+)]
+pub async fn get_scout(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<ScoutedCompDetail>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let detail = IntelService::new().get_scout(&db, id).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Updates the officer-editable fields of a scout.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.manage`, `404` if unknown.
+#[utoipa::path(
+    patch,
+    path = "/api/intel/scouts/{id}",
+    tag = "intel",
+    summary = "Update a scouted enemy composition",
+    description = "Renames a scout, edits officer notes, corrects its engagement bracket, or \
+        archives it. Archiving hides a scout while preserving its battles and matchup history.",
+    security(("session_cookie" = ["intel.manage"])),
+    params(("id" = i64, Path, description = "Scouted comp id")),
+    request_body = UpdateScoutRequest,
+    responses(
+        (status = 200, description = "Scout updated", body = ApiResponse<ScoutedCompDetail>),
+        (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails),
+        (status = 404, description = "Scout not found", body = ProblemDetails)
+    )
+)]
+pub async fn update_scout(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateScoutRequest>,
+) -> Result<Json<ApiResponse<ScoutedCompDetail>>, AppError> {
+    user.require(&perms, Permission::IntelEdit).await?;
+    let detail = IntelService::new().update_scout(&db, id, &body).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Permanently deletes a scout and its battle links.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.manage`, `404` if unknown.
+#[utoipa::path(
+    delete,
+    path = "/api/intel/scouts/{id}",
+    tag = "intel",
+    summary = "Delete a scouted enemy composition",
+    description = "Removes the scout and its battle links. Prefer archiving when the intent is \
+        to tidy the board, since deletion also discards matchup history.",
+    security(("session_cookie" = ["intel.manage"])),
+    params(("id" = i64, Path, description = "Scouted comp id")),
+    responses(
+        (status = 200, description = "Scout deleted"),
+        (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails),
+        (status = 404, description = "Scout not found", body = ProblemDetails)
+    )
+)]
+pub async fn delete_scout(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    user.require(&perms, Permission::IntelDelete).await?;
+    IntelService::new().delete_scout(&db, id).await?;
+    Ok(Json(ApiResponse::new(())))
+}
+
+/// Scouts one stored battle, creating or merging one comp per opposing guild.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.manage`, `404` if no snapshot exists.
+#[utoipa::path(
+    post,
+    path = "/api/intel/scouts/from-battle/{battle_id}",
+    tag = "intel",
+    summary = "Scout a battle",
+    description = "Reads the stored battle snapshot and derives one enemy composition per \
+        opposing guild, merging into an existing scout when the fingerprint or the \
+        guild-and-bracket pair already matches. Our own guild and configured allies are always \
+        excluded. Pass `dry_run=true` to preview without writing. Idempotent: re-scouting a \
+        battle already linked to a scout changes nothing.",
+    security(("session_cookie" = ["intel.manage"])),
+    params(("battle_id" = i64, Path, description = "AlbionBB battle id"), ScoutBattleQuery),
+    responses(
+        (status = 200, description = "Battle scouted", body = ApiResponse<Vec<ScoutOutcome>>),
+        (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails),
+        (status = 404, description = "No stored snapshot for that battle", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn scout_battle(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(control): Extension<backend_identity::tenant::ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path(battle_id): Path<i64>,
+    Query(query): Query<ScoutBattleQuery>,
+) -> Result<Json<ApiResponse<Vec<ScoutOutcome>>>, AppError> {
+    user.require(&perms, Permission::IntelCreate).await?;
+    let outcomes = IntelService::new()
+        .scout_battle(
+            &db,
+            &guild_context(&cfg, &control.0, &tenant.0).await?,
+            battle_id,
+            query.dry_run.unwrap_or(false),
+            Some(user.user_id),
+        )
+        .await?;
+    Ok(Json(ApiResponse::new(outcomes)))
+}
+
+/// Manually scouts one page of battle snapshots older than `before`.
+///
+/// `scout_recent_snapshots` (the background pass that runs alongside battle
+/// sync) only ever looks at the newest 50 snapshots, so a battle that misses
+/// that window before being scouted is never picked up automatically. This
+/// is the officer-triggered fix: a cursor over history rather than a fixed
+/// window. Call once with no `before` to start from now, then keep calling
+/// again with `before` set to the previous response's
+/// `oldest_considered_start_time` until `considered` comes back `0`, which
+/// means the cursor has reached the end of the snapshot history.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `intel.create`.
+#[utoipa::path(
+    post,
+    path = "/api/intel/scouts/backfill",
+    tag = "intel",
+    summary = "Backfill scouting over battle history",
+    description = "Pages backward through `guild_battle_snapshots` by `start_time`, scouting \
+        whichever snapshots in the page are not already linked in `scouted_comp_battles`. \
+        Unlike the automatic pass that only ever looks at the newest 50 snapshots, this lets an \
+        officer walk the full history on demand. Call repeatedly, passing each response's \
+        `oldest_considered_start_time` back as the next call's `before`, until `considered` is \
+        `0`.",
+    security(("session_cookie" = ["intel.create"])),
+    params(ScoutBackfillQuery),
+    responses(
+        (status = 200, description = "One backfill page scouted", body = ApiResponseScoutBackfillOutcome),
+        (status = 403, description = "Forbidden - lacks intel.create", body = ProblemDetails)
+    )
+)]
+pub async fn scout_snapshots_backfill(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(control): Extension<backend_identity::tenant::ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Query(query): Query<ScoutBackfillQuery>,
+) -> Result<Json<ApiResponse<BackfillOutcome>>, AppError> {
+    user.require(&perms, Permission::IntelCreate).await?;
+    let before = query.before.unwrap_or_else(Utc::now);
+    let limit = query.limit.unwrap_or(DEFAULT_BACKFILL_LIMIT);
+    let outcome = scout_snapshots_before(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        before,
+        limit,
+    )
+    .await?;
+    Ok(Json(ApiResponse::new(outcome)))
+}
+
+/// Other scouts ranked by resemblance to this one.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, `404` if the scout is unknown.
+#[utoipa::path(
+    get,
+    path = "/api/intel/scouts/{id}/similar",
+    tag = "intel",
+    summary = "Find similar enemy compositions",
+    description = "Scores every other scout against this one. The blend is 55% role shape and \
+        45% weapon mix, scaled down by roster-size mismatch. `full_weapon_coverage` is false \
+        when either side's weapons came from a partial kill feed, which understates the score.",
+    security(("session_cookie" = ["intel.view"])),
+    params(("id" = i64, Path, description = "Scouted comp id"), SuggestionQuery),
+    responses(
+        (status = 200, description = "Similar scouts", body = ApiResponse<Vec<SimilarityHit>>),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
+        (status = 404, description = "Scout not found", body = ProblemDetails)
+    )
+)]
+pub async fn similar_scouts(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Query(query): Query<SuggestionQuery>,
+) -> Result<Json<ApiResponse<Vec<SimilarityHit>>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let hits = IntelService::new()
+        .similar_scouts(&db, id, query.resolved())
+        .await?;
+    Ok(Json(ApiResponse::new(hits)))
+}
+
+/// Our comps ranked as answers to this scout.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, `404` if the scout is unknown.
+#[utoipa::path(
+    get,
+    path = "/api/intel/scouts/{id}/counters",
+    tag = "intel",
+    summary = "Recommend counters to an enemy composition",
+    description = "Ranks our comps against this scout, proven record first and resemblance \
+        second. `tested` distinguishes comps we have actually fielded against this opponent \
+        from those suggested purely by similarity.",
+    security(("session_cookie" = ["intel.view"])),
+    params(("id" = i64, Path, description = "Scouted comp id"), SuggestionQuery),
+    responses(
+        (status = 200, description = "Counter suggestions", body = ApiResponse<Vec<CounterSuggestion>>),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
+        (status = 404, description = "Scout not found", body = ProblemDetails)
+    )
+)]
+pub async fn counters(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Query(query): Query<SuggestionQuery>,
+) -> Result<Json<ApiResponse<Vec<CounterSuggestion>>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let suggestions = IntelService::new()
+        .counters(&db, id, query.resolved())
+        .await?;
+    Ok(Json(ApiResponse::new(suggestions)))
+}
+
+/// Scouts ranked by how closely they resemble one of our comps.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, `404` if the comp has no builds.
+#[utoipa::path(
+    get,
+    path = "/api/intel/comps/{comp_id}/threats",
+    tag = "intel",
+    summary = "Find enemy compositions resembling one of our comps",
+    description = "Scores every scout against one of our own comps, expanded from its build \
+        quantities into virtual players. Comp variants do not inherit their parent's builds.",
+    security(("session_cookie" = ["intel.view"])),
+    params(("comp_id" = i64, Path, description = "Our comp id"), SuggestionQuery),
+    responses(
+        (status = 200, description = "Threatening scouts", body = ApiResponse<Vec<SimilarityHit>>),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails),
+        (status = 404, description = "Comp not found or has no builds", body = ProblemDetails)
+    )
+)]
+pub async fn threats_to_comp(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(comp_id): Path<i64>,
+    Query(query): Query<SuggestionQuery>,
+) -> Result<Json<ApiResponse<Vec<SimilarityHit>>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let hits = IntelService::new()
+        .threats_to_comp(&db, comp_id, query.resolved())
+        .await?;
+    Ok(Json(ApiResponse::new(hits)))
+}
+
+/// The full matchup matrix of our comps against scouted comps.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `intel.view`.
+#[utoipa::path(
+    get,
+    path = "/api/intel/matchups",
+    tag = "intel",
+    summary = "Matchup matrix",
+    description = "Win/loss tallies per (our comp, scouted comp) pair, taken from the stored \
+        battle outcomes. `coverage` reports how many of the underlying battles could be \
+        attributed to one of our comps: battles never linked to an event have no comp and are \
+        excluded, which is the usual reason a matrix looks sparse.",
+    security(("session_cookie" = ["intel.view"])),
+    params(MatchupQuery),
+    responses(
+        (status = 200, description = "Matchup matrix", body = ApiResponse<MatchupReport>),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn matchup_matrix(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(query): Query<MatchupQuery>,
+) -> Result<Json<ApiResponse<MatchupReport>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let scope: Vec<i64> = query.scout_id.into_iter().collect();
+    let report = matchups(&db, &scope).await?;
+    Ok(Json(ApiResponse::new(report)))
+}
+
+/// The full guild report for a window.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.report.view`, or `400` if the
+/// window bounds are not RFC 3339 or are inverted.
+#[utoipa::path(
+    get,
+    path = "/api/intel/report",
+    tag = "intel",
+    summary = "Guild report",
+    description = "One aggregate behind every Intel dashboard tab: combat performance, \
+        operations and attendance, silver flow, per-member and per-comp rows, enemy threat \
+        board, weapon meta, an hour-of-day histogram, activity timeline and leaderboards. \
+        Defaults to the last 30 days. Served from a short-lived cache; `data_quality` reports \
+        how much of the underlying data could be attributed to a comp or a linked member.",
+    security(("session_cookie" = ["intel.report.view"])),
+    params(ReportParams),
+    responses(
+        (status = 200, description = "Report computed", body = ApiResponse<GuildReport>),
+        (status = 400, description = "Invalid window", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.report.view", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn guild_report(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(control): Extension<backend_identity::tenant::ControlDb>,
+    Extension(cache): Extension<ReportCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Query(params): Query<ReportParams>,
+) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
+    user.require(&perms, Permission::IntelReportView).await?;
+    let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let granularity = params.granularity.as_deref().unwrap_or("week");
+    if let Some(cached) = cache.get(&tenant.0, range, granularity) {
+        return Ok(Json(ApiResponse::new(cached)));
+    }
+    let report = build_guild_report(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        range,
+        granularity,
+    )
+    .await?;
+    cache.put(&tenant.0, range, granularity, &report);
+    Ok(Json(ApiResponse::new(report)))
+}
+
+/// Recomputes the report, bypassing and refreshing the cache.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.manage`, or `400` for a bad window.
+#[utoipa::path(
+    post,
+    path = "/api/intel/report/refresh",
+    tag = "intel",
+    summary = "Recompute the guild report",
+    description = "Drops the cached report and recomputes it. Use after an import or a bulk \
+        correction, when waiting out the cache would show officers stale figures.",
+    security(("session_cookie" = ["intel.manage"])),
+    params(ReportParams),
+    responses(
+        (status = 200, description = "Report recomputed", body = ApiResponse<GuildReport>),
+        (status = 400, description = "Invalid window", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.manage", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn refresh_guild_report(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(control): Extension<backend_identity::tenant::ControlDb>,
+    Extension(cache): Extension<ReportCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Query(params): Query<ReportParams>,
+) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
+    user.require(&perms, Permission::IntelEdit).await?;
+    let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let granularity = params.granularity.as_deref().unwrap_or("week");
+    cache.invalidate(&tenant.0);
+    let report = build_guild_report(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        range,
+        granularity,
+    )
+    .await?;
+    cache.put(&tenant.0, range, granularity, &report);
+    Ok(Json(ApiResponse::new(report)))
+}
+
+/// Member leaderboards for a window.
+///
+/// Split out from the full report deliberately. Rankings are something every
+/// member should see, while the report around them carries silver flow and
+/// per-member bank balances that are officer business — so this endpoint is
+/// gated at `intel.view` and returns only the boards. The financial boards
+/// (`silver_lost`, `split_earnings`, `regear_silver`, `siphoned`) are further
+/// gated behind `intel.report.view`: a caller without it gets every other
+/// board with the financial ones returned empty rather than 403ing the whole
+/// request.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, or `400` for a bad window.
+#[utoipa::path(
+    get,
+    path = "/api/intel/leaderboards",
+    tag = "intel",
+    summary = "Member leaderboards",
+    description = "Attendance, kills, deaths, kill and death fame, silver lost, split \
+        earnings, regear silver and siphoned energy, each ranked over the window and computed \
+        from real activity rather than stored counters. Members with nothing to show are \
+        omitted rather than padding the tail with zeroes. Defaults to the last 30 days. The \
+        silver lost, split earnings, regear silver and siphoned boards are only populated for \
+        callers who also hold `intel.report.view`; other callers get empty arrays for those \
+        boards.",
+    security(("session_cookie" = ["intel.view"])),
+    params(ReportParams),
+    responses(
+        (status = 200, description = "Leaderboards computed", body = ApiResponse<ReportLeaderboards>),
+        (status = 400, description = "Invalid window", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn leaderboards(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(control): Extension<backend_identity::tenant::ControlDb>,
+    Extension(cache): Extension<ReportCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Query(params): Query<ReportParams>,
+) -> Result<Json<ApiResponse<ReportLeaderboards>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    // Silver flow is officer business (same gate as `/report`); a caller with
+    // only `intel.view` gets the combat/attendance boards but not the
+    // financial ones.
+    let can_see_financials = user
+        .has_permission(&perms, Permission::IntelReportView)
+        .await;
+    let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let granularity = params.granularity.as_deref().unwrap_or("week");
+    // Shares the report's cache: an officer who already opened the dashboard
+    // has paid for this computation, and vice versa.
+    let mut leaderboards = if let Some(cached) = cache.get(&tenant.0, range, granularity) {
+        cached.leaderboards
+    } else {
+        let report = build_guild_report(
+            &db,
+            &guild_context(&cfg, &control.0, &tenant.0).await?,
+            range,
+            granularity,
+        )
+        .await?;
+        cache.put(&tenant.0, range, granularity, &report);
+        report.leaderboards
+    };
+    if !can_see_financials {
+        leaderboards.silver_lost.clear();
+        leaderboards.split_earnings.clear();
+        leaderboards.regear_silver.clear();
+        leaderboards.siphoned.clear();
+    }
+    Ok(Json(ApiResponse::new(leaderboards)))
+}
+
+/// One member's combat record for a window: their roster row plus a weekly
+/// breakdown and their most recent fights.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.report.view` (the same gate as
+/// `/report`, since this surfaces the same per-member silver and split
+/// figures one row at a time), `400` for an invalid window, or `404` if
+/// `user_id` does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/intel/players/{user_id}",
+    tag = "intel",
+    summary = "Get one member's intel report",
+    description = "The guild report's per-member row, expanded with a weekly breakdown \
+        (fights, win rate, kills, deaths, kill fame, silver lost) and this member's most \
+        recent fights. Defaults to the last 30 days, not served from the guild report's cache.",
+    security(("session_cookie" = ["intel.report.view"])),
+    params(("user_id" = i64, Path, description = "App user id"), ReportParams),
+    responses(
+        (status = 200, description = "Player report computed", body = ApiResponse<PlayerReport>),
+        (status = 400, description = "Invalid window", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.report.view", body = ProblemDetails),
+        (status = 404, description = "No such user", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn player_report(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(control): Extension<backend_identity::tenant::ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path(user_id): Path<i64>,
+    Query(params): Query<ReportParams>,
+) -> Result<Json<ApiResponse<PlayerReport>>, AppError> {
+    user.require(&perms, Permission::IntelReportView).await?;
+    let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let report = build_player_report(
+        &db,
+        &guild_context(&cfg, &control.0, &tenant.0).await?,
+        user_id,
+        range,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
+    Ok(Json(ApiResponse::new(report)))
+}

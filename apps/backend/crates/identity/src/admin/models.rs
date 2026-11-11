@@ -1,0 +1,547 @@
+//! Request and response types for the admin module.
+
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+fn default_event_delivery() -> String {
+    "calendar".to_string()
+}
+
+/// `calendar` updates the single channel calendar. `message` posts one channel
+/// message and thread. `forum` opens a forum post and applies the configured tags.
+pub fn normalize_discord_delivery(value: &str) -> Result<&'static str, String> {
+    match value {
+        "calendar" => Ok("calendar"),
+        "message" => Ok("message"),
+        "forum" => Ok("forum"),
+        other => Err(format!(
+            "discord_delivery must be calendar, message, or forum, got '{other}'"
+        )),
+    }
+}
+
+/// One role and the permissions currently granted to it.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RolePermissionsView {
+    /// Internal primary key of `roles` (UUID for newly created rows).
+    pub role_id: String,
+    /// Human-readable role name.
+    pub role_name: String,
+    /// Ordering weight; higher wins when a member holds several roles.
+    pub priority: i32,
+    /// Linked Discord guild role snowflake, if any.
+    pub discord_role_id: Option<String>,
+    /// When true, unmatched Discord members fall through to this role.
+    pub is_default: bool,
+    /// Unique generic staff ping role linked to the Discord role used for `@staff`.
+    pub is_staff: bool,
+    /// Holders also receive the generic staff Discord role.
+    pub grants_staff: bool,
+    /// Permission keys granted to this role.
+    pub permissions: Vec<String>,
+}
+
+/// Request body to create a gestionale role, optionally linked to a Discord role.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateRoleRequest {
+    /// Display name; must be unique.
+    pub name: String,
+    /// Ordering weight; higher wins for `highest_role`.
+    #[serde(default)]
+    pub priority: i32,
+    /// Discord snowflake to link. Omit or empty to leave unlinked.
+    pub discord_role_id: Option<String>,
+    /// When true, this becomes the unmatched-member fallback (unsets the previous default).
+    #[serde(default)]
+    pub is_default: bool,
+    /// When true, this becomes the unique generic staff ping role (unsets the previous staff role).
+    #[serde(default)]
+    pub is_staff: bool,
+    /// When true, assigning this role also assigns the generic staff Discord role.
+    #[serde(default)]
+    pub grants_staff: bool,
+}
+
+/// Partial update for a gestionale role. Absent fields stay unchanged; empty `discord_role_id` unlinks.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateRoleRequest {
+    /// New display name.
+    pub name: Option<String>,
+    /// New priority.
+    pub priority: Option<i32>,
+    /// New Discord snowflake. Send `""` to unlink.
+    pub discord_role_id: Option<String>,
+    /// Set or clear default fallback status.
+    pub is_default: Option<bool>,
+    /// Set or clear generic staff ping status.
+    pub is_staff: Option<bool>,
+    /// Set or clear whether holders also receive the generic staff Discord role.
+    pub grants_staff: Option<bool>,
+}
+
+/// Grouping metadata for one assignable permission key.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PermissionCatalogEntry {
+    /// Stable key stored in `role_permissions`.
+    pub key: String,
+    /// First segment of the key, used to group the matrix (`bank`, `regear`, …).
+    pub resource: String,
+    /// Remainder of the key (`withdraw.accept`, `manage`, …).
+    pub action: String,
+}
+
+/// The whole authorization matrix, plus the full set of assignable keys.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PermissionMatrix {
+    /// Every role known to the system, highest priority first.
+    pub roles: Vec<RolePermissionsView>,
+    /// Every permission the backend can gate on, so the UI can render the
+    /// full grid rather than only what happens to be granted today.
+    pub available_permissions: Vec<String>,
+    /// Same keys as `available_permissions`, with resource/action split for grouping.
+    pub permission_catalog: Vec<PermissionCatalogEntry>,
+}
+
+/// Request body to replace one role's permission set.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateRolePermissionsRequest {
+    /// The complete set of permissions the role should end up with.
+    ///
+    /// This is a replacement, not a patch: sending the full set makes the
+    /// outcome independent of what was there before, so two officers editing
+    /// the same role cannot interleave into a state neither intended.
+    pub permissions: Vec<String>,
+}
+
+/// The guild's Discord integration settings, as seen by the client.
+///
+/// Every field is nullable — an unset channel means "the code that would post there skips it",
+/// same as the deployment env vars this table replaced.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct GuildSettingsView {
+    /// Channel where the bot/poller announces new events.
+    pub discord_events_channel_id: Option<String>,
+    /// Channel where the bot/poller announces new battles.
+    pub discord_battles_channel_id: Option<String>,
+    /// Channel where call-to-arms events get their urgent announcement.
+    pub discord_battles_cta_channel_id: Option<String>,
+    /// Channel that receives a copy of every audit log entry.
+    pub discord_audit_log_channel_id: Option<String>,
+    /// Channel that receives transaction (bank ledger) activity.
+    pub discord_transaction_spam_channel_id: Option<String>,
+    /// Role pinged by event announcements, reminders, and start notices.
+    pub discord_event_role_id: Option<String>,
+    /// Role assigned automatically to human members joining the Discord guild.
+    pub discord_auto_role_id: Option<String>,
+    /// Role given to alliance members on this Discord.
+    pub discord_alliance_role_id: Option<String>,
+    /// Discord snowflake linked to the unique gestionale `is_default` role, if any.
+    ///
+    /// Computed from `roles` on read; not stored on `guild_settings`.
+    pub default_role_discord_id: Option<String>,
+    /// Forum Channel where the bot creates one thread per loot split.
+    pub discord_splits_forum_channel_id: Option<String>,
+    /// Forum tag applied to pending split posts.
+    pub discord_split_pending_tag_id: Option<String>,
+    /// Forum tag applied to completed split posts.
+    pub discord_split_completed_tag_id: Option<String>,
+    /// Forum tag applied to not-completed split posts.
+    pub discord_split_not_completed_tag_id: Option<String>,
+    /// Forum tag applied to lost split posts.
+    pub discord_split_lost_tag_id: Option<String>,
+    /// Category where the bot creates live event voice channels.
+    pub discord_event_voice_category_id: Option<String>,
+    /// Channel where the bot announces flash masses (binary, no comp).
+    pub discord_flash_mass_channel_id: Option<String>,
+    /// Forum where events with delivery `forum` are posted.
+    pub discord_events_forum_channel_id: Option<String>,
+    /// `calendar`, `message`, or `forum`.
+    #[serde(default = "default_event_delivery")]
+    pub discord_event_delivery: String,
+    pub discord_event_scheduled_tag_id: Option<String>,
+    pub discord_event_live_tag_id: Option<String>,
+    pub discord_event_cta_tag_id: Option<String>,
+    pub discord_event_flash_tag_id: Option<String>,
+    /// IANA timezone used to interpret wall-clock times from Discord (for example `Europe/Rome`).
+    pub discord_event_timezone: String,
+    /// Channel where the application panel is published.
+    pub discord_applications_channel_id: Option<String>,
+    /// Category where active application channels are created.
+    pub discord_applications_category_id: Option<String>,
+    /// Optional archive category for resolved applications.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// Role allowed to manage applications.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// Optional role assigned when an application is accepted.
+    pub discord_applications_accepted_role_id: Option<String>,
+    /// Discord role added on top when an application is accepted as a Trial.
+    pub trial_role_id: Option<String>,
+    /// Default trial length in days; a manager can still move a single trial's deadline.
+    pub trial_duration_days: Option<i32>,
+    /// Channel for application open/closed announcements.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// Whether new applications are accepted.
+    pub discord_applications_open: bool,
+    /// Application panel title.
+    pub discord_applications_panel_title: String,
+    /// Application panel message.
+    pub discord_applications_panel_message: String,
+    /// Title shown when a manager opens the application actions.
+    pub discord_applications_manage_title: String,
+    /// Message shown when a manager opens the application actions.
+    pub discord_applications_manage_message: String,
+    /// Message shown when applications are closed.
+    pub discord_applications_closed_message: String,
+    pub discord_applications_closed_title: String,
+    pub discord_applications_close_title: String,
+    pub discord_applications_close_message: String,
+    pub discord_applications_accept_title: String,
+    pub discord_applications_decline_title: String,
+    pub discord_applications_no_permission_title: String,
+    pub discord_applications_already_open_title: String,
+    pub discord_applications_final_title: String,
+    /// Message shown when the actor lacks application permissions.
+    pub discord_applications_no_permission_message: String,
+    /// Message shown when the applicant already has an open application.
+    pub discord_applications_already_open_message: String,
+    /// Message shown after accepting an application.
+    pub discord_applications_accept_message: String,
+    /// Message shown after declining an application.
+    pub discord_applications_decline_message: String,
+    /// Message shown when application processing fails.
+    pub discord_applications_error_message: String,
+    /// Message shown after an application action completes.
+    pub discord_applications_result_message: String,
+    /// Application welcome title.
+    pub discord_applications_welcome_title: String,
+    /// Application welcome message.
+    pub discord_applications_welcome_message: String,
+    /// Announcement sent when applications open.
+    pub discord_applications_status_open_message: String,
+    /// Announcement sent when applications close.
+    pub discord_applications_status_closed_message: String,
+    /// Message ID of the published application panel, when available.
+    pub discord_applications_panel_message_id: Option<String>,
+    pub discord_tickets_archive_channel_id: Option<String>,
+    pub discord_tickets_welcome_title: String,
+    pub discord_tickets_welcome_message: String,
+    pub discord_tickets_closed_title: String,
+    pub discord_tickets_closed_message: String,
+    /// Channel where the bot announces guild giveaways.
+    pub discord_giveaways_channel_id: Option<String>,
+    /// Optional role pinged on a new giveaway announcement.
+    pub discord_giveaways_role_id: Option<String>,
+    /// Default percentage fee applied to new splits.
+    #[schema(value_type = String, example = "20.00")]
+    pub default_split_fee: rust_decimal::Decimal,
+}
+
+impl GuildSettingsView {
+    /// Builds a view from the singleton model row.
+    #[must_use]
+    pub fn from_model(model: backend_entities::admin::Model) -> Self {
+        Self {
+            discord_events_channel_id: model.discord_events_channel_id,
+            discord_battles_channel_id: model.discord_battles_channel_id,
+            discord_battles_cta_channel_id: model.discord_battles_cta_channel_id,
+            discord_audit_log_channel_id: model.discord_audit_log_channel_id,
+            discord_transaction_spam_channel_id: model.discord_transaction_spam_channel_id,
+            discord_event_role_id: model.discord_event_role_id,
+            discord_auto_role_id: model.discord_auto_role_id,
+            discord_alliance_role_id: model.discord_alliance_role_id,
+            default_role_discord_id: None,
+            discord_splits_forum_channel_id: model.discord_splits_forum_channel_id,
+            discord_split_pending_tag_id: model.discord_split_pending_tag_id,
+            discord_split_completed_tag_id: model.discord_split_completed_tag_id,
+            discord_split_not_completed_tag_id: model.discord_split_not_completed_tag_id,
+            discord_split_lost_tag_id: model.discord_split_lost_tag_id,
+            discord_event_voice_category_id: model.discord_event_voice_category_id,
+            discord_flash_mass_channel_id: model.discord_flash_mass_channel_id,
+            discord_events_forum_channel_id: model.discord_events_forum_channel_id,
+            discord_event_delivery: model.discord_event_delivery,
+            discord_event_scheduled_tag_id: model.discord_event_scheduled_tag_id,
+            discord_event_live_tag_id: model.discord_event_live_tag_id,
+            discord_event_cta_tag_id: model.discord_event_cta_tag_id,
+            discord_event_flash_tag_id: model.discord_event_flash_tag_id,
+            discord_event_timezone: model.discord_event_timezone,
+            discord_applications_channel_id: model.discord_applications_channel_id,
+            discord_applications_category_id: model.discord_applications_category_id,
+            discord_applications_archive_category_id: model
+                .discord_applications_archive_category_id,
+            discord_applications_manage_role_id: model.discord_applications_manage_role_id,
+            discord_applications_accepted_role_id: model.discord_applications_accepted_role_id,
+            trial_role_id: model.trial_role_id,
+            trial_duration_days: model.trial_duration_days,
+            discord_applications_status_channel_id: model.discord_applications_status_channel_id,
+            discord_applications_open: model.discord_applications_open,
+            discord_applications_panel_title: model.discord_applications_panel_title,
+            discord_applications_panel_message: model.discord_applications_panel_message,
+            discord_applications_manage_title: model.discord_applications_manage_title,
+            discord_applications_manage_message: model.discord_applications_manage_message,
+            discord_applications_closed_message: model.discord_applications_closed_message,
+            discord_applications_closed_title: model.discord_applications_closed_title,
+            discord_applications_close_title: model.discord_applications_close_title,
+            discord_applications_close_message: model.discord_applications_close_message,
+            discord_applications_accept_title: model.discord_applications_accept_title,
+            discord_applications_decline_title: model.discord_applications_decline_title,
+            discord_applications_no_permission_title: model
+                .discord_applications_no_permission_title,
+            discord_applications_already_open_title: model.discord_applications_already_open_title,
+            discord_applications_final_title: model.discord_applications_final_title,
+            discord_applications_no_permission_message: model
+                .discord_applications_no_permission_message,
+            discord_applications_already_open_message: model
+                .discord_applications_already_open_message,
+            discord_applications_accept_message: model.discord_applications_accept_message,
+            discord_applications_decline_message: model.discord_applications_decline_message,
+            discord_applications_error_message: model.discord_applications_error_message,
+            discord_applications_result_message: model.discord_applications_result_message,
+            discord_applications_welcome_title: model.discord_applications_welcome_title,
+            discord_applications_welcome_message: model.discord_applications_welcome_message,
+            discord_applications_status_open_message: model
+                .discord_applications_status_open_message,
+            discord_applications_status_closed_message: model
+                .discord_applications_status_closed_message,
+            discord_applications_panel_message_id: model.discord_applications_panel_message_id,
+            discord_tickets_archive_channel_id: model.discord_tickets_archive_channel_id,
+            discord_tickets_welcome_title: model.discord_tickets_welcome_title,
+            discord_tickets_welcome_message: model.discord_tickets_welcome_message,
+            discord_tickets_closed_title: model.discord_tickets_closed_title,
+            discord_tickets_closed_message: model.discord_tickets_closed_message,
+            discord_giveaways_channel_id: model.discord_giveaways_channel_id,
+            discord_giveaways_role_id: model.discord_giveaways_role_id,
+            default_split_fee: model.default_split_fee,
+        }
+    }
+}
+
+/// A Discord role available for `AutoRole` configuration.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordRoleView {
+    /// Discord role snowflake.
+    pub id: String,
+    /// Role name shown in the admin panel.
+    pub name: String,
+    /// Discord hierarchy position; higher roles have a greater position.
+    pub position: i32,
+    /// Whether Discord manages this role and prevents manual assignment.
+    pub managed: bool,
+}
+
+/// A human Discord guild member not yet present as a local `users` row.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordMemberView {
+    /// Discord user snowflake.
+    pub id: String,
+    /// Discord username (`user.username`).
+    pub username: String,
+    /// Discord display name (`user.global_name`), when set.
+    pub global_name: Option<String>,
+    /// Guild nickname, when set.
+    pub nick: Option<String>,
+    /// Best label for pickers: nick, then global name, then username.
+    pub display_name: String,
+    /// Avatar hash, when the user has one.
+    pub avatar: Option<String>,
+}
+
+/// One tag on a Discord forum channel.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordForumTagView {
+    /// Forum tag snowflake.
+    pub id: String,
+    /// Tag name shown in Discord.
+    pub name: String,
+}
+
+/// A Discord guild channel, category, or forum the admin can pick from.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordChannelView {
+    /// Channel snowflake.
+    pub id: String,
+    /// Channel name without the leading `#`.
+    pub name: String,
+    /// Coarse kind used by searchable pickers: `text`, `voice`, `category`, or `forum`.
+    pub kind: String,
+    /// Raw Discord channel type integer.
+    pub type_id: i32,
+    /// Parent category snowflake, when the channel sits in one.
+    pub parent_id: Option<String>,
+    /// Discord position within the parent.
+    pub position: i32,
+    /// Forum tags, populated only for forum channels.
+    pub available_tags: Vec<DiscordForumTagView>,
+}
+
+/// Current `AutoRole` configuration.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AutoRoleSettingsView {
+    /// Configured Discord role snowflake, or `null` when disabled.
+    pub discord_auto_role_id: Option<String>,
+    /// Discord role linked to the gestionale default role, if any.
+    pub default_role_discord_id: Option<String>,
+}
+
+/// Request body for the `AutoRole` configuration endpoint.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateAutoRoleRequest {
+    /// Discord role snowflake; an empty string disables `AutoRole`.
+    pub discord_auto_role_id: String,
+}
+
+/// Request body for `PUT /admin/settings`.
+///
+/// Partial update: a field entirely absent from the JSON body is left unchanged, matching
+/// `UpdateRegearSettingsRequest`'s convention elsewhere in this codebase. To clear an
+/// already-configured channel, send it as an empty string rather than `null` — the service
+/// normalizes `Some("")` to "unset this column". This avoids the serde "double option" dance a
+/// true `Option<Option<String>>` would need to tell "absent" and "present but null" apart, and the
+/// admin settings form always sends every field anyway (either a ~19-digit Discord snowflake or
+/// empty), so there is no real case where a client needs `null` specifically.
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+pub struct UpdateGuildSettingsRequest {
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_events_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_battles_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_battles_cta_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_audit_log_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_transaction_spam_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_event_role_id: Option<String>,
+    /// Base guild role assigned on Discord join. Omit to leave unchanged; send `""` to clear.
+    pub discord_auto_role_id: Option<String>,
+    /// Alliance-member Discord role. Omit to leave unchanged; send `""` to clear.
+    pub discord_alliance_role_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_splits_forum_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_pending_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_completed_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_not_completed_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_lost_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_event_voice_category_id: Option<String>,
+    /// Flash mass announcement channel. Omit to leave unchanged; send `""` to clear.
+    pub discord_flash_mass_channel_id: Option<String>,
+    pub discord_events_forum_channel_id: Option<String>,
+    /// `calendar`, `message`, or `forum`. Omit to leave unchanged.
+    pub discord_event_delivery: Option<String>,
+    pub discord_event_scheduled_tag_id: Option<String>,
+    pub discord_event_live_tag_id: Option<String>,
+    pub discord_event_cta_tag_id: Option<String>,
+    pub discord_event_flash_tag_id: Option<String>,
+    /// IANA timezone used for wall-clock event times; cannot be cleared.
+    pub discord_event_timezone: Option<String>,
+    /// Giveaway announcement channel. Omit to leave unchanged; send `""` to clear.
+    pub discord_giveaways_channel_id: Option<String>,
+    /// Giveaway ping role. Omit to leave unchanged; send `""` to clear.
+    pub discord_giveaways_role_id: Option<String>,
+    /// New application panel channel; empty clears it.
+    pub discord_applications_channel_id: Option<String>,
+    /// New active application category; empty clears it.
+    pub discord_applications_category_id: Option<String>,
+    /// New archive category; empty clears it.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// New application manager role; empty clears it.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// Role assigned when an application is accepted; empty clears it.
+    pub discord_applications_accepted_role_id: Option<String>,
+    /// New application status channel; empty clears it.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// New application open state.
+    pub discord_applications_open: Option<bool>,
+    /// New panel title.
+    pub discord_applications_panel_title: Option<String>,
+    /// New panel message.
+    pub discord_applications_panel_message: Option<String>,
+    /// New manager action title.
+    pub discord_applications_manage_title: Option<String>,
+    /// New manager action message.
+    pub discord_applications_manage_message: Option<String>,
+    /// New closed-application message.
+    pub discord_applications_closed_message: Option<String>,
+    pub discord_applications_closed_title: Option<String>,
+    pub discord_applications_close_title: Option<String>,
+    pub discord_applications_close_message: Option<String>,
+    pub discord_applications_accept_title: Option<String>,
+    pub discord_applications_decline_title: Option<String>,
+    pub discord_applications_no_permission_title: Option<String>,
+    pub discord_applications_already_open_title: Option<String>,
+    pub discord_applications_final_title: Option<String>,
+    /// New insufficient-permission message.
+    pub discord_applications_no_permission_message: Option<String>,
+    /// New already-open message.
+    pub discord_applications_already_open_message: Option<String>,
+    /// New accept result message.
+    pub discord_applications_accept_message: Option<String>,
+    /// New decline result message.
+    pub discord_applications_decline_message: Option<String>,
+    /// New application error message.
+    pub discord_applications_error_message: Option<String>,
+    /// New generic result message.
+    pub discord_applications_result_message: Option<String>,
+    /// New application welcome title.
+    pub discord_applications_welcome_title: Option<String>,
+    /// New application welcome message.
+    pub discord_applications_welcome_message: Option<String>,
+    /// New open announcement message.
+    pub discord_applications_status_open_message: Option<String>,
+    /// New closed announcement message.
+    pub discord_applications_status_closed_message: Option<String>,
+    /// New panel message ID; empty clears it.
+    pub discord_applications_panel_message_id: Option<String>,
+    /// Archive channel for both application and support threads; empty clears it.
+    pub discord_tickets_archive_channel_id: Option<String>,
+    pub discord_tickets_welcome_title: Option<String>,
+    pub discord_tickets_welcome_message: Option<String>,
+    pub discord_tickets_closed_title: Option<String>,
+    pub discord_tickets_closed_message: Option<String>,
+    /// New default split fee percentage. Must be between 0 and 100.
+    #[schema(value_type = Option<String>, example = "20.00")]
+    pub default_split_fee: Option<rust_decimal::Decimal>,
+}
+
+/// The guild's three brand colours, as the web app reads them.
+///
+/// Kept apart from [`GuildSettingsView`] even though they share a row: this is
+/// the one slice of guild settings every member's session carries, so it stays
+/// a small payload of its own rather than dragging the Discord configuration
+/// along with it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct BrandColorsView {
+    /// Actions, active states and focus. `None` means "use the product default".
+    pub primary: Option<String>,
+    /// Supporting accent, second stop of the accent gradients.
+    pub secondary: Option<String>,
+    /// Third accent, final stop of the accent gradients.
+    pub tertiary: Option<String>,
+}
+
+impl BrandColorsView {
+    /// True when the guild has picked no colour at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.primary.is_none() && self.secondary.is_none() && self.tertiary.is_none()
+    }
+}
+
+/// Request body to change the guild's brand colours.
+///
+/// Follows the same convention as the rest of guild settings: an absent field
+/// is left as-is, and `""` clears the colour back to the product default.
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+pub struct UpdateBrandColorsRequest {
+    /// New primary, as `#rgb` or `#rrggbb`. Omit to leave unchanged; `""` clears.
+    pub primary: Option<String>,
+    /// New secondary. Omit to leave unchanged; `""` clears.
+    pub secondary: Option<String>,
+    /// New tertiary. Omit to leave unchanged; `""` clears.
+    pub tertiary: Option<String>,
+}
