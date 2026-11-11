@@ -20,7 +20,7 @@ The Dockerfile builds the package in a Rust 1.88 builder stage and copies `targe
 
 ## Verification
 
-From the repository root, run `cargo test --workspace`.
+From `apps/backend` (the Cargo workspace root), run `cargo test --workspace`.
 
 Tests that need PostgreSQL read **only** `TEST_DATABASE_URL`; they never fall back to `DATABASE_URL`, which usually points at the dev database. When `TEST_DATABASE_URL` is unset the tests print a skip message and pass without touching any database. When it is set, it must point at a disposable PostgreSQL instance (the tests create and drop their own schemas); a non-Postgres backend or a failed connection panics instead of skipping.
 

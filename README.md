@@ -146,8 +146,7 @@ albion-guild-manager-from-weaklings/
 │           └── services/   # Polling loop, command registry
 ├── plans/                  # Design plans (e.g. siphoned module)
 ├── DESIGN.md               # UI/UX design specification
-├── docker-compose.yml      # Full stack deployment
-└── Cargo.toml              # Workspace manifest (backend)
+└── docker-compose.yml      # Full stack deployment
 ```
 
 ---
@@ -375,7 +374,7 @@ Permission checks are centralized on a **permission cache** loaded from the data
 
 Run the configured component test targets from the repository root:
 
-- `cargo test --workspace`
+- `cargo test --manifest-path apps/backend/Cargo.toml --workspace`
 - `npm test --prefix apps/frontend`
 - `npm test --prefix apps/discord-bot`
 
