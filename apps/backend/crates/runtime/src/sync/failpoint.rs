@@ -2,8 +2,10 @@
 //!
 //! [`check`] is a no-op in production. Under `cfg(test)` a point armed with
 //! [`arm`] fires once and returns an error, which makes the surrounding
-//! operation stop at exactly that step (as if the process had died there). Each
-//! test uses its own point names because the armed set is process-wide.
+//! operation stop at exactly that step (as if the process had died there). The
+//! armed set is per thread: each `#[tokio::test]` runs on its own thread with a
+//! current-thread runtime, so a test running in parallel can never consume a
+//! point another test armed.
 
 use backend_core::errors::AppError;
 
@@ -26,24 +28,27 @@ pub fn check(name: &'static str) -> Result<(), AppError> {
 
 #[cfg(test)]
 pub mod armed {
-    use std::sync::Mutex;
+    use std::cell::RefCell;
 
-    static ARMED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
-
-    /// Arms `name` so the next [`super::check`] of it fails.
-    pub fn arm(name: &'static str) {
-        ARMED.lock().unwrap_or_else(|e| e.into_inner()).push(name);
+    thread_local! {
+        static ARMED: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
     }
 
-    /// Removes `name` from the armed set; true when it was armed.
+    /// Arms `name` so the next [`super::check`] of it on this thread fails.
+    pub fn arm(name: &'static str) {
+        ARMED.with_borrow_mut(|armed| armed.push(name));
+    }
+
+    /// Removes `name` from this thread's armed set; true when it was armed.
     pub fn take(name: &'static str) -> bool {
-        let mut armed = ARMED.lock().unwrap_or_else(|e| e.into_inner());
-        match armed.iter().position(|armed| *armed == name) {
-            Some(index) => {
-                armed.swap_remove(index);
-                true
-            }
-            None => false,
-        }
+        ARMED.with_borrow_mut(
+            |armed| match armed.iter().position(|armed| *armed == name) {
+                Some(index) => {
+                    armed.swap_remove(index);
+                    true
+                }
+                None => false,
+            },
+        )
     }
 }
