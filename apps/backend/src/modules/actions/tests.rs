@@ -25,10 +25,10 @@ use crate::modules::events::lifecycle::XpFilter;
 use crate::modules::events::lifecycle::{AfterCommit, Cause};
 use crate::modules::events::status::{EVENT_TRANSITIONS, edge};
 use crate::modules::splits::entities::split;
-use crate::modules::sync::OriginRef;
 use crate::modules::sync::copy_role::CopyRole;
 use crate::modules::sync::test_support::{insert_split, sqlite_db};
 use crate::modules::users::entities as users;
+use crate::sync_origin::OriginRef;
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind};
 use axum::{Extension, extract::Path};
 
@@ -226,7 +226,7 @@ fn copy_refusal_carries_the_origin_in_params_and_text() {
         tenant_id: Some("9".to_owned()),
         tenant_name: Some("Guild A".to_owned()),
         tenant_kind: Some("alliance".to_owned()),
-        kind: crate::modules::sync::SyncKind::Event,
+        kind: crate::sync_origin::SyncKind::Event,
         entity_id: Some(3),
         path: Some("/events/3".to_owned()),
     });

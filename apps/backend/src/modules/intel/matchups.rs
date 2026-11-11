@@ -36,8 +36,8 @@ use utoipa::ToSchema;
 use crate::errors::AppError;
 use crate::modules::comps::entities::comp;
 use crate::modules::events::entities::{event, event_battle, fight, fight_battle};
-use crate::modules::events::service::ratio_percent;
 use crate::modules::intel::entities::scouted_comp_battle;
+use crate::ratios::ratio_percent;
 
 /// A battle's canonical Fight, or the battle itself when no `fight_battles`
 /// row maps it (should not normally happen — every hydrated battle gets a

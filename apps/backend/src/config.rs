@@ -8,6 +8,9 @@ use serde::Deserialize;
 /// Compiled-in version from `Cargo.toml` — set automatically at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Default Discord REST base URL (`Config.discord_api_base` overrides it).
+pub const DEFAULT_DISCORD_API_BASE: &str = "https://discord.com/api/v10";
+
 /// The Discord channel/role IDs that used to live here (audit log, transaction spam, CTA
 /// announcements, event-ping role) now live in the `guild_settings` DB table instead — see
 /// `modules::admin::service::AdminService` — so an admin can change them from the web app
@@ -164,7 +167,7 @@ fn default_albionbb_base_url() -> String {
 }
 
 fn default_discord_api_base() -> String {
-    crate::modules::discord_api::DEFAULT_API_BASE.to_string()
+    DEFAULT_DISCORD_API_BASE.to_string()
 }
 
 fn default_discord_api_timeout() -> u64 {

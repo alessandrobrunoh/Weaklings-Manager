@@ -19,10 +19,10 @@ use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::battles::entities::{BattlePlayer, Model as SnapshotModel};
 use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
-use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::entities::scouted_comp;
 use crate::modules::intel::roles::{RoleClassifier, RoleConfidence};
 use crate::modules::intel::similarity::{CompProfile, fingerprint_of};

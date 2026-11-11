@@ -13,42 +13,10 @@
 //! copy locally managed.
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
-use serde::Serialize;
-use utoipa::ToSchema;
 
 use crate::errors::AppError;
 use crate::modules::splits::entities::split;
-
-/// Entity kinds that take part in synchronization (F2 covers the two that have
-/// a legacy copy mechanism guarded by the API).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum SyncKind {
-    /// A scheduled or live event.
-    Event,
-    /// A loot split.
-    Split,
-}
-
-impl SyncKind {
-    /// Lowercase singular name, as used in messages and problem bodies.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Event => "event",
-            Self::Split => "split",
-        }
-    }
-
-    /// Relative API/UI path of one entity of this kind (`/events/12`).
-    #[must_use]
-    pub fn path(self, id: i64) -> String {
-        match self {
-            Self::Event => format!("/events/{id}"),
-            Self::Split => format!("/splits/{id}"),
-        }
-    }
-}
+use crate::sync_origin::SyncKind;
 
 /// What an entity is in the synchronization topology.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

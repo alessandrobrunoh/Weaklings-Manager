@@ -21,6 +21,7 @@ use crate::modules::events::{
     service::EventService,
 };
 use crate::modules::splits::entities::split;
+use crate::modules::sync::event_links::canonical_event_origin;
 use crate::tenant::TenantRegistry;
 
 /// Ensure an event may create an alliance mirror before the source event is inserted.
@@ -841,25 +842,6 @@ async fn holder_still_has_signup(
         ))
         .await?
         .is_some())
-}
-
-pub async fn canonical_event_origin(
-    control: &DatabaseConnection,
-    tenant_id: &str,
-    event_id: i64,
-) -> Result<(String, i64), AppError> {
-    let row = control
-        .query_one(Statement::from_sql_and_values(
-            control.get_database_backend(),
-            "SELECT source_tenant_id, source_event_id FROM event_sync_links \
-             WHERE sync_enabled AND mirror_tenant_id=$1 AND mirror_event_id=$2",
-            [tenant_id.into(), event_id.into()],
-        ))
-        .await?;
-    match row {
-        Some(row) => Ok((row.try_get_by_index(0)?, row.try_get_by_index(1)?)),
-        None => Ok((tenant_id.to_owned(), event_id)),
-    }
 }
 
 async fn fanout_asset_id(

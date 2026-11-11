@@ -4899,7 +4899,7 @@ mod tests {
             .expect_err("complete forbidden");
         match complete_err {
             AppError::ReadOnlyCopy(origin) => {
-                assert_eq!(origin.kind, crate::modules::sync::SyncKind::Split);
+                assert_eq!(origin.kind, crate::sync_origin::SyncKind::Split);
             }
             other => panic!("expected read-only copy, got {other:?}"),
         }

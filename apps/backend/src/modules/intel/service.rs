@@ -7,11 +7,11 @@ use sea_orm::{
     QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 
+use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::battles::entities as snapshot_entity;
 use crate::modules::comps::entities::{build, build_item, comp, comp_build};
 use crate::modules::comps::status::BuildSlot;
-use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
 use crate::modules::intel::matchups::{MatchupReport, best_counter, matchups, threat_score};
 use crate::modules::intel::models::{

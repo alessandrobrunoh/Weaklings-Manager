@@ -12,6 +12,7 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 use utoipa::ToSchema;
 
+use crate::albion_common::normalize_server;
 use crate::errors::AppError;
 use crate::modules::battles::entities::BattlePlayer;
 use crate::runtime::backoff::BackoffPolicy;
@@ -21,9 +22,6 @@ const DEFAULT_BASE_URL: &str = "https://api.albionbb.com";
 
 /// Default request timeout if the caller does not specify one.
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
-
-/// Default server path segment when the caller does not specify one.
-const DEFAULT_SERVER: &str = "eu";
 
 /// Requests in flight at once across every clone of one client, so a burst of
 /// tenant workers and HTTP callers cannot overrun the shared upstream.
@@ -43,18 +41,6 @@ const RETRY_POLICY: BackoffPolicy = BackoffPolicy {
 
 /// Upper bound honoured for a `Retry-After` header.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
-
-/// Normalizes a server string into a valid `AlbionBB` path segment.
-/// Accepts `eu`/`europe`, `na`/`americas`/`us`, `asia`/`sgp`; falls back to `eu`.
-#[must_use]
-pub fn normalize_server(server: Option<&str>) -> String {
-    match server.map(str::to_ascii_lowercase).as_deref() {
-        Some("eu" | "europe") => "eu".to_string(),
-        Some("na" | "americas" | "america" | "us") => "na".to_string(),
-        Some("asia" | "sgp") => "asia".to_string(),
-        _ => DEFAULT_SERVER.to_string(),
-    }
-}
 
 /// Pagination metadata returned alongside a list of battles.
 ///

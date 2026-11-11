@@ -41,6 +41,10 @@ pub(crate) mod serde_helpers;
 pub(crate) mod app_runtime;
 pub(crate) mod tenant_workers;
 
+pub(crate) mod albion_common;
+pub(crate) mod ratios;
+pub(crate) mod sync_origin;
+
 use axum::Router;
 use axum::extract::MatchedPath;
 use sea_orm_migration::MigratorTrait;

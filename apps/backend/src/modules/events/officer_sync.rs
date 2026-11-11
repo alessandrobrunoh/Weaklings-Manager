@@ -28,8 +28,9 @@ use crate::modules::events::{
         RosterVersionRequest,
     },
     service::EventService,
-    sync::{canonical_event_origin, linked_event_peers, map_build, sync_participation},
+    sync::{linked_event_peers, map_build, sync_participation},
 };
+use crate::modules::sync::event_links::canonical_event_origin;
 use crate::modules::users::entities as user_entities;
 use crate::modules::users::identity::{upsert_discord_user, user_id_for_discord_id};
 use crate::tenant::TenantRegistry;

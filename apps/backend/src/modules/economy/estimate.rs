@@ -34,7 +34,7 @@
 
 use std::collections::HashMap;
 
-use crate::modules::battles::outcome::FriendlySide;
+use crate::albion_common::FriendlySide;
 
 /// One item stack from a victim's death equipment, as observed. `item_type_id`
 /// is the RAW upstream string — never normalized (see the module docs).

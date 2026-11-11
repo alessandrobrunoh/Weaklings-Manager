@@ -12,6 +12,7 @@ use sea_orm::{
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use crate::albion_common::FriendlySide;
 use crate::errors::AppError;
 use crate::modules::albion::service::AlbionLinkService;
 use crate::modules::albionbb::client::{AlbionBbBattlesFilters, AlbionBbKillEvent};
@@ -31,7 +32,7 @@ use crate::pagination::{
 use super::models::{
     BattleDetail, BattleFightMetadata, BattleGuildSummary, BattleSummary, LinkedEvent,
 };
-use super::outcome::{self, BattleOutcome, FriendlySide, GuildLine};
+use super::outcome::{self, BattleOutcome, GuildLine};
 use super::{evidence, evidence_writer};
 use crate::modules::battles::entities::{
     ActiveModel as GuildBattleSnapshotActiveModel, BattleLossEstimate,
@@ -618,8 +619,9 @@ fn filter_sort_page_battles(
 #[cfg(test)]
 mod filter_tests {
     use super::{battle_outcome, filter_sort_page_battles};
+    use crate::albion_common::FriendlySide;
     use crate::modules::battles::models::{BattleFightMetadata, BattleGuildSummary, BattleSummary};
-    use crate::modules::battles::outcome::{BattleOutcome, FriendlySide};
+    use crate::modules::battles::outcome::BattleOutcome;
     use crate::pagination::{PaginationParams, SortOrder};
 
     fn our_side(guild_id: &str) -> FriendlySide {

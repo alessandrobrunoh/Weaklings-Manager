@@ -31,6 +31,7 @@ use super::fight_grouping::{
 use super::lifecycle::{
     Cause, Transition, Transitioned, XpFilter, finish_session_in_txn, transition_in_txn,
 };
+use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::albionbb::client::{AlbionBbBattleSummary, AlbionBbBattlesFilters};
 use crate::modules::albionbb::service::AlbionBbService;
@@ -49,6 +50,7 @@ use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::{SplitService, SplitSyncState};
 use crate::modules::splits::status::SplitStatus;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
+use crate::ratios::{kill_death_ratio, ratio_percent};
 
 /// Hard cap on how long an event session can stay live before the background
 /// worker auto-stops it. Tuned to 3 hours per product requirement.
@@ -617,133 +619,6 @@ async fn opponent_rollups_for_battles(
     Ok(rollups.into_values().collect())
 }
 
-/// Battle-side classification rules for event analytics.
-///
-/// `AlbionBB` exposes every guild in the fight as a peer, but event stats need to separate our side
-/// from real opponents. The configured guild plus allied guild IDs/names are treated as friendly,
-/// so alliance members do not pollute opponent charts or matchup summaries.
-///
-/// # Example
-/// ```ignore
-/// let context = BattleLinkingContext::new(
-///     "weaklings-id",
-///     &["ally-id".to_string()],
-///     &["BetterGetBack".to_string()],
-/// );
-/// assert!(context.is_friendly_guild("ally-id", "BetterGetBack"));
-/// ```
-#[derive(Debug, Clone)]
-pub struct BattleLinkingContext {
-    guild_id: Option<String>,
-    allied_guild_ids: HashSet<String>,
-    allied_guild_names: HashSet<String>,
-    server: Option<String>,
-}
-
-impl BattleLinkingContext {
-    /// Creates a normalized friendly-guild classifier for a single linking run.
-    ///
-    /// IDs are kept case-sensitive because Albion IDs are opaque. Names are lower-cased to tolerate
-    /// operator input differences in environment variables. The method performs no I/O and is safe
-    /// to construct per request or worker tick.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let context = BattleLinkingContext::new("main", &[], &["BetterGetBack".to_string()]);
-    /// assert!(context.is_friendly_guild("main", "Weaklings"));
-    /// ```
-    #[must_use]
-    pub fn new(guild_id: &str, allied_guild_ids: &[String], allied_guild_names: &[String]) -> Self {
-        Self {
-            guild_id: Some(guild_id.to_string()),
-            allied_guild_ids: allied_guild_ids.iter().cloned().collect(),
-            allied_guild_names: allied_guild_names
-                .iter()
-                .map(|name| name.to_ascii_lowercase())
-                .collect(),
-            server: None,
-        }
-    }
-
-    /// Alliance-side classifier: no own guild, every member guild is friendly.
-    ///
-    /// Alliance tenants have no `albion_guild_id`; their Albion identity is the
-    /// alliance, whose friendly side is the set of its active member guild IDs.
-    /// `guild_id` stays `None` so no battle row is ever treated as "our own
-    /// guild" — an unknown or blank guild ID classifies as not ours.
-    #[must_use]
-    pub fn for_alliance(member_guild_ids: &[String]) -> Self {
-        Self {
-            guild_id: None,
-            allied_guild_ids: member_guild_ids.iter().cloned().collect(),
-            allied_guild_names: HashSet::new(),
-            server: None,
-        }
-    }
-
-    /// Sets the `AlbionBB` server used by automatic battle linking.
-    #[must_use]
-    pub fn with_server(mut self, server: Option<String>) -> Self {
-        self.server = server;
-        self
-    }
-
-    /// `AlbionBB` server path segment, if configured.
-    #[must_use]
-    pub fn server(&self) -> Option<&str> {
-        self.server.as_deref()
-    }
-
-    /// Returns `true` when a battle guild belongs to our side.
-    ///
-    /// The configured guild ID always wins, then explicit allied IDs, then normalized names as a
-    /// fallback for partial upstream payloads.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let context = BattleLinkingContext::new("main", &[], &["BetterGetBack".to_string()]);
-    /// assert!(context.is_friendly_guild("", "bettergetback"));
-    /// ```
-    #[must_use]
-    pub fn is_friendly_guild(&self, guild_id: &str, guild_name: &str) -> bool {
-        if self.is_own_guild(guild_id) || self.allied_guild_ids.contains(guild_id) {
-            return true;
-        }
-        if guild_name.trim().is_empty() {
-            return false;
-        }
-        self.allied_guild_names
-            .contains(&guild_name.to_ascii_lowercase())
-    }
-
-    /// True when this guild ID is the configured own guild. Alliance-side
-    /// contexts own no guild, so this is always `false` for them.
-    #[must_use]
-    pub fn is_own_guild(&self, guild_id: &str) -> bool {
-        self.guild_id.as_deref() == Some(guild_id)
-    }
-
-    /// Configured Albion guild ID used to query `AlbionBB` and identify our own
-    /// guild row. `None` for alliance-side contexts, which have no guild of
-    /// their own.
-    #[must_use]
-    pub fn guild_id(&self) -> Option<&str> {
-        self.guild_id.as_deref()
-    }
-
-    /// Allied guild IDs, in the shape `battles::outcome::FriendlySide` expects.
-    #[must_use]
-    pub fn allied_guild_ids(&self) -> Vec<String> {
-        self.allied_guild_ids.iter().cloned().collect()
-    }
-
-    /// Allied guild names, already lower-cased by the constructor.
-    #[must_use]
-    pub fn allied_guild_names(&self) -> Vec<String> {
-        self.allied_guild_names.iter().cloned().collect()
-    }
-}
-
 /// Compact battle snapshot derived from `AlbionBB` for event analytics.
 ///
 /// Used to carry only the two `event_battles` columns still populated this way
@@ -755,24 +630,6 @@ impl BattleLinkingContext {
 struct LinkedBattleSnapshot {
     guild_players_count: i64,
     battle_total_players: i64,
-}
-
-/// Computes a percentage and safely handles empty denominators.
-pub(crate) fn ratio_percent(part: i64, total: i64) -> f64 {
-    if total == 0 {
-        return 0.0;
-    }
-
-    (part as f64 / total as f64) * 100.0
-}
-
-/// Computes K/D while avoiding division by zero.
-pub(crate) fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
-    if deaths == 0 {
-        return kills as f64;
-    }
-
-    kills as f64 / deaths as f64
 }
 
 /// Ranks the most relevant opponents for a scope of raw `AlbionBB` battle ids, from the
@@ -3557,7 +3414,7 @@ impl EventService {
             mass_time_utc: Set(Some(mass.into())),
             start_time_utc: Set(Some(start.into())),
             ping_alliance: Set(req.ping_alliance),
-            discord_delivery: Set(crate::modules::events::models::normalize_discord_delivery(
+            discord_delivery: Set(crate::modules::admin::models::normalize_discord_delivery(
                 &req.discord_delivery,
             )
             .map_err(AppError::Validation)?
@@ -4351,7 +4208,7 @@ impl EventService {
     /// # ) -> Result<(), backend::errors::AppError> {
     /// let service = EventService::new();
     /// let request = UpdateEventBattlesRequest { battle_ids: vec!["123456789".to_string()] };
-    /// let context = backend::modules::events::service::BattleLinkingContext::new(
+    /// let context = backend::albion_common::BattleLinkingContext::new(
     ///     "guild-id",
     ///     &[],
     ///     &["BetterGetBack".to_string()],

@@ -16,12 +16,12 @@ use sea_orm::{
 };
 use tokio::time::interval;
 
+use crate::albion_common::BattleLinkingContext;
 use crate::albion_scope::{self, AlbionScope};
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as SnapshotEntity};
 use crate::modules::battles::service::BattlesService;
-use crate::modules::events::service::BattleLinkingContext;
 use crate::pagination::{PaginationParams, SortOrder};
 
 /// Tick interval for the sync worker. Battles that fall off page 1 between

@@ -6,11 +6,12 @@
 
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
+use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::events::entities::event;
-use crate::modules::events::service::{BattleLinkingContext, EventService};
+use crate::modules::events::service::EventService;
 use crate::modules::regear::extractor::{ExtractionGuildContext, RegearExtractor};
 
 /// Re-links battles for every session still awaiting linkage.

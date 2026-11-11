@@ -11,10 +11,10 @@ use axum::{
 
 use chrono::{DateTime, Utc};
 
+use crate::albion_common::BattleLinkingContext;
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::auto_scout::{BackfillOutcome, scout_snapshots_before};
 use crate::modules::intel::cache::ReportCache;
 use crate::modules::intel::matchups::{MatchupReport, matchups};

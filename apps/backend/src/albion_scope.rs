@@ -7,9 +7,7 @@
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement};
 
-use crate::modules::albionbb::client::normalize_server;
-use crate::modules::battles::outcome::FriendlySide;
-use crate::modules::events::service::BattleLinkingContext;
+use crate::albion_common::{BattleLinkingContext, FriendlySide, normalize_server};
 
 /// Guild, region, and allies used to scope Albion reads and writes.
 #[derive(Debug, Clone, PartialEq, Eq)]

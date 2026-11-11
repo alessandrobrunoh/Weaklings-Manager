@@ -7,6 +7,19 @@ fn default_event_delivery() -> String {
     "calendar".to_string()
 }
 
+/// `calendar` updates the single channel calendar. `message` posts one channel
+/// message and thread. `forum` opens a forum post and applies the configured tags.
+pub fn normalize_discord_delivery(value: &str) -> Result<&'static str, String> {
+    match value {
+        "calendar" => Ok("calendar"),
+        "message" => Ok("message"),
+        "forum" => Ok("forum"),
+        other => Err(format!(
+            "discord_delivery must be calendar, message, or forum, got '{other}'"
+        )),
+    }
+}
+
 /// One role and the permissions currently granted to it.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RolePermissionsView {

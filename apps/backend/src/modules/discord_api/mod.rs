@@ -15,7 +15,7 @@ mod error;
 mod limiter;
 mod types;
 
-pub use client::{DEFAULT_API_BASE, DiscordRest, LiveDiscordRest};
+pub use client::{DiscordRest, LiveDiscordRest};
 pub use error::{DiscordError, upstream};
 pub use types::{
     DiscordChannelPayload, DiscordGuildMemberPayload, DiscordRolePayload, DiscordUserPayload,

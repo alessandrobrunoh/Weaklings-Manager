@@ -20,6 +20,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::albion_common::{BattleSide, FriendlySide};
 use crate::errors::AppError;
 use crate::modules::albion::entities::albion_link;
 use crate::modules::audit::service::AuditService;
@@ -30,8 +31,7 @@ use crate::modules::battles::entities::{
 };
 use crate::modules::battles::models::BattleGuildSummary;
 use crate::modules::battles::outcome::{
-    BattleOutcome, BattleSide, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome,
-    combine_segments,
+    BattleOutcome, GuildLine, OutcomeVerdict, battle_outcome, combine_segments,
 };
 use crate::modules::comps::entities::{build, comp};
 use crate::modules::events::entities::{

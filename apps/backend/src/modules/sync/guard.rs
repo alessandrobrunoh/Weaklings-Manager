@@ -11,58 +11,12 @@ use std::collections::HashMap;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Statement, Value,
 };
-use serde::Serialize;
-use utoipa::ToSchema;
 
 use crate::errors::AppError;
 use crate::modules::splits::entities::split;
+use crate::sync_origin::{OriginRef, SyncKind};
 
-use super::copy_role::{
-    CopyLink, CopyRole, LegacyLinks, SyncKind, legacy_copy_link, split_copy_link,
-};
-
-/// Reference to the authoritative entity a read-only copy points back to.
-///
-/// Fields the legacy data does not record are `None` (and absent from the JSON);
-/// the `sync_copies` backing fills them all.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
-pub struct OriginRef {
-    /// Tenant that owns the entity.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_id: Option<String>,
-    /// Display name of the owning tenant.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_name: Option<String>,
-    /// `guild` or `alliance`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_kind: Option<String>,
-    /// What kind of entity the copy is.
-    pub kind: SyncKind,
-    /// The entity's id inside the owning tenant.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entity_id: Option<i64>,
-    /// Relative route of the entity in the owning tenant (`/events/123`); the
-    /// tenant switch is the client's job.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-}
-
-impl OriginRef {
-    /// One-line, human-readable explanation used as the problem `detail`.
-    #[must_use]
-    pub fn summary(&self) -> String {
-        let owner = match (&self.tenant_name, &self.tenant_id) {
-            (Some(name), _) if !name.is_empty() => format!("tenant {name}"),
-            (_, Some(id)) if !id.is_empty() => format!("tenant {id}"),
-            _ => "another tenant".to_owned(),
-        };
-        format!(
-            "this {} is a synchronized copy owned by {owner}; \
-             manage it from the owner tenant instead",
-            self.kind.as_str()
-        )
-    }
-}
+use super::copy_role::{CopyLink, CopyRole, LegacyLinks, legacy_copy_link, split_copy_link};
 
 /// Role and origin of one copy, as returned by [`copy_info`].
 #[allow(

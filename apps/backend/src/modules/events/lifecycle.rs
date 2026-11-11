@@ -32,8 +32,9 @@ use crate::modules::events::{
     fanout_outbox,
     models::EventView,
     service::{EventService, MAX_SESSION_DURATION, reject_if_event_archived},
-    sync::{canonical_event_origin, linked_event_peers},
+    sync::linked_event_peers,
 };
+use crate::modules::sync::event_links::canonical_event_origin;
 
 // --- Transition core -------------------------------------------------------
 
@@ -831,12 +832,13 @@ mod tests {
         service::EventService,
         sync::{process_due_forwards, sync_participation},
     };
-    use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable};
+    use crate::modules::sync::{LegacyLinks, assert_writable};
     use crate::modules::users::identity::upsert_discord_user;
     use crate::postgres::{
         connect_with_search_path, drop_schema, ensure_schema,
         test_support::{try_admin_db, unique_schema},
     };
+    use crate::sync_origin::SyncKind;
     use crate::tenant::TenantRegistry;
     use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
     use sea_orm_migration::MigratorTrait;

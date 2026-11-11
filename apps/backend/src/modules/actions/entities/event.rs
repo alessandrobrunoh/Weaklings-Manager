@@ -14,7 +14,8 @@ use crate::modules::auth::Permission;
 use crate::modules::events::lifecycle::{Transition, XpFilter};
 use crate::modules::sync::copy_role::CopyRole;
 use crate::modules::sync::guard::copy_info;
-use crate::modules::sync::{LegacyLinks, OriginRef, SyncKind, copy_role};
+use crate::modules::sync::{LegacyLinks, copy_role};
+use crate::sync_origin::{OriginRef, SyncKind};
 
 // Only the creator, or an administrator holding `events.manage`, may run any of these.
 const EDIT: Authority = Authority::CreatorOr(Permission::EventsManage);

@@ -30,10 +30,10 @@ use std::collections::{HashMap, HashSet};
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
+use crate::albion_common::FriendlySide;
 use crate::errors::AppError;
 use crate::modules::albiondata::service::{AlbionDataService, cheapest_price_index};
 use crate::modules::battles::evidence_entities::{battle_kill, battle_kill_item};
-use crate::modules::battles::outcome::FriendlySide;
 use crate::modules::regear::entities::{PricingFallback, load_settings};
 
 use crate::modules::economy::entities::battle_loss_estimate;

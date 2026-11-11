@@ -700,19 +700,6 @@ fn default_discord_delivery() -> String {
     "message".to_string()
 }
 
-/// `calendar` updates the single channel calendar. `message` posts one channel
-/// message and thread. `forum` opens a forum post and applies the configured tags.
-pub fn normalize_discord_delivery(value: &str) -> Result<&'static str, String> {
-    match value {
-        "calendar" => Ok("calendar"),
-        "message" => Ok("message"),
-        "forum" => Ok("forum"),
-        other => Err(format!(
-            "discord_delivery must be calendar, message, or forum, got '{other}'"
-        )),
-    }
-}
-
 /// Discord voice channel created by the bot for a live event.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct SetEventVoiceChannelRequest {

@@ -12,7 +12,8 @@ use crate::errors::AppError;
 use crate::modules::events::entities::event;
 use crate::modules::events::lifecycle::{Cause, Transition, XpFilter};
 use crate::modules::events::service::EventService;
-use crate::modules::sync::{LegacyLinks, SyncKind, copy_role};
+use crate::modules::sync::{LegacyLinks, copy_role};
+use crate::sync_origin::SyncKind;
 
 /// Stops every `live` session whose `auto_stop_deadline` has already elapsed.
 ///

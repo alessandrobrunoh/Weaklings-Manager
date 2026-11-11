@@ -32,6 +32,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
+use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::albion::entities::albion_link;
 use crate::modules::bank::entities as transaction;
@@ -42,7 +43,6 @@ use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::events::entities::{
     event, event_battle, event_participation, fight, fight_battle,
 };
-use crate::modules::events::service::{BattleLinkingContext, kill_death_ratio, ratio_percent};
 use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
 use crate::modules::intel::matchups::{MatchupRow, best_counter, matchups};
@@ -53,6 +53,7 @@ use crate::modules::regear::entities as regear;
 use crate::modules::siphoned::entities as siphoned;
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::users::entities as user;
+use crate::ratios::{kill_death_ratio, ratio_percent};
 
 /// Default window when the caller does not supply one.
 const DEFAULT_WINDOW_DAYS: i64 = 30;

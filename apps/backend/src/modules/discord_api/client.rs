@@ -11,9 +11,6 @@ use super::limiter;
 use super::types::{DiscordChannelPayload, DiscordGuildMemberPayload, DiscordRolePayload};
 use crate::config::Config;
 
-/// Default Discord REST base URL (`Config.discord_api_base` overrides it).
-pub const DEFAULT_API_BASE: &str = "https://discord.com/api/v10";
-
 /// `User-Agent` sent with every Discord call.
 pub const USER_AGENT: &str = "WeaklingsBackend (0.0.3)";
 

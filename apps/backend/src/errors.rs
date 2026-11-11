@@ -14,7 +14,7 @@ use serde_json::json;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use crate::modules::sync::OriginRef;
+use crate::sync_origin::OriginRef;
 
 /// One row that's stopping a delete/update from proceeding.
 ///

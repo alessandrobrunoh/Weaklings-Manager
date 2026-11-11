@@ -13,9 +13,9 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::errors::AppError;
+use crate::modules::sync::event_links::{canonical_event_origin, stored_attribution};
 
 use super::models::{EventDetailView, EventParticipantView, EventRosterView};
-use super::sync::canonical_event_origin;
 
 /// One guild a caller may be attributed to for a linked event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -68,30 +68,6 @@ pub async fn eligible_participation_guilds(
         })
         .collect::<Result<Vec<_>, sea_orm::DbErr>>()
         .map_err(Into::into)
-}
-
-/// The guild already attributed to this participant, if any.
-pub async fn stored_attribution(
-    control: &DatabaseConnection,
-    source_tenant_id: &str,
-    source_event_id: i64,
-    discord_id: &str,
-) -> Result<Option<String>, AppError> {
-    let row = control
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "SELECT guild_tenant_id FROM event_participant_attributions \
-             WHERE source_tenant_id = $1 AND source_event_id = $2 AND discord_id = $3",
-            [
-                source_tenant_id.into(),
-                source_event_id.into(),
-                discord_id.into(),
-            ],
-        ))
-        .await?;
-    row.map(|row| row.try_get_by_index(0))
-        .transpose()
-        .map_err(AppError::Database)
 }
 
 /// The attributed guild of every given participant on a linked event, keyed by Discord id.

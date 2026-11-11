@@ -57,7 +57,9 @@ use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::alliance_share::ShareActor;
-use crate::modules::sync::{LegacyLinks, SyncKind, assert_writable, copy_role};
+use crate::modules::sync::event_links::canonical_event_origin;
+use crate::modules::sync::{LegacyLinks, assert_writable, copy_role};
+use crate::sync_origin::SyncKind;
 
 /// The member-guild island locator carried by an event request: `(origin guild, tab id)`.
 ///
@@ -281,7 +283,7 @@ async fn hydrate_event_view(
     registry: &TenantRegistry,
     origin_guild_id: &str,
 ) -> EventView {
-    match super::sync::canonical_event_origin(&control.0, origin_guild_id, view.id).await {
+    match canonical_event_origin(&control.0, origin_guild_id, view.id).await {
         Ok((source_tenant_id, source_event_id)) if source_tenant_id != origin_guild_id => {
             view.source_tenant_id.get_or_insert(source_tenant_id);
             view.source_event_id.get_or_insert(source_event_id);

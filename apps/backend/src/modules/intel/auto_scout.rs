@@ -13,11 +13,11 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::battles::entities::{
     Column as SnapshotColumn, Entity as SnapshotEntity, Model as SnapshotModel,
 };
-use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::entities::scouted_comp_battle;
 use crate::modules::intel::service::IntelService;
 

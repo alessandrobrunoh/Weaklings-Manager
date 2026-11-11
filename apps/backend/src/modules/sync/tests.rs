@@ -7,8 +7,9 @@ use super::guard::copy_info;
 use super::test_support::{
     insert_split, insert_user, link_event, register_tenant, share_split, sqlite_db,
 };
-use super::{LegacyLinks, SyncKind, assert_split_writable, assert_writable, copy_role};
+use super::{LegacyLinks, assert_split_writable, assert_writable, copy_role};
 use crate::errors::AppError;
+use crate::sync_origin::SyncKind;
 
 const TENANT: &str = "guild-a";
 

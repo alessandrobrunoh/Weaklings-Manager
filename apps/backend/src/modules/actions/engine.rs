@@ -26,7 +26,8 @@ use crate::modules::events::{
     },
     service::EventService,
 };
-use crate::modules::sync::{OriginRef, copy_role::CopyRole};
+use crate::modules::sync::copy_role::CopyRole;
+use crate::sync_origin::OriginRef;
 
 /// What the engine knows about one entity at one moment.
 #[derive(Debug, Clone, PartialEq)]

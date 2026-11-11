@@ -129,7 +129,7 @@ impl AdminService {
             active.discord_events_forum_channel_id = Set(normalize(value));
         }
         if let Some(value) = &req.discord_event_delivery {
-            let delivery = crate::modules::events::models::normalize_discord_delivery(value)
+            let delivery = crate::modules::admin::models::normalize_discord_delivery(value)
                 .map_err(AppError::Validation)?;
             active.discord_event_delivery = Set(delivery.to_string());
         }

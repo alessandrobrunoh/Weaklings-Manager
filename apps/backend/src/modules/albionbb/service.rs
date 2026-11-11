@@ -19,8 +19,9 @@ use chrono::{DateTime, Utc};
 
 use super::client::{
     AlbionBbApiClient, AlbionBbBattleDetail, AlbionBbBattleSummary, AlbionBbBattlesFilters,
-    AlbionBbGuildInfo, AlbionBbKillEvent, AlbionBbPageMeta, normalize_server,
+    AlbionBbGuildInfo, AlbionBbKillEvent, AlbionBbPageMeta,
 };
+use crate::albion_common::normalize_server;
 use crate::errors::AppError;
 use crate::ttl_cache::TtlCache;
 

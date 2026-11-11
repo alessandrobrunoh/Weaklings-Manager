@@ -13,7 +13,7 @@
 //! be unit tested without one. A later integration step maps real query
 //! results onto [`GuildStatSource`], [`PlayerStatSource`] and [`KillSource`].
 
-use crate::modules::battles::outcome::FriendlySide;
+use crate::albion_common::FriendlySide;
 
 /// Mirrors one row of `battle_guild_stats`.
 #[derive(Debug, Clone, PartialEq)]

@@ -12,7 +12,6 @@ use crate::errors::AppError;
 use crate::modules::audit::entities::Model as AuditRow;
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::events::entities::event::Entity as EventEntity;
-use crate::modules::events::{attribution::stored_attribution, sync::canonical_event_origin};
 use crate::modules::splits::entities::{
     split::{Column as SplitColumn, Entity as SplitEntity},
     split_participant::{Column as ParticipantColumn, Entity as ParticipantEntity},
@@ -21,6 +20,7 @@ use crate::modules::splits::service::{
     SplitService, calculate_net_value, echo_audit_row, event_has_ended, participant_shares,
     split_audit_in,
 };
+use crate::modules::sync::event_links::{canonical_event_origin, stored_attribution};
 use crate::modules::sync::{LegacyLinks, assert_split_writable};
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::tenant::TenantRegistry;

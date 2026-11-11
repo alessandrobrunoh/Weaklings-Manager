@@ -12,6 +12,7 @@
 pub mod copy_role;
 pub mod engine;
 pub mod error;
+pub mod event_links;
 pub mod failpoint;
 pub mod guard;
 pub mod handler;
@@ -31,5 +32,5 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
-pub use copy_role::{LegacyLinks, SyncKind, copy_role};
-pub use guard::{OriginRef, assert_split_writable, assert_writable};
+pub use copy_role::{LegacyLinks, copy_role};
+pub use guard::{assert_split_writable, assert_writable};
