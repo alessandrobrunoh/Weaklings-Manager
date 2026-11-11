@@ -2352,20 +2352,12 @@ fn add_loss_estimate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::battles::entities as battle_snapshot;
     use crate::modules::comps::entities::comp_category;
     use crate::testkit::{ALBION_GUILDS, GUILDS, World};
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory SQLite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn timestamp(offset_hours: i64) -> sea_orm::prelude::DateTimeWithTimeZone {

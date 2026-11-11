@@ -814,21 +814,14 @@ async fn load_entries(
 mod tests {
     use super::*;
     use chrono::Duration;
-    use sea_orm::{ActiveModelTrait, ConnectionTrait, Database, Set};
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
     use std::collections::HashSet;
 
-    use crate::migration::MigratorTrait;
     use crate::modules::bank::entities::Entity as BankEntity;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("sqlite memory");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str) -> i64 {

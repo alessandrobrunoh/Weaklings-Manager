@@ -793,10 +793,7 @@ mod tests {
     #[tokio::test]
     async fn listing_ignores_an_email_probe() {
         use super::super::entities::ActiveModel;
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
+        let db = crate::testkit::migrated_sqlite().await;
         for (name, email) in [("alice", "alice@example.com"), ("bob", "bob@example.com")] {
             ActiveModel {
                 username: Set(name.to_string()),
@@ -825,18 +822,11 @@ mod tests {
     }
 
     use super::*;
-    use crate::migration::MigratorTrait;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
     #[tokio::test]
     async fn test_pagination_and_filtering() {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
+        let db = crate::testkit::migrated_sqlite().await;
 
         use super::super::entities::ActiveModel;
 
@@ -1000,12 +990,7 @@ mod tests {
     }
 
     async fn seed_specializations_user() -> (DatabaseConnection, i64) {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
+        let db = crate::testkit::migrated_sqlite().await;
 
         use super::super::entities::ActiveModel;
         let user = ActiveModel {
@@ -1158,10 +1143,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_linked_member_inserts_user_and_albion_link() {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
+        let db = crate::testkit::migrated_sqlite().await;
         let service = UserService::new();
 
         let profile = service
@@ -1218,10 +1200,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_linked_member_rejects_claimed_albion_character() {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
+        let db = crate::testkit::migrated_sqlite().await;
         let service = UserService::new();
         service
             .create_linked_member(

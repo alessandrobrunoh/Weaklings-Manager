@@ -1565,11 +1565,7 @@ mod cache_tests {
     /// A tenant database with the real schema, for code that reads the permission
     /// tables.
     async fn migrated_pool() -> DatabaseConnection {
-        let db = pool().await;
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("tenant migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     #[tokio::test]

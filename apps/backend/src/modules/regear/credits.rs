@@ -329,17 +329,10 @@ mod tests {
 
     // --- ledger invariants (DB-backed) ---
 
-    use crate::migration::MigratorTrait;
-    use sea_orm::{Database, DatabaseConnection};
+    use sea_orm::DatabaseConnection;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect in-memory sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn set_pools(db: &DatabaseConnection, user_id: i64, weekly: i32, bonus: i32) {

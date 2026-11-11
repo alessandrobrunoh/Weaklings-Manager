@@ -1256,8 +1256,6 @@ impl Default for AlbionLinkService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
-    use sea_orm::Database;
 
     const SELF_AUDIT: LinkAudit<'static> = LinkAudit {
         actor_user_id: None,
@@ -1265,13 +1263,7 @@ mod tests {
     };
 
     async fn setup_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     #[tokio::test]

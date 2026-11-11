@@ -459,18 +459,12 @@ pub fn normalize_vod_url(raw: &str) -> Result<String, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::progression::entities::ProgressionSeasonActiveModel;
     use crate::modules::progression::models::UpdateProgressionSettingsRequest;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {

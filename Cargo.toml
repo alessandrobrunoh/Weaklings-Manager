@@ -17,3 +17,9 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# The bundled SQLite C library runs every SQLite-backed test; at the dev default
+# (-O0) it is several times slower. Optimising only this crate costs one extra C
+# compile, cached afterwards, and leaves our own code's dev settings untouched.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3

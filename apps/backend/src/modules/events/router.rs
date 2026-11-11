@@ -2812,15 +2812,9 @@ mod tests {
         ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, DatabaseConnection,
         DbBackend, Statement,
     };
-    use sea_orm_migration::MigratorTrait;
 
     async fn authorization_test_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("test database should connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("test database migrations should run");
+        let db = crate::testkit::migrated_sqlite().await;
         db.execute_unprepared(
             "CREATE TABLE event_sync_links (
                 source_tenant_id TEXT NOT NULL,

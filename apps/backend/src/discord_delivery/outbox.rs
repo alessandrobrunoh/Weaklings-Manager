@@ -905,17 +905,9 @@ pub async fn rearm_config<C: ConnectionTrait>(
 mod tests {
     use super::*;
     use rand::{SeedableRng, rngs::StdRng};
-    use sea_orm::Database;
-    use sea_orm_migration::MigratorTrait;
 
     async fn sqlite() -> sea_orm::DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("tenant migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn at(seconds: i64) -> DateTime<Utc> {

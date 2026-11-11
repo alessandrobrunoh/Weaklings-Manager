@@ -11,13 +11,15 @@
 //! behaviour (row locks, `SKIP LOCKED`) stays behind `TEST_DATABASE_URL`.
 
 pub mod discord_stub;
+mod tenant_schema;
+
+pub use tenant_schema::{apply_tenant_schema, migrated_sqlite};
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
-use sea_orm_migration::MigratorTrait;
 
 use crate::errors::AppError;
 use crate::modules::auth::Permissions;
@@ -120,12 +122,7 @@ impl World {
         for (id, kind) in std::iter::once((ALLIANCE, "alliance"))
             .chain(GUILDS.into_iter().map(|id| (id, "guild")))
         {
-            let db = Database::connect("sqlite::memory:")
-                .await
-                .expect("tenant sqlite");
-            crate::migration::Migrator::up(&db, None)
-                .await
-                .expect("tenant migrations");
+            let db = migrated_sqlite().await;
             registry.cache_context_for_tests(Arc::new(TenantContext {
                 tenant_id: id.to_owned(),
                 schema_name: String::new(),

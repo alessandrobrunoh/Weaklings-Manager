@@ -485,15 +485,9 @@ impl AuditService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     #[test]

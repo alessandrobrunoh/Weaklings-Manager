@@ -3806,19 +3806,13 @@ mod transition_tests {
     use crate::modules::events::entities::{event_completion_xp, event_participation};
     use crate::modules::splits::entities::{split, split_participant};
     use crate::modules::users::entities as users;
-    use sea_orm::{Database, TransactionTrait};
+    use sea_orm::TransactionTrait;
     use sea_orm_migration::MigratorTrait;
 
     const FAIL_TRIGGER: &str = "fail_split_participants";
 
     pub(super) async fn sqlite_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("tenant migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, name: &str) -> i64 {

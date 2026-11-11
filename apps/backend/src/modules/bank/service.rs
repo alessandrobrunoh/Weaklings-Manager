@@ -1619,16 +1619,9 @@ impl Default for BankService {
 mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {

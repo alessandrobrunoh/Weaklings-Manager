@@ -1278,9 +1278,7 @@ async fn other_role_grants(
 mod tests {
     use super::*;
     use super::{DiscordGuildMemberPayload, DiscordUserPayload, unregistered_discord_members};
-    use crate::migration::MigratorTrait;
     use crate::testkit::discord_stub::{DiscordStub, StubReply};
-    use sea_orm::Database;
     use std::collections::HashSet;
 
     #[tokio::test]
@@ -1332,11 +1330,7 @@ mod tests {
     }
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     #[test]

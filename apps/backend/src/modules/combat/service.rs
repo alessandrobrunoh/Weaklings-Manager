@@ -1401,8 +1401,7 @@ mod service_tests {
 #[cfg(test)]
 mod comp_readiness_tests {
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
-    use sea_orm_migration::MigratorTrait;
+    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
     use super::CombatService;
     use crate::modules::comps::entities::{
@@ -1414,13 +1413,7 @@ mod comp_readiness_tests {
     use crate::modules::users::specializations;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("failed to run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     /// One comp with a single seat requiring a Polehammer.
@@ -1753,8 +1746,7 @@ mod comp_readiness_tests {
 
 #[cfg(test)]
 mod scenario_tests {
-    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
-    use sea_orm_migration::MigratorTrait;
+    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
     use super::CombatService;
     use crate::modules::combat::models::{
@@ -1765,13 +1757,7 @@ mod scenario_tests {
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("failed to run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn seed_user(db: &DatabaseConnection, username: &str) -> i64 {
@@ -2092,8 +2078,7 @@ mod scenario_tests {
 
 #[cfg(test)]
 mod calibration_tests {
-    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
-    use sea_orm_migration::MigratorTrait;
+    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
     use super::{BuildLoadout, CombatService, SpecSource};
     use crate::modules::albion::entities::albion_link;
@@ -2105,13 +2090,7 @@ mod calibration_tests {
     use crate::modules::users::specializations;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("failed to run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     /// One member, fully trained, with a Polehammer build and an event sign-up naming it.

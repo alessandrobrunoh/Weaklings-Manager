@@ -515,11 +515,10 @@ impl DiscordMemberApi for FakeDiscord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::admin::models::CreateRoleRequest;
     use crate::modules::admin::service::AdminService;
     use crate::testkit::discord_stub::{DiscordStub, StubReply};
-    use sea_orm::{ActiveModelTrait, Database, Set};
+    use sea_orm::{ActiveModelTrait, Set};
 
     fn role(
         id: &str,
@@ -569,11 +568,7 @@ mod tests {
     }
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, discord_id: Option<&str>) -> i64 {

@@ -2716,18 +2716,10 @@ impl Default for SplitService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {
@@ -3770,9 +3762,7 @@ mod tests {
     #[tokio::test]
     async fn island_list_query_count_does_not_grow_with_islands() {
         let counted = crate::testkit::queries::CountedDb::sqlite_memory().await;
-        crate::migration::Migrator::up(&counted.connection(), None)
-            .await
-            .expect("Failed to run database migrations");
+        crate::testkit::apply_tenant_schema(&counted.connection()).await;
         let db = counted.connection();
         let service = SplitService::new();
         let cities = [

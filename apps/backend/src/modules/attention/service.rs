@@ -126,19 +126,12 @@ pub async fn list_attention_findings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, Database, Set};
+    use sea_orm::{ActiveModelTrait, Set};
     use serde_json::json;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory SQLite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     #[allow(clippy::too_many_arguments)]

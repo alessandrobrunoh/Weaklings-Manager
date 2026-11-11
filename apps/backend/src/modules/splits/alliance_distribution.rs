@@ -632,21 +632,14 @@ async fn finalize_source_split(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::audit::entities::{Column as AuditColumn, Entity as AuditEntity};
     use crate::modules::splits::models::{
         CreateIslandRequest, CreateSplitRequest, UpsertParticipantRequest,
     };
-    use sea_orm::{ActiveModelTrait, Database};
+    use sea_orm::ActiveModelTrait;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn pending_split(db: &DatabaseConnection, creator: i64, user: i64) -> i64 {

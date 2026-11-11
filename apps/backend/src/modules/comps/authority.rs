@@ -87,8 +87,7 @@ pub(crate) async fn require_author_or_manage(
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::*;
-    use crate::migration::MigratorTrait;
-    use sea_orm::{ConnectionTrait, Database, Statement};
+    use sea_orm::{ConnectionTrait, Statement};
 
     /// Owner of build 10 and comp 20.
     pub(crate) const AUTHOR: i64 = 1;
@@ -98,12 +97,7 @@ pub(crate) mod test_support {
     pub(crate) async fn fixture(
         role_grants: &[(&str, &[&str])],
     ) -> (DatabaseConnection, Permissions) {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrations");
+        let db = crate::testkit::migrated_sqlite().await;
         let backend = db.get_database_backend();
         let mut statements = vec![
             "INSERT INTO users (id, username, email, role, created_at) VALUES (1, 'author', 'a@x', \

@@ -276,18 +276,10 @@ fn match_status_str(status: &MatchStatus) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::comps::entities::build_category;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory SQLite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn ts(rfc3339: &str) -> DateTimeWithTimeZone {

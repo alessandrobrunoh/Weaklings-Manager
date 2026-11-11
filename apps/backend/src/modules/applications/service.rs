@@ -215,16 +215,11 @@ impl ApplicationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::admin::models::UpdateGuildSettingsRequest;
     use crate::modules::admin::service::AdminService;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
+        let db = crate::testkit::migrated_sqlite().await;
         AdminService::update_guild_settings(
             &db,
             1,
