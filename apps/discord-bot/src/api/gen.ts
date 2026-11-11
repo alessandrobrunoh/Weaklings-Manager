@@ -2775,6 +2775,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/{id}/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an event party
+         * @description The roster version carried in the body is checked like every other roster write. The change is
+         *     broadcast on the live roster socket. Alliance copies keep their own single party and are not
+         *     updated.
+         */
+        post: operations["create_event_party"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{id}/parties/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder event parties */
+        post: operations["reorder_event_parties"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{id}/parties/{party_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an event party
+         * @description The last remaining party cannot be removed (409). Its members go back to the waiting list and
+         *     `unseated_count` says how many.
+         */
+        delete: operations["delete_event_party"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an event party
+         * @description Members whose seat (build and ordinal) still exists in the new comp keep it; the others go back
+         *     to the waiting list and `unseated_count` says how many. An empty `name` clears the label.
+         */
+        patch: operations["update_event_party"];
+        trace?: never;
+    };
     "/api/events/{id}/remind": {
         parameters: {
             query?: never;
@@ -6743,10 +6808,30 @@ export interface components {
              */
             status: string;
         };
+        /** @description `OpenAPI` schema wrapper for a roster after a party change. */
+        ApiResponseEventPartyChange: {
+            /** @description The roster after the change and the number of members it unseated. */
+            data: components["schemas"]["EventPartyChangeView"];
+            /**
+             * @description Indicates the outcome of the request, always "success".
+             * @example success
+             */
+            status: string;
+        };
         /** @description `OpenAPI` schema wrapper for event revision fingerprints. */
         ApiResponseEventRevisionList: {
             /** @description Status/roster fingerprints for the requested event ids. */
             data: components["schemas"]["EventRevision"][];
+            /**
+             * @description Indicates the outcome of the request, always "success".
+             * @example success
+             */
+            status: string;
+        };
+        /** @description `OpenAPI` schema wrapper for an event roster snapshot. */
+        ApiResponseEventRoster: {
+            /** @description The roster after the change. */
+            data: components["schemas"]["EventRosterView"];
             /**
              * @description Indicates the outcome of the request, always "success".
              * @example success
@@ -7749,6 +7834,12 @@ export interface components {
                  * @example Fill
                  */
                 name: string;
+                /**
+                 * Format: int64
+                 * @description Party whose seats this role extends. `None` for the virtual `Fill` role, which belongs to
+                 *     no party.
+                 */
+                party_id?: number | null;
                 /** @description `weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`. */
                 weapon_key?: string | null;
             };
@@ -7775,7 +7866,10 @@ export interface components {
                 active_comp_id: number;
                 /** @description Human-readable name of the prospective comp tier. */
                 active_comp_name: string;
-                /** @description Concrete builds available to select, including event-specific extra roster slots. */
+                /**
+                 * @description Concrete builds available to select, including event-specific extra roster slots. The
+                 *     union over every party, quantities summed.
+                 */
                 builds: components["schemas"]["EventSignupBuildView"][];
                 /**
                  * @description Whether the member declared at least one weapon. When `false`, self-service signup is not
@@ -7787,6 +7881,11 @@ export interface components {
                  *     the prospective threshold merely by opening the menu.
                  */
                 is_already_registered: boolean;
+                /**
+                 * @description The same builds grouped by party, in party order. Each build's `quantity` counts only that
+                 *     party's seats.
+                 */
+                parties: components["schemas"]["EventSignupPartyView"][];
             };
             /** @description Indicates the outcome of the request, always "success" for this envelope. */
             status: string;
@@ -11421,6 +11520,28 @@ export interface components {
             parent_id?: number | null;
         };
         /**
+         * @description Request body to add a party to an event.
+         * @example {
+         *       "comp_id": 3,
+         *       "expected_roster_version": 4,
+         *       "name": "Brawl"
+         *     }
+         */
+        CreateEventPartyRequest: {
+            /**
+             * Format: int64
+             * @description Comp the new party is built from.
+             */
+            comp_id: number;
+            /**
+             * Format: int64
+             * @description Roster version the client last saw.
+             */
+            expected_roster_version: number;
+            /** @description Optional label for the party. */
+            name?: string | null;
+        };
+        /**
          * @description Request body to create a new event.
          * @example {
          *       "call_to_arms": false,
@@ -11512,6 +11633,11 @@ export interface components {
              * @example 5
              */
             build_id: number;
+            /**
+             * Format: int64
+             * @description Party that gets the extra seat. Defaults to the event's last party.
+             */
+            party_id?: number | null;
         };
         /** @description One item prize on create. */
         CreateGiveawayPrizeRequest: {
@@ -11966,6 +12092,14 @@ export interface components {
              *     [`super::sim::DeclaredCast::target_count`] with something explicit.
              */
             target_ids: string[];
+        };
+        /** @description Request body to remove a party. */
+        DeleteEventPartyRequest: {
+            /**
+             * Format: int64
+             * @description Roster version the client last saw.
+             */
+            expected_roster_version: number;
         };
         /** @description Payload returned by `DELETE /batches/{batch_id}`. */
         DeletedCount: {
@@ -12648,7 +12782,7 @@ export interface components {
             active_comp_name?: string | null;
             /** @description Raw Battle segments retained for compatibility and traceability. */
             battles: components["schemas"]["EventBattleView"][];
-            /** @description Every build and quantity in the active comp snapshot, including empty slots. */
+            /** @description Every build and quantity across the parties' effective comps, including empty slots. */
             comp_builds: components["schemas"]["EventCompBuildView"][];
             /** @description Market-based equipment loss estimates aggregated from persisted battle snapshots. */
             estimated_losses: components["schemas"]["BattleLossEstimate"];
@@ -12656,6 +12790,8 @@ export interface components {
             fights: components["schemas"]["EventFightView"][];
             /** @description The list of registered participants. */
             participants: components["schemas"]["EventParticipantView"][];
+            /** @description The event's parties in order. Empty for flash masses. */
+            parties: components["schemas"]["EventPartyView"][];
             /** @description Available roster roles. `Fill` is always first and has unlimited capacity. */
             roster_roles: components["schemas"]["EventRosterRoleView"][];
             /** @description Aggregated split economy statistics. */
@@ -12875,6 +13011,68 @@ export interface components {
              */
             weapons: components["schemas"]["ParticipantWeaponView"][];
         };
+        /** @description A roster after a party change, with how many members lost their seat. */
+        EventPartyChangeView: {
+            /** @description The roster after the change. */
+            roster: components["schemas"]["EventRosterView"];
+            /**
+             * Format: int32
+             * @description Members whose seat no longer exists and who went back to the waiting list.
+             */
+            unseated_count: number;
+        };
+        /** @description How many seats of one role a party has. */
+        EventPartyRoleCount: {
+            /**
+             * Format: int32
+             * @description Seats of that role in the party, extra roles included.
+             */
+            count: number;
+            /** @description Build role (`tank`, `healer`, `support`, `dps`, `brawler`, `battle_mount`). */
+            role: string;
+        };
+        /** @description One party of an event: a comp, an optional label and its seat summary. */
+        EventPartyView: {
+            /**
+             * Format: int64
+             * @description The comp whose seats the party currently has. Equals `comp_id` unless the event has a
+             *     single party, whose comp can switch to a larger variant as people sign up.
+             */
+            active_comp_id: number;
+            /** @description Board party numbers the party spans (a comp over 20 seats spans several). */
+            board_party_numbers: number[];
+            /**
+             * Format: int64
+             * @description The comp stored on the party.
+             */
+            comp_id: number;
+            /** @description Name of the effective comp. */
+            comp_name: string;
+            /**
+             * Format: int32
+             * @description Seats of the party that currently have someone on them.
+             */
+            filled_count: number;
+            /**
+             * Format: int64
+             * @description Party identifier; seat keys embed it.
+             */
+            id: number;
+            /** @description Optional label ("Clap", "Brawl"). */
+            name?: string | null;
+            /**
+             * Format: int32
+             * @description 1-based order of the party inside the event.
+             */
+            position: number;
+            /** @description Seat counts per role, in the order tank, healer, support, dps, brawler, battle_mount. */
+            role_counts: components["schemas"]["EventPartyRoleCount"][];
+            /**
+             * Format: int32
+             * @description Comp seats plus the party's extra roles.
+             */
+            seat_count: number;
+        };
         /** @description Cheap fingerprint the Discord poller uses to skip full event-detail hydration. */
         EventRevision: {
             /** @description When this event was archived. `None` means it is listed as active. */
@@ -12920,8 +13118,63 @@ export interface components {
              * @example Fill
              */
             name: string;
+            /**
+             * Format: int64
+             * @description Party whose seats this role extends. `None` for the virtual `Fill` role, which belongs to
+             *     no party.
+             */
+            party_id?: number | null;
             /** @description `weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`. */
             weapon_key?: string | null;
+        };
+        /** @description A canonical seat in the active composition. */
+        EventRosterSeatView: {
+            /** Format: int64 */
+            build_id: number;
+            build_name: string;
+            /** Format: int32 */
+            build_version: number;
+            /** @description Stable key `party:{party_id}:build:{build_id}:{n}`. */
+            key: string;
+            participant?: null | components["schemas"]["EventParticipantView"];
+            /**
+             * Format: int64
+             * @description Party the seat belongs to.
+             */
+            party_id: number;
+            /** @description Label of that party, if it has one. */
+            party_name?: string | null;
+            /**
+             * Format: int32
+             * @description Board party number: continues across the event's parties, 20 seats each.
+             */
+            party_number: number;
+            /**
+             * Format: int32
+             * @description 1-based order of that party inside the event.
+             */
+            party_position: number;
+            /** Format: int32 */
+            position: number;
+            role: string;
+            /** @description `weapon:{BASE}` of the seat build's main-hand weapon, when it has one. */
+            weapon_key?: string | null;
+        };
+        /** @description A persisted event roster snapshot. */
+        EventRosterView: {
+            /**
+             * Format: int64
+             * @description Effective comp of the first party.
+             */
+            active_comp_id: number;
+            bench: components["schemas"]["EventParticipantView"][];
+            /** Format: int64 */
+            event_id: number;
+            /** @description The event's parties in order, with fill counts and role summaries. */
+            parties: components["schemas"]["EventPartyView"][];
+            /** Format: int64 */
+            roster_version: number;
+            seats: components["schemas"]["EventRosterSeatView"][];
         };
         /** @description A concrete build selectable while joining an event. */
         EventSignupBuildView: {
@@ -12963,7 +13216,10 @@ export interface components {
             active_comp_id: number;
             /** @description Human-readable name of the prospective comp tier. */
             active_comp_name: string;
-            /** @description Concrete builds available to select, including event-specific extra roster slots. */
+            /**
+             * @description Concrete builds available to select, including event-specific extra roster slots. The
+             *     union over every party, quantities summed.
+             */
             builds: components["schemas"]["EventSignupBuildView"][];
             /**
              * @description Whether the member declared at least one weapon. When `false`, self-service signup is not
@@ -12975,6 +13231,30 @@ export interface components {
              *     the prospective threshold merely by opening the menu.
              */
             is_already_registered: boolean;
+            /**
+             * @description The same builds grouped by party, in party order. Each build's `quantity` counts only that
+             *     party's seats.
+             */
+            parties: components["schemas"]["EventSignupPartyView"][];
+        };
+        /** @description The builds one party offers to a member signing up. */
+        EventSignupPartyView: {
+            /** @description Builds the party offers, with the party's own quantities. */
+            builds: components["schemas"]["EventSignupBuildView"][];
+            /** @description Name of the party's effective comp. */
+            comp_name: string;
+            /** @description Optional party label. */
+            name?: string | null;
+            /**
+             * Format: int64
+             * @description Party identifier.
+             */
+            party_id: number;
+            /**
+             * Format: int32
+             * @description 1-based order of the party inside the event.
+             */
+            position: number;
         };
         /** @description Aggregated loot split metrics linked to an event. */
         EventSplitStats: {
@@ -16604,6 +16884,16 @@ export interface components {
              */
             user_id?: number | null;
         };
+        /** @description Request body to reorder an event's parties. */
+        ReorderEventPartiesRequest: {
+            /**
+             * Format: int64
+             * @description Roster version the client last saw.
+             */
+            expected_roster_version: number;
+            /** @description Every party id of the event, in the wanted order. */
+            party_ids: number[];
+        };
         /** @description Caveats that explain gaps in the numbers above. */
         ReportDataQuality: {
             /** Format: int64 */
@@ -18233,6 +18523,29 @@ export interface components {
         UpdateEventBattlesRequest: {
             /** @description `AlbionBB` battle IDs to attach. Empty list removes every linked battle from the event. */
             battle_ids: string[];
+        };
+        /**
+         * @description Request body to change a party's comp and/or label.
+         * @example {
+         *       "comp_id": 3,
+         *       "expected_roster_version": 4,
+         *       "name": "Clap"
+         *     }
+         */
+        UpdateEventPartyRequest: {
+            /**
+             * Format: int64
+             * @description New comp. Members whose seat still exists in it keep that seat; the rest return to the
+             *     waiting list.
+             */
+            comp_id?: number | null;
+            /**
+             * Format: int64
+             * @description Roster version the client last saw.
+             */
+            expected_roster_version: number;
+            /** @description New label. An empty string clears it. */
+            name?: string | null;
         };
         /**
          * @description Request body to update an existing event.
@@ -27015,6 +27328,289 @@ export interface operations {
                 };
             };
             /** @description Conflict - caller belongs to no active guild in this alliance */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    create_event_party: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Event ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEventPartyRequest"];
+            };
+        };
+        responses: {
+            /** @description Party added; the roster after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseEventRoster"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - not the event creator and lacks events.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Event or comp not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Stale roster version, or a flash mass */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reorder_event_parties: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Event ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderEventPartiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Parties reordered; the roster after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseEventRoster"];
+                };
+            };
+            /** @description party_ids is not exactly the event's parties */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - not the event creator and lacks events.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Stale roster version, or a flash mass */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_event_party: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Event ID */
+                id: number;
+                /** @description Party ID */
+                party_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteEventPartyRequest"];
+            };
+        };
+        responses: {
+            /** @description Party removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseEventPartyChange"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - not the event creator and lacks events.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Event or party not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Last party, stale roster version, or a flash mass */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_event_party: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Event ID */
+                id: number;
+                /** @description Party ID */
+                party_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEventPartyRequest"];
+            };
+        };
+        responses: {
+            /** @description Party updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseEventPartyChange"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - not the event creator and lacks events.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Event, party or comp not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Stale roster version, or a flash mass */
             409: {
                 headers: {
                     [name: string]: unknown;
