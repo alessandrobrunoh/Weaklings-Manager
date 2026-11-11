@@ -92,6 +92,16 @@ import { EventBattlesTab } from './detail/event-battles-tab';
 import { EventGuildBadge } from './detail/event-guild-badge';
 import { EventHeader } from './detail/event-header';
 import { EventOverviewTab } from './detail/event-overview-tab';
+import { EventMySpot } from './detail/event-my-spot';
+import { EventRoleBoard } from './detail/event-role-board';
+import {
+  compareSeatsByRole,
+  partyRoleCounts,
+  roleColorVar,
+  roleGlyph as lobbyRoleGlyph,
+  roleLabelKey,
+  type PartyRoleCount,
+} from './detail/roster-lobby';
 import { EventSplitsTab } from './detail/event-splits-tab';
 import {
   ownershipListParams,
@@ -106,7 +116,7 @@ import {
  */
 const FILL_BUILD_VALUE = 'fill';
 
-type EventDetailTab = 'roster' | 'overview' | 'battles' | 'splits';
+type EventDetailTab = 'overview' | 'parties' | 'battles' | 'splits';
 
 type PendingConfirm =
   | { kind: 'archive' }
@@ -118,7 +128,7 @@ type PendingConfirm =
   | { kind: 'remove-participant'; userId: number; username: string };
 
 function isEventDetailTab(value: string): value is EventDetailTab {
-  return value === 'roster' || value === 'overview' || value === 'battles' || value === 'splits';
+  return value === 'overview' || value === 'parties' || value === 'battles' || value === 'splits';
 }
 
 /**
@@ -168,15 +178,6 @@ interface EventRosterParty {
   readonly seats: readonly EventRosterSeat[];
 }
 
-const ROSTER_ROLE_ORDER: readonly string[] = [
-  'tank',
-  'support',
-  'dps',
-  'brawler',
-  'healer',
-  'battle_mount',
-];
-
 interface AddEventMemberRequest {
   user_id: number;
   primary_build_id: number | null;
@@ -210,6 +211,8 @@ interface AddEventMemberRequest {
     EventGuildBadge,
     EventHeader,
     EventOverviewTab,
+    EventMySpot,
+    EventRoleBoard,
     EventSplitsTab,
   ],
   template: `
@@ -293,982 +296,496 @@ interface AddEventMemberRequest {
         (tabChange)="onTabChange($event)"
       />
 
-      <!-- ================= EVENT SUMMARY: status, meta, description, your registration ================= -->
-      <section class="card mb-3.5 p-3 sm:p-3.5">
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <!-- Left Info Block -->
-          <div class="space-y-1.5 min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <app-status-chip [value]="detail.status" />
-
-              @if (detail.call_to_arms) {
-                <span
-                  class="chip chip--warning font-bold text-xs inline-flex items-center gap-1"
-                  [appTooltip]="t('events.detail.cta_active')"
-                >
-                  <span class="cta-star">★</span> CTA
-                </span>
-              }
-
-              @if (detail.regear) {
-                <span
-                  class="chip chip--tonal text-xs inline-flex items-center gap-1"
-                  [appTooltip]="t('events.detail.regear_active')"
-                >
-                  <app-icon name="shield" size="0.75rem" />
-                  {{ t('events.regear') }}
-                </span>
-              }
-
-              <!-- Countdown Badge -->
-              @if (detail.status === 'live') {
-                <span
-                  class="chip chip--success font-mono text-xs font-semibold inline-flex items-center gap-1.5 animate-pulse"
-                >
-                  <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
-                  {{ t('events.detail.countdown_live') }}
-                </span>
-              } @else if (detail.status === 'scheduled') {
-                <span class="chip chip--info font-mono text-xs inline-flex items-center gap-1">
-                  <app-icon name="calendar" size="0.75rem" />
-                  {{ countdownText() }}
-                </span>
-              } @else {
-                <span class="chip font-mono text-xs text-[var(--color-text-secondary)]">
-                  {{ t('events.detail.countdown_ended') }}
-                </span>
-              }
-            </div>
-
-            <div
-              class="flex flex-wrap items-center gap-2.5 text-xs text-[var(--color-text-secondary)]"
-            >
-              <span class="inline-flex items-center gap-1 font-medium text-white">
+      <!-- ================= EVENT STRIP: status, times, comp, capacity, your status ================= -->
+      <section class="event-strip" [attr.aria-label]="detail.title">
+        <div class="event-strip__main">
+          <div class="event-strip__chips">
+            <app-status-chip [value]="detail.status" />
+            @if (detail.call_to_arms) {
+              <span class="chip chip--warning font-bold text-xs" [appTooltip]="t('events.detail.cta_active')">
+                <span aria-hidden="true">★</span> CTA
+              </span>
+            }
+            @if (detail.regear) {
+              <span class="chip chip--tonal text-xs inline-flex items-center gap-1" [appTooltip]="t('events.detail.regear_active')">
+                <app-icon name="shield" size="0.75rem" />
+                {{ t('events.regear') }}
+              </span>
+            }
+            @if (detail.status === 'live') {
+              <span class="chip chip--success font-mono text-xs font-semibold inline-flex items-center gap-1.5">
+                <span class="live-dot" aria-hidden="true"></span>
+                {{ t('events.detail.countdown_live') }}
+              </span>
+            } @else if (detail.status === 'scheduled') {
+              <span class="chip chip--info font-mono text-xs inline-flex items-center gap-1">
                 <app-icon name="calendar" size="0.75rem" />
-                {{ formatDate(detail.start_time_utc ?? detail.event_date_utc) }}
+                {{ countdownText() }}
               </span>
-              <span>Mass: {{ formatTime(detail.mass_time_utc ?? detail.event_date_utc) }}</span>
-              <span>Start: {{ formatTime(detail.start_time_utc ?? detail.event_date_utc) }}</span>
+            } @else {
+              <span class="chip font-mono text-xs">{{ t('events.detail.countdown_ended') }}</span>
+            }
+          </div>
 
-              <span class="text-[var(--color-text-tertiary)]">&bull;</span>
-
-              <span class="inline-flex items-center gap-1">
-                <app-icon name="package" size="0.75rem" />
-                <strong class="text-white font-semibold">{{
-                  detail.active_comp_name || detail.comp_name || t('events.detail.no_comp_linked')
-                }}</strong>
-              </span>
-
-              <span class="text-[var(--color-text-tertiary)]">&bull;</span>
-
-              <!-- Capacity Progress Pill -->
-              <div
-                class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[11px]"
-              >
-                <span>{{ t('events.detail.capacity') }}:</span>
-                <span class="font-mono font-bold text-white">
-                  {{ rosterFilledSeats() }}/{{ rosterSeatCount() }}
-                </span>
-                <div class="h-1 w-10 bg-[var(--color-border)] rounded-full overflow-hidden">
-                  <div
-                    class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                    [style.width.%]="
-                      rosterSeatCount() > 0 ? (rosterFilledSeats() / rosterSeatCount()) * 100 : 0
-                    "
-                  ></div>
-                </div>
-              </div>
+          <dl class="event-strip__facts">
+            <div class="event-strip__fact">
+              <dt>{{ t('events.lobby.date') }}</dt>
+              <dd>{{ formatDay(detail.start_time_utc ?? detail.event_date_utc) }}</dd>
             </div>
+            <div class="event-strip__fact">
+              <dt>{{ t('events.lobby.mass') }}</dt>
+              <dd>{{ formatTime(detail.mass_time_utc ?? detail.event_date_utc) }}</dd>
+            </div>
+            <div class="event-strip__fact">
+              <dt>{{ t('events.lobby.start') }}</dt>
+              <dd>{{ formatTime(detail.start_time_utc ?? detail.event_date_utc) }}</dd>
+            </div>
+            <div class="event-strip__fact">
+              <dt>{{ t('events.lobby.comp') }}</dt>
+              <dd>{{ detail.active_comp_name || detail.comp_name || t('events.detail.no_comp_linked') }}</dd>
+            </div>
+            <div class="event-strip__fact">
+              <dt>{{ t('events.detail.capacity') }}</dt>
+              <dd class="event-strip__capacity">
+                <span class="font-mono">{{ rosterFilledSeats() }}/{{ rosterSeatCount() }}</span>
+                <span class="event-strip__meter" aria-hidden="true">
+                  <span [style.width.%]="fillPercent(rosterFilledSeats(), rosterSeatCount())"></span>
+                </span>
+              </dd>
+            </div>
+          </dl>
 
-            @if (detail.description) {
-              <p class="text-[11px] text-[var(--color-text-secondary)] max-w-4xl line-clamp-2">
-                {{ detail.description }}
-              </p>
-            }
-          </div>
+          @if (detail.description) {
+            <p class="event-strip__description">{{ detail.description }}</p>
+          }
+        </div>
 
-          <!-- Right Participation Card -->
-          <div class="flex-shrink-0">
-            @if (currentParticipant(); as participation) {
-              <div
-                class="rounded-xl px-3 py-2 border border-[var(--color-success)] bg-[var(--color-success-container)] min-w-[240px] space-y-1.5"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-1.5">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-success">
-                      {{ t('events.detail.registered_as') }}
-                    </span>
-                  </div>
-                  <span class="chip chip--success text-[9px] font-bold uppercase px-1.5 py-0.2">
-                    {{
-                      ownRosterSeat()
-                        ? 'Titolare'
-                        : isCurrentUserOnRosterBench()
-                          ? 'Bench'
-                          : 'Iscritto'
-                    }}
-                  </span>
-                </div>
-
-                <div class="text-xs">
-                  <p class="font-semibold text-xs text-white truncate max-w-[14rem]">
-                    @if (participation.primary_build_id === null) {
-                      {{ t('events.detail.fill_option') }}
-                    } @else {
-                      {{
-                        participation.primary_build_name ||
-                          'Build #' + participation.primary_build_id
-                      }}
-                    }
-                  </p>
-                </div>
-
-                @if (!detail.archived_at) {
-                  <div class="flex items-center gap-1 pt-1.5 border-t border-[var(--color-success)]">
-                    <button
-                      type="button"
-                      class="btn btn--outline btn--sm text-[10px] py-0.5 px-2 flex-1"
-                      (click)="toggleJoinForm()"
-                    >
-                      {{ t('events.detail.change_build') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn--ghost btn--sm text-[10px] py-0.5 px-2 text-error hover:bg-[var(--color-error-container)]"
-                      (click)="leave(detail.id)"
-                    >
-                      {{ t('events.leave') }}
-                    </button>
-                  </div>
-                }
-              </div>
-            } @else if (!detail.archived_at) {
-              <div
-                class="rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-center gap-3"
-              >
-                <div>
-                  <div class="flex items-center gap-1.5">
-                    <app-icon name="users" size="0.75rem" />
-                    <span class="text-xs font-semibold text-white">{{ t('events.detail.not_registered') }}</span>
-                  </div>
-                  <p class="text-[10px] text-[var(--color-text-secondary)]">
-                    Prenota il tuo posto nella comp.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="btn btn--primary btn--sm text-xs py-1 px-3 whitespace-nowrap"
-                  (click)="toggleJoinForm()"
-                >
-                  <app-icon name="plus" size="0.75rem" />
-                  {{ t('events.participate') }}
-                </button>
-              </div>
-            }
-          </div>
+        <div class="event-strip__me">
+          @if (ownRosterSeat(); as seat) {
+            <button
+              type="button"
+              class="my-status my-status--seated"
+              [style.--role-accent]="roleAccent(seat.role)"
+              (click)="onTabChange('overview')"
+            >
+              <span class="my-status__label">{{ t('events.lobby.yourSpot') }}</span>
+              <span class="my-status__value">
+                {{ t('events.lobby.statusSeated', { role: rosterSeatRoleLabel(seat), party: seat.party_number, position: seat.position }) }}
+              </span>
+            </button>
+          } @else if (currentParticipant()) {
+            <button type="button" class="my-status my-status--waiting" (click)="onTabChange('overview')">
+              <span class="my-status__label">{{ t('events.lobby.yourSpot') }}</span>
+              <span class="my-status__value">{{ t('events.lobby.statusWaiting') }}</span>
+            </button>
+          } @else if (!detail.archived_at) {
+            <button type="button" class="btn btn--primary my-status__join" (click)="toggleJoinForm()">
+              <app-icon name="plus" size="1rem" />
+              {{ t('events.participate') }}
+            </button>
+          }
         </div>
       </section>
 
       <app-page-stack>
+        @if ((tab() === 'overview' || tab() === 'parties') && rosterSnapshotState() !== 'ready') {
+          @if (rosterSnapshotState() === 'error') {
+            <section class="card p-6 border-[var(--color-error)] text-center space-y-2">
+              <app-icon name="alert" size="2rem" color="var(--color-danger)" />
+              <h2 class="text-sm font-bold text-[var(--color-text)]">{{ t('events.roster.unavailable') }}</h2>
+              <p class="text-xs text-[var(--color-text-secondary)]">{{ rosterSnapshotError() }}</p>
+              <button type="button" class="btn btn--outline btn--sm mt-2" (click)="load()">
+                {{ t('common.retry') }}
+              </button>
+            </section>
+          } @else {
+            <section class="card p-6 text-center">
+              <app-loading [label]="t('events.roster.loading')" />
+            </section>
+          }
+        }
+
         @switch (tab()) {
-          <!-- ================= TAB 1: ROSTER & COMPOSITION BUILDER ================= -->
-          @case ('roster') {
+          <!-- ================= TAB 1: OVERVIEW — your spot and the role board ================= -->
+          @case ('overview') {
             @if (rosterSnapshotState() === 'ready' && rosterSnapshot(); as roster) {
-              <div class="event-roster-shell space-y-4">
-                <p class="event-detail__roster-live sr-only" aria-live="polite" aria-atomic="true">
-                  {{ rosterAnnouncement() }}
-                </p>
+              <div class="lobby-overview">
+                <app-event-my-spot
+                  [participant]="currentParticipant()"
+                  [seat]="ownRosterSeat()"
+                  [canJoin]="!detail.archived_at"
+                  [archived]="!!detail.archived_at"
+                  [weaponIcon]="mySpotWeaponIcon()"
+                  [items]="mySpotItems()"
+                  [mainAbilities]="ownSeatAbilityRows()"
+                  [swapAbilities]="ownSeatSwapAbilityRows()"
+                  (join)="toggleJoinForm()"
+                  (changeBuild)="toggleJoinForm()"
+                  (leave)="leave(detail.id)"
+                  (showInParty)="showOwnSeatInParty()"
+                />
+                <app-event-role-board
+                  [seats]="roster.seats"
+                  [bench]="roster.bench"
+                  [currentUserId]="currentUserId()"
+                  [buildIcons]="buildIconMap()"
+                  (inspect)="onSeatWeaponClick($event)"
+                />
+              </div>
+            }
+          }
 
-                <!-- 3-COLUMN COMPACT LAYOUT: SIDEBAR PANCHINA | CONTENT PARTY | SIDEBAR CON EQUIP -->
-                <div
-                  class="event-roster-layout grid grid-cols-1 lg:grid-cols-[250px_1fr_310px] xl:grid-cols-[270px_1fr_340px] gap-4 items-start"
-                >
-                  <!-- 1. LEFT SIDEBAR: PANCHINA & CONTROLLI -->
-                  <aside
-                    class="event-roster-sidebar space-y-3 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin"
-                  >
-                    <!-- Panchina Card -->
-                    <div
-                      class="event-roster-bench card p-0 overflow-hidden transition-all shadow-sm"
-                      [class.border-[var(--color-border)]]="!isDropTargetBench()"
-                      [class.border-[var(--color-warning)]]="isDropTargetBench()"
-                      [class.border-dashed]="isDropTargetBench()"
-                      [class.ring-2]="isDropTargetBench()"
-                      [class.ring-amber-500/50]="isDropTargetBench()"
-                      [class.bg-[var(--color-warning-container)]]="isDropTargetBench()"
-                      (dragover)="onBenchDragOver($event)"
-                      (dragleave)="onBenchDragLeave($event)"
-                      (drop)="onBenchDrop($event)"
+          <!-- ================= TAB 2: PARTIES — the live board ================= -->
+          @case ('parties') {
+            @if (rosterSnapshotState() === 'ready' && rosterSnapshot(); as roster) {
+              <div class="party-room">
+                <p class="sr-only" aria-live="polite" aria-atomic="true">{{ rosterAnnouncement() }}</p>
+
+                <div class="party-toolbar">
+                  <div class="party-toolbar__status">
+                    <span class="live-dot" aria-hidden="true"></span>
+                    <strong>{{ t('events.lobby.live') }}</strong>
+                    <span class="party-toolbar__hint">{{ t('events.lobby.liveHint') }}</span>
+                  </div>
+                  <div class="party-toolbar__actions">
+                    <label class="sr-only" for="party-spec-filter">{{ t('events.lobby.specFilter') }}</label>
+                    <select
+                      id="party-spec-filter"
+                      class="select select--sm party-toolbar__spec"
+                      [value]="selectedSpecializationKey()"
+                      (change)="selectSpecialization($event)"
                     >
-                      <!-- Bench Header -->
-                      <div
-                        class="bg-[var(--color-surface-1)] p-3 border-b border-[var(--color-border)] space-y-2"
-                      >
-                        <div class="flex items-center justify-between">
-                          <div class="flex items-center gap-1.5">
-                            <app-icon name="users" size="0.875rem" />
-                            <h3 class="font-bold text-xs uppercase tracking-wider text-white">
-                              {{ t('events.detail.unassigned_signups') }}
-                            </h3>
-                          </div>
-                          <span class="chip chip--warning font-mono text-[10px] font-bold">
-                            {{ roster.bench.length }}
-                          </span>
-                        </div>
-
-                        <!-- Search in Bench -->
-                        @if (roster.bench.length > 0) {
-                          <input
-                            class="input input--sm text-xs py-1"
-                            type="search"
-                            [placeholder]="t('events.roster.searchBench')"
-                            [value]="benchSearch()"
-                            (input)="onBenchSearchInput($event)"
-                          />
-                        }
-                      </div>
-
-                      @if (isDropTargetBench()) {
-                        <div
-                          class="m-2 p-2.5 rounded-lg border-2 border-dashed border-[var(--color-warning)] bg-[var(--color-warning-container)] text-warning text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2"
-                        >
-                          <app-icon name="users" size="0.875rem" />
-                          {{ t('events.detail.drop_to_bench') }}
-                        </div>
+                      <option value="">{{ t('events.lobby.allSpecs') }}</option>
+                      @for (item of specializationCatalog(); track item.id + ':' + item.type) {
+                        <option [value]="specializationKey(item)">{{ item.name }}</option>
                       }
-
-                      <!-- Bench Members List -->
-                      <div class="p-2 space-y-1.5 max-h-[300px] overflow-y-auto scrollbar-thin">
-                        @for (member of filteredRosterBench(); track member.user_id) {
-                          <div
-                            class="surface p-2 hover:border-[var(--color-primary)] transition-all space-y-1 select-none rounded-lg"
-                            [class.border-[var(--color-warning)]]="rosterAssignTarget() !== null"
-                            [class.bg-[var(--color-warning-container)]]="rosterAssignTarget() !== null"
-                            [class.opacity-40]="draggedBenchMember()?.user_id === member.user_id"
-                            [attr.draggable]="canManageParticipants() && !rosterCommandSaving()"
-                            (dragstart)="onBenchMemberDragStart($event, member)"
-                            (dragend)="onDragEnd()"
-                          >
-                            <div class="flex items-center justify-between gap-1.5">
-                              <div class="flex items-center gap-1.5 min-w-0">
-                                @if (canManageParticipants()) {
-                                  <span
-                                    class="text-[var(--color-text-tertiary)] hover:text-white cursor-grab active:cursor-grabbing flex-shrink-0"
-                                    [appTooltip]="t('events.detail.unassigned_hint')"
-                                    tooltipPosition="top"
-                                  >
-                                    <app-icon name="grip" size="0.75rem" />
-                                  </span>
-                                }
-                                <app-avatar [username]="member.username" size="xs" />
-                                <span class="text-xs font-semibold text-white truncate">
-                                  {{ member.username }}
-                                </span>
-                                <app-event-guild-badge [guild]="member.guild" />
-                              </div>
-
-                              @if (canManageParticipants() && rosterAssignTarget(); as target) {
-                                <button
-                                  type="button"
-                                  class="btn btn--primary btn--sm text-[10px] py-0.5 px-2 whitespace-nowrap"
-                                  [disabled]="rosterCommandSaving()"
-                                  (click)="assignBenchMemberToServerSeat(member.user_id)"
-                                >
-                                  P{{ target.party_number }} #{{ target.position }}
-                                </button>
-                              } @else if (canManageParticipants()) {
-                                <button
-                                  type="button"
-                                  class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-error hover:bg-[var(--color-error-container)]"
-                                  [disabled]="rosterCommandSaving()"
-                                  (click)="requestRemoveParticipant(member)"
-                                  [appTooltip]="t('events.detail.remove_participant')"
-                                  tooltipPosition="top"
-                                  [attr.aria-label]="
-                                    t('events.detail.remove_participant') + ': ' + member.username
-                                  "
-                                >
-                                  <app-icon name="user-x" size="0.75rem" />
-                                </button>
-                              }
-                            </div>
-
-                            <div class="text-[10px] text-[var(--color-text-secondary)] space-y-0.5">
-                              <div class="flex items-center justify-between gap-1">
-                                <span class="text-[var(--color-text-tertiary)]">1ª:</span>
-                                <span class="font-medium text-white truncate max-w-[10rem]">
-                                  {{ member.primary_build_name || 'Generico' }}
-                                </span>
-                              </div>
-                              @if (member.secondary_build_name) {
-                                <div class="flex items-center justify-between gap-1">
-                                  <span class="text-[var(--color-text-tertiary)]">2ª:</span>
-                                  <span
-                                    class="text-[var(--color-text-secondary)] truncate max-w-[10rem]"
-                                  >
-                                    {{ member.secondary_build_name }}
-                                  </span>
-                                </div>
-                              }
-                            </div>
-                          </div>
-                        } @empty {
-                          <div class="py-6 text-center text-xs text-[var(--color-text-secondary)]">
-                            Panchina vuota
-                          </div>
-                        }
-                      </div>
-                    </div>
-
-                    <!-- Roster Controls & Actions Card -->
-                    <div class="event-roster-controls card p-3 space-y-3">
-                      <div class="flex items-center justify-between">
-                        <span
-                          class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-                        >
-                          {{ t('events.detail.roster_capacity') }}
-                        </span>
-                        <span class="font-mono text-xs font-bold text-white">
-                          {{ rosterFilledSeats() }} / {{ rosterSeatCount() }}
-                        </span>
-                      </div>
-                      <div
-                        class="h-1.5 w-full bg-[var(--color-surface-2)] rounded-full overflow-hidden"
+                    </select>
+                    @if (canManageParticipants()) {
+                      <button
+                        type="button"
+                        class="btn btn--primary btn--sm"
+                        [disabled]="rosterCommandSaving() || roster.bench.length === 0"
+                        (click)="autoFillServerRoster()"
+                        [appTooltip]="t('events.detail.auto_fill_hint')"
                       >
-                        <div
-                          class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                          [style.width.%]="
-                            rosterSeatCount() > 0
-                              ? (rosterFilledSeats() / rosterSeatCount()) * 100
-                              : 0
-                          "
-                        ></div>
-                      </div>
-
-                      <!-- Weapon Spec Filter -->
-                      <div class="space-y-1">
-                        <span
-                          class="text-[10px] text-[var(--color-text-secondary)] font-medium block"
-                          >Filtro Spec:</span
-                        >
-                        <select
-                          class="select select--sm text-xs py-1 px-2 h-7 w-full"
-                          aria-label="Filtro spec arma"
-                          [value]="selectedSpecializationKey()"
-                          (change)="selectSpecialization($event)"
-                        >
-                          <option value="">Tutte le spec</option>
-                          @for (item of specializationCatalog(); track item.id + ':' + item.type) {
-                            <option [value]="specializationKey(item)">{{ item.name }}</option>
-                          }
-                        </select>
-                      </div>
-
-                      <!-- Management actions -->
-                      <div class="grid gap-1.5 pt-2 border-t border-[var(--color-border)]">
-                        @if (canEdit()) {
-                          <button
-                            type="button"
-                            class="btn btn--outline btn--sm text-xs w-full justify-center"
-                            (click)="openRosterRoleManager()"
-                          >
-                            <app-icon name="plus" size="0.75rem" />
-                            Ruolo extra
-                          </button>
-                        }
-
-                        @if (canManageParticipants()) {
-                          <button
-                            type="button"
-                            class="btn btn--outline btn--sm text-xs w-full justify-center"
-                            [disabled]="memberSaving() || rosterCommandSaving()"
-                            (click)="openMemberPicker()"
-                          >
-                            <app-icon name="plus" size="0.75rem" />
-                            Add a Member
-                          </button>
-                          <button
-                            type="button"
-                            class="btn btn--tonal btn--sm text-xs w-full justify-center"
-                            [disabled]="rosterCommandSaving() || roster.bench.length === 0"
-                            (click)="autoFillServerRoster()"
-                            [appTooltip]="t('events.detail.auto_fill_hint')"
-                          >
-                            <app-icon name="sparkles" size="0.75rem" />
-                            {{ t('events.detail.auto_fill') }}
-                          </button>
-                          @if (canViewRosterSuggestions()) {
-                            <button
-                              type="button"
-                              class="btn btn--outline btn--sm text-xs w-full justify-center"
-                              [disabled]="rosterCommandSaving() || rosterSuggestionsLoading() || roster.bench.length === 0"
-                              (click)="openRosterSuggestions()"
-                              [appTooltip]="'Calcola la migliore assegnazione per Item Power, senza applicarla'"
-                            >
-                              <app-icon name="zap" size="0.75rem" />
-                              {{ rosterSuggestionsLoading() ? t('events.roster.calculating') : t('events.roster.suggest') }}
-                            </button>
-                          }
-                        }
-
+                        <app-icon name="sparkles" size="0.875rem" />
+                        {{ t('events.detail.auto_fill') }}
+                      </button>
+                      @if (canViewRosterSuggestions()) {
                         <button
                           type="button"
-                          class="btn btn--ghost btn--sm text-xs w-full justify-center"
-                          (click)="copyRosterForDiscord()"
+                          class="btn btn--outline btn--sm"
+                          [disabled]="rosterCommandSaving() || rosterSuggestionsLoading() || roster.bench.length === 0"
+                          (click)="openRosterSuggestions()"
                         >
-                          <app-icon name="discord" size="0.875rem" />
-                          {{ t('events.detail.copy_discord') }}
+                          <app-icon name="zap" size="0.875rem" />
+                          {{ rosterSuggestionsLoading() ? t('events.roster.calculating') : t('events.roster.suggest') }}
                         </button>
-                      </div>
+                      }
+                      <button
+                        type="button"
+                        class="btn btn--outline btn--sm"
+                        [disabled]="memberSaving() || rosterCommandSaving()"
+                        (click)="openMemberPicker()"
+                      >
+                        <app-icon name="plus" size="0.875rem" />
+                        {{ t('events.lobby.addMember') }}
+                      </button>
+                    }
+                    @if (canEdit()) {
+                      <button type="button" class="btn btn--outline btn--sm" (click)="openRosterRoleManager()">
+                        <app-icon name="settings" size="0.875rem" />
+                        {{ t('events.lobby.extraRoles') }}
+                      </button>
+                    }
+                    <button type="button" class="btn btn--ghost btn--sm" (click)="copyRosterForDiscord()">
+                      <app-icon name="discord" size="0.875rem" />
+                      {{ t('events.detail.copy_discord') }}
+                    </button>
+                  </div>
+                </div>
+
+                @if (rosterSwapSource(); as source) {
+                  <div class="party-mode" role="status">
+                    <app-icon name="refresh" size="1rem" />
+                    <div class="min-w-0 flex-1">
+                      <p class="party-mode__title">{{ t('events.lobby.pickedSeat', { name: source.participant?.username ?? '' }) }}</p>
+                      <p class="party-mode__hint">{{ t('events.lobby.pickedHint') }}</p>
                     </div>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="cancelRosterCommandMode()">
+                      {{ t('events.detail.cancel_swap') }}
+                    </button>
+                  </div>
+                } @else if (rosterAssignTarget(); as target) {
+                  <div class="party-mode" role="status">
+                    <app-icon name="plus" size="1rem" />
+                    <p class="party-mode__title min-w-0 flex-1">
+                      {{ t('events.detail.pick_bench_member', { party: target.party_number, position: target.position, build: target.build_name }) }}
+                    </p>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="cancelRosterCommandMode()">
+                      {{ t('events.detail.cancel_swap') }}
+                    </button>
+                  </div>
+                } @else if (canManageParticipants()) {
+                  <p class="party-room__hint">{{ t('events.lobby.manageHint') }}</p>
+                }
+
+                <div class="party-room__layout">
+                  <!-- Waiting list: signed-up players without a seat -->
+                  <aside
+                    class="party-bench"
+                    [class.party-bench--drop]="isDropTargetBench()"
+                    [attr.aria-label]="t('events.lobby.waitingList')"
+                    (dragover)="onBenchDragOver($event)"
+                    (dragleave)="onBenchDragLeave($event)"
+                    (drop)="onBenchDrop($event)"
+                  >
+                    <header class="party-bench__head">
+                      <h3 class="party-bench__title">{{ t('events.lobby.waitingList') }}</h3>
+                      <span class="party-bench__count">{{ roster.bench.length }}</span>
+                    </header>
+                    @if (roster.bench.length > 0) {
+                      <input
+                        class="input input--sm"
+                        type="search"
+                        [attr.aria-label]="t('events.lobby.benchSearch')"
+                        [placeholder]="t('events.lobby.benchSearch')"
+                        [value]="benchSearch()"
+                        (input)="onBenchSearchInput($event)"
+                      />
+                    }
+                    @if (isDropTargetBench()) {
+                      <p class="party-bench__drop">{{ t('events.detail.drop_to_bench') }}</p>
+                    }
+                    <ul class="party-bench__list">
+                      @for (member of filteredRosterBench(); track member.user_id) {
+                        <li
+                          class="bench-card"
+                          [class.bench-card--mine]="member.user_id === currentUserId()"
+                          [class.bench-card--dragging]="draggedBenchMember()?.user_id === member.user_id"
+                          [class.bench-card--draggable]="canManageParticipants()"
+                          [attr.draggable]="canManageParticipants() && !rosterCommandSaving()"
+                          (dragstart)="onBenchMemberDragStart($event, member)"
+                          (dragend)="onDragEnd()"
+                        >
+                          <div class="bench-card__who">
+                            <app-avatar [username]="member.username" size="sm" />
+                            <div class="min-w-0">
+                              <p class="bench-card__name">
+                                {{ member.username }}
+                                @if (member.user_id === currentUserId()) {
+                                  <span class="seat__you">{{ t('events.lobby.you') }}</span>
+                                }
+                              </p>
+                              <p class="bench-card__builds">
+                                <span>{{ member.primary_build_id === null ? t('events.detail.fill_option') : member.primary_build_name }}</span>
+                                @if (member.secondary_build_name) {
+                                  <span class="bench-card__alt">· {{ member.secondary_build_name }}</span>
+                                }
+                              </p>
+                            </div>
+                            <app-event-guild-badge [guild]="member.guild" />
+                          </div>
+                          @if (canManageParticipants()) {
+                            @if (rosterAssignTarget(); as target) {
+                              <button
+                                type="button"
+                                class="btn btn--primary btn--sm bench-card__place"
+                                [disabled]="rosterCommandSaving()"
+                                (click)="assignBenchMemberToServerSeat(member.user_id)"
+                              >
+                                {{ t('events.lobby.placeHere', { party: target.party_number, position: target.position }) }}
+                              </button>
+                            } @else {
+                              <button
+                                type="button"
+                                class="icon-btn icon-btn--danger"
+                                [disabled]="rosterCommandSaving()"
+                                (click)="requestRemoveParticipant(member)"
+                                [appTooltip]="t('events.detail.remove_participant')"
+                                [attr.aria-label]="t('events.detail.remove_participant') + ': ' + member.username"
+                              >
+                                <app-icon name="user-x" size="0.875rem" />
+                              </button>
+                            }
+                          }
+                        </li>
+                      } @empty {
+                        <li class="party-bench__empty">{{ t('events.lobby.waitingEmpty') }}</li>
+                      }
+                    </ul>
                   </aside>
 
-                  <!-- 2. CENTER COLUMN: CONTENT PARTY -->
-                  <div class="event-roster-main space-y-4 min-w-0">
-                    <!-- Active swap / assign notice banner -->
-                    @if (rosterSwapSource(); as source) {
-                      <div
-                        class="card p-3 border border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse"
-                      >
-                        <div class="flex items-center gap-2 text-xs font-semibold text-white">
-                          <app-icon
-                            name="refresh"
-                            size="1rem"
-                            class="text-[var(--color-primary)]"
-                          />
-                          <span>{{ t('events.detail.swap_destination', { name: source.participant?.username ?? '', build: source.build_name ?? '' }) }}</span>
-                        </div>
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm text-xs"
-                          (click)="cancelRosterCommandMode()"
-                        >
-                          {{ t('events.detail.cancel_swap') }}
-                        </button>
-                      </div>
-                    } @else if (rosterAssignTarget(); as target) {
-                      <div
-                        class="card p-3 border border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse"
-                      >
-                        <div class="flex items-center gap-2 text-xs font-semibold text-white">
-                          <app-icon name="plus" size="1rem" class="text-[var(--color-primary)]" />
-                          <span>{{ t('events.detail.pick_bench_member', { party: target.party_number ?? '', position: target.position ?? '', build: target.build_name ?? '' }) }}</span>
-                        </div>
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm text-xs"
-                          (click)="cancelRosterCommandMode()"
-                        >
-                          {{ t('events.detail.cancel_swap') }}
-                        </button>
-                      </div>
-                    }
-
-                    <!-- Party tabs appear only when the comp spans more than one 20-player party. -->
-                    @if (rosterParties().length > 1) {
-                      <div
-                        class="flex gap-1 overflow-x-auto border-b border-[var(--color-border)]"
-                        role="tablist"
-                        aria-label="Parties"
-                      >
-                        @for (party of rosterParties(); track party.partyNumber) {
-                          <button
-                            type="button"
-                            role="tab"
-                            class="shrink-0 border-b-2 border-transparent px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] focus-visible:outline-offset-[-2px]"
-                            [class.event-detail__party-tab--active]="activeRosterParty()?.partyNumber === party.partyNumber"
-                            [attr.aria-selected]="
-                              activeRosterParty()?.partyNumber === party.partyNumber
-                            "
-                            [attr.tabindex]="
-                              activeRosterParty()?.partyNumber === party.partyNumber ? 0 : -1
-                            "
-                            [attr.aria-controls]="'event-party-panel-' + party.partyNumber"
-                            (click)="selectRosterParty(party.partyNumber)"
-                            (keydown)="onRosterPartyKeydown($event, party.partyNumber)"
-                          >
-                            {{ rosterPartyName(party) }}
-                            <span
-                              class="ml-1 font-mono text-[10px] text-[var(--color-text-tertiary)]"
-                            >
-                              {{ rosterPartyFilledSeats(party) }}/{{ party.seats.length }}
-                            </span>
-                          </button>
-                        }
-                      </div>
-                    }
-
-                    @if (activeRosterParty(); as party) {
-                      <section
-                        class="event-roster-party card overflow-hidden border border-[var(--color-border)] p-0 shadow-sm"
-                        role="tabpanel"
-                        [id]="'event-party-panel-' + party.partyNumber"
-                        [attr.aria-label]="rosterPartyName(party)"
-                      >
-                        <!-- Party Header -->
-                        <header
-                          class="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-3.5 py-2.5"
-                        >
-                          <div class="flex items-center gap-2">
-                            <h3 class="text-xs font-bold uppercase tracking-wider text-white">
-                              {{ rosterPartyName(party) }}
+                  <!-- Parties: every party side by side so players can be moved between them -->
+                  <div class="party-grid">
+                    @for (party of rosterParties(); track party.partyNumber) {
+                      <section class="party-card" [attr.aria-labelledby]="'party-heading-' + party.partyNumber">
+                        <header class="party-card__head">
+                          <div class="party-card__title-row">
+                            <h3 class="party-card__title" [id]="'party-heading-' + party.partyNumber">
+                              {{ t('events.lobby.party', { number: party.partyNumber }) }}
                             </h3>
-                            <span class="text-[11px] font-mono text-[var(--color-text-secondary)]">
-                              ({{ party.seats.length }} posti)
+                            <span class="party-card__count">
+                              {{ t('events.lobby.seatsCount', { filled: rosterPartyFilledSeats(party), total: party.seats.length }) }}
                             </span>
                           </div>
-
-                          <div class="flex items-center gap-2">
-                            <div
-                              class="h-1.5 w-14 bg-[var(--color-surface-2)] rounded-full overflow-hidden"
-                            >
-                              <div
-                                class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                                [style.width.%]="
-                                  (rosterPartyFilledSeats(party) / party.seats.length) * 100
-                                "
-                              ></div>
-                            </div>
-                            <span class="font-mono text-xs font-bold text-white">
-                              {{ rosterPartyFilledSeats(party) }}/{{ party.seats.length }}
-                            </span>
+                          <div class="party-card__meter" aria-hidden="true">
+                            <span [style.width.%]="fillPercent(rosterPartyFilledSeats(party), party.seats.length)"></span>
                           </div>
+                          <ul class="party-card__roles">
+                            @for (count of partyRoles(party); track count.role) {
+                              <li class="party-card__role" [style.--role-accent]="roleAccent(count.role)">
+                                <span class="party-card__role-dot" aria-hidden="true"></span>
+                                {{ roleNameFor(count.role) }}
+                                <span class="font-mono">{{ count.filled }}/{{ count.total }}</span>
+                              </li>
+                            }
+                          </ul>
                         </header>
 
-                        <!-- Seats List -->
-                        <ol
-                          class="event-roster-seats divide-y divide-[var(--color-border)]"
-                          [attr.aria-label]="rosterPartyName(party)"
-                        >
-                          @for (
-                            seat of party.seats;
-                            track seat.party_number + ':' + seat.position
-                          ) {
+                        <ol class="party-card__seats" [attr.aria-label]="t('events.lobby.party', { number: party.partyNumber })">
+                          @for (seat of party.seats; track seat.key + ':' + (seat.participant?.user_id ?? 'open')) {
                             <li
-                              class="event-roster-seat px-3 py-2 transition-all flex items-center justify-between gap-2.5 hover:bg-[var(--color-surface-hover)] select-none cursor-pointer"
-                              [class]="roleBorderClass(seat.role)"
-                              [class.bg-[var(--color-surface-2)]]="
-                                rosterSwapSource()?.key === rosterSeatKey(seat) ||
-                                activeInspectSeat()?.key === seat.key
-                              "
-                              [class.ring-1]="activeInspectSeat()?.key === seat.key"
-                              [class.ring-[var(--color-primary)]]="
-                                activeInspectSeat()?.key === seat.key
-                              "
-                              [class.ring-2]="
-                                rosterSwapSource()?.key === rosterSeatKey(seat) ||
-                                dropTargetSeatKey() === rosterSeatKey(seat)
-                              "
-                              [class.opacity-40]="draggedSeat()?.key === rosterSeatKey(seat)"
-                              [attr.draggable]="
-                                canManageParticipants() &&
-                                seat.participant !== null &&
-                                !rosterCommandSaving()
-                              "
+                              class="seat"
+                              [id]="'event-seat-' + seat.key"
+                              [style.--role-accent]="roleAccent(seat.role)"
+                              [class.seat--open]="seat.participant === null"
+                              [class.seat--mine]="seat.participant !== null && seat.participant.user_id === currentUserId()"
+                              [class.seat--picked]="rosterSwapSource()?.key === seat.key"
+                              [class.seat--target]="rosterAssignTarget()?.key === seat.key"
+                              [class.seat--drop]="dropTargetSeatKey() === seat.key"
+                              [class.seat--dragging]="draggedSeat()?.key === seat.key"
+                              [class.seat--highlight]="highlightedSeatKey() === seat.key"
+                              [attr.draggable]="canManageParticipants() && seat.participant !== null && !rosterCommandSaving()"
                               (dragstart)="onSeatDragStart($event, seat)"
                               (dragend)="onDragEnd()"
                               (dragover)="onSeatDragOver($event, seat)"
                               (dragleave)="onSeatDragLeave($event, seat)"
                               (drop)="onSeatDrop($event, seat)"
-                              (click)="onRosterSeatClick(seat)"
                             >
-                              <!-- Left: Grip, Weapon Icon, Role & Build -->
-                              <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                                @if (canManageParticipants() && seat.participant) {
-                                  <span
-                                    class="text-[var(--color-text-tertiary)] hover:text-white cursor-grab active:cursor-grabbing flex-shrink-0"
-                                    [appTooltip]="t('events.detail.swap_selected')"
-                                    tooltipPosition="top"
-                                  >
-                                    <app-icon name="grip" size="0.75rem" />
-                                  </span>
+                              <button
+                                type="button"
+                                class="seat__weapon"
+                                (click)="onSeatWeaponClick(seat)"
+                                (mouseenter)="onSeatWeaponMouseEnter(seat, $event)"
+                                (mouseleave)="onSeatWeaponMouseLeave()"
+                                [attr.aria-label]="t('events.lobby.buildDetails', { build: seat.build_name })"
+                              >
+                                @if (seatWeaponIconUrl(seat); as icon) {
+                                  <img [src]="icon" alt="" loading="lazy" />
+                                } @else {
+                                  <span aria-hidden="true">{{ roleGlyphFor(seat.role) }}</span>
                                 }
+                              </button>
 
-                                <!-- Weapon Icon: Hover shows spell tooltip, Click opens details dialog & selects seat in sidebar -->
-                                <button
-                                  type="button"
-                                  class="relative flex-shrink-0 h-9 w-9 rounded-lg p-0.5 flex items-center justify-center border border-[var(--color-border)] bg-[var(--color-surface-1)] cursor-pointer group hover:border-[var(--color-primary)] hover:scale-105 transition-all focus:outline-none"
-                                  (click)="onSeatWeaponClick(seat)"
-                                  (mouseenter)="onSeatWeaponMouseEnter(seat, $event)"
-                                  (mouseleave)="onSeatWeaponMouseLeave()"
-                                  [attr.aria-label]="'Ispeziona build ' + seat.build_name"
-                                >
-                                  @if (seatWeaponIconUrl(seat); as icon) {
-                                    <img
-                                      [src]="icon"
-                                      [alt]="seat.build_name"
-                                      class="h-full w-full object-contain pointer-events-none"
-                                      loading="lazy"
-                                    />
-                                  } @else {
-                                    <span
-                                      class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]"
-                                    >
-                                      {{ roleGlyph(seat.role) }}
-                                    </span>
-                                  }
-                                </button>
-
-                                <!-- Build, Role & Occupant -->
-                                <div class="min-w-0 flex-1">
-                                  <div class="flex items-center gap-1.5 flex-wrap">
-                                    <span
-                                      class="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded"
-                                      [class]="roleChip(seat.role)"
-                                    >
-                                      {{ rosterSeatRoleLabel(seat) }}
-                                    </span>
-                                    <span
-                                      class="text-xs font-bold text-white truncate max-w-[11rem]"
-                                    >
-                                      {{ seat.build_name }}
-                                    </span>
-                                    <span
-                                      class="text-[10px] font-mono text-[var(--color-text-secondary)]"
-                                    >
-                                      #{{ seat.position }}
-                                    </span>
-                                  </div>
-
-                                  <!-- Occupant details -->
-                                  <div class="mt-0.5 flex items-center gap-2 min-w-0">
-                                    @if (seat.participant; as participant) {
-                                      <div class="flex items-center gap-1.5 min-w-0">
-                                        <app-avatar [username]="participant.username" size="xs" />
-                                        <span
-                                          class="text-xs font-medium truncate"
-                                          [class.text-[var(--color-primary)]]="
-                                            participant.user_id === currentParticipant()?.user_id
-                                          "
-                                          [class.font-bold]="
-                                            participant.user_id === currentParticipant()?.user_id
-                                          "
-                                          [class.text-white]="
-                                            participant.user_id !== currentParticipant()?.user_id
-                                          "
-                                        >
-                                          {{ participant.username }}
-                                        </span>
-
-                                        <app-event-guild-badge [guild]="participant.guild" />
-
-                                        @if (selectedSpecializationKey()) {
-                                          <span
-                                            class="font-mono text-[9px] font-bold px-1 py-0.2 rounded"
-                                            [class.bg-[var(--color-success)]/10]="
-                                              participantSpecLevel(participant) >= 100
-                                            "
-                                            [class.text-success]="
-                                              participantSpecLevel(participant) >= 100
-                                            "
-                                            [class.bg-[var(--color-warning-container)]]="
-                                              participantSpecLevel(participant) > 0 &&
-                                              participantSpecLevel(participant) < 100
-                                            "
-                                            [class.text-warning]="
-                                              participantSpecLevel(participant) > 0 &&
-                                              participantSpecLevel(participant) < 100
-                                            "
-                                            [class.text-[var(--color-text-disabled)]]="
-                                              participantSpecLevel(participant) === 0
-                                            "
-                                          >
-                                            {{ participantSpecLevel(participant) }}/120
-                                          </span>
-                                        }
-                                      </div>
-                                    } @else {
+                              <div class="seat__body">
+                                <p class="seat__build">
+                                  <span class="seat__build-name">{{ seat.build_name }}</span>
+                                  <span class="seat__role">{{ rosterSeatRoleLabel(seat) }}</span>
+                                </p>
+                                @if (seat.participant; as occupant) {
+                                  <p class="seat__occupant">
+                                    <app-avatar [username]="occupant.username" size="xs" />
+                                    <span class="seat__name">{{ occupant.username }}</span>
+                                    @if (occupant.user_id === currentUserId()) {
+                                      <span class="seat__you">{{ t('events.lobby.you') }}</span>
+                                    }
+                                    <app-event-guild-badge [guild]="occupant.guild" />
+                                    @if (selectedSpecializationKey()) {
                                       <span
-                                        class="text-[11px] italic text-[var(--color-text-disabled)]"
+                                        class="seat__spec"
+                                        [class.seat__spec--high]="participantSpecLevel(occupant) >= 100"
+                                        [class.seat__spec--mid]="participantSpecLevel(occupant) > 0 && participantSpecLevel(occupant) < 100"
                                       >
-                                        Posto libero
+                                        {{ participantSpecLevel(occupant) }}/120
                                       </span>
                                     }
-                                  </div>
-                                </div>
+                                  </p>
+                                } @else {
+                                  <p class="seat__occupant seat__occupant--open">{{ t('events.lobby.openSeat') }}</p>
+                                }
                               </div>
 
-                              <!-- Right: Quick actions -->
-                              <div class="flex items-center gap-1 flex-shrink-0">
-                                @if (canManageParticipants()) {
+                              @if (canManageParticipants()) {
+                                <div class="seat__actions">
                                   @if (rosterSwapSource(); as source) {
-                                    @if (source.key !== rosterSeatKey(seat)) {
+                                    @if (source.key !== seat.key) {
                                       <button
                                         type="button"
-                                        class="btn btn--primary btn--sm text-[10px] py-0.5 px-2"
+                                        class="btn btn--primary btn--sm"
                                         [disabled]="rosterCommandSaving()"
                                         (click)="swapServerRosterSeats(seat)"
                                       >
-                                        {{ t('events.detail.swap_here') }}
+                                        {{ seat.participant ? t('events.detail.swap_here') : t('events.lobby.moveHere') }}
                                       </button>
                                     }
-                                  } @else if (rosterAssignTarget(); as target) {
-                                    <!-- Waiting for bench pick -->
+                                  } @else if (rosterAssignTarget()) {
+                                    <!-- Waiting for a pick from the waiting list -->
                                   } @else if (seat.participant; as occupant) {
                                     <button
                                       type="button"
-                                      class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-white"
+                                      class="icon-btn"
                                       [disabled]="rosterCommandSaving()"
                                       (click)="beginRosterSwap(seat)"
                                       [appTooltip]="t('events.detail.swap_seat')"
-                                      tooltipPosition="top"
+                                      [attr.aria-label]="t('events.detail.swap_seat') + ': ' + occupant.username"
                                     >
-                                      <app-icon name="refresh" size="0.75rem" />
+                                      <app-icon name="refresh" size="0.875rem" />
                                     </button>
                                     <button
                                       type="button"
-                                      class="btn btn--ghost btn--sm p-1 text-error hover:bg-[var(--color-error-container)]"
+                                      class="icon-btn"
                                       [disabled]="rosterCommandSaving()"
                                       (click)="clearServerRosterSeat(seat)"
-                                      [appTooltip]="t('events.detail.move_to_bench')"
-                                      tooltipPosition="top"
+                                      [appTooltip]="t('events.lobby.unseat')"
+                                      [attr.aria-label]="t('events.lobby.unseat') + ': ' + occupant.username"
                                     >
-                                      <app-icon name="close" size="0.75rem" />
+                                      <app-icon name="chevron-left" size="0.875rem" />
                                     </button>
                                     <button
                                       type="button"
-                                      class="btn btn--ghost btn--sm p-1 text-error hover:bg-[var(--color-error-container)]"
+                                      class="icon-btn icon-btn--danger"
                                       [disabled]="rosterCommandSaving()"
                                       (click)="requestRemoveParticipant(occupant)"
                                       [appTooltip]="t('events.detail.remove_participant')"
-                                      tooltipPosition="top"
-                                      [attr.aria-label]="
-                                        t('events.detail.remove_participant') + ': ' + occupant.username
-                                      "
+                                      [attr.aria-label]="t('events.detail.remove_participant') + ': ' + occupant.username"
                                     >
-                                      <app-icon name="user-x" size="0.75rem" />
+                                      <app-icon name="user-x" size="0.875rem" />
                                     </button>
                                   } @else {
                                     <button
                                       type="button"
-                                      class="btn btn--outline btn--sm text-[10px] py-0.5 px-1.5"
-                                      [disabled]="rosterCommandSaving()"
+                                      class="btn btn--outline btn--sm"
+                                      [disabled]="rosterCommandSaving() || roster.bench.length === 0"
                                       (click)="selectRosterAssignTarget(seat)"
                                     >
-                                      + {{ t('events.detail.assign') }}
+                                      <app-icon name="plus" size="0.75rem" />
+                                      {{ t('events.detail.assign') }}
                                     </button>
                                   }
-                                }
-                              </div>
+                                </div>
+                              }
                             </li>
                           }
                         </ol>
                       </section>
-                    } @else {
-                      <p class="py-8 text-center text-xs text-[var(--color-text-secondary)]">
-                        {{ t('events.detail.no_parties') }}
-                      </p>
+                    } @empty {
+                      <p class="party-room__hint">{{ t('events.detail.no_parties') }}</p>
                     }
                   </div>
-
-                  <!-- 3. RIGHT SIDEBAR: SIDEBAR CON EQUIP -->
-                  <aside
-                    class="event-roster-inspector card p-3.5 space-y-3.5 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin"
-                  >
-                    @if (activeInspectSeat(); as seat) {
-                      <!-- Header -->
-                      <div class="space-y-2 border-b border-[var(--color-border)] pb-3">
-                        <div class="flex items-center justify-between gap-2">
-                          <span
-                            class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-                          >
-                            @if (ownRosterSeat()?.key === seat.key) {
-                              Il tuo ruolo
-                            } @else {
-                              Ruolo selezionato
-                            }
-                          </span>
-                          @if (
-                            selectedInspectSeat() &&
-                            ownRosterSeat() &&
-                            selectedInspectSeat()?.key !== ownRosterSeat()?.key
-                          ) {
-                            <button
-                              type="button"
-                              class="text-[10px] text-[var(--color-primary)] hover:underline font-semibold"
-                              (click)="selectedInspectSeat.set(null)"
-                            >
-                              Il mio ruolo
-                            </button>
-                          }
-                        </div>
-
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="min-w-0">
-                            <h3 class="text-sm font-bold text-white truncate">
-                              {{ seat.build_name }}
-                            </h3>
-                            <p class="text-[11px] text-[var(--color-text-secondary)] font-mono">
-                              Party {{ seat.party_number }} · Pos. #{{ seat.position }}
-                            </p>
-                          </div>
-                          <span
-                            class="chip font-semibold text-[10px]"
-                            [class]="roleChip(seat.role)"
-                          >
-                            {{ rosterSeatRoleLabel(seat) }}
-                          </span>
-                        </div>
-
-                        <!-- Occupant pill -->
-                        @if (seat.participant; as p) {
-                          <div
-                            class="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] px-2 py-1 rounded-lg border border-[var(--color-border)]"
-                          >
-                            <app-avatar [username]="p.username" size="xs" />
-                            <span class="truncate font-medium text-white">{{ p.username }}</span>
-                          </div>
-                        } @else {
-                          <div
-                            class="text-xs text-[var(--color-text-tertiary)] italic bg-[var(--color-surface-2)] px-2 py-1 rounded-lg border border-[var(--color-border)]"
-                          >
-                            Posto non occupato
-                          </div>
-                        }
-
-                        <!-- Main / Swap Tabs -->
-                        @if (rosterSeatBuildItems(seat).some((i) => i.loadout === 'swap')) {
-                          <div
-                            class="flex items-center gap-1 p-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]"
-                          >
-                            <button
-                              type="button"
-                              class="flex-1 py-1 text-xs rounded font-medium transition-all text-center"
-                              [class.bg-white/10]="inspectLoadout() === 'main'"
-                              [class.text-white]="inspectLoadout() === 'main'"
-                              [class.text-[var(--color-text-secondary)]]="
-                                inspectLoadout() !== 'main'
-                              "
-                              (click)="inspectLoadout.set('main')"
-                            >
-                              Main Set
-                            </button>
-                            <button
-                              type="button"
-                              class="flex-1 py-1 text-xs rounded font-medium transition-all text-center"
-                              [class.bg-white/10]="inspectLoadout() === 'swap'"
-                              [class.text-white]="inspectLoadout() === 'swap'"
-                              [class.text-[var(--color-text-secondary)]]="
-                                inspectLoadout() !== 'swap'
-                              "
-                              (click)="inspectLoadout.set('swap')"
-                            >
-                              Swap Set
-                            </button>
-                          </div>
-                        }
-                      </div>
-
-                      <!-- Paper doll / Equipment Grid -->
-                      <div>
-                        <p
-                          class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)] mb-2"
-                        >
-                          Equipaggiamento ({{ activeInspectItems().length }}/10)
-                        </p>
-                        <app-equipment-grid [items]="activeInspectItems()" />
-                      </div>
-
-                      <!-- Abilità e passive dell'equipaggiamento -->
-                      <div class="space-y-2 pt-2 border-t border-[var(--color-border)]">
-                        <div class="flex items-center justify-between">
-                          <p
-                            class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-                          >
-                            {{ t('events.detail.abilities_chosen') }}
-                          </p>
-                          <span class="text-[10px] text-[var(--color-text-tertiary)]"
-                            >Spell configurate</span
-                          >
-                        </div>
-
-                        @let rows = activeInspectAbilityRows();
-                        @if (rows.length > 0) {
-                          <div class="space-y-2">
-                            @for (row of rows; track row.slot) {
-                              <div
-                                class="p-2.5 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)] space-y-1.5"
-                              >
-                                <span class="text-[11px] font-bold text-white block truncate">
-                                  {{ row.itemName }}
-                                </span>
-                                <div class="grid gap-1">
-                                  @for (slot of row.slots; track slot.label + slot.index) {
-                                    @let chosen = selectedChoiceInSlot(slot);
-                                    @if (chosen) {
-                                      <div
-                                        class="flex items-center gap-2 rounded bg-[var(--color-surface)] px-2 py-1 border border-white/5"
-                                      >
-                                        <span
-                                          class="font-mono text-[10px] font-bold px-1 py-0.2 rounded bg-white/10 text-white min-w-5 text-center"
-                                        >
-                                          {{ slot.label }}
-                                        </span>
-                                        <img
-                                          [src]="iconUrlForSpell(chosen.id)"
-                                          [alt]="chosen.name"
-                                          class="h-5 w-5 rounded object-contain border border-white/10 bg-black/40"
-                                          loading="lazy"
-                                        />
-                                        <span class="text-xs text-white font-medium truncate">{{
-                                          chosen.name
-                                        }}</span>
-                                      </div>
-                                    }
-                                  }
-                                </div>
-                              </div>
-                            }
-                          </div>
-                        } @else {
-                          <p class="text-xs text-[var(--color-text-secondary)] italic">
-                            {{ t('events.detail.no_abilities_build') }}
-                          </p>
-                        }
-                      </div>
-                    } @else {
-                      <div class="py-12 text-center text-xs text-[var(--color-text-secondary)]">
-                        {{ t('events.roster.noRoleSelected') }}
-                      </div>
-                    }
-                  </aside>
                 </div>
               </div>
-            } @else if (rosterSnapshotState() === 'loading') {
-              <section class="card p-6 text-center">
-                <app-loading [label]="t('events.roster.loading')" />
-              </section>
-            } @else if (rosterSnapshotState() === 'error') {
-              <section class="card p-6 border-[var(--color-error)] text-center space-y-2">
-                <app-icon name="alert" size="2rem" color="var(--color-danger)" />
-                <h2 class="text-sm font-bold text-[var(--color-text)]">{{ t('events.roster.unavailable') }}</h2>
-                <p class="text-xs text-[var(--color-text-secondary)]">
-                  {{ rosterSnapshotError() }}
-                </p>
-                <button type="button" class="btn btn--outline btn--sm mt-2" (click)="load()">
-                  {{ t('common.retry') }}
-                </button>
-              </section>
             }
           }
 
-          <!-- ================= TAB 2: OVERVIEW & INTEL ================= -->
-          @case ('overview') {
+          <!-- ================= TAB 3: BATTLES — performance, intel and linked battles ================= -->
+          @case ('battles') {
             @defer (on immediate) {
               <app-event-overview-tab
                 [event]="detail"
                 [eventLossEstimate]="eventLossEstimate()"
                 [canViewOpponents]="canViewOpponents()"
               />
-            } @placeholder {
-              <app-loading [label]="t('common.loading')" />
-            }
-          }
-
-          <!-- ================= TAB 3: BATTLES & COMBAT LOGS ================= -->
-          @case ('battles') {
-            @defer (on immediate) {
               <app-event-battles-tab
                 [event]="detail"
                 [canEdit]="canEdit()"
@@ -1755,8 +1272,9 @@ interface AddEventMemberRequest {
 
     <!-- 4. EXTRA ROSTER ROLES DIALOG -->
     @if (rosterRoleManagerOpen()) {
-      <app-dialog title="Ruoli extra del roster" size="md" (closed)="closeRosterRoleManager()">
+      <app-dialog [title]="t('events.lobby.extraRolesTitle')" size="md" (closed)="closeRosterRoleManager()">
         <div class="grid gap-4">
+          <p class="text-sm text-[var(--color-text-secondary)]">{{ t('events.lobby.extraRolesBody') }}</p>
           <section
             aria-labelledby="fill-role-heading"
             class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5"
@@ -1914,7 +1432,7 @@ interface AddEventMemberRequest {
 
     <!-- 5. ADD MEMBER DIALOGS -->
     @if (draftMember(); as member) {
-      <app-dialog title="Add a Member" size="md" (closed)="closeMemberForm()">
+      <app-dialog [title]="t('events.lobby.addMember')" size="md" (closed)="closeMemberForm()">
         <form class="grid gap-4" (submit)="onMemberSubmit($event)">
           <div class="surface flex items-center gap-3 p-3">
             <app-avatar [username]="member.title" size="sm" />
@@ -2316,75 +1834,6 @@ interface AddEventMemberRequest {
       :host ::ng-deep [class~='bg-black/40'] {
         background-color: var(--color-surface-3) !important;
       }
-      .event-roster-shell {
-        container-type: inline-size;
-      }
-      .event-roster-sidebar,
-      .event-roster-main {
-        min-width: 0;
-      }
-      .event-roster-bench,
-      .event-roster-controls,
-      .event-roster-party,
-      .event-roster-inspector {
-        border: 1px solid var(--color-border);
-        background: var(--color-surface);
-        box-shadow: var(--shadow-subtle-2);
-      }
-      .event-roster-bench > :first-child {
-        background: var(--color-surface-2);
-      }
-      .event-roster-bench .surface {
-        background: var(--color-surface-1);
-        border-color: var(--color-border);
-      }
-      .event-roster-controls {
-        padding: 0.875rem;
-      }
-      .event-roster-sidebar > .card,
-      .event-roster-main > .card,
-      .event-roster-main section.card {
-        border-color: var(--color-border);
-        background: var(--color-surface);
-      }
-      .event-roster-sidebar > .card {
-        box-shadow: var(--shadow-subtle-2);
-      }
-      .event-roster-party {
-        border-radius: var(--radius-cards);
-      }
-      .event-roster-party > header {
-        min-height: 3.25rem;
-      }
-      .event-roster-seat {
-        min-height: 4.25rem;
-        border-left-width: 3px;
-        border-left-style: solid;
-        border-top-color: transparent;
-        border-right-color: transparent;
-        border-bottom-color: var(--color-border);
-        background: var(--color-surface);
-      }
-      .event-roster-seat:last-child {
-        border-bottom-color: transparent;
-      }
-      .event-roster-seat:hover {
-        box-shadow: inset 0 0 0 1px var(--color-border-hover);
-      }
-      .event-roster-inspector {
-        border-color: var(--color-border);
-      }
-      .event-roster-main section.card {
-        box-shadow: var(--shadow-subtle);
-      }
-      @container (max-width: 720px) {
-        .event-roster-layout {
-          gap: 0.75rem;
-        }
-        .event-roster-main {
-          order: -1;
-        }
-      }
       :host ::ng-deep .rounded-xl,
       :host ::ng-deep .rounded-2xl {
         border-radius: var(--radius-cards);
@@ -2553,12 +2002,633 @@ interface AddEventMemberRequest {
         grid-template-columns: minmax(0, 1fr) auto;
         padding: 0.75rem 1rem;
       }
-      @media (prefers-reduced-motion: reduce) {
-        .event-detail__fill-bar span {
-          transition: none;
+    }
+    /* The board below sits outside the layer: an unlayered global reset would otherwise win
+       over its borders and padding. */
+      /* ---------- Event strip ---------- */
+      .event-strip {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+        padding: 1rem 1.25rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface);
+      }
+      .event-strip__main {
+        display: grid;
+        flex: 1 1 32rem;
+        min-width: 0;
+        gap: 0.75rem;
+      }
+      .event-strip__chips {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.375rem;
+      }
+      .event-strip__facts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1.75rem;
+      }
+      .event-strip__fact dt {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-text-secondary);
+      }
+      .event-strip__fact dd {
+        margin-top: 0.125rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--color-text);
+      }
+      .event-strip__capacity {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .event-strip__meter {
+        display: inline-block;
+        width: 4.5rem;
+        height: 0.375rem;
+        overflow: hidden;
+        border-radius: var(--radius-full);
+        background: var(--color-surface-2, var(--color-surface-muted));
+      }
+      .event-strip__meter > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--color-success);
+        transition: width 300ms ease;
+      }
+      .event-strip__description {
+        max-width: 64rem;
+        font-size: 0.8125rem;
+        color: var(--color-text-secondary);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .event-strip__me {
+        flex: none;
+      }
+      .my-status {
+        display: grid;
+        gap: 0.125rem;
+        min-width: 13rem;
+        padding: 0.625rem 0.875rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-smallcards);
+        background: var(--color-surface-2, var(--color-surface-muted));
+        text-align: left;
+        transition: border-color var(--motion-fast), background-color var(--motion-fast);
+      }
+      .my-status:hover {
+        border-color: var(--color-border-strong);
+      }
+      .my-status:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+      .my-status--seated {
+        border-color: color-mix(in oklab, var(--role-accent) 60%, var(--color-border));
+        border-left: 4px solid var(--role-accent);
+      }
+      .my-status--waiting {
+        border-left: 4px solid var(--color-warning);
+      }
+      .my-status__label {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-text-secondary);
+      }
+      .my-status__value {
+        font-size: 0.875rem;
+        font-weight: 700;
+        color: var(--color-text);
+      }
+      .my-status__join {
+        min-height: 2.75rem;
+        padding-inline: 1.25rem;
+      }
+      .live-dot {
+        display: inline-block;
+        width: 0.5rem;
+        height: 0.5rem;
+        flex: none;
+        border-radius: var(--radius-full);
+        background: var(--color-success);
+        box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-success) 60%, transparent);
+        animation: live-pulse 2s ease-out infinite;
+      }
+      @keyframes live-pulse {
+        0% {
+          box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-success) 55%, transparent);
+        }
+        70% {
+          box-shadow: 0 0 0 0.375rem transparent;
+        }
+        100% {
+          box-shadow: 0 0 0 0 transparent;
         }
       }
-    }
+
+      /* ---------- Overview ---------- */
+      .lobby-overview {
+        display: grid;
+        gap: 1rem;
+        align-items: start;
+      }
+      @media (min-width: 64rem) {
+        .lobby-overview {
+          grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+        }
+      }
+
+      /* ---------- Parties board ---------- */
+      .party-room {
+        display: grid;
+        gap: 0.875rem;
+      }
+      .party-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface);
+      }
+      .party-toolbar__status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: var(--color-text);
+      }
+      .party-toolbar__hint {
+        color: var(--color-text-secondary);
+      }
+      .party-toolbar__actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .party-toolbar__spec {
+        width: auto;
+        min-width: 10rem;
+        max-width: 14rem;
+      }
+      .party-mode {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--color-primary);
+        border-radius: var(--radius-cards);
+        background: var(--color-primary-container);
+        color: var(--color-text);
+      }
+      .party-mode__title {
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .party-mode__hint,
+      .party-room__hint {
+        font-size: 0.8125rem;
+        color: var(--color-text-secondary);
+      }
+      .party-room__layout {
+        display: grid;
+        gap: 1rem;
+        align-items: start;
+      }
+      @media (min-width: 64rem) {
+        .party-room__layout {
+          grid-template-columns: 18rem minmax(0, 1fr);
+        }
+        .party-bench {
+          position: sticky;
+          top: 1rem;
+          max-height: calc(100vh - 2rem);
+        }
+      }
+      .party-bench {
+        display: grid;
+        grid-template-rows: auto auto auto 1fr;
+        gap: 0.625rem;
+        min-height: 0;
+        padding: 0.875rem;
+        border: 1px solid var(--color-border);
+        border-top: 4px solid var(--color-warning);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface);
+        transition: border-color var(--motion-fast), background-color var(--motion-fast);
+      }
+      .party-bench--drop {
+        border-color: var(--color-warning);
+        border-style: dashed;
+        background: var(--color-warning-container);
+      }
+      .party-bench__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .party-bench__title {
+        font-family: var(--font-display);
+        font-size: 0.875rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--color-text);
+      }
+      .party-bench__count {
+        min-width: 1.75rem;
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius-full);
+        background: var(--color-warning-container);
+        color: var(--color-warning);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 700;
+        text-align: center;
+      }
+      .party-bench__drop {
+        padding: 0.625rem;
+        border: 2px dashed var(--color-warning);
+        border-radius: var(--radius-md);
+        font-size: 0.8125rem;
+        font-weight: 700;
+        text-align: center;
+        color: var(--color-warning);
+      }
+      .party-bench__list {
+        display: grid;
+        align-content: start;
+        gap: 0.5rem;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      .party-bench__empty {
+        padding: 1.5rem 0.5rem;
+        font-size: 0.8125rem;
+        text-align: center;
+        color: var(--color-text-secondary);
+      }
+      .bench-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.625rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-smallcards);
+        background: var(--color-surface-1, var(--color-bg));
+        transition: border-color var(--motion-fast), opacity var(--motion-fast);
+      }
+      .bench-card--draggable {
+        cursor: grab;
+      }
+      .bench-card--draggable:hover {
+        border-color: var(--color-border-strong);
+      }
+      .bench-card--mine {
+        border-color: var(--color-primary);
+      }
+      .bench-card--dragging {
+        opacity: 0.4;
+      }
+      .bench-card__who {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .bench-card__who > .min-w-0 {
+        flex: 1;
+      }
+      .bench-card__name {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        overflow: hidden;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--color-text);
+        white-space: nowrap;
+      }
+      .bench-card__builds {
+        overflow: hidden;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .bench-card__alt {
+        color: var(--color-text-muted);
+      }
+      .bench-card__place {
+        grid-column: 1 / -1;
+        justify-self: stretch;
+      }
+      .party-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+        gap: 1rem;
+        align-items: start;
+      }
+      .party-card {
+        overflow: hidden;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-cards);
+        background: var(--color-surface);
+      }
+      .party-card__head {
+        display: grid;
+        gap: 0.5rem;
+        padding: 0.875rem 1rem 0.75rem;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-2, var(--color-surface-muted));
+      }
+      .party-card__title-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .party-card__title {
+        font-family: var(--font-display);
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--color-text);
+      }
+      .party-card__count {
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .party-card__meter {
+        height: 0.375rem;
+        overflow: hidden;
+        border-radius: var(--radius-full);
+        background: var(--color-surface);
+      }
+      .party-card__meter > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--color-success);
+        transition: width 300ms ease;
+      }
+      .party-card__roles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.75rem;
+      }
+      .party-card__role {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3125rem;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .party-card__role-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: var(--radius-full);
+        background: var(--role-accent);
+      }
+      .party-card__seats {
+        display: grid;
+      }
+      .seat {
+        position: relative;
+        display: flex;
+        min-height: 3.75rem;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.75rem 0.5rem 1rem;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface);
+        transition: background-color var(--motion-fast), box-shadow var(--motion-fast), opacity var(--motion-fast);
+        animation: seat-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+      }
+      .seat::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--role-accent);
+      }
+      .seat:last-child {
+        border-bottom: 0;
+      }
+      .seat[draggable='true'] {
+        cursor: grab;
+      }
+      .seat:hover {
+        background: var(--color-surface-hover);
+      }
+      .seat--open {
+        background: transparent;
+        animation: none;
+      }
+      .seat--open::before {
+        opacity: 0.35;
+      }
+      .seat--mine {
+        background: color-mix(in oklab, var(--color-primary) 12%, var(--color-surface));
+      }
+      .seat--picked,
+      .seat--target,
+      .seat--highlight {
+        box-shadow: inset 0 0 0 2px var(--color-primary);
+      }
+      .seat--drop {
+        box-shadow: inset 0 0 0 2px var(--color-success);
+        background: var(--color-success-container);
+      }
+      .seat--dragging {
+        opacity: 0.4;
+      }
+      @keyframes seat-in {
+        from {
+          transform: scale(0.97);
+          background: color-mix(in oklab, var(--role-accent) 22%, var(--color-surface));
+        }
+        to {
+          transform: scale(1);
+        }
+      }
+      .seat__weapon {
+        display: inline-flex;
+        width: 2.75rem;
+        height: 2.75rem;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        padding: 0.125rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-2, var(--color-surface-muted));
+        color: var(--role-accent);
+        font-size: 0.75rem;
+        font-weight: 800;
+        transition: border-color var(--motion-fast), transform var(--motion-fast);
+      }
+      .seat__weapon:hover {
+        border-color: var(--role-accent);
+        transform: translateY(-1px);
+      }
+      .seat__weapon:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+      .seat__weapon img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        pointer-events: none;
+      }
+      .seat__body {
+        display: grid;
+        flex: 1;
+        min-width: 0;
+        gap: 0.125rem;
+      }
+      .seat__build {
+        display: flex;
+        min-width: 0;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+      .seat__build-name {
+        overflow: hidden;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--color-text);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .seat__role {
+        flex: none;
+        font-size: 0.625rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--role-accent);
+      }
+      .seat__occupant {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 0.375rem;
+        font-size: 0.8125rem;
+        color: var(--color-text);
+      }
+      .seat__occupant--open {
+        font-style: italic;
+        color: var(--color-text-muted);
+      }
+      .seat__name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .seat__you {
+        flex: none;
+        padding: 0 0.375rem;
+        border-radius: var(--radius-badges);
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+        font-size: 0.625rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .seat__spec {
+        flex: none;
+        padding: 0 0.25rem;
+        border-radius: var(--radius-chip);
+        font-family: var(--font-mono);
+        font-size: 0.625rem;
+        font-weight: 700;
+        color: var(--color-text-disabled);
+      }
+      .seat__spec--mid {
+        background: var(--color-warning-container);
+        color: var(--color-warning);
+      }
+      .seat__spec--high {
+        background: var(--color-success-container);
+        color: var(--color-success);
+      }
+      .seat__actions {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 0.25rem;
+      }
+      .icon-btn {
+        display: inline-flex;
+        width: 2rem;
+        height: 2rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        color: var(--color-text-secondary);
+        transition: background-color var(--motion-fast), color var(--motion-fast);
+      }
+      .icon-btn:hover:not(:disabled) {
+        background: var(--color-surface-active);
+        color: var(--color-text);
+      }
+      .icon-btn--danger:hover:not(:disabled) {
+        background: var(--color-error-container);
+        color: var(--color-error);
+      }
+      .icon-btn:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+      .icon-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .event-detail__fill-bar span,
+        .event-strip__meter > span,
+        .party-card__meter > span,
+        .seat,
+        .seat__weapon,
+        .bench-card,
+        .party-bench,
+        .my-status {
+          transition: none;
+        }
+        .seat,
+        .live-dot {
+          animation: none;
+        }
+      }
   `,
 })
 export class EventDetailPage {
@@ -2609,7 +2679,7 @@ export class EventDetailPage {
     );
   });
   protected readonly showEditForm = signal(false);
-  protected readonly tab = signal<EventDetailTab>('roster');
+  protected readonly tab = signal<EventDetailTab>('overview');
   protected readonly pendingConfirm = signal<PendingConfirm | null>(null);
   protected readonly saving = signal(false);
 
@@ -2644,12 +2714,14 @@ export class EventDetailPage {
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
     const detail = this.event();
-    const rosterCount = detail?.participants.length ?? 0;
     const battlesCount = detail?.battles.length ?? 0;
     const splitsCount = detail?.splits.length ?? 0;
     return [
-      { id: 'roster', label: `${this.t('events.tab.roster')} (${rosterCount})` },
       { id: 'overview', label: this.t('events.tab.overview') },
+      {
+        id: 'parties',
+        label: `${this.t('events.tab.parties')} (${this.rosterFilledSeats()}/${this.rosterSeatCount()})`,
+      },
       { id: 'battles', label: `${this.t('events.tab.battles')} (${battlesCount})` },
       { id: 'splits', label: `${this.t('events.tab.splits')} (${splitsCount})` },
     ];
@@ -2945,15 +3017,7 @@ export class EventDetailPage {
       .sort(([left], [right]) => left - right)
       .map(([partyNumber, seats]) => ({
         partyNumber,
-        seats: [...seats].sort((left, right) => {
-          const leftRole = ROSTER_ROLE_ORDER.indexOf(left.role);
-          const rightRole = ROSTER_ROLE_ORDER.indexOf(right.role);
-          return (
-            (leftRole === -1 ? ROSTER_ROLE_ORDER.length : leftRole) -
-              (rightRole === -1 ? ROSTER_ROLE_ORDER.length : rightRole) ||
-            left.position - right.position
-          );
-        }),
+        seats: [...seats].sort(compareSeatsByRole),
       }));
   });
 
@@ -2973,6 +3037,38 @@ export class EventDetailPage {
       this.rosterSnapshot()?.seats.find((seat) => seat.participant?.user_id === userId) ?? null
     );
   });
+
+  protected readonly currentUserId = computed<number | null>(
+    () => this.auth.profile()?.user_id ?? null,
+  );
+
+  /** Weapon icon of every build whose details are loaded, for the role board and "your spot". */
+  protected readonly buildIconMap = computed<ReadonlyMap<number, string>>(() => {
+    const icons = new Map<number, string>();
+    for (const [buildId, weapon] of this.buildWeaponByBuildId()) {
+      const url = this.renderItemIconUrl(weapon);
+      if (url) icons.set(buildId, url);
+    }
+    return icons;
+  });
+
+  /** Every item of the viewer's seat build, both loadouts (the spot card splits them). */
+  protected readonly mySpotItems = computed<BuildItemSlot[]>(() => {
+    const seat = this.ownRosterSeat();
+    return seat ? this.rosterSeatBuildItems(seat) : [];
+  });
+
+  /** The seat build's weapon when placed, otherwise the first-choice build's. */
+  protected readonly mySpotWeaponIcon = computed(() => {
+    const seat = this.ownRosterSeat();
+    if (seat) return this.seatWeaponIconUrl(seat);
+    const primary = this.currentParticipant()?.primary_build_id ?? null;
+    return primary === null ? '' : (this.buildIconMap().get(primary) ?? '');
+  });
+
+  /** Briefly outlined after "Show in party" so the viewer finds their seat on the board. */
+  protected readonly highlightedSeatKey = signal<string | null>(null);
+  private highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly isCurrentUserOnRosterBench = computed(() => {
     const userId = this.auth.profile()?.user_id ?? null;
@@ -3055,11 +3151,14 @@ export class EventDetailPage {
     (this.event()?.roster_roles ?? []).filter((role) => !role.is_fill),
   );
 
+  /**
+   * Builds that can become an extra role: anything not already one. A build the comp already has
+   * is allowed — the extra role is one more seat of it.
+   */
   protected readonly availableExtraRoleBuilds = computed<readonly BuildSummary[]>(() => {
-    const unavailable = new Set([
-      ...this.availableBuilds().map((entry) => entry.build_id),
-      ...this.extraRosterRoles().flatMap((role) => (role.build_id === null ? [] : [role.build_id])),
-    ]);
+    const unavailable = new Set(
+      this.extraRosterRoles().flatMap((role) => (role.build_id === null ? [] : [role.build_id])),
+    );
     return this.allBuilds().filter((build) => !unavailable.has(build.id));
   });
 
@@ -3482,7 +3581,7 @@ export class EventDetailPage {
         this.eventId = Number(id);
         this.showEditForm.set(false);
         this.showJoinForm.set(false);
-        this.tab.set('roster');
+        this.tab.set('overview');
         this.pendingConfirm.set(null);
         void this.load();
         void this.loadAllianceContext();
@@ -3495,6 +3594,7 @@ export class EventDetailPage {
 
     this.destroyRef.onDestroy(() => {
       clearInterval(timer);
+      if (this.highlightTimer !== null) clearTimeout(this.highlightTimer);
       this.realtimeRoster.close();
     });
 
@@ -3572,7 +3672,7 @@ export class EventDetailPage {
       this.draftRosterRoleBuildId.set('');
       // Silent: adding a role reshapes the seats, but the page must not blink back to the top.
       await this.load(true);
-      this.toasts.success('Ruolo extra aggiunto al roster.');
+      this.toasts.success(this.t('events.lobby.roleAdded'));
     } catch (error) {
       this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -3587,12 +3687,44 @@ export class EventDetailPage {
     try {
       await firstValueFrom(this.api.delete(`api/events/${this.eventId}/roster-roles/${role.id}`));
       await this.load(true);
-      this.toasts.success('Ruolo extra rimosso dal roster.');
+      this.toasts.success(this.t('events.lobby.roleRemoved'));
     } catch (error) {
       this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.rosterRoleSaving.set(false);
     }
+  }
+
+  /** Opens the Parties tab and scrolls the viewer's own seat into view. */
+  protected showOwnSeatInParty(): void {
+    const seat = this.ownRosterSeat();
+    this.tab.set('parties');
+    if (!seat || typeof document === 'undefined') return;
+    this.highlightedSeatKey.set(seat.key);
+    if (this.highlightTimer !== null) clearTimeout(this.highlightTimer);
+    this.highlightTimer = setTimeout(() => this.highlightedSeatKey.set(null), 2400);
+    setTimeout(() => {
+      document
+        .getElementById(`event-seat-${seat.key}`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }
+
+  protected roleAccent(role: string): string {
+    return roleColorVar(role);
+  }
+
+  protected roleNameFor(role: string): string {
+    const key = roleLabelKey(role);
+    return key ? this.t(key) : role;
+  }
+
+  protected roleGlyphFor(role: string): string {
+    return lobbyRoleGlyph(role);
+  }
+
+  protected partyRoles(party: EventRosterParty): PartyRoleCount[] {
+    return partyRoleCounts(party.seats);
   }
 
   protected rosterPartyName(party: EventRosterParty): string {
@@ -4691,6 +4823,14 @@ export class EventDetailPage {
 
   protected onStartTimeChange(event: Event): void {
     this.draftStartTime.set((event.target as HTMLInputElement).value);
+  }
+
+  protected formatDay(iso: string): string {
+    return new Date(iso).toLocaleDateString([], {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
   }
 
   protected formatTime(iso: string): string {

@@ -2,7 +2,12 @@
 
 ## Overview
 
-This directory contains the events list and an event detail page with overview, roster, battles, and splits tabs.
+This directory contains the events list and an event detail page with Overview, Parties, Battles, and Splits tabs.
+
+- **Overview** is the member view: "your spot" (`detail/event-my-spot.ts`: join, waiting for a seat, or party/seat/role with the build's equipment and abilities) and the role board (`detail/event-role-board.ts`: every role and build, who holds each seat, how many are open, and who is waiting).
+- **Parties** is the live board: the waiting list beside every party side by side. Officers drag players between seats, parties and the waiting list, or use Assign / Swap / Move to bench; the socket keeps every viewer in sync.
+- **Battles** shows the performance and intel cards above the linked battles.
+- `detail/roster-lobby.ts` holds the pure seat grouping (by role, then build) and role colours/labels shared by both views.
 
 ## Interface
 

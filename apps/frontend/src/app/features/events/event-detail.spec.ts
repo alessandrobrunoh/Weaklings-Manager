@@ -200,7 +200,8 @@ describe('EventDetailPage roster room', () => {
     expect(page.ownRosterSeat()?.party_number).toBe(2);
     expect(page.ownRosterSeat()?.position).toBe(2);
     expect(page.rosterParties().map((party) => party.partyNumber)).toEqual([1, 2]);
-    expect(page.rosterParties()[1].seats.map((entry) => entry.position)).toEqual([2, 1]);
+    // Healer before support: the party reads in the app's role order (tank, healer, support, dps…).
+    expect(page.rosterParties()[1].seats.map((entry) => entry.position)).toEqual([1, 2]);
   }, 15_000);
 
   it('correctly groups up to 20 seats per party', () => {
