@@ -16,6 +16,7 @@ use crate::alliance_share::{
 };
 use crate::events::{
     models::{CreateEventRequest, EventView, ParticipateEventRequest},
+    parties::load_event_parties,
     participation_outbox::{self, FailureDisposition, ForwardKey, Intent},
     service::EventService,
 };
@@ -133,10 +134,18 @@ pub async fn create_mirror(
     )
     .await?;
 
-    let source_roles = backend_entities::events::event_roster_role::Entity::find()
+    // The mirror keeps a single party, so only the first party's extra roles are shared.
+    let source_first_party = load_event_parties(source_db, source_event.id)
+        .await?
+        .first()
+        .map(|party| party.id);
+    let source_roles: Vec<_> = backend_entities::events::event_roster_role::Entity::find()
         .filter(backend_entities::events::event_roster_role::Column::EventId.eq(source_event.id))
         .all(source_db)
-        .await?;
+        .await?
+        .into_iter()
+        .filter(|role| role.party_id.or(source_first_party) == source_first_party)
+        .collect();
     let mut mapped_roles = Vec::with_capacity(source_roles.len());
     for role in source_roles {
         let build_share = AllianceShareService::share_build(
@@ -198,6 +207,11 @@ pub async fn create_mirror(
             .id
     };
 
+    let mirror_first_party = load_event_parties(&alliance.db, mirror_id)
+        .await?
+        .first()
+        .map(|party| party.id)
+        .ok_or_else(|| AppError::Internal(format!("event {mirror_id} has no parties")))?;
     for build_id in mapped_roles {
         use backend_entities::events::event_roster_role as roster_role;
         let existing_role = roster_role::Entity::find()
@@ -209,6 +223,7 @@ pub async fn create_mirror(
             roster_role::ActiveModel {
                 event_id: sea_orm::ActiveValue::Set(mirror_id),
                 build_id: sea_orm::ActiveValue::Set(build_id),
+                party_id: sea_orm::ActiveValue::Set(Some(mirror_first_party)),
                 ..Default::default()
             }
             .insert(&alliance.db)

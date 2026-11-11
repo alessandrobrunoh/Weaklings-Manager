@@ -57,7 +57,10 @@ function seat(
   role: EventRosterSeat['role'] = 'dps',
 ): EventRosterSeat {
   return {
-    key: `build:${partyNumber}:${position}`,
+    key: `party:${partyNumber}:build:${position}:1`,
+    party_id: partyNumber,
+    party_name: null,
+    party_position: partyNumber,
     party_number: partyNumber,
     position,
     build_id: position,
@@ -196,6 +199,7 @@ describe('EventDetailPage roster room', () => {
       event_id: 1,
       roster_version: 3,
       active_comp_id: 9,
+      parties: [],
       seats: [seat(2, 1, 7, 'healer'), seat(1, 3, null), seat(2, 2, 42, 'support')],
       bench: [],
     });
@@ -248,6 +252,7 @@ describe('EventDetailPage roster room', () => {
       event_id: 1,
       roster_version: 1,
       active_comp_id: 1,
+      parties: [],
       seats,
       bench: [],
     });
@@ -283,6 +288,7 @@ describe('EventDetailPage roster room', () => {
       event_id: 10,
       roster_version: 1,
       active_comp_id: 1,
+      parties: [],
       seats: [seat1, seat2],
       bench: [benchUser],
       items: [],
@@ -331,6 +337,7 @@ describe('EventDetailPage roster room', () => {
       event_id: 10,
       roster_version: 1,
       active_comp_id: 1,
+      parties: [],
       seats: [seat1, seat2],
       bench: [benchUser],
     });
@@ -405,6 +412,7 @@ describe('EventDetailPage seat commands', () => {
       event_id: 10,
       roster_version: 4,
       active_comp_id: 1,
+      parties: [],
       seats: [seated],
       bench: [],
     };
@@ -586,6 +594,7 @@ describe('EventDetailPage roster suggestions', () => {
       event_id: 1,
       roster_version: 1,
       active_comp_id: 9,
+      parties: [],
       seats: [seat(1, 3, null, 'healer')],
       bench: [
         {
@@ -604,7 +613,7 @@ describe('EventDetailPage roster suggestions', () => {
     page.rosterSuggestions.set({
       placements: [
         {
-          seat_key: 'build:1:3',
+          seat_key: 'party:1:build:3:1',
           user_id: 7,
           score: { item_power: 1536, max_item_power: 1600, readiness: 0.96, preference: 'primary', blocking: [] },
         },
@@ -616,7 +625,7 @@ describe('EventDetailPage roster suggestions', () => {
     const rows = page.rosterSuggestionRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      seatKey: 'build:1:3',
+      seatKey: 'party:1:build:3:1',
       buildName: 'Build 3',
       username: 'Tacos',
       itemPower: 1536,
@@ -631,13 +640,14 @@ describe('EventDetailPage roster suggestions', () => {
       event_id: 1,
       roster_version: 1,
       active_comp_id: 9,
+      parties: [],
       seats: [seat(1, 1, null)],
       bench: [],
     });
     page.rosterSuggestions.set({
       placements: [
         {
-          seat_key: 'build:1:1',
+          seat_key: 'party:1:build:1:1',
           user_id: 99,
           score: { item_power: 0, max_item_power: 0, readiness: 0, preference: 'none', blocking: [] },
         },
@@ -655,13 +665,14 @@ describe('EventDetailPage roster suggestions', () => {
       event_id: 1,
       roster_version: 1,
       active_comp_id: 9,
+      parties: [],
       seats: [],
       bench: [],
     });
     page.rosterSuggestions.set({
       placements: [
         {
-          seat_key: 'build:1:1',
+          seat_key: 'party:1:build:1:1',
           user_id: 1,
           score: { item_power: 0, max_item_power: 0, readiness: 0, preference: 'none', blocking: [] },
         },
@@ -679,6 +690,7 @@ describe('EventDetailPage roster suggestions', () => {
       event_id: 1,
       roster_version: 1,
       active_comp_id: 9,
+      parties: [],
       seats: [seat(1, 1, null)],
       bench: [],
     });
@@ -942,6 +954,7 @@ describe('EventDetailPage guild attribution', () => {
         is_already_registered: false,
         has_declared_weapons: hasDeclaredWeapons,
         builds: [build(7, 'allowed'), build(8, 'not_declared'), build(9, 'locked')],
+        parties: [],
       };
     }
 
@@ -1096,6 +1109,7 @@ describe('EventDetailPage weapon fit on the Parties board', () => {
       active_comp_id: 1,
       seats: [target],
       bench: [locked, none, basic, main, other],
+      parties: [],
     });
 
     expect(page.filteredRosterBench().map((entry) => entry.user_id)).toEqual([1, 2, 3, 4, 5]);

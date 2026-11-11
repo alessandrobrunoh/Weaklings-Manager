@@ -117,6 +117,26 @@ pub struct ApiResponseEventRosterRoleList {
     pub data: Vec<crate::events::models::EventRosterRoleView>,
 }
 
+/// `OpenAPI` schema wrapper for an event roster snapshot.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventRoster {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The roster after the change.
+    pub data: crate::events::models::EventRosterView,
+}
+
+/// `OpenAPI` schema wrapper for a roster after a party change.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventPartyChange {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The roster after the change and the number of members it unseated.
+    pub data: crate::events::models::EventPartyChangeView,
+}
+
 /// `OpenAPI` schema wrapper for `EventDetailView` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventDetail {

@@ -12,6 +12,7 @@ import type {
   BuildItemSlot,
   BuildSlot,
   EventParticipant,
+  EventParty,
   EventRosterSeat,
 } from '../../../core/models/api.models';
 import { TranslateService } from '../../../core/services/translate.service';
@@ -20,7 +21,14 @@ import type { AbilitySlotView } from '../../../shared/data/albion-abilities';
 import { AbilityBar } from '../../../shared/components/ability-bar/ability-bar';
 import { EquipmentGrid } from '../../../shared/components/equipment-grid/equipment-grid';
 import { Icon } from '../../../shared/components/icon/icon';
-import { roleColorVar, roleGlyph, roleLabelKey } from './roster-lobby';
+import {
+  partyForBoardNumber,
+  partyHeading,
+  roleColorVar,
+  roleGlyph,
+  roleLabelKey,
+  seatPartyLabel,
+} from './roster-lobby';
 
 /** One equipped item that offers ability choices, as the page computes them. */
 export interface MySpotAbilityRow {
@@ -119,7 +127,7 @@ export type MySpotState = 'not-joined' | 'waiting' | 'seated';
                 <p class="my-spot__role">
                   <span class="my-spot__role-chip">{{ roleName() }}</span>
                   <span class="my-spot__seat">
-                    {{ t('events.lobby.partySeat', { party: current.party_number, position: current.position }) }}
+                    {{ t('events.lobby.partySeat', { party: partyName(current), position: current.position }) }}
                   </span>
                 </p>
                 <h2 id="my-spot-heading" class="my-spot__title my-spot__title--build">
@@ -415,6 +423,8 @@ export class EventMySpot {
   readonly participant = input<EventParticipant | null>(null);
   /** The seat the viewer holds, or `null` when they are not placed. */
   readonly seat = input<EventRosterSeat | null>(null);
+  /** The event's parties, to name the viewer's party. */
+  readonly parties = input<readonly EventParty[]>([]);
   /** Whether the event can still be joined from the site. */
   readonly canJoin = input(true);
   /** Archived events are read-only: no join, change or leave. */
@@ -432,6 +442,16 @@ export class EventMySpot {
   readonly showInParty = output<void>();
 
   protected readonly loadout = signal<'main' | 'swap'>('main');
+
+  /** Name of the viewer's party: its label (with "1/2" when it spans boards) or "Party N". */
+  protected partyName(seat: EventRosterSeat): string {
+    const defaultName = (position: number): string =>
+      this.translate.t('events.lobby.party', { number: position });
+    const party = partyForBoardNumber(this.parties(), seat.party_number);
+    return party
+      ? partyHeading(party, seat.party_number, defaultName)
+      : seatPartyLabel(seat, defaultName);
+  }
 
   protected readonly state = computed<MySpotState>(() => {
     if (this.seat()) return 'seated';

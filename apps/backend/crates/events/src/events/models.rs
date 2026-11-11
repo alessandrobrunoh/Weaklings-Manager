@@ -504,6 +504,9 @@ pub struct EventRosterRoleView {
     pub is_fill: bool,
     /// `weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`.
     pub weapon_key: Option<String>,
+    /// Party whose seats this role extends. `None` for the virtual `Fill` role, which belongs to
+    /// no party.
+    pub party_id: Option<i64>,
 }
 
 /// A concrete build available for the next event signup.
@@ -552,6 +555,21 @@ pub enum SignupAvailability {
     Locked,
 }
 
+/// The builds one party offers to a member signing up.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventSignupPartyView {
+    /// Party identifier.
+    pub party_id: i64,
+    /// 1-based order of the party inside the event.
+    pub position: i32,
+    /// Optional party label.
+    pub name: Option<String>,
+    /// Name of the party's effective comp.
+    pub comp_name: String,
+    /// Builds the party offers, with the party's own quantities.
+    pub builds: Vec<EventSignupBuildView>,
+}
+
 /// The server-authoritative choices presented to a member before they select a concrete build.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventSignupOptionsView {
@@ -564,8 +582,12 @@ pub struct EventSignupOptionsView {
     /// Whether the requesting member is already on the roster and therefore does not increment
     /// the prospective threshold merely by opening the menu.
     pub is_already_registered: bool,
-    /// Concrete builds available to select, including event-specific extra roster slots.
+    /// Concrete builds available to select, including event-specific extra roster slots. The
+    /// union over every party, quantities summed.
     pub builds: Vec<EventSignupBuildView>,
+    /// The same builds grouped by party, in party order. Each build's `quantity` counts only that
+    /// party's seats.
+    pub parties: Vec<EventSignupPartyView>,
     /// Whether the member declared at least one weapon. When `false`, self-service signup is not
     /// limited to declared weapons (only to weapons an officer did not lock for them).
     pub has_declared_weapons: bool,
@@ -588,7 +610,9 @@ pub struct EventDetailView {
     pub active_comp_capacity: Option<i64>,
     /// Available roster roles. `Fill` is always first and has unlimited capacity.
     pub roster_roles: Vec<EventRosterRoleView>,
-    /// Every build and quantity in the active comp snapshot, including empty slots.
+    /// The event's parties in order. Empty for flash masses.
+    pub parties: Vec<EventPartyView>,
+    /// Every build and quantity across the parties' effective comps, including empty slots.
     pub comp_builds: Vec<EventCompBuildView>,
     /// The list of registered participants.
     pub participants: Vec<EventParticipantView>,
@@ -632,15 +656,61 @@ pub struct UpdateEventBattlesRequest {
 pub struct EventRosterView {
     pub event_id: i64,
     pub roster_version: i64,
+    /// Effective comp of the first party.
     pub active_comp_id: i64,
+    /// The event's parties in order, with fill counts and role summaries.
+    pub parties: Vec<EventPartyView>,
     pub seats: Vec<EventRosterSeatView>,
     pub bench: Vec<EventParticipantView>,
+}
+
+/// How many seats of one role a party has.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct EventPartyRoleCount {
+    /// Build role (`tank`, `healer`, `support`, `dps`, `brawler`, `battle_mount`).
+    pub role: String,
+    /// Seats of that role in the party, extra roles included.
+    pub count: i32,
+}
+
+/// One party of an event: a comp, an optional label and its seat summary.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventPartyView {
+    /// Party identifier; seat keys embed it.
+    pub id: i64,
+    /// 1-based order of the party inside the event.
+    pub position: i32,
+    /// Optional label ("Clap", "Brawl").
+    pub name: Option<String>,
+    /// The comp stored on the party.
+    pub comp_id: i64,
+    /// The comp whose seats the party currently has. Equals `comp_id` unless the event has a
+    /// single party, whose comp can switch to a larger variant as people sign up.
+    pub active_comp_id: i64,
+    /// Name of the effective comp.
+    pub comp_name: String,
+    /// Comp seats plus the party's extra roles.
+    pub seat_count: i32,
+    /// Seats of the party that currently have someone on them.
+    pub filled_count: i32,
+    /// Board party numbers the party spans (a comp over 20 seats spans several).
+    pub board_party_numbers: Vec<i32>,
+    /// Seat counts per role, in the order tank, healer, support, dps, brawler, battle_mount.
+    pub role_counts: Vec<EventPartyRoleCount>,
 }
 
 /// A canonical seat in the active composition.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventRosterSeatView {
+    /// Stable key `party:{party_id}:build:{build_id}:{n}`.
     pub key: String,
+    /// Party the seat belongs to.
+    pub party_id: i64,
+    /// Label of that party, if it has one.
+    pub party_name: Option<String>,
+    /// 1-based order of that party inside the event.
+    pub party_position: i32,
+    /// Board party number: continues across the event's parties, 20 seats each.
     pub party_number: i32,
     pub position: i32,
     pub build_id: i64,
@@ -679,6 +749,62 @@ pub struct CreateEventRosterRoleRequest {
     /// Existing build to make available as an event-specific roster role.
     #[schema(example = 5)]
     pub build_id: i64,
+    /// Party that gets the extra seat. Defaults to the event's last party.
+    #[serde(default)]
+    pub party_id: Option<i64>,
+}
+
+/// Request body to add a party to an event.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({ "comp_id": 3, "name": "Brawl", "expected_roster_version": 4 }))]
+pub struct CreateEventPartyRequest {
+    /// Comp the new party is built from.
+    pub comp_id: i64,
+    /// Optional label for the party.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Roster version the client last saw.
+    pub expected_roster_version: i64,
+}
+
+/// Request body to change a party's comp and/or label.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({ "comp_id": 3, "name": "Clap", "expected_roster_version": 4 }))]
+pub struct UpdateEventPartyRequest {
+    /// New comp. Members whose seat still exists in it keep that seat; the rest return to the
+    /// waiting list.
+    #[serde(default)]
+    pub comp_id: Option<i64>,
+    /// New label. An empty string clears it.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Roster version the client last saw.
+    pub expected_roster_version: i64,
+}
+
+/// Request body to remove a party.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct DeleteEventPartyRequest {
+    /// Roster version the client last saw.
+    pub expected_roster_version: i64,
+}
+
+/// Request body to reorder an event's parties.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct ReorderEventPartiesRequest {
+    /// Every party id of the event, in the wanted order.
+    pub party_ids: Vec<i64>,
+    /// Roster version the client last saw.
+    pub expected_roster_version: i64,
+}
+
+/// A roster after a party change, with how many members lost their seat.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventPartyChangeView {
+    /// The roster after the change.
+    pub roster: EventRosterView,
+    /// Members whose seat no longer exists and who went back to the waiting list.
+    pub unseated_count: i32,
 }
 
 /// Request body to create a new event.

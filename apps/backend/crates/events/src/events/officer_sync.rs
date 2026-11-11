@@ -25,11 +25,13 @@ use crate::events::{
         AssignRosterSeatRequest, CreateEventRosterRoleRequest, ParticipateEventRequest,
         RosterVersionRequest,
     },
+    parties::party_id_at_position,
     service::EventService,
     sync::{linked_event_peers, map_build, sync_participation},
 };
 use backend_core::errors::AppError;
-use backend_entities::events::{event, event_roster_assignment, event_roster_role};
+use backend_combat::seats::EventSeatKey;
+use backend_entities::events::{event, event_party, event_roster_assignment, event_roster_role};
 use backend_entities::users as user_entities;
 use backend_identity::tenant::TenantRegistry;
 use backend_identity::users::identity::{upsert_discord_user, user_id_for_discord_id};
@@ -37,10 +39,10 @@ use backend_runtime::sync::event_links::canonical_event_origin;
 
 /// How a roster role changed on the event the officer edited.
 pub enum RosterRoleChange {
-    /// An extra role for this build was added.
-    Added { build_id: i64 },
-    /// The extra role for this build was removed.
-    Removed { build_id: i64 },
+    /// An extra role for this build was added to the party at `party_position`.
+    Added { build_id: i64, party_position: i32 },
+    /// The extra role for this build was removed from the party at `party_position`.
+    Removed { build_id: i64, party_position: i32 },
 }
 
 /// Forwards an officer adding, changing or removing a participant.
@@ -80,19 +82,51 @@ pub async fn sync_officer_participation(
     sync_participation(control, registry, tenant_id, event_id, &actor, request).await
 }
 
-/// Seat key `build:{build_id}:{ordinal}` with the build id passed through `map`.
+/// Seat key `party:{party_id}:build:{build_id}:{ordinal}` with the party and build ids passed
+/// through `map`.
 ///
-/// Seat keys name a build by its tenant-local id, so a key cannot be copied to another tenant as
-/// is. Returns `None` for a key that does not have that shape.
-fn translate_seat_key(seat_key: &str, map: impl FnOnce(i64) -> Option<i64>) -> Option<String> {
-    let mut parts = seat_key.split(':');
-    let (Some("build"), Some(build_id), Some(ordinal), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
+/// Seat keys name a party and a build by tenant-local ids, so a key cannot be copied to another
+/// tenant as is. `map` receives `(party_id, build_id)` and returns the copy's pair, or `None` when
+/// the copy has no counterpart. Returns `None` for a key that does not have that shape.
+fn translate_seat_key(
+    seat_key: &str,
+    map: impl FnOnce(i64, i64) -> Option<(i64, i64)>,
+) -> Option<String> {
+    let parsed = EventSeatKey::parse(seat_key)?;
+    let (party_id, build_id) = map(parsed.party_id, parsed.build_id)?;
+    Some(
+        EventSeatKey {
+            party_id,
+            build_id,
+            ordinal: parsed.ordinal,
+        }
+        .render(),
+    )
+}
+
+/// The party of `peer_event_id` standing where `source_party_id` stands on the edited event.
+///
+/// Copies keep a single party, so only the first party's seats have a counterpart. Parties are
+/// matched by position because their ids are tenant-local.
+async fn peer_party_id(
+    source: &DatabaseConnection,
+    peer: &DatabaseConnection,
+    peer_event_id: i64,
+    source_party_id: i64,
+) -> Result<Option<i64>, AppError> {
+    let Some(position) = event_party::Entity::find_by_id(source_party_id)
+        .one(source)
+        .await?
+        .map(|party| party.position)
     else {
-        return None;
+        return Ok(None);
     };
-    let build_id: i64 = build_id.parse().ok()?;
-    Some(format!("build:{}:{ordinal}", map(build_id)?))
+    Ok(event_party::Entity::find()
+        .filter(event_party::Column::EventId.eq(peer_event_id))
+        .filter(event_party::Column::Position.eq(position))
+        .one(peer)
+        .await?
+        .map(|party| party.id))
 }
 
 /// Who holds one touched seat on the edited event, by Discord id.
@@ -178,6 +212,7 @@ async fn sync_seats_to_peer(
     (origin_tenant, origin_event): (&str, i64),
 ) -> Result<(), AppError> {
     let peer = registry.get_or_load(peer_tenant).await?;
+    let current = registry.get_or_load(tenant_id).await?;
     let assigned_by = upsert_discord_user(
         &peer.db,
         &actor.discord_id,
@@ -190,11 +225,15 @@ async fn sync_seats_to_peer(
     // Translate every key up front so a seat the copy cannot represent fails before any write.
     let mut wanted: Vec<(String, Option<i64>)> = Vec::with_capacity(states.len());
     for state in states {
-        let build_id = state
-            .seat_key
-            .split(':')
-            .nth(1)
-            .and_then(|id| id.parse::<i64>().ok());
+        let parsed = EventSeatKey::parse(&state.seat_key).ok_or_else(|| {
+            AppError::Validation(format!("seat {} has no counterpart", state.seat_key))
+        })?;
+        let peer_party = peer_party_id(&current.db, &peer.db, peer_id, parsed.party_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Validation(format!("seat {} has no counterpart", state.seat_key))
+            })?;
+        let build_id = Some(parsed.build_id);
         let mapped = map_build(
             control,
             tenant_id,
@@ -204,7 +243,10 @@ async fn sync_seats_to_peer(
             origin_event,
         )
         .await?;
-        let peer_key = translate_seat_key(&state.seat_key, |_| mapped).ok_or_else(|| {
+        let peer_key = translate_seat_key(&state.seat_key, |_, _| {
+            mapped.map(|build| (peer_party, build))
+        })
+        .ok_or_else(|| {
             AppError::Validation(format!("seat {} has no counterpart", state.seat_key))
         })?;
         let occupant = match &state.occupant {
@@ -387,7 +429,15 @@ async fn sync_role_change_to_peer(
     let peer = registry.get_or_load(peer_tenant).await?;
     let service = EventService::new();
     match *change {
-        RosterRoleChange::Added { build_id } => {
+        RosterRoleChange::Added {
+            build_id,
+            party_position,
+        } => {
+            // Copies keep a single party: a role on any other party has no counterpart.
+            let Some(peer_party) = party_id_at_position(&peer.db, peer_id, party_position).await?
+            else {
+                return Ok(());
+            };
             let mapped = map_role_build(
                 control,
                 registry,
@@ -402,7 +452,10 @@ async fn sync_role_change_to_peer(
                 .create_event_roster_role(
                     &peer.db,
                     peer_id,
-                    CreateEventRosterRoleRequest { build_id: mapped },
+                    CreateEventRosterRoleRequest {
+                        build_id: mapped,
+                        party_id: Some(peer_party),
+                    },
                 )
                 .await
             {
@@ -411,7 +464,16 @@ async fn sync_role_change_to_peer(
                 Err(error) => Err(error),
             }
         }
-        RosterRoleChange::Removed { build_id } => {
+        RosterRoleChange::Removed {
+            build_id,
+            party_position,
+        } => {
+            if party_id_at_position(&peer.db, peer_id, party_position)
+                .await?
+                .is_none()
+            {
+                return Ok(());
+            }
             let Some(mapped) = map_build(
                 control,
                 tenant_id,
@@ -493,21 +555,28 @@ mod tests {
     use super::translate_seat_key;
 
     #[test]
-    fn seat_keys_are_rewritten_to_the_copys_build() {
+    fn seat_keys_are_rewritten_to_the_copys_party_and_build() {
         assert_eq!(
-            translate_seat_key("build:7:3", |id| Some(id + 100)),
-            Some("build:107:3".to_owned())
+            translate_seat_key("party:2:build:7:3", |party, build| Some((
+                party + 10,
+                build + 100
+            ))),
+            Some("party:12:build:107:3".to_owned())
         );
-        assert_eq!(translate_seat_key("build:7:3", |_| None), None);
+        assert_eq!(translate_seat_key("party:2:build:7:3", |_, _| None), None);
         for malformed in [
             "",
-            "build",
-            "build:x:1",
-            "build:7",
-            "role:7:1",
-            "build:7:1:9",
+            "build:7:3",
+            "party:2",
+            "party:x:build:7:1",
+            "party:2:role:7:1",
+            "party:2:build:7:1:9",
         ] {
-            assert_eq!(translate_seat_key(malformed, Some), None, "{malformed}");
+            assert_eq!(
+                translate_seat_key(malformed, |party, build| Some((party, build))),
+                None,
+                "{malformed}"
+            );
         }
     }
 }

@@ -40,6 +40,26 @@ fn guarded_routes() -> Vec<(&'static str, &'static str, Option<Value>)> {
         ("POST", "/{id}/roster/auto-fill", Some(version)),
         ("POST", "/{id}/roster-roles", Some(json!({ "build_id": 1 }))),
         ("DELETE", "/{id}/roster-roles/1", None),
+        (
+            "POST",
+            "/{id}/parties",
+            Some(json!({ "comp_id": 1, "expected_roster_version": 0 })),
+        ),
+        (
+            "PATCH",
+            "/{id}/parties/1",
+            Some(json!({ "name": "Brawl", "expected_roster_version": 0 })),
+        ),
+        (
+            "DELETE",
+            "/{id}/parties/1",
+            Some(json!({ "expected_roster_version": 0 })),
+        ),
+        (
+            "POST",
+            "/{id}/parties/order",
+            Some(json!({ "party_ids": [1], "expected_roster_version": 0 })),
+        ),
         ("POST", "/{id}/mirror-retry", None),
         ("PATCH", "/{id}", Some(json!({}))),
         ("DELETE", "/{id}", None),
@@ -88,7 +108,7 @@ async fn every_mutating_event_route_rejects_a_copy_with_the_origin() {
     let app = matrix_app(super::router(), &db, TENANT, "guild");
 
     let routes = guarded_routes();
-    assert_eq!(routes.len(), 22, "one entry per guarded handler");
+    assert_eq!(routes.len(), 26, "one entry per guarded handler");
     for (method, template, body) in routes {
         let copy = insert_event(&db, creator).await;
         link_event(&db, ("alliance", ORIGIN_EVENT), (TENANT, copy), true).await;

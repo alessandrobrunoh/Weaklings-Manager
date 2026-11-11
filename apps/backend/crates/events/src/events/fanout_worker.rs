@@ -11,6 +11,7 @@ use crate::alliance_share::{ShareActor, copy_alliance_comp_to_tenant};
 use crate::events::{
     fanout_outbox::{self, ClaimedTarget, FailureDisposition},
     models::CreateEventRequest,
+    parties::load_event_parties,
     service::EventService,
 };
 use backend_core::errors::AppError;
@@ -493,10 +494,23 @@ async fn sync_roster_roles(
     target_event_id: i64,
     build_id_map: &HashMap<i64, i64>,
 ) -> Result<(), AppError> {
-    let source_roles = event_roster_role::Entity::find()
+    // Copies keep a single party, so only the first party's extra roles are copied.
+    let source_first_party = load_event_parties(source, source_event_id)
+        .await?
+        .first()
+        .map(|party| party.id);
+    let source_roles: Vec<_> = event_roster_role::Entity::find()
         .filter(event_roster_role::Column::EventId.eq(source_event_id))
         .all(source)
-        .await?;
+        .await?
+        .into_iter()
+        .filter(|role| role.party_id.or(source_first_party) == source_first_party)
+        .collect();
+    let target_first_party = load_event_parties(target, target_event_id)
+        .await?
+        .first()
+        .map(|party| party.id)
+        .ok_or_else(|| AppError::Internal(format!("event {target_event_id} has no parties")))?;
     let mapped_roles = source_roles
         .into_iter()
         .map(|role| {
@@ -517,6 +531,7 @@ async fn sync_roster_roles(
         event_roster_role::ActiveModel {
             event_id: Set(target_event_id),
             build_id: Set(build_id),
+            party_id: Set(Some(target_first_party)),
             ..Default::default()
         }
         .insert(&txn)

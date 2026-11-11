@@ -2252,6 +2252,25 @@
         ],
         "type": "object"
       },
+      "ApiResponseEventPartyChange": {
+        "description": "`OpenAPI` schema wrapper for a roster after a party change.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EventPartyChangeView",
+            "description": "The roster after the change and the number of members it unseated."
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\".",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponseEventRevisionList": {
         "description": "`OpenAPI` schema wrapper for event revision fingerprints.",
         "properties": {
@@ -2261,6 +2280,25 @@
               "$ref": "#/components/schemas/EventRevision"
             },
             "type": "array"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\".",
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseEventRoster": {
+        "description": "`OpenAPI` schema wrapper for an event roster snapshot.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EventRosterView",
+            "description": "The roster after the change."
           },
           "status": {
             "description": "Indicates the outcome of the request, always \"success\".",
@@ -4186,6 +4224,14 @@
                 "example": "Fill",
                 "type": "string"
               },
+              "party_id": {
+                "description": "Party whose seats this role extends. `None` for the virtual `Fill` role, which belongs to\nno party.",
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "weapon_key": {
                 "description": "`weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`.",
                 "type": [
@@ -4232,7 +4278,7 @@
                 "type": "string"
               },
               "builds": {
-                "description": "Concrete builds available to select, including event-specific extra roster slots.",
+                "description": "Concrete builds available to select, including event-specific extra roster slots. The\nunion over every party, quantities summed.",
                 "items": {
                   "$ref": "#/components/schemas/EventSignupBuildView"
                 },
@@ -4245,6 +4291,13 @@
               "is_already_registered": {
                 "description": "Whether the requesting member is already on the roster and therefore does not increment\nthe prospective threshold merely by opening the menu.",
                 "type": "boolean"
+              },
+              "parties": {
+                "description": "The same builds grouped by party, in party order. Each build's `quantity` counts only that\nparty's seats.",
+                "items": {
+                  "$ref": "#/components/schemas/EventSignupPartyView"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -4253,6 +4306,7 @@
               "active_comp_capacity",
               "is_already_registered",
               "builds",
+              "parties",
               "has_declared_weapons"
             ],
             "type": "object"
@@ -11378,6 +11432,38 @@
         ],
         "type": "object"
       },
+      "CreateEventPartyRequest": {
+        "description": "Request body to add a party to an event.",
+        "example": {
+          "comp_id": 3,
+          "expected_roster_version": 4,
+          "name": "Brawl"
+        },
+        "properties": {
+          "comp_id": {
+            "description": "Comp the new party is built from.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "expected_roster_version": {
+            "description": "Roster version the client last saw.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Optional label for the party.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "comp_id",
+          "expected_roster_version"
+        ],
+        "type": "object"
+      },
       "CreateEventRequest": {
         "description": "Request body to create a new event.",
         "example": {
@@ -11509,6 +11595,14 @@
             "example": 5,
             "format": "int64",
             "type": "integer"
+          },
+          "party_id": {
+            "description": "Party that gets the extra seat. Defaults to the event's last party.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -12383,6 +12477,20 @@
           "spell_id",
           "cast_at",
           "target_ids"
+        ],
+        "type": "object"
+      },
+      "DeleteEventPartyRequest": {
+        "description": "Request body to remove a party.",
+        "properties": {
+          "expected_roster_version": {
+            "description": "Roster version the client last saw.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_roster_version"
         ],
         "type": "object"
       },
@@ -13701,7 +13809,7 @@
                 "type": "array"
               },
               "comp_builds": {
-                "description": "Every build and quantity in the active comp snapshot, including empty slots.",
+                "description": "Every build and quantity across the parties' effective comps, including empty slots.",
                 "items": {
                   "$ref": "#/components/schemas/EventCompBuildView"
                 },
@@ -13722,6 +13830,13 @@
                 "description": "The list of registered participants.",
                 "items": {
                   "$ref": "#/components/schemas/EventParticipantView"
+                },
+                "type": "array"
+              },
+              "parties": {
+                "description": "The event's parties in order. Empty for flash masses.",
+                "items": {
+                  "$ref": "#/components/schemas/EventPartyView"
                 },
                 "type": "array"
               },
@@ -13750,6 +13865,7 @@
             },
             "required": [
               "roster_roles",
+              "parties",
               "comp_builds",
               "participants",
               "fights",
@@ -14096,6 +14212,117 @@
         ],
         "type": "object"
       },
+      "EventPartyChangeView": {
+        "description": "A roster after a party change, with how many members lost their seat.",
+        "properties": {
+          "roster": {
+            "$ref": "#/components/schemas/EventRosterView",
+            "description": "The roster after the change."
+          },
+          "unseated_count": {
+            "description": "Members whose seat no longer exists and who went back to the waiting list.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "roster",
+          "unseated_count"
+        ],
+        "type": "object"
+      },
+      "EventPartyRoleCount": {
+        "description": "How many seats of one role a party has.",
+        "properties": {
+          "count": {
+            "description": "Seats of that role in the party, extra roles included.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "role": {
+            "description": "Build role (`tank`, `healer`, `support`, `dps`, `brawler`, `battle_mount`).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "count"
+        ],
+        "type": "object"
+      },
+      "EventPartyView": {
+        "description": "One party of an event: a comp, an optional label and its seat summary.",
+        "properties": {
+          "active_comp_id": {
+            "description": "The comp whose seats the party currently has. Equals `comp_id` unless the event has a\nsingle party, whose comp can switch to a larger variant as people sign up.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "board_party_numbers": {
+            "description": "Board party numbers the party spans (a comp over 20 seats spans several).",
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "comp_id": {
+            "description": "The comp stored on the party.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "comp_name": {
+            "description": "Name of the effective comp.",
+            "type": "string"
+          },
+          "filled_count": {
+            "description": "Seats of the party that currently have someone on them.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "description": "Party identifier; seat keys embed it.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Optional label (\"Clap\", \"Brawl\").",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "description": "1-based order of the party inside the event.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "role_counts": {
+            "description": "Seat counts per role, in the order tank, healer, support, dps, brawler, battle_mount.",
+            "items": {
+              "$ref": "#/components/schemas/EventPartyRoleCount"
+            },
+            "type": "array"
+          },
+          "seat_count": {
+            "description": "Comp seats plus the party's extra roles.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "comp_id",
+          "active_comp_id",
+          "comp_name",
+          "seat_count",
+          "filled_count",
+          "board_party_numbers",
+          "role_counts"
+        ],
+        "type": "object"
+      },
       "EventRevision": {
         "description": "Cheap fingerprint the Discord poller uses to skip full event-detail hydration.",
         "properties": {
@@ -14163,6 +14390,14 @@
             "example": "Fill",
             "type": "string"
           },
+          "party_id": {
+            "description": "Party whose seats this role extends. `None` for the virtual `Fill` role, which belongs to\nno party.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "weapon_key": {
             "description": "`weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`.",
             "type": [
@@ -14174,6 +14409,130 @@
         "required": [
           "name",
           "is_fill"
+        ],
+        "type": "object"
+      },
+      "EventRosterSeatView": {
+        "description": "A canonical seat in the active composition.",
+        "properties": {
+          "build_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "build_name": {
+            "type": "string"
+          },
+          "build_version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "key": {
+            "description": "Stable key `party:{party_id}:build:{build_id}:{n}`.",
+            "type": "string"
+          },
+          "participant": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EventParticipantView"
+              }
+            ]
+          },
+          "party_id": {
+            "description": "Party the seat belongs to.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "party_name": {
+            "description": "Label of that party, if it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "party_number": {
+            "description": "Board party number: continues across the event's parties, 20 seats each.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "party_position": {
+            "description": "1-based order of that party inside the event.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "role": {
+            "type": "string"
+          },
+          "weapon_key": {
+            "description": "`weapon:{BASE}` of the seat build's main-hand weapon, when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "party_id",
+          "party_position",
+          "party_number",
+          "position",
+          "build_id",
+          "build_name",
+          "build_version",
+          "role"
+        ],
+        "type": "object"
+      },
+      "EventRosterView": {
+        "description": "A persisted event roster snapshot.",
+        "properties": {
+          "active_comp_id": {
+            "description": "Effective comp of the first party.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "bench": {
+            "items": {
+              "$ref": "#/components/schemas/EventParticipantView"
+            },
+            "type": "array"
+          },
+          "event_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "parties": {
+            "description": "The event's parties in order, with fill counts and role summaries.",
+            "items": {
+              "$ref": "#/components/schemas/EventPartyView"
+            },
+            "type": "array"
+          },
+          "roster_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "seats": {
+            "items": {
+              "$ref": "#/components/schemas/EventRosterSeatView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "event_id",
+          "roster_version",
+          "active_comp_id",
+          "parties",
+          "seats",
+          "bench"
         ],
         "type": "object"
       },
@@ -14244,7 +14603,7 @@
             "type": "string"
           },
           "builds": {
-            "description": "Concrete builds available to select, including event-specific extra roster slots.",
+            "description": "Concrete builds available to select, including event-specific extra roster slots. The\nunion over every party, quantities summed.",
             "items": {
               "$ref": "#/components/schemas/EventSignupBuildView"
             },
@@ -14257,6 +14616,13 @@
           "is_already_registered": {
             "description": "Whether the requesting member is already on the roster and therefore does not increment\nthe prospective threshold merely by opening the menu.",
             "type": "boolean"
+          },
+          "parties": {
+            "description": "The same builds grouped by party, in party order. Each build's `quantity` counts only that\nparty's seats.",
+            "items": {
+              "$ref": "#/components/schemas/EventSignupPartyView"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -14265,7 +14631,48 @@
           "active_comp_capacity",
           "is_already_registered",
           "builds",
+          "parties",
           "has_declared_weapons"
+        ],
+        "type": "object"
+      },
+      "EventSignupPartyView": {
+        "description": "The builds one party offers to a member signing up.",
+        "properties": {
+          "builds": {
+            "description": "Builds the party offers, with the party's own quantities.",
+            "items": {
+              "$ref": "#/components/schemas/EventSignupBuildView"
+            },
+            "type": "array"
+          },
+          "comp_name": {
+            "description": "Name of the party's effective comp.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Optional party label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "party_id": {
+            "description": "Party identifier.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "position": {
+            "description": "1-based order of the party inside the event.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "party_id",
+          "position",
+          "comp_name",
+          "builds"
         ],
         "type": "object"
       },
@@ -21056,6 +21463,29 @@
         },
         "type": "object"
       },
+      "ReorderEventPartiesRequest": {
+        "description": "Request body to reorder an event's parties.",
+        "properties": {
+          "expected_roster_version": {
+            "description": "Roster version the client last saw.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "party_ids": {
+            "description": "Every party id of the event, in the wanted order.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "party_ids",
+          "expected_roster_version"
+        ],
+        "type": "object"
+      },
       "ReportDataQuality": {
         "description": "Caveats that explain gaps in the numbers above.",
         "properties": {
@@ -24386,6 +24816,40 @@
         },
         "required": [
           "battle_ids"
+        ],
+        "type": "object"
+      },
+      "UpdateEventPartyRequest": {
+        "description": "Request body to change a party's comp and/or label.",
+        "example": {
+          "comp_id": 3,
+          "expected_roster_version": 4,
+          "name": "Clap"
+        },
+        "properties": {
+          "comp_id": {
+            "description": "New comp. Members whose seat still exists in it keep that seat; the rest return to the\nwaiting list.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "expected_roster_version": {
+            "description": "Roster version the client last saw.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "New label. An empty string clears it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "expected_roster_version"
         ],
         "type": "object"
       },
@@ -37695,6 +38159,409 @@
           }
         ],
         "summary": "List eligible participation guilds",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/events/{id}/parties": {
+      "post": {
+        "description": "The roster version carried in the body is checked like every other roster write. The change is\nbroadcast on the live roster socket. Alliance copies keep their own single party and are not\nupdated.",
+        "operationId": "create_event_party",
+        "parameters": [
+          {
+            "description": "Event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventPartyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEventRoster"
+                }
+              }
+            },
+            "description": "Party added; the roster after the change"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - not the event creator and lacks events.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Event or comp not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale roster version, or a flash mass"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "Add an event party",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/events/{id}/parties/order": {
+      "post": {
+        "operationId": "reorder_event_parties",
+        "parameters": [
+          {
+            "description": "Event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderEventPartiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEventRoster"
+                }
+              }
+            },
+            "description": "Parties reordered; the roster after the change"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "party_ids is not exactly the event's parties"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - not the event creator and lacks events.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Event not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale roster version, or a flash mass"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "Reorder event parties",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/events/{id}/parties/{party_id}": {
+      "delete": {
+        "description": "The last remaining party cannot be removed (409). Its members go back to the waiting list and\n`unseated_count` says how many.",
+        "operationId": "delete_event_party",
+        "parameters": [
+          {
+            "description": "Event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Party ID",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteEventPartyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEventPartyChange"
+                }
+              }
+            },
+            "description": "Party removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - not the event creator and lacks events.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Event or party not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Last party, stale roster version, or a flash mass"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "Remove an event party",
+        "tags": [
+          "events"
+        ]
+      },
+      "patch": {
+        "description": "Members whose seat (build and ordinal) still exists in the new comp keep it; the others go back\nto the waiting list and `unseated_count` says how many. An empty `name` clears the label.",
+        "operationId": "update_event_party",
+        "parameters": [
+          {
+            "description": "Event ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Party ID",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventPartyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEventPartyChange"
+                }
+              }
+            },
+            "description": "Party updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - not the event creator and lacks events.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Event, party or comp not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale roster version, or a flash mass"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ],
+        "summary": "Update an event party",
         "tags": [
           "events"
         ]

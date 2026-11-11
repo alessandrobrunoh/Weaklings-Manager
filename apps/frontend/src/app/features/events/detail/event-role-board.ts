@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 
 import type {
+  EventParty,
   EventRosterParticipant,
   EventRosterSeat,
 } from '../../../core/models/api.models';
@@ -9,6 +10,9 @@ import type { TranslationKey } from '../../../i18n/en';
 import { Avatar } from '../../../shared/components/avatar/avatar';
 import {
   groupSeatsByRole,
+  partyForBoardNumber,
+  partyHeading,
+  seatPartyLabel,
   roleColorVar,
   roleGlyph,
   roleLabelKey,
@@ -83,6 +87,9 @@ import {
                         >
                           <app-avatar [username]="occupant.username" size="xs" />
                           <span class="player-chip__name">{{ occupant.username }}</span>
+                          @if (occupant.partyLabel) {
+                            <span class="player-chip__party">{{ occupant.partyLabel }}</span>
+                          }
                           @if (occupant.user_id === currentUserId()) {
                             <span class="player-chip__you">{{ t('events.lobby.you') }}</span>
                           }
@@ -336,6 +343,11 @@ import {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .player-chip__party {
+      font-size: 0.625rem;
+      font-weight: 700;
+      color: var(--color-text-secondary);
+    }
     .player-chip__you {
       font-size: 0.625rem;
       font-weight: 800;
@@ -384,6 +396,8 @@ export class EventRoleBoard {
   readonly seats = input.required<readonly EventRosterSeat[]>();
   /** Signed-up players who do not have a seat yet. */
   readonly bench = input.required<readonly EventRosterParticipant[]>();
+  /** The event's parties; with more than one, each player is tagged with their party. */
+  readonly parties = input<readonly EventParty[]>([]);
   /** The viewer, highlighted wherever they appear. */
   readonly currentUserId = input<number | null>(null);
   /** Weapon icon per build id; builds without one show their role letter. */
@@ -418,7 +432,20 @@ export class EventRoleBoard {
     return total > 0 ? Math.round((filled / total) * 100) : 0;
   }
 
-  protected occupants(build: LobbyBuildGroup): EventRosterParticipant[] {
-    return build.seats.flatMap((seat) => (seat.participant ? [seat.participant] : []));
+  protected occupants(
+    build: LobbyBuildGroup,
+  ): (EventRosterParticipant & { partyLabel: string | null })[] {
+    const tagged = this.parties().length > 1;
+    const defaultName = (position: number): string => this.t('events.lobby.party', { number: position });
+    return build.seats.flatMap((seat) => {
+      if (!seat.participant) return [];
+      const party = partyForBoardNumber(this.parties(), seat.party_number);
+      const partyLabel = tagged
+        ? party
+          ? partyHeading(party, seat.party_number, defaultName)
+          : seatPartyLabel(seat, defaultName)
+        : null;
+      return [{ ...seat.participant, partyLabel }];
+    });
   }
 }
