@@ -257,6 +257,13 @@ export interface UpdateSplitDiscordSyncState {
 
 export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped' | 'cancelled';
 
+/** Caller-scoped decision for managing an event (the thread Ping button uses it). */
+export interface EventManagementAuthorityView {
+  is_organizer: boolean;
+  can_manage: boolean;
+  required_permission: string;
+}
+
 export interface EventView {
   id: number;
   title: string;

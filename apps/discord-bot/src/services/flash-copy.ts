@@ -41,6 +41,8 @@ const flashText = {
     nobody: "*Nobody yet — one tap on Join below.*",
     join: "Join",
     leave: "Leave",
+    ping: "Ping",
+    reminder: "🔔 {prefix}Reminder: **{title}** starts <t:{timestamp}:R>.",
     controlsHint: "Use the controls below to join, leave or manage the event.",
     massNotice:
       "🔔 {mentions}\n**{title}** mass is starting — join <#{voiceChannelId}>. Start: <t:{startTs}:R>.{unlinked}",
@@ -98,6 +100,8 @@ const flashText = {
     nobody: "*Nessuno per ora — premi Partecipa qui sotto.*",
     join: "Partecipa",
     leave: "Esci",
+    ping: "Avvisa",
+    reminder: "🔔 {prefix}Promemoria: **{title}** inizia <t:{timestamp}:R>.",
     controlsHint: "Usa i pulsanti qui sotto per partecipare, uscire o gestire la massa.",
     massNotice:
       "🔔 {mentions}\n**{title}** — la mass è iniziata. Entra in <#{voiceChannelId}>. Inizio: <t:{startTs}:R>.{unlinked}",

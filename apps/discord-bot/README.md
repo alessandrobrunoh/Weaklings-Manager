@@ -56,7 +56,7 @@ GUILD_NAME=YourInGameGuildName
 `/flash` accepts relative times such as `30m` and `1h30m`, or a guild-local wall time such as
 `21:00`. A clock time that has already passed means the next day. The message action opens the
 same form with the message text prefilled for review. The flash modal, calendar, thread card,
-Join/Leave and Undo copy use Italian or English based on the Discord locale.
+Join/Leave/Ping and Undo copy use Italian or English based on the Discord locale.
 
 > **Multi-server**: one bot process serves every Discord server it is invited to. There is no
 > "the" server: slash commands are registered per guild, and each registered tenant gets its own
