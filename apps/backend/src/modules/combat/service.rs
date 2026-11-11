@@ -19,6 +19,7 @@ use super::models::{
     MemberItemPowerView, ReadinessObservation, RunDetail, RunSummary, ScenarioDefinition,
     ScenarioDetail, ScenarioSummary, ScenarioVersionRef, SpecSource, UpdateScenarioRequest,
 };
+use super::seats::canonical_comp_seats;
 use crate::errors::AppError;
 use crate::modules::combat::dataset::{
     combat_items, combat_rules, combat_spells, dataset_version, spec_node,
@@ -253,11 +254,8 @@ impl CombatService {
         event_id: Option<i64>,
     ) -> Result<CompReadinessView, AppError> {
         use crate::modules::events::entities::event_participation;
-        use crate::modules::events::service::EventService;
 
-        let seat_views = EventService::new()
-            .canonical_roster_seats(db, comp_id)
-            .await?;
+        let seat_views = canonical_comp_seats(db, comp_id).await?;
         if seat_views.is_empty() {
             comp::Entity::find_by_id(comp_id)
                 .one(db)

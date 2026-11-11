@@ -1698,44 +1698,29 @@ impl EventService {
     }
 
     /// Expands a comp's `comp_builds` rows into the flat, ordered seat list every roster view
-    /// is built from.
+    /// is built from, with no participant assigned yet.
     ///
-    /// Public so [`crate::modules::combat::readiness`] can read the same seats for a comp with
-    /// no event context at all — readiness is a property of the composition, not of any one
-    /// night's roster.
+    /// The seat query itself is [`crate::modules::combat::seats::canonical_comp_seats`], which
+    /// readiness also reads with no event context at all.
     pub async fn canonical_roster_seats<C: ConnectionTrait>(
         &self,
         db: &C,
         comp_id: i64,
     ) -> Result<Vec<EventRosterSeatView>, AppError> {
-        let mut rows = comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(comp_id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        rows.sort_by_key(|row| row.build_id);
-        let builds_by_id =
-            load_builds_by_id(db, rows.iter().map(|row| row.build_id).collect()).await?;
-        let mut seats = Vec::new();
-        for row in rows {
-            let build = builds_by_id
-                .get(&row.build_id)
-                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", row.build_id)))?;
-            for ordinal in 1..=row.quantity {
-                let sequential = seats.len() as i32;
-                seats.push(EventRosterSeatView {
-                    key: format!("build:{}:{ordinal}", row.build_id),
-                    party_number: sequential / 20 + 1,
-                    position: sequential % 20 + 1,
-                    build_id: row.build_id,
-                    build_name: build.name.clone(),
-                    build_version: build.version,
-                    role: build.role.clone(),
-                    participant: None,
-                });
-            }
-        }
-        Ok(seats)
+        let seats = crate::modules::combat::seats::canonical_comp_seats(db, comp_id).await?;
+        Ok(seats
+            .into_iter()
+            .map(|seat| EventRosterSeatView {
+                key: seat.key,
+                party_number: seat.party_number,
+                position: seat.position,
+                build_id: seat.build_id,
+                build_name: seat.build_name,
+                build_version: seat.build_version,
+                role: seat.role,
+                participant: None,
+            })
+            .collect())
     }
 
     async fn advance_roster_version(

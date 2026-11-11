@@ -172,7 +172,11 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::get(openapi::serve_openapi_json),
         )
         .merge(modules::router())
-        .nest("/platform", crate::modules::platform::router())
+        .nest(
+            "/platform",
+            crate::modules::platform::router()
+                .merge(crate::modules::events::platform_routes::platform_routes()),
+        )
         .nest("/tenants", crate::modules::platform::public_router())
         .nest("/alliances", crate::modules::platform::alliance_router());
 

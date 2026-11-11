@@ -2,7 +2,7 @@
 //!
 //! Pure over plain structs — no database, no async — so the scoring and the assignment algorithm
 //! are each unit-testable on their own. The service layer above this turns `event_participations`,
-//! `canonical_roster_seats` and `user_specializations` into [`Member`] and [`Seat`]; nothing here
+//! `canonical_comp_seats` and `user_specializations` into [`Member`] and [`Seat`]; nothing here
 //! knows those tables exist.
 //!
 //! # Why Hungarian, not greedy

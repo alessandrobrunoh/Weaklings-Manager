@@ -4,6 +4,7 @@
 
 pub mod attribution;
 pub mod auto_stop;
+pub mod comp_routes;
 #[cfg(test)]
 mod copy_matrix_tests;
 #[cfg(test)]
@@ -20,6 +21,7 @@ pub mod officer_sync;
 pub mod participation_outbox;
 #[cfg(test)]
 mod platform_leave_tests;
+pub mod platform_routes;
 pub mod roster_hub;
 pub mod router;
 pub mod schemas;

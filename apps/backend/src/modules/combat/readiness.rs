@@ -2,7 +2,7 @@
 //!
 //! Pure over [`fit::Seat`]/[`fit::Member`] — no database — so the roll-up is unit-testable on its
 //! own. The service layer turns a comp's `comp_builds` (via
-//! [`crate::modules::events::service::EventService::canonical_roster_seats`]) and a candidate pool
+//! [`super::seats::canonical_comp_seats`]) and a candidate pool
 //! of members with any recorded specialization into these shapes.
 
 use serde::Serialize;

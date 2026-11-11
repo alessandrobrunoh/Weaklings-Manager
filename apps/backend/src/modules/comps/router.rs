@@ -20,7 +20,6 @@ use crate::modules::comps::schemas::{
     ApiResponseCompDetail, ApiResponsePaginatedBuilds, ApiResponsePaginatedComps,
     PaginatedBuildSummary, PaginatedCompSummary,
 };
-use crate::modules::events::schemas::ApiResponseCompPerformance;
 use crate::pagination::PaginationParams;
 use crate::responses::ApiResponse;
 
@@ -35,7 +34,6 @@ use super::price_cache::PriceCache;
 use super::pricing::{cached_build_price, cached_comp_price, evict_build_prices};
 use super::service::CompService;
 use crate::modules::albiondata::service::AlbionDataService;
-use crate::modules::combat::models::BuildItemPowerParams;
 use crate::tenant::CurrentTenantId;
 
 /// Selects which loadout of a build an item operation targets.
@@ -153,11 +151,7 @@ pub fn router() -> Router {
             put(set_build_item_spells),
         )
         .route("/builds/{id}/versions", post(create_build_version))
-        .route("/builds/{id}/performance", get(get_build_performance))
-        .route("/builds/{id}/item-power", get(get_build_item_power))
-        .route("/builds/{id}/roster-fit", get(get_build_roster_fit))
         .route("/builds/{id}/price", get(get_build_price))
-        .route("/{id}/readiness", get(get_comp_readiness))
         .route("/{id}/price", get(get_comp_price))
         .route("/builds/{id}/archive", post(archive_build))
         .route("/builds/{id}/unarchive", post(unarchive_build))
@@ -167,7 +161,6 @@ pub fn router() -> Router {
             "/{id}",
             get(get_comp).patch(update_comp).delete(delete_comp),
         )
-        .route("/{id}/performance", get(get_comp_performance))
         .route("/{id}/versions", post(create_comp_version))
         .route("/{id}/archive", post(archive_comp))
         .route("/{id}/unarchive", post(unarchive_comp))
@@ -997,36 +990,6 @@ async fn get_comp(
     Ok(Json(ApiResponse::new(comp)))
 }
 
-/// Gets linked-event performance for a comp.
-///
-/// Any authenticated user can inspect these analytics because they are derived
-/// from event and battle data already visible to guild members.
-#[utoipa::path(
-    get,
-    path = "/api/comps/{id}/performance",
-    tag = "comps",
-    summary = "Get comp performance analytics",
-    description = "Aggregates win/loss, K/D, kill fame and opponent performance from battles linked to events using this comp.",
-    security(("session_cookie" = [])),
-    params(("id" = i64, Path, description = "Comp ID")),
-    responses(
-        (status = 200, description = "Comp performance retrieved successfully", body = ApiResponseCompPerformance),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 404, description = "Comp not found", body = ProblemDetails)
-    )
-)]
-async fn get_comp_performance(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Path(id): Path<i64>,
-) -> Result<Json<ApiResponse<crate::modules::events::models::CompPerformanceView>>, AppError> {
-    user.require(&perms, Permission::CompsCompsView).await?;
-    let service = crate::modules::events::service::EventService::new();
-    let performance = service.get_comp_performance(&db, id).await?;
-    Ok(Json(ApiResponse::new(performance)))
-}
-
 /// Updates a comp.
 ///
 /// Requires `comps.comps.edit` on a row you authored, or `comps.comps.manage` for anyone's.
@@ -1379,170 +1342,6 @@ pub(crate) async fn unarchive_comp(
     let service = CompService::new();
     let comp = service.unarchive_comp(&db, id).await?;
     Ok(Json(ApiResponse::new(comp)))
-}
-
-/// Query parameters for a comp's readiness roll-up.
-#[derive(Debug, Clone, Default, serde::Deserialize, IntoParams)]
-pub struct CompReadinessParams {
-    /// Score against this event's participants rather than every specialised member.
-    #[serde(default)]
-    pub event_id: Option<i64>,
-}
-
-/// Reports whether a composition can actually be fielded, and where it is weakest.
-#[utoipa::path(
-    get,
-    path = "/api/comps/{id}/readiness",
-    tag = "comps",
-    summary = "Get a composition's readiness roll-up",
-    description = "For every seat the comp defines, finds the best-scoring candidate in the pool \
-                   and rolls the result up to comp level: average Item Power now vs. at the \
-                   ceiling, the weakest seats, per-build bench depth, and which seats nobody can \
-                   currently fill. Pass `event_id` to score against that event's sign-ups instead \
-                   of every specialised member in the guild. When `event_id` is given and that \
-                   event's fights have a computed analytics rollup, the response also carries \
-                   `observed`: the average Item Power the roster that actually fought turned out \
-                   to have, and its delta against the prediction. `observed` is `None` — not an \
-                   error — when no `event_id` was given, or that event has no analyzed fights yet.",
-    security(("session_cookie" = [])),
-    params(("id" = i64, Path, description = "Comp ID"), CompReadinessParams),
-    responses(
-        (status = 200, description = "Readiness roll-up", body = crate::modules::combat::schemas::ApiResponseCompReadinessView),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
-        (status = 404, description = "Comp not found", body = ProblemDetails)
-    )
-)]
-async fn get_comp_readiness(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Path(id): Path<i64>,
-    Query(params): Query<CompReadinessParams>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<crate::modules::combat::models::CompReadinessView>>, AppError> {
-    user.require(&perms, Permission::CombatReadinessView)
-        .await?;
-    let readiness = crate::modules::combat::service::CombatService::new()
-        .comp_readiness(&db, id, params.event_id)
-        .await?;
-    Ok(Json(ApiResponse::new(readiness)))
-}
-
-/// Returns the Item Power of a build, optionally scored with one member's specialization.
-///
-/// Reading a build is enough: the figure is a property of the build plus whichever levels the
-/// caller asks for, and both are already visible to anyone who can open the build.
-#[utoipa::path(
-    get,
-    path = "/api/comps/builds/{id}/item-power",
-    tag = "comps",
-    summary = "Calculate a build's Item Power",
-    description = "Item Power = base(tier, enchantment) + quality bonus + Destiny Board bonuses. \
-                   Pass `spec=max` for the build's ceiling, `spec=current` with a `user_id` for \
-                   what one member would actually field, or `spec=fixed` with a `level` to compare \
-                   builds rather than people. Every contribution is itemised, so each point traces \
-                   back to the node that granted it.",
-    security(("session_cookie" = [])),
-    params(("id" = i64, Path, description = "Build version ID"), BuildItemPowerParams),
-    responses(
-        (status = 200, description = "Item Power breakdown", body = crate::modules::combat::schemas::ApiResponseItemPower),
-        (status = 400, description = "Unusable specialization source", body = ProblemDetails),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 404, description = "Build not found", body = ProblemDetails)
-    )
-)]
-async fn get_build_item_power(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Path(id): Path<i64>,
-    Query(params): Query<BuildItemPowerParams>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<crate::modules::combat::models::ItemPowerView>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsView).await?;
-    let loadout = crate::modules::combat::service::parse_loadout(params.loadout.as_deref())?;
-    let view = crate::modules::combat::service::CombatService::new()
-        .build_item_power(
-            &db,
-            id,
-            loadout,
-            params.spec.unwrap_or_default(),
-            params.user_id,
-            params.level,
-        )
-        .await?;
-    Ok(Json(ApiResponse::new(view)))
-}
-
-/// Scores every member with a recorded specialization against one build, best first.
-///
-/// Gated on the readiness permission rather than on build viewing: it reports on the whole guild
-/// at once, which is a different thing from a member working out their own Item Power.
-#[utoipa::path(
-    get,
-    path = "/api/comps/builds/{id}/roster-fit",
-    tag = "comps",
-    summary = "Rank the roster against a build",
-    description = "Returns every member with any recorded Destiny Board level, scored on this \
-                   build and sorted by Item Power descending — the answer to \"who should fly \
-                   this?\". `blocking_nodes` names, per member, the specializations that would \
-                   gain them the most Item Power, so the list doubles as a training plan.",
-    security(("session_cookie" = [])),
-    params(("id" = i64, Path, description = "Build version ID"), BuildItemPowerParams),
-    responses(
-        (status = 200, description = "Members ranked against the build", body = crate::modules::combat::schemas::ApiResponseBuildRosterFit),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
-        (status = 404, description = "Build not found", body = ProblemDetails)
-    )
-)]
-async fn get_build_roster_fit(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Path(id): Path<i64>,
-    Query(params): Query<BuildItemPowerParams>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<crate::modules::combat::models::BuildRosterFitView>>, AppError> {
-    user.require(&perms, Permission::CombatReadinessView)
-        .await?;
-    let loadout = crate::modules::combat::service::parse_loadout(params.loadout.as_deref())?;
-    let view = crate::modules::combat::service::CombatService::new()
-        .build_roster_fit(&db, id, loadout)
-        .await?;
-    Ok(Json(ApiResponse::new(view)))
-}
-
-/// Returns how one build version has performed.
-///
-/// Any authenticated user can read build performance.
-#[utoipa::path(
-    get,
-    path = "/api/comps/builds/{id}/performance",
-    tag = "comps",
-    summary = "Get a build version's battle performance",
-    description = "Attributes battle numbers to the players who actually ran this build version, \
-                   by matching sign-ups to the per-player rows in the stored battle snapshots \
-                   through their linked Albion character name. `stats` is null — not zeroed — when \
-                   the version has no battle data, so 'never used' stays distinguishable from \
-                   'lost every time'. `players_without_an_albion_link` and \
-                   `stats.matched_players` report the coverage behind the numbers.",
-    security(("session_cookie" = [])),
-    params(("id" = i64, Path, description = "Build version ID")),
-    responses(
-        (status = 200, description = "Build performance", body = crate::modules::events::schemas::ApiResponseBuildPerformance),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 404, description = "Build not found", body = ProblemDetails)
-    )
-)]
-async fn get_build_performance(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Path(id): Path<i64>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<crate::modules::events::models::BuildPerformanceView>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsView).await?;
-    let service = crate::modules::events::service::EventService::new();
-    let performance = service.get_build_performance(&db, id).await?;
-    Ok(Json(ApiResponse::new(performance)))
 }
 
 /// Returns a build's total market price, computed live from Albion Online Data.

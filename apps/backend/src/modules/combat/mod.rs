@@ -9,6 +9,7 @@
 //! above, in the service. That keeps the arithmetic unit-testable against fixtures captured from
 //! the live game, which is the only thing that can prove these numbers right.
 
+pub mod comp_routes;
 pub mod data_types;
 pub mod dataset;
 pub mod entities;
@@ -20,6 +21,7 @@ pub mod readiness;
 pub mod router;
 pub mod scenario;
 pub mod schemas;
+pub mod seats;
 pub mod service;
 pub mod sim;
 pub mod spell;

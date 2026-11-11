@@ -72,7 +72,12 @@ pub fn router() -> Router {
         )
         .nest("/openalbion", crate::modules::openalbion::router())
         .nest("/combat", crate::modules::combat::router())
-        .nest("/comps", crate::modules::comps::router())
+        .nest(
+            "/comps",
+            crate::modules::comps::router()
+                .merge(crate::modules::combat::comp_routes::comp_routes())
+                .merge(crate::modules::events::comp_routes::comp_routes()),
+        )
         .nest("/events", crate::modules::events::router())
         .nest("/actions", crate::modules::actions::router())
         .nest("/fights", crate::modules::fights::router())

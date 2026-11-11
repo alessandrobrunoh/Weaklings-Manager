@@ -91,10 +91,10 @@ use utoipa::OpenApi;
         crate::modules::comps::router::set_build_item_spells,
         crate::modules::comps::router::create_build_version,
         crate::modules::comps::router::create_comp_version,
-        crate::modules::comps::router::get_build_performance,
-        crate::modules::comps::router::get_build_item_power,
-        crate::modules::comps::router::get_build_roster_fit,
-        crate::modules::comps::router::get_comp_readiness,
+        crate::modules::events::comp_routes::get_build_performance,
+        crate::modules::combat::comp_routes::get_build_item_power,
+        crate::modules::combat::comp_routes::get_build_roster_fit,
+        crate::modules::combat::comp_routes::get_comp_readiness,
         crate::modules::comps::router::get_build_price,
         crate::modules::comps::router::get_comp_price,
         crate::modules::combat::router::get_dataset,
@@ -134,7 +134,7 @@ use utoipa::OpenApi;
         crate::modules::comps::router::list_comps,
         crate::modules::comps::router::create_comp,
         crate::modules::comps::router::get_comp,
-        crate::modules::comps::router::get_comp_performance,
+        crate::modules::events::comp_routes::get_comp_performance,
         crate::modules::comps::router::update_comp,
         crate::modules::comps::router::delete_comp,
         crate::modules::comps::router::add_comp_build,
@@ -281,8 +281,8 @@ use utoipa::OpenApi;
         crate::modules::platform::router::assign_admin,
         crate::modules::platform::router::revoke_admin,
         crate::modules::platform::router::reload_admins,
-        crate::modules::platform::router::list_exhausted_fanout,
-        crate::modules::platform::router::requeue_exhausted_fanout,
+        crate::modules::events::platform_routes::list_exhausted_fanout,
+        crate::modules::events::platform_routes::requeue_exhausted_fanout,
         crate::modules::platform::public::tenant_status,
         crate::modules::platform::public::register_tenant,
         crate::modules::platform::public::albion_search,
@@ -1128,58 +1128,95 @@ mod tests {
         out
     }
 
-    /// The `(METHOD, shape)` of every route mounted under `/api` by the module
-    /// routers. Prefixes come from `modules/mod.rs`; `platform` is mounted by
-    /// `lib.rs` (`/platform`, and `/tenants` and `/alliances` for `public.rs`).
-    fn mounted_routes(modules_dir: &Path) -> BTreeSet<(String, String)> {
-        let registry = fs::read_to_string(modules_dir.join("mod.rs")).expect("modules/mod.rs");
-        let mut prefixes: BTreeMap<String, String> = BTreeMap::new();
-        for line in registry.lines() {
-            let Some(rest) = line.trim().strip_prefix(".nest(\"") else {
-                continue;
-            };
-            let Some((prefix, tail)) = rest.split_once('"') else {
-                continue;
-            };
-            if let Some(module) = tail
-                .split("::router()")
-                .next()
-                .filter(|_| tail.contains("::router()"))
-            {
-                let module = module.trim_start_matches(|c: char| c == ',' || c.is_whitespace());
-                // `crate::modules::users` and `users` name the same module.
-                let module = module.rsplit("::").next().unwrap_or(module);
-                prefixes.insert(module.to_owned(), prefix.to_owned());
-            }
-        }
-        prefixes.insert("platform".to_owned(), "/platform".to_owned());
+    /// Where the `.route(...)` calls of every mounted router live, relative to `src/modules`,
+    /// and the prefix they are mounted under. A module entry (`events`) covers `events.rs` and
+    /// every file below `events/`; a file entry (`events/comp_routes.rs`) wins over its module,
+    /// so handlers relocated into another feature and merged into a router there keep their
+    /// real mount prefix. The registry is `modules/mod.rs`; `platform` is mounted by `lib.rs`,
+    /// and its `public.rs` splits further into `/tenants` and `/alliances` (see
+    /// `mounted_routes`). `route_sources_cover_every_mount` keeps this table complete.
+    const ROUTE_SOURCES: &[(&str, &str)] = &[
+        ("health", "/health"),
+        ("users", "/users"),
+        ("members", "/members"),
+        ("auth", "/auth"),
+        ("bank", "/bank"),
+        ("splits", "/splits"),
+        ("albion", "/albion"),
+        ("albionbb", "/albionbb"),
+        ("applications", "/applications"),
+        ("tickets", "/tickets"),
+        ("albiondata", "/albiondata"),
+        ("battles", "/battles"),
+        ("attention", "/attention"),
+        ("enemies", "/enemies"),
+        ("fingerprints", "/fingerprints"),
+        ("economy", "/economy"),
+        ("fight_analytics", "/fight-analytics"),
+        ("openalbion", "/openalbion"),
+        ("combat", "/combat"),
+        ("comps", "/comps"),
+        ("combat/comp_routes.rs", "/comps"),
+        ("events/comp_routes.rs", "/comps"),
+        ("events", "/events"),
+        ("actions", "/actions"),
+        ("fights", "/fights"),
+        ("giveaways", "/giveaways"),
+        ("siphoned", "/siphoned"),
+        ("regear", "/regear"),
+        ("alliance_share", "/alliance"),
+        ("capabilities", "/me"),
+        ("admin", "/admin"),
+        ("utils", "/utils"),
+        ("audit", "/audit"),
+        ("intel", "/intel"),
+        ("progression", "/progression"),
+        ("vods", "/vods"),
+        ("warns", "/warns"),
+        ("notifications", "/notifications"),
+        ("platform", "/platform"),
+        ("events/platform_routes.rs", "/platform"),
+    ];
 
+    /// Mounts in `modules/mod.rs` the route scan skips on purpose. `/sync`: its routes have no
+    /// `#[utoipa::path]` and are not on the allowlist; the previous `.nest(...)` line scan never
+    /// matched `sync::router::router()`, so documenting or allowlisting them is its own change.
+    const UNSCANNED_MOUNTS: &[&str] = &["/sync"];
+
+    /// The `ROUTE_SOURCES` entry that owns `rel` (a path under `src/modules`): the most
+    /// specific one, so a file entry beats its module entry.
+    fn route_source(rel: &Path) -> Option<&'static str> {
+        ROUTE_SOURCES
+            .iter()
+            .filter(|(source, _)| {
+                if source.ends_with(".rs") {
+                    rel == Path::new(source)
+                } else {
+                    rel == Path::new(&format!("{source}.rs")) || rel.starts_with(source)
+                }
+            })
+            .max_by_key(|(source, _)| Path::new(source).components().count())
+            .map(|(_, prefix)| *prefix)
+    }
+
+    /// The `(METHOD, shape)` of every route mounted under `/api` by the module
+    /// routers, with each file's prefix taken from `ROUTE_SOURCES`.
+    fn mounted_routes(modules_dir: &Path) -> BTreeSet<(String, String)> {
         let mut files = Vec::new();
         collect_rs_files(modules_dir, &mut files);
         let mut out = BTreeSet::new();
         for file in files {
             let rel = file.strip_prefix(modules_dir).expect("under modules/");
-            let top = rel
-                .components()
-                .next()
-                .map(|c| {
-                    c.as_os_str()
-                        .to_string_lossy()
-                        .trim_end_matches(".rs")
-                        .to_owned()
-                })
-                .unwrap_or_default();
-            let Some(prefix) = prefixes.get(&top) else {
+            let Some(prefix) = route_source(rel) else {
                 continue;
             };
             let text = fs::read_to_string(&file).expect("readable module source");
             // Test code mounts throwaway routers; only production code counts.
             let production = text.split("#[cfg(test)]").next().unwrap_or_default();
-            let file_name = rel.file_name().and_then(|n| n.to_str()).unwrap_or_default();
             let alliance_split = production.find("pub fn alliance_router");
             for (literal, methods) in route_calls(production) {
-                let mut mount = prefix.clone();
-                if top == "platform" && file_name == "public.rs" {
+                let mut mount = prefix.to_owned();
+                if rel == Path::new("platform/public.rs") {
                     let at = production
                         .find(&format!(".route(\"{literal}\""))
                         .unwrap_or(0);
@@ -1284,6 +1321,62 @@ mod tests {
             stale.is_empty(),
             "allowlist entries that are now documented or gone (remove them): {stale:?}"
         );
+    }
+
+    /// `ROUTE_SOURCES` stays complete: every `.nest("/x", ...)` in `modules/mod.rs` has an entry
+    /// (or is a deliberate `UNSCANNED_MOUNTS` gap), every router merged in from another
+    /// module's file has a file entry, and every entry still exists. Without this, a new or
+    /// moved router would silently skip `mounted_routes_are_documented_or_allowlisted`.
+    #[test]
+    fn route_sources_cover_every_mount() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let modules_dir = src.join("modules");
+        // Whitespace removed, so a `.nest(` that rustfmt wrapped over several lines still matches.
+        let squash = |path: PathBuf| -> String {
+            fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("readable {}", path.display()))
+                .split_whitespace()
+                .collect()
+        };
+        let registry = squash(modules_dir.join("mod.rs"));
+        let lib = squash(src.join("lib.rs"));
+        let prefixes: BTreeSet<&str> = ROUTE_SOURCES.iter().map(|(_, prefix)| *prefix).collect();
+
+        let nests: Vec<&str> = registry
+            .split(".nest(\"")
+            .skip(1)
+            .filter_map(|chunk| chunk.split('"').next())
+            .collect();
+        assert!(!nests.is_empty(), "no `.nest(\"` found in modules/mod.rs");
+        let uncovered: Vec<_> = nests
+            .iter()
+            .filter(|prefix| !prefixes.contains(*prefix) && !UNSCANNED_MOUNTS.contains(*prefix))
+            .collect();
+        assert!(
+            uncovered.is_empty(),
+            "mounted in modules/mod.rs but missing from ROUTE_SOURCES: {uncovered:?}"
+        );
+
+        for text in [&registry, &lib] {
+            for chunk in text.split(".merge(crate::modules::").skip(1) {
+                let call = chunk.split("()").next().unwrap_or_default();
+                let mut segments: Vec<&str> = call.split("::").collect();
+                segments.pop();
+                let file = format!("{}.rs", segments.join("/"));
+                assert!(
+                    ROUTE_SOURCES.iter().any(|(source, _)| *source == file),
+                    "merged router `{call}` lives in {file}, which has no ROUTE_SOURCES entry"
+                );
+            }
+        }
+
+        for (source, _) in ROUTE_SOURCES {
+            let path = modules_dir.join(source);
+            assert!(
+                path.exists() || path.with_extension("rs").exists(),
+                "ROUTE_SOURCES entry {source} does not exist under src/modules"
+            );
+        }
     }
 
     /// Successful JSON bodies go through the `ApiResponse*` / paginated envelope,

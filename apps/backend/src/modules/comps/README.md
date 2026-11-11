@@ -8,6 +8,8 @@ The comps module manages build/comp categories, builds and loadouts, composition
 
 The router provides category CRUD; build CRUD, item/spell updates, versioning, performance, Item Power, roster-fit and price views; and comp CRUD, readiness/performance/price, versioning, archive, build membership, and quantity operations.
 
+The performance handlers (`events::comp_routes`) and the Item Power, roster-fit and readiness handlers (`combat::comp_routes`) are served under `/api/comps` too, but live with the feature that computes them; the app registry merges them into this router.
+
 List filters support pagination and `mine=true` for the current user's records. Loadout queries default to `main` and reject unknown values. Build/comp price views return decimal totals, breakdowns, and an RFC3339 pricing timestamp.
 
 ## Invariants
