@@ -17,8 +17,8 @@ use super::models::{
     EventBattleView, EventCompBuildView, EventDetailView, EventFightView, EventParticipantView,
     EventRevision, EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
     EventSignupOptionsView, EventSplitStats, EventSummary, EventView, OpponentPerformanceView,
-    ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest,
-    UpdateEventBattlesRequest, UpdateEventRequest,
+    ParticipantWeaponView, ParticipateEventRequest, RosterVersionRequest, SignupAvailability,
+    SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use backend_entities::events::{
     event, event_battle, event_completion_xp, event_discord_role, event_participation,
@@ -50,6 +50,7 @@ use backend_entities::splits::{split, split_participant};
 use backend_entities::status::comps::{BuildLoadout, BuildRole};
 use backend_entities::status::splits::SplitStatus;
 use backend_identity::audit::service::AuditService;
+use backend_identity::users::weapons::{self, UserWeaponSet};
 use backend_splits::service::{SplitService, SplitSyncState};
 
 /// Hard cap on how long an event session can stay live before the background
@@ -146,25 +147,116 @@ fn resolve_assigned_build_name(
         .ok_or_else(|| AppError::NotFound(format!("Build {assigned_build_id} not found")))
 }
 
+/// How a member's weapons answer for a build carrying `weapon_key`, for self-service signup.
+///
+/// A build without a weapon is never gated. A weapon an officer locked is refused outright; once
+/// the member declared at least one weapon, only declared weapons are allowed. A member with no
+/// declarations yet is not limited, which keeps signup working until they fill in their weapons.
+fn signup_availability(weapons: &UserWeaponSet, weapon_key: Option<&str>) -> SignupAvailability {
+    let Some(weapon_key) = weapon_key else {
+        return SignupAvailability::Allowed;
+    };
+    if weapons.is_locked(weapon_key) {
+        SignupAvailability::Locked
+    } else if weapons.has_declarations() && weapons.proficiency(weapon_key).is_none() {
+        SignupAvailability::NotDeclared
+    } else {
+        SignupAvailability::Allowed
+    }
+}
+
+/// The display name of a weapon key for an error message, falling back to the key itself.
+fn weapon_label(weapon_key: &str) -> String {
+    backend_albion_data::openalbion::service::weapon_name_for_key(weapon_key)
+        .map_or_else(|| weapon_key.to_string(), str::to_string)
+}
+
+/// Refuses a self-service signup whose builds carry a weapon the member may not pick.
+///
+/// Reads nothing beyond the member's own weapon rows when they have none, so the common case
+/// costs a single query.
+async fn ensure_weapons_allow_signup<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    build_ids: &[i64],
+) -> Result<(), AppError> {
+    if build_ids.is_empty() {
+        return Ok(());
+    }
+    let sets = weapons::load_sets_for_users(db, &[user_id]).await?;
+    let Some(set) = sets.get(&user_id) else {
+        return Ok(());
+    };
+    let weapon_keys = backend_combat::seats::main_weapon_keys(db, build_ids).await?;
+    for build_id in build_ids {
+        let Some(weapon_key) = weapon_keys.get(build_id) else {
+            continue;
+        };
+        match signup_availability(set, Some(weapon_key)) {
+            SignupAvailability::Allowed => {}
+            SignupAvailability::Locked => {
+                return Err(AppError::Validation(format!(
+                    "{} is locked for you by an officer, so you cannot sign up with this build",
+                    weapon_label(weapon_key)
+                )));
+            }
+            SignupAvailability::NotDeclared => {
+                return Err(AppError::Validation(format!(
+                    "{} is not one of the weapons you declared; add it to your weapons first",
+                    weapon_label(weapon_key)
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The weapon rows of one participant as the roster board shows them, sorted by key.
+fn participant_weapon_views(rows: Option<&Vec<weapons::Model>>) -> Vec<ParticipantWeaponView> {
+    let mut views: Vec<ParticipantWeaponView> = rows
+        .into_iter()
+        .flatten()
+        .map(|row| ParticipantWeaponView {
+            weapon_key: row.weapon_key.clone(),
+            proficiency: row
+                .proficiency
+                .as_deref()
+                .and_then(weapons::WeaponProficiency::parse),
+            locked: row.locked,
+        })
+        .collect();
+    views.sort_by(|left, right| left.weapon_key.cmp(&right.weapon_key));
+    views
+}
+
 /// The pre-existing `auto_fill_roster` behaviour: first matching seat in signup order.
 ///
 /// A participant takes the first available seat for their primary build, or their secondary if no
 /// primary seat is free; a participant matching neither is left for the officer to place by hand.
+/// A seat whose weapon an officer locked for the participant is skipped, as if it were taken.
 /// `available` is mutated in place so a later participant cannot double-book a seat this pass just
 /// gave away.
 fn greedy_placements(
     unassigned: &[event_participation::Model],
     available: &mut Vec<EventRosterSeatView>,
+    weapons_by_user: &HashMap<i64, UserWeaponSet>,
 ) -> Vec<(i64, String)> {
     let mut placements = Vec::new();
     for participant in unassigned {
+        let locked_seat = |seat: &EventRosterSeatView| {
+            seat.weapon_key.as_deref().is_some_and(|weapon_key| {
+                weapons_by_user
+                    .get(&participant.user_id)
+                    .is_some_and(|set| set.is_locked(weapon_key))
+            })
+        };
         let index = available
             .iter()
-            .position(|seat| Some(seat.build_id) == participant.primary_build_id)
+            .position(|seat| Some(seat.build_id) == participant.primary_build_id && !locked_seat(seat))
             .or_else(|| {
-                available
-                    .iter()
-                    .position(|seat| Some(seat.build_id) == participant.secondary_build_id)
+                available.iter().position(|seat| {
+                    Some(seat.build_id) == participant.secondary_build_id && !locked_seat(seat)
+                })
             });
         if let Some(index) = index {
             let seat = available.remove(index);
@@ -186,6 +278,7 @@ async fn fit_inputs<C: sea_orm::ConnectionTrait>(
     let user_ids: Vec<i64> = unassigned.iter().map(|entry| entry.user_id).collect();
     let levels_by_user =
         backend_identity::users::specializations::load_levels_for_users(db, &user_ids).await?;
+    let weapons_by_user = weapons::load_sets_for_users(db, &user_ids).await?;
     let members: Vec<fit::Member> = unassigned
         .iter()
         .map(|entry| fit::Member {
@@ -199,6 +292,10 @@ async fn fit_inputs<C: sea_orm::ConnectionTrait>(
             ),
             primary_build_id: entry.primary_build_id,
             secondary_build_id: entry.secondary_build_id,
+            weapons: weapons_by_user
+                .get(&entry.user_id)
+                .map(fit::MemberWeapons::from_set)
+                .unwrap_or_default(),
         })
         .collect();
 
@@ -432,12 +529,11 @@ async fn load_event_roster_roles(
     db: &DatabaseConnection,
     event_id: i64,
 ) -> Result<Vec<EventRosterRoleView>, AppError> {
-    let extra_roles = event_roster_role::Entity::find()
-        .filter(event_roster_role::Column::EventId.eq(event_id))
-        .order_by_asc(event_roster_role::Column::Id)
-        .all(db)
-        .await
-        .map_err(AppError::Database)?;
+    let extra_roles = load_extra_roster_roles(db, event_id).await?;
+    let build_ids: Vec<i64> = extra_roles.iter().map(|role| role.build_id).collect();
+    // Two queries for every role together, instead of one build lookup per role.
+    let builds_by_id = load_builds_by_id(db, build_ids.clone()).await?;
+    let weapon_keys = backend_combat::seats::main_weapon_keys(db, &build_ids).await?;
 
     let mut roles = Vec::with_capacity(extra_roles.len() + 1);
     roles.push(EventRosterRoleView {
@@ -445,19 +541,19 @@ async fn load_event_roster_roles(
         build_id: None,
         name: "Fill".to_string(),
         is_fill: true,
+        weapon_key: None,
     });
 
     for role in extra_roles {
-        let build = build::Entity::find_by_id(role.build_id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
+        let build = builds_by_id
+            .get(&role.build_id)
             .ok_or_else(|| AppError::NotFound(format!("Build {} not found", role.build_id)))?;
         roles.push(EventRosterRoleView {
             id: Some(role.id),
             build_id: Some(role.build_id),
-            name: build.name,
+            name: build.name.clone(),
             is_fill: false,
+            weapon_key: weapon_keys.get(&role.build_id).cloned(),
         });
     }
 
@@ -1457,6 +1553,8 @@ impl EventService {
                 &participant_user_ids,
             )
             .await?;
+        // One query for every participant's weapons, like the specializations above.
+        let weapon_rows_by_user = weapons::load_rows_for_users(db, &participant_user_ids).await?;
 
         // Hydrated in a fixed number of queries (users, display names, builds) instead of
         // several lookups per participant: every roster read is repeated by every open client
@@ -1534,6 +1632,9 @@ impl EventService {
                         .unwrap_or_default(),
                     // Attributed by the router, which owns the control-plane connection.
                     guild: None,
+                    weapons: participant_weapon_views(
+                        weapon_rows_by_user.get(&participation.user_id),
+                    ),
                 },
             );
         }
@@ -1584,6 +1685,7 @@ impl EventService {
                 build_name: seat.build_name,
                 build_version: seat.build_version,
                 role: seat.role,
+                weapon_key: seat.weapon_key,
                 participant: None,
             })
             .collect())
@@ -1620,8 +1722,9 @@ impl EventService {
         if extra_roles.is_empty() {
             return Ok(seats);
         }
-        let builds_by_id =
-            load_builds_by_id(db, extra_roles.iter().map(|role| role.build_id).collect()).await?;
+        let extra_build_ids: Vec<i64> = extra_roles.iter().map(|role| role.build_id).collect();
+        let builds_by_id = load_builds_by_id(db, extra_build_ids.clone()).await?;
+        let weapon_keys = backend_combat::seats::main_weapon_keys(db, &extra_build_ids).await?;
         for role in extra_roles {
             let build = builds_by_id
                 .get(&role.build_id)
@@ -1643,6 +1746,7 @@ impl EventService {
                 build_name: build.name.clone(),
                 build_version: build.version,
                 role: build.role.clone(),
+                weapon_key: weapon_keys.get(&role.build_id).cloned(),
                 participant: None,
             });
         }
@@ -2000,7 +2104,11 @@ impl EventService {
             .collect();
 
         let placements = match request.strategy.unwrap_or_default() {
-            FitStrategy::Greedy => greedy_placements(&unassigned, &mut available),
+            FitStrategy::Greedy => {
+                let user_ids: Vec<i64> = unassigned.iter().map(|entry| entry.user_id).collect();
+                let weapons_by_user = weapons::load_sets_for_users(&txn, &user_ids).await?;
+                greedy_placements(&unassigned, &mut available, &weapons_by_user)
+            }
             FitStrategy::SpecOptimal => {
                 self.spec_optimal_placements(&txn, &unassigned, &available)
                     .await?
@@ -2172,11 +2280,15 @@ impl EventService {
         .await
         .map_err(AppError::Database)?;
 
+        let weapon_key = backend_combat::seats::main_weapon_keys(db, &[role.build_id])
+            .await?
+            .remove(&role.build_id);
         Ok(EventRosterRoleView {
             id: Some(role.id),
             build_id: Some(role.build_id),
             name: build.name,
             is_fill: false,
+            weapon_key,
         })
     }
 
@@ -2424,6 +2536,17 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        let candidate_build_ids: Vec<i64> = comp_builds
+            .iter()
+            .map(|entry| entry.build_id)
+            .chain(extra_roster_roles.iter().map(|entry| entry.build_id))
+            .collect();
+        let weapon_keys =
+            backend_combat::seats::main_weapon_keys(db, &candidate_build_ids).await?;
+        let member_weapons = weapons::load_sets_for_users(db, &[user_id])
+            .await?
+            .remove(&user_id)
+            .unwrap_or_default();
         let mut builds = BTreeMap::<i64, EventSignupBuildView>::new();
         for (build_id, quantity) in comp_builds
             .into_iter()
@@ -2450,6 +2573,7 @@ impl EventService {
                 .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))?;
             let role = BuildRole::from_str(&build.role)
                 .map_err(|_| AppError::Internal(format!("Unknown build role: {}", build.role)))?;
+            let weapon_key = weapon_keys.get(&build_id).cloned();
             builds.insert(
                 build_id,
                 EventSignupBuildView {
@@ -2457,6 +2581,12 @@ impl EventService {
                     name: build.name,
                     role,
                     quantity,
+                    weapon_name: weapon_key
+                        .as_deref()
+                        .and_then(backend_albion_data::openalbion::service::weapon_name_for_key)
+                        .map(str::to_string),
+                    availability: signup_availability(&member_weapons, weapon_key.as_deref()),
+                    weapon_key,
                 },
             );
         }
@@ -2467,6 +2597,7 @@ impl EventService {
             active_comp_capacity,
             is_already_registered,
             builds: builds.into_values().collect(),
+            has_declared_weapons: member_weapons.has_declarations(),
         })
     }
 
@@ -2856,6 +2987,7 @@ impl EventService {
                 &participant_user_ids,
             )
             .await?;
+        let weapon_rows_by_user = weapons::load_rows_for_users(db, &participant_user_ids).await?;
 
         let assignments = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(id))
@@ -2953,6 +3085,7 @@ impl EventService {
                     .unwrap_or_default(),
                 // Attributed by the router, which owns the control-plane connection.
                 guild: None,
+                weapons: participant_weapon_views(weapon_rows_by_user.get(&p.user_id)),
             });
         }
 
@@ -4540,12 +4673,14 @@ impl EventService {
         user_id: i64,
         req: ParticipateEventRequest,
     ) -> Result<(EventDetailView, i64), AppError> {
+        // The member is signing themselves up, so the weapon rules apply.
         self.apply_participation(
             db,
             event_id,
             user_id,
             req.primary_build_id,
             req.secondary_build_id,
+            true,
         )
         .await
     }
@@ -4601,12 +4736,15 @@ impl EventService {
             .ok_or_else(|| AppError::NotFound(format!("User {target_user_id} not found")))?;
         let _ = user_exists;
 
+        // An officer places the member, so the member's own weapon rules are not enforced; the
+        // roster board shows a warning instead.
         self.apply_participation(
             db,
             event_id,
             target_user_id,
             req.primary_build_id,
             req.secondary_build_id,
+            false,
         )
         .await
     }
@@ -4615,7 +4753,9 @@ impl EventService {
     /// build existence, roster membership and primary slot availability.
     ///
     /// Shared by both the self-service `participate` and the officer-driven
-    /// `set_participant` so the rules never drift between the two paths.
+    /// `set_participant` so the rules never drift between the two paths. `enforce_weapons` is
+    /// `true` only for self-service signup: the member's declared and locked weapons then limit
+    /// which builds they may pick, while an officer can place anyone anywhere.
     async fn apply_participation(
         &self,
         db: &DatabaseConnection,
@@ -4623,6 +4763,7 @@ impl EventService {
         user_id: i64,
         primary_build_id: Option<i64>,
         secondary_build_id: Option<i64>,
+        enforce_weapons: bool,
     ) -> Result<(EventDetailView, i64), AppError> {
         // Validate event exists
         let event_model = event::Entity::find_by_id(event_id)
@@ -4662,6 +4803,14 @@ impl EventService {
                     "Secondary build {sec_id} not found"
                 )));
             }
+        }
+
+        if enforce_weapons {
+            let picked: Vec<i64> = [primary_build_id, secondary_build_id]
+                .into_iter()
+                .flatten()
+                .collect();
+            ensure_weapons_allow_signup(db, user_id, &picked).await?;
         }
 
         // Fetch current participations
@@ -5590,17 +5739,18 @@ mod tests {
                 first_user,
                 Some(comp_build_id),
                 Some(extra_build_id),
+                true,
             )
             .await
             .expect("comp build and extra secondary should be allowed");
         service
-            .apply_participation(&db, event_id, second_user, Some(extra_build_id), None)
+            .apply_participation(&db, event_id, second_user, Some(extra_build_id), None, true)
             .await
             .expect("one extra primary slot should be allowed beyond comp capacity");
 
         assert!(matches!(
             service
-                .apply_participation(&db, event_id, third_user, Some(extra_build_id), None)
+                .apply_participation(&db, event_id, third_user, Some(extra_build_id), None, true)
                 .await,
             Err(AppError::Validation(message)) if message.contains("already full")
         ));
@@ -7375,8 +7525,10 @@ mod tests {
             statements_per_read[0], statements_per_read[1],
             "statements per roster read: {statements_per_read:?}"
         );
+        // 12 before weapons; participants' weapons and the seat builds' weapon keys are one
+        // statement each, whatever the roster size.
         assert!(
-            statements_per_read[1] <= 12,
+            statements_per_read[1] <= 14,
             "a 40-participant roster read took {} statements",
             statements_per_read[1]
         );
@@ -7618,6 +7770,489 @@ mod tests {
             Some(expert),
             "the trained member should take the seat, not whoever signed up first"
         );
+    }
+
+    const HAMMER_KEY: &str = "weapon:2H_POLEHAMMER";
+    const SWORD_KEY: &str = "weapon:MAIN_SWORD";
+
+    /// An event whose comp has a Polehammer build, a Broadsword build and a build with no weapon
+    /// (a mount), `quantity` seats each.
+    struct WeaponEvent {
+        event_id: i64,
+        officer: i64,
+        hammer: i64,
+        sword: i64,
+        mount: i64,
+    }
+
+    async fn weapon_event(db: &DatabaseConnection, quantity: i32) -> WeaponEvent {
+        let officer = insert_user(db, "weapon-officer", "weapon-officer@example.com").await;
+        let category = create_build_category(db, "weapon-builds").await;
+        let hammer = create_build(db, "weapon-hammer", category).await;
+        insert_weapon_item(db, hammer, "T8_2H_POLEHAMMER").await;
+        let sword = create_build(db, "weapon-sword", category).await;
+        insert_weapon_item(db, sword, "T8_MAIN_SWORD").await;
+        let mount = create_build(db, "weapon-mount", category).await;
+        let comp_category = create_comp_category(db, "weapon-comps").await;
+        let comp_id = create_comp(
+            db,
+            "weapon-comp",
+            comp_category,
+            None,
+            vec![(hammer, quantity), (sword, quantity), (mount, quantity)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Weapon event".to_string()),
+            comp_id: Set(Some(comp_id)),
+            created_by: Set(officer),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert event")
+        .id;
+        WeaponEvent {
+            event_id,
+            officer,
+            hammer,
+            sword,
+            mount,
+        }
+    }
+
+    /// Stores one `user_weapons` row: a declared level, an officer lock, or both.
+    async fn insert_member_weapon(
+        db: &DatabaseConnection,
+        user_id: i64,
+        weapon_key: &str,
+        proficiency: Option<&str>,
+        locked: bool,
+    ) {
+        weapons::ActiveModel {
+            user_id: Set(user_id),
+            weapon_key: Set(weapon_key.to_string()),
+            proficiency: Set(proficiency.map(str::to_string)),
+            locked: Set(locked),
+            locked_by_user_id: Set(None),
+            updated_at: Set(ts()),
+            updated_by_user_id: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert user weapon");
+    }
+
+    fn join(primary: Option<i64>, secondary: Option<i64>) -> ParticipateEventRequest {
+        ParticipateEventRequest {
+            primary_build_id: primary,
+            secondary_build_id: secondary,
+        }
+    }
+
+    fn availability_of(options: &EventSignupOptionsView, build_id: i64) -> SignupAvailability {
+        options
+            .builds
+            .iter()
+            .find(|build| build.build_id == build_id)
+            .map(|build| build.availability)
+            .expect("the build is offered")
+    }
+
+    #[tokio::test]
+    async fn signup_options_report_weapon_availability() {
+        let db = seed_db().await;
+        let w = weapon_event(&db, 2).await;
+        let service = EventService::new();
+        let undeclared = insert_user(&db, "no-weapons", "no-weapons@example.com").await;
+        let declared = insert_user(&db, "has-weapons", "has-weapons@example.com").await;
+        let lock_only = insert_user(&db, "lock-only", "lock-only@example.com").await;
+        let both = insert_user(&db, "declared-and-locked", "both@example.com").await;
+        insert_member_weapon(&db, declared, HAMMER_KEY, Some("main"), false).await;
+        insert_member_weapon(&db, lock_only, SWORD_KEY, None, true).await;
+        insert_member_weapon(&db, both, HAMMER_KEY, Some("good"), true).await;
+
+        // No declarations: everything is allowed, and the hint flag says why.
+        let options = service
+            .get_event_signup_options(&db, w.event_id, undeclared)
+            .await
+            .unwrap();
+        assert!(!options.has_declared_weapons);
+        for build in &options.builds {
+            assert_eq!(build.availability, SignupAvailability::Allowed);
+        }
+        let hammer = options.builds.iter().find(|b| b.build_id == w.hammer).unwrap();
+        assert_eq!(hammer.weapon_key.as_deref(), Some(HAMMER_KEY));
+        assert_eq!(hammer.weapon_name.as_deref(), Some("Polehammer"));
+        let mount = options.builds.iter().find(|b| b.build_id == w.mount).unwrap();
+        assert_eq!(mount.weapon_key, None);
+        assert_eq!(mount.weapon_name, None);
+
+        // Declared the hammer: the sword is "not declared"; a build with no weapon stays open.
+        let options = service
+            .get_event_signup_options(&db, w.event_id, declared)
+            .await
+            .unwrap();
+        assert!(options.has_declared_weapons);
+        assert_eq!(availability_of(&options, w.hammer), SignupAvailability::Allowed);
+        assert_eq!(availability_of(&options, w.sword), SignupAvailability::NotDeclared);
+        assert_eq!(availability_of(&options, w.mount), SignupAvailability::Allowed);
+
+        // A lock with no declarations: only the locked weapon is closed.
+        let options = service
+            .get_event_signup_options(&db, w.event_id, lock_only)
+            .await
+            .unwrap();
+        assert!(!options.has_declared_weapons);
+        assert_eq!(availability_of(&options, w.hammer), SignupAvailability::Allowed);
+        assert_eq!(availability_of(&options, w.sword), SignupAvailability::Locked);
+
+        // Declared and locked: locked wins.
+        let options = service
+            .get_event_signup_options(&db, w.event_id, both)
+            .await
+            .unwrap();
+        assert!(options.has_declared_weapons);
+        assert_eq!(availability_of(&options, w.hammer), SignupAvailability::Locked);
+        assert_eq!(availability_of(&options, w.sword), SignupAvailability::NotDeclared);
+    }
+
+    #[tokio::test]
+    async fn self_signup_is_limited_to_declared_unlocked_weapons() {
+        let db = seed_db().await;
+        let w = weapon_event(&db, 2).await;
+        let service = EventService::new();
+        let declared = insert_user(&db, "has-weapons", "has-weapons@example.com").await;
+        insert_member_weapon(&db, declared, HAMMER_KEY, Some("main"), false).await;
+
+        let not_declared = service
+            .participate_with_roster_version(&db, w.event_id, declared, join(Some(w.sword), None))
+            .await;
+        assert!(
+            matches!(&not_declared, Err(AppError::Validation(message)) if message.contains("Broadsword")),
+            "got {not_declared:?}"
+        );
+        let secondary = service
+            .participate_with_roster_version(
+                &db,
+                w.event_id,
+                declared,
+                join(Some(w.hammer), Some(w.sword)),
+            )
+            .await;
+        assert!(
+            matches!(secondary, Err(AppError::Validation(_))),
+            "the secondary build is gated too"
+        );
+        assert!(
+            service.get_roster(&db, w.event_id).await.unwrap().bench.is_empty(),
+            "a refused signup leaves nothing behind"
+        );
+
+        service
+            .participate_with_roster_version(&db, w.event_id, declared, join(Some(w.hammer), None))
+            .await
+            .expect("a declared weapon is allowed");
+        service
+            .participate_with_roster_version(&db, w.event_id, declared, join(Some(w.mount), None))
+            .await
+            .expect("a build with no weapon is never gated");
+        service
+            .participate_with_roster_version(&db, w.event_id, declared, join(None, None))
+            .await
+            .expect("Fill is always allowed");
+
+        // Zero declarations: any build is allowed.
+        let newcomer = insert_user(&db, "newcomer", "newcomer@example.com").await;
+        service
+            .participate_with_roster_version(&db, w.event_id, newcomer, join(Some(w.sword), None))
+            .await
+            .expect("a member who has not declared anything may pick any build");
+
+        // A lock closes its weapon even for a member with no declarations, and Fill stays open.
+        let locked = insert_user(&db, "locked", "locked@example.com").await;
+        insert_member_weapon(&db, locked, SWORD_KEY, None, true).await;
+        let refused = service
+            .participate_with_roster_version(&db, w.event_id, locked, join(Some(w.sword), None))
+            .await;
+        assert!(
+            matches!(&refused, Err(AppError::Validation(message)) if message.contains("locked")),
+            "got {refused:?}"
+        );
+        service
+            .participate_with_roster_version(&db, w.event_id, locked, join(Some(w.hammer), None))
+            .await
+            .expect("other weapons stay open");
+        service
+            .participate_with_roster_version(&db, w.event_id, locked, join(None, None))
+            .await
+            .expect("Fill is allowed even with a lock");
+
+        // Declared and locked at once: locked wins.
+        let both = insert_user(&db, "both", "both@example.com").await;
+        insert_member_weapon(&db, both, HAMMER_KEY, Some("main"), true).await;
+        let refused = service
+            .participate_with_roster_version(&db, w.event_id, both, join(Some(w.hammer), None))
+            .await;
+        assert!(
+            matches!(&refused, Err(AppError::Validation(message)) if message.contains("locked")),
+            "got {refused:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn officer_placement_is_not_gated_by_weapons() {
+        let db = seed_db().await;
+        let w = weapon_event(&db, 2).await;
+        let service = EventService::new();
+        let declared = insert_user(&db, "has-weapons", "has-weapons@example.com").await;
+        let locked = insert_user(&db, "locked", "locked@example.com").await;
+        insert_member_weapon(&db, declared, SWORD_KEY, Some("main"), false).await;
+        insert_member_weapon(&db, locked, HAMMER_KEY, None, true).await;
+
+        service
+            .add_member_with_roster_version(
+                &db,
+                w.event_id,
+                AddEventMemberRequest {
+                    user_id: declared,
+                    primary_build_id: Some(w.hammer),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("an officer can add a member on a weapon they did not declare");
+        service
+            .set_participant_with_roster_version(
+                &db,
+                w.event_id,
+                locked,
+                crate::events::models::SetParticipantRequest {
+                    primary_build_id: Some(w.hammer),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("an officer can set a participant on a weapon locked for them");
+
+        let version = service
+            .get_roster(&db, w.event_id)
+            .await
+            .unwrap()
+            .roster_version;
+        service
+            .assign_roster_seat(
+                &db,
+                w.event_id,
+                &format!("build:{}:1", w.hammer),
+                AssignRosterSeatRequest {
+                    user_id: locked,
+                    expected_roster_version: version,
+                },
+                w.officer,
+            )
+            .await
+            .expect("seat assignment is not gated either");
+
+        // The board warns instead: it carries the occupant's weapons and the seat's weapon.
+        let roster = service.get_roster(&db, w.event_id).await.unwrap();
+        let seat = roster
+            .seats
+            .iter()
+            .find(|seat| seat.key == format!("build:{}:1", w.hammer))
+            .unwrap();
+        assert_eq!(seat.weapon_key.as_deref(), Some(HAMMER_KEY));
+        let occupant = seat.participant.as_ref().expect("the locked member sits there");
+        assert_eq!(occupant.user_id, locked);
+        assert_eq!(occupant.weapons.len(), 1);
+        assert_eq!(occupant.weapons[0].weapon_key, HAMMER_KEY);
+        assert!(occupant.weapons[0].locked);
+        assert_eq!(occupant.weapons[0].proficiency, None);
+        let bench_member = roster
+            .bench
+            .iter()
+            .find(|participant| participant.user_id == declared)
+            .expect("the other member waits on the bench");
+        assert_eq!(bench_member.weapons[0].weapon_key, SWORD_KEY);
+        assert_eq!(
+            bench_member.weapons[0].proficiency,
+            Some(backend_identity::users::weapons::WeaponProficiency::Main)
+        );
+        let mount_seat = roster
+            .seats
+            .iter()
+            .find(|seat| seat.build_id == w.mount)
+            .unwrap();
+        assert_eq!(mount_seat.weapon_key, None);
+    }
+
+    #[tokio::test]
+    async fn auto_fill_never_seats_a_member_on_a_weapon_locked_for_them() {
+        for strategy in [
+            backend_combat::fit::FitStrategy::Greedy,
+            backend_combat::fit::FitStrategy::SpecOptimal,
+        ] {
+            let db = seed_db().await;
+            let w = weapon_event(&db, 1).await;
+            let service = EventService::new();
+            let locked = insert_user(&db, "locked", "locked@example.com").await;
+            let other = insert_user(&db, "other", "other@example.com").await;
+            insert_member_weapon(&db, locked, HAMMER_KEY, None, true).await;
+            // The locked member is far better trained and signed up first, and still must not
+            // take the Polehammer seat.
+            backend_identity::users::specializations::ActiveModel {
+                user_id: Set(locked),
+                node_key: Set(HAMMER_KEY.to_string()),
+                node_name: Set("Polehammer".to_string()),
+                category: Set("weapon".to_string()),
+                level: Set(100),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+            service
+                .set_participant_with_roster_version(
+                    &db,
+                    w.event_id,
+                    locked,
+                    crate::events::models::SetParticipantRequest {
+                        primary_build_id: Some(w.hammer),
+                        secondary_build_id: None,
+                    },
+                )
+                .await
+                .unwrap();
+            service
+                .participate_with_roster_version(
+                    &db,
+                    w.event_id,
+                    other,
+                    join(Some(w.hammer), None),
+                )
+                .await
+                .expect_err("the single Polehammer slot is taken by the locked member");
+            // Free the slot by switching the locked member to Fill, then let the other member in.
+            service
+                .set_participant_with_roster_version(
+                    &db,
+                    w.event_id,
+                    locked,
+                    crate::events::models::SetParticipantRequest {
+                        primary_build_id: None,
+                        secondary_build_id: Some(w.hammer),
+                    },
+                )
+                .await
+                .unwrap();
+            service
+                .participate_with_roster_version(
+                    &db,
+                    w.event_id,
+                    other,
+                    join(Some(w.hammer), None),
+                )
+                .await
+                .unwrap();
+
+            let version = service
+                .get_roster(&db, w.event_id)
+                .await
+                .unwrap()
+                .roster_version;
+            let (_, changed) = service
+                .auto_fill_roster(
+                    &db,
+                    w.event_id,
+                    RosterVersionRequest {
+                        expected_roster_version: version,
+                        strategy: Some(strategy),
+                    },
+                    w.officer,
+                )
+                .await
+                .unwrap();
+
+            let roster = service.get_roster(&db, w.event_id).await.unwrap();
+            let hammer_seat = roster
+                .seats
+                .iter()
+                .find(|seat| seat.key == format!("build:{}:1", w.hammer))
+                .unwrap();
+            assert_eq!(
+                hammer_seat.participant.as_ref().map(|p| p.user_id),
+                Some(other),
+                "{strategy:?}: the member without the lock takes the seat (changed: {changed:?})"
+            );
+            assert!(
+                roster
+                    .seats
+                    .iter()
+                    .filter_map(|seat| seat.participant.as_ref().map(|p| (seat, p)))
+                    .all(|(seat, p)| !(p.user_id == locked
+                        && seat.weapon_key.as_deref() == Some(HAMMER_KEY))),
+                "{strategy:?}: the locked member never sits on a Polehammer seat"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn spec_optimal_prefers_the_member_who_declared_the_seats_weapon() {
+        let db = seed_db().await;
+        let w = weapon_event(&db, 1).await;
+        let service = EventService::new();
+        // Both sign up as Fill with identical (no) training. The undeclared member signs up
+        // first, so only the declaration can put the other one on the Polehammer.
+        let undeclared = insert_user(&db, "undeclared", "undeclared@example.com").await;
+        let main = insert_user(&db, "main", "main@example.com").await;
+        let basic = insert_user(&db, "basic", "basic@example.com").await;
+        insert_member_weapon(&db, main, HAMMER_KEY, Some("main"), false).await;
+        insert_member_weapon(&db, basic, HAMMER_KEY, Some("basic"), false).await;
+        for user_id in [undeclared, basic, main] {
+            service
+                .participate_with_roster_version(&db, w.event_id, user_id, join(None, None))
+                .await
+                .unwrap();
+        }
+
+        let suggestions = service.get_roster_suggestions(&db, w.event_id).await.unwrap();
+        let hammer_placement = suggestions
+            .placements
+            .iter()
+            .find(|placement| placement.seat_key == format!("build:{}:1", w.hammer))
+            .expect("the Polehammer seat is filled");
+        assert_eq!(
+            hammer_placement.user_id, main,
+            "main beats basic beats undeclared"
+        );
+
+        let version = service
+            .get_roster(&db, w.event_id)
+            .await
+            .unwrap()
+            .roster_version;
+        service
+            .auto_fill_roster(
+                &db,
+                w.event_id,
+                RosterVersionRequest {
+                    expected_roster_version: version,
+                    strategy: Some(backend_combat::fit::FitStrategy::SpecOptimal),
+                },
+                w.officer,
+            )
+            .await
+            .unwrap();
+        let roster = service.get_roster(&db, w.event_id).await.unwrap();
+        let seated = roster
+            .seats
+            .iter()
+            .find(|seat| seat.key == format!("build:{}:1", w.hammer))
+            .and_then(|seat| seat.participant.as_ref())
+            .map(|participant| participant.user_id);
+        assert_eq!(seated, Some(main));
     }
 
     #[tokio::test]

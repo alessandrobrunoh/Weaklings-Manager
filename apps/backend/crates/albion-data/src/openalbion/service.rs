@@ -264,6 +264,51 @@ pub fn base_identifier_for_stored_item(item_id: i64, icon: Option<&str>) -> Opti
     Some(base_identifier(stem))
 }
 
+/// Prefix of a weapon key, shared with the Destiny Board's `weapon:{BASE}` node keys.
+pub const WEAPON_KEY_PREFIX: &str = "weapon:";
+
+/// The tier-less display name of every catalog weapon, keyed by base identifier (`MAIN_SWORD`).
+fn weapon_names_by_base() -> &'static HashMap<String, String> {
+    static BY_BASE: OnceLock<HashMap<String, String>> = OnceLock::new();
+    BY_BASE.get_or_init(|| {
+        catalog_items()
+            .iter()
+            .filter(|item| item.item_type.as_deref() == Some("weapon"))
+            .filter_map(|item| {
+                item.identifier
+                    .as_deref()
+                    .map(|identifier| (base_identifier(identifier), item.name.clone()))
+            })
+            .collect()
+    })
+}
+
+/// The tier-less display name of the catalog weapon with this base identifier
+/// (`MAIN_SWORD` is `Broadsword`), or `None` when no catalog weapon has that base.
+#[must_use]
+pub fn weapon_name_for_base(base: &str) -> Option<&'static str> {
+    weapon_names_by_base().get(base).map(String::as_str)
+}
+
+/// The tier-less display name of the weapon a `weapon:{BASE}` key names, or `None` when the key
+/// is not in canonical form (`weapon:` plus an upper-case base) or names no catalog weapon.
+#[must_use]
+pub fn weapon_name_for_key(weapon_key: &str) -> Option<&'static str> {
+    weapon_name_for_base(weapon_key.strip_prefix(WEAPON_KEY_PREFIX)?)
+}
+
+/// The weapon key (`weapon:2H_POLEHAMMER`) of a stored build item, or `None` when the item cannot
+/// be resolved to a catalog weapon.
+///
+/// Callers pass only items from a build's weapon slot; this still refuses anything whose base is
+/// not a catalog weapon, so a corrupt row never yields a key the declaration API would reject.
+#[must_use]
+pub fn weapon_key_for_stored_item(item_id: i64, icon: Option<&str>) -> Option<String> {
+    let base = base_identifier_for_stored_item(item_id, icon)?;
+    weapon_name_for_base(&base)?;
+    Some(format!("{WEAPON_KEY_PREFIX}{base}"))
+}
+
 /// Recovers the full Albion Online Data Project identifier of a stored item — tier kept, an
 /// `@N` enchantment suffix appended when `enchantment > 0`.
 ///
@@ -670,5 +715,47 @@ mod aodp_identifier_tests {
     #[test]
     fn unknown_id_and_no_icon_resolves_to_none() {
         assert_eq!(aodp_identifier_for_stored_item(-1, None, 0), None);
+    }
+}
+
+#[cfg(test)]
+mod weapon_key_tests {
+    use super::*;
+
+    // `T8_MAIN_SWORD` in the bundled catalog.
+    const BROADSWORD_ID: i64 = 1_129_082_251_177_166_736;
+
+    #[test]
+    fn a_weapon_base_resolves_to_its_tier_less_name() {
+        assert_eq!(weapon_name_for_base("MAIN_SWORD"), Some("Broadsword"));
+        assert_eq!(weapon_name_for_base("2H_POLEHAMMER"), Some("Polehammer"));
+        assert_eq!(
+            weapon_name_for_key("weapon:2H_POLEHAMMER"),
+            Some("Polehammer")
+        );
+    }
+
+    #[test]
+    fn non_weapons_and_malformed_keys_have_no_name() {
+        assert_eq!(weapon_name_for_base("ARMOR_PLATE_SET1"), None);
+        assert_eq!(weapon_name_for_key("armor:ARMOR_PLATE_SET1"), None);
+        assert_eq!(weapon_name_for_key("weapon:T8_MAIN_SWORD"), None);
+        assert_eq!(weapon_name_for_key("weapon:main_sword"), None);
+        assert_eq!(weapon_name_for_key("MAIN_SWORD"), None);
+    }
+
+    #[test]
+    fn a_stored_weapon_item_maps_to_a_tier_less_key() {
+        assert_eq!(
+            weapon_key_for_stored_item(BROADSWORD_ID, None),
+            Some("weapon:MAIN_SWORD".to_string())
+        );
+    }
+
+    #[test]
+    fn a_stored_item_that_is_not_a_weapon_has_no_weapon_key() {
+        let icon = "https://render.albiononline.com/v1/item/T4_BAG.png?quality=1&size=64";
+        assert_eq!(weapon_key_for_stored_item(-1, Some(icon)), None);
+        assert_eq!(weapon_key_for_stored_item(-1, None), None);
     }
 }

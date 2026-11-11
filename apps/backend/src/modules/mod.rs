@@ -13,7 +13,10 @@ use axum::Router;
 pub fn router() -> Router {
     Router::new()
         .nest("/health", health::router())
-        .nest("/users", backend_identity::users::router())
+        .nest(
+            "/users",
+            backend_identity::users::router().merge(backend_combat::user_weapons::router()),
+        )
         .nest("/members", backend_identity::members::router())
         .nest("/auth", backend_identity::auth::router())
         .nest("/bank", backend_bank::router())

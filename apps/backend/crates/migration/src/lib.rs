@@ -165,6 +165,7 @@ pub mod m20261107_000004_backfill_event_discord_stamps;
 pub mod m20261109_000001_grant_comp_build_manage_to_editors;
 pub mod m20261109_000002_create_albion_link_requests;
 pub mod m20261110_000001_restrict_manage_to_admins;
+pub mod m20261111_000001_create_user_weapons;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
 
@@ -326,6 +327,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_000001_grant_comp_build_manage_to_editors::Migration),
             Box::new(m20261109_000002_create_albion_link_requests::Migration),
             Box::new(m20261110_000001_restrict_manage_to_admins::Migration),
+            Box::new(m20261111_000001_create_user_weapons::Migration),
         ]
     }
 }

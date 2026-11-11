@@ -15,6 +15,16 @@ pub struct ApiResponseRosterSuggestions {
     pub data: crate::fit::Assignment,
 }
 
+/// `OpenAPI` schema wrapper for a member's weapon list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseUserWeapons {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The member's weapons: declared levels and officer locks.
+    pub data: Vec<backend_identity::users::weapons::UserWeaponView>,
+}
+
 /// `OpenAPI` schema wrapper for a comp readiness response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseCompReadinessView {

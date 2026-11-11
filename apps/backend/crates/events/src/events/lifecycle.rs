@@ -1785,6 +1785,7 @@ mod tests {
                 build_name: "Build".to_owned(),
                 build_version: 1,
                 role: "dps".to_owned(),
+                weapon_key: None,
                 participant: Some(participants[0].clone()),
             }],
             bench: participants[1..].to_vec(),
@@ -2387,7 +2388,7 @@ mod tests {
                         description: None,
                         role: BuildRole::Healer,
                         category_id: build_category.id,
-                        items: None,
+                        items: crate::events::test_support::main_weapon_items(),
                     },
                 )
                 .await
@@ -2402,7 +2403,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Healer,
                     category_id: build_category.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -3378,7 +3379,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Healer,
                     category_id: build_category.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await

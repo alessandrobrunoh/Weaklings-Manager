@@ -994,7 +994,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Healer,
                     category_id: build_category.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await

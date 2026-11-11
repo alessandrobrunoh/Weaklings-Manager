@@ -19,3 +19,22 @@ pub fn matrix_app(
         .layer(Extension(RosterHub::default()))
         .layer(Extension(AlbionBbService::default()))
 }
+
+/// `items` for a `CreateBuildRequest` in tests: a Broadsword in the main loadout, so the build
+/// satisfies the main-hand weapon rule that every non-mount build must meet.
+pub fn main_weapon_items() -> Option<Vec<backend_comps::models::CreateBuildItemRequest>> {
+    let broadsword =
+        backend_albion_data::openalbion::service::catalog_item_by_identifier("T8_MAIN_SWORD")
+            .expect("T8_MAIN_SWORD is in the bundled catalog");
+    Some(vec![backend_comps::models::CreateBuildItemRequest {
+        slot: backend_entities::status::comps::BuildSlot::Weapon,
+        openalbion_item_type: "weapon".to_owned(),
+        openalbion_item_id: broadsword.id,
+        openalbion_item_name: broadsword.name.clone(),
+        openalbion_item_icon: None,
+        spells: None,
+        openalbion_item_tier: None,
+        openalbion_item_quality: None,
+        openalbion_item_enchantment: None,
+    }])
+}
