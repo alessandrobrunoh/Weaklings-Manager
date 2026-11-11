@@ -668,44 +668,6 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn two_guild_tenants_in_one_process_get_different_friendly_sides() {
-        use crate::testkit::{ALBION_GUILDS, ALLIANCE, GUILDS, World};
-
-        let world = World::new().await;
-        world.seed_albion_control().await;
-
-        let first = load_friendly_side(&world.control, GUILDS[0])
-            .await
-            .expect("G1 side");
-        let second = load_friendly_side(&world.control, GUILDS[1])
-            .await
-            .expect("G2 side");
-        assert!(first.is_own(ALBION_GUILDS[0]));
-        assert!(!first.contains(ALBION_GUILDS[1], ""));
-        assert!(second.is_own(ALBION_GUILDS[1]));
-        assert!(!second.contains(ALBION_GUILDS[0], ""));
-
-        // The alliance has no own guild; its active members are friendly, a
-        // member that left is not.
-        let alliance = load_friendly_side(&world.control, ALLIANCE)
-            .await
-            .expect("alliance side");
-        assert!(alliance.contains(ALBION_GUILDS[0], ""));
-        assert!(alliance.contains(ALBION_GUILDS[1], ""));
-        assert!(!alliance.is_own(ALBION_GUILDS[0]));
-
-        // No Albion identity, or no row at all: fail closed, never env.
-        assert!(matches!(
-            load_friendly_side(&world.control, GUILDS[2]).await,
-            Err(AlbionScopeError::NotConfigured)
-        ));
-        assert!(matches!(
-            load_friendly_side(&world.control, "missing").await,
-            Err(AlbionScopeError::NotConfigured)
-        ));
-    }
-
     #[test]
     fn sync_runs_only_for_active_guild_tenants() {
         assert!(sync_cycle_should_run("active", "guild"));

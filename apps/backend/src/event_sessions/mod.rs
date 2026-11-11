@@ -8,7 +8,6 @@
 //! session is polled repeatedly until either the post-stop grace period elapses
 //! or the listing stabilises (same row count two ticks in a row).
 
-pub mod auto_stop;
 pub mod battle_linker;
 
 use std::sync::Arc;
@@ -19,7 +18,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use tokio::time::interval;
 
 use crate::modules::giveaways::GiveawayService;
-use auto_stop::auto_stop_expired_sessions;
+use crate::modules::events::auto_stop::auto_stop_expired_sessions;
 use battle_linker::refresh_pending_links;
 
 use crate::albion_scope::{self, AlbionScope};

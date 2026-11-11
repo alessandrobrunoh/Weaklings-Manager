@@ -3,6 +3,7 @@
 //! Handles scheduling events and coordinating player sign-ups / comp scaling.
 
 pub mod attribution;
+pub mod auto_stop;
 #[cfg(test)]
 mod copy_matrix_tests;
 #[cfg(test)]
@@ -16,10 +17,14 @@ pub mod mirror_retry;
 pub mod models;
 pub mod officer_sync;
 pub mod participation_outbox;
+#[cfg(test)]
+mod platform_leave_tests;
 pub mod roster_hub;
 pub mod router;
 pub mod service;
 pub mod status;
 pub mod sync;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use router::router;

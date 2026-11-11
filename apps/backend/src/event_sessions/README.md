@@ -7,7 +7,7 @@ This module starts a Tokio background worker that periodically stops expired eve
 ## Interface
 
 - `spawn` starts the worker using the database connection, AlbionBB and AlbionData services, configuration, and tenant ID. It returns neither a result nor a task handle.
-- `auto_stop_expired_sessions` and `refresh_pending_links` are exposed from their respective public submodules.
+- `refresh_pending_links` is exposed from the public `battle_linker` submodule. `auto_stop_expired_sessions` lives in `modules::events::auto_stop`, next to the lifecycle it drives.
 - The worker runs its cycle every 30 seconds.
 
 ## Invariants

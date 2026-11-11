@@ -2997,7 +2997,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_concurrent_balance_reads_and_withdraw_all_never_corrupt_the_ledger() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_bkc").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_bkc").await
         else {
             return;
         };

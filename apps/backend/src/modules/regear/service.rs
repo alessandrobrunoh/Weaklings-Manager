@@ -1770,7 +1770,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_concurrent_requests_on_different_deaths_cannot_overspend() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_rgs").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_rgs").await
         else {
             return;
         };
@@ -1819,7 +1819,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_parallel_self_service_posts_create_one_request_and_spend_one_credit() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_rgd").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_rgd").await
         else {
             return;
         };
