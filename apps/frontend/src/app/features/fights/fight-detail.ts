@@ -37,6 +37,7 @@ import { DataTableCell } from '../../shared/components/data-table/data-table-cel
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
+import { albionBattlesUrl, formatConfidence } from '../battles/battle-metrics';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -171,7 +172,7 @@ type PendingFightMutation =
           </span>
 
           <span class="chip chip--neutral font-mono text-xs capitalize">
-            {{ t('fights.grouping', { method: detail.grouping_method, confidence: formatPercent(detail.grouping_confidence) }) }}
+            {{ t('fights.grouping', { method: detail.grouping_method, confidence: formatConfidence(detail.grouping_confidence) }) }}
           </span>
 
           @if (detail.needs_review) {
@@ -850,11 +851,11 @@ type PendingFightMutation =
                           </a>
                           <a
                             class="text-[10px] text-secondary hover:underline no-underline"
-                            [href]="'https://albionbattles.com/battles/' + battleId"
+                            [href]="albionBattlesUrl(battleId)"
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            {{ t('battles.view_on_albionbb') }} ↗
+                            {{ t('battles.view_on_albion_battles') }} ↗
                           </a>
                         </div>
                         <p class="text-[11px] text-secondary">
@@ -2048,10 +2049,8 @@ export class FightDetailPage {
     return (value ?? 0).toFixed(2);
   }
 
-  protected formatPercent(value: number | undefined): string {
-    const v = value ?? 0;
-    return `${(v <= 1 ? v * 100 : v).toFixed(0)}%`;
-  }
+  protected readonly formatConfidence = formatConfidence;
+  protected readonly albionBattlesUrl = albionBattlesUrl;
 
   private parsePositiveId(value: string): number | null {
     if (!/^\d+$/.test(value.trim())) return null;
