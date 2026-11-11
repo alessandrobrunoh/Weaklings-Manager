@@ -1,7 +1,7 @@
 //! `AlbionBB` routing module.
 //!
 //! Generic, raw passthroughs to the `AlbionBB` API. Not typically called directly
-//! by the frontend — the [`crate::modules::battles`] module reshapes `AlbionBB`
+//! by the frontend — the `battles` module reshapes `AlbionBB`
 //! data for the configured Weaklings guild. Exposed for power users and the
 //! `OpenAPI` explorer.
 

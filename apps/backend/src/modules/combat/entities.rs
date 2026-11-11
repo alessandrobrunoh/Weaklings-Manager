@@ -87,7 +87,7 @@ pub mod combat_run {
         pub engine_version: i32,
         /// The ao-bin-dumps commit the dataset came from at run time.
         pub dataset_commit: String,
-        /// The full [`crate::modules::combat::scenario::ScenarioResult`], serialized.
+        /// The full `combat::scenario::ScenarioResult`, serialized.
         pub result_json: String,
         /// The user who ran it.
         pub ran_by: i64,

@@ -45,7 +45,7 @@ pub struct Config {
     ///
     /// This is a platform-wide master key, not an ordinary API token: a request that
     /// presents it correctly but omits `X-Discord-Id` runs as `bot_system` with
-    /// [`UserContext::is_superadmin`](crate::modules::auth::rbac::UserContext::is_superadmin)
+    /// `UserContext::is_superadmin`
     /// true (see `try_from_bot_headers`), bypassing every permission check on whichever
     /// tenant `X-Guild-Id` names. Treat it like a root credential — generate it with the
     /// same care as `SESSION_SECRET`, store it only in the backend's and the bot's own

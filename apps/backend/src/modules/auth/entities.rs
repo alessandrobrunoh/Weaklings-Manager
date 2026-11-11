@@ -36,7 +36,7 @@ pub mod role_permission {
     use sea_orm::entity::prelude::*;
 
     /// A single `(role_id, permission)` row. The `permission` column holds the
-    /// stable string form of a [`Permission`](crate::modules::auth::permissions::Permission)
+    /// stable string form of a `Permission`
     /// variant (see `Permission::as_str`).
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
     #[sea_orm(table_name = "role_permissions")]
