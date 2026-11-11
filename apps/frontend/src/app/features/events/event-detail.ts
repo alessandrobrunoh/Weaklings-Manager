@@ -840,7 +840,6 @@ const BENCH_FIT_CHIP: Readonly<
               <app-event-battles-tab
                 [event]="detail"
                 [canEdit]="canEdit()"
-                [eventLossEstimate]="eventLossEstimate()"
                 (toggleBattleLinkForm)="toggleBattleLinkForm()"
               />
             } @placeholder {

@@ -728,6 +728,7 @@ export interface BattlePerformanceStats {
   total_battles: number;
   wins: number;
   losses: number;
+  /** Percentage in 0..100: wins / (wins + losses). */
   win_rate: number;
   total_kills: number;
   total_deaths: number;
@@ -829,6 +830,8 @@ export interface FightListItem {
   segment_count: number;
   total_players: number;
   total_kills: number;
+  /** Not sent by the API yet; the Battles page sums it when present. */
+  total_deaths?: number;
   total_fame: number;
   outcome: FightOutcomeView;
 }
@@ -2732,6 +2735,7 @@ export interface FightTrendPeriod {
   win_sample_size: number;
   wins: number;
   losses: number;
+  /** Percentage in 0..100, over decided fights only; `null` when none was decided. */
   win_rate: number | null;
   kills: number;
   deaths: number;

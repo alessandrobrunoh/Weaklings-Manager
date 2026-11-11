@@ -1,5 +1,7 @@
 import type { EventBattleSummary, EventFight, SplitSummary } from '../../../core/models/api.models';
 
+export { formatConfidence } from '../../battles/battle-metrics';
+
 /** Outcome and headline numbers for one Fight, derived from its linked battle segments. */
 export interface FightKpis {
   readonly outcome: 'victory' | 'defeat' | 'draw' | 'unknown';
@@ -38,6 +40,7 @@ export function formatCompact(value: number): string {
   }).format(value);
 }
 
+/** Formats a value that is already a 0..100 percentage (every `win_rate`). */
 export function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
@@ -46,10 +49,10 @@ export function formatRatio(value: number): string {
   return value.toFixed(2);
 }
 
-export function fightOutcomeLabel(outcome: FightKpis['outcome']): string {
-  return outcome.toUpperCase();
-}
-
+/**
+ * Headline numbers of one Fight. The canonical aggregates the API sends on the Fight win; the
+ * linked battle segments are only a fallback for responses that predate them.
+ */
 export function fightMetrics(fight: EventFight, battles: readonly EventBattleSummary[]): FightKpis {
   const linkedBattles = battles.filter((battle) =>
     fight.battle_ids.includes(battle.albionbb_battle_id),
@@ -69,10 +72,12 @@ export function fightMetrics(fight: EventFight, battles: readonly EventBattleSum
     players:
       fight.total_players ??
       fight.stats?.total_players ??
+      fight.stats?.players ??
       (playerCounts.length > 0 ? Math.max(...playerCounts) : null),
     kills:
       fight.total_kills ??
       fight.stats?.total_kills ??
+      fight.stats?.kills ??
       (hasLinkedBattles
         ? linkedBattles.reduce((total, battle) => total + battle.guild_kills, 0)
         : null),

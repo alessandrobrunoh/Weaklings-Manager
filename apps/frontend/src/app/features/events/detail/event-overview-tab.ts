@@ -6,6 +6,7 @@ import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { Avatar } from '../../../shared/components/avatar/avatar';
 import { Icon } from '../../../shared/components/icon/icon';
+import { undecidedFights, winRatePercent } from '../../battles/battle-metrics';
 import {
   formatAmount,
   formatCompact,
@@ -29,18 +30,22 @@ import {
       <!-- Card 1: Win Rate -->
       <article class="surface p-4">
         <p class="event-detail__label">{{ t('events.detail.win_rate') }}</p>
-        <p class="event-detail__value mt-1">{{ formatPercent(detail.stats.win_rate) }}</p>
+        <p class="event-detail__value mt-1">
+          {{ winRate() === null ? '—' : formatPercent(winRate()!) }}
+        </p>
         <p class="event-detail__sub mb-2">
           {{ detail.stats.wins }} {{ t('events.detail.wins') }} &middot; {{ detail.stats.losses }}
           {{ t('events.detail.losses') }}
         </p>
-        @if (detail.stats.total_battles > 0) {
+        @if (winRate() !== null) {
           <div class="event-detail__fill-bar" style="background: var(--color-danger)">
-            <span
-              [style.width.%]="(detail.stats.wins / detail.stats.total_battles) * 100"
-              style="background: var(--color-success)"
-            ></span>
+            <span [style.width.%]="winRate()" style="background: var(--color-success)"></span>
           </div>
+        }
+        @if (undecided() > 0) {
+          <p class="event-detail__sub mt-2">
+            {{ t('events.detail.win_rate_undecided', { count: undecided() }) }}
+          </p>
         }
       </article>
 
@@ -57,7 +62,7 @@ import {
           {{ detail.stats.total_deaths }} {{ t('events.detail.deaths') }}
         </p>
         <p class="text-xs font-mono text-[var(--color-text-secondary)]">
-          Fame:
+          {{ t('battles.fame') }}:
           <strong class="text-[var(--color-text)]">{{
             formatCompact(detail.stats.total_kill_fame)
           }}</strong>
@@ -82,7 +87,7 @@ import {
         [class.border-[var(--color-success)]]="eventBalance().isProfitable"
         [class.border-[var(--color-danger)]]="!eventBalance().isProfitable"
       >
-        <p class="event-detail__label">Net Event Balance</p>
+        <p class="event-detail__label">{{ t('events.detail.net_balance') }}</p>
         <p
           class="event-detail__value mt-1 font-mono"
           [class.text-[var(--color-success)]]="eventBalance().isProfitable"
@@ -92,8 +97,12 @@ import {
           }}{{ formatAmount(eventBalance().netBalance) }}
         </p>
         <p class="event-detail__sub">
-          Loot: {{ formatCompact(eventBalance().totalLoot) }} &minus; Losses:
-          {{ formatCompact(eventBalance().totalLoss) }}
+          {{
+            t('events.detail.balance_breakdown', {
+              loot: formatCompact(eventBalance().totalLoot),
+              loss: formatCompact(eventBalance().totalLoss),
+            })
+          }}
         </p>
       </article>
     </section>
@@ -123,9 +132,23 @@ import {
                       {{ player.player_name }}
                     </p>
                     <p class="text-[11px] text-[var(--color-text-secondary)]">
-                      {{ player.deaths }}
-                      {{ player.deaths === 1 ? 'morte' : 'morti' }} &middot;
-                      {{ player.priced_items }}/{{ player.total_items }} item
+                      {{
+                        t(
+                          player.deaths === 1
+                            ? 'events.detail.death_one'
+                            : 'events.detail.death_other',
+                          {
+                            count: player.deaths,
+                          }
+                        )
+                      }}
+                      &middot;
+                      {{
+                        t('events.detail.items_priced', {
+                          priced: player.priced_items,
+                          total: player.total_items,
+                        })
+                      }}
                     </p>
                   </div>
                 </div>
@@ -135,7 +158,7 @@ import {
                     -{{ formatAmount(player.estimated_loss) }}
                   </span>
                   <span class="block text-[10px] font-mono text-[var(--color-text-secondary)]">
-                    silver
+                    {{ t('events.detail.silver') }}
                   </span>
                 </div>
               </div>
@@ -173,19 +196,20 @@ import {
                       class="text-xs font-bold text-[var(--color-primary)] hover:underline truncate inline-flex items-center gap-1"
                       routerLink="/intel/opponents"
                       [queryParams]="{ q: opponent.guild_name }"
-                      title="View opponent intel"
+                      [title]="t('events.detail.view_opponent_intel')"
                     >
-                      <span>{{ opponent.guild_name || 'Gilda sconosciuta' }}</span>
+                      <span>{{ opponent.guild_name || t('events.detail.unknown_guild') }}</span>
                       <app-icon name="arrow-right" size="0.75rem" />
                     </a>
                   } @else {
                     <span class="text-xs font-bold text-[var(--color-text)] truncate">
-                      {{ opponent.guild_name || 'Gilda sconosciuta' }}
+                      {{ opponent.guild_name || t('events.detail.unknown_guild') }}
                     </span>
                   }
                   <span class="text-xs font-mono font-medium text-[var(--color-text-secondary)]">
-                    {{ opponent.wins }}W / {{ opponent.losses }}L ({{ opponent.battles }}
-                    btl)
+                    {{ opponent.wins }}W / {{ opponent.losses }}L ({{
+                      t('events.detail.battles_short', { count: opponent.battles })
+                    }})
                   </span>
                 </div>
 
@@ -194,7 +218,10 @@ import {
                     class="flex items-center justify-between text-[11px] font-mono text-[var(--color-text-secondary)]"
                   >
                     <span>{{ t('nav.guild') }}: {{ formatCompact(opponent.guild_kill_fame) }}</span>
-                    <span>Nemici: {{ formatCompact(opponent.opponent_kill_fame) }}</span>
+                    <span
+                      >{{ t('events.detail.enemies') }}:
+                      {{ formatCompact(opponent.opponent_kill_fame) }}</span
+                    >
                   </div>
                   @if (opponent.guild_kill_fame + opponent.opponent_kill_fame > 0) {
                     <div class="event-detail__fill-bar" style="background: var(--color-danger)">
@@ -235,6 +262,16 @@ export class EventOverviewTab {
   protected readonly formatNumber = formatNumber;
   protected readonly formatPercent = formatPercent;
   protected readonly formatRatio = formatRatio;
+
+  protected readonly winRate = computed(() => {
+    const stats = this.event().stats;
+    return winRatePercent(stats.wins, stats.losses);
+  });
+
+  protected readonly undecided = computed(() => {
+    const stats = this.event().stats;
+    return undecidedFights(stats.total_battles, stats.wins, stats.losses);
+  });
 
   protected readonly eventBalance = computed(() => {
     const detail = this.event();

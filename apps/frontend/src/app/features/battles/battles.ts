@@ -37,6 +37,12 @@ import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { battleOutcomeLabel, type BattleOutcomeType } from './battle-outcome';
+import { winRatePercent } from './battle-metrics';
+import {
+  buildGuildScopeStats,
+  emptyScopeStats,
+  type BattleScopeStats,
+} from './battle-scope-stats';
 
 const PAGE_SIZE = 10;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
@@ -46,15 +52,6 @@ type BattleListRow = BattleSummary | FightListItem;
 
 function isBattleTab(value: string): value is BattleTab {
   return value === 'guild' || value === 'me';
-}
-
-interface BattleScopeStats {
-  readonly battles: number;
-  readonly players: number;
-  readonly kills: number;
-  readonly deaths: number;
-  readonly fame: number;
-  readonly victories: number;
 }
 
 /**
@@ -206,7 +203,7 @@ interface BattleScopeStats {
                   {{ scopeStats().battles }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Loaded engagements
+                  {{ t('battles.scope.onPage') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
@@ -226,7 +223,7 @@ interface BattleScopeStats {
                   {{ formatCompact(scopeStats().fame) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Kill fame generated
+                  {{ t('battles.scope.onPage') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
@@ -246,7 +243,7 @@ interface BattleScopeStats {
                   {{ formatAmount(scopeStats().kills) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Enemies dispatched
+                  {{ t('battles.scope.onPage') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
@@ -267,7 +264,7 @@ interface BattleScopeStats {
                     {{ formatAmount(scopeStats().deaths) }}
                   </p>
                   <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                    Casualties suffered
+                    {{ t('battles.scope.onPage') }}
                   </p>
                 </div>
                 <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
@@ -280,19 +277,26 @@ interface BattleScopeStats {
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                    {{ scopeStats().deaths > 0 ? 'Guild K/D' : 'Win Rate' }}
+                    {{ scopeStats().deaths > 0 ? t('battles.kill_death') : t('events.detail.win_rate') }}
                   </p>
                   <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                     @if (scopeStats().deaths > 0) {
                       {{ (scopeStats().kills / scopeStats().deaths).toFixed(2) }}
-                    } @else if (scopeStats().battles > 0) {
-                      {{ winRatePercent() }}%
                     } @else {
-                      0%
+                      {{ winRateLabel() }}
                     }
                   </p>
                   <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                    {{ scopeStats().deaths > 0 ? 'Ratio in loaded battles' : scopeStats().victories + ' victories in loaded fights' }}
+                    @if (scopeStats().deaths > 0) {
+                      {{ t('battles.scope.onPage') }}
+                    } @else {
+                      {{
+                        t('battles.scope.winRateSub', {
+                          wins: scopeStats().victories,
+                          losses: scopeStats().defeats,
+                        })
+                      }}
+                    }
                   </p>
                 </div>
                 <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
@@ -307,13 +311,13 @@ interface BattleScopeStats {
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('battles.players') }}
+                  {{ t(tab() === 'guild' ? 'battles.scope.largestFight' : 'battles.players') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                  {{ formatAmount(scopeStats().players) }}
+                  {{ formatAmount(tab() === 'guild' ? scopeStats().peakPlayers : scopeStats().players) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Total participants
+                  {{ t('battles.scope.onPage') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
@@ -606,7 +610,8 @@ export class Battles {
 
   protected readonly trackBattle = (battle: BattleListRow): unknown => this.rowId(battle);
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.load();
@@ -771,7 +776,7 @@ export class Battles {
         if (generation !== this.loadGeneration) return;
         this.battles.set(response.items);
         this.totalItems.set(response.total_items);
-        this.scopeStats.set(this.buildGuildScopeStats(response.items));
+        this.scopeStats.set(buildGuildScopeStats(response.items));
       } else {
         const response = await firstValueFrom(
           this.api.get<PaginatedData<BattleSummary>>(path, params),
@@ -794,28 +799,15 @@ export class Battles {
     }
   }
 
-  protected winRatePercent(): number {
+  /** wins / (wins + losses) of the loaded fights; "—" when none was decided. */
+  protected winRateLabel(): string {
     const stats = this.scopeStats();
-    if (stats.battles === 0) return 0;
-    return Math.round((stats.victories / stats.battles) * 100);
+    const rate = winRatePercent(stats.victories, stats.defeats);
+    return rate === null ? '—' : `${Math.round(rate)}%`;
   }
 
   private emptyScopeStats(): BattleScopeStats {
-    return { battles: 0, players: 0, kills: 0, deaths: 0, fame: 0, victories: 0 };
-  }
-
-  private buildGuildScopeStats(fights: readonly FightListItem[]): BattleScopeStats {
-    return fights.reduce<BattleScopeStats>(
-      (stats, fight) => ({
-        battles: stats.battles + 1,
-        players: stats.players + fight.total_players,
-        kills: stats.kills + fight.total_kills,
-        deaths: stats.deaths,
-        fame: stats.fame + fight.total_fame,
-        victories: stats.victories + (fight.outcome.outcome === 'victory' ? 1 : 0),
-      }),
-      this.emptyScopeStats(),
-    );
+    return emptyScopeStats();
   }
 
   private async buildPersonalScopeStats(
@@ -837,12 +829,12 @@ export class Battles {
       );
       if (!player) return stats;
       return {
+        ...stats,
         battles: stats.battles + 1,
         players: stats.players + 1,
         kills: stats.kills + player.kills,
         deaths: stats.deaths + player.deaths,
         fame: stats.fame + player.kill_fame,
-        victories: stats.victories,
       };
     }, this.emptyScopeStats());
   }

@@ -2,25 +2,17 @@ import { ChangeDetectionStrategy, Component, inject, input, output } from '@angu
 import { Router, RouterLink } from '@angular/router';
 
 import type {
-  BattleLossEstimate,
   EventBattleSummary,
   EventDetailView,
   EventFight,
 } from '../../../core/models/api.models';
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
+import { albionBattlesUrl, formatConfidence } from '../../battles/battle-metrics';
 import { battleOutcomeLabel } from '../../battles/battle-outcome';
 import { EmptyState } from '../../../shared/components/empty-state/empty-state';
 import { Icon } from '../../../shared/components/icon/icon';
-import {
-  fightMetrics,
-  fightOutcomeLabel,
-  formatAmount,
-  formatCompact,
-  formatDate,
-  formatNumber,
-  formatPercent,
-} from './event-detail.utils';
+import { fightMetrics, formatCompact, formatDate, formatNumber } from './event-detail.utils';
 
 /** Battles tab of the event detail page: linked battle segments, canonical fights and combat logs. */
 @Component({
@@ -35,15 +27,15 @@ import {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-              Fight {{ detail.fights.length }} &middot; {{ t('events.detail.battles') }} ({{
-                detail.battles.length
-              }})
+              {{ t('events.detail.battles') }}
             </h2>
             <span class="font-mono text-xs font-semibold text-[var(--color-text-secondary)]">
-              {{ detail.stats.wins }}W / {{ detail.stats.losses }}L
-            </span>
-            <span class="font-mono text-xs font-semibold text-[var(--color-danger)]">
-              Perdite: -{{ formatAmount(eventLossEstimate().total_estimated_loss) }}
+              {{
+                t('events.detail.fights_battles_count', {
+                  fights: detail.fights.length,
+                  battles: detail.battles.length,
+                })
+              }}
             </span>
           </div>
 
@@ -73,7 +65,7 @@ import {
       </section>
 
       @if (detail.fights.length > 0) {
-        <section class="space-y-3" aria-label="Canonical fights">
+        <section class="space-y-3" [attr.aria-label]="t('events.detail.canonical_fights')">
           @for (fight of detail.fights; track fight.id) {
             @let metrics = fightMetrics(fight, detail.battles);
             <article class="card p-5 shadow-sm space-y-4">
@@ -85,41 +77,37 @@ import {
                       [class.chip--success]="metrics.outcome === 'victory'"
                       [class.chip--error]="metrics.outcome === 'defeat'"
                     >
-                      {{ fightOutcomeLabel(metrics.outcome) }}
+                      {{ outcomeLabel(metrics.outcome) }}
                     </span>
                     <h3 class="font-bold text-base text-[var(--color-text)]">
-                      Fight #{{ fight.id }}
+                      {{ t('events.detail.fight_number', { id: fight.id }) }}
                     </h3>
                   </div>
                   <p class="text-xs text-[var(--color-text-secondary)]">
                     {{ formatDate(fight.started_at) }} &middot; {{ fight.grouping_method }}
                     @if (fight.needs_review) {
                       &middot;
-                      <span class="text-warning font-semibold">necessita revisione</span>
+                      <span class="text-warning font-semibold">{{ t('fights.needsReview') }}</span>
                     }
                   </p>
                 </div>
 
                 <button type="button" class="btn btn--outline btn--sm" (click)="openFight(fight)">
-                  Apri Fight &rarr;
+                  {{ t('events.detail.open_fight') }} &rarr;
                 </button>
               </div>
 
               <div
-                class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 pt-3 border-t border-[var(--color-border)]"
+                class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5 pt-3 border-t border-[var(--color-border)]"
               >
-                <div class="surface p-3">
-                  <p class="event-detail__label">{{ t('battles.outcome') }}</p>
-                  <p class="text-xs font-bold mt-1 uppercase">{{ metrics.outcome }}</p>
-                </div>
                 <div class="surface p-3">
                   <p class="event-detail__label">{{ t('battles.segments') }}</p>
                   <p class="event-detail__value-sm mt-1">{{ metrics.segments }}</p>
                 </div>
                 <div class="surface p-3">
-                  <p class="event-detail__label">Confidence</p>
+                  <p class="event-detail__label">{{ t('events.detail.confidence') }}</p>
                   <p class="event-detail__value-sm mt-1">
-                    {{ formatPercent(fight.grouping_confidence) }}
+                    {{ formatConfidence(fight.grouping_confidence) }}
                   </p>
                 </div>
                 @if (metrics.players !== null) {
@@ -166,20 +154,20 @@ import {
                     [class.chip--success]="battle.outcome === 'victory'"
                     [class.chip--error]="battle.outcome === 'defeat'"
                   >
-                    {{ battleOutcomeChipLabel(battle.outcome) }}
+                    {{ outcomeLabel(battle.outcome) }}
                   </span>
                   <a
                     class="font-mono text-xs text-[var(--color-primary)] font-bold hover:underline"
                     [routerLink]="['/battles', battle.albionbb_battle_id]"
                   >
-                    Battle #{{ battle.albionbb_battle_id }}
+                    {{ t('events.detail.battle_number', { id: battle.albionbb_battle_id }) }}
                   </a>
                   <span class="text-xs text-[var(--color-text-secondary)]">
                     &middot; {{ formatDate(battle.battle_started_at) }}
                   </span>
                   @if (battle.opponent_guild_name) {
                     <span class="chip chip--tonal text-xs font-semibold">
-                      vs {{ battle.opponent_guild_name }}
+                      {{ t('events.detail.vs_opponent', { name: battle.opponent_guild_name }) }}
                     </span>
                   }
                 </div>
@@ -187,11 +175,11 @@ import {
                 <div class="flex items-center gap-2">
                   <a
                     class="btn btn--ghost btn--sm text-xs"
-                    [href]="'https://albionbattles.com/battles/' + battle.albionbb_battle_id"
+                    [href]="albionBattlesUrl(battle.albionbb_battle_id)"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    AlbionBB &rarr;
+                    {{ t('battles.view_on_albion_battles') }} &rarr;
                   </a>
                   <button
                     type="button"
@@ -203,19 +191,21 @@ import {
                 </div>
               </div>
 
-              <!-- 4-Column Combat Metrics -->
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <!-- 3-Column Combat Metrics -->
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div class="surface p-3">
-                  <span class="event-detail__label">Forze in campo</span>
+                  <span class="event-detail__label">{{ t('events.detail.forces') }}</span>
                   <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
                     {{ battle.guild_players_count }}
-                    <span class="text-xs text-[var(--color-text-secondary)]">vs</span>
+                    <span class="text-xs text-[var(--color-text-secondary)]">{{
+                      t('events.detail.vs')
+                    }}</span>
                     {{ battle.opponent_players_count ?? '—' }}
                   </p>
                 </div>
 
                 <div class="surface p-3">
-                  <span class="event-detail__label">Kill / Morti</span>
+                  <span class="event-detail__label">{{ t('events.detail.kills_deaths') }}</span>
                   <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
                     <span class="text-[var(--color-success)]">{{ battle.guild_kills }}</span>
                     /
@@ -227,13 +217,6 @@ import {
                   <span class="event-detail__label">{{ t('events.detail.kill_fame') }}</span>
                   <p class="font-mono text-sm font-bold text-[var(--color-success)] mt-0.5">
                     +{{ formatCompact(battle.guild_kill_fame) }}
-                  </p>
-                </div>
-
-                <div class="surface p-3">
-                  <span class="event-detail__label">Morti Registrate</span>
-                  <p class="font-mono text-sm font-bold text-[var(--color-danger)] mt-0.5">
-                    {{ battle.guild_deaths }} morti
                   </p>
                 </div>
               </div>
@@ -254,20 +237,18 @@ export class EventBattlesTab {
 
   readonly event = input.required<EventDetailView>();
   readonly canEdit = input.required<boolean>();
-  readonly eventLossEstimate = input.required<BattleLossEstimate>();
   readonly toggleBattleLinkForm = output<void>();
 
   protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
-  protected readonly formatAmount = formatAmount;
   protected readonly formatCompact = formatCompact;
   protected readonly formatDate = formatDate;
   protected readonly formatNumber = formatNumber;
-  protected readonly formatPercent = formatPercent;
+  protected readonly formatConfidence = formatConfidence;
+  protected readonly albionBattlesUrl = albionBattlesUrl;
   protected readonly fightMetrics = fightMetrics;
-  protected readonly fightOutcomeLabel = fightOutcomeLabel;
 
-  protected battleOutcomeChipLabel(outcome: EventBattleSummary['outcome']): string {
+  protected outcomeLabel(outcome: EventBattleSummary['outcome']): string {
     return this.t(battleOutcomeLabel(outcome));
   }
 

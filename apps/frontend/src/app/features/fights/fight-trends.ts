@@ -205,23 +205,20 @@ export class FightTrendsPage {
   protected barHeight(fights: number): number { return (fights / this.maxDailyFights()) * 100; }
   protected formatMetric(value: number | null, format: ComparisonMetric['format']): string {
     if (value === null) return '—';
-    if (format === 'percent') return `${this.formatNumber(this.asPercent(value), 1)}%`;
+    if (format === 'percent') return `${this.formatNumber(value, 1)}%`;
     if (format === 'ratio') return this.formatNumber(value, 2);
     if (format === 'compact') return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
     return this.formatNumber(value);
   }
   protected formatDelta(current: number | null, previous: number | null, format: ComparisonMetric['format']): string {
     if (current === null || previous === null) return 'No comparison';
-    const difference = format === 'percent' ? this.asPercent(current) - this.asPercent(previous) : current - previous;
+    const difference = current - previous;
     const prefix = difference > 0 ? '+' : '';
     if (format === 'percent') return `${prefix}${this.formatNumber(difference, 1)} pp`;
     if (format === 'ratio') return `${prefix}${this.formatNumber(difference, 2)}`;
     if (format === 'compact') return `${prefix}${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(difference)}`;
     return `${prefix}${this.formatNumber(difference)}`;
   }
-  /** Mirrors fight-detail.ts's `formatPercent`: win_rate arrives as a 0-1 fraction. */
-  private asPercent(value: number): number { return value <= 1 ? value * 100 : value; }
-
   private combineSelections(period: FightTrendPeriod | undefined, type: 'build' | 'comp'): PlannedSelection[] {
     if (!period) return [];
     if (type === 'comp') {

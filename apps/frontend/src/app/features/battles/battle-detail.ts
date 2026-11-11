@@ -26,6 +26,7 @@ import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { albionBattlesUrl } from './battle-metrics';
 import { battleOutcomeLabel, type BattleOutcomeType } from './battle-outcome';
 import { Chart, type ChartClickEvent, type ChartTableRow } from '../../shared/components/chart/chart';
 import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
@@ -164,11 +165,11 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
         </button>
         <a
           class="btn btn--ghost btn--sm no-underline"
-          [href]="'https://albionbattles.com/battles/' + detail.battle_id"
+          [href]="albionBattlesUrl(detail.battle_id)"
           target="_blank"
           rel="noopener noreferrer"
         >
-          {{ t('battles.view_on_albionbb') }} ↗
+          {{ t('battles.view_on_albion_battles') }} ↗
         </a>
         @if (canScoutBattle()) {
           <button
@@ -1215,6 +1216,7 @@ export class BattleDetailPage {
   private readonly palette = computed(() => chartPalette(this.theme.isDark()));
   private readonly chrome = computed(() => chartChrome(this.theme.isDark()));
 
+  protected readonly albionBattlesUrl = albionBattlesUrl;
   protected readonly battle = signal<BattleDetail | null>(null);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
