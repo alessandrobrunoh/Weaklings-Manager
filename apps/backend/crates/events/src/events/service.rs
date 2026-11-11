@@ -17,8 +17,8 @@ use super::models::{
     BuildPerformanceView, CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest,
     EventBattleView, EventCompBuildView, EventDetailView, EventFightView, EventParticipantView,
     EventRevision, EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
-    EventSignupOptionsView, EventSplitStats, EventSummary, EventView, OpponentPerformanceView,
-    ParticipantWeaponView, ParticipateEventRequest, RosterVersionRequest, SignupAvailability,
+    EventSignupOptionsView, EventSignupPartyView, EventSplitStats, EventSummary, EventView,
+    OpponentPerformanceView, ParticipantWeaponView, ParticipateEventRequest, RosterVersionRequest, SignupAvailability,
     SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use backend_entities::events::{
@@ -32,11 +32,15 @@ use super::fight_grouping::{
 use super::lifecycle::{
     Cause, Transition, Transitioned, XpFilter, finish_session_in_txn, transition_in_txn,
 };
+use super::parties::{
+    EventSeatPlan, concrete_signup_count, insert_first_party, load_event_parties, unseat_missing_seats,
+};
 use backend_albion_data::albionbb::client::{AlbionBbBattleSummary, AlbionBbBattlesFilters};
 use backend_albion_data::albionbb::service::AlbionBbService;
 use backend_battles::battles::models::BattleGuildSummary;
 use backend_battles::fight_analytics::service::{FightAggregateStats, FightOutcomeView};
 use backend_combat::fit::{self, FitStrategy};
+use backend_combat::seats::EventSeatKey;
 use backend_core::albion_common::{BattleLinkingContext, FriendlySide};
 use backend_core::errors::AppError;
 use backend_core::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
@@ -103,12 +107,9 @@ fn expansion_threshold(capacity: i64) -> i64 {
     (capacity.max(1).saturating_mul(3) / 4).max(1)
 }
 
-/// Parses `build:{id}:{slot}` into the assigned build identifier.
+/// Parses `party:{party}:build:{id}:{n}` into the assigned build identifier.
 fn assigned_build_id_from_seat_key(seat_key: &str) -> Option<i64> {
-    let mut parts = seat_key.split(':');
-    (parts.next() == Some("build"))
-        .then(|| parts.next()?.parse::<i64>().ok())
-        .flatten()
+    EventSeatKey::parse(seat_key).map(|key| key.build_id)
 }
 
 /// Maps each assigned member to the build of the seat they occupy.
@@ -126,7 +127,7 @@ fn assigned_builds_by_user(
 
 /// Loads the builds with the given ids in one query. Missing ids are simply absent from the
 /// map; callers decide whether that is an error.
-async fn load_builds_by_id<C: ConnectionTrait>(
+pub(super) async fn load_builds_by_id<C: ConnectionTrait>(
     db: &C,
     mut build_ids: Vec<i64>,
 ) -> Result<HashMap<i64, build::Model>, AppError> {
@@ -531,7 +532,7 @@ pub async fn load_alliance_ping_targets(
 
 /// An event's extra roster roles in the order they were added, which is the order their seats
 /// are appended to the roster.
-async fn load_extra_roster_roles<C: ConnectionTrait>(
+pub(super) async fn load_extra_roster_roles<C: ConnectionTrait>(
     db: &C,
     event_id: i64,
 ) -> Result<Vec<event_roster_role::Model>, AppError> {
@@ -560,6 +561,7 @@ async fn load_event_roster_roles(
         name: "Fill".to_string(),
         is_fill: true,
         weapon_key: None,
+        party_id: None,
     });
 
     for role in extra_roles {
@@ -572,6 +574,7 @@ async fn load_event_roster_roles(
             name: build.name.clone(),
             is_fill: false,
             weapon_key: weapon_keys.get(&role.build_id).cloned(),
+            party_id: role.party_id,
         });
     }
 
@@ -2216,19 +2219,8 @@ impl EventService {
             .iter()
             .filter(|p| p.primary_build_id.is_some())
             .count();
-        let extra_roles = load_extra_roster_roles(db, event_id).await?;
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                db,
-                event_model.organized_comp_id()?,
-                concrete,
-                extra_roles.len(),
-                event_model.player_cap,
-            )
-            .await?;
-        let mut seats = self
-            .roster_seats_with_extras(db, event_id, active_comp.id, &extra_roles)
-            .await?;
+        let plan = self.seat_plan(db, &event_model, concrete).await?;
+        let mut seats: Vec<EventRosterSeatView> = plan.seats().cloned().collect();
         let assignments = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
             .all(db)
@@ -2347,105 +2339,23 @@ impl EventService {
                 (!assigned_users.contains(&user_id)).then_some(participant)
             })
             .collect();
+        let filled: HashSet<&str> = seats
+            .iter()
+            .filter(|seat| seat.participant.is_some())
+            .map(|seat| seat.key.as_str())
+            .collect();
+        let parties = plan.party_views(&filled);
         Ok(EventRosterView {
             event_id,
             roster_version: event_model.roster_version,
-            active_comp_id: active_comp.id,
+            active_comp_id: plan.first_comp().id,
+            parties,
             seats,
             bench,
         })
     }
 
-    /// Expands a comp's `comp_builds` rows into the flat, ordered seat list every roster view
-    /// is built from, with no participant assigned yet.
-    ///
-    /// The seat query itself is [`backend_combat::seats::canonical_comp_seats`], which
-    /// readiness also reads with no event context at all.
-    pub async fn canonical_roster_seats<C: ConnectionTrait>(
-        &self,
-        db: &C,
-        comp_id: i64,
-    ) -> Result<Vec<EventRosterSeatView>, AppError> {
-        let seats = backend_combat::seats::canonical_comp_seats(db, comp_id).await?;
-        Ok(seats
-            .into_iter()
-            .map(|seat| EventRosterSeatView {
-                key: seat.key,
-                party_number: seat.party_number,
-                position: seat.position,
-                build_id: seat.build_id,
-                build_name: seat.build_name,
-                build_version: seat.build_version,
-                role: seat.role,
-                weapon_key: seat.weapon_key,
-                participant: None,
-            })
-            .collect())
-    }
-
-    /// The seats an event's roster actually has: the active comp's canonical seats followed by
-    /// one seat per event-specific extra role.
-    ///
-    /// An extra role for build `B` is seat `build:B:{n}` where `n` continues after the comp's own
-    /// seats for `B` (1 when the comp has none), matching the extra primary slot the signup check
-    /// grants for that build. Extra seats are appended in the order the roles were added and keep
-    /// the 20-per-party numbering going, so they land in the last party (or open a new one).
-    pub async fn event_roster_seats<C: ConnectionTrait>(
-        &self,
-        db: &C,
-        event_id: i64,
-        comp_id: i64,
-    ) -> Result<Vec<EventRosterSeatView>, AppError> {
-        let extra_roles = load_extra_roster_roles(db, event_id).await?;
-        self.roster_seats_with_extras(db, event_id, comp_id, &extra_roles)
-            .await
-    }
-
-    /// [`Self::event_roster_seats`] for a caller that already loaded the event's extra roles
-    /// (in id order, see [`load_extra_roster_roles`]).
-    async fn roster_seats_with_extras<C: ConnectionTrait>(
-        &self,
-        db: &C,
-        event_id: i64,
-        comp_id: i64,
-        extra_roles: &[event_roster_role::Model],
-    ) -> Result<Vec<EventRosterSeatView>, AppError> {
-        let mut seats = self.canonical_roster_seats(db, comp_id).await?;
-        if extra_roles.is_empty() {
-            return Ok(seats);
-        }
-        let extra_build_ids: Vec<i64> = extra_roles.iter().map(|role| role.build_id).collect();
-        let builds_by_id = load_builds_by_id(db, extra_build_ids.clone()).await?;
-        let weapon_keys = backend_combat::seats::main_weapon_keys(db, &extra_build_ids).await?;
-        for role in extra_roles {
-            let build = builds_by_id
-                .get(&role.build_id)
-                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", role.build_id)))?;
-            let prefix = format!("build:{}:", role.build_id);
-            let ordinal = seats
-                .iter()
-                .filter(|seat| seat.key.starts_with(&prefix))
-                .count()
-                + 1;
-            let sequential = i32::try_from(seats.len()).map_err(|_| {
-                AppError::Internal(format!("roster for event {event_id} has too many seats"))
-            })?;
-            seats.push(EventRosterSeatView {
-                key: format!("{prefix}{ordinal}"),
-                party_number: sequential / 20 + 1,
-                position: sequential % 20 + 1,
-                build_id: role.build_id,
-                build_name: build.name.clone(),
-                build_version: build.version,
-                role: build.role.clone(),
-                weapon_key: weapon_keys.get(&role.build_id).cloned(),
-                participant: None,
-            });
-        }
-        Ok(seats)
-    }
-
-    async fn advance_roster_version(
+    pub(super) async fn advance_roster_version(
         &self,
         txn: &sea_orm::DatabaseTransaction,
         event_id: i64,
@@ -2495,30 +2405,12 @@ impl EventService {
                 "user is not participating in this event".to_string(),
             ));
         }
-        let extra_slots = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .count(&txn)
-            .await
-            .map_err(AppError::Database)? as usize;
         let concrete = participations
             .iter()
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                &txn,
-                event_model.organized_comp_id()?,
-                concrete,
-                extra_slots,
-                event_model.player_cap,
-            )
-            .await?;
-        if !self
-            .event_roster_seats(&txn, event_id, active_comp.id)
-            .await?
-            .iter()
-            .any(|seat| seat.key == seat_key)
-        {
+        let plan = self.seat_plan(&txn, &event_model, concrete).await?;
+        if !plan.seats().any(|seat| seat.key == seat_key) {
             return Err(AppError::Validation(format!(
                 "invalid roster seat key: {seat_key}"
             )));
@@ -2570,30 +2462,12 @@ impl EventService {
             .all(&txn)
             .await
             .map_err(AppError::Database)?;
-        let extra_slots = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .count(&txn)
-            .await
-            .map_err(AppError::Database)? as usize;
         let concrete = participations
             .iter()
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                &txn,
-                event_model.organized_comp_id()?,
-                concrete,
-                extra_slots,
-                event_model.player_cap,
-            )
-            .await?;
-        if !self
-            .event_roster_seats(&txn, event_id, active_comp.id)
-            .await?
-            .iter()
-            .any(|seat| seat.key == seat_key)
-        {
+        let plan = self.seat_plan(&txn, &event_model, concrete).await?;
+        if !plan.seats().any(|seat| seat.key == seat_key) {
             return Err(AppError::Validation(format!(
                 "invalid roster seat key: {seat_key}"
             )));
@@ -2640,27 +2514,13 @@ impl EventService {
             .all(&txn)
             .await
             .map_err(AppError::Database)?;
-        let extra_slots = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .count(&txn)
-            .await
-            .map_err(AppError::Database)? as usize;
         let concrete = participations
             .iter()
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                &txn,
-                event_model.organized_comp_id()?,
-                concrete,
-                extra_slots,
-                event_model.player_cap,
-            )
-            .await?;
-        let seats = self.event_roster_seats(&txn, event_id, active_comp.id).await?;
-        if !seats.iter().any(|seat| seat.key == request.source_seat_key)
-            || !seats.iter().any(|seat| seat.key == request.target_seat_key)
+        let plan = self.seat_plan(&txn, &event_model, concrete).await?;
+        if !plan.seats().any(|seat| seat.key == request.source_seat_key)
+            || !plan.seats().any(|seat| seat.key == request.target_seat_key)
         {
             return Err(AppError::Validation("invalid roster seat key".to_string()));
         }
@@ -2727,32 +2587,17 @@ impl EventService {
             .all(&txn)
             .await
             .map_err(AppError::Database)?;
-        let extra_slots = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .count(&txn)
-            .await
-            .map_err(AppError::Database)? as usize;
         let concrete = participations
             .iter()
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                &txn,
-                event_model.organized_comp_id()?,
-                concrete,
-                extra_slots,
-                event_model.player_cap,
-            )
-            .await?;
+        let plan = self.seat_plan(&txn, &event_model, concrete).await?;
         let assignments = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
             .all(&txn)
             .await
             .map_err(AppError::Database)?;
-        let seats = self
-            .event_roster_seats(&txn, event_id, active_comp.id)
-            .await?;
+        let seats: Vec<EventRosterSeatView> = plan.seats().cloned().collect();
         let seat_keys: HashSet<&str> = seats.iter().map(|seat| seat.key.as_str()).collect();
         // An assignment to a seat the roster no longer has (a removed extra role, a smaller comp
         // variant) already shows that member on the bench. Drop the row so they can be placed
@@ -2847,32 +2692,17 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let extra_slots = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .count(db)
-            .await
-            .map_err(AppError::Database)? as usize;
         let concrete = participations
             .iter()
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
-        let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(
-                db,
-                event_model.organized_comp_id()?,
-                concrete,
-                extra_slots,
-                event_model.player_cap,
-            )
-            .await?;
+        let plan = self.seat_plan(db, &event_model, concrete).await?;
         let assignments = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let seats = self
-            .event_roster_seats(db, event_id, active_comp.id)
-            .await?;
+        let seats: Vec<EventRosterSeatView> = plan.seats().cloned().collect();
         let seat_keys: HashSet<&str> = seats.iter().map(|seat| seat.key.as_str()).collect();
         // Same rule as `auto_fill_roster`: a row for a seat that no longer exists does not seat
         // anyone.
@@ -2963,9 +2793,28 @@ impl EventService {
             )));
         }
 
+        // The extra seat goes to the requested party, or the last one.
+        let parties = load_event_parties(db, event_id).await?;
+        let party_id = match request.party_id {
+            Some(party_id) => parties
+                .iter()
+                .find(|party| party.id == party_id)
+                .map(|party| party.id)
+                .ok_or_else(|| {
+                    AppError::NotFound(format!(
+                        "Party {party_id} was not found for event {event_id}"
+                    ))
+                })?,
+            None => parties
+                .last()
+                .map(|party| party.id)
+                .ok_or_else(|| AppError::Conflict(format!("Event {event_id} has no parties")))?,
+        };
+
         let role = event_roster_role::ActiveModel {
             event_id: Set(event_id),
             build_id: Set(request.build_id),
+            party_id: Set(Some(party_id)),
             ..Default::default()
         }
         .insert(db)
@@ -2981,6 +2830,7 @@ impl EventService {
             name: build.name,
             is_fill: false,
             weapon_key,
+            party_id: role.party_id,
         })
     }
 
@@ -3002,14 +2852,18 @@ impl EventService {
             )));
         }
         let txn = db.begin().await.map_err(AppError::Database)?;
-        let comp_id = event::Entity::find_by_id(event_id)
+        let event_model = event::Entity::find_by_id(event_id)
             .one(&txn)
             .await
-            .map_err(AppError::Database)?
-            .and_then(|event| event.comp_id);
-        let seats_before = match comp_id {
-            Some(comp_id) => self.event_roster_seats(&txn, event_id, comp_id).await?,
-            None => Vec::new(),
+            .map_err(AppError::Database)?;
+        // Flash masses have no roster, so there is no seat to remove.
+        let plan_input = match event_model {
+            Some(event_model) if !event_model.is_flash() => {
+                let concrete = concrete_signup_count(&txn, event_id).await?;
+                let before = self.seat_plan(&txn, &event_model, concrete).await?;
+                Some((event_model, concrete, before.seat_keys()))
+            }
+            _ => None,
         };
         event_roster_role::Entity::delete_by_id(role_id)
             .exec(&txn)
@@ -3017,26 +2871,12 @@ impl EventService {
             .map_err(AppError::Database)?;
         // The seat the role added is gone; whoever sat there goes back to the bench rather than
         // silently reappearing on it if the same role is added again later.
-        if let Some(comp_id) = comp_id {
-            let seats_after: HashSet<String> = self
-                .event_roster_seats(&txn, event_id, comp_id)
+        if let Some((event_model, concrete, before_keys)) = plan_input {
+            let after_keys = self
+                .seat_plan(&txn, &event_model, concrete)
                 .await?
-                .into_iter()
-                .map(|seat| seat.key)
-                .collect();
-            let removed: Vec<String> = seats_before
-                .into_iter()
-                .map(|seat| seat.key)
-                .filter(|key| !seats_after.contains(key))
-                .collect();
-            if !removed.is_empty() {
-                event_roster_assignment::Entity::delete_many()
-                    .filter(event_roster_assignment::Column::EventId.eq(event_id))
-                    .filter(event_roster_assignment::Column::SeatKey.is_in(removed))
-                    .exec(&txn)
-                    .await
-                    .map_err(AppError::Database)?;
-            }
+                .seat_keys();
+            unseat_missing_seats(&txn, event_id, &before_keys, &after_keys).await?;
         }
         txn.commit().await.map_err(AppError::Database)?;
         Ok(())
@@ -3055,7 +2895,7 @@ impl EventService {
 
     /// Resolves the active composition using parent-linked expansions and fixed-capacity extra
     /// roster roles.
-    async fn resolve_active_comp_with_extra_slots<C: ConnectionTrait>(
+    pub(super) async fn resolve_active_comp_with_extra_slots<C: ConnectionTrait>(
         &self,
         db: &C,
         base_comp_id: i64,
@@ -3208,71 +3048,36 @@ impl EventService {
         let prospective_target =
             comp_resolution_target(prospective_participant_count, event.player_cap);
 
-        let extra_roster_roles = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        let (active_comp, active_comp_capacity) = self
-            .resolve_active_comp_with_extra_slots(
-                db,
-                event.organized_comp_id()?,
-                prospective_target,
-                extra_roster_roles.len(),
-                event.player_cap,
-            )
-            .await?;
+        let plan = self.seat_plan(db, &event, prospective_target).await?;
 
-        let comp_builds = comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(active_comp.id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        let candidate_build_ids: Vec<i64> = comp_builds
-            .iter()
-            .map(|entry| entry.build_id)
-            .chain(extra_roster_roles.iter().map(|entry| entry.build_id))
-            .collect();
-        let weapon_keys =
-            backend_combat::seats::main_weapon_keys(db, &candidate_build_ids).await?;
         let member_weapons = weapons::load_sets_for_users(db, &[user_id])
             .await?
             .remove(&user_id)
             .unwrap_or_default();
-        let mut builds = BTreeMap::<i64, EventSignupBuildView>::new();
-        for (build_id, quantity) in comp_builds
-            .into_iter()
-            .map(|entry| (entry.build_id, entry.quantity))
-            .chain(
-                extra_roster_roles
-                    .into_iter()
-                    .map(|entry| (entry.build_id, 1)),
-            )
-        {
-            if let Some(existing) = builds.get_mut(&build_id) {
-                existing.quantity = existing.quantity.checked_add(quantity).ok_or_else(|| {
+
+        // One view per distinct build; the flat list sums its seats over every party and each
+        // party group repeats it with that party's own seat count.
+        let mut build_views = BTreeMap::<i64, EventSignupBuildView>::new();
+        for seat in plan.seats() {
+            if let Some(existing) = build_views.get_mut(&seat.build_id) {
+                existing.quantity = existing.quantity.checked_add(1).ok_or_else(|| {
                     AppError::Internal(format!(
-                        "signup slot quantity overflow for build {build_id}"
+                        "signup slot quantity overflow for build {}",
+                        seat.build_id
                     ))
                 })?;
                 continue;
             }
-
-            let build = build::Entity::find_by_id(build_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-                .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))?;
-            let role = BuildRole::from_str(&build.role)
-                .map_err(|_| AppError::Internal(format!("Unknown build role: {}", build.role)))?;
-            let weapon_key = weapon_keys.get(&build_id).cloned();
-            builds.insert(
-                build_id,
+            let role = BuildRole::from_str(&seat.role)
+                .map_err(|_| AppError::Internal(format!("Unknown build role: {}", seat.role)))?;
+            let weapon_key = seat.weapon_key.clone();
+            build_views.insert(
+                seat.build_id,
                 EventSignupBuildView {
-                    build_id,
-                    name: build.name,
+                    build_id: seat.build_id,
+                    name: seat.build_name.clone(),
                     role,
-                    quantity,
+                    quantity: 1,
                     weapon_name: weapon_key
                         .as_deref()
                         .and_then(backend_albion_data::openalbion::service::weapon_name_for_key)
@@ -3282,13 +3087,40 @@ impl EventService {
                 },
             );
         }
+        let parties = plan
+            .parties
+            .iter()
+            .map(|layout| {
+                let mut seat_counts = BTreeMap::<i64, i32>::new();
+                for seat in &layout.seats {
+                    *seat_counts.entry(seat.build_id).or_insert(0) += 1;
+                }
+                EventSignupPartyView {
+                    party_id: layout.party.id,
+                    position: layout.party.position,
+                    name: layout.party.name.clone(),
+                    comp_name: layout.active_comp.name.clone(),
+                    builds: seat_counts
+                        .into_iter()
+                        .filter_map(|(build_id, quantity)| {
+                            build_views.get(&build_id).map(|view| EventSignupBuildView {
+                                quantity,
+                                ..view.clone()
+                            })
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
 
+        let active_comp = plan.first_comp();
         Ok(EventSignupOptionsView {
             active_comp_id: active_comp.id,
-            active_comp_name: active_comp.name,
-            active_comp_capacity,
+            active_comp_name: active_comp.name.clone(),
+            active_comp_capacity: plan.comp_capacity(),
             is_already_registered,
-            builds: builds.into_values().collect(),
+            builds: build_views.into_values().collect(),
+            parties,
             has_declared_weapons: member_weapons.has_declarations(),
         })
     }
@@ -3642,35 +3474,26 @@ impl EventService {
             .await
             .map_err(AppError::Database)?;
 
-        let extra_roster_slots = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(id))
-            .count(db)
-            .await
-            .map_err(AppError::Database)? as usize;
         // Flash masses carry no comp: the detail is the plain participant
         // list the Discord card renders as "Coming".
-        let (active_comp, active_capacity) = if event_model.is_flash() {
-            (None, None)
+        let plan = if event_model.is_flash() {
+            None
         } else {
-            let (active_comp, active_capacity) = self
-                .resolve_active_comp_with_extra_slots(
+            Some(
+                self.seat_plan(
                     db,
-                    event_model.organized_comp_id()?,
+                    &event_model,
                     comp_resolution_target(participations.len(), event_model.player_cap),
-                    extra_roster_slots,
-                    event_model.player_cap,
                 )
-                .await?;
-            (Some(active_comp), Some(active_capacity))
+                .await?,
+            )
         };
-        let active_comp_builds = match &active_comp {
-            None => Vec::new(),
-            Some(active_comp) => comp_build::Entity::find()
-                .filter(comp_build::Column::CompId.eq(active_comp.id))
-                .all(db)
-                .await
-                .map_err(AppError::Database)?,
-        };
+        let active_comp = plan.as_ref().map(|plan| plan.first_comp().clone());
+        let active_capacity = plan.as_ref().map(EventSeatPlan::comp_capacity);
+        let active_comp_builds: Vec<(i64, i32)> = plan
+            .as_ref()
+            .map(|plan| plan.comp_build_totals().into_iter().collect())
+            .unwrap_or_default();
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
         let mut specializations_by_user =
@@ -3686,6 +3509,10 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        let assigned_keys: HashSet<String> = assignments
+            .iter()
+            .map(|assignment| assignment.seat_key.clone())
+            .collect();
         let assigned_build_by_user = assigned_builds_by_user(assignments);
 
         // Batched in place of the per-participant lookups this loop used to
@@ -3707,10 +3534,8 @@ impl EventService {
                 .map(|user| (user.id, user))
                 .collect();
 
-        let mut needed_build_ids: HashSet<i64> = active_comp_builds
-            .iter()
-            .map(|entry| entry.build_id)
-            .collect();
+        let mut needed_build_ids: HashSet<i64> =
+            active_comp_builds.iter().map(|(build_id, _)| *build_id).collect();
         for p in &participations {
             needed_build_ids.extend(p.primary_build_id);
             needed_build_ids.extend(p.secondary_build_id);
@@ -3818,15 +3643,26 @@ impl EventService {
         // re-resolve every build name one-by-one a second time.
         let mut comp_build_views = active_comp_builds
             .into_iter()
-            .map(|entry| {
+            .map(|(build_id, quantity)| {
                 Ok::<EventCompBuildView, AppError>(EventCompBuildView {
-                    build_id: entry.build_id,
-                    name: build_name(entry.build_id)?,
-                    quantity: entry.quantity,
+                    build_id,
+                    name: build_name(build_id)?,
+                    quantity,
                 })
             })
             .collect::<Result<Vec<_>, AppError>>()?;
         comp_build_views.sort_by_key(|entry| entry.build_id);
+        let party_views = plan
+            .as_ref()
+            .map(|plan| {
+                let filled: HashSet<&str> = plan
+                    .seats()
+                    .filter(|seat| assigned_keys.contains(&seat.key))
+                    .map(|seat| seat.key.as_str())
+                    .collect();
+                plan.party_views(&filled)
+            })
+            .unwrap_or_default();
 
         Ok(EventDetailView {
             event: event_view,
@@ -3834,6 +3670,7 @@ impl EventService {
             active_comp_name: active_comp.as_ref().map(|comp| comp.name.clone()),
             active_comp_capacity: active_capacity,
             roster_roles,
+            parties: party_views,
             comp_builds: comp_build_views,
             participants: participant_views,
             fights,
@@ -4399,6 +4236,10 @@ impl EventService {
         .map_err(AppError::Database)?;
 
         let event_id = event_model.id;
+        // An organized event always has a first party holding the chosen comp.
+        if let Some(comp_id) = comp_id {
+            insert_first_party(&txn, event_id, comp_id).await?;
+        }
         for (sort_order, discord_role_id) in discord_role_ids.into_iter().enumerate() {
             event_discord_role::ActiveModel {
                 event_id: Set(event_id),
@@ -4490,6 +4331,8 @@ impl EventService {
                 Some(trimmed.to_string())
             });
         }
+        // A comp different from the current one replaces the first party's comp.
+        let mut comp_change = None;
         if let Some(comp_id) = req.comp_id {
             // Flash masses never gain a comp in place: the promote path (flash
             // → organized) is a dedicated flow, not an update.
@@ -4510,6 +4353,9 @@ impl EventService {
                 )));
             }
             active.comp_id = Set(Some(comp_id));
+            if event_model.comp_id != Some(comp_id) {
+                comp_change = Some(comp_id);
+            }
         }
         let current_start = event_model
             .start_time_utc
@@ -4552,7 +4398,20 @@ impl EventService {
 
         active.updated_at = Set(chrono::Utc::now().into());
 
-        let updated = active.update(db).await.map_err(AppError::Database)?;
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let mut updated = active.update(&txn).await.map_err(AppError::Database)?;
+        if let Some(comp_id) = comp_change {
+            // Members whose seat still exists in the new comp keep it; the rest are unseated.
+            self.set_first_party_comp(&txn, &event_model, comp_id)
+                .await?;
+            // The comp change moved the roster version; return the row as stored.
+            updated = event::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        }
+        txn.commit().await.map_err(AppError::Database)?;
         self.to_event_view(db, updated).await
     }
 
@@ -5507,16 +5366,6 @@ impl EventService {
             event_model.player_cap,
         );
 
-        let extra_roster_roles = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        let extra_roster_build_ids: HashSet<i64> = extra_roster_roles
-            .iter()
-            .map(|role| role.build_id)
-            .collect();
-
         // Flash masses have binary participation: no build choices, no comp
         // machinery. A build id on a flash signup is a client contract
         // violation, not a silent default.
@@ -5527,44 +5376,27 @@ impl EventService {
             ));
         }
 
-        // Each persisted extra role adds one primary slot when selecting a comp variant.
-        let (active_comp, active_comp_builds) = if event_model.is_flash() {
-            (None, Vec::new())
+        // The seats of every party (comp seats plus extra roles) are the signup capacity. A
+        // single-party event resolves its comp variant from the prospective signup count.
+        let plan = if event_model.is_flash() {
+            None
         } else {
-            let (active_comp, _) = self
-                .resolve_active_comp_with_extra_slots(
-                    db,
-                    event_model.organized_comp_id()?,
-                    target_size,
-                    extra_roster_build_ids.len(),
-                    event_model.player_cap,
-                )
-                .await?;
-            let active_comp_builds = comp_build::Entity::find()
-                .filter(comp_build::Column::CompId.eq(active_comp.id))
-                .all(db)
-                .await
-                .map_err(AppError::Database)?;
-            (Some(active_comp), active_comp_builds)
+            Some(self.seat_plan(db, &event_model, target_size).await?)
         };
+        let comp_name = plan
+            .as_ref()
+            .map(|plan| plan.first_comp().name.clone())
+            .unwrap_or_default();
 
         // Fill does not consume a build slot. A concrete primary build remains constrained by the
         // resolved comp and event-specific extra roster roles.
         if let Some(primary_build_id) = primary_build_id {
-            let comp_primary_slots = active_comp_builds
-                .iter()
-                .find(|cb| cb.build_id == primary_build_id)
-                .map_or(0, |comp_build| comp_build.quantity as usize);
-            let extra_primary_slots =
-                usize::from(extra_roster_build_ids.contains(&primary_build_id));
-            let primary_slot_limit = comp_primary_slots + extra_primary_slots;
+            let primary_slot_limit = plan
+                .as_ref()
+                .map_or(0, |plan| plan.seats_for_build(primary_build_id));
             if primary_slot_limit == 0 {
                 return Err(AppError::Validation(format!(
-                    "Primary build {primary_build_id} is not allowed in comp {} or its extra roster roles",
-                    active_comp
-                        .as_ref()
-                        .map(|comp| comp.name.clone())
-                        .unwrap_or_default()
+                    "Primary build {primary_build_id} is not allowed in comp {comp_name} or its extra roster roles"
                 )));
             }
 
@@ -5576,16 +5408,7 @@ impl EventService {
                 .all(db)
                 .await
                 .map_err(AppError::Database)?;
-            let assigned_build_by_user: HashMap<i64, i64> = assignments
-                .into_iter()
-                .filter_map(|assignment| {
-                    let mut parts = assignment.seat_key.split(':');
-                    (parts.next() == Some("build"))
-                        .then(|| parts.next()?.parse::<i64>().ok())
-                        .flatten()
-                        .map(|build_id| (assignment.user_id, build_id))
-                })
-                .collect();
+            let assigned_build_by_user = assigned_builds_by_user(assignments);
             let taken_count = current_participations
                 .iter()
                 .filter(|p| p.user_id != user_id)
@@ -5606,14 +5429,12 @@ impl EventService {
 
         // Secondary builds do not consume a primary slot, but must be available from either source.
         if let Some(sec_id) = secondary_build_id {
-            let in_active_comp = active_comp_builds.iter().any(|cb| cb.build_id == sec_id);
-            if !in_active_comp && !extra_roster_build_ids.contains(&sec_id) {
+            let in_roster = plan
+                .as_ref()
+                .is_some_and(|plan| plan.seats_for_build(sec_id) > 0);
+            if !in_roster {
                 return Err(AppError::Validation(format!(
-                    "Secondary build {sec_id} is not allowed in comp {} or its extra roster roles",
-                    active_comp
-                        .as_ref()
-                        .map(|comp| comp.name.clone())
-                        .unwrap_or_default()
+                    "Secondary build {sec_id} is not allowed in comp {comp_name} or its extra roster roles"
                 )));
             }
         }
@@ -5631,13 +5452,9 @@ impl EventService {
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
 
         if let Some(primary_build_id) = primary_build_id {
-            let comp_primary_slots = active_comp_builds
-                .iter()
-                .find(|cb| cb.build_id == primary_build_id)
-                .map_or(0, |comp_build| comp_build.quantity as usize);
-            let extra_primary_slots =
-                usize::from(extra_roster_build_ids.contains(&primary_build_id));
-            let primary_slot_limit = comp_primary_slots + extra_primary_slots;
+            let primary_slot_limit = plan
+                .as_ref()
+                .map_or(0, |plan| plan.seats_for_build(primary_build_id));
 
             let fresh_participations = event_participation::Entity::find()
                 .filter(event_participation::Column::EventId.eq(event_id))
@@ -6141,10 +5958,28 @@ mod tests {
     }
 
     /// A minimal event owned by `creator`, enough to hang sign-ups and battles off.
+    /// Gives an event inserted straight into the table its first party, like `create_event` does.
+    async fn add_first_party(db: &DatabaseConnection, event_id: i64, comp_id: i64) -> i64 {
+        crate::events::parties::insert_first_party(db, event_id, comp_id)
+            .await
+            .expect("first party")
+            .id
+    }
+
+    /// The seat key of the `ordinal`-th seat of `build_id` in party `party_id`.
+    fn seat_key(party_id: i64, build_id: i64, ordinal: i32) -> String {
+        EventSeatKey {
+            party_id,
+            build_id,
+            ordinal,
+        }
+        .render()
+    }
+
     async fn insert_event(db: &DatabaseConnection, title: &str, creator: i64) -> i64 {
         let comp_category = create_comp_category(db, &format!("cat-{title}")).await;
         let comp_id = create_comp(db, title, comp_category, None, Vec::new()).await;
-        event::ActiveModel {
+        let event_id = event::ActiveModel {
             title: Set(title.to_string()),
             comp_id: Set(Some(comp_id)),
             created_by: Set(creator),
@@ -6154,7 +5989,11 @@ mod tests {
         .insert(db)
         .await
         .expect("failed to insert the event")
-        .id
+        .id;
+        super::super::parties::insert_first_party(db, event_id, comp_id)
+            .await
+            .expect("failed to insert the first party");
+        event_id
     }
 
     #[tokio::test]
@@ -6396,6 +6235,7 @@ mod tests {
         .await
         .expect("event should be created")
         .id;
+        add_first_party(&db, event_id, comp_id).await;
         let service = EventService::new();
         service
             .create_event_roster_role(
@@ -6403,6 +6243,7 @@ mod tests {
                 event_id,
                 CreateEventRosterRoleRequest {
                     build_id: extra_build_id,
+                    party_id: None,
                 },
             )
             .await
@@ -6461,6 +6302,7 @@ mod tests {
         .await
         .expect("event should be created")
         .id;
+        add_first_party(&db, event_id, comp_id).await;
         let service = EventService::new();
 
         let (detail, version) = service
@@ -6699,6 +6541,7 @@ mod tests {
         .await
         .expect("event should be created")
         .id;
+        add_first_party(&db, event_id, base).await;
 
         let mut existing_member = None;
         for number in 0..10 {
@@ -6877,6 +6720,7 @@ mod tests {
         .await
         .expect("event should be created")
         .id;
+        add_first_party(&db, event_id, comp_id).await;
 
         let detail = EventService::new()
             .participate(
@@ -6991,6 +6835,7 @@ mod tests {
         .await
         .expect("event should be created")
         .id;
+        add_first_party(&db, event_id, base).await;
         let service = EventService::new();
 
         let first_detail = service
@@ -7060,7 +6905,14 @@ mod tests {
         ));
 
         let added = service
-            .create_event_roster_role(&db, event_id, CreateEventRosterRoleRequest { build_id })
+            .create_event_roster_role(
+                &db,
+                event_id,
+                CreateEventRosterRoleRequest {
+                    build_id,
+                    party_id: None,
+                },
+            )
             .await
             .expect("existing build should be added as a roster role");
         assert_eq!(added.build_id, Some(build_id));
@@ -7068,7 +6920,14 @@ mod tests {
 
         assert!(matches!(
             service
-                .create_event_roster_role(&db, event_id, CreateEventRosterRoleRequest { build_id })
+                .create_event_roster_role(
+                    &db,
+                    event_id,
+                    CreateEventRosterRoleRequest {
+                        build_id,
+                        party_id: None,
+                    },
+                )
                 .await,
             Err(AppError::Conflict(_))
         ));
@@ -7122,6 +6981,7 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        let party_id = add_first_party(&db, event_id, comp_id).await;
         let service = EventService::new();
 
         let new_build_role = service
@@ -7130,6 +6990,7 @@ mod tests {
                 event_id,
                 CreateEventRosterRoleRequest {
                     build_id: extra_build,
+                    party_id: None,
                 },
             )
             .await
@@ -7140,6 +7001,7 @@ mod tests {
                 event_id,
                 CreateEventRosterRoleRequest {
                     build_id: comp_build,
+                    party_id: None,
                 },
             )
             .await
@@ -7150,9 +7012,9 @@ mod tests {
         assert_eq!(
             keys,
             vec![
-                format!("build:{comp_build}:1").as_str(),
-                format!("build:{extra_build}:1").as_str(),
-                format!("build:{comp_build}:2").as_str(),
+                seat_key(party_id, comp_build, 1).as_str(),
+                seat_key(party_id, extra_build, 1).as_str(),
+                seat_key(party_id, comp_build, 2).as_str(),
             ],
         );
         assert_eq!(roster.seats[1].build_name, "Siege Bow");
@@ -7174,7 +7036,7 @@ mod tests {
             .await
             .expect("members can sign up for the extra role");
         let roster = service.get_roster(&db, event_id).await.expect("roster loads");
-        let extra_key = format!("build:{extra_build}:1");
+        let extra_key = seat_key(party_id, extra_build, 1);
         service
             .assign_roster_seat(
                 &db,
@@ -8084,6 +7946,7 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        add_first_party(&db, event_id, comp_id).await;
 
         // Stored with the legacy tier-specific key, so the canonicalization is exercised too.
         backend_identity::users::specializations::ActiveModel {
@@ -8163,6 +8026,7 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        let party_id = add_first_party(&db, event_id, comp_id).await;
 
         let service = EventService::new();
         let mut seated = 0;
@@ -8187,10 +8051,10 @@ mod tests {
                 event_roster_assignment::ActiveModel {
                     event_id: Set(event_id),
                     user_id: Set(user_id),
-                    seat_key: Set(format!(
-                        "build:{}:{}",
+                    seat_key: Set(seat_key(
+                        party_id,
                         build_ids[(seated + 1) % 4],
-                        seated / 4 + 1
+                        (seated / 4 + 1) as i32,
                     )),
                     assigned_by: Set(creator),
                     assigned_at: Set(ts()),
@@ -8231,9 +8095,9 @@ mod tests {
             "statements per roster read: {statements_per_read:?}"
         );
         // 12 before weapons; participants' weapons and the seat builds' weapon keys are one
-        // statement each, whatever the roster size.
+        // statement each, whatever the roster size; the party list is one more.
         assert!(
-            statements_per_read[1] <= 14,
+            statements_per_read[1] <= 15,
             "a 40-participant roster read took {} statements",
             statements_per_read[1]
         );
@@ -8345,6 +8209,7 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        let party_id = add_first_party(&db, event_id, comp_id).await;
 
         let service = EventService::new();
         service
@@ -8373,7 +8238,7 @@ mod tests {
             .await
             .expect("greedy auto-fill should succeed");
 
-        assert_eq!(changed, vec![format!("build:{build_id}:1")]);
+        assert_eq!(changed, vec![seat_key(party_id, build_id, 1)]);
         let roster = service
             .get_roster(&db, event_id)
             .await
@@ -8417,6 +8282,7 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        let party_id = add_first_party(&db, event_id, comp_id).await;
 
         backend_identity::users::specializations::ActiveModel {
             user_id: Set(expert),
@@ -8461,7 +8327,7 @@ mod tests {
             .await
             .expect("spec-optimal auto-fill should succeed");
 
-        assert_eq!(changed, vec![format!("build:{build_id}:1")]);
+        assert_eq!(changed, vec![seat_key(party_id, build_id, 1)]);
         let roster = service
             .get_roster(&db, event_id)
             .await
@@ -8484,6 +8350,7 @@ mod tests {
     /// (a mount), `quantity` seats each.
     struct WeaponEvent {
         event_id: i64,
+        party_id: i64,
         officer: i64,
         hammer: i64,
         sword: i64,
@@ -8518,8 +8385,10 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        let party_id = add_first_party(db, event_id, comp_id).await;
         WeaponEvent {
             event_id,
+            party_id,
             officer,
             hammer,
             sword,
@@ -8751,7 +8620,7 @@ mod tests {
             .assign_roster_seat(
                 &db,
                 w.event_id,
-                &format!("build:{}:1", w.hammer),
+                &seat_key(w.party_id, w.hammer, 1),
                 AssignRosterSeatRequest {
                     user_id: locked,
                     expected_roster_version: version,
@@ -8766,7 +8635,7 @@ mod tests {
         let seat = roster
             .seats
             .iter()
-            .find(|seat| seat.key == format!("build:{}:1", w.hammer))
+            .find(|seat| seat.key == seat_key(w.party_id, w.hammer, 1))
             .unwrap();
         assert_eq!(seat.weapon_key.as_deref(), Some(HAMMER_KEY));
         let occupant = seat.participant.as_ref().expect("the locked member sits there");
@@ -8884,7 +8753,7 @@ mod tests {
             let hammer_seat = roster
                 .seats
                 .iter()
-                .find(|seat| seat.key == format!("build:{}:1", w.hammer))
+                .find(|seat| seat.key == seat_key(w.party_id, w.hammer, 1))
                 .unwrap();
             assert_eq!(
                 hammer_seat.participant.as_ref().map(|p| p.user_id),
@@ -8926,7 +8795,7 @@ mod tests {
         let hammer_placement = suggestions
             .placements
             .iter()
-            .find(|placement| placement.seat_key == format!("build:{}:1", w.hammer))
+            .find(|placement| placement.seat_key == seat_key(w.party_id, w.hammer, 1))
             .expect("the Polehammer seat is filled");
         assert_eq!(
             hammer_placement.user_id, main,
@@ -8954,7 +8823,7 @@ mod tests {
         let seated = roster
             .seats
             .iter()
-            .find(|seat| seat.key == format!("build:{}:1", w.hammer))
+            .find(|seat| seat.key == seat_key(w.party_id, w.hammer, 1))
             .and_then(|seat| seat.participant.as_ref())
             .map(|participant| participant.user_id);
         assert_eq!(seated, Some(main));
@@ -8980,6 +8849,7 @@ mod tests {
         .await
         .expect("failed to insert event")
         .id;
+        let party_id = add_first_party(&db, event_id, comp_id).await;
         let service = EventService::new();
         let (_, joined_version) = service
             .participate_with_roster_version(
@@ -8998,7 +8868,7 @@ mod tests {
             .assign_roster_seat(
                 &db,
                 event_id,
-                &format!("build:{build_id}:1"),
+                &seat_key(party_id, build_id, 1),
                 AssignRosterSeatRequest {
                     user_id,
                     expected_roster_version: joined_version,
@@ -9022,12 +8892,12 @@ mod tests {
                 .as_deref(),
             Some("roster-build")
         );
-        let (_, roster_version, seat_key) = service
+        let (_, roster_version, cleared_seat) = service
             .cancel_participation(&db, event_id, user_id)
             .await
             .expect("cancellation should succeed");
         assert_eq!(roster_version, 3);
-        assert_eq!(seat_key, Some(format!("build:{build_id}:1")));
+        assert_eq!(cleared_seat, Some(seat_key(party_id, build_id, 1)));
         assert!(
             event_roster_assignment::Entity::find()
                 .filter(event_roster_assignment::Column::EventId.eq(event_id))

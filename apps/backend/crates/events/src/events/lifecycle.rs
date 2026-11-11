@@ -1781,8 +1781,12 @@ mod tests {
             event_id: copy_a.id,
             roster_version: 1,
             active_comp_id: 0,
+            parties: Vec::new(),
             seats: vec![EventRosterSeatView {
                 key: "seat".to_owned(),
+                party_id: 1,
+                party_name: None,
+                party_position: 1,
                 party_number: 1,
                 position: 1,
                 build_id: 1,
@@ -2336,6 +2340,9 @@ mod tests {
         /// The alliance build, and each guild copy's own build.
         build: i64,
         copy_builds: Vec<i64>,
+        /// The alliance event's first party, and each guild copy's own.
+        party: i64,
+        copy_parties: Vec<i64>,
     }
 
     async fn publish_organized_alliance_event(title: &str) -> Option<Organized> {
@@ -2456,8 +2463,11 @@ mod tests {
             .expect("source row");
         let mut copies = Vec::new();
         let mut copy_builds = Vec::new();
+        let mut copy_parties = Vec::new();
+        let party = first_party_id(alliance_db, source.id).await;
         for index in [1, 2] {
             let copy = world.guild_copy(index, source.id).await;
+            copy_parties.push(first_party_id(&world.tenant_dbs[index], copy.id).await);
             let rows = comp_build::Entity::find()
                 .filter(comp_build::Column::CompId.eq(copy.comp_id.expect("copy comp")))
                 .all(&world.tenant_dbs[index])
@@ -2474,7 +2484,19 @@ mod tests {
             copies,
             build: build.summary.id,
             copy_builds,
+            party,
+            copy_parties,
         })
+    }
+
+    /// The id of an event's first party.
+    async fn first_party_id(db: &DatabaseConnection, event_id: i64) -> i64 {
+        crate::events::parties::load_event_parties(db, event_id)
+            .await
+            .expect("parties")
+            .first()
+            .expect("first party")
+            .id
     }
 
     impl Organized {
@@ -2544,17 +2566,20 @@ mod tests {
         }
 
         fn seat(&self, ordinal: u32) -> String {
-            format!("build:{}:{ordinal}", self.build)
+            format!("party:{}:build:{}:{ordinal}", self.party, self.build)
         }
 
         /// `(seat key, discord id)` for every seated participant, with the key rewritten to the
         /// alliance build so every tenant can be compared to the origin.
         async fn seated(&self, tenant_index: usize, event_id: i64) -> Vec<(String, String)> {
             let db = &self.world.tenant_dbs[tenant_index];
-            let build = if tenant_index == 0 {
-                self.build
+            let (build, party) = if tenant_index == 0 {
+                (self.build, self.party)
             } else {
-                self.copy_builds[tenant_index - 1]
+                (
+                    self.copy_builds[tenant_index - 1],
+                    self.copy_parties[tenant_index - 1],
+                )
             };
             let mut seated = Vec::new();
             for row in backend_entities::events::event_roster_assignment::Entity::find()
@@ -2573,8 +2598,8 @@ mod tests {
                     .expect("discord id");
                 seated.push((
                     row.seat_key.replace(
-                        &format!("build:{build}:"),
-                        &format!("build:{}:", self.build),
+                        &format!("party:{party}:build:{build}:"),
+                        &format!("party:{}:build:{}:", self.party, self.build),
                     ),
                     discord_id,
                 ));
@@ -2835,6 +2860,7 @@ mod tests {
                 case.source.id,
                 crate::events::models::CreateEventRosterRoleRequest {
                     build_id: case.build,
+                    party_id: None,
                 },
             )
             .await
@@ -2842,7 +2868,8 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 forward(RosterRoleChange::Added {
-                    build_id: case.build
+                    build_id: case.build,
+                    party_position: 1,
                 })
                 .await
                 .len(),
@@ -2860,7 +2887,8 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 forward(RosterRoleChange::Removed {
-                    build_id: case.build
+                    build_id: case.build,
+                    party_position: 1,
                 })
                 .await
                 .len(),

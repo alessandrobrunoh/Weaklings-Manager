@@ -8,7 +8,7 @@ use axum::{
     },
     http::{HeaderMap, StatusCode},
     response::Response,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
 };
 
 use backend_core::config::Config;
@@ -21,9 +21,9 @@ use serde::Deserialize;
 
 use crate::events::schemas::{
     ApiResponseEventCalendarList, ApiResponseEventDetail, ApiResponseEventFanoutStatus,
-    ApiResponseEventList, ApiResponseEventManagementAuthority, ApiResponseEventRevisionList,
-    ApiResponseEventRosterRoleList, ApiResponseEventSummary, ApiResponseEventView,
-    ApiResponseParticipationGuildList,
+    ApiResponseEventList, ApiResponseEventManagementAuthority, ApiResponseEventPartyChange,
+    ApiResponseEventRevisionList, ApiResponseEventRoster, ApiResponseEventRosterRoleList,
+    ApiResponseEventSummary, ApiResponseEventView, ApiResponseParticipationGuildList,
 };
 use backend_core::responses::ApiResponse;
 use backend_identity::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
@@ -40,16 +40,18 @@ use super::lifecycle::{
     propagate_source_change,
 };
 use super::models::{
-    AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
-    CreateEventRosterRoleRequest, EventDetailView, EventEffectsResponse, EventFilters,
-    EventManagementAuthorityView, EventRevision, EventRosterRoleView, EventRosterView,
-    EventSignupOptionsView, EventSummary, EventView, ParticipateEventRequest, RosterVersionRequest,
+    AddEventMemberRequest, AssignRosterSeatRequest, CreateEventPartyRequest, CreateEventRequest,
+    CreateEventRosterRoleRequest, DeleteEventPartyRequest, EventDetailView, EventEffectsResponse,
+    EventFilters, EventManagementAuthorityView, EventPartyChangeView, EventRevision,
+    EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventSummary, EventView,
+    ParticipateEventRequest, ReorderEventPartiesRequest, RosterVersionRequest,
     SetEventVoiceChannelRequest, SetParticipantRequest, SwapRosterSeatsRequest,
-    UpdateEventBattlesRequest, UpdateEventRequest,
+    UpdateEventBattlesRequest, UpdateEventPartyRequest, UpdateEventRequest,
 };
 use super::officer_sync::{
     RosterRoleChange, sync_officer_participation, sync_roster_role, sync_roster_seats,
 };
+use super::parties::party_position_of_role;
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
 use super::sync::{assert_active_alliance, create_mirror, sync_participation};
@@ -470,6 +472,12 @@ pub fn router() -> Router {
         .route(
             "/{id}/roster-roles/{role_id}",
             delete(delete_event_roster_role),
+        )
+        .route("/{id}/parties", post(create_event_party))
+        .route("/{id}/parties/order", post(reorder_event_parties))
+        .route(
+            "/{id}/parties/{party_id}",
+            patch(update_event_party).delete(delete_event_party),
         )
         .route(
             "/{id}/participate",
@@ -1278,6 +1286,7 @@ async fn create_event_roster_role(
         .create_event_roster_role(&db, id, request)
         .await?;
     if let Some(build_id) = role.build_id {
+        let party_position = party_position_of_role(&db, id, role.party_id).await?;
         forward_roster_role(
             &control,
             &registry,
@@ -1285,7 +1294,10 @@ async fn create_event_roster_role(
             &tenant.0,
             id,
             &user,
-            RosterRoleChange::Added { build_id },
+            RosterRoleChange::Added {
+                build_id,
+                party_position,
+            },
         )
         .await;
     }
@@ -1325,16 +1337,19 @@ async fn delete_event_roster_role(
     require_event_management_authority(&user, &perms, &db, id).await?;
     assert_event_writable(&db, &control, &tenant.0, id).await?;
     // The copies hold their own role rows, so the removal is forwarded by build.
-    let removed_build = backend_entities::events::event_roster_role::Entity::find_by_id(role_id)
+    let removed_role = backend_entities::events::event_roster_role::Entity::find_by_id(role_id)
         .one(&db)
         .await
         .map_err(AppError::Database)?
-        .filter(|role| role.event_id == id)
-        .map(|role| role.build_id);
+        .filter(|role| role.event_id == id);
+    let removed_party_position = match &removed_role {
+        Some(role) => party_position_of_role(&db, id, role.party_id).await?,
+        None => 1,
+    };
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
-    if let Some(build_id) = removed_build {
+    if let Some(role) = removed_role {
         forward_roster_role(
             &control,
             &registry,
@@ -1342,12 +1357,220 @@ async fn delete_event_roster_role(
             &tenant.0,
             id,
             &user,
-            RosterRoleChange::Removed { build_id },
+            RosterRoleChange::Removed {
+                build_id: role.build_id,
+                party_position: removed_party_position,
+            },
         )
         .await;
     }
     notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Adds a party to an event.
+///
+/// The roster version carried in the body is checked like every other roster write. The change is
+/// broadcast on the live roster socket. Alliance copies keep their own single party and are not
+/// updated.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/parties",
+    tag = "events",
+    summary = "Add an event party",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body = CreateEventPartyRequest,
+    responses(
+        (status = 200, description = "Party added; the roster after the change", body = ApiResponseEventRoster),
+        (status = 400, description = "Validation error", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
+        (status = 404, description = "Event or comp not found", body = ProblemDetails),
+        (status = 409, description = "Stale roster version, or a flash mass", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn create_event_party(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path(id): Path<i64>,
+    Json(request): Json<CreateEventPartyRequest>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
+    let version = EventService::new()
+        .create_event_party(&db, id, request)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        "event party added"
+    );
+    hub.publish(&tenant.0, id, version, "parties_changed", Vec::new());
+    Ok(Json(ApiResponse::new(
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
+    )))
+}
+
+/// Changes a party's comp and/or label.
+///
+/// Members whose seat (build and ordinal) still exists in the new comp keep it; the others go back
+/// to the waiting list and `unseated_count` says how many. An empty `name` clears the label.
+#[utoipa::path(
+    patch,
+    path = "/api/events/{id}/parties/{party_id}",
+    tag = "events",
+    summary = "Update an event party",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID"),
+        ("party_id" = i64, Path, description = "Party ID")
+    ),
+    request_body = UpdateEventPartyRequest,
+    responses(
+        (status = 200, description = "Party updated", body = ApiResponseEventPartyChange),
+        (status = 400, description = "Validation error", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
+        (status = 404, description = "Event, party or comp not found", body = ProblemDetails),
+        (status = 409, description = "Stale roster version, or a flash mass", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_event_party(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path((id, party_id)): Path<(i64, i64)>,
+    Json(request): Json<UpdateEventPartyRequest>,
+) -> Result<Json<ApiResponse<EventPartyChangeView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
+    let (version, unseated_count) = EventService::new()
+        .update_event_party(&db, id, party_id, request)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        party_id,
+        roster_version = version,
+        unseated_count,
+        actor_id = user.user_id,
+        "event party updated"
+    );
+    hub.publish(&tenant.0, id, version, "parties_changed", Vec::new());
+    Ok(Json(ApiResponse::new(EventPartyChangeView {
+        roster: load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
+        unseated_count,
+    })))
+}
+
+/// Removes a party with its extra roles and seat assignments.
+///
+/// The last remaining party cannot be removed (409). Its members go back to the waiting list and
+/// `unseated_count` says how many.
+#[utoipa::path(
+    delete,
+    path = "/api/events/{id}/parties/{party_id}",
+    tag = "events",
+    summary = "Remove an event party",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID"),
+        ("party_id" = i64, Path, description = "Party ID")
+    ),
+    request_body = DeleteEventPartyRequest,
+    responses(
+        (status = 200, description = "Party removed", body = ApiResponseEventPartyChange),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
+        (status = 404, description = "Event or party not found", body = ProblemDetails),
+        (status = 409, description = "Last party, stale roster version, or a flash mass", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn delete_event_party(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path((id, party_id)): Path<(i64, i64)>,
+    Json(request): Json<DeleteEventPartyRequest>,
+) -> Result<Json<ApiResponse<EventPartyChangeView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
+    let (version, unseated_count) = EventService::new()
+        .delete_event_party(&db, id, party_id, request.expected_roster_version)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        party_id,
+        roster_version = version,
+        unseated_count,
+        actor_id = user.user_id,
+        "event party removed"
+    );
+    hub.publish(&tenant.0, id, version, "parties_changed", Vec::new());
+    Ok(Json(ApiResponse::new(EventPartyChangeView {
+        roster: load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
+        unseated_count,
+    })))
+}
+
+/// Reorders an event's parties. Assignments are kept: seat keys embed party ids.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/parties/order",
+    tag = "events",
+    summary = "Reorder event parties",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body = ReorderEventPartiesRequest,
+    responses(
+        (status = 200, description = "Parties reordered; the roster after the change", body = ApiResponseEventRoster),
+        (status = 400, description = "party_ids is not exactly the event's parties", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - not the event creator and lacks events.manage", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Stale roster version, or a flash mass", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn reorder_event_parties(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path(id): Path<i64>,
+    Json(request): Json<ReorderEventPartiesRequest>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    assert_event_writable(&db, &control, &tenant.0, id).await?;
+    let version = EventService::new()
+        .reorder_event_parties(&db, id, request)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        "event parties reordered"
+    );
+    hub.publish(&tenant.0, id, version, "parties_changed", Vec::new());
+    Ok(Json(ApiResponse::new(
+        load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
+    )))
 }
 
 /// Tells every live-roster subscriber that the seat layout itself changed.
@@ -2917,7 +3140,7 @@ mod tests {
         .await
         .expect("test comp should be inserted")
         .id;
-        event::ActiveModel {
+        let event_id = event::ActiveModel {
             title: Set(title.to_string()),
             comp_id: Set(Some(comp_id)),
             created_by: Set(creator_id),
@@ -2927,7 +3150,11 @@ mod tests {
         .insert(db)
         .await
         .expect("test event should be inserted")
-        .id
+        .id;
+        super::super::parties::insert_first_party(db, event_id, comp_id)
+            .await
+            .expect("test event party should be inserted");
+        event_id
     }
 
     async fn insert_test_role_with_permission(

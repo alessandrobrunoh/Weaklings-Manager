@@ -19,6 +19,9 @@ pub mod loop_tasks;
 pub mod mirror_retry;
 pub mod models;
 pub mod officer_sync;
+mod parties;
+#[cfg(test)]
+mod parties_tests;
 pub mod participation_outbox;
 #[cfg(test)]
 mod platform_leave_tests;

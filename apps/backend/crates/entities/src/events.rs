@@ -288,12 +288,17 @@ pub mod event_roster_role {
         pub event_id: i64,
         /// Existing build exposed as this extra roster role.
         pub build_id: i64,
+        /// Party whose seats this role extends. Always set by the application; the column is
+        /// nullable only because SQLite cannot add a `NOT NULL` column to a populated table.
+        /// A `NULL` is read as the event's first party.
+        pub party_id: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
     pub enum Relation {
         Event,
         Build,
+        Party,
     }
 
     impl RelationTrait for Relation {
@@ -306,6 +311,10 @@ pub mod event_roster_role {
                 Self::Build => Entity::belongs_to(crate::comps::build::Entity)
                     .from(Column::BuildId)
                     .to(crate::comps::build::Column::Id)
+                    .into(),
+                Self::Party => Entity::belongs_to(super::event_party::Entity)
+                    .from(Column::PartyId)
+                    .to(super::event_party::Column::Id)
                     .into(),
             }
         }
@@ -320,6 +329,65 @@ pub mod event_roster_role {
     impl Related<crate::comps::build::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::Build.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// One party of an organized event: its own comp and an optional label.
+pub mod event_party {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "event_parties")]
+    pub struct Model {
+        /// The unique persisted party ID; seat keys embed it.
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        /// Event that owns the party.
+        pub event_id: i64,
+        /// 1-based, contiguous order of the party inside its event.
+        pub position: i32,
+        /// Optional label ("Clap", "Brawl").
+        pub name: Option<String>,
+        /// The comp the party is built from.
+        pub comp_id: i64,
+        /// When the party was created.
+        pub created_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Event,
+        Comp,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Event => Entity::belongs_to(super::event::Entity)
+                    .from(Column::EventId)
+                    .to(super::event::Column::Id)
+                    .into(),
+                Self::Comp => Entity::belongs_to(crate::comps::comp::Entity)
+                    .from(Column::CompId)
+                    .to(crate::comps::comp::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::event::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Event.def()
+        }
+    }
+
+    impl Related<crate::comps::comp::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Comp.def()
         }
     }
 

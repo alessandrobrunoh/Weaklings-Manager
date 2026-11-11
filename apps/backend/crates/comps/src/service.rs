@@ -8,8 +8,8 @@ use std::str::FromStr;
 
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
+    DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
 use sea_orm::sea_query::{Expr, Func};
@@ -18,7 +18,7 @@ use backend_core::errors::{AppError, BlockingReference};
 use backend_core::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 use backend_entities::events::{
     event, event_participation, event_participation::Column as EventParticipationColumn,
-    event_roster_role, event_roster_role::Column as EventRosterRoleColumn,
+    event_party, event_roster_role, event_roster_role::Column as EventRosterRoleColumn,
 };
 
 use super::models::{
@@ -2238,15 +2238,27 @@ impl CompService {
 
     /// Deletes a comp. Cascades to `comp_builds` via FK.
     ///
-    /// `events.comp_id` is a `RESTRICT` FK, so a comp still linked to any
-    /// event can't be deleted at the database level — checked here first so
+    /// `events.comp_id` and `event_parties.comp_id` are `RESTRICT` FKs, so a comp still linked to
+    /// any event (directly or as a party's comp) can't be deleted at the database level — checked
+    /// here first so
     /// the caller gets the specific blocking events back instead of a raw
     /// constraint-violation error. Comps that reference this one as their
     /// `parent_id` (expansion children/variants) are checked the same way so
     /// they aren't silently orphaned or cascade-deleted.
     pub async fn delete_comp(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
+        let party_event_ids: Vec<i64> = event_party::Entity::find()
+            .filter(event_party::Column::CompId.eq(id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|party| party.event_id)
+            .collect();
         let blocking_events = event::Entity::find()
-            .filter(event::Column::CompId.eq(id))
+            .filter(
+                Condition::any()
+                    .add(event::Column::CompId.eq(id))
+                    .add(event::Column::Id.is_in(party_event_ids)),
+            )
             .all(db)
             .await?;
 

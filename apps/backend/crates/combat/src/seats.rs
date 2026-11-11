@@ -13,10 +13,55 @@ use backend_core::errors::AppError;
 use backend_entities::comps::{build, build_item, comp_build};
 use backend_entities::status::comps::{BuildLoadout, BuildSlot};
 
+/// A parsed event seat key, `party:<party_id>:build:<build_id>:<ordinal>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventSeatKey {
+    /// Party that owns the seat.
+    pub party_id: i64,
+    /// Build the seat is for.
+    pub build_id: i64,
+    /// 1-based count of that build's seats inside the party.
+    pub ordinal: i32,
+}
+
+impl EventSeatKey {
+    /// Renders the stable key stored in `event_roster_assignments.seat_key`.
+    #[must_use]
+    pub fn render(&self) -> String {
+        format!(
+            "party:{}:build:{}:{}",
+            self.party_id, self.build_id, self.ordinal
+        )
+    }
+
+    /// Parses a key written by [`Self::render`]; `None` for anything else, including the
+    /// comp-level `build:<id>:<n>` keys readiness uses.
+    #[must_use]
+    pub fn parse(key: &str) -> Option<Self> {
+        let mut parts = key.split(':');
+        let (Some("party"), Some(party_id), Some("build"), Some(build_id), Some(ordinal), None) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) else {
+            return None;
+        };
+        Some(Self {
+            party_id: party_id.parse().ok()?,
+            build_id: build_id.parse().ok()?,
+            ordinal: ordinal.parse().ok()?,
+        })
+    }
+}
+
 /// One seat of a comp, before anyone is assigned to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompSeat {
-    /// Stable seat key: `build:<build_id>:<ordinal>`.
+    /// Comp-level seat key: `build:<build_id>:<ordinal>`. Event rosters re-key the seat per party
+    /// with [`EventSeatKey`]; readiness, which has no event, keeps this form.
     pub key: String,
     /// 1-based party the seat falls in (20 seats per party).
     pub party_number: i32,
@@ -131,4 +176,34 @@ async fn load_builds_by_id<C: ConnectionTrait>(
         .into_iter()
         .map(|build| (build.id, build))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EventSeatKey;
+
+    #[test]
+    fn event_seat_keys_round_trip() {
+        let key = EventSeatKey {
+            party_id: 12,
+            build_id: 7,
+            ordinal: 3,
+        };
+        assert_eq!(key.render(), "party:12:build:7:3");
+        assert_eq!(EventSeatKey::parse("party:12:build:7:3"), Some(key));
+    }
+
+    #[test]
+    fn malformed_and_comp_level_keys_do_not_parse() {
+        for key in [
+            "",
+            "build:7:3",
+            "party:1:build:7",
+            "party:x:build:7:1",
+            "party:1:role:7:1",
+            "party:1:build:7:1:9",
+        ] {
+            assert_eq!(EventSeatKey::parse(key), None, "{key}");
+        }
+    }
 }
