@@ -1919,7 +1919,7 @@ mod tests {
         .await;
         // `AppError::Database` is classified into a status when it becomes a response, which is
         // where a unique violation turns into 409.
-        let error: AppError = raced.err().expect("unique constraint").into();
+        let error: AppError = raced.expect_err("unique constraint").into();
         let status = axum::response::IntoResponse::into_response(error).status();
         assert_eq!(status, axum::http::StatusCode::CONFLICT);
     }

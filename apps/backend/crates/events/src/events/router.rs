@@ -1286,6 +1286,7 @@ async fn create_event_roster_role(
         (status = 404, description = "Event roster role not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn delete_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -2286,6 +2287,7 @@ pub async fn set_participant(
         (status = 404, description = "Event / participation not found", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn remove_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,

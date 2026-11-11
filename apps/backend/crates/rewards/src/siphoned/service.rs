@@ -1728,8 +1728,7 @@ mod tests {
         let delete_error = service
             .delete_entry(&db, entry_id)
             .await
-            .err()
-            .expect("settlement entry must not be deletable");
+            .expect_err("settlement entry must not be deletable");
         assert!(
             matches!(delete_error, AppError::Conflict(_)),
             "{delete_error:?}"
@@ -1747,8 +1746,7 @@ mod tests {
                 },
             )
             .await
-            .err()
-            .expect("settlement entry must not be editable");
+            .expect_err("settlement entry must not be editable");
         assert!(
             matches!(edit_error, AppError::Conflict(_)),
             "{edit_error:?}"

@@ -331,6 +331,7 @@ pub struct SelectTenantBody {
         (status = 403, description = "Chosen tenant is not in the pending set", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn select_tenant(
     headers: HeaderMap,
     Extension(cfg): Extension<Config>,
@@ -421,6 +422,7 @@ pub async fn list_session_tenants(
         (status = 403, description = "Not a member of that tenant, or Discord confirms the user left its server (the membership is then dropped)", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn switch_tenant(
     headers: HeaderMap,
     Extension(cfg): Extension<Config>,

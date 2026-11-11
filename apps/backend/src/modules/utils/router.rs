@@ -154,8 +154,7 @@ mod tests {
             multipart,
         )
         .await
-        .err()
-        .expect("a member without splits.create must not reach the OCR provider");
+        .expect_err("a member without splits.create must not reach the OCR provider");
         assert!(matches!(err, AppError::Forbidden(_)), "got {err:?}");
     }
 
