@@ -110,15 +110,10 @@ pub async fn ensure_member(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use sea_orm::Database;
 
     async fn tenant_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn request(discord_id: &str) -> EnsureMemberRequest {

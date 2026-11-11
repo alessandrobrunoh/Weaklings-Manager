@@ -516,21 +516,15 @@ fn escalation_view(row: &WarnEscalationModel, username: Option<String>) -> WarnE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::audit::entities::{Column as AuditColumn, Entity as AuditEntity};
     use crate::modules::progression::entities::{
         ProgressionAccountColumn, ProgressionAccountEntity, ProgressionSeasonActiveModel,
     };
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
     use chrono::Duration;
-    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {

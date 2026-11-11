@@ -2572,19 +2572,14 @@ mod tests {
     /// queries in `load` are exercised too, not just `compute_comps`'s
     /// in-memory folding.
     mod compute_comps_tests {
-        use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
         use super::*;
-        use crate::migration::MigratorTrait;
         use crate::modules::comps::entities::comp_category;
         use crate::modules::events::entities::fight_battle;
 
         async fn seed_db() -> DatabaseConnection {
-            let db = Database::connect("sqlite::memory:").await.expect("connect");
-            crate::migration::Migrator::up(&db, None)
-                .await
-                .expect("migrate");
-            db
+            crate::testkit::migrated_sqlite().await
         }
 
         fn report_range() -> DateRange {

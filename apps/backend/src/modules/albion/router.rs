@@ -890,13 +890,10 @@ async fn requester_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
-    use sea_orm::{Database, EntityTrait};
+    use sea_orm::EntityTrait;
 
     async fn setup_db() -> sea_orm::DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.unwrap();
-        crate::migration::Migrator::up(&db, None).await.unwrap();
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn account(discord_id: &str, is_tenant_owner: bool) -> UserContext {

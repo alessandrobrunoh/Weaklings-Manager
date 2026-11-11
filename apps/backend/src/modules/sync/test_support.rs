@@ -6,22 +6,15 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, DatabaseConnection, DbBackend,
-    Statement,
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection, DbBackend, Statement,
 };
-use sea_orm_migration::MigratorTrait;
 
 use crate::modules::splits::entities::split;
 use crate::modules::users::entities as users;
 
 /// Migrated tenant schema plus the control stand-in tables.
 pub(crate) async fn sqlite_db() -> DatabaseConnection {
-    let db = Database::connect("sqlite::memory:")
-        .await
-        .expect("connect sqlite");
-    crate::migration::Migrator::up(&db, None)
-        .await
-        .expect("tenant migrations");
+    let db = crate::testkit::migrated_sqlite().await;
     db.execute_unprepared(
         "CREATE TABLE event_sync_links (
             source_tenant_id TEXT NOT NULL,

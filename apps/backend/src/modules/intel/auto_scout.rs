@@ -163,21 +163,14 @@ async fn scout_unscouted_snapshots(
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::battles::models::{BattleGuildSummary, BattlePlayer};
     use crate::modules::intel::entities::scouted_comp;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory SQLite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn ctx() -> BattleLinkingContext {

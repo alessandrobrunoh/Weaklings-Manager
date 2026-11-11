@@ -320,22 +320,14 @@ async fn insert_finding<C: ConnectionTrait>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use chrono::Duration as ChronoDuration;
-    use sea_orm::Database;
 
     use crate::modules::comps::entities::{comp as comp_entities, comp_category};
     use crate::modules::events::entities::event;
     use crate::modules::users::entities as user_entities;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory SQLite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_fight(

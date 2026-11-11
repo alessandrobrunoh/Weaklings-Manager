@@ -5016,7 +5016,6 @@ async fn create_linked_split(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::albionbb::client::AlbionBbGuild;
     use crate::modules::comps::entities::{
         build::ActiveModel as BuildActiveModel,
@@ -5026,26 +5025,18 @@ mod tests {
     };
     use crate::modules::events::models::EventFilters;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
-    use sea_orm::{ActiveValue::Set, Database};
+    use sea_orm::ActiveValue::Set;
 
     use crate::testkit::queries::CountedDb;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     /// [`seed_db`] with every statement counted, for the query-count regressions.
     async fn seed_counted_db() -> CountedDb {
         let counted = CountedDb::sqlite_memory().await;
-        crate::migration::Migrator::up(&counted.connection(), None)
-            .await
-            .expect("Failed to run database migrations");
+        crate::testkit::apply_tenant_schema(&counted.connection()).await;
         counted
     }
 

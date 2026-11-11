@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, Once, OnceLock};
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use tracing::{Event, Subscriber};
+use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::{Layer, Registry};
 
@@ -54,8 +55,11 @@ fn install_layer() {
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| {
         // Another subscriber may already be global; the counts then stay at zero, which the
-        // callers' sanity assertions catch.
-        let _ = tracing::subscriber::set_global_default(Registry::default().with(CountLayer));
+        // callers' sanity assertions catch. The filter keeps every other span and event
+        // disabled, so the process-wide subscriber costs the rest of the suite nothing.
+        let layer =
+            CountLayer.with_filter(filter_fn(|meta| meta.target().starts_with("sqlx::query")));
+        let _ = tracing::subscriber::set_global_default(Registry::default().with(layer));
     });
 }
 

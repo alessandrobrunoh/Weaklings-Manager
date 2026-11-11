@@ -1076,11 +1076,10 @@ async fn to_views_with_joins(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::comps::status::BuildSlot;
     use chrono::Duration as ChronoDuration;
     use sea_orm::entity::prelude::DateTimeWithTimeZone;
-    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection};
+    use sea_orm::{ActiveModelTrait, DatabaseConnection};
 
     use super::super::entities::{
         RegearRequestBalanceActiveModel, RegearRequestBalanceColumn, RegearRequestBalanceEntity,
@@ -1123,13 +1122,7 @@ mod tests {
     }
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect in-memory sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_death(

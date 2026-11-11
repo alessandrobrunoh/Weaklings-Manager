@@ -95,17 +95,11 @@ impl TrialService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::admin::entities::ActiveModel as GuildSettingsActiveModel;
     use crate::modules::applications::ApplicationService;
-    use sea_orm::{ColumnTrait, Database};
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn configure_trial(db: &DatabaseConnection, role_id: Option<&str>, days: Option<i32>) {

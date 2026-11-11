@@ -342,18 +342,13 @@ pub fn threat_score(rows: &[MatchupRow], scouted_comp_id: i64, player_count: i64
 
 #[cfg(test)]
 mod tests {
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::intel::entities::scouted_comp;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn ts() -> sea_orm::prelude::DateTimeWithTimeZone {

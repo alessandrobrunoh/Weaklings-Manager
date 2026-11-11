@@ -288,19 +288,14 @@ fn fight_view(
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, FixedOffset};
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::comps::entities::{comp as comp_entities, comp_category};
     use crate::modules::users::entities as user_entities;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn ts(s: &str) -> DateTime<FixedOffset> {

@@ -356,19 +356,12 @@ pub async fn evict_build_prices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
-    use crate::migration::MigratorTrait;
     use crate::modules::comps::entities::{build_category, comp, comp_category};
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect in-memory sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection) -> i64 {

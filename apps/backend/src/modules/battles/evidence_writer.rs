@@ -226,18 +226,11 @@ pub async fn persist_evidence(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::battles::evidence::{GuildStatRow, KillItemRow, KillRow, PlayerStatRow};
-    use sea_orm::{Database, PaginatorTrait};
+    use sea_orm::PaginatorTrait;
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory SQLite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     fn guild_row(id: &str, name: &str) -> GuildStatRow {

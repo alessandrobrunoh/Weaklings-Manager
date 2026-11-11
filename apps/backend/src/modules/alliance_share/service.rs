@@ -1358,7 +1358,6 @@ mod tests {
         connect_with_search_path, drop_schema, ensure_schema,
         test_support::{try_admin_db, unique_schema},
     };
-    use sea_orm::Database;
 
     fn actor(discord_id: &str) -> ShareActor {
         ShareActor {
@@ -1426,11 +1425,7 @@ mod tests {
     }
 
     async fn seed_sqlite() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {

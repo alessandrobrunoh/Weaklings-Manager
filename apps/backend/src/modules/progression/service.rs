@@ -1272,9 +1272,7 @@ async fn recalc_levels_for_flagged_season(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migration::MigratorTrait;
     use chrono::Duration;
-    use sea_orm::Database;
 
     #[test]
     fn guild_rank_validation_requires_ordered_thresholds_and_unique_roles() {
@@ -1312,11 +1310,7 @@ mod tests {
     }
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {

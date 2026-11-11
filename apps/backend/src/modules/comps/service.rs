@@ -2409,10 +2409,8 @@ impl Default for CompService {
 mod tests {
     use super::super::models::CreateBuildItemRequest;
     use super::*;
-    use crate::migration::MigratorTrait;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
     use crate::pagination::PaginationParams;
-    use sea_orm::Database;
 
     use super::super::entities::{
         build::ActiveModel as BuildActiveModel,
@@ -2422,13 +2420,7 @@ mod tests {
     };
 
     async fn seed_db() -> DatabaseConnection {
-        let db = Database::connect("sqlite::memory:")
-            .await
-            .expect("Failed to connect to test database");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {

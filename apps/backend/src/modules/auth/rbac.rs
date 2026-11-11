@@ -833,14 +833,10 @@ mod tests {
 
     #[tokio::test]
     async fn session_cookie_user_id_follows_discord_id_not_stale_cache() {
-        use crate::migration::MigratorTrait;
         use crate::modules::users::entities as user_entities;
-        use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
+        let db = crate::testkit::migrated_sqlite().await;
         let alice = user_entities::ActiveModel {
             username: Set("alice".into()),
             email: Set("alice@example.com".into()),
@@ -881,10 +877,9 @@ mod tests {
 
     #[tokio::test]
     async fn bot_user_context_resolves_and_validates_role_headers() {
-        use crate::migration::MigratorTrait;
         use crate::modules::auth::entities::role;
         use crate::modules::users::entities as user_entities;
-        use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
         async fn extract_bot_context(
             db: &DatabaseConnection,
@@ -931,10 +926,7 @@ mod tests {
             UserContext::from_request_parts(&mut parts, &()).await
         }
 
-        let db = Database::connect("sqlite::memory:").await.expect("connect");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
+        let db = crate::testkit::migrated_sqlite().await;
         user_entities::ActiveModel {
             username: Set("bot-user".into()),
             email: Set("bot-user@example.com".into()),
@@ -1068,13 +1060,7 @@ mod tests {
     }
 
     async fn tenant_db() -> sea_orm::DatabaseConnection {
-        use sea_orm::Database;
-        use sea_orm_migration::MigratorTrait;
-        let db = Database::connect("sqlite::memory:").await.expect("sqlite");
-        crate::migration::Migrator::up(&db, None)
-            .await
-            .expect("migrate");
-        db
+        crate::testkit::migrated_sqlite().await
     }
 
     /// A blank `BOT_API_SECRET` must not turn an empty `X-Bot-Secret:` header into a
