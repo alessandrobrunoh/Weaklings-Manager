@@ -38,6 +38,15 @@ Alliance event copies are linked through the control-plane `event_sync_links` ta
 
 (Details pending/documentation failed) Other database, notification, live-roster, and synchronization effects require a compliant bounded review.
 
+## Fight grouping and battle statistics
+
+- `fight_grouping::score_fight_grouping` is pure. `AutoMerge` needs independent evidence (a shared opposing guild or a shared player); the event, a short gap and our own guild being on both sides only reach `NeedsReview`, and fully disjoint opposing guilds cap the pair at `NeedsReview`. Evidence keys are never blank: guilds fall back to their name, players to `name|guild` (the same rule as the fights module's `player_rollup_key`), and a player is friendly through the battle's own guild rows (`FriendlySide::for_battle`).
+- Grouping (`group_fights_by_adjacent_evidence`) never touches fights with `grouping_method = "manual"`, merges inside one transaction (`auto_merge_fights`; a vanished fight is a logged skip) and clears a stale `needs_review` on non-manual fights that every comparison in the pass settled as `Separate`.
+- `group_orphan_fights` only merges orphans of the same event scope: linked in `event_battles` to the same event, or inside the same event's Start..Stop window, or outside every event. `ensure_seed_fights_for_event` attaches an orphan fight only when all its segments belong to the event; the others are split into a new orphan fight first (`attach_orphan_fight_to_event`). A battle whose fight belongs to another event is a logged skip, never a 409.
+- The event page still seeds and groups on read (`sync_event_fights`), because event-scoped grouping has no other caller; it logs and skips failures instead of failing the read. A worker may call the same function.
+- Event statistics count per Fight: `total_battles`, `wins`, `losses` and each `top_opponents` row's `battles`/`wins`/`losses`. "Our side" is every friendly `battle_guild_stats` row summed (own guild plus allies), for kills, deaths, kill fame and player counts, in `EventBattleView`, the opponent rollups and `fight_stats`.
+- `EventFightView` carries the Fight's stored `outcome` (`FightOutcomeView`, same shape as `GET /api/fights`), `segment_count`, and, once `fight_stats` exists, `stats` (`FightAggregateStats`) plus `total_players`/`total_kills`/`total_fame` (friendly side). Every `win_rate` in the API is a percentage in `0..=100`.
+
 ## Verification
 
 From the repository root, run `cargo test -p backend-events`.

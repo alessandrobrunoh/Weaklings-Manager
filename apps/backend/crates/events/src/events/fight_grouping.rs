@@ -62,20 +62,37 @@ pub struct FightGroupingResult {
 /// a gap over [`MAX_FIGHT_GAP`] always result in [`FightGroupingDecision::Separate`].
 /// Missing optional identity evidence contributes no score; it is never treated
 /// as contradictory evidence.
+///
+/// [`FightGroupingDecision::AutoMerge`] additionally requires *independent*
+/// evidence that the two records are the same engagement: a shared opposing
+/// guild or a shared player. The event, the short gap and our own guild being on
+/// both sides describe every pair of battles from one event, so on their own
+/// they only ever reach [`FightGroupingDecision::NeedsReview`]. Two records
+/// whose opposing guild sets are both known and entirely disjoint are different
+/// engagements and are capped at review as well, whatever else matches.
 #[must_use]
 pub fn score_fight_grouping(left: &FightEvidence, right: &FightEvidence) -> FightGroupingResult {
     if has_hard_no_merge(left, right) {
-        return result(0.0);
+        return result(0.0, false);
     }
+
+    let opponent_overlap = overlap_ratio(&left.opponent_guild_ids, &right.opponent_guild_ids);
+    let player_overlap = overlap_ratio(&left.player_ids, &right.player_ids);
 
     let mut score = event_score(left.event_id, right.event_id);
     score += timing_score(left, right);
     score += 0.18 * overlap_ratio(&left.friendly_guild_ids, &right.friendly_guild_ids);
-    score += 0.16 * overlap_ratio(&left.opponent_guild_ids, &right.opponent_guild_ids);
-    score += 0.26 * overlap_ratio(&left.player_ids, &right.player_ids);
+    score += 0.16 * opponent_overlap;
+    score += 0.26 * player_overlap;
     score += size_score(left.size, right.size);
 
-    result(score)
+    let opponents_contradict = !left.opponent_guild_ids.is_empty()
+        && !right.opponent_guild_ids.is_empty()
+        && opponent_overlap <= 0.0;
+    let has_independent_evidence =
+        (opponent_overlap > 0.0 || player_overlap > 0.0) && !opponents_contradict;
+
+    result(score, has_independent_evidence)
 }
 
 fn has_hard_no_merge(left: &FightEvidence, right: &FightEvidence) -> bool {
@@ -146,8 +163,8 @@ fn size_score(left: Option<usize>, right: Option<usize>) -> f64 {
     }
 }
 
-fn result(score: f64) -> FightGroupingResult {
-    let decision = if score >= 0.80 {
+fn result(score: f64, has_independent_evidence: bool) -> FightGroupingResult {
+    let decision = if score >= 0.80 && has_independent_evidence {
         FightGroupingDecision::AutoMerge
     } else if score >= 0.55 {
         FightGroupingDecision::NeedsReview
@@ -268,5 +285,75 @@ mod tests {
         let result = score_fight_grouping(&left, &right);
         assert!((0.55..0.80).contains(&result.score));
         assert_eq!(result.decision, FightGroupingDecision::NeedsReview);
+    }
+
+    #[test]
+    fn same_event_and_short_gap_with_only_our_guild_needs_review() {
+        let mut left = evidence(0, 10);
+        left.event_id = Some(42);
+        left.friendly_guild_ids = identities(&["friendly"]);
+        let mut right = evidence(15, 25);
+        right.event_id = Some(42);
+        right.friendly_guild_ids = identities(&["friendly"]);
+
+        let result = score_fight_grouping(&left, &right);
+        assert!(
+            result.score >= 0.80,
+            "the raw score alone would have auto-merged"
+        );
+        assert_eq!(result.decision, FightGroupingDecision::NeedsReview);
+    }
+
+    #[test]
+    fn same_event_with_disjoint_opponents_never_auto_merges() {
+        let mut left = evidence(0, 10);
+        left.event_id = Some(42);
+        left.friendly_guild_ids = identities(&["friendly"]);
+        left.opponent_guild_ids = identities(&["opponent-a"]);
+        left.size = Some(20);
+        let mut right = evidence(15, 25);
+        right.event_id = Some(42);
+        right.friendly_guild_ids = identities(&["friendly"]);
+        right.opponent_guild_ids = identities(&["opponent-b"]);
+        right.size = Some(20);
+
+        let result = score_fight_grouping(&left, &right);
+        assert_eq!(result.decision, FightGroupingDecision::NeedsReview);
+    }
+
+    #[test]
+    fn disjoint_opponents_cap_the_decision_even_with_shared_players() {
+        let mut left = evidence(0, 10);
+        left.event_id = Some(42);
+        left.friendly_guild_ids = identities(&["friendly"]);
+        left.opponent_guild_ids = identities(&["opponent-a"]);
+        left.player_ids = identities(&["player-a", "player-b"]);
+        let mut right = evidence(15, 25);
+        right.event_id = Some(42);
+        right.friendly_guild_ids = identities(&["friendly"]);
+        right.opponent_guild_ids = identities(&["opponent-b"]);
+        right.player_ids = identities(&["player-a", "player-b"]);
+
+        assert_eq!(
+            score_fight_grouping(&left, &right).decision,
+            FightGroupingDecision::NeedsReview
+        );
+    }
+
+    #[test]
+    fn same_event_with_a_shared_opponent_auto_merges() {
+        let mut left = evidence(0, 10);
+        left.event_id = Some(42);
+        left.friendly_guild_ids = identities(&["friendly"]);
+        left.opponent_guild_ids = identities(&["opponent-a"]);
+        let mut right = evidence(15, 25);
+        right.event_id = Some(42);
+        right.friendly_guild_ids = identities(&["friendly"]);
+        right.opponent_guild_ids = identities(&["opponent-a", "opponent-b"]);
+
+        assert_eq!(
+            score_fight_grouping(&left, &right).decision,
+            FightGroupingDecision::AutoMerge
+        );
     }
 }

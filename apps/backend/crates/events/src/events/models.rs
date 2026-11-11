@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 
 use super::lifecycle::EffectRef;
 
+use backend_battles::fight_analytics::service::{FightAggregateStats, FightOutcomeView};
 use backend_entities::battles::BattleLossEstimate;
 use backend_entities::status::comps::BuildRole;
 
@@ -82,15 +83,17 @@ pub struct OpponentPerformanceView {
     pub guild_id: Option<String>,
     /// Human-readable guild name when available.
     pub guild_name: String,
-    /// Number of linked battles against this opponent. Includes battles whose Fight outcome is
-    /// `"draw"` or `"unknown"` — we did fight this guild, even when neither `wins` nor `losses`
-    /// can honestly claim the result.
+    /// Number of distinct Fights against this opponent (a multi-segment Fight counts once, the
+    /// same unit as `total_battles`). Includes Fights whose outcome is `"draw"` or `"unknown"`:
+    /// we did fight this guild, even when neither `wins` nor `losses` can honestly claim the
+    /// result.
     pub battles: i64,
-    /// Wins against this opponent (Fight outcome `"victory"`).
+    /// Fights won against this opponent (Fight outcome `"victory"`), counted once per Fight.
     pub wins: i64,
-    /// Losses against this opponent (Fight outcome `"defeat"`).
+    /// Fights lost against this opponent (Fight outcome `"defeat"`), counted once per Fight.
     pub losses: i64,
-    /// Kill fame scored by our guild in these matchups.
+    /// Kill fame scored by our side (own guild plus allies) in these matchups, summed over every
+    /// segment.
     pub guild_kill_fame: i64,
     /// Kill fame scored by the opponent in these matchups.
     pub opponent_kill_fame: i64,
@@ -407,17 +410,18 @@ pub struct EventBattleView {
     pub albionbb_battle_id: String,
     /// When the battle started (RFC3339).
     pub battle_started_at: String,
-    /// Number of players from the configured guild seen in this battle.
+    /// Number of players on our side seen in this battle: the configured guild plus its allies,
+    /// summed.
     pub guild_players_count: i32,
     /// Total players in the battle (across all guilds), if known.
     pub battle_total_players: Option<i32>,
     /// When this row was last refreshed from `AlbionBB` (RFC3339).
     pub fetched_at: String,
-    /// Kills scored by the configured guild.
+    /// Kills scored by our side (the configured guild plus its allies, summed).
     pub guild_kills: i64,
-    /// Deaths suffered by the configured guild.
+    /// Deaths suffered by our side (the configured guild plus its allies, summed).
     pub guild_deaths: i64,
-    /// Kill fame scored by the configured guild.
+    /// Kill fame scored by our side (the configured guild plus its allies, summed).
     pub guild_kill_fame: i64,
     /// This battle segment's canonical Fight outcome: `"victory"`, `"defeat"`, `"draw"`, or
     /// `"unknown"` when the segment has no linked Fight yet.
@@ -460,6 +464,25 @@ pub struct EventFightView {
     pub needs_review: bool,
     /// Technical `AlbionBB` battle IDs that make up this Fight, in sequence.
     pub battle_ids: Vec<String>,
+    /// The Fight's stored outcome (`fights.outcome`), the same value `stats.wins`/`losses` and
+    /// every battle's `outcome` are built from, and the same shape `GET /api/fights` returns.
+    pub outcome: FightOutcomeView,
+    /// Friendly-side combat totals from the Fight's `fight_stats` rollup. Absent until the
+    /// Fight's analytics have been computed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<FightAggregateStats>,
+    /// Number of persisted battle segments in this Fight.
+    pub segment_count: i64,
+    /// Distinct friendly players across the Fight's segments (our guild plus allies). Absent
+    /// until the Fight's analytics have been computed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_players: Option<i64>,
+    /// Friendly kills summed across segments. Absent until analytics have been computed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_kills: Option<i64>,
+    /// Friendly kill fame summed across segments. Absent until analytics have been computed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_fame: Option<i64>,
 }
 
 /// A role available on an event roster.
