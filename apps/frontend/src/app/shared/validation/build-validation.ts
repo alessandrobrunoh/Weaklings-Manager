@@ -19,6 +19,14 @@ const MAX_NAME_LENGTH = 80;
 /** The slot a build is effectively defined by. */
 const PRIMARY_SLOT = 'weapon';
 
+/** The only role that may go without a main-hand weapon: a mount has no weapon to speak of. */
+export const BATTLE_MOUNT_ROLE = 'battle_mount';
+
+/** Whether a build with this role needs a main-loadout weapon (mirrors the server rule). */
+export function buildNeedsWeapon(role: string): boolean {
+  return role !== BATTLE_MOUNT_ROLE;
+}
+
 /** What a build form holds at submit time. */
 export interface BuildDraft {
   readonly name: string;
@@ -74,9 +82,10 @@ export function validateBuildName(
 /**
  * Validates a whole build draft.
  *
- * A build with no weapon is rejected: the weapon is what the build *is*, and
- * one saved without it silently breaks role classification and comp costing
- * downstream. Other slots stay optional — half-specified builds are a normal
+ * A build with no weapon is rejected unless it is a battle mount: the weapon
+ * is what the build *is* (it also decides whose signup it fits), and one saved
+ * without it silently breaks role classification and comp costing downstream.
+ * Other slots stay optional — half-specified builds are a normal
  * intermediate state while an officer is still assembling one.
  */
 export function validateBuildDraft(
@@ -98,10 +107,10 @@ export function validateBuildDraft(
     errors.push({ field: 'role', message: 'Role is required.' });
   }
 
-  if (!draft.filledSlots.includes(PRIMARY_SLOT)) {
+  if (draft.role !== BATTLE_MOUNT_ROLE && !draft.filledSlots.includes(PRIMARY_SLOT)) {
     errors.push({
       field: 'items',
-      message: 'A build needs a weapon — it is what determines its role and cost.',
+      message: 'A build needs a main-hand weapon in its main loadout.',
     });
   }
 

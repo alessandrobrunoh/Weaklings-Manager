@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -31,9 +32,11 @@ import type {
   UpdateCompCategoryRequest,
 } from '../../core/models/api.models';
 import {
+  albionCombatIconUrl,
   albionEquipmentIconUrl,
   filterAlbionEquipmentCatalog,
 } from '../../shared/data/albion-equipment-catalog';
+import { groupBuildsByWeapon } from '../../shared/data/user-weapons';
 import {
   DEFAULT_ALBION_ITEM_ENCHANTMENT,
   normalizeAlbionItemEnchantment,
@@ -115,6 +118,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
   selector: 'app-comps',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    NgTemplateOutlet,
     RouterLink,
     PageHeader,
     PageStack,
@@ -708,10 +712,44 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           }
         </section>
       } @else if (tab() === 'builds') {
+        <!-- Per-row actions, shared by the weapon groups and the table -->
+        <ng-template #buildActions let-row>
+          <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
+            <a class="btn btn--tonal btn--sm" [routerLink]="['/builds', row.id]">{{
+              t('common.open')
+            }}</a>
+            @if (canArchiveBuild(row)) {
+              @if (row.archived_at) {
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  [disabled]="saving()"
+                  (click)="unarchiveBuild(row)"
+                >
+                  {{ t('comps.unarchive') }}
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  [disabled]="saving()"
+                  (click)="askArchiveBuild(row)"
+                >
+                  {{ t('comps.archive') }}
+                </button>
+              }
+            }
+          </div>
+        </ng-template>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <app-ownership-scope-toggle
             [scope]="listScope()"
             (scopeChange)="setListScope($event)"
+          />
+          <app-view-toggle
+            [options]="buildViewOptions()"
+            [active]="buildsView()"
+            (activeChange)="setBuildsView($event)"
           />
           @if (canArchiveBuilds()) {
             <button
@@ -725,6 +763,90 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             </button>
           }
         </div>
+        @if (buildsView() === 'weapon') {
+          <div class="flex flex-wrap items-center gap-3">
+            <input
+              class="input input--sm max-w-xs"
+              type="search"
+              [attr.aria-label]="t('common.search')"
+              [placeholder]="t('common.search')"
+              [value]="buildSearch()"
+              (input)="onBuildSearch($event)"
+            />
+            @if (!loading() && builds().length < buildsTotal()) {
+              <span class="text-xs text-[var(--color-text-secondary)]">
+                {{ t('comps.showingCount', { shown: builds().length, total: buildsTotal() }) }}
+              </span>
+            }
+          </div>
+          @if (loading()) {
+            <app-loading [label]="t('common.loading')" />
+          } @else if (loadFailed()) {
+            <app-error-state
+              [message]="t('common.error')"
+              [retryLabel]="t('common.retry')"
+              (retry)="loadBuilds()"
+            />
+          } @else if (buildGroups().length === 0) {
+            <app-empty-state
+              [message]="t(listScope() === 'mine' ? 'comps.scope.emptyMine' : 'common.empty')"
+              icon="package"
+            />
+          } @else {
+            @for (group of buildGroups(); track group.key ?? '__no_weapon__'; let groupIndex = $index) {
+              <section class="card overflow-hidden" [attr.aria-labelledby]="'build-weapon-' + groupIndex">
+                <header class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-2.5">
+                  @if (group.key; as weaponKey) {
+                    <img
+                      class="h-8 w-8 flex-none object-contain"
+                      [src]="weaponIconUrl(weaponKey)"
+                      alt=""
+                      width="32"
+                      height="32"
+                      loading="lazy"
+                    />
+                  } @else {
+                    <span
+                      class="flex h-8 w-8 flex-none items-center justify-center rounded border border-[var(--color-border)] text-[var(--color-text-secondary)]"
+                      aria-hidden="true"
+                    >
+                      <app-icon name="package" size="1rem" />
+                    </span>
+                  }
+                  <h3
+                    [id]="'build-weapon-' + groupIndex"
+                    class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-heading)]"
+                  >
+                    {{ group.name ?? t('comps.noWeapon') }}
+                  </h3>
+                  <span class="chip chip--neutral">{{ group.builds.length }}</span>
+                </header>
+                <ul class="divide-y divide-[var(--color-border)]">
+                  @for (row of group.builds; track row.id) {
+                    <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
+                      <a
+                        class="flex min-w-0 flex-1 basis-48 items-center gap-2 text-sm font-bold hover:underline"
+                        [routerLink]="['/builds', row.id]"
+                      >
+                        <span class="truncate">{{ row.name }}</span>
+                        @if (row.archived_at) {
+                          <span class="chip chip--neutral text-xs">{{ t('comps.archived') }}</span>
+                        }
+                      </a>
+                      <span class="chip font-semibold">{{ roleLabel(row.role) }}</span>
+                      <span class="chip text-xs">{{ row.category_name || t('comps.noCategory') }}</span>
+                      <span class="font-mono text-xs font-semibold">{{ row.main_item_count }}/10 slots</span>
+                      <ng-container
+                        [ngTemplateOutlet]="buildActions"
+                        [ngTemplateOutletContext]="{ $implicit: row }"
+                      />
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
+          }
+        } @else {
         <app-data-table
           [columns]="buildColumns()"
           [rows]="builds()"
@@ -752,6 +874,23 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
               }
             </span>
           </ng-template>
+          <ng-template dataTableCell="weapon" let-row>
+            @if (row.weapon_key) {
+              <span class="flex items-center gap-2 text-sm">
+                <img
+                  class="h-6 w-6 flex-none object-contain"
+                  [src]="weaponIconUrl(row.weapon_key)"
+                  alt=""
+                  width="24"
+                  height="24"
+                  loading="lazy"
+                />
+                <span class="truncate">{{ row.weapon_name }}</span>
+              </span>
+            } @else {
+              <span class="text-xs text-[var(--color-text-secondary)]">{{ t('comps.noWeapon') }}</span>
+            }
+          </ng-template>
           <ng-template dataTableCell="role" let-row>
             <span class="chip font-semibold">{{ roleLabel(row.role) }}</span>
           </ng-template>
@@ -762,34 +901,13 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             <span class="font-mono text-xs font-semibold">{{ row.main_item_count }}/10 slots</span>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
-            <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
-              <a class="btn btn--tonal btn--sm" [routerLink]="['/builds', row.id]">{{
-                t('common.open')
-              }}</a>
-              @if (canArchiveBuild(row)) {
-                @if (row.archived_at) {
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [disabled]="saving()"
-                    (click)="unarchiveBuild(row)"
-                  >
-                    {{ t('comps.unarchive') }}
-                  </button>
-                } @else {
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [disabled]="saving()"
-                    (click)="askArchiveBuild(row)"
-                  >
-                    {{ t('comps.archive') }}
-                  </button>
-                }
-              }
-            </div>
+            <ng-container
+              [ngTemplateOutlet]="buildActions"
+              [ngTemplateOutletContext]="{ $implicit: row }"
+            />
           </ng-template>
         </app-data-table>
+        }
       } @else {
         <app-data-table
           [columns]="categoryColumns()"
@@ -1198,6 +1316,25 @@ export class Comps {
   /** Pages of `OPTIONS_LIMIT` comps already fetched into `comps()`. */
   private compsLoadedPage = 1;
   protected readonly builds = signal<BuildSummary[]>([]);
+  /** `weapon` groups every build under its weapon (one unpaged fetch); `list` is the sortable, paged table. */
+  protected readonly buildsView = signal<'weapon' | 'list'>('weapon');
+  protected readonly buildSearch = signal('');
+  protected readonly buildViewOptions = computed<readonly ViewToggleOption[]>(() => [
+    { id: 'weapon', label: this.t('comps.groupByWeapon') },
+    { id: 'list', label: this.t('comps.listView') },
+  ]);
+  protected readonly buildGroups = computed(() => {
+    const query = this.buildSearch().trim().toLowerCase();
+    const rows = query
+      ? this.builds().filter((build) =>
+          [build.name, build.weapon_name ?? '', build.created_by_username, build.category_name ?? '']
+            .join(' ')
+            .toLowerCase()
+            .includes(query),
+        )
+      : this.builds();
+    return groupBuildsByWeapon(rows);
+  });
   protected readonly buildsTotal = signal(0);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
   protected readonly compCategories = signal<CompCategoryView[]>([]);
@@ -1480,6 +1617,11 @@ export class Comps {
       accessor: (row) => row.name,
     },
     {
+      key: 'weapon',
+      label: 'comps.weapon',
+      accessor: (row) => row.weapon_name ?? '',
+    },
+    {
       key: 'role',
       label: 'common.role',
       sortable: true,
@@ -1737,6 +1879,21 @@ export class Comps {
   protected onCompsPageChange(event: DataTablePageChange): void {
     this.compsPage = event;
     void this.loadComps();
+  }
+
+  protected setBuildsView(view: string): void {
+    const next = view === 'list' ? 'list' : 'weapon';
+    if (next === this.buildsView()) return;
+    this.buildsView.set(next);
+    void this.loadBuilds();
+  }
+
+  protected onBuildSearch(event: Event): void {
+    this.buildSearch.set((event.target as HTMLInputElement).value);
+  }
+
+  protected weaponIconUrl(weaponKey: string): string {
+    return albionCombatIconUrl(weaponKey.replace(/^weapon:/, ''));
   }
 
   protected onBuildsPageChange(event: DataTablePageChange): void {
@@ -2247,7 +2404,13 @@ export class Comps {
         { existingNames: this.builds().map((build) => build.name) },
       );
       if (errors.length > 0) {
-        this.toasts.error(summarizeErrors(errors));
+        this.toasts.error(
+          summarizeErrors(
+            errors.map((error) =>
+              error.field === 'items' ? { ...error, message: this.t('comps.weaponRequired') } : error,
+            ),
+          ),
+        );
         return;
       }
     } else {
@@ -2406,6 +2569,18 @@ export class Comps {
     return params;
   }
 
+  /** Grouping needs every build at once, so the grouped view skips paging and server-side filters. */
+  private weaponGroupParams(): Record<string, string | number | boolean> {
+    return {
+      page: 1,
+      limit: OPTIONS_LIMIT,
+      sort: 'name',
+      order: 'asc',
+      ...(this.showArchivedBuilds() ? { archived: 'true' } : {}),
+      ...ownershipListParams(this.listScope()),
+    };
+  }
+
   private async loadCreateOptions(): Promise<void> {
     try {
       const [builds, comps] = await Promise.all([
@@ -2524,7 +2699,7 @@ export class Comps {
       const data = await firstValueFrom(
         this.api.get<PaginatedData<BuildSummary>>(
           'api/comps/builds',
-          this.listParams(this.buildsPage),
+          this.buildsView() === 'weapon' ? this.weaponGroupParams() : this.listParams(this.buildsPage),
         ),
       );
       this.compPerformanceById.set({});

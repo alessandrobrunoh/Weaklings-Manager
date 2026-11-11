@@ -12,6 +12,7 @@ import type {
   EventRosterParticipant,
   EventRosterSeat,
   EventRosterView,
+  EventSignupOptions,
   ParticipationGuildOption,
   RosterSuggestions,
 } from '../../core/models/api.models';
@@ -63,6 +64,7 @@ function seat(
     build_name: `Build ${position}`,
     build_version: 1,
     role,
+    weapon_key: null,
     participant:
       userId === null
         ? null
@@ -71,6 +73,7 @@ function seat(
             username: `Member ${userId}`,
             discord_id: null,
             specializations: {},
+            weapons: [],
             primary_build_id: position,
             primary_build_name: `Build ${position}`,
             secondary_build_id: null,
@@ -269,6 +272,7 @@ describe('EventDetailPage roster room', () => {
       username: 'BenchGuy',
       discord_id: null,
       specializations: {},
+      weapons: [],
       primary_build_id: 1,
       primary_build_name: 'Build 1',
       secondary_build_id: null,
@@ -589,6 +593,7 @@ describe('EventDetailPage roster suggestions', () => {
           username: 'Tacos',
           discord_id: null,
           specializations: {},
+          weapons: [],
           primary_build_id: 3,
           primary_build_name: 'Build 3',
           secondary_build_id: null,
@@ -695,6 +700,10 @@ interface EventDetailGuildAttributionAccess {
   readonly joinError: WritableSignal<string | null>;
   readonly showJoinConfirm: WritableSignal<boolean>;
   readonly draftPrimaryBuildId: WritableSignal<string>;
+  readonly draftSecondaryBuildId: WritableSignal<string>;
+  readonly fillValue: string;
+  readonly showWeaponsHint: Signal<boolean>;
+  buildBlockReason(buildId: number): string | null;
   toggleJoinForm(): void;
   loadParticipationGuilds(): Promise<void>;
   onJoinSubmit(submit: SubmitEvent): Promise<void>;
@@ -721,6 +730,7 @@ describe('EventDetailPage guild attribution', () => {
     guilds?: ParticipationGuildOption[] | Error;
     /** Use the real ApiService (and its envelope unwrapping) over HttpTestingController. */
     realApi?: boolean;
+    signupOptions?: EventSignupOptions | Error;
   }): {
     page: EventDetailGuildAttributionAccess;
     fixture: { nativeElement: HTMLElement; detectChanges(): void };
@@ -731,6 +741,11 @@ describe('EventDetailPage guild attribution', () => {
     const get = vi.fn((path: string) => {
       if (path.endsWith('/participation-guilds')) {
         return options.guilds instanceof Error ? throwError(() => options.guilds) : of(options.guilds ?? []);
+      }
+      if (path.endsWith('/signup-options') && options.signupOptions) {
+        return options.signupOptions instanceof Error
+          ? throwError(() => options.signupOptions)
+          : of(options.signupOptions);
       }
       return of({ items: [] });
     });
@@ -909,6 +924,82 @@ describe('EventDetailPage guild attribution', () => {
     expect(page.guildChoiceBlocked()).toBe(false);
   });
 
+  describe('weapon gating', () => {
+    function signupOptions(hasDeclaredWeapons: boolean): EventSignupOptions {
+      const build = (build_id: number, availability: EventSignupOptions['builds'][number]['availability']) => ({
+        build_id,
+        name: `Build ${build_id}`,
+        role: 'dps' as const,
+        quantity: 1,
+        weapon_key: `weapon:W${build_id}`,
+        weapon_name: `Weapon ${build_id}`,
+        availability,
+      });
+      return {
+        active_comp_id: 1,
+        active_comp_name: 'Comp',
+        active_comp_capacity: 20,
+        is_already_registered: false,
+        has_declared_weapons: hasDeclaredWeapons,
+        builds: [build(7, 'allowed'), build(8, 'not_declared'), build(9, 'locked')],
+      };
+    }
+
+    it('explains why a build is unavailable and leaves the others open', async () => {
+      const { page, get } = createPage({ tenantKind: 'guild', signupOptions: signupOptions(true) });
+
+      page.toggleJoinForm();
+      await vi.waitFor(() => expect(get).toHaveBeenCalledWith('api/events/5/signup-options'));
+      await vi.waitFor(() => expect(page.buildBlockReason(8)).not.toBeNull());
+
+      expect(page.buildBlockReason(7)).toBeNull();
+      expect(page.buildBlockReason(8)).toBe('events.detail.build_not_declared');
+      expect(page.buildBlockReason(9)).toBe('events.detail.build_locked');
+      expect(page.showWeaponsHint()).toBe(false);
+    });
+
+    it('refuses a blocked primary or secondary build but always accepts Fill', async () => {
+      const { page } = createPage({ tenantKind: 'guild', signupOptions: signupOptions(true) });
+      page.toggleJoinForm();
+      await vi.waitFor(() => expect(page.buildBlockReason(8)).not.toBeNull());
+
+      page.draftPrimaryBuildId.set('8');
+      await page.onJoinSubmit(submitEvent);
+      expect(page.showJoinConfirm()).toBe(false);
+      expect(page.joinError()).toBe('events.detail.build_not_declared');
+
+      page.joinError.set(null);
+      page.draftPrimaryBuildId.set('7');
+      page.draftSecondaryBuildId.set('9');
+      await page.onJoinSubmit(submitEvent);
+      expect(page.showJoinConfirm()).toBe(false);
+      expect(page.joinError()).toBe('events.detail.build_locked');
+
+      page.joinError.set(null);
+      page.draftPrimaryBuildId.set(page.fillValue);
+      page.draftSecondaryBuildId.set('');
+      await page.onJoinSubmit(submitEvent);
+      expect(page.showJoinConfirm()).toBe(true);
+    });
+
+    it('nudges a member who declared nothing towards My weapons', async () => {
+      const { page } = createPage({ tenantKind: 'guild', signupOptions: signupOptions(false) });
+
+      page.toggleJoinForm();
+      await vi.waitFor(() => expect(page.showWeaponsHint()).toBe(true));
+    });
+
+    it('leaves every build selectable when the options cannot be loaded', async () => {
+      const { page, get } = createPage({ tenantKind: 'guild', signupOptions: new Error('boom') });
+
+      page.toggleJoinForm();
+      await vi.waitFor(() => expect(get).toHaveBeenCalledWith('api/events/5/signup-options'));
+
+      expect(page.buildBlockReason(8)).toBeNull();
+      expect(page.showWeaponsHint()).toBe(false);
+    });
+  });
+
   it('links a split to the event with PATCH (the splits API has no PUT route)', async () => {
     const { page, patch } = createPage({ tenantKind: 'guild' });
 
@@ -923,5 +1014,123 @@ describe('EventDetailPage guild attribution', () => {
     await page.performUnlinkSplit(77);
 
     expect(patch).toHaveBeenCalledWith('api/splits/77', { event_id: null });
+  });
+});
+
+interface EventDetailWeaponBoardAccess {
+  readonly rosterSnapshot: WritableSignal<EventRosterView | null>;
+  readonly rosterAssignTarget: WritableSignal<EventRosterSeat | null>;
+  readonly filteredRosterBench: Signal<readonly EventParticipant[]>;
+  benchFit(member: EventParticipant): { tone: string; label: string; icon: string | null } | null;
+  seatWarning(seat: EventRosterSeat): 'locked' | 'not_declared' | null;
+}
+
+describe('EventDetailPage weapon fit on the Parties board', () => {
+  const POLE = 'weapon:2H_POLEHAMMER';
+  const HOLY = 'weapon:MAIN_HOLYSTAFF';
+
+  function createPage(): EventDetailWeaponBoardAccess {
+    TestBed.configureTestingModule({
+      imports: [EventDetailPage],
+      providers: [
+        { provide: ApiService, useValue: { get: () => of({ items: [] }) } },
+        {
+          provide: AuthService,
+          useValue: { hasPermission: () => true, profile: () => ({ user_id: 1 }) },
+        },
+        { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '1' })) } },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: { error: () => undefined, success: () => undefined } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve([]) } },
+        {
+          provide: RealtimeRosterService,
+          useValue: {
+            close: () => undefined,
+            connect: () => undefined,
+            messages: NEVER,
+            connectionState: signal('disconnected'),
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(EventDetailPage);
+    return fixture.componentInstance as unknown as EventDetailWeaponBoardAccess;
+  }
+
+  function member(
+    userId: number,
+    weapons: EventRosterParticipant['weapons'],
+  ): EventRosterParticipant {
+    return {
+      user_id: userId,
+      username: `Member ${userId}`,
+      discord_id: null,
+      specializations: {},
+      weapons,
+      primary_build_id: 1,
+      primary_build_name: 'Build 1',
+      secondary_build_id: null,
+      secondary_build_name: null,
+    };
+  }
+
+  function weaponSeat(
+    weaponKey: string | null,
+    occupant: EventRosterParticipant | null,
+  ): EventRosterSeat {
+    return { ...seat(1, 1, null), weapon_key: weaponKey, participant: occupant };
+  }
+
+  it('orders the waiting list by fit for the picked seat and shows the level on each card', () => {
+    const page = createPage();
+    const locked = member(1, [{ weapon_key: POLE, proficiency: 'main', locked: true }]);
+    const none = member(2, []);
+    const basic = member(3, [{ weapon_key: POLE, proficiency: 'basic', locked: false }]);
+    const main = member(4, [{ weapon_key: POLE, proficiency: 'main', locked: false }]);
+    const other = member(5, [{ weapon_key: HOLY, proficiency: 'main', locked: false }]);
+    const target = weaponSeat(POLE, null);
+    page.rosterSnapshot.set({
+      event_id: 1,
+      roster_version: 1,
+      active_comp_id: 1,
+      seats: [target],
+      bench: [locked, none, basic, main, other],
+    });
+
+    expect(page.filteredRosterBench().map((entry) => entry.user_id)).toEqual([1, 2, 3, 4, 5]);
+    expect(page.benchFit(main as EventParticipant)).toBeNull();
+
+    page.rosterAssignTarget.set(target);
+
+    expect(page.filteredRosterBench().map((entry) => entry.user_id)).toEqual([4, 3, 2, 5, 1]);
+    expect(page.benchFit(main as EventParticipant)).toMatchObject({
+      tone: 'success',
+      label: 'weapons.proficiency.main',
+    });
+    expect(page.benchFit(other as EventParticipant)).toMatchObject({
+      tone: 'warning',
+      label: 'weapons.notDeclared',
+    });
+    expect(page.benchFit(locked as EventParticipant)).toMatchObject({
+      tone: 'error',
+      label: 'weapons.locked',
+      icon: 'lock',
+    });
+  });
+
+  it('warns on a seat held by someone who locked or never declared its weapon', () => {
+    const page = createPage();
+    const lockedOccupant = member(1, [{ weapon_key: POLE, proficiency: null, locked: true }]);
+    const undeclaredOccupant = member(2, [{ weapon_key: HOLY, proficiency: 'good', locked: false }]);
+    const fineOccupant = member(3, [{ weapon_key: POLE, proficiency: 'basic', locked: false }]);
+    const newcomer = member(4, []);
+
+    expect(page.seatWarning(weaponSeat(POLE, lockedOccupant))).toBe('locked');
+    expect(page.seatWarning(weaponSeat(POLE, undeclaredOccupant))).toBe('not_declared');
+    expect(page.seatWarning(weaponSeat(POLE, fineOccupant))).toBeNull();
+    expect(page.seatWarning(weaponSeat(POLE, newcomer))).toBeNull();
+    expect(page.seatWarning(weaponSeat(null, lockedOccupant))).toBeNull();
+    expect(page.seatWarning(weaponSeat(POLE, null))).toBeNull();
   });
 });
