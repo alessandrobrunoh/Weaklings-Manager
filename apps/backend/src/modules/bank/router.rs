@@ -12,11 +12,12 @@ use axum::{
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedTransactionView, PaginationParams};
-use crate::responses::{
-    ApiResponse, ApiResponseBalanceSummary, ApiResponseBankAnalyticsSummary,
-    ApiResponseGuildBankSummary, ApiResponseTransactionView, ApiResponseTransactionViewList,
+use crate::modules::bank::schemas::{
+    ApiResponseBalanceSummary, ApiResponseBankAnalyticsSummary, ApiResponseGuildBankSummary,
+    ApiResponseTransactionView, ApiResponseTransactionViewList, PaginatedTransactionView,
 };
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
 use super::alliance::{self, AllianceCaller};

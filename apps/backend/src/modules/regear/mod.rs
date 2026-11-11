@@ -12,6 +12,7 @@ pub mod extractor;
 pub mod models;
 pub mod pricing;
 pub mod router;
+pub mod schemas;
 pub mod service;
 pub mod slots;
 pub mod status;

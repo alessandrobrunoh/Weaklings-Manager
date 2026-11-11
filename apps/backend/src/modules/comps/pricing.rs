@@ -26,8 +26,7 @@ use crate::errors::AppError;
 use crate::modules::albiondata::client::AlbionDataMarketPrice;
 use crate::modules::albiondata::service::{AlbionDataService, cheapest_price_index};
 use crate::modules::openalbion::service::aodp_identifier_for_stored_item;
-use crate::modules::regear::entities::RegearSettingModel;
-use crate::modules::regear::pricing::PricingFallback;
+use crate::modules::regear::entities::{PricingFallback, RegearSettingModel};
 
 use super::models::{BuildPriceView, CompBuildPriceRow, CompPriceView, ItemPriceRow};
 use super::price_cache::PriceCache;

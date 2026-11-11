@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::modules::albionbb::client::{
-    AlbionBbBattleDetail, AlbionBbBattleSummary, AlbionBbGuild, AlbionBbKillEvent, AlbionBbPlayer,
+    AlbionBbBattleDetail, AlbionBbBattleSummary, AlbionBbGuild, AlbionBbKillEvent,
 };
+use crate::modules::battles::entities::{BattleLossEstimate, BattlePlayer};
 use crate::modules::battles::outcome::BattleOutcome;
 
 /// A guild summary nested in a battle.
@@ -92,39 +93,6 @@ pub struct BattleSummary {
     pub outcome: Option<BattleOutcome>,
 }
 
-/// A player in a battle.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct BattlePlayer {
-    /// Player id.
-    pub id: String,
-    /// Player name.
-    pub name: String,
-    /// Guild id.
-    pub guild_id: String,
-    /// Guild name.
-    pub guild_name: String,
-    /// Alliance name, if in an alliance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alliance_name: Option<String>,
-    /// Alliance id, if in an alliance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alliance_id: Option<String>,
-    /// Kills.
-    pub kills: i64,
-    /// Deaths.
-    pub deaths: i64,
-    /// Kill fame.
-    pub kill_fame: i64,
-    /// Death fame.
-    pub death_fame: i64,
-    /// Average item power.
-    pub item_power: f64,
-    /// `true` when the player's guild fights on the requesting tenant's side.
-    /// Stamped by the backend on read; see [`BattleGuildSummary::is_friendly`].
-    #[serde(default)]
-    pub is_friendly: bool,
-}
-
 /// A kill participant (killer or victim).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleKillParticipant {
@@ -168,42 +136,6 @@ pub struct BattleKillEvent {
     /// The entire upstream kill event preserved verbatim, so the frontend can
     /// render any `AlbionBB` field we did not model explicitly.
     pub raw: serde_json::Value,
-}
-
-/// Estimated silver lost in a battle, derived from victim equipment and Albion Data prices.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-pub struct BattleLossEstimate {
-    /// Sum of all priced victim equipment items.
-    pub total_estimated_loss: i64,
-    /// Number of distinct item stacks that received a market price.
-    pub priced_items: i64,
-    /// Number of item stacks present in kill feed equipment.
-    pub total_items: i64,
-    /// Estimate grouped by victim player.
-    pub players: Vec<PlayerLossEstimate>,
-    /// Estimate grouped by victim guild.
-    pub guilds: Vec<GuildLossEstimate>,
-}
-
-/// Per-player loss estimate for one battle.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-pub struct PlayerLossEstimate {
-    pub player_name: String,
-    pub guild_name: Option<String>,
-    pub estimated_loss: i64,
-    pub deaths: i64,
-    pub priced_items: i64,
-    pub total_items: i64,
-}
-
-/// Per-guild loss estimate for one battle.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-pub struct GuildLossEstimate {
-    pub guild_name: String,
-    pub estimated_loss: i64,
-    pub deaths: i64,
-    pub priced_items: i64,
-    pub total_items: i64,
 }
 
 /// Full battle detail, extending the summary with per-player and kill timeline.
@@ -301,25 +233,6 @@ impl From<&AlbionBbBattleSummary> for BattleSummary {
 impl From<AlbionBbBattleSummary> for BattleSummary {
     fn from(s: AlbionBbBattleSummary) -> Self {
         Self::from(&s)
-    }
-}
-
-impl From<&AlbionBbPlayer> for BattlePlayer {
-    fn from(p: &AlbionBbPlayer) -> Self {
-        Self {
-            id: p.id.clone(),
-            name: p.name.clone(),
-            guild_id: p.guild_id.clone(),
-            guild_name: p.guild_name.clone(),
-            alliance_name: p.alliance_name.clone(),
-            alliance_id: p.alliance_id.clone(),
-            kills: p.kills,
-            deaths: p.deaths,
-            kill_fame: p.kill_fame,
-            death_fame: p.death_fame,
-            item_power: p.item_power,
-            is_friendly: false,
-        }
     }
 }
 

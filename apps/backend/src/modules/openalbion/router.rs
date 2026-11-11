@@ -10,8 +10,11 @@ use super::catalog::{
 use super::service::OpenAlbionService;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::UserContext;
-use crate::pagination::{PaginatedOpenAlbionWeapon, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponsePaginatedOpenAlbionWeapons};
+use crate::modules::openalbion::schemas::{
+    ApiResponsePaginatedOpenAlbionWeapons, PaginatedOpenAlbionWeapon,
+};
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
@@ -186,7 +189,7 @@ impl ItemListQuery {
     security(("session_cookie" = [])),
     params(ItemListQuery),
     responses(
-        (status = 200, description = "Items retrieved successfully", body = crate::responses::ApiResponsePaginatedOpenAlbionItems),
+        (status = 200, description = "Items retrieved successfully", body = crate::modules::openalbion::schemas::ApiResponsePaginatedOpenAlbionItems),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 500, description = "Bundled catalog error", body = ProblemDetails)
     )
@@ -195,7 +198,8 @@ pub async fn list_items(
     _user: UserContext,
     Extension(service): Extension<OpenAlbionService>,
     Query(query): Query<ItemListQuery>,
-) -> Result<Json<ApiResponse<crate::pagination::PaginatedOpenAlbionItem>>, AppError> {
+) -> Result<Json<ApiResponse<crate::modules::openalbion::schemas::PaginatedOpenAlbionItem>>, AppError>
+{
     let item_type = query.parsed_item_type()?;
     let pagination = query.pagination();
     let filters = query.filters();
@@ -204,7 +208,7 @@ pub async fn list_items(
         .await?;
 
     Ok(Json(ApiResponse::new(
-        crate::pagination::PaginatedOpenAlbionItem::from(paginated),
+        crate::modules::openalbion::schemas::PaginatedOpenAlbionItem::from(paginated),
     )))
 }
 
@@ -217,7 +221,7 @@ pub async fn list_items(
     description = "Returns the manually curated catalog for weapons, armor, accessories and consumables bundled with the application. This endpoint is served entirely from local application data.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Complete item catalog", body = crate::responses::ApiResponseOpenAlbionCatalog),
+        (status = 200, description = "Complete item catalog", body = crate::modules::openalbion::schemas::ApiResponseOpenAlbionCatalog),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 500, description = "The bundled catalog is invalid", body = ProblemDetails)
     )
@@ -287,7 +291,7 @@ pub async fn list_categories(
                    Served entirely from local application data.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Ability catalog", body = crate::responses::ApiResponseOpenAlbionAbilities),
+        (status = 200, description = "Ability catalog", body = crate::modules::openalbion::schemas::ApiResponseOpenAlbionAbilities),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]

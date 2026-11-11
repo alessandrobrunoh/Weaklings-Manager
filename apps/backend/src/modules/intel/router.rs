@@ -26,9 +26,10 @@ use crate::modules::intel::report::{
     DateRange, GuildReport, PlayerReport, ReportLeaderboards, ReportParams, build_guild_report,
     build_player_report,
 };
+use crate::modules::intel::schemas::{ApiResponseScoutBackfillOutcome, PaginatedScoutedComp};
 use crate::modules::intel::service::IntelService;
-use crate::pagination::{PaginatedScoutedComp, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseScoutBackfillOutcome};
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 use crate::tenant::CurrentTenantId;
 
 /// Default page size for `POST /scouts/backfill` when `limit` is omitted.

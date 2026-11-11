@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::errors::AppError;
-use crate::modules::battles::entities::Model as SnapshotModel;
-use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent, BattlePlayer};
+use crate::modules::battles::entities::{BattlePlayer, Model as SnapshotModel};
+use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
 use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::entities::scouted_comp;
 use crate::modules::intel::roles::{RoleClassifier, RoleConfidence};

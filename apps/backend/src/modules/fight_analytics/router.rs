@@ -12,7 +12,8 @@ use sea_orm::DatabaseConnection;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{ApiResponse, ApiResponseFightAnalytics};
+use crate::modules::fight_analytics::schemas::ApiResponseFightAnalytics;
+use crate::responses::ApiResponse;
 
 use super::service::{self, FightAnalyticsView};
 

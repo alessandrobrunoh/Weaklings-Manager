@@ -819,9 +819,8 @@ impl CombatService {
     pub async fn calibration(&self, db: &DatabaseConnection) -> Result<CalibrationView, AppError> {
         use crate::modules::albion::entities::albion_link;
         use crate::modules::battles::entities::{
-            Column as SnapshotColumn, Entity as SnapshotEntity,
+            BattlePlayer, Column as SnapshotColumn, Entity as SnapshotEntity,
         };
-        use crate::modules::battles::models::BattlePlayer;
         use crate::modules::events::entities::{event, event_participation};
 
         const MATCH_WINDOW_HOURS: i64 = 24;
@@ -2084,8 +2083,7 @@ mod calibration_tests {
 
     use super::{BuildLoadout, CombatService, SpecSource};
     use crate::modules::albion::entities::albion_link;
-    use crate::modules::battles::entities::ActiveModel as SnapshotActiveModel;
-    use crate::modules::battles::models::BattlePlayer;
+    use crate::modules::battles::entities::{ActiveModel as SnapshotActiveModel, BattlePlayer};
     use crate::modules::comps::entities::{build, build_category, build_item};
     use crate::modules::events::entities::{event, event_participation};
     use crate::modules::users::entities::ActiveModel as UserActiveModel;

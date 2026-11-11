@@ -12,8 +12,11 @@ use super::specializations::{UpdateSpecializationsRequest, UserSpecializationVie
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedUserProfile, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfile};
+use crate::modules::users::schemas::{
+    ApiResponseUserMetrics, ApiResponseUserProfile, PaginatedUserProfile,
+};
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 use crate::tenant::{CurrentTenantId, CurrentTenantKind};
 use axum::{
     Extension, Json, Router,

@@ -13,6 +13,7 @@ use tokio::sync::Semaphore;
 use utoipa::ToSchema;
 
 use crate::errors::AppError;
+use crate::modules::battles::entities::BattlePlayer;
 use crate::runtime::backoff::BackoffPolicy;
 
 /// Default base URL of the public `AlbionBB` API.
@@ -216,6 +217,25 @@ pub struct AlbionBbPlayer {
         default
     )]
     pub item_power: f64,
+}
+
+impl From<&AlbionBbPlayer> for BattlePlayer {
+    fn from(p: &AlbionBbPlayer) -> Self {
+        Self {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            guild_id: p.guild_id.clone(),
+            guild_name: p.guild_name.clone(),
+            alliance_name: p.alliance_name.clone(),
+            alliance_id: p.alliance_id.clone(),
+            kills: p.kills,
+            deaths: p.deaths,
+            kill_fame: p.kill_fame,
+            death_fame: p.death_fame,
+            item_power: p.item_power,
+            is_friendly: false,
+        }
+    }
 }
 
 /// A battle entry as returned by `AlbionBB`'s battle-listing endpoints.

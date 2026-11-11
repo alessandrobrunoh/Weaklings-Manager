@@ -166,7 +166,8 @@ mod tests {
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
     use super::*;
-    use crate::modules::battles::models::{BattleGuildSummary, BattlePlayer};
+    use crate::modules::battles::entities::BattlePlayer;
+    use crate::modules::battles::models::BattleGuildSummary;
     use crate::modules::intel::entities::scouted_comp;
 
     async fn seed_db() -> DatabaseConnection {

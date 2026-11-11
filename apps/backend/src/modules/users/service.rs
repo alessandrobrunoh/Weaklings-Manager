@@ -15,8 +15,7 @@ use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 use crate::modules::albion::service::AlbionLinkService;
-use crate::modules::battles::entities::Entity as GuildBattleSnapshotEntity;
-use crate::modules::battles::models::BattleLossEstimate;
+use crate::modules::battles::entities::{BattleLossEstimate, Entity as GuildBattleSnapshotEntity};
 use crate::modules::combat::dataset::spec_node;
 use crate::modules::comps::entities::build::Entity as BuildEntity;
 use crate::modules::events::entities::event_participation::{
@@ -481,7 +480,7 @@ impl UserService {
             let snapshots = GuildBattleSnapshotEntity::find().all(db).await?;
             for snap in snapshots {
                 let Ok(players) = serde_json::from_str::<
-                    Vec<crate::modules::battles::models::BattlePlayer>,
+                    Vec<crate::modules::battles::entities::BattlePlayer>,
                 >(&snap.players_json) else {
                     continue;
                 };

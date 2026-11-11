@@ -66,7 +66,7 @@ pub fn router() -> Router {
     security(("session_cookie" = [])),
     params(ListNotificationsQuery),
     responses(
-        (status = 200, description = "Inbox page", body = crate::responses::ApiResponsePaginatedNotificationView),
+        (status = 200, description = "Inbox page", body = crate::modules::notifications::schemas::ApiResponsePaginatedNotificationView),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     )
 )]
@@ -93,7 +93,7 @@ async fn list_notifications(
     summary = "Count unread notifications for the caller",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Unread count", body = crate::responses::ApiResponseUnreadCountView),
+        (status = 200, description = "Unread count", body = crate::modules::notifications::schemas::ApiResponseUnreadCountView),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     )
 )]
@@ -120,7 +120,7 @@ async fn unread_count(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Notification id")),
     responses(
-        (status = 200, description = "Notification marked read", body = crate::responses::ApiResponseNotificationView),
+        (status = 200, description = "Notification marked read", body = crate::modules::notifications::schemas::ApiResponseNotificationView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails)
     )
@@ -148,7 +148,7 @@ async fn mark_read(
     summary = "Mark every unread notification as read",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "Unread rows marked read", body = crate::responses::ApiResponseReadAllResult),
+        (status = 200, description = "Unread rows marked read", body = crate::modules::notifications::schemas::ApiResponseReadAllResult),
         (status = 401, description = "Unauthorized", body = ProblemDetails)
     )
 )]
@@ -175,7 +175,7 @@ async fn mark_all_read(
     security(("session_cookie" = ["notifications.broadcast"])),
     request_body = BroadcastRequest,
     responses(
-        (status = 200, description = "Broadcast fanned out", body = crate::responses::ApiResponseBroadcastResult),
+        (status = 200, description = "Broadcast fanned out", body = crate::modules::notifications::schemas::ApiResponseBroadcastResult),
         (status = 400, description = "Invalid payload", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)

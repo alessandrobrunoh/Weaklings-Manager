@@ -15,12 +15,14 @@ use utoipa::IntoParams;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedBuildSummary, PaginatedCompSummary, PaginationParams};
-use crate::responses::{
-    ApiResponse, ApiResponseBuildCategoryList, ApiResponseBuildDetail, ApiResponseCompCategoryList,
-    ApiResponseCompDetail, ApiResponseCompPerformance, ApiResponsePaginatedBuilds,
-    ApiResponsePaginatedComps,
+use crate::modules::comps::schemas::{
+    ApiResponseBuildCategoryList, ApiResponseBuildDetail, ApiResponseCompCategoryList,
+    ApiResponseCompDetail, ApiResponsePaginatedBuilds, ApiResponsePaginatedComps,
+    PaginatedBuildSummary, PaginatedCompSummary,
 };
+use crate::modules::events::schemas::ApiResponseCompPerformance;
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 
 use super::authority::{Authored, require_author_or_manage};
 use super::models::{
@@ -1405,7 +1407,7 @@ pub struct CompReadinessParams {
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Comp ID"), CompReadinessParams),
     responses(
-        (status = 200, description = "Readiness roll-up", body = crate::responses::ApiResponseCompReadinessView),
+        (status = 200, description = "Readiness roll-up", body = crate::modules::combat::schemas::ApiResponseCompReadinessView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails)
@@ -1443,7 +1445,7 @@ async fn get_comp_readiness(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Build version ID"), BuildItemPowerParams),
     responses(
-        (status = 200, description = "Item Power breakdown", body = crate::responses::ApiResponseItemPower),
+        (status = 200, description = "Item Power breakdown", body = crate::modules::combat::schemas::ApiResponseItemPower),
         (status = 400, description = "Unusable specialization source", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
@@ -1487,7 +1489,7 @@ async fn get_build_item_power(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Build version ID"), BuildItemPowerParams),
     responses(
-        (status = 200, description = "Members ranked against the build", body = crate::responses::ApiResponseBuildRosterFit),
+        (status = 200, description = "Members ranked against the build", body = crate::modules::combat::schemas::ApiResponseBuildRosterFit),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
@@ -1526,7 +1528,7 @@ async fn get_build_roster_fit(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Build version ID")),
     responses(
-        (status = 200, description = "Build performance", body = crate::responses::ApiResponseBuildPerformance),
+        (status = 200, description = "Build performance", body = crate::modules::events::schemas::ApiResponseBuildPerformance),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Build not found", body = ProblemDetails)
     )
@@ -1581,7 +1583,7 @@ async fn get_build_price(
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildPriceView>>, AppError> {
     user.require(&perms, Permission::CompsBuildsView).await?;
-    let settings = crate::modules::regear::service::load_settings(&db).await?;
+    let settings = crate::modules::regear::entities::load_settings(&db).await?;
     let view = cached_build_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
 }
@@ -1620,7 +1622,7 @@ async fn get_comp_price(
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompPriceView>>, AppError> {
     user.require(&perms, Permission::CompsCompsView).await?;
-    let settings = crate::modules::regear::service::load_settings(&db).await?;
+    let settings = crate::modules::regear::entities::load_settings(&db).await?;
     let view = cached_comp_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
 }

@@ -10,6 +10,7 @@ pub mod permission_cache;
 pub mod permissions;
 pub mod rbac;
 pub mod router;
+pub mod schemas;
 pub mod service;
 pub mod session_store;
 

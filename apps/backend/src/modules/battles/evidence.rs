@@ -24,7 +24,8 @@
 use chrono::{DateTime, FixedOffset};
 use serde_json::Value;
 
-use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent, BattlePlayer};
+use crate::modules::battles::entities::BattlePlayer;
+use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
 use crate::modules::battles::outcome::FriendlySide;
 use crate::modules::intel::roles::{RoleClassifier, RoleConfidence};
 use crate::modules::intel::scout::{ROLE_UNOBSERVED, weapons_by_player};

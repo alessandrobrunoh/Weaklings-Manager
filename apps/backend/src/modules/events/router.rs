@@ -19,12 +19,13 @@ use crate::modules::auth::{BotSecret, Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
 use serde::Deserialize;
 
-use crate::responses::{
-    ApiResponse, ApiResponseEventCalendarList, ApiResponseEventDetail,
-    ApiResponseEventFanoutStatus, ApiResponseEventList, ApiResponseEventManagementAuthority,
-    ApiResponseEventRevisionList, ApiResponseEventRosterRoleList, ApiResponseEventSummary,
-    ApiResponseEventView, ApiResponseParticipationGuildList,
+use crate::modules::events::schemas::{
+    ApiResponseEventCalendarList, ApiResponseEventDetail, ApiResponseEventFanoutStatus,
+    ApiResponseEventList, ApiResponseEventManagementAuthority, ApiResponseEventRevisionList,
+    ApiResponseEventRosterRoleList, ApiResponseEventSummary, ApiResponseEventView,
+    ApiResponseParticipationGuildList,
 };
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 
 use sea_orm::{ConnectionTrait, DbBackend, EntityTrait, Statement, Value};
@@ -917,7 +918,7 @@ async fn get_roster(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
-        (status = 200, description = "Proposed assignment", body = crate::responses::ApiResponseRosterSuggestions),
+        (status = 200, description = "Proposed assignment", body = crate::modules::combat::schemas::ApiResponseRosterSuggestions),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)

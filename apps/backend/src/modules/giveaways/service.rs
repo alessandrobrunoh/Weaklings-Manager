@@ -474,7 +474,7 @@ impl GiveawayService {
             let savepoint = txn.begin().await?;
             let credited = async {
                 let regear_settings =
-                    crate::modules::regear::service::load_settings(&savepoint).await?;
+                    crate::modules::regear::entities::load_settings(&savepoint).await?;
                 crate::modules::regear::credits::credit_bonus(
                     &savepoint,
                     &regear_settings,
@@ -1038,7 +1038,7 @@ mod tests {
 
         service.draw(&db, created.giveaway.id, true).await.unwrap();
 
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         let balance = crate::modules::regear::credits::get_or_create_balance(&db, &settings, alice)
@@ -1081,7 +1081,7 @@ mod tests {
     }
 
     async fn bonus_balance(db: &DatabaseConnection, user_id: i64) -> i32 {
-        let settings = crate::modules::regear::service::load_settings(db)
+        let settings = crate::modules::regear::entities::load_settings(db)
             .await
             .unwrap();
         crate::modules::regear::credits::get_or_create_balance(db, &settings, user_id)

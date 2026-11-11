@@ -32,6 +32,7 @@
 pub mod compute;
 pub mod entities;
 pub mod router;
+pub mod schemas;
 pub mod service;
 pub mod writer;
 

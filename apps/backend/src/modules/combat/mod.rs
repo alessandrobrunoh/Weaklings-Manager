@@ -19,6 +19,7 @@ pub mod pattern;
 pub mod readiness;
 pub mod router;
 pub mod scenario;
+pub mod schemas;
 pub mod service;
 pub mod sim;
 pub mod spell;

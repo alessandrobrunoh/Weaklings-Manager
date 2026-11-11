@@ -34,8 +34,7 @@ use crate::errors::AppError;
 use crate::modules::albiondata::service::{AlbionDataService, cheapest_price_index};
 use crate::modules::battles::evidence_entities::{battle_kill, battle_kill_item};
 use crate::modules::battles::outcome::FriendlySide;
-use crate::modules::regear::pricing::PricingFallback;
-use crate::modules::regear::service::load_settings;
+use crate::modules::regear::entities::{PricingFallback, load_settings};
 
 use crate::modules::economy::entities::battle_loss_estimate;
 use super::estimate::{self, KillLossSource, LossItemSource};

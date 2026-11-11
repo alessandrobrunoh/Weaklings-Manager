@@ -78,7 +78,7 @@ pub struct AlbionBbBattlesList {
     security(("session_cookie" = [])),
     params(BattlesListQuery),
     responses(
-        (status = 200, description = "Battles retrieved successfully", body = crate::responses::ApiResponseAlbionBbBattlesList),
+        (status = 200, description = "Battles retrieved successfully", body = crate::modules::albionbb::schemas::ApiResponseAlbionBbBattlesList),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
@@ -120,7 +120,7 @@ pub async fn list_battles(
         ("server" = Option<String>, Query, description = "AlbionBB server segment, defaults to `eu`"),
     ),
     responses(
-        (status = 200, description = "Battle retrieved successfully", body = crate::responses::ApiResponseAlbionBbBattleDetail),
+        (status = 200, description = "Battle retrieved successfully", body = crate::modules::albionbb::schemas::ApiResponseAlbionBbBattleDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "No battle exists with this id", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
@@ -152,7 +152,7 @@ pub async fn get_battle(
         ("server" = Option<String>, Query, description = "AlbionBB server segment, defaults to `eu`"),
     ),
     responses(
-        (status = 200, description = "Kills retrieved successfully", body = crate::responses::ApiResponseAlbionBbKillEventList),
+        (status = 200, description = "Kills retrieved successfully", body = crate::modules::albionbb::schemas::ApiResponseAlbionBbKillEventList),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
@@ -182,7 +182,7 @@ pub async fn get_battle_kills(
         ("server" = Option<String>, Query, description = "AlbionBB server segment, defaults to `eu`"),
     ),
     responses(
-        (status = 200, description = "Guild retrieved successfully", body = crate::responses::ApiResponseAlbionBbGuildInfo),
+        (status = 200, description = "Guild retrieved successfully", body = crate::modules::albionbb::schemas::ApiResponseAlbionBbGuildInfo),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "No guild exists with this id", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
@@ -214,7 +214,7 @@ pub async fn get_guild(
         ("min_players" = Option<i64>, Query, description = "Minimum total players threshold"),
     ),
     responses(
-        (status = 200, description = "Player stats retrieved successfully", body = crate::responses::ApiResponseAlbionBbPlayerStats),
+        (status = 200, description = "Player stats retrieved successfully", body = crate::modules::albionbb::schemas::ApiResponseAlbionBbPlayerStats),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "No player exists with this id", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)

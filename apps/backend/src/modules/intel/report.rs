@@ -36,9 +36,8 @@ use crate::errors::AppError;
 use crate::modules::albion::entities::albion_link;
 use crate::modules::bank::entities as transaction;
 use crate::modules::battles::entities as snapshot;
-use crate::modules::battles::models::{
-    BattleGuildSummary, BattleKillEvent, BattleLossEstimate, BattlePlayer,
-};
+use crate::modules::battles::entities::{BattleLossEstimate, BattlePlayer};
+use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::events::entities::{
     event, event_battle, event_participation, fight, fight_battle,

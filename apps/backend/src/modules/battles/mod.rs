@@ -12,6 +12,7 @@ pub mod evidence_writer;
 pub mod models;
 pub mod outcome;
 pub mod router;
+pub mod schemas;
 pub mod service;
 
 pub use router::router;

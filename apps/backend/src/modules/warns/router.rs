@@ -92,7 +92,7 @@ pub fn router() -> Router {
     security(("session_cookie" = ["warns.issue"])),
     request_body = IssueWarnRequest,
     responses(
-        (status = 200, description = "Warn issued", body = crate::responses::ApiResponseWarnView),
+        (status = 200, description = "Warn issued", body = crate::modules::warns::schemas::ApiResponseWarnView),
         (status = 400, description = "Invalid payload", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
@@ -123,7 +123,7 @@ async fn issue_warn(
     security(("session_cookie" = ["warns.view"])),
     params(ListWarnsQuery),
     responses(
-        (status = 200, description = "Warns retrieved", body = crate::responses::ApiResponsePaginatedWarnView),
+        (status = 200, description = "Warns retrieved", body = crate::modules::warns::schemas::ApiResponsePaginatedWarnView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -154,7 +154,7 @@ async fn list_warns(
     security(("session_cookie" = ["warns.issue"])),
     params(("id" = i64, Path, description = "Warn id")),
     responses(
-        (status = 200, description = "Warn revoked", body = crate::responses::ApiResponseWarnView),
+        (status = 200, description = "Warn revoked", body = crate::modules::warns::schemas::ApiResponseWarnView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Warn not found", body = ProblemDetails),
@@ -185,7 +185,7 @@ async fn revoke_warn(
     security(("session_cookie" = ["warns.view"])),
     params(ListEscalationsQuery),
     responses(
-        (status = 200, description = "Escalations retrieved", body = crate::responses::ApiResponsePaginatedWarnEscalationView),
+        (status = 200, description = "Escalations retrieved", body = crate::modules::warns::schemas::ApiResponsePaginatedWarnEscalationView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -225,7 +225,7 @@ async fn list_escalations(
     security(("session_cookie" = ["warns.issue"])),
     params(("id" = i64, Path, description = "Escalation id")),
     responses(
-        (status = 200, description = "Escalation acknowledged", body = crate::responses::ApiResponseWarnEscalationView),
+        (status = 200, description = "Escalation acknowledged", body = crate::modules::warns::schemas::ApiResponseWarnEscalationView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Escalation not found", body = ProblemDetails),

@@ -12,8 +12,11 @@ use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::bank::service::BankService;
 use crate::modules::platform::service::PlatformService;
-use crate::pagination::{PaginatedSplitSummary, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
+use crate::modules::splits::schemas::{
+    ApiResponseMatchedParticipantList, ApiResponseSplitDetail, PaginatedSplitSummary,
+};
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 use sea_orm::EntityTrait;
 
@@ -146,7 +149,7 @@ pub fn router() -> Router {
         filtered or paginated. Open to any authenticated member.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "KPI totals", body = crate::responses::ApiResponseSplitKpiSummary),
+        (status = 200, description = "KPI totals", body = crate::modules::splits::schemas::ApiResponseSplitKpiSummary),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]

@@ -1,5 +1,7 @@
 //! Read-only canonical Fight API.
 
+pub mod schemas;
+
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -23,11 +25,10 @@ use crate::modules::albion::entities::albion_link;
 use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::battles::entities::{
-    Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
+    BattleLossEstimate, BattlePlayer, Column as GuildBattleSnapshotColumn,
+    Entity as GuildBattleSnapshotEntity, GuildLossEstimate, PlayerLossEstimate,
 };
-use crate::modules::battles::models::{
-    BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
-};
+use crate::modules::battles::models::BattleGuildSummary;
 use crate::modules::battles::outcome::{
     BattleOutcome, BattleSide, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome,
     combine_segments,
@@ -37,11 +38,12 @@ use crate::modules::events::entities::{
     event, event_battle, event_participation, fight, fight_backfill_issue, fight_battle,
 };
 use crate::modules::fight_analytics;
+use crate::modules::fights::schemas::ApiResponseFightBackfillIssueList;
 use crate::modules::users::entities as user;
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
-use crate::responses::{ApiResponse, ApiResponseFightBackfillIssueList};
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId};
 use serde_json::{Value, json};
 

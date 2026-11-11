@@ -11,7 +11,8 @@ use super::service::OcrService;
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{ApiResponse, ApiResponseOcrResult};
+use crate::modules::utils::schemas::ApiResponseOcrResult;
+use crate::responses::ApiResponse;
 
 /// Creates the router for the utils module.
 pub fn router() -> Router {

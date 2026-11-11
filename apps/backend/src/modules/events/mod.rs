@@ -22,6 +22,7 @@ pub mod participation_outbox;
 mod platform_leave_tests;
 pub mod roster_hub;
 pub mod router;
+pub mod schemas;
 pub mod service;
 pub mod status;
 pub mod sync;

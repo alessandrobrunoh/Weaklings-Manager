@@ -1,0 +1,127 @@
+//! `OpenAPI` response schemas for the `combat` module.
+//!
+//! Concrete `ApiResponse*` and `Paginated*` wrappers; utoipa names each schema after its type.
+
+use serde::Serialize;
+use utoipa::ToSchema;
+
+/// `OpenAPI` schema wrapper for a roster-suggestions response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseRosterSuggestions {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The proposed assignment.
+    pub data: crate::modules::combat::fit::Assignment,
+}
+
+/// `OpenAPI` schema wrapper for a comp readiness response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCompReadinessView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The readiness roll-up, plus its comparison against observed battle evidence when
+    /// available.
+    pub data: crate::modules::combat::models::CompReadinessView,
+}
+
+/// `OpenAPI` schema wrapper for the combat dataset response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCombatDataset {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The dataset provenance payload.
+    pub data: crate::modules::combat::models::CombatDatasetView,
+}
+
+/// `OpenAPI` schema wrapper for a simulated burst response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseSimulate {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The resolved burst.
+    pub data: crate::modules::combat::models::SimulateView,
+}
+
+/// `OpenAPI` schema wrapper for a scenario version response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseScenarioDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The scenario version.
+    pub data: crate::modules::combat::models::ScenarioDetail,
+}
+
+/// `OpenAPI` schema wrapper for a scenario list response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseScenarioSummaryList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The list of scenario versions.
+    pub data: Vec<crate::modules::combat::models::ScenarioSummary>,
+}
+
+/// `OpenAPI` schema wrapper for a run response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseRunDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The pinned run.
+    pub data: crate::modules::combat::models::RunDetail,
+}
+
+/// `OpenAPI` schema wrapper for a run list response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseRunSummaryList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The list of runs.
+    pub data: Vec<crate::modules::combat::models::RunSummary>,
+}
+
+/// `OpenAPI` schema wrapper for the Item Power calibration report response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCalibration {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The calibration report.
+    pub data: crate::modules::combat::models::CalibrationView,
+}
+
+/// `OpenAPI` schema wrapper for the mastery-groups mapping response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseMasteryGroups {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The item-to-mastery-node payload.
+    pub data: crate::modules::combat::models::MasteryGroupsView,
+}
+
+/// `OpenAPI` schema wrapper for an Item Power response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseItemPower {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The itemised Item Power payload.
+    pub data: crate::modules::combat::models::ItemPowerView,
+}
+
+/// `OpenAPI` schema wrapper for a build's roster-fit response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBuildRosterFit {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Every member scored against the build.
+    pub data: crate::modules::combat::models::BuildRosterFitView,
+}

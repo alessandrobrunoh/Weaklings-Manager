@@ -16,27 +16,7 @@ use crate::modules::comps::status::BuildSlot;
 
 use super::models::BreakdownRow;
 use super::slots::{is_slot_enabled, slot_from_albionbb_key};
-use crate::modules::regear::entities::RegearSettingModel;
-
-/// The fallback strategy for choosing a price when the configured city has no listing.
-#[derive(Debug, Clone, Copy)]
-pub enum PricingFallback {
-    /// Use the cheapest listing across all cities (default).
-    CheapestAny,
-    /// Only honor listings in the configured city; otherwise the slot is priced at 0.
-    Strict,
-}
-
-impl PricingFallback {
-    /// Parses the strategy string stored in `regear_settings.pricing_fallback_strategy`.
-    #[must_use]
-    pub fn from_str(strategy: &str) -> Self {
-        match strategy {
-            "strict" => Self::Strict,
-            _ => Self::CheapestAny,
-        }
-    }
-}
+use crate::modules::regear::entities::{PricingFallback, RegearSettingModel};
 
 /// One item found while walking the equipment JSON. The slot is resolved from the parent key
 /// (e.g. the value at `Equipment.MainHand` is tagged with `BuildSlot::Weapon`).

@@ -11,13 +11,12 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, Quer
 
 use crate::errors::AppError;
 use crate::modules::auth::Permission;
+use crate::modules::bank::schemas::PaginatedTransactionView;
 use crate::modules::platform::service::PlatformService;
 use crate::modules::users::entities::{
     Column as UserColumn, Entity as UserEntity, Model as UserModel,
 };
-use crate::pagination::{
-    MAX_PAGE_LIMIT, PaginatedTransactionView, PaginationParams, SortOrder, paginate_vec,
-};
+use crate::pagination::{MAX_PAGE_LIMIT, PaginationParams, SortOrder, paginate_vec};
 use crate::tenant::{TenantContext, TenantRegistry};
 
 use super::models::{

@@ -23,8 +23,9 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedBattleSummary, PaginationParams, SortOrder};
-use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
+use crate::modules::battles::schemas::{ApiResponsePaginatedBattles, PaginatedBattleSummary};
+use crate::pagination::{PaginationParams, SortOrder};
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId};
 
 /// Creates the router for the `battles` module.
@@ -138,7 +139,7 @@ pub async fn list_battles(
     security(("session_cookie" = ["fights.view"])),
     params(("battle_id" = i64, Path, description = "AlbionBB battle id")),
     responses(
-        (status = 200, description = "Battle retrieved successfully", body = crate::responses::ApiResponseBattleDetail),
+        (status = 200, description = "Battle retrieved successfully", body = crate::modules::battles::schemas::ApiResponseBattleDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing the fights.view permission", body = ProblemDetails),
         (status = 404, description = "No battle exists with this id", body = ProblemDetails),

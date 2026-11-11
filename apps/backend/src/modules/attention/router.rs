@@ -10,8 +10,9 @@ use axum::{Extension, Json, Router, routing::get};
 use sea_orm::DatabaseConnection;
 
 use crate::errors::{AppError, ProblemDetails};
+use crate::modules::attention::schemas::ApiResponseAttentionFindingList;
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{ApiResponse, ApiResponseAttentionFindingList};
+use crate::responses::ApiResponse;
 
 use super::service::{self, AttentionFindingView};
 use super::writer;
