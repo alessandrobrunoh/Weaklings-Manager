@@ -186,6 +186,41 @@ fn literal(text: &str) -> String {
     format!("'{}'", text.replace('\'', "''"))
 }
 
+/// A throwaway tenant schema (all tenant migrations applied) on `TEST_DATABASE_URL`.
+pub struct TenantSchema {
+    /// Connection whose `search_path` is the migrated schema.
+    pub db: DatabaseConnection,
+    admin: DatabaseConnection,
+    schema: String,
+}
+
+impl TenantSchema {
+    /// Creates and migrates a fresh schema; `None` when `TEST_DATABASE_URL` is not set.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the schema cannot be created, connected to or migrated.
+    pub async fn try_new(prefix: &str) -> Option<Self> {
+        let (url, admin) = crate::postgres::test_support::try_admin_db().await?;
+        let schema = crate::postgres::test_support::unique_schema(prefix);
+        crate::postgres::ensure_schema(&admin, &schema)
+            .await
+            .expect("create tenant schema");
+        let db = crate::postgres::connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect tenant schema");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate tenant schema");
+        Some(Self { db, admin, schema })
+    }
+
+    /// Drops the schema; call at the end of the test.
+    pub async fn cleanup(self) {
+        let _ = crate::postgres::drop_schema(&self.admin, &self.schema).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

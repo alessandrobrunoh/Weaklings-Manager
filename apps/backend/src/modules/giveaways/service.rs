@@ -1199,7 +1199,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_a_failed_bonus_credit_does_not_poison_the_draw_transaction() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_gvp").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_gvp").await
         else {
             return;
         };
@@ -1230,7 +1230,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_concurrent_draws_credit_exactly_once() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_gvc").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_gvc").await
         else {
             return;
         };

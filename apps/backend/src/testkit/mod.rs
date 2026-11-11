@@ -310,4 +310,40 @@ mod tests {
         assert!(table_exists(&world.guild(1).db, "world_probe").await);
         assert!(!table_exists(&world.guild(2).db, "world_probe").await);
     }
+
+    #[tokio::test]
+    async fn two_guild_tenants_in_one_process_get_different_friendly_sides() {
+        let world = World::new().await;
+        world.seed_albion_control().await;
+
+        let first = crate::albion_scope::load_friendly_side(&world.control, GUILDS[0])
+            .await
+            .expect("G1 side");
+        let second = crate::albion_scope::load_friendly_side(&world.control, GUILDS[1])
+            .await
+            .expect("G2 side");
+        assert!(first.is_own(ALBION_GUILDS[0]));
+        assert!(!first.contains(ALBION_GUILDS[1], ""));
+        assert!(second.is_own(ALBION_GUILDS[1]));
+        assert!(!second.contains(ALBION_GUILDS[0], ""));
+
+        // The alliance has no own guild; its active members are friendly, a
+        // member that left is not.
+        let alliance = crate::albion_scope::load_friendly_side(&world.control, ALLIANCE)
+            .await
+            .expect("alliance side");
+        assert!(alliance.contains(ALBION_GUILDS[0], ""));
+        assert!(alliance.contains(ALBION_GUILDS[1], ""));
+        assert!(!alliance.is_own(ALBION_GUILDS[0]));
+
+        // No Albion identity, or no row at all: fail closed, never env.
+        assert!(matches!(
+            crate::albion_scope::load_friendly_side(&world.control, GUILDS[2]).await,
+            Err(crate::albion_scope::AlbionScopeError::NotConfigured)
+        ));
+        assert!(matches!(
+            crate::albion_scope::load_friendly_side(&world.control, "missing").await,
+            Err(crate::albion_scope::AlbionScopeError::NotConfigured)
+        ));
+    }
 }

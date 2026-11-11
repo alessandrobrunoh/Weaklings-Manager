@@ -306,7 +306,7 @@ async fn crash_recovery_fences_the_dead_holder_on_sqlite() {
 /// Eight concurrent claimers over 200 due rows: every row is leased exactly once.
 #[tokio::test]
 async fn postgres_claims_are_disjoint_under_concurrency() {
-    use crate::postgres::test_support::TenantSchema;
+    use crate::testkit::tenant_schema::TenantSchema;
     let Some(schema) = TenantSchema::try_new("discord_claim").await else {
         return;
     };
@@ -365,7 +365,7 @@ async fn postgres_claims_are_disjoint_under_concurrency() {
 
 #[tokio::test]
 async fn postgres_crash_recovery_fences_the_dead_holder() {
-    use crate::postgres::test_support::TenantSchema;
+    use crate::testkit::tenant_schema::TenantSchema;
     let Some(schema) = TenantSchema::try_new("discord_crash").await else {
         return;
     };

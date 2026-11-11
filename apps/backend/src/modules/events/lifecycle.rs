@@ -3636,7 +3636,7 @@ mod tests {
     #[tokio::test]
     async fn auto_stop_goes_through_the_transition_core_and_skips_xp_for_mirrors() {
         use super::transition_tests::{fixture, seed_event};
-        use crate::event_sessions::auto_stop::auto_stop_expired_sessions;
+        use crate::modules::events::auto_stop::auto_stop_expired_sessions;
         use crate::modules::events::entities::event_completion_xp;
 
         let Some(world) = TestWorld::new().await else {
@@ -3721,7 +3721,7 @@ mod tests {
 mod copy_role_auto_stop_tests {
     use super::transition_tests::{fixture, seed_event, sqlite_db as bare_sqlite_db};
     use super::*;
-    use crate::event_sessions::auto_stop::auto_stop_expired_sessions;
+    use crate::modules::events::auto_stop::auto_stop_expired_sessions;
     use crate::modules::events::entities::event_completion_xp;
     use crate::modules::sync::test_support::{link_event, sqlite_db};
     use sea_orm::PaginatorTrait;

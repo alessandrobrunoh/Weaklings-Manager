@@ -175,16 +175,16 @@ fn matrix_config() -> crate::config::Config {
     }
 }
 
-/// Layers a module router with the extensions the real server provides, all backed by `db`.
+/// Layers a module router with the shared extensions the real server provides, all backed
+/// by `db`. Feature-specific extensions (the events router's `RosterHub` and
+/// `AlbionBbService`) are added by that feature's own harness.
 pub(crate) fn matrix_app(
     routes: axum::Router,
     db: &DatabaseConnection,
     tenant_id: &str,
     tenant_kind: &str,
 ) -> axum::Router {
-    use crate::modules::albionbb::service::AlbionBbService;
     use crate::modules::auth::Permissions;
-    use crate::modules::events::roster_hub::RosterHub;
     use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
     use axum::Extension;
 
@@ -199,8 +199,6 @@ pub(crate) fn matrix_app(
             "sqlite::memory:".to_owned(),
             db.clone(),
         )))
-        .layer(Extension(RosterHub::default()))
-        .layer(Extension(AlbionBbService::default()))
 }
 
 /// Sends one request through `app` as the bot system caller and returns status + JSON body.

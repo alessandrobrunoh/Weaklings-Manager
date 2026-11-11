@@ -252,37 +252,6 @@ pub(crate) mod test_support {
         }
     }
 
-    /// A throwaway tenant schema (all tenant migrations applied) on `TEST_DATABASE_URL`.
-    pub(crate) struct TenantSchema {
-        pub(crate) db: DatabaseConnection,
-        admin: DatabaseConnection,
-        schema: String,
-    }
-
-    impl TenantSchema {
-        /// Creates and migrates a fresh schema; `None` when `TEST_DATABASE_URL` is not set.
-        pub(crate) async fn try_new(prefix: &str) -> Option<Self> {
-            use sea_orm_migration::MigratorTrait;
-            let (url, admin) = try_admin_db().await?;
-            let schema = unique_schema(prefix);
-            super::ensure_schema(&admin, &schema)
-                .await
-                .expect("create tenant schema");
-            let db = super::connect_with_search_path(&url, &schema)
-                .await
-                .expect("connect tenant schema");
-            crate::migration::Migrator::up(&db, None)
-                .await
-                .expect("migrate tenant schema");
-            Some(Self { db, admin, schema })
-        }
-
-        /// Drops the schema; call at the end of the test.
-        pub(crate) async fn cleanup(self) {
-            let _ = super::drop_schema(&self.admin, &self.schema).await;
-        }
-    }
-
     pub(crate) fn unique_schema(prefix: &str) -> String {
         format!(
             "{prefix}_{}",

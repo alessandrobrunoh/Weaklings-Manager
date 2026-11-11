@@ -461,7 +461,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_concurrent_consumers_cannot_overspend_the_balance() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_rgc").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_rgc").await
         else {
             return;
         };
@@ -494,7 +494,7 @@ mod tests {
 
     #[tokio::test]
     async fn pg_concurrent_first_reads_create_a_single_row() {
-        let Some(tenant) = crate::postgres::test_support::TenantSchema::try_new("it_rgf").await
+        let Some(tenant) = crate::testkit::tenant_schema::TenantSchema::try_new("it_rgf").await
         else {
             return;
         };
