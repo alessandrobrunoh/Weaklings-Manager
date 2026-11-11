@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildNeedsWeapon,
   summarizeErrors,
   validateBuildDraft,
   validateBuildName,
@@ -54,6 +55,25 @@ describe('validateBuildDraft', () => {
       existingNames: [],
     });
     expect(errors.map((e) => e.field)).toContain('items');
+  });
+
+  it('knows which roles need a main-hand weapon', () => {
+    expect(buildNeedsWeapon('tank')).toBe(true);
+    expect(buildNeedsWeapon('battle_mount')).toBe(false);
+  });
+
+  it('lets a battle mount go without a weapon', () => {
+    const errors = validateBuildDraft(draft({ role: 'battle_mount', filledSlots: ['mount'] }), {
+      existingNames: [],
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it('asks for a main-hand weapon in the main loadout', () => {
+    const errors = validateBuildDraft(draft({ filledSlots: [] }), { existingNames: [] });
+    expect(errors.find((e) => e.field === 'items')?.message).toBe(
+      'A build needs a main-hand weapon in its main loadout.',
+    );
   });
 
   it('accepts a build carrying only a weapon', () => {

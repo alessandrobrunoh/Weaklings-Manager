@@ -24,6 +24,7 @@ function seat(
     build_name: `Build ${buildId}`,
     build_version: 1,
     role,
+    weapon_key: null,
     participant: occupant
       ? {
           user_id: position,
@@ -34,6 +35,7 @@ function seat(
           secondary_build_id: null,
           secondary_build_name: null,
           specializations: {},
+          weapons: [],
         }
       : null,
   };

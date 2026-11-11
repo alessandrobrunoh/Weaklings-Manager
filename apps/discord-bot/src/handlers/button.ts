@@ -30,7 +30,11 @@ import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { formatSilver } from '../format.js';
 import { FLASH_UNDO_WINDOW_MS, getPoller } from "../services/poller.js";
-import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
+import {
+  buildSignupRoleOptions,
+  selectableSignupBuilds,
+  signupRoles,
+} from "../services/event-signup.js";
 import {
   buildGuildSelectRow,
   buildRoleSelectCustomId,
@@ -790,7 +794,7 @@ async function handleEventButton(
       return;
     }
 
-    const availableRoles = signupRoles(signupOptions.builds);
+    const availableRoles = signupRoles(selectableSignupBuilds(signupOptions.builds));
 
     const {
       ActionRowBuilder,

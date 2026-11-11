@@ -105,9 +105,10 @@ const signupOptions = {
   active_comp_name: "Comp",
   active_comp_capacity: 10,
   is_already_registered: false,
+  has_declared_weapons: false,
   builds: [
-    { build_id: 10, name: "Great Fire", role: "dps", quantity: 2 },
-    { build_id: 11, name: "Grail", role: "healer", quantity: 1 },
+    { build_id: 10, name: "Great Fire", role: "dps", quantity: 2, weapon_key: null, weapon_name: null, availability: "allowed" },
+    { build_id: 11, name: "Grail", role: "healer", quantity: 1, weapon_key: null, weapon_name: null, availability: "allowed" },
   ],
 };
 

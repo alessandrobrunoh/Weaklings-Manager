@@ -9,7 +9,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
@@ -32,12 +32,14 @@ import type {
   EventRosterRole,
   EventRosterSeat,
   EventRosterView,
+  EventSignupOptions,
   OpenAlbionItemAbilities,
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
   ParticipationGuildOption,
   RosterSuggestions,
+  SignupAvailability,
   SplitSummary,
   AllianceContext,
   UpdateEventBattlesRequest,
@@ -64,6 +66,12 @@ import {
   deduplicateAlbionCombatCatalog,
   normalizeAlbionEquipmentName,
 } from '../../shared/data/albion-equipment-catalog';
+import {
+  seatWeaponWarning,
+  sortBenchForWeapon,
+  weaponFit,
+  type WeaponFit,
+} from '../../shared/data/user-weapons';
 import type { TranslationKey } from '../../i18n/en';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { Avatar } from '../../shared/components/avatar/avatar';
@@ -184,6 +192,25 @@ interface AddEventMemberRequest {
   secondary_build_id?: number;
 }
 
+/** Waiting-list chip per weapon fit. The label always names the state, so colour is never the only cue. */
+const BENCH_FIT_CHIP: Readonly<
+  Record<
+    WeaponFit,
+    {
+      tone: 'success' | 'info' | 'neutral' | 'warning' | 'error';
+      labelKey: TranslationKey;
+      icon: 'alert' | 'lock' | null;
+    }
+  >
+> = {
+  main: { tone: 'success', labelKey: 'weapons.proficiency.main', icon: null },
+  good: { tone: 'info', labelKey: 'weapons.proficiency.good', icon: null },
+  basic: { tone: 'neutral', labelKey: 'weapons.proficiency.basic', icon: null },
+  no_declarations: { tone: 'neutral', labelKey: 'weapons.fit.noDeclarations', icon: null },
+  not_declared: { tone: 'warning', labelKey: 'weapons.notDeclared', icon: 'alert' },
+  locked: { tone: 'error', labelKey: 'weapons.locked', icon: 'lock' },
+};
+
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -207,6 +234,7 @@ interface AddEventMemberRequest {
     Select,
     TooltipDirective,
     OwnershipScopeToggle,
+    RouterLink,
     EventBattlesTab,
     EventGuildBadge,
     EventHeader,
@@ -554,6 +582,11 @@ interface AddEventMemberRequest {
                         (input)="onBenchSearchInput($event)"
                       />
                     }
+                    @if (assignWeaponKey()) {
+                      <p class="party-bench__sorted" role="status">
+                        {{ t('events.lobby.sortedForWeapon', { weapon: assignWeaponName() }) }}
+                      </p>
+                    }
                     @if (isDropTargetBench()) {
                       <p class="party-bench__drop">{{ t('events.detail.drop_to_bench') }}</p>
                     }
@@ -583,6 +616,16 @@ interface AddEventMemberRequest {
                                   <span class="bench-card__alt">· {{ member.secondary_build_name }}</span>
                                 }
                               </p>
+                              @if (benchFit(member); as fit) {
+                                <p class="bench-card__fit">
+                                  <span class="chip" [class]="'chip chip--' + fit.tone">
+                                    @if (fit.icon) {
+                                      <app-icon [name]="fit.icon" size="0.6875rem" />
+                                    }
+                                    {{ fit.label }}
+                                  </span>
+                                </p>
+                              }
                             </div>
                             <app-event-guild-badge [guild]="member.guild" />
                           </div>
@@ -701,6 +744,14 @@ interface AddEventMemberRequest {
                                       </span>
                                     }
                                   </p>
+                                  @if (seatWarning(seat); as warning) {
+                                    <p class="seat__warn">
+                                      <span class="chip" [class]="warning === 'locked' ? 'chip chip--error' : 'chip chip--warning'">
+                                        <app-icon [name]="warning === 'locked' ? 'lock' : 'alert'" size="0.6875rem" />
+                                        {{ warning === 'locked' ? t('weapons.warn.locked') : t('weapons.warn.notDeclared') }}
+                                      </span>
+                                    </p>
+                                  }
                                 } @else {
                                   <p class="seat__occupant seat__occupant--open">{{ t('events.lobby.openSeat') }}</p>
                                 }
@@ -1005,6 +1056,24 @@ interface AddEventMemberRequest {
                 {{ t('events.detail.no_builds') }}
               </p>
             }
+            @if (showWeaponsHint()) {
+              <div class="surface flex flex-wrap items-center gap-2 p-3 border border-[var(--color-border)]" role="note">
+                <app-icon name="info" size="1rem" />
+                <p class="min-w-0 flex-1 text-xs text-[var(--color-text-secondary)]">
+                  {{ t('events.detail.weapons_hint') }}
+                </p>
+                <a
+                  class="btn btn--outline btn--sm"
+                  routerLink="/profile"
+                  [queryParams]="{ tab: 'destiny' }"
+                  (click)="showJoinForm.set(false)"
+                >
+                  {{ t('events.detail.weapons_hint_link') }}
+                </a>
+              </div>
+            } @else if (signupOptions()?.has_declared_weapons) {
+              <p class="text-xs text-[var(--color-text-secondary)]">{{ t('events.detail.weapons_limited') }}</p>
+            }
             <section class="build-choice-panel" aria-labelledby="primary-build-choice-title">
               <div class="flex items-center justify-between gap-3">
                 <span id="primary-build-choice-title" class="label">{{ t('events.detail.primary_build') }} *</span>
@@ -1032,6 +1101,7 @@ interface AddEventMemberRequest {
                     class="build-choice-card"
                     [class.build-choice-card--selected]="isSelectedBuild(draftPrimaryBuildId(), entry.build_id)"
                     [attr.aria-pressed]="isSelectedBuild(draftPrimaryBuildId(), entry.build_id)"
+                    [disabled]="buildBlockReason(entry.build_id) !== null"
                     (click)="selectJoinPrimary(buildIdValue(entry.build_id))"
                   >
                     @if (buildWeaponIcon(entry.build_id); as iconUrl) {
@@ -1042,6 +1112,12 @@ interface AddEventMemberRequest {
                     <span class="build-choice-card__copy">
                       <strong>{{ entry.build.name }}</strong>
                       <small>{{ roleLabelName(entry.build.role) }} · {{ entry.build.category_name || t('comps.noCategory') }}</small>
+                      @if (buildBlockReason(entry.build_id); as reason) {
+                        <small class="build-choice-card__reason">
+                          <app-icon name="lock" size="0.6875rem" />
+                          {{ reason }}
+                        </small>
+                      }
                     </span>
                   </button>
                 }
@@ -1087,6 +1163,7 @@ interface AddEventMemberRequest {
                       class="build-choice-card"
                       [class.build-choice-card--selected]="isSelectedBuild(draftSecondaryBuildId(), entry.build_id)"
                       [attr.aria-pressed]="isSelectedBuild(draftSecondaryBuildId(), entry.build_id)"
+                      [disabled]="buildBlockReason(entry.build_id) !== null"
                       (click)="selectJoinSecondary(buildIdValue(entry.build_id))"
                     >
                       @if (buildWeaponIcon(entry.build_id); as iconUrl) {
@@ -1097,6 +1174,12 @@ interface AddEventMemberRequest {
                       <span class="build-choice-card__copy">
                         <strong>{{ entry.build.name }}</strong>
                         <small>{{ roleLabelName(entry.build.role) }}</small>
+                        @if (buildBlockReason(entry.build_id); as reason) {
+                          <small class="build-choice-card__reason">
+                            <app-icon name="lock" size="0.6875rem" />
+                            {{ reason }}
+                          </small>
+                        }
                       </span>
                     </button>
                   }
@@ -1938,6 +2021,22 @@ interface AddEventMemberRequest {
         color: var(--color-text-secondary);
         font-size: 0.6875rem;
       }
+      .build-choice-card:disabled {
+        cursor: not-allowed;
+        transform: none;
+        border-style: dashed;
+        background: var(--color-surface-2);
+      }
+      .build-choice-card:disabled:hover {
+        border-color: var(--color-border);
+      }
+      .build-choice-card__copy small.build-choice-card__reason {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        color: var(--color-text);
+        font-weight: 600;
+      }
       .event-detail__sub {
         color: var(--color-text-secondary);
         font-size: 0.75rem;
@@ -2338,6 +2437,16 @@ interface AddEventMemberRequest {
         color: var(--color-text-secondary);
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .bench-card__fit {
+        margin-top: 0.25rem;
+      }
+      .party-bench__sorted {
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .seat__warn {
+        margin-top: 0.25rem;
       }
       .bench-card__alt {
         color: var(--color-text-muted);
@@ -2854,6 +2963,21 @@ export class EventDetailPage {
   protected readonly joinFormLoading = signal(false);
   protected readonly compLoading = signal(false);
   protected readonly joinSubmitting = signal(false);
+  /** Server-side view of which builds the caller may sign up with; `null` until loaded or when it failed. */
+  protected readonly signupOptions = signal<EventSignupOptions | null>(null);
+  protected readonly signupAvailability = computed(() => {
+    const map = new Map<number, SignupAvailability>();
+    for (const build of this.signupOptions()?.builds ?? []) map.set(build.build_id, build.availability);
+    return map;
+  });
+  protected readonly hasDeclaredWeapons = computed(
+    () => this.signupOptions()?.has_declared_weapons ?? true,
+  );
+  /** True once the options loaded and the member has declared nothing: show the "declare weapons" hint. */
+  protected readonly showWeaponsHint = computed(() => {
+    const options = this.signupOptions();
+    return options !== null && !options.has_declared_weapons;
+  });
   protected readonly joinError = signal<string | null>(null);
   protected readonly availableBuilds = signal<CompBuildEntry[]>([]);
   protected readonly allBuilds = signal<BuildSummary[]>([]);
@@ -3135,16 +3259,29 @@ export class EventDetailPage {
     y: number;
   } | null>(null);
 
+  /** Weapon of the seat an officer is filling from the waiting list, if it has one. */
+  protected readonly assignWeaponKey = computed(() => this.rosterAssignTarget()?.weapon_key ?? null);
+  protected readonly assignWeaponName = computed(() => {
+    const key = this.assignWeaponKey();
+    return key ? normalizeAlbionEquipmentName(key.replace(/^weapon:/, '')) : '';
+  });
+
+  /**
+   * The waiting list. While a seat is being filled it is ordered by how well each member fits the
+   * seat's weapon (main, good, basic, no declarations, not declared, locked last).
+   */
   protected readonly filteredRosterBench = computed<readonly EventParticipant[]>(() => {
     const bench = this.rosterSnapshot()?.bench ?? [];
     const query = this.benchSearch().trim().toLowerCase();
-    if (!query) return bench;
-    return bench.filter(
-      (m) =>
-        m.username.toLowerCase().includes(query) ||
-        (m.primary_build_name?.toLowerCase().includes(query) ?? false) ||
-        (m.secondary_build_name?.toLowerCase().includes(query) ?? false),
-    );
+    const matching = !query
+      ? bench
+      : bench.filter(
+          (m) =>
+            m.username.toLowerCase().includes(query) ||
+            (m.primary_build_name?.toLowerCase().includes(query) ?? false) ||
+            (m.secondary_build_name?.toLowerCase().includes(query) ?? false),
+        );
+    return sortBenchForWeapon(matching, this.assignWeaponKey());
   });
 
   protected readonly extraRosterRoles = computed<readonly EventRosterRole[]>(() =>
@@ -3550,6 +3687,23 @@ export class EventDetailPage {
 
   protected specializationKey(item: OpenAlbionItem): string {
     return albionSpecializationKey(item);
+  }
+
+  /** Chip describing how a waiting-list member fits the seat being filled; `null` outside assign mode. */
+  protected benchFit(member: EventParticipant): {
+    tone: string;
+    label: string;
+    icon: 'alert' | 'lock' | null;
+  } | null {
+    const fit = weaponFit(member.weapons, this.assignWeaponKey());
+    if (fit === null) return null;
+    const chip = BENCH_FIT_CHIP[fit];
+    return { tone: chip.tone, label: this.t(chip.labelKey), icon: chip.icon };
+  }
+
+  /** Warning for the member on a seat: danger when the weapon is locked for them, warning when undeclared. */
+  protected seatWarning(seat: EventRosterSeat): 'locked' | 'not_declared' | null {
+    return seat.participant ? seatWeaponWarning(seat.participant.weapons, seat.weapon_key) : null;
   }
 
   protected participantSpecLevel(participant: EventParticipant): number {
@@ -4986,11 +5140,43 @@ export class EventDetailPage {
     );
     this.joinError.set(null);
     this.showJoinForm.set(true);
+    void this.loadSignupOptions();
     if (this.isAllianceTenant()) {
       void this.loadParticipationGuilds();
     }
     if (this.availableBuilds().length === 0) {
       void this.loadActiveComp();
+    }
+  }
+
+  /**
+   * Which builds the caller may sign up with, given the weapons they declared and the locks an
+   * officer set. A failure leaves every build selectable: the server enforces the same rule on
+   * submit, so this only decides how early the member hears about it.
+   */
+  private async loadSignupOptions(): Promise<void> {
+    const detail = this.event();
+    if (!detail) return;
+    this.signupOptions.set(null);
+    try {
+      const options = await firstValueFrom(
+        this.api.get<EventSignupOptions>(`api/events/${detail.id}/signup-options`),
+      );
+      this.signupOptions.set(options && Array.isArray(options.builds) ? options : null);
+    } catch {
+      this.signupOptions.set(null);
+    }
+  }
+
+  /** Why the caller cannot sign up with this build, or `null` when they can. */
+  protected buildBlockReason(buildId: number): string | null {
+    switch (this.signupAvailability().get(buildId)) {
+      case 'locked':
+        return this.t('events.detail.build_locked');
+      case 'not_declared':
+        return this.t('events.detail.build_not_declared');
+      default:
+        return null;
     }
   }
 
@@ -5076,6 +5262,16 @@ export class EventDetailPage {
     // `null` is the virtual Fill role: the backend accepts a participation without a build.
     if (!this.isFillSelected() && Number(this.draftPrimaryBuildId()) <= 0) {
       this.joinError.set(this.t('events.detail.primary_required'));
+      return;
+    }
+
+    const blocked = [this.draftPrimaryBuildId(), this.draftSecondaryBuildId()]
+      .map(Number)
+      .filter((buildId) => buildId > 0)
+      .map((buildId) => this.buildBlockReason(buildId))
+      .find((reason) => reason !== null);
+    if (blocked) {
+      this.joinError.set(blocked);
       return;
     }
 

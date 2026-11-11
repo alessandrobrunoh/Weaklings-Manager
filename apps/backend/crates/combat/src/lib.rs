@@ -30,5 +30,6 @@ pub mod seats;
 pub mod service;
 pub mod sim;
 pub mod spell;
+pub mod user_weapons;
 
 pub use router::router;

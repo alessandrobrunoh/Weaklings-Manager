@@ -135,6 +135,16 @@ const ARMOR_SLOT_LABEL: Record<DestinyArmorSlotId, DestinyLabelKey> = {
   boots: 'destiny.slot.boots',
 };
 
+/** Weapon families in Destiny Board display order. */
+export function destinyWeaponFamilyOrder(): readonly DestinyWeaponFamilyId[] {
+  return WEAPON_FAMILY_ORDER;
+}
+
+/** i18n key of a weapon family's label. */
+export function destinyWeaponFamilyLabelKey(family: DestinyWeaponFamilyId): DestinyLabelKey {
+  return WEAPON_FAMILY_LABEL[family];
+}
+
 /** True when the node is a group rather than a leaf item. */
 export function isDestinyGroup(node: DestinyTreeNode): node is DestinyGroupNode {
   return 'kind' in node && node.kind === 'group';

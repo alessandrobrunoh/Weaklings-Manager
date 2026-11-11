@@ -316,6 +316,8 @@ impl CombatService {
                 ),
                 primary_build_id: None,
                 secondary_build_id: None,
+                // Readiness is a property of the composition, not of anyone's declared weapons.
+                weapons: fit::MemberWeapons::default(),
             })
             .collect();
 

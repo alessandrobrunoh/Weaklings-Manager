@@ -113,9 +113,9 @@ function makeApi(routes: {
 }
 
 const builds: EventSignupBuildOption[] = [
-  { build_id: 10, name: 'Great Fire', role: 'dps', quantity: 2 },
-  { build_id: 11, name: 'Grail', role: 'healer', quantity: 1 },
-  { build_id: 12, name: 'Greatsword', role: 'dps', quantity: 3 },
+  { build_id: 10, name: 'Great Fire', role: 'dps', quantity: 2, weapon_key: null, weapon_name: null, availability: 'allowed' },
+  { build_id: 11, name: 'Grail', role: 'healer', quantity: 1, weapon_key: null, weapon_name: null, availability: 'allowed' },
+  { build_id: 12, name: 'Greatsword', role: 'dps', quantity: 3, weapon_key: null, weapon_name: null, availability: 'allowed' },
 ];
 
 test('resolveEventFromThread maps a known thread to its event id', () => {
@@ -206,7 +206,7 @@ test('/join on an organized event with a resolvable build signs up for that buil
     const api = makeApi({
       get: (path) => {
         if (path === 'api/events/5') return { id: 5, event_kind: 'organized', status: 'scheduled', participants: [] };
-        if (path === 'api/events/5/signup-options') return { builds, is_already_registered: false };
+        if (path === 'api/events/5/signup-options') return { builds, is_already_registered: false, has_declared_weapons: true };
         throw new Error(`Unexpected GET ${path}`);
       },
       post: (path, body) => {
@@ -230,7 +230,7 @@ test('/join with an ambiguous build lists the matches', async () => {
     const api = makeApi({
       get: (path) => {
         if (path === 'api/events/5') return { id: 5, event_kind: 'organized', status: 'scheduled', participants: [] };
-        if (path === 'api/events/5/signup-options') return { builds, is_already_registered: false };
+        if (path === 'api/events/5/signup-options') return { builds, is_already_registered: false, has_declared_weapons: true };
         throw new Error(`Unexpected GET ${path}`);
       },
     });
@@ -239,6 +239,32 @@ test('/join with an ambiguous build lists the matches', async () => {
     const description = replies[0].embeds[0].data.description ?? '';
     assert.match(description, /Great Fire/);
     assert.match(description, /Greatsword/);
+  } finally {
+    unregisterPoller('thread-test-guild');
+  }
+});
+
+test('/join with a build of a locked weapon explains why instead of "not found"', async () => {
+  registerPoller(makePoller({ '5': 'thread-5' }));
+  try {
+    const { interaction, replies } = makeInteraction({ threadId: 'thread-5', build: 'grail' });
+    const lockedBuilds: EventSignupBuildOption[] = builds.map((entry) =>
+      entry.build_id === 11
+        ? { ...entry, weapon_key: 'weapon:MAIN_HOLYSTAFF', weapon_name: 'Holy Staff', availability: 'locked' }
+        : entry,
+    );
+    const api = makeApi({
+      get: (path) => {
+        if (path === 'api/events/5') return { id: 5, event_kind: 'organized', status: 'scheduled', participants: [] };
+        if (path === 'api/events/5/signup-options') {
+          return { builds: lockedBuilds, is_already_registered: false, has_declared_weapons: true };
+        }
+        throw new Error(`Unexpected GET ${path}`);
+      },
+    });
+    await executeEventThreadAction(interaction, api, 'join');
+    assert.equal(api.calls.some((call) => call.method === 'post'), false);
+    assert.match(replies[0].embeds[0].data.description ?? '', /locked/);
   } finally {
     unregisterPoller('thread-test-guild');
   }

@@ -140,6 +140,12 @@ pub struct BuildSummary {
     pub main_item_count: u64,
     /// When this build was archived, if it has been. `None` means it's active.
     pub archived_at: Option<String>,
+    /// `weapon:{BASE}` of the weapon in the main loadout's weapon slot (for example
+    /// `weapon:2H_POLEHAMMER`), derived from the stored item and never stored itself. `None` for
+    /// a build with no main-loadout weapon, such as a battle mount.
+    pub weapon_key: Option<String>,
+    /// Tier-less display name of [`Self::weapon_key`] (for example `Polehammer`).
+    pub weapon_name: Option<String>,
 }
 
 /// A build's full detail, including items.

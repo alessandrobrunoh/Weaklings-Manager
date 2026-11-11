@@ -340,11 +340,18 @@ export interface EventDetailView extends EventView {
   splits?: Array<{ id: number }>;
 }
 
+/** Whether the requesting member may pick a build themselves, given their declared weapons. */
+export type SignupAvailability = "allowed" | "not_declared" | "locked";
+
 export interface EventSignupBuildOption {
   build_id: number;
   name: string;
   role: BuildRole;
   quantity: number;
+  /** `weapon:{BASE}` of the build's main weapon, or `null` when the build has none. */
+  weapon_key: string | null;
+  weapon_name: string | null;
+  availability: SignupAvailability;
 }
 
 /** Server-authoritative comp tier and builds for the requesting member's next concrete signup. */
@@ -353,6 +360,8 @@ export interface EventSignupOptionsView {
   active_comp_name: string;
   active_comp_capacity: number;
   is_already_registered: boolean;
+  /** False while the member has not declared any weapon: every unlocked build is then allowed. */
+  has_declared_weapons: boolean;
   builds: EventSignupBuildOption[];
 }
 

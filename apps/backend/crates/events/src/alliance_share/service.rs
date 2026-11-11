@@ -1529,7 +1529,7 @@ mod tests {
                     description: Some("smash".to_owned()),
                     role: BuildRole::Dps,
                     category_id: category.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -1719,7 +1719,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Dps,
                     category_id: category.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -1891,7 +1891,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Dps,
                     category_id: src_build_cat.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -1905,7 +1905,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Healer,
                     category_id: src_build_cat.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -2066,7 +2066,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Dps,
                     category_id: build_cat.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -2080,7 +2080,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Healer,
                     category_id: build_cat.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await
@@ -2354,7 +2354,7 @@ mod tests {
                     description: None,
                     role: BuildRole::Dps,
                     category_id: build_cat.id,
-                    items: None,
+                    items: crate::events::test_support::main_weapon_items(),
                 },
             )
             .await

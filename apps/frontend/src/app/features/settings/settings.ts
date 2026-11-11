@@ -1,7 +1,7 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -30,6 +30,7 @@ import { Avatar } from '../../shared/components/avatar/avatar';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { DestinyBoard } from '../../shared/components/destiny-board/destiny-board';
+import { WeaponRoster } from '../../shared/components/weapon-roster/weapon-roster';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
@@ -77,6 +78,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
     DataTable,
     DataTableCell,
     DestinyBoard,
+    WeaponRoster,
     Dialog,
     ErrorState,
     Icon,
@@ -199,6 +201,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 
         <!-- TAB: DESTINY BOARD -->
         @if (activeTab() === 'destiny') {
+          <app-weapon-roster mode="self" [specNodes]="specializationNodes()" />
           <article class="card p-6" aria-labelledby="destiny-board-heading">
             <div class="mb-4">
               <h2 id="destiny-board-heading" class="text-base font-semibold" style="color: var(--color-text)">
@@ -673,6 +676,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 export class Settings {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
   protected readonly theme = inject(ThemeService);
   protected readonly translate = inject(TranslateService);
   private readonly toasts = inject(ToastService);
@@ -900,6 +904,10 @@ export class Settings {
 
   constructor() {
     void this.load();
+    // Deep link from the event signup dialog: `/profile?tab=destiny` opens "My weapons".
+    if (this.route.snapshot.queryParamMap.get('tab') === 'destiny') {
+      this.onTabChange('destiny');
+    }
   }
 
   protected roleChip(role?: Role | string): string {

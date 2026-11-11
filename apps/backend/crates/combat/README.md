@@ -15,6 +15,8 @@ The router documents APIs under `/api/combat`:
 - Scenario/run reads: `GET /tests`, `GET /tests/{id}`, `GET /tests/{id}/runs`, `GET /runs/{run_id}`, and `POST /tests/{id}/run`.
 - Scenario management: `POST /tests`, `PATCH /tests/{id}`, `POST /tests/{id}/versions`, and archive/unarchive operations.
 
+- Member weapons, mounted under `/api/users`: `GET`/`PUT /me/weapons` and `GET`/`PUT /{user_id}/weapons` (`user_weapons.rs`). Auto-fill treats a weapon an officer locked for a member as a hard block (`fit::MemberWeapons`) and a declared level as a small score bonus.
+
 (Details pending/documentation failed) Runtime permission mapping and full request/response shapes need a compliant bounded router review.
 
 ## Invariants

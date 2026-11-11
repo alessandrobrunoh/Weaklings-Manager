@@ -40,6 +40,8 @@ function build(version: number, items: BuildItemSlot[]): BuildDetail {
     item_count: items.length,
     main_item_count: items.length,
     archived_at: null,
+    weapon_key: null,
+    weapon_name: null,
     items,
   };
 }
@@ -79,6 +81,8 @@ function comp(
         item_count: 0,
         main_item_count: 0,
         archived_at: null,
+        weapon_key: null,
+        weapon_name: null,
       },
     })),
   };

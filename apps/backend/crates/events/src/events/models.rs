@@ -382,6 +382,20 @@ pub struct EventParticipantView {
     /// identically on the origin and every copy; `None` for legacy or unattributed signups and on
     /// events that are not linked.
     pub guild: Option<super::attribution::ParticipationGuild>,
+    /// The weapons this participant declared and the ones an officer locked for them, so the
+    /// board can warn when a seat's weapon is not one of theirs.
+    pub weapons: Vec<ParticipantWeaponView>,
+}
+
+/// One weapon row of an event participant: a declared level and/or an officer lock.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct ParticipantWeaponView {
+    /// Canonical weapon key, for example `weapon:2H_POLEHAMMER`.
+    pub weapon_key: String,
+    /// The level the participant declared, or `None` when the row only carries an officer lock.
+    pub proficiency: Option<backend_identity::users::weapons::WeaponProficiency>,
+    /// Whether an officer locked this weapon for the participant.
+    pub locked: bool,
 }
 
 /// A battle linked to an event session.
@@ -465,6 +479,8 @@ pub struct EventRosterRoleView {
     pub name: String,
     /// Whether this is the automatic unlimited-capacity Fill role.
     pub is_fill: bool,
+    /// `weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`.
+    pub weapon_key: Option<String>,
 }
 
 /// A concrete build available for the next event signup.
@@ -489,6 +505,28 @@ pub struct EventSignupBuildView {
     pub role: BuildRole,
     /// Available slots from the prospective comp snapshot plus extra event roster slots.
     pub quantity: i32,
+    /// `weapon:{BASE}` of the build's main-hand weapon, when it has one. A build without a
+    /// weapon (a battle mount) is never gated.
+    pub weapon_key: Option<String>,
+    /// Tier-less display name of [`Self::weapon_key`].
+    pub weapon_name: Option<String>,
+    /// Whether the requesting member may pick this build for themselves.
+    pub availability: SignupAvailability,
+}
+
+/// Whether a member's weapons allow them to pick a build for themselves.
+///
+/// Only self-service signup is gated; an officer can still put anyone on any build.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SignupAvailability {
+    /// The build can be picked: its weapon is declared, or the member has no declarations yet,
+    /// or the build carries no weapon.
+    Allowed,
+    /// The member declared weapons and this build's weapon is not one of them.
+    NotDeclared,
+    /// An officer locked this build's weapon for the member.
+    Locked,
 }
 
 /// The server-authoritative choices presented to a member before they select a concrete build.
@@ -505,6 +543,9 @@ pub struct EventSignupOptionsView {
     pub is_already_registered: bool,
     /// Concrete builds available to select, including event-specific extra roster slots.
     pub builds: Vec<EventSignupBuildView>,
+    /// Whether the member declared at least one weapon. When `false`, self-service signup is not
+    /// limited to declared weapons (only to weapons an officer did not lock for them).
+    pub has_declared_weapons: bool,
 }
 
 /// Full details of an event including active comp details and participants list.
@@ -583,6 +624,8 @@ pub struct EventRosterSeatView {
     pub build_name: String,
     pub build_version: i32,
     pub role: String,
+    /// `weapon:{BASE}` of the seat build's main-hand weapon, when it has one.
+    pub weapon_key: Option<String>,
     pub participant: Option<EventParticipantView>,
 }
 

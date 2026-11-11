@@ -10,7 +10,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
-import { validateBuildName } from '../../shared/validation/build-validation';
+import { buildNeedsWeapon, validateBuildName } from '../../shared/validation/build-validation';
 
 import type {
   BuildCategoryView,
@@ -163,7 +163,7 @@ const ITEM_TIERS = [
     } @else if (build(); as current) {
       <app-page-header
         [title]="current.name"
-        [subtitle]="roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))"
+        [subtitle]="roleLabel(current.role) + ' · ' + (current.weapon_name ? current.weapon_name + ' · ' : '') + (current.category_name || t('comps.noCategory'))"
         [badge]="current.archived_at ? t('comps.archived') : undefined"
       >
         <div pageActions class="flex flex-wrap items-center gap-2">
@@ -252,6 +252,16 @@ const ITEM_TIERS = [
       </app-page-header>
 
       <app-page-stack>
+        <!-- ================= MISSING WEAPON ================= -->
+        @if (missingWeapon()) {
+          <div
+            class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex items-center gap-2 text-xs"
+            role="status"
+          >
+            <app-icon name="alert" size="1rem" />
+            <span>{{ t('comps.weaponMissingWarning') }}</span>
+          </div>
+        }
         <!-- ================= EDIT MODE BANNER ================= -->
         @if (mode() === 'edit') {
           <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -743,6 +753,11 @@ export class CompBuildDetailPage {
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly build = signal<BuildDetail | null>(null);
+  /** A non-mount build without a main-hand weapon in its main loadout cannot be saved. */
+  protected readonly missingWeapon = computed(() => {
+    const current = this.build();
+    return current !== null && buildNeedsWeapon(current.role) && !current.weapon_key;
+  });
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
   // Preserve the selected category in the native select even if the category list is incomplete.
   protected readonly editCategoryOptions = computed(() => {
@@ -1227,6 +1242,14 @@ export class CompBuildDetailPage {
     });
     if (nameError) {
       this.toasts.error(nameError.message);
+      return;
+    }
+
+    // The server refuses to save a build without a main-hand weapon (battle mounts excepted), so
+    // say so here instead of after the round trip.
+    const effectiveRole = this.editRole() || build.role;
+    if (buildNeedsWeapon(effectiveRole) && !build.weapon_key) {
+      this.toasts.error(this.t('comps.weaponRequired'));
       return;
     }
 

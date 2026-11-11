@@ -234,6 +234,7 @@ mod readiness_tests {
             specs: SpecLevels::from_rows(specs.iter().map(|(k, l)| (*k, *l))),
             primary_build_id: None,
             secondary_build_id: None,
+            weapons: crate::fit::MemberWeapons::default(),
         }
     }
 

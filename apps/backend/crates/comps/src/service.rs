@@ -189,6 +189,25 @@ fn validate_catalog_item(
     Ok(item)
 }
 
+/// The message for a build that has no main-hand weapon in its main loadout.
+const MAIN_WEAPON_REQUIRED: &str = "a build needs a main-hand weapon in its main loadout";
+
+/// Whether `role` is exempt from the main-hand weapon rule: a battle mount carries no weapon.
+fn role_needs_no_weapon(role: BuildRole) -> bool {
+    role == BuildRole::BattleMount
+}
+
+/// Whether a build's main loadout holds an item in its weapon slot.
+async fn has_main_weapon<C: ConnectionTrait>(db: &C, build_id: i64) -> Result<bool, AppError> {
+    Ok(build_item::Entity::find()
+        .filter(BuildItemColumn::BuildId.eq(build_id))
+        .filter(BuildItemColumn::Loadout.eq(BuildLoadout::Main.as_str()))
+        .filter(BuildItemColumn::Slot.eq(BuildSlot::Weapon.as_str()))
+        .count(db)
+        .await?
+        > 0)
+}
+
 /// The `spell_id` values chosen on one equipped item, grouped by kind.
 async fn read_item_spells(
     db: &DatabaseConnection,
@@ -730,6 +749,23 @@ impl CompService {
             .count(db)
             .await?;
 
+        let weapon_item = build_item::Entity::find()
+            .filter(BuildItemColumn::BuildId.eq(build.id))
+            .filter(BuildItemColumn::Loadout.eq(BuildLoadout::Main.as_str()))
+            .filter(BuildItemColumn::Slot.eq(BuildSlot::Weapon.as_str()))
+            .one(db)
+            .await?;
+        let weapon_key = weapon_item.and_then(|item| {
+            backend_albion_data::openalbion::service::weapon_key_for_stored_item(
+                item.openalbion_item_id,
+                item.openalbion_item_icon.as_deref(),
+            )
+        });
+        let weapon_name = weapon_key
+            .as_deref()
+            .and_then(backend_albion_data::openalbion::service::weapon_name_for_key)
+            .map(str::to_string);
+
         Ok(BuildSummary {
             id: build.id,
             name: build.name,
@@ -744,6 +780,8 @@ impl CompService {
             item_count,
             main_item_count,
             archived_at: build.archived_at.map(|dt| dt.to_rfc3339()),
+            weapon_key,
+            weapon_name,
         })
     }
 
@@ -1086,6 +1124,16 @@ impl CompService {
             )));
         }
 
+        // Every build except a battle mount is fielded with a main-hand weapon, and the weapon is
+        // what members' declared weapons are matched against at signup.
+        let has_weapon = req
+            .items
+            .as_ref()
+            .is_some_and(|items| items.iter().any(|item| item.slot == BuildSlot::Weapon));
+        if !role_needs_no_weapon(req.role) && !has_weapon {
+            return Err(AppError::Validation(MAIN_WEAPON_REQUIRED.to_string()));
+        }
+
         self.ensure_build_identity_free(db, &req.name, req.category_id, creator_id, None)
             .await?;
 
@@ -1206,6 +1254,16 @@ impl CompService {
             let _ = category_id; // used above for validation
         }
 
+        // Switching a build to a role that needs a weapon requires one to be there. Other edits
+        // leave a legacy weaponless build editable, so it can still be fixed.
+        if let Some(new_role) = req.role
+            && !role_needs_no_weapon(new_role)
+            && new_role != parse_role(&build)?
+            && !has_main_weapon(db, build.id).await?
+        {
+            return Err(AppError::Validation(MAIN_WEAPON_REQUIRED.to_string()));
+        }
+
         let target_name = req
             .name
             .as_deref()
@@ -1276,6 +1334,11 @@ impl CompService {
             .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
         // The actor is authorized by the router. The row stays in the source creator's group.
         let _ = creator_id;
+
+        // A version is a full copy, so it must be a valid build on its own.
+        if !role_needs_no_weapon(parse_role(&source)?) && !has_main_weapon(db, source.id).await? {
+            return Err(AppError::Validation(MAIN_WEAPON_REQUIRED.to_string()));
+        }
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
@@ -2500,13 +2563,14 @@ mod tests {
         .id
     }
 
+    /// A build request that satisfies the main-hand weapon rule: a Broadsword in the main loadout.
     fn build_request(name: &str, category_id: i64) -> CreateBuildRequest {
         CreateBuildRequest {
             name: name.to_string(),
             description: None,
             role: BuildRole::Dps,
             category_id,
-            items: None,
+            items: Some(vec![broadsword_create_item(None)]),
         }
     }
 
@@ -3195,11 +3259,12 @@ mod tests {
         let db = seed_db().await;
         let (service, build_id) = seed_build(&db).await;
 
+        // Every build now carries a main-hand weapon, so the swap weapon slot is the empty one.
         let error = service
             .set_build_item_spells(
                 &db,
                 build_id,
-                BuildLoadout::Main,
+                BuildLoadout::Swap,
                 BuildSlot::Weapon,
                 spells(&[("1", "HEROICSTRIKE2")], &[]),
             )
@@ -5610,5 +5675,182 @@ mod tests {
             .await
             .expect("alice may reuse bob's composition name");
         assert_eq!(renamed.summary.name, "Standard");
+    }
+
+    #[tokio::test]
+    async fn a_build_carries_the_key_and_name_of_its_main_weapon() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+
+        let detail = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(detail.summary.weapon_key.as_deref(), Some("weapon:MAIN_SWORD"));
+        assert_eq!(detail.summary.weapon_name.as_deref(), Some("Broadsword"));
+
+        // A swap-loadout weapon is not the build's weapon.
+        service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Swap,
+                BuildSlot::Weapon,
+                weapon("Polehammer"),
+            )
+            .await
+            .unwrap();
+        let after_swap = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(
+            after_swap.summary.weapon_key.as_deref(),
+            Some("weapon:MAIN_SWORD")
+        );
+
+        // Replacing the main weapon changes the derived key and name; no enchantment or tier
+        // leaks into it.
+        service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                weapon("Polehammer"),
+            )
+            .await
+            .unwrap();
+        let replaced = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(
+            replaced.summary.weapon_key.as_deref(),
+            Some("weapon:2H_POLEHAMMER")
+        );
+        assert_eq!(replaced.summary.weapon_name.as_deref(), Some("Polehammer"));
+
+        let listed = service
+            .list_builds(
+                &db,
+                BuildFilters::default(),
+                PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            listed.items[0].weapon_key.as_deref(),
+            Some("weapon:2H_POLEHAMMER"),
+            "the list summaries carry the weapon too"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_build_without_a_main_weapon_is_rejected_unless_it_is_a_battle_mount() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+
+        for items in [None, Some(Vec::new())] {
+            let mut request = build_request("Unarmed", crystal);
+            request.items = items;
+            let error = service
+                .create_build(&db, user, request)
+                .await
+                .expect_err("a non-mount build needs a main-hand weapon");
+            assert!(
+                matches!(&error, AppError::Validation(message) if message.contains("main-hand weapon")),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        let mut mount = build_request("Swiftclaw", crystal);
+        mount.role = BuildRole::BattleMount;
+        mount.items = None;
+        let created = service
+            .create_build(&db, user, mount)
+            .await
+            .expect("a battle mount carries no weapon");
+        assert_eq!(created.summary.weapon_key, None);
+        assert_eq!(created.summary.weapon_name, None);
+    }
+
+    #[tokio::test]
+    async fn switching_a_weaponless_build_to_a_weapon_role_is_rejected() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+        let mut mount = build_request("Swiftclaw", crystal);
+        mount.role = BuildRole::BattleMount;
+        mount.items = None;
+        let created = service.create_build(&db, user, mount).await.unwrap();
+
+        let error = service
+            .update_build(
+                &db,
+                created.summary.id,
+                UpdateBuildRequest {
+                    name: None,
+                    description: None,
+                    role: Some(BuildRole::Tank),
+                    category_id: None,
+                },
+            )
+            .await
+            .expect_err("a weaponless build cannot become a tank");
+        assert!(matches!(error, AppError::Validation(_)));
+
+        // Once it has a weapon the role switch is fine.
+        service
+            .upsert_build_item(
+                &db,
+                created.summary.id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                broadsword(),
+            )
+            .await
+            .unwrap();
+        let updated = service
+            .update_build(
+                &db,
+                created.summary.id,
+                UpdateBuildRequest {
+                    name: None,
+                    description: None,
+                    role: Some(BuildRole::Tank),
+                    category_id: None,
+                },
+            )
+            .await
+            .expect("a build with a weapon can become a tank");
+        assert_eq!(updated.summary.role, BuildRole::Tank);
+    }
+
+    #[tokio::test]
+    async fn a_legacy_weaponless_build_stays_editable_but_cannot_be_versioned() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let legacy = insert_build(&db, "Old Build", "dps", crystal, user).await;
+        let service = CompService::new();
+
+        let renamed = service
+            .update_build(
+                &db,
+                legacy,
+                UpdateBuildRequest {
+                    name: None,
+                    description: Some("still editable".to_string()),
+                    role: None,
+                    category_id: None,
+                },
+            )
+            .await
+            .expect("existing rows are not rewritten and stay editable");
+        assert_eq!(renamed.summary.description.as_deref(), Some("still editable"));
+
+        let error = service
+            .create_build_version(&db, legacy, user)
+            .await
+            .expect_err("a new version is a new build and needs a weapon");
+        assert!(matches!(error, AppError::Validation(_)));
     }
 }

@@ -7,6 +7,7 @@ import {
   buildSignupRoleOptions,
   buildsForSignupRole,
   FILL_SIGNUP_VALUE,
+  selectableSignupBuilds,
   signupRoles,
   type SignupRoleValue,
 } from "../services/event-signup.js";
@@ -149,7 +150,7 @@ export async function handleSelectMenu(
         return;
       }
 
-      const availableRoles = signupRoles(signupOptions.builds);
+      const availableRoles = signupRoles(selectableSignupBuilds(signupOptions.builds));
 
       const {
         ActionRowBuilder,
@@ -256,7 +257,7 @@ export async function handleSelectMenu(
         return;
       }
 
-      const availableBuilds = buildsForSignupRole(signupOptions.builds, role);
+      const availableBuilds = buildsForSignupRole(selectableSignupBuilds(signupOptions.builds), role);
 
       if (availableBuilds.length === 0) {
         const warnEmbed = createResponseEmbed(

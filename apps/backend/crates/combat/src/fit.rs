@@ -19,10 +19,14 @@
 //! most a couple hundred seats, so a few hundred thousand operations costs microseconds — there is
 //! no scale at which the naive approach would be justified by speed.
 
+use std::collections::{HashMap, HashSet};
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::ip::{self, CharacterIpBreakdown, EquippedItem, SpecLevels};
+use backend_entities::status::comps::BuildSlot;
+use backend_identity::users::weapons::{UserWeaponSet, WeaponProficiency};
 
 /// Which build a member already asked to fly, if any — a signal to prefer, not a constraint.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -53,6 +57,60 @@ impl Preference {
     }
 }
 
+/// The weapons a member declared and the ones an officer locked for them.
+///
+/// Locks are a hard rule for assignment (a locked weapon's seat is never filled by the member);
+/// declarations are a soft preference that breaks ties between otherwise similar members.
+#[derive(Debug, Clone, Default)]
+pub struct MemberWeapons {
+    levels: HashMap<String, WeaponProficiency>,
+    locked: HashSet<String>,
+}
+
+impl MemberWeapons {
+    /// Builds the assignment view of a member's stored weapon rows.
+    #[must_use]
+    pub fn from_set(set: &UserWeaponSet) -> Self {
+        let mut weapons = Self::default();
+        for (key, standing) in set.iter() {
+            if let Some(level) = standing.proficiency {
+                weapons.levels.insert(key.to_string(), level);
+            }
+            if standing.locked {
+                weapons.locked.insert(key.to_string());
+            }
+        }
+        weapons
+    }
+
+    /// Whether an officer locked this weapon for the member.
+    #[must_use]
+    pub fn is_locked(&self, weapon_key: &str) -> bool {
+        self.locked.contains(weapon_key)
+    }
+
+    /// The level the member declared for this weapon, if any.
+    #[must_use]
+    pub fn proficiency(&self, weapon_key: &str) -> Option<WeaponProficiency> {
+        self.levels.get(weapon_key).copied()
+    }
+
+    /// Item Power points a declared weapon adds to a seat's score: `main` 60, `good` 40,
+    /// `basic` 20, undeclared 0.
+    ///
+    /// Sized like [`Preference::bonus`]: enough to decide between near-equal candidates in favour
+    /// of someone who said they play the weapon, not enough to seat a clearly worse-trained member
+    /// over a better one who never declared it.
+    fn bonus(&self, weapon_key: &str) -> f64 {
+        match self.proficiency(weapon_key) {
+            Some(WeaponProficiency::Main) => 60.0,
+            Some(WeaponProficiency::Good) => 40.0,
+            Some(WeaponProficiency::Basic) => 20.0,
+            None => 0.0,
+        }
+    }
+}
+
 /// One member available to be seated.
 #[derive(Debug, Clone)]
 pub struct Member {
@@ -64,6 +122,8 @@ pub struct Member {
     pub primary_build_id: Option<i64>,
     /// The build they signed up as secondary, if any.
     pub secondary_build_id: Option<i64>,
+    /// The weapons they declared, and the ones an officer locked for them.
+    pub weapons: MemberWeapons,
 }
 
 /// One seat to be filled.
@@ -81,6 +141,17 @@ pub struct Seat {
     pub items: Vec<EquippedItem>,
 }
 
+impl Seat {
+    /// `weapon:{BASE}` of the weapon the seat's build carries, when its loadout has one.
+    #[must_use]
+    pub fn weapon_key(&self) -> Option<String> {
+        self.items
+            .iter()
+            .find(|item| item.slot == BuildSlot::Weapon && !item.base.is_empty())
+            .map(|item| format!("weapon:{}", item.base))
+    }
+}
+
 /// How well one member fits one seat.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FitScore {
@@ -95,6 +166,10 @@ pub struct FitScore {
     pub preference: Preference,
     /// Reasons this pairing cannot be made, empty when it can.
     pub blocking: Vec<String>,
+    /// Item Power points the member's declared level on the seat's weapon adds to the score.
+    /// Internal tie-break, not part of the API.
+    #[serde(skip)]
+    pub weapon_bonus: f64,
 }
 
 impl FitScore {
@@ -109,7 +184,7 @@ impl FitScore {
         if !self.blocking.is_empty() || self.max_item_power <= 0.0 {
             return 0.0;
         }
-        self.readiness + self.preference.bonus() / self.max_item_power
+        self.readiness + (self.preference.bonus() + self.weapon_bonus) / self.max_item_power
     }
 }
 
@@ -134,6 +209,15 @@ pub fn score(member: &Member, seat: &Seat) -> FitScore {
     if seat.items.is_empty() {
         blocking.push("seat has no equipped items to score against".to_string());
     }
+    // A weapon an officer locked for the member is a hard rule; a declared level only nudges.
+    let mut weapon_bonus = 0.0;
+    if let Some(weapon_key) = seat.weapon_key() {
+        if member.weapons.is_locked(&weapon_key) {
+            blocking.push("an officer locked this weapon for the member".to_string());
+        } else {
+            weapon_bonus = member.weapons.bonus(&weapon_key);
+        }
+    }
 
     FitScore {
         item_power: breakdown.average,
@@ -145,6 +229,7 @@ pub fn score(member: &Member, seat: &Seat) -> FitScore {
         },
         preference,
         blocking,
+        weapon_bonus,
     }
 }
 
@@ -419,9 +504,10 @@ mod hungarian {
 
 #[cfg(test)]
 mod fit_tests {
-    use super::{Assignment, Member, Preference, Seat, assign, score};
+    use super::{Assignment, Member, MemberWeapons, Preference, Seat, assign, score};
     use crate::ip::{EquippedItem, SpecLevels};
     use backend_entities::status::comps::BuildSlot;
+    use backend_identity::users::weapons::{self, UserWeaponSet, WeaponProficiency};
 
     fn polehammer_seat(seat_key: &str, build_id: i64) -> Seat {
         Seat {
@@ -443,6 +529,36 @@ mod fit_tests {
             specs: SpecLevels::from_rows(specs.iter().map(|(k, l)| (*k, *l))),
             primary_build_id: primary,
             secondary_build_id: None,
+            weapons: MemberWeapons::default(),
+        }
+    }
+
+    fn with_weapons(
+        mut member: Member,
+        declared: &[(&str, WeaponProficiency)],
+        locked: &[&str],
+    ) -> Member {
+        let mut rows = Vec::new();
+        for (key, level) in declared {
+            rows.push(row(key, Some(level.as_str()), false));
+        }
+        for key in locked {
+            rows.push(row(key, None, true));
+        }
+        member.weapons = MemberWeapons::from_set(&UserWeaponSet::from_rows(&rows));
+        member
+    }
+
+    fn row(weapon_key: &str, proficiency: Option<&str>, locked: bool) -> weapons::Model {
+        weapons::Model {
+            id: 0,
+            user_id: 0,
+            weapon_key: weapon_key.to_string(),
+            proficiency: proficiency.map(str::to_string),
+            locked,
+            locked_by_user_id: None,
+            updated_at: chrono::Utc::now().into(),
+            updated_by_user_id: None,
         }
     }
 
@@ -632,5 +748,91 @@ mod fit_tests {
         forward_pairs.sort();
         reversed_pairs.sort();
         assert_eq!(forward_pairs, reversed_pairs);
+    }
+
+    #[test]
+    fn a_seat_reports_the_weapon_of_its_loadout() {
+        assert_eq!(
+            polehammer_seat("build:1:1", 1).weapon_key().as_deref(),
+            Some("weapon:2H_POLEHAMMER")
+        );
+        let unarmed = Seat {
+            seat_key: "build:2:1".to_string(),
+            build_id: 2,
+            items: Vec::new(),
+        };
+        assert_eq!(unarmed.weapon_key(), None);
+    }
+
+    #[test]
+    fn a_locked_weapon_blocks_the_seat_for_that_member_only() {
+        let seat = polehammer_seat("build:1:1", 1);
+        let locked = with_weapons(
+            member(1, &[("weapon:2H_POLEHAMMER", 100)], None),
+            &[],
+            &["weapon:2H_POLEHAMMER"],
+        );
+        let fit = score(&locked, &seat);
+        assert!(!fit.blocking.is_empty());
+        assert!((fit.combined() - 0.0).abs() < f64::EPSILON);
+
+        let free = score(&member(2, &[("weapon:2H_POLEHAMMER", 100)], None), &seat);
+        assert!(free.blocking.is_empty());
+    }
+
+    #[test]
+    fn auto_assignment_never_seats_a_member_on_a_weapon_locked_for_them() {
+        let seat = polehammer_seat("build:1:1", 1);
+        // The locked member is far better trained, and still must not take the seat.
+        let locked = with_weapons(
+            member(1, &[("weapon:2H_POLEHAMMER", 100)], Some(1)),
+            &[],
+            &["weapon:2H_POLEHAMMER"],
+        );
+        let weaker = member(2, &[("weapon:2H_POLEHAMMER", 10)], None);
+        let result = assign(&[locked.clone(), weaker], std::slice::from_ref(&seat));
+        assert_eq!(result.placements.len(), 1);
+        assert_eq!(result.placements[0].user_id, 2);
+        assert_eq!(result.unplaced_members, vec![1]);
+
+        let alone = assign(&[locked], &[seat]);
+        assert!(
+            alone.placements.is_empty(),
+            "a lone locked member is left on the bench"
+        );
+        assert_eq!(alone.unfilled_seats, vec!["build:1:1".to_string()]);
+    }
+
+    #[test]
+    fn a_declared_weapon_breaks_a_tie_and_main_beats_good_beats_basic() {
+        let seat = polehammer_seat("build:1:1", 1);
+        let specs = &[("weapon:2H_POLEHAMMER", 60)];
+        let undeclared = member(1, specs, None);
+        let basic = with_weapons(
+            member(2, specs, None),
+            &[("weapon:2H_POLEHAMMER", WeaponProficiency::Basic)],
+            &[],
+        );
+        let good = with_weapons(
+            member(3, specs, None),
+            &[("weapon:2H_POLEHAMMER", WeaponProficiency::Good)],
+            &[],
+        );
+        let main = with_weapons(
+            member(4, specs, None),
+            &[("weapon:2H_POLEHAMMER", WeaponProficiency::Main)],
+            &[],
+        );
+
+        let combined = |member: &Member| score(member, &seat).combined();
+        assert!(combined(&basic) > combined(&undeclared));
+        assert!(combined(&good) > combined(&basic));
+        assert!(combined(&main) > combined(&good));
+
+        let result = assign(
+            &[undeclared, basic, good, main],
+            std::slice::from_ref(&seat),
+        );
+        assert_eq!(result.placements[0].user_id, 4);
     }
 }
