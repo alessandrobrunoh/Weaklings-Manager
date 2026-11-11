@@ -20,6 +20,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
 use subtle::ConstantTimeEq;
 
+use crate::albion_scope;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::migration::Migrator;
@@ -28,7 +29,7 @@ use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
 use crate::modules::capabilities::{self, Enforcement};
 use crate::postgres::{self, connect_tenant_pool, list_active_tenants};
-use crate::{albion_scope, battle_sync, event_sessions};
+use crate::{battle_sync, event_sessions};
 
 /// Header the Discord bot sends to select a guild/tenant.
 ///

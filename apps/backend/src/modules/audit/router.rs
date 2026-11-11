@@ -1,10 +1,8 @@
 use crate::modules::audit::entities;
 use super::service::{AuditListFilters, AuditService};
-use crate::{
-    errors::AppError,
-    modules::auth::{Permission, Permissions, UserContext},
-    pagination::{PaginatedData, PaginationParams},
-};
+use crate::errors::AppError;
+use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::pagination::{PaginatedData, PaginationParams};
 use axum::{Extension, Json, Router, extract::Query, routing::get};
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};

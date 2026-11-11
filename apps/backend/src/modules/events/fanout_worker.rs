@@ -7,21 +7,18 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
 };
 
-use crate::{
-    errors::AppError,
-    modules::{
-        admin::service::AdminService,
-        alliance_share::{ShareActor, copy_alliance_comp_to_tenant},
-        events::{
-            entities::{event, event_roster_role},
-            fanout_outbox::{self, ClaimedTarget, FailureDisposition},
-            models::CreateEventRequest,
-            service::EventService,
-        },
-        users::{entities::Entity as UserEntity, identity::upsert_discord_user},
-    },
-    tenant::TenantRegistry,
+use crate::errors::AppError;
+use crate::modules::admin::service::AdminService;
+use crate::modules::alliance_share::{ShareActor, copy_alliance_comp_to_tenant};
+use crate::modules::events::entities::{event, event_roster_role};
+use crate::modules::events::{
+    fanout_outbox::{self, ClaimedTarget, FailureDisposition},
+    models::CreateEventRequest,
+    service::EventService,
 };
+use crate::modules::users::entities::Entity as UserEntity;
+use crate::modules::users::identity::upsert_discord_user;
+use crate::tenant::TenantRegistry;
 
 const TARGET_LEASE_SECONDS: i64 = 60;
 const MAX_TARGETS_PER_TICK: u64 = 12;
@@ -617,23 +614,20 @@ async fn save_asset_map(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        modules::comps::{
-            models::{
-                AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
-                CreateCompCategoryRequest, CreateCompRequest,
-            },
-            service::CompService,
-            status::BuildRole,
+    use crate::modules::comps::status::BuildRole;
+    use crate::modules::comps::{
+        models::{
+            AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
+            CreateCompCategoryRequest, CreateCompRequest,
         },
-        modules::events::fanout_outbox::Operation,
-        modules::events::{
-            entities::event_roster_role, models::CreateEventRequest, service::EventService,
-        },
-        postgres::{
-            connect_with_search_path, drop_schema, ensure_schema,
-            test_support::{try_admin_db, unique_schema},
-        },
+        service::CompService,
+    };
+    use crate::modules::events::entities::event_roster_role;
+    use crate::modules::events::fanout_outbox::Operation;
+    use crate::modules::events::{models::CreateEventRequest, service::EventService};
+    use crate::postgres::{
+        connect_with_search_path, drop_schema, ensure_schema,
+        test_support::{try_admin_db, unique_schema},
     };
     use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait};
     use sea_orm_migration::MigratorTrait;

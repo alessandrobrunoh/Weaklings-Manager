@@ -16,7 +16,8 @@ use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 use uuid::Uuid;
 
-use crate::{errors::AppError, modules::events::models::ParticipateEventRequest};
+use crate::errors::AppError;
+use crate::modules::events::models::ParticipateEventRequest;
 
 /// Delivery attempts (the synchronous one included) before an entry is parked.
 pub const MAX_ATTEMPTS: i32 = 12;

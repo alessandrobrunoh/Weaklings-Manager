@@ -11,14 +11,11 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{
-    errors::AppError,
-    modules::{
-        alliance_share::ShareActor,
-        events::{entities::event, service::EventService, sync::create_mirror},
-    },
-    tenant::TenantRegistry,
-};
+use crate::errors::AppError;
+use crate::modules::alliance_share::ShareActor;
+use crate::modules::events::entities::event;
+use crate::modules::events::{service::EventService, sync::create_mirror};
+use crate::tenant::TenantRegistry;
 
 const LEASE_SECONDS: i64 = 60;
 const MAX_ATTEMPTS: i32 = 12;

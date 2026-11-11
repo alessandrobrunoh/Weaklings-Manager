@@ -16,15 +16,14 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::modules::splits::{
-    entities::{
-        split::{Column as SplitColumn, Entity as SplitEntity},
-        split_discord_sync::{ActiveModel as SyncActiveModel, Entity as SyncEntity},
-    },
-    models::SplitDetail,
-    service::SplitService,
+use crate::errors::AppError;
+use crate::modules::auth::BotSecret;
+use crate::modules::splits::entities::{
+    split::{Column as SplitColumn, Entity as SplitEntity},
+    split_discord_sync::{ActiveModel as SyncActiveModel, Entity as SyncEntity},
 };
-use crate::{errors::AppError, modules::auth::BotSecret, responses::ApiResponse};
+use crate::modules::splits::{models::SplitDetail, service::SplitService};
+use crate::responses::ApiResponse;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct DiscoveryQuery {

@@ -2804,10 +2804,8 @@ mod tests {
         list_event_calendar, parse_event_revision_ids, require_event_management_authority,
     };
     use crate::errors::AppError;
-    use crate::modules::auth::{
-        Permission, Permissions, UserContext,
-        entities::{role, role_permission},
-    };
+    use crate::modules::auth::entities::{role, role_permission};
+    use crate::modules::auth::{Permission, Permissions, UserContext};
     use crate::modules::comps::entities::{comp, comp_category};
     use crate::modules::events::entities::event;
     use crate::modules::users::entities as users;

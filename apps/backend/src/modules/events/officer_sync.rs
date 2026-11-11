@@ -16,29 +16,23 @@
 
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use crate::{
-    errors::AppError,
-    modules::{
-        alliance_share::{
-            AllianceShareService, ShareActor, ShareParams,
-            models::{ArtifactType, CreateAllianceShareRequest},
-        },
-        events::{
-            entities::{event, event_roster_assignment, event_roster_role},
-            models::{
-                AssignRosterSeatRequest, CreateEventRosterRoleRequest, ParticipateEventRequest,
-                RosterVersionRequest,
-            },
-            service::EventService,
-            sync::{canonical_event_origin, linked_event_peers, map_build, sync_participation},
-        },
-        users::{
-            entities as user_entities,
-            identity::{upsert_discord_user, user_id_for_discord_id},
-        },
-    },
-    tenant::TenantRegistry,
+use crate::errors::AppError;
+use crate::modules::alliance_share::{
+    AllianceShareService, ShareActor, ShareParams,
+    models::{ArtifactType, CreateAllianceShareRequest},
 };
+use crate::modules::events::entities::{event, event_roster_assignment, event_roster_role};
+use crate::modules::events::{
+    models::{
+        AssignRosterSeatRequest, CreateEventRosterRoleRequest, ParticipateEventRequest,
+        RosterVersionRequest,
+    },
+    service::EventService,
+    sync::{canonical_event_origin, linked_event_peers, map_build, sync_participation},
+};
+use crate::modules::users::entities as user_entities;
+use crate::modules::users::identity::{upsert_discord_user, user_id_for_discord_id};
+use crate::tenant::TenantRegistry;
 
 /// How a roster role changed on the event the officer edited.
 pub enum RosterRoleChange {

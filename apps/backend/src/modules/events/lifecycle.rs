@@ -18,21 +18,17 @@ use serde::Serialize;
 use serde_json::json;
 use utoipa::ToSchema;
 
-use crate::{
-    discord_delivery::{
-        kinds::{Cause as OutboxCause, EffectKind},
-        outbox::{self, Effect, EmitOutcome},
-    },
-    errors::AppError,
-    modules::splits::{
-        entities::split,
-        service::{SplitService, SplitSyncState},
-    },
-    tenant::TenantRegistry,
+use crate::discord_delivery::{
+    kinds::{Cause as OutboxCause, EffectKind},
+    outbox::{self, Effect, EmitOutcome},
 };
+use crate::errors::AppError;
+use crate::modules::splits::entities::split;
+use crate::modules::splits::service::{SplitService, SplitSyncState};
+use crate::tenant::TenantRegistry;
 
+use crate::modules::events::entities::event;
 use crate::modules::events::{
-    entities::event,
     fanout_outbox,
     models::EventView,
     service::{EventService, MAX_SESSION_DURATION, reject_if_event_archived},
@@ -2338,14 +2334,14 @@ mod tests {
     }
 
     async fn publish_organized_alliance_event(title: &str) -> Option<Organized> {
+        use crate::modules::comps::entities::comp_build;
+        use crate::modules::comps::status::BuildRole;
         use crate::modules::comps::{
-            entities::comp_build,
             models::{
                 AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
                 CreateCompCategoryRequest, CreateCompRequest,
             },
             service::CompService,
-            status::BuildRole,
         };
         let world = TestWorld::new().await?;
         let alliance_db = &world.tenant_dbs[0];
@@ -2797,10 +2793,8 @@ mod tests {
 
     #[tokio::test]
     async fn officer_roster_roles_reach_every_guild_copy_idempotently() {
-        use crate::modules::events::{
-            entities::event_roster_role,
-            officer_sync::{RosterRoleChange, sync_roster_role},
-        };
+        use crate::modules::events::entities::event_roster_role;
+        use crate::modules::events::officer_sync::{RosterRoleChange, sync_roster_role};
         let Some(case) = publish_organized_alliance_event("Officer roles").await else {
             return;
         };
@@ -3346,13 +3340,13 @@ mod tests {
             AllianceShareService, ShareParams,
             models::{ArtifactType, CreateAllianceShareRequest},
         };
+        use crate::modules::comps::status::BuildRole;
         use crate::modules::comps::{
             models::{
                 AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
                 CreateCompCategoryRequest, CreateCompRequest,
             },
             service::CompService,
-            status::BuildRole,
         };
         let Some(world) = TestWorld::new().await else {
             return;

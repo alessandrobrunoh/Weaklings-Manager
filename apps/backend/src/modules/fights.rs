@@ -20,6 +20,8 @@ use utoipa::ToSchema;
 
 use crate::errors::AppError;
 use crate::modules::albion::entities::albion_link;
+use crate::modules::audit::service::AuditService;
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::battles::entities::{
     Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
 };
@@ -36,10 +38,6 @@ use crate::modules::events::entities::{
 };
 use crate::modules::fight_analytics;
 use crate::modules::users::entities as user;
-use crate::modules::{
-    audit::service::AuditService,
-    auth::{Permission, Permissions, UserContext},
-};
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };

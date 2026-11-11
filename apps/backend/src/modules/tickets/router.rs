@@ -1,12 +1,8 @@
-use crate::modules::tickets::{
-    entities::{Column, Entity, Model},
-    service::TicketService,
-};
-use crate::{
-    errors::AppError,
-    modules::auth::{BotDiscordUser, Permission, Permissions},
-    responses::ApiResponse,
-};
+use crate::errors::AppError;
+use crate::modules::auth::{BotDiscordUser, Permission, Permissions};
+use crate::modules::tickets::entities::{Column, Entity, Model};
+use crate::modules::tickets::service::TicketService;
+use crate::responses::ApiResponse;
 use axum::{
     Extension, Json, Router,
     extract::Path,

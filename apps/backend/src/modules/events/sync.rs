@@ -10,22 +10,18 @@ use sea_orm::{
     QueryOrder, Statement,
 };
 
-use crate::{
-    errors::AppError,
-    modules::{
-        alliance_share::{
-            AllianceShareService, ShareActor, ShareParams,
-            models::{ArtifactType, CreateAllianceShareRequest},
-        },
-        events::{
-            models::{CreateEventRequest, EventView, ParticipateEventRequest},
-            participation_outbox::{self, FailureDisposition, ForwardKey, Intent},
-            service::EventService,
-        },
-        splits::entities::split,
-    },
-    tenant::TenantRegistry,
+use crate::errors::AppError;
+use crate::modules::alliance_share::{
+    AllianceShareService, ShareActor, ShareParams,
+    models::{ArtifactType, CreateAllianceShareRequest},
 };
+use crate::modules::events::{
+    models::{CreateEventRequest, EventView, ParticipateEventRequest},
+    participation_outbox::{self, FailureDisposition, ForwardKey, Intent},
+    service::EventService,
+};
+use crate::modules::splits::entities::split;
+use crate::tenant::TenantRegistry;
 
 /// Ensure an event may create an alliance mirror before the source event is inserted.
 pub async fn assert_active_alliance(

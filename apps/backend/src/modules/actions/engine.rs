@@ -19,8 +19,8 @@ use super::model::{
 use crate::errors::AppError;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::capabilities::catalogue;
+use crate::modules::events::entities::event as event_entity;
 use crate::modules::events::{
-    entities::event as event_entity,
     lifecycle::{
         AfterCommit, Cause, Transition, TransitionOutcome, WakeSet, XpFilter, transition_in_txn,
     },

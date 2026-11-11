@@ -11,7 +11,8 @@ use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 
 use super::wake::{Wake, WakeTarget};
-use crate::{errors::AppError, tenant::TenantRegistry};
+use crate::errors::AppError;
+use crate::tenant::TenantRegistry;
 
 /// Handles a loop body needs. Cloning is cheap (connections and the registry
 /// are reference-counted).
