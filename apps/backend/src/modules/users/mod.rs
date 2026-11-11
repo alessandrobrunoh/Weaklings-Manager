@@ -7,6 +7,7 @@ pub mod entities;
 pub mod identity;
 pub mod member_roles;
 pub mod router;
+pub mod schemas;
 pub mod service;
 pub mod specializations;
 

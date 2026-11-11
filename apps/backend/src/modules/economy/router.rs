@@ -16,9 +16,10 @@ use sea_orm::DatabaseConnection;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{
-    ApiResponse, ApiResponseBattleEconomy, ApiResponseEventEconomy, ApiResponseFightEconomy,
+use crate::modules::economy::schemas::{
+    ApiResponseBattleEconomy, ApiResponseEventEconomy, ApiResponseFightEconomy,
 };
+use crate::responses::ApiResponse;
 
 use super::models::{BattleEconomyView, EventEconomyView, FightEconomyView};
 use super::service::EconomyService;

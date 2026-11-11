@@ -22,11 +22,12 @@ use sea_orm::DatabaseConnection;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedFingerprintSummary, PaginationParams, SortOrder};
-use crate::responses::{
-    ApiResponse, ApiResponseBuildObservationSummary, ApiResponseFingerprintDetail,
-    ApiResponseMetaEntries, ApiResponsePaginatedFingerprints,
+use crate::modules::fingerprints::schemas::{
+    ApiResponseBuildObservationSummary, ApiResponseFingerprintDetail, ApiResponseMetaEntries,
+    ApiResponsePaginatedFingerprints, PaginatedFingerprintSummary,
 };
+use crate::pagination::{PaginationParams, SortOrder};
+use crate::responses::ApiResponse;
 
 use super::models::{
     BuildObservationSummary, FingerprintDetail, ListFingerprintsQuery, MetaEntry, MetaQuery,

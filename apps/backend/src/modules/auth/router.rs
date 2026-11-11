@@ -12,9 +12,10 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::admin::models::BrandColorsView;
 use crate::modules::admin::service::AdminService;
+use crate::modules::auth::schemas::ApiResponseDiscordUserProfile;
 use crate::modules::platform::service::PlatformService;
 use crate::platform_admins::PlatformAdmins;
-use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, TenantRegistry};
 use axum::{
     Extension, Json, Router,

@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn paginated_transactions_report_the_coverage_gap() {
-        let page = crate::pagination::PaginatedTransactionView::from(
+        let page = crate::modules::bank::schemas::PaginatedTransactionView::from(
             crate::pagination::PaginatedData::new(Vec::new(), 0, 0, 1, 10),
         );
         assert!(

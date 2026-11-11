@@ -1,5 +1,7 @@
 //! Read-only canonical Fight API.
 
+pub mod schemas;
+
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -37,11 +39,12 @@ use crate::modules::events::entities::{
     event, event_battle, event_participation, fight, fight_backfill_issue, fight_battle,
 };
 use crate::modules::fight_analytics;
+use crate::modules::fights::schemas::ApiResponseFightBackfillIssueList;
 use crate::modules::users::entities as user;
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
-use crate::responses::{ApiResponse, ApiResponseFightBackfillIssueList};
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId};
 use serde_json::{Value, json};
 

@@ -92,7 +92,7 @@ async fn require_self_or_officer(
         across all seasons. Without a covering season the numeric fields are zeros/level 1.",
     security(("session_cookie" = ["progression.view"])),
     responses(
-        (status = 200, description = "Snapshot retrieved", body = crate::responses::ApiResponseProgressionMeView),
+        (status = 200, description = "Snapshot retrieved", body = crate::modules::progression::schemas::ApiResponseProgressionMeView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks progression.view", body = ProblemDetails)
     )
@@ -314,7 +314,7 @@ async fn activate_season(
         authors return `{ awarded: false, reason: \"unlinked\" }` rather than 401.",
     request_body = AwardMessageRequest,
     responses(
-        (status = 200, description = "Award attempted", body = crate::responses::ApiResponseAwardMessageView),
+        (status = 200, description = "Award attempted", body = crate::modules::progression::schemas::ApiResponseAwardMessageView),
         (status = 401, description = "Invalid or missing bot secret", body = ProblemDetails)
     )
 )]
@@ -340,7 +340,7 @@ async fn award_message(
     security(("session_cookie" = ["progression.view"])),
     params(LeaderboardQuery),
     responses(
-        (status = 200, description = "Leaderboard retrieved", body = crate::responses::ApiResponsePaginatedLeaderboardEntryView),
+        (status = 200, description = "Leaderboard retrieved", body = crate::modules::progression::schemas::ApiResponsePaginatedLeaderboardEntryView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Season not found", body = ProblemDetails)
@@ -380,7 +380,7 @@ async fn get_leaderboard(
     security(("session_cookie" = ["progression.view"])),
     params(("id" = i64, Path, description = "User id")),
     responses(
-        (status = 200, description = "Snapshot retrieved", body = crate::responses::ApiResponseProgressionMeView),
+        (status = 200, description = "Snapshot retrieved", body = crate::modules::progression::schemas::ApiResponseProgressionMeView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -409,7 +409,7 @@ async fn get_user(
     security(("session_cookie" = ["progression.view"])),
     params(("id" = i64, Path, description = "User id"), LedgerQuery),
     responses(
-        (status = 200, description = "Ledger retrieved", body = crate::responses::ApiResponsePaginatedXpLedgerEntryView),
+        (status = 200, description = "Ledger retrieved", body = crate::modules::progression::schemas::ApiResponsePaginatedXpLedgerEntryView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -450,7 +450,7 @@ async fn get_user_ledger(
     params(("id" = i64, Path, description = "User id")),
     request_body = AdjustProgressionRequest,
     responses(
-        (status = 200, description = "Adjusted", body = crate::responses::ApiResponseProgressionMeView),
+        (status = 200, description = "Adjusted", body = crate::modules::progression::schemas::ApiResponseProgressionMeView),
         (status = 400, description = "Invalid payload", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),

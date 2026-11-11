@@ -27,6 +27,7 @@
 pub mod entities;
 pub mod router;
 pub mod rules;
+pub mod schemas;
 pub mod service;
 pub mod writer;
 

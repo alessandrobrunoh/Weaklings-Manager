@@ -11,9 +11,10 @@ use axum::{
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{
-    ApiResponse, ApiResponseCombatDataset, ApiResponseItemPower, ApiResponseMasteryGroups,
+use crate::modules::combat::schemas::{
+    ApiResponseCombatDataset, ApiResponseItemPower, ApiResponseMasteryGroups,
 };
+use crate::responses::ApiResponse;
 
 use super::models::{
     CalibrationView, CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView,
@@ -215,7 +216,7 @@ pub struct MemberItemPowerParams {
     security(("session_cookie" = [])),
     request_body = SimulateRequest,
     responses(
-        (status = 200, description = "The resolved burst", body = crate::responses::ApiResponseSimulate),
+        (status = 200, description = "The resolved burst", body = crate::modules::combat::schemas::ApiResponseSimulate),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -255,7 +256,7 @@ pub struct ListScenariosParams {
     security(("session_cookie" = [])),
     params(ListScenariosParams),
     responses(
-        (status = 200, description = "Scenario versions", body = crate::responses::ApiResponseScenarioSummaryList),
+        (status = 200, description = "Scenario versions", body = crate::modules::combat::schemas::ApiResponseScenarioSummaryList),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -282,7 +283,7 @@ async fn list_scenarios(
     security(("session_cookie" = [])),
     request_body = CreateScenarioRequest,
     responses(
-        (status = 200, description = "The created scenario", body = crate::responses::ApiResponseScenarioDetail),
+        (status = 200, description = "The created scenario", body = crate::modules::combat::schemas::ApiResponseScenarioDetail),
         (status = 400, description = "Empty name", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.tests.manage", body = ProblemDetails),
@@ -312,7 +313,7 @@ async fn create_scenario(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Scenario version ID")),
     responses(
-        (status = 200, description = "The scenario version", body = crate::responses::ApiResponseScenarioDetail),
+        (status = 200, description = "The scenario version", body = crate::modules::combat::schemas::ApiResponseScenarioDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Scenario not found", body = ProblemDetails)
     )
@@ -342,7 +343,7 @@ async fn get_scenario(
     params(("id" = i64, Path, description = "Scenario version ID")),
     request_body = UpdateScenarioRequest,
     responses(
-        (status = 200, description = "The updated scenario", body = crate::responses::ApiResponseScenarioDetail),
+        (status = 200, description = "The updated scenario", body = crate::modules::combat::schemas::ApiResponseScenarioDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.tests.manage", body = ProblemDetails),
         (status = 404, description = "Scenario not found", body = ProblemDetails),
@@ -375,7 +376,7 @@ async fn update_scenario(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Source scenario version ID")),
     responses(
-        (status = 200, description = "The new version", body = crate::responses::ApiResponseScenarioDetail),
+        (status = 200, description = "The new version", body = crate::modules::combat::schemas::ApiResponseScenarioDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.tests.manage", body = ProblemDetails),
         (status = 404, description = "Scenario not found", body = ProblemDetails)
@@ -404,7 +405,7 @@ async fn create_scenario_version(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Scenario version ID")),
     responses(
-        (status = 200, description = "The archived scenario", body = crate::responses::ApiResponseScenarioDetail),
+        (status = 200, description = "The archived scenario", body = crate::modules::combat::schemas::ApiResponseScenarioDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.tests.manage", body = ProblemDetails),
         (status = 404, description = "Scenario not found", body = ProblemDetails)
@@ -433,7 +434,7 @@ async fn archive_scenario(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Scenario version ID")),
     responses(
-        (status = 200, description = "The unarchived scenario", body = crate::responses::ApiResponseScenarioDetail),
+        (status = 200, description = "The unarchived scenario", body = crate::modules::combat::schemas::ApiResponseScenarioDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.tests.manage", body = ProblemDetails),
         (status = 404, description = "Scenario not found", body = ProblemDetails)
@@ -467,7 +468,7 @@ async fn unarchive_scenario(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Scenario version ID")),
     responses(
-        (status = 200, description = "The pinned run", body = crate::responses::ApiResponseRunDetail),
+        (status = 200, description = "The pinned run", body = crate::modules::combat::schemas::ApiResponseRunDetail),
         (status = 400, description = "Stored scenario definition is unreadable", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Scenario not found", body = ProblemDetails)
@@ -496,7 +497,7 @@ async fn run_scenario(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Scenario version ID")),
     responses(
-        (status = 200, description = "Past runs", body = crate::responses::ApiResponseRunSummaryList),
+        (status = 200, description = "Past runs", body = crate::modules::combat::schemas::ApiResponseRunSummaryList),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -521,7 +522,7 @@ async fn list_runs(
     security(("session_cookie" = [])),
     params(("run_id" = i64, Path, description = "Run ID")),
     responses(
-        (status = 200, description = "The pinned run", body = crate::responses::ApiResponseRunDetail),
+        (status = 200, description = "The pinned run", body = crate::modules::combat::schemas::ApiResponseRunDetail),
         (status = 400, description = "Stored run is unreadable", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "Run not found", body = ProblemDetails)
@@ -553,7 +554,7 @@ async fn get_run(
                    accuracy across the whole guild, not a member's own Item Power.",
     security(("session_cookie" = [])),
     responses(
-        (status = 200, description = "The calibration report", body = crate::responses::ApiResponseCalibration),
+        (status = 200, description = "The calibration report", body = crate::modules::combat::schemas::ApiResponseCalibration),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.calibration.view", body = ProblemDetails)
     )

@@ -10,12 +10,13 @@ use super::service::{
 };
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedAlbionGuildMember, PaginationParams};
-use crate::responses::{
-    ApiResponse, ApiResponseAlbionLinkRequests, ApiResponseAlbionLinkStatus,
-    ApiResponsePaginatedAlbionGuildMembers,
+use crate::modules::albion::schemas::{
+    ApiResponseAlbionLinkRequests, ApiResponseAlbionLinkStatus,
+    ApiResponsePaginatedAlbionGuildMembers, PaginatedAlbionGuildMember,
 };
+use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::pagination::PaginationParams;
+use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 use axum::{
     Extension, Json, Router,

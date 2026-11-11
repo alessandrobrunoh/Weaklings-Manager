@@ -20,13 +20,12 @@ use sea_orm::DatabaseConnection;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{
-    PaginatedEnemyGuildSummary, PaginatedEnemyPlayerSummary, PaginationParams, SortOrder,
+use crate::modules::enemies::schemas::{
+    ApiResponseEnemyGuildDossier, ApiResponseEnemyPlayerDossier, ApiResponsePaginatedEnemyGuilds,
+    ApiResponsePaginatedEnemyPlayers, PaginatedEnemyGuildSummary, PaginatedEnemyPlayerSummary,
 };
-use crate::responses::{
-    ApiResponse, ApiResponseEnemyGuildDossier, ApiResponseEnemyPlayerDossier,
-    ApiResponsePaginatedEnemyGuilds, ApiResponsePaginatedEnemyPlayers,
-};
+use crate::pagination::{PaginationParams, SortOrder};
+use crate::responses::ApiResponse;
 
 use super::models::{
     EnemyGuildDossier, EnemyPlayerDossier, ListEnemyGuildsQuery, ListEnemyPlayersQuery,

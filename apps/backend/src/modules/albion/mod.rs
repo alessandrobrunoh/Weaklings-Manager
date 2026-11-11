@@ -11,6 +11,7 @@ pub mod discord_nick;
 pub mod entities;
 pub mod notify;
 pub mod router;
+pub mod schemas;
 pub mod service;
 
 pub use router::router;

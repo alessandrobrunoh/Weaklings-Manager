@@ -73,7 +73,7 @@ pub fn router() -> Router {
     security(("session_cookie" = ["giveaways.view"])),
     params(ListGiveawaysQuery),
     responses(
-        (status = 200, description = "Giveaways retrieved", body = crate::responses::ApiResponsePaginatedGiveawayView),
+        (status = 200, description = "Giveaways retrieved", body = crate::modules::giveaways::schemas::ApiResponsePaginatedGiveawayView),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -100,7 +100,7 @@ async fn list_giveaways(
     security(("session_cookie" = ["giveaways.create"])),
     request_body = CreateGiveawayRequest,
     responses(
-        (status = 200, description = "Giveaway created", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Giveaway created", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 400, description = "Invalid payload", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
@@ -128,7 +128,7 @@ async fn create_giveaway(
     security(("session_cookie" = ["giveaways.view"])),
     params(("id" = i64, Path, description = "Giveaway ID")),
     responses(
-        (status = 200, description = "Giveaway retrieved", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Giveaway retrieved", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails)
@@ -155,7 +155,7 @@ async fn get_giveaway(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Giveaway ID")),
     responses(
-        (status = 200, description = "Entered", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Entered", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails),
         (status = 409, description = "Giveaway is closed", body = ProblemDetails)
@@ -180,7 +180,7 @@ async fn enter_giveaway(
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Giveaway ID")),
     responses(
-        (status = 200, description = "Left", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Left", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 404, description = "Not found", body = ProblemDetails),
         (status = 409, description = "Giveaway is closed", body = ProblemDetails)
@@ -205,7 +205,7 @@ async fn leave_giveaway(
     security(("session_cookie" = ["giveaways.manage"])),
     params(("id" = i64, Path, description = "Giveaway ID")),
     responses(
-        (status = 200, description = "Cancelled", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Cancelled", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 409, description = "Giveaway is not open", body = ProblemDetails)
@@ -232,7 +232,7 @@ async fn cancel_giveaway(
     security(("session_cookie" = ["giveaways.manage"])),
     params(("id" = i64, Path, description = "Giveaway ID")),
     responses(
-        (status = 200, description = "Drawn", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Drawn", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -259,7 +259,7 @@ async fn draw_giveaway(
     params(("id" = i64, Path, description = "Giveaway ID")),
     request_body = SetGiveawayDiscordMessageRequest,
     responses(
-        (status = 200, description = "Stored", body = crate::responses::ApiResponseGiveawayDetail),
+        (status = 200, description = "Stored", body = crate::modules::giveaways::schemas::ApiResponseGiveawayDetail),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )

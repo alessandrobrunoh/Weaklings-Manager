@@ -17,6 +17,7 @@ pub mod models;
 pub mod report;
 pub mod roles;
 pub mod router;
+pub mod schemas;
 pub mod scout;
 pub mod service;
 pub mod similarity;

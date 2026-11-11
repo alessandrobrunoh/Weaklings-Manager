@@ -7,6 +7,7 @@ pub mod alliance;
 pub mod entities;
 pub mod models;
 pub mod router;
+pub mod schemas;
 pub mod service;
 pub mod status;
 

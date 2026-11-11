@@ -36,7 +36,7 @@ pub fn router() -> Router {
     security(("session_cookie" = ["vod.submit"])),
     request_body = SubmitVodRequest,
     responses(
-        (status = 200, description = "VOD claimed", body = crate::responses::ApiResponseVodReviewView),
+        (status = 200, description = "VOD claimed", body = crate::modules::vods::schemas::ApiResponseVodReviewView),
         (status = 400, description = "Forum not configured, thread not found / wrong forum / other server, or URL host not allowed", body = ProblemDetails),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden or not the thread owner", body = ProblemDetails),
@@ -80,7 +80,7 @@ async fn submit_vod(
     summary = "List the caller's claimed VOD reviews",
     security(("session_cookie" = ["vod.submit"])),
     responses(
-        (status = 200, description = "List retrieved", body = crate::responses::ApiResponseVodReviewViewList),
+        (status = 200, description = "List retrieved", body = crate::modules::vods::schemas::ApiResponseVodReviewViewList),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )

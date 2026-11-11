@@ -56,7 +56,7 @@ pub struct PricesQuery {
     security(("session_cookie" = [])),
     params(PricesQuery),
     responses(
-        (status = 200, description = "Market prices retrieved successfully", body = crate::responses::ApiResponseAlbionDataMarketPriceList),
+        (status = 200, description = "Market prices retrieved successfully", body = crate::modules::albiondata::schemas::ApiResponseAlbionDataMarketPriceList),
         (status = 400, description = "Invalid item list or query", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 502, description = "Upstream Albion Online Data API error", body = ProblemDetails)
@@ -100,7 +100,7 @@ pub struct ItemIconQuery {
         ItemIconQuery,
     ),
     responses(
-        (status = 200, description = "Item icon URL resolved successfully", body = crate::responses::ApiResponseAlbionDataItemIcon),
+        (status = 200, description = "Item icon URL resolved successfully", body = crate::modules::albiondata::schemas::ApiResponseAlbionDataItemIcon),
         (status = 400, description = "Invalid item id, quality, or size", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )

@@ -128,7 +128,7 @@ pub fn router() -> Router {
     security(("session_cookie" = ["regear.view"])),
     params(ListDeathsQuery),
     responses(
-        (status = 200, description = "Deaths retrieved successfully", body = ApiResponse<crate::pagination::PaginatedDeathView>),
+        (status = 200, description = "Deaths retrieved successfully", body = ApiResponse<crate::modules::regear::schemas::PaginatedDeathView>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks regear.view, or used global without regear.adjudicate", body = ProblemDetails)
     )
@@ -138,7 +138,7 @@ async fn list_deaths(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(query): Query<ListDeathsQuery>,
-) -> Result<Json<ApiResponse<crate::pagination::PaginatedDeathView>>, AppError> {
+) -> Result<Json<ApiResponse<crate::modules::regear::schemas::PaginatedDeathView>>, AppError> {
     user.require(&perms, Permission::RegearView).await?;
     let global = query.filters.global.unwrap_or(false);
     if global {
@@ -155,7 +155,7 @@ async fn list_deaths(
         )
         .await?;
     Ok(Json(ApiResponse::new(
-        crate::pagination::PaginatedDeathView::from(paginated),
+        crate::modules::regear::schemas::PaginatedDeathView::from(paginated),
     )))
 }
 
@@ -243,7 +243,7 @@ async fn request_regear(
     security(("session_cookie" = ["regear.adjudicate"])),
     params(ListDeathsQuery),
     responses(
-        (status = 200, description = "Pending requests retrieved", body = ApiResponse<crate::pagination::PaginatedDeathView>),
+        (status = 200, description = "Pending requests retrieved", body = ApiResponse<crate::modules::regear::schemas::PaginatedDeathView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks regear.adjudicate", body = ProblemDetails)
     )
@@ -253,7 +253,7 @@ async fn list_pending_requests(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(query): Query<ListDeathsQuery>,
-) -> Result<Json<ApiResponse<crate::pagination::PaginatedDeathView>>, AppError> {
+) -> Result<Json<ApiResponse<crate::modules::regear::schemas::PaginatedDeathView>>, AppError> {
     user.require(&perms, Permission::RegearAdjudicate).await?;
     let mut filters = query.filters.clone();
     // Force the status filter to pending; ignore whatever the client sent.
@@ -263,7 +263,7 @@ async fn list_pending_requests(
         .list_deaths(&db, user.user_id, true, &query.pagination(), &filters)
         .await?;
     Ok(Json(ApiResponse::new(
-        crate::pagination::PaginatedDeathView::from(paginated),
+        crate::modules::regear::schemas::PaginatedDeathView::from(paginated),
     )))
 }
 
@@ -364,7 +364,7 @@ async fn reject_request(
     security(("session_cookie" = ["regear.view"])),
     params(ListDeathsQuery),
     responses(
-        (status = 200, description = "Deaths retrieved", body = ApiResponse<crate::pagination::PaginatedDeathView>),
+        (status = 200, description = "Deaths retrieved", body = ApiResponse<crate::modules::regear::schemas::PaginatedDeathView>),
         (status = 401, description = "Unauthorized", body = ProblemDetails),
         (status = 403, description = "Forbidden", body = ProblemDetails)
     )
@@ -375,7 +375,7 @@ async fn list_event_deaths(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(event_id): Path<i64>,
     Query(query): Query<ListDeathsQuery>,
-) -> Result<Json<ApiResponse<crate::pagination::PaginatedDeathView>>, AppError> {
+) -> Result<Json<ApiResponse<crate::modules::regear::schemas::PaginatedDeathView>>, AppError> {
     user.require(&perms, Permission::RegearView).await?;
     let global = query.filters.global.unwrap_or(false);
     if global {
@@ -388,7 +388,7 @@ async fn list_event_deaths(
         .list_deaths(&db, user.user_id, global, &query.pagination(), &filters)
         .await?;
     Ok(Json(ApiResponse::new(
-        crate::pagination::PaginatedDeathView::from(paginated),
+        crate::modules::regear::schemas::PaginatedDeathView::from(paginated),
     )))
 }
 
