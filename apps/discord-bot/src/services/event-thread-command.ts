@@ -13,7 +13,11 @@ import type {
 } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
 import { getPoller, type Poller } from "./poller.js";
-import { buildSignupRoleOptions, signupRoles } from "./event-signup.js";
+import {
+  buildSignupRoleOptions,
+  selectableSignupBuilds,
+  signupRoles,
+} from "./event-signup.js";
 import {
   buildGuildSelectRow,
   buildRoleSelectCustomId,
@@ -277,8 +281,33 @@ async function joinEvent(
 
   const buildQuery = interaction.options.getString("build", false);
   if (buildQuery !== null) {
-    const match = resolveSignupBuildByName(signupOptions.builds, buildQuery);
+    const selectable = selectableSignupBuilds(signupOptions.builds);
+    const match = resolveSignupBuildByName(selectable, buildQuery);
     if (match.kind === "none") {
+      // A build that exists but is not open to this member gets the reason, not "not found".
+      const blocked = resolveSignupBuildByName(signupOptions.builds, buildQuery);
+      if (blocked.kind === "unique") {
+        await interaction.editReply({
+          embeds: [
+            createResponseEmbed(
+              "warning",
+              eventThreadCopy(interaction.locale, "buildNotAllowedTitle"),
+              eventThreadCopy(
+                interaction.locale,
+                blocked.build.availability === "locked"
+                  ? "buildLockedBody"
+                  : "buildNotDeclaredBody",
+                {
+                  build: blocked.build.name,
+                  weapon: blocked.build.weapon_name ?? blocked.build.name,
+                },
+              ),
+              "GUILD EVENT",
+            ),
+          ],
+        });
+        return;
+      }
       await interaction.editReply({
         embeds: [
           createResponseEmbed(
@@ -286,7 +315,7 @@ async function joinEvent(
             eventThreadCopy(interaction.locale, "buildNoMatchTitle"),
             eventThreadCopy(interaction.locale, "buildNoMatchBody", {
               query: buildQuery,
-              builds: listBuildNames(signupOptions.builds),
+              builds: listBuildNames(selectable),
             }),
             "GUILD EVENT",
           ),
@@ -391,7 +420,7 @@ async function joinEvent(
     });
     return;
   }
-  const availableRoles = signupRoles(signupOptions.builds);
+  const availableRoles = signupRoles(selectableSignupBuilds(signupOptions.builds));
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(buildRoleSelectCustomId(eventId, cardMessageId, guildTenantId))
     .setPlaceholder("Select your Role")

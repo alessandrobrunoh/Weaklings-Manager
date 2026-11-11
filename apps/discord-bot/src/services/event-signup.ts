@@ -19,6 +19,19 @@ export interface SignupRoleOption {
   description?: string;
 }
 
+/**
+ * Keeps only the builds the member may pick themselves.
+ *
+ * The backend marks builds of weapons the member has not declared, or that an officer locked for
+ * them, and rejects those signups; hiding them keeps the menus to choices that will succeed. Fill
+ * is not a build and stays available regardless.
+ */
+export function selectableSignupBuilds(
+  builds: readonly EventSignupBuildOption[],
+): EventSignupBuildOption[] {
+  return builds.filter((build) => build.availability === "allowed");
+}
+
 /** Returns the role categories represented by the server-authoritative signup build list. */
 export function signupRoles(builds: readonly EventSignupBuildOption[]): BuildRole[] {
   return [...new Set(builds.map((build) => build.role))];

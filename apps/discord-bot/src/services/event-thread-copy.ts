@@ -8,6 +8,11 @@ const eventThreadText = {
     buildNoMatchTitle: "Build Not Found",
     buildNoMatchBody:
       "No signup build matches \"{query}\". Available builds: {builds}.",
+    buildNotAllowedTitle: "Build Not Available To You",
+    buildNotDeclaredBody:
+      "{build} uses {weapon}, which is not in your weapons. Add it in Profile → Destiny on the website, or sign up as Fill.",
+    buildLockedBody:
+      "{build} uses {weapon}, which an officer locked for you. Pick another build or sign up as Fill.",
     buildAmbiguousTitle: "Build Ambiguous",
     buildAmbiguousBody:
       "\"{query}\" matches more than one build: {matches}. Use the full name, or rerun without `build` to pick from the menu.",
@@ -19,6 +24,11 @@ const eventThreadText = {
     buildNoMatchTitle: "Build non trovata",
     buildNoMatchBody:
       "Nessuna build di iscrizione corrisponde a \"{query}\". Build disponibili: {builds}.",
+    buildNotAllowedTitle: "Build non disponibile per te",
+    buildNotDeclaredBody:
+      "{build} usa {weapon}, che non è tra le tue armi. Aggiungila in Profilo → Destiny sul sito, oppure iscriviti come Fill.",
+    buildLockedBody:
+      "{build} usa {weapon}, che un officer ti ha bloccato. Scegli un'altra build o iscriviti come Fill.",
     buildAmbiguousTitle: "Build ambigua",
     buildAmbiguousBody:
       "\"{query}\" corrisponde a più build: {matches}. Usa il nome completo, o riesegui senza `build` per scegliere dal menu.",
