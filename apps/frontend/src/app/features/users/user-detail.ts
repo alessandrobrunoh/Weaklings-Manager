@@ -40,6 +40,7 @@ import { normalizeAlbionSpecializationKey } from '../../shared/data/albion-equip
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { DestinyBoard } from '../../shared/components/destiny-board/destiny-board';
+import { WeaponRoster } from '../../shared/components/weapon-roster/weapon-roster';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
@@ -82,6 +83,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     DatePipe,
     DecimalPipe,
     DestinyBoard,
+    WeaponRoster,
     Dialog,
     EmptyState,
     ErrorState,
@@ -540,6 +542,15 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           </form>
         }
 
+        <!-- Weapons the member can play, with officer locks -->
+        @if (member(); as weaponsMember) {
+          <app-weapon-roster
+            mode="manage"
+            [userId]="weaponsMember.id"
+            [editable]="canManageWeapons()"
+          />
+        }
+
         <!-- Albion Combat Specializations -->
         <section class="card p-6" aria-labelledby="specializations-heading">
           <div class="mb-4">
@@ -788,6 +799,11 @@ export class UserDetailPage {
       this.auth.hasPermission('users.specializations.manage')
     );
   });
+
+  /** Declaring and locking another member's weapons takes the same permission as editing their specs. */
+  protected readonly canManageWeapons = computed(() =>
+    this.auth.hasPermission('users.specializations.manage'),
+  );
 
   protected readonly canManageLinks = computed(
     () =>

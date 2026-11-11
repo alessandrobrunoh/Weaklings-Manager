@@ -317,6 +317,77 @@ export interface UpdateSpecializationsRequest {
   specializations: UserSpecializationInput[];
 }
 
+/** How well a member plays a weapon. UI labels are Main / Good / Basic. */
+export type WeaponProficiency = 'main' | 'good' | 'basic';
+
+/**
+ * One weapon in a member's "My weapons" list.
+ *
+ * `weapon_key` is `weapon:{BASE}` (tier-less base identifier, no enchantment), the same format as
+ * the Destiny Board node key. `proficiency: null` means the member never declared it and the row
+ * only exists because an officer locked it.
+ */
+export interface UserWeapon {
+  weapon_key: string;
+  weapon_name: string;
+  proficiency: WeaponProficiency | null;
+  locked: boolean;
+  updated_at: string;
+}
+
+export interface DeclareWeaponInput {
+  weapon_key: string;
+  proficiency: WeaponProficiency;
+}
+
+/** Replaces the caller's declarations; locked rows are never changed by this call. */
+export interface UpdateMyWeaponsRequest {
+  weapons: DeclareWeaponInput[];
+}
+
+export interface ManageWeaponInput {
+  weapon_key: string;
+  proficiency: WeaponProficiency | null;
+  locked: boolean;
+}
+
+/** Officer replace of a member's whole weapon list, locks included. */
+export interface ManageUserWeaponsRequest {
+  weapons: ManageWeaponInput[];
+}
+
+/** A weapon of a participant as carried by event rosters. */
+export interface ParticipantWeapon {
+  weapon_key: string;
+  proficiency: WeaponProficiency | null;
+  locked: boolean;
+}
+
+/** Whether a member may sign up with a build, given their declared weapons. */
+export type SignupAvailability = 'allowed' | 'not_declared' | 'locked';
+
+/** A concrete build selectable while joining an event (`GET /api/events/{id}/signup-options`). */
+export interface EventSignupBuild {
+  build_id: number;
+  name: string;
+  role: BuildRole;
+  quantity: number;
+  weapon_key: string | null;
+  weapon_name: string | null;
+  availability: SignupAvailability;
+}
+
+/** The server-authoritative choices presented to a member before they select a build. */
+export interface EventSignupOptions {
+  active_comp_id: number;
+  active_comp_name: string;
+  active_comp_capacity: number;
+  is_already_registered: boolean;
+  /** False while the member has declared no weapon: any build is then allowed (except locked ones). */
+  has_declared_weapons: boolean;
+  builds: EventSignupBuild[];
+}
+
 export interface UserMetrics {
   most_played_build: string | null;
   events_attended: number;
@@ -702,6 +773,8 @@ export interface EventRosterRole {
   build_id: number | null;
   name: string;
   is_fill: boolean;
+  /** Weapon of the role's build; `null` for Fill and for builds without a main-loadout weapon. */
+  weapon_key: string | null;
 }
 
 export interface EventFight {
@@ -893,6 +966,8 @@ export interface EventParticipant {
   assigned_build_id?: number | null;
   assigned_build_name?: string | null;
   specializations?: Record<string, number>;
+  /** Weapons the member declared (or an officer locked). Empty when none. */
+  weapons: ParticipantWeapon[];
   /** Member guild the participant signed up for; `null` when unattributed or the event is not linked. */
   guild?: ParticipantGuild | null;
 }
@@ -915,6 +990,7 @@ export interface EventRosterParticipant {
   assigned_build_id?: number | null;
   assigned_build_name?: string | null;
   specializations: Record<string, number>;
+  weapons: ParticipantWeapon[];
   guild?: ParticipantGuild | null;
 }
 
@@ -927,6 +1003,8 @@ export interface EventRosterSeat {
   build_name: string;
   build_version: number;
   role: string;
+  /** Weapon of the seat's build; `null` when the build has no main-loadout weapon. */
+  weapon_key: string | null;
   participant: EventRosterParticipant | null;
 }
 
@@ -1450,6 +1528,10 @@ export interface BuildSummary {
   main_item_count: number;
   /** When this build was archived, if it has been. `null` means it's active. */
   archived_at: string | null;
+  /** `weapon:{BASE}` of the main-loadout weapon; `null` when the build has none. */
+  weapon_key: string | null;
+  /** Tier-less display name of {@link weapon_key}. */
+  weapon_name: string | null;
 }
 
 /** One sibling version of a build or comp, for the version switcher. */

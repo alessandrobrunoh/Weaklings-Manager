@@ -18,6 +18,8 @@ function build(id: number, name: string, role: BuildRole): BuildSummary {
     item_count: 1,
     main_item_count: 1,
     archived_at: null,
+    weapon_key: null,
+    weapon_name: null,
   };
 }
 
