@@ -25,11 +25,10 @@ use crate::modules::albion::entities::albion_link;
 use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::battles::entities::{
-    Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
+    BattleLossEstimate, BattlePlayer, Column as GuildBattleSnapshotColumn,
+    Entity as GuildBattleSnapshotEntity, GuildLossEstimate, PlayerLossEstimate,
 };
-use crate::modules::battles::models::{
-    BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
-};
+use crate::modules::battles::models::BattleGuildSummary;
 use crate::modules::battles::outcome::{
     BattleOutcome, BattleSide, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome,
     combine_segments,

@@ -360,7 +360,7 @@ mod tests {
     #[tokio::test]
     async fn first_read_creates_exactly_one_row_and_repeats_are_idempotent() {
         let db = seed_db().await;
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         let first = get_or_create_balance(&db, &settings, 7).await.unwrap();
@@ -374,7 +374,7 @@ mod tests {
     #[tokio::test]
     async fn consume_spends_bonus_first_then_weekly_and_never_goes_negative() {
         let db = seed_db().await;
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         get_or_create_balance(&db, &settings, 1).await.unwrap();
@@ -394,7 +394,7 @@ mod tests {
     #[tokio::test]
     async fn consume_with_one_credit_left_succeeds_exactly_once() {
         let db = seed_db().await;
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         get_or_create_balance(&db, &settings, 2).await.unwrap();
@@ -412,7 +412,7 @@ mod tests {
     #[tokio::test]
     async fn credit_bonus_adds_and_clamps_at_the_cap_in_one_statement() {
         let db = seed_db().await;
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         credit_bonus(&db, &settings, 3, 1).await.unwrap();
@@ -428,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn weekly_topup_is_applied_once_per_elapsed_week() {
         let db = seed_db().await;
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         get_or_create_balance(&db, &settings, 4).await.unwrap();
@@ -466,7 +466,7 @@ mod tests {
             return;
         };
         let db = tenant.db.clone();
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         get_or_create_balance(&db, &settings, 1).await.unwrap();
@@ -499,7 +499,7 @@ mod tests {
             return;
         };
         let db = tenant.db.clone();
-        let settings = crate::modules::regear::service::load_settings(&db)
+        let settings = crate::modules::regear::entities::load_settings(&db)
             .await
             .unwrap();
         let mut handles = Vec::new();

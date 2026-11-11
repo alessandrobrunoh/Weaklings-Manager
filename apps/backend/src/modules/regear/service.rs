@@ -35,7 +35,7 @@ use super::models::{
 use super::slots::albionbb_key_for_slot;
 use crate::modules::regear::entities::{
     RegearDeathActiveModel, RegearDeathColumn, RegearDeathEntity, RegearDeathModel,
-    RegearSettingActiveModel, RegearSettingEntity, RegearSettingModel,
+    RegearSettingActiveModel, load_settings,
 };
 use crate::modules::regear::status::{RegearSource, RegearStatus};
 
@@ -978,23 +978,6 @@ impl Default for RegearService {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Loads the singleton settings row, raising `Internal` if it is missing (it is seeded by the
-/// migration so this should only happen on a corrupted DB).
-///
-/// Generic over `ConnectionTrait` (not just `DatabaseConnection`) so `giveaways::service` can
-/// call it with `&txn` from inside its own draw transaction — acquiring a second pool connection
-/// there instead would deadlock a single-connection SQLite pool. `pub(crate)` for that same
-/// cross-module use.
-pub(crate) async fn load_settings<C>(db: &C) -> Result<RegearSettingModel, AppError>
-where
-    C: sea_orm::ConnectionTrait,
-{
-    RegearSettingEntity::find()
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::Internal("regear_settings singleton row is missing".to_string()))
 }
 
 /// Sums the contributions of included breakdown rows. Used by `accept_request` to verify the

@@ -29,14 +29,14 @@ use crate::pagination::{
 };
 
 use super::models::{
-    BattleDetail, BattleFightMetadata, BattleGuildSummary, BattleLossEstimate, BattleSummary,
-    GuildLossEstimate, LinkedEvent, PlayerLossEstimate,
+    BattleDetail, BattleFightMetadata, BattleGuildSummary, BattleSummary, LinkedEvent,
 };
 use super::outcome::{self, BattleOutcome, FriendlySide, GuildLine};
 use super::{evidence, evidence_writer};
-use crate::modules::battles::entities::Entity as GuildBattleSnapshotEntity;
 use crate::modules::battles::entities::{
-    ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
+    ActiveModel as GuildBattleSnapshotActiveModel, BattleLossEstimate,
+    Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity, GuildLossEstimate,
+    PlayerLossEstimate,
 };
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before

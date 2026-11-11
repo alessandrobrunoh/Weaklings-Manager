@@ -7,6 +7,8 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::AppError;
+
 /// One eligible death of a guild member in a battle linked to a `call_to_arms` event.
 pub mod regear_death {
     use super::{
@@ -169,3 +171,40 @@ pub use regear_setting::{
     ActiveModel as RegearSettingActiveModel, Entity as RegearSettingEntity,
     Model as RegearSettingModel,
 };
+
+/// The fallback strategy for choosing a price when the configured city has no listing.
+#[derive(Debug, Clone, Copy)]
+pub enum PricingFallback {
+    /// Use the cheapest listing across all cities (default).
+    CheapestAny,
+    /// Only honor listings in the configured city; otherwise the slot is priced at 0.
+    Strict,
+}
+
+impl PricingFallback {
+    /// Parses the strategy string stored in `regear_settings.pricing_fallback_strategy`.
+    #[must_use]
+    pub fn from_str(strategy: &str) -> Self {
+        match strategy {
+            "strict" => Self::Strict,
+            _ => Self::CheapestAny,
+        }
+    }
+}
+
+/// Loads the singleton settings row, raising `Internal` if it is missing (it is seeded by the
+/// migration so this should only happen on a corrupted DB).
+///
+/// Generic over `ConnectionTrait` (not just `DatabaseConnection`) so `giveaways::service` can
+/// call it with `&txn` from inside its own draw transaction — acquiring a second pool connection
+/// there instead would deadlock a single-connection SQLite pool. `pub(crate)` for that same
+/// cross-module use.
+pub(crate) async fn load_settings<C>(db: &C) -> Result<RegearSettingModel, AppError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    RegearSettingEntity::find()
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::Internal("regear_settings singleton row is missing".to_string()))
+}

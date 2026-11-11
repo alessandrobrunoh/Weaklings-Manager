@@ -1583,7 +1583,7 @@ async fn get_build_price(
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildPriceView>>, AppError> {
     user.require(&perms, Permission::CompsBuildsView).await?;
-    let settings = crate::modules::regear::service::load_settings(&db).await?;
+    let settings = crate::modules::regear::entities::load_settings(&db).await?;
     let view = cached_build_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
 }
@@ -1622,7 +1622,7 @@ async fn get_comp_price(
     Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompPriceView>>, AppError> {
     user.require(&perms, Permission::CompsCompsView).await?;
-    let settings = crate::modules::regear::service::load_settings(&db).await?;
+    let settings = crate::modules::regear::entities::load_settings(&db).await?;
     let view = cached_comp_price(&cache, &tenant.0, &db, &albiondata, id, &settings).await?;
     Ok(Json(ApiResponse::new(view)))
 }

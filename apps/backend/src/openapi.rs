@@ -593,7 +593,7 @@ use utoipa::OpenApi;
             crate::modules::albionbb::schemas::ApiResponseAlbionBbPlayerStats,
             crate::modules::battles::models::BattleGuildSummary,
             crate::modules::battles::models::BattleSummary,
-            crate::modules::battles::models::BattlePlayer,
+            crate::modules::battles::entities::BattlePlayer,
             crate::modules::battles::models::BattleKillParticipant,
             crate::modules::battles::models::BattleKillEvent,
             crate::modules::battles::models::BattleDetail,

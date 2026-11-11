@@ -36,12 +36,11 @@ use crate::modules::albionbb::client::{AlbionBbBattleSummary, AlbionBbBattlesFil
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::audit::service::AuditService;
 use crate::modules::battles::entities::{
-    Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
+    BattleLossEstimate, BattlePlayer, Column as GuildBattleSnapshotColumn,
+    Entity as GuildBattleSnapshotEntity, GuildLossEstimate, PlayerLossEstimate,
 };
 use crate::modules::battles::evidence_entities::battle_guild_stat;
-use crate::modules::battles::models::{
-    BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
-};
+use crate::modules::battles::models::BattleGuildSummary;
 use crate::modules::combat::fit::{self, FitStrategy};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::comps::status::{BuildLoadout, BuildRole};
@@ -3245,7 +3244,7 @@ impl EventService {
             .collect();
 
         for snapshot in &snapshots {
-            let players: Vec<crate::modules::battles::models::BattlePlayer> =
+            let players: Vec<crate::modules::battles::entities::BattlePlayer> =
                 serde_json::from_str(&snapshot.players_json).unwrap_or_default();
             let ours: Vec<_> = players
                 .iter()

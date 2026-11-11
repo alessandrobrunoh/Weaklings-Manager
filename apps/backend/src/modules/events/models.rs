@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 use super::lifecycle::EffectRef;
 
-use crate::modules::battles::models::BattleLossEstimate;
+use crate::modules::battles::entities::BattleLossEstimate;
 use crate::modules::comps::status::BuildRole;
 
 /// Filters for listing events.
