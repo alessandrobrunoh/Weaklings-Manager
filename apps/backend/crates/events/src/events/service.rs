@@ -414,6 +414,20 @@ pub async fn load_alliance_ping_targets(
     Ok(targets)
 }
 
+/// An event's extra roster roles in the order they were added, which is the order their seats
+/// are appended to the roster.
+async fn load_extra_roster_roles<C: ConnectionTrait>(
+    db: &C,
+    event_id: i64,
+) -> Result<Vec<event_roster_role::Model>, AppError> {
+    event_roster_role::Entity::find()
+        .filter(event_roster_role::Column::EventId.eq(event_id))
+        .order_by_asc(event_roster_role::Column::Id)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 async fn load_event_roster_roles(
     db: &DatabaseConnection,
     event_id: i64,
@@ -1414,21 +1428,19 @@ impl EventService {
             .iter()
             .filter(|p| p.primary_build_id.is_some())
             .count();
-        let extras = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(event_id))
-            .count(db)
-            .await
-            .map_err(AppError::Database)? as usize;
+        let extra_roles = load_extra_roster_roles(db, event_id).await?;
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 db,
                 event_model.organized_comp_id()?,
                 concrete,
-                extras,
+                extra_roles.len(),
                 event_model.player_cap,
             )
             .await?;
-        let mut seats = self.canonical_roster_seats(db, active_comp.id).await?;
+        let mut seats = self
+            .roster_seats_with_extras(db, event_id, active_comp.id, &extra_roles)
+            .await?;
         let assignments = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
             .all(db)
@@ -1577,6 +1589,66 @@ impl EventService {
             .collect())
     }
 
+    /// The seats an event's roster actually has: the active comp's canonical seats followed by
+    /// one seat per event-specific extra role.
+    ///
+    /// An extra role for build `B` is seat `build:B:{n}` where `n` continues after the comp's own
+    /// seats for `B` (1 when the comp has none), matching the extra primary slot the signup check
+    /// grants for that build. Extra seats are appended in the order the roles were added and keep
+    /// the 20-per-party numbering going, so they land in the last party (or open a new one).
+    pub async fn event_roster_seats<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        event_id: i64,
+        comp_id: i64,
+    ) -> Result<Vec<EventRosterSeatView>, AppError> {
+        let extra_roles = load_extra_roster_roles(db, event_id).await?;
+        self.roster_seats_with_extras(db, event_id, comp_id, &extra_roles)
+            .await
+    }
+
+    /// [`Self::event_roster_seats`] for a caller that already loaded the event's extra roles
+    /// (in id order, see [`load_extra_roster_roles`]).
+    async fn roster_seats_with_extras<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        event_id: i64,
+        comp_id: i64,
+        extra_roles: &[event_roster_role::Model],
+    ) -> Result<Vec<EventRosterSeatView>, AppError> {
+        let mut seats = self.canonical_roster_seats(db, comp_id).await?;
+        if extra_roles.is_empty() {
+            return Ok(seats);
+        }
+        let builds_by_id =
+            load_builds_by_id(db, extra_roles.iter().map(|role| role.build_id).collect()).await?;
+        for role in extra_roles {
+            let build = builds_by_id
+                .get(&role.build_id)
+                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", role.build_id)))?;
+            let prefix = format!("build:{}:", role.build_id);
+            let ordinal = seats
+                .iter()
+                .filter(|seat| seat.key.starts_with(&prefix))
+                .count()
+                + 1;
+            let sequential = i32::try_from(seats.len()).map_err(|_| {
+                AppError::Internal(format!("roster for event {event_id} has too many seats"))
+            })?;
+            seats.push(EventRosterSeatView {
+                key: format!("{prefix}{ordinal}"),
+                party_number: sequential / 20 + 1,
+                position: sequential % 20 + 1,
+                build_id: role.build_id,
+                build_name: build.name.clone(),
+                build_version: build.version,
+                role: build.role.clone(),
+                participant: None,
+            });
+        }
+        Ok(seats)
+    }
+
     async fn advance_roster_version(
         &self,
         txn: &sea_orm::DatabaseTransaction,
@@ -1646,7 +1718,7 @@ impl EventService {
             )
             .await?;
         if !self
-            .canonical_roster_seats(&txn, active_comp.id)
+            .event_roster_seats(&txn, event_id, active_comp.id)
             .await?
             .iter()
             .any(|seat| seat.key == seat_key)
@@ -1721,7 +1793,7 @@ impl EventService {
             )
             .await?;
         if !self
-            .canonical_roster_seats(&txn, active_comp.id)
+            .event_roster_seats(&txn, event_id, active_comp.id)
             .await?
             .iter()
             .any(|seat| seat.key == seat_key)
@@ -1790,7 +1862,7 @@ impl EventService {
                 event_model.player_cap,
             )
             .await?;
-        let seats = self.canonical_roster_seats(&txn, active_comp.id).await?;
+        let seats = self.event_roster_seats(&txn, event_id, active_comp.id).await?;
         if !seats.iter().any(|seat| seat.key == request.source_seat_key)
             || !seats.iter().any(|seat| seat.key == request.target_seat_key)
         {
@@ -1882,19 +1954,42 @@ impl EventService {
             .all(&txn)
             .await
             .map_err(AppError::Database)?;
-        let assigned_users: HashSet<_> = assignments
+        let seats = self
+            .event_roster_seats(&txn, event_id, active_comp.id)
+            .await?;
+        let seat_keys: HashSet<&str> = seats.iter().map(|seat| seat.key.as_str()).collect();
+        // An assignment to a seat the roster no longer has (a removed extra role, a smaller comp
+        // variant) already shows that member on the bench. Drop the row so they can be placed
+        // again instead of being skipped as "already seated".
+        let stale_seat_keys: Vec<String> = assignments
+            .iter()
+            .filter(|assignment| !seat_keys.contains(assignment.seat_key.as_str()))
+            .map(|assignment| assignment.seat_key.clone())
+            .collect();
+        if !stale_seat_keys.is_empty() {
+            event_roster_assignment::Entity::delete_many()
+                .filter(event_roster_assignment::Column::EventId.eq(event_id))
+                .filter(event_roster_assignment::Column::SeatKey.is_in(stale_seat_keys))
+                .exec(&txn)
+                .await
+                .map_err(AppError::Database)?;
+        }
+        let live_assignments: Vec<_> = assignments
+            .iter()
+            .filter(|assignment| seat_keys.contains(assignment.seat_key.as_str()))
+            .collect();
+        let assigned_users: HashSet<_> = live_assignments
             .iter()
             .map(|assignment| assignment.user_id)
             .collect();
-        let assigned_seats: HashSet<_> = assignments
+        let assigned_seats: HashSet<_> = live_assignments
             .iter()
             .map(|assignment| assignment.seat_key.as_str())
             .collect();
-        let mut available: Vec<_> = self
-            .canonical_roster_seats(&txn, active_comp.id)
-            .await?
-            .into_iter()
+        let mut available: Vec<_> = seats
+            .iter()
             .filter(|seat| !assigned_seats.contains(seat.key.as_str()))
+            .cloned()
             .collect();
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
@@ -1975,19 +2070,28 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let assigned_users: HashSet<_> = assignments
+        let seats = self
+            .event_roster_seats(db, event_id, active_comp.id)
+            .await?;
+        let seat_keys: HashSet<&str> = seats.iter().map(|seat| seat.key.as_str()).collect();
+        // Same rule as `auto_fill_roster`: a row for a seat that no longer exists does not seat
+        // anyone.
+        let live_assignments: Vec<_> = assignments
+            .iter()
+            .filter(|assignment| seat_keys.contains(assignment.seat_key.as_str()))
+            .collect();
+        let assigned_users: HashSet<_> = live_assignments
             .iter()
             .map(|assignment| assignment.user_id)
             .collect();
-        let assigned_seats: HashSet<_> = assignments
+        let assigned_seats: HashSet<_> = live_assignments
             .iter()
             .map(|assignment| assignment.seat_key.as_str())
             .collect();
-        let available: Vec<_> = self
-            .canonical_roster_seats(db, active_comp.id)
-            .await?
-            .into_iter()
+        let available: Vec<_> = seats
+            .iter()
             .filter(|seat| !assigned_seats.contains(seat.key.as_str()))
+            .cloned()
             .collect();
         let unassigned: Vec<_> = participations
             .into_iter()
@@ -2093,10 +2197,44 @@ impl EventService {
                 "Roster role {role_id} was not found for event {event_id}"
             )));
         }
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let comp_id = event::Entity::find_by_id(event_id)
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .and_then(|event| event.comp_id);
+        let seats_before = match comp_id {
+            Some(comp_id) => self.event_roster_seats(&txn, event_id, comp_id).await?,
+            None => Vec::new(),
+        };
         event_roster_role::Entity::delete_by_id(role_id)
-            .exec(db)
+            .exec(&txn)
             .await
             .map_err(AppError::Database)?;
+        // The seat the role added is gone; whoever sat there goes back to the bench rather than
+        // silently reappearing on it if the same role is added again later.
+        if let Some(comp_id) = comp_id {
+            let seats_after: HashSet<String> = self
+                .event_roster_seats(&txn, event_id, comp_id)
+                .await?
+                .into_iter()
+                .map(|seat| seat.key)
+                .collect();
+            let removed: Vec<String> = seats_before
+                .into_iter()
+                .map(|seat| seat.key)
+                .filter(|key| !seats_after.contains(key))
+                .collect();
+            if !removed.is_empty() {
+                event_roster_assignment::Entity::delete_many()
+                    .filter(event_roster_assignment::Column::EventId.eq(event_id))
+                    .filter(event_roster_assignment::Column::SeatKey.is_in(removed))
+                    .exec(&txn)
+                    .await
+                    .map_err(AppError::Database)?;
+            }
+        }
+        txn.commit().await.map_err(AppError::Database)?;
         Ok(())
     }
 
@@ -6127,6 +6265,136 @@ mod tests {
                 .expect("Fill should remain after removing an extra role")
                 .len(),
             1
+        );
+    }
+
+    /// An extra role is a seat officers can fill: it shows up on the roster, accepts an
+    /// assignment, and taking it away sends its occupant back to the bench.
+    #[tokio::test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scenario: add, sign up, assign, remove, each checked on the roster"
+    )]
+    async fn extra_roster_roles_add_assignable_seats() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let member = insert_user(&db, "member", "member@example.com").await;
+        let build_category = create_build_category(&db, "extra-seat-builds").await;
+        let comp_build = create_build(&db, "Hallowfall", build_category).await;
+        let extra_build = create_build(&db, "Siege Bow", build_category).await;
+        let comp_category = create_comp_category(&db, "extra-seat-comps").await;
+        let comp_id =
+            create_comp(&db, "extra-seat-comp", comp_category, None, vec![(comp_build, 1)]).await;
+        let event_id = event::ActiveModel {
+            title: Set("Extra seat event".to_string()),
+            comp_id: Set(Some(comp_id)),
+            created_by: Set(officer),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert event")
+        .id;
+        let service = EventService::new();
+
+        let new_build_role = service
+            .create_event_roster_role(
+                &db,
+                event_id,
+                CreateEventRosterRoleRequest {
+                    build_id: extra_build,
+                },
+            )
+            .await
+            .expect("a build outside the comp becomes an extra role");
+        service
+            .create_event_roster_role(
+                &db,
+                event_id,
+                CreateEventRosterRoleRequest {
+                    build_id: comp_build,
+                },
+            )
+            .await
+            .expect("a second copy of a comp build is also an extra role");
+
+        let roster = service.get_roster(&db, event_id).await.expect("roster loads");
+        let keys: Vec<&str> = roster.seats.iter().map(|seat| seat.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            vec![
+                format!("build:{comp_build}:1").as_str(),
+                format!("build:{extra_build}:1").as_str(),
+                format!("build:{comp_build}:2").as_str(),
+            ],
+        );
+        assert_eq!(roster.seats[1].build_name, "Siege Bow");
+        assert_eq!(
+            (roster.seats[2].party_number, roster.seats[2].position),
+            (1, 3)
+        );
+
+        service
+            .participate_with_roster_version(
+                &db,
+                event_id,
+                member,
+                ParticipateEventRequest {
+                    primary_build_id: Some(extra_build),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("members can sign up for the extra role");
+        let roster = service.get_roster(&db, event_id).await.expect("roster loads");
+        let extra_key = format!("build:{extra_build}:1");
+        service
+            .assign_roster_seat(
+                &db,
+                event_id,
+                &extra_key,
+                AssignRosterSeatRequest {
+                    user_id: member,
+                    expected_roster_version: roster.roster_version,
+                },
+                officer,
+            )
+            .await
+            .expect("the extra seat accepts an assignment");
+        let roster = service.get_roster(&db, event_id).await.expect("roster loads");
+        assert_eq!(
+            roster
+                .seats
+                .iter()
+                .find(|seat| seat.key == extra_key)
+                .and_then(|seat| seat.participant.as_ref())
+                .map(|participant| participant.user_id),
+            Some(member)
+        );
+
+        service
+            .delete_event_roster_role(
+                &db,
+                event_id,
+                new_build_role.id.expect("persisted role id"),
+            )
+            .await
+            .expect("the extra role is removed");
+        let roster = service.get_roster(&db, event_id).await.expect("roster loads");
+        assert!(roster.seats.iter().all(|seat| seat.key != extra_key));
+        assert_eq!(
+            roster.bench.iter().map(|p| p.user_id).collect::<Vec<_>>(),
+            vec![member]
+        );
+        assert_eq!(
+            event_roster_assignment::Entity::find()
+                .filter(event_roster_assignment::Column::EventId.eq(event_id))
+                .count(&db)
+                .await
+                .expect("assignments count"),
+            0,
+            "the removed seat's assignment row is deleted"
         );
     }
 

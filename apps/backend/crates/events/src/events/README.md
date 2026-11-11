@@ -29,6 +29,7 @@ The bounded router excerpt registers event CRUD/lifecycle, roster, participation
 
 - Event timestamps are RFC3339; mass time cannot be later than start. The comp expansion threshold is floor-based at 75% of capacity.
 - `Fill` is a virtual roster role; roster writes carry `expected_roster_version`.
+- Each extra roster role is one more seat: `EventService::event_roster_seats` appends `build:{id}:{n}` after the comp's own seats (n continues the comp's count for that build). Every roster read and write uses that seat list; removing the role deletes its seat's assignment.
 - (Details pending/documentation failed) Remaining validation and fight-grouping invariants require a compliant bounded review.
 
 ## Side Effects
