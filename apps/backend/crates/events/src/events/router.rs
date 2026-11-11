@@ -804,6 +804,36 @@ async fn list_event_revisions(
     Ok(Json(ApiResponse::new(revisions)))
 }
 
+/// Loads an event detail with battles classified for the requesting tenant.
+///
+/// A tenant that has no Albion guild or region configured cannot classify battles, but it can
+/// still read its events: the detail is then built without battle linking or fight grouping
+/// (the shape `EventService::get_event_detail` returns) instead of failing the request.
+async fn event_detail_for_tenant(
+    service: &EventService,
+    db: &sea_orm::DatabaseConnection,
+    control: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+    id: i64,
+) -> Result<EventDetailView, AppError> {
+    match backend_identity::albion_scope::load_event_read_scope(control, tenant_id).await {
+        Ok(scope) => {
+            service
+                .get_event_detail_with_context(db, id, &scope.linking_context())
+                .await
+        }
+        Err(backend_identity::albion_scope::AlbionScopeError::NotConfigured) => {
+            tracing::debug!(
+                tenant_id,
+                event_id = id,
+                "tenant has no Albion guild configured; reading the event without battle classification"
+            );
+            service.get_event_detail(db, id).await
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 /// Gets a detailed event.
 ///
 /// Requires `events.view` permission.
@@ -836,13 +866,8 @@ async fn get_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
-    let service = EventService::new();
-    let context = backend_identity::albion_scope::load_event_read_scope(&control.0, &tenant_id)
-        .await?
-        .linking_context();
-    let event = service
-        .get_event_detail_with_context(&db, id, &context)
-        .await?;
+    let event =
+        event_detail_for_tenant(&EventService::new(), &db, &control.0, &tenant_id, id).await?;
     Ok(Json(ApiResponse::new(
         hydrate_event_detail(event, &control, &registry, &tenant_id).await,
     )))
@@ -2741,13 +2766,8 @@ async fn list_event_battles(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
-    let service = EventService::new();
-    let context = backend_identity::albion_scope::load_event_read_scope(&control.0, &tenant_id)
-        .await?
-        .linking_context();
-    let mut detail = service
-        .get_event_detail_with_context(&db, id, &context)
-        .await?;
+    let mut detail =
+        event_detail_for_tenant(&EventService::new(), &db, &control.0, &tenant_id, id).await?;
     attribute_detail(&control.0, &tenant_id, &mut detail).await;
     Ok(Json(ApiResponse::new(detail)))
 }
@@ -2806,8 +2826,9 @@ async fn replace_event_battles(
 #[cfg(test)]
 mod tests {
     use super::{
-        EventManagementAuthorityView, get_event_management_authority, get_events_summary,
-        list_event_calendar, parse_event_revision_ids, require_event_management_authority,
+        EventManagementAuthorityView, EventService, event_detail_for_tenant,
+        get_event_management_authority, get_events_summary, list_event_calendar,
+        parse_event_revision_ids, require_event_management_authority,
     };
     use axum::Extension;
     use backend_core::errors::AppError;
@@ -2945,6 +2966,52 @@ mod tests {
             super_admin_id: None,
             is_tenant_owner: false,
         }
+    }
+
+    /// A control database whose only tenant is an active guild without an Albion guild id.
+    async fn control_without_albion_guild() -> DatabaseConnection {
+        let control = Database::connect("sqlite::memory:")
+            .await
+            .expect("control database should connect");
+        control
+            .execute_unprepared(
+                "CREATE TABLE tenants (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    albion_guild_id TEXT,
+                    albion_api_region TEXT,
+                    albion_alliance_id TEXT,
+                    albion_allied_guild_ids TEXT,
+                    albion_allied_guild_names TEXT
+                )",
+            )
+            .await
+            .expect("tenants table should be created");
+        control
+            .execute_unprepared("INSERT INTO tenants (id, kind) VALUES ('tenant-a', 'guild')")
+            .await
+            .expect("tenant should be inserted");
+        control
+    }
+
+    #[tokio::test]
+    async fn event_detail_is_served_when_the_tenant_has_no_albion_guild() {
+        let db = authorization_test_db().await;
+        let creator = insert_authorization_test_user(&db, "creator").await;
+        let event_id = insert_authorization_test_event(&db, "No Albion guild", creator).await;
+        let control = control_without_albion_guild().await;
+
+        // The strict scope still refuses this tenant ...
+        assert!(matches!(
+            backend_identity::albion_scope::load_event_read_scope(&control, "tenant-a").await,
+            Err(backend_identity::albion_scope::AlbionScopeError::NotConfigured)
+        ));
+        // ... but reading the event degrades to "no battle classification" instead of failing.
+        let detail =
+            event_detail_for_tenant(&EventService::new(), &db, &control, "tenant-a", event_id)
+                .await
+                .expect("event detail should degrade, not fail");
+        assert_eq!(detail.event.id, event_id);
     }
 
     #[test]

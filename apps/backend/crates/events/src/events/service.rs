@@ -63,6 +63,22 @@ pub(super) const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3)
 /// re-fetching `AlbionBB` to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
+/// How long before the earliest start signal of an event (the Start press, the scheduled
+/// start or the mass call) a battle may begin and still be linked to it. Officers press
+/// Start after the first engagement, not before it.
+const LINK_WINDOW_LEAD: ChronoDuration = ChronoDuration::minutes(30);
+
+/// How long after the event stopped (or, while it is live, after now) a battle may begin
+/// and still be linked to it. Officers press Stop after the last fight, not at its end.
+const LINK_WINDOW_TRAIL: ChronoDuration = ChronoDuration::minutes(20);
+
+/// Longest `link_last_error` text stored on an event row.
+const LINK_ERROR_MAX_CHARS: usize = 500;
+
+/// Upstream list pages the linker walks at most; a safety cap so an upstream pagination
+/// regression cannot spin the worker forever.
+const MAX_LINK_BATTLE_PAGES: u64 = 100;
+
 /// Keep flash VOD posts behind the same undo window as Discord announcements.
 fn vod_delivery_eligible() -> Condition {
     Condition::all()
@@ -1892,6 +1908,171 @@ fn normalize_battle_ids(raw_battle_ids: &[String]) -> Result<Vec<String>, AppErr
     }
 
     Ok(battle_ids)
+}
+
+/// The UTC window `[start, end]` in which a battle counts as part of an event.
+///
+/// It opens [`LINK_WINDOW_LEAD`] before the earliest of the Start press (`started_at`), the
+/// scheduled start (`start_time_utc`, or its alias `event_date_utc` when unset) and the mass
+/// call (`mass_time_utc`), and closes [`LINK_WINDOW_TRAIL`] after `stopped_at`, or after `now`
+/// while the session is still live.
+pub(crate) fn link_window(
+    model: &event::Model,
+    now: DateTime<Utc>,
+) -> (DateTime<Utc>, DateTime<Utc>) {
+    let signals = [
+        model.started_at,
+        Some(model.start_time_utc.unwrap_or(model.event_date_utc)),
+        model.mass_time_utc,
+    ];
+    let earliest = signals
+        .into_iter()
+        .flatten()
+        .map(|signal| signal.with_timezone(&Utc))
+        .min()
+        .unwrap_or(now);
+    let latest = model
+        .stopped_at
+        .map_or(now, |stopped| stopped.with_timezone(&Utc));
+    (earliest - LINK_WINDOW_LEAD, latest + LINK_WINDOW_TRAIL)
+}
+
+/// Battles listed upstream for a guild, plus the error that cut the walk short, if any.
+struct GuildBattleWalk {
+    /// Every battle fetched before the walk ended, newest page first.
+    battles: Vec<AlbionBbBattleSummary>,
+    /// The upstream failure that stopped the walk; `battles` still holds what came before it.
+    error: Option<AppError>,
+}
+
+/// Walks the guild's `AlbionBB` battle list, newest first, until a page holds only battles that
+/// began before `oldest`.
+///
+/// `AlbionBB` returns a raw array without pagination metadata, so the walk also ends at an
+/// empty page, at a page with no new ids, past the last page (a 404 after page 1) and after
+/// [`MAX_LINK_BATTLE_PAGES`]. A failed page ends the walk but keeps the earlier pages.
+///
+/// The shared guild battle catalog is not used here: it walks a fixed number of pages with a
+/// player-count filter the linker must not apply, while this walk usually stops after one or
+/// two pages.
+async fn fetch_guild_battles_since(
+    albionbb: &AlbionBbService,
+    server: Option<&str>,
+    guild_id: &str,
+    oldest: DateTime<Utc>,
+) -> GuildBattleWalk {
+    let mut battles = Vec::new();
+    let mut seen_battle_ids = HashSet::new();
+    for page in 1..=MAX_LINK_BATTLE_PAGES {
+        let filters = AlbionBbBattlesFilters {
+            guild_id: Some(guild_id.to_string()),
+            page: Some(page),
+            ..Default::default()
+        };
+        let page_battles = match albionbb.get_battles(server, &filters).await {
+            Ok((page_battles, _)) => page_battles,
+            Err(AppError::NotFound(_)) if page > 1 => break,
+            Err(error) => {
+                return GuildBattleWalk {
+                    battles,
+                    error: Some(error),
+                };
+            }
+        };
+        if page_battles.is_empty() {
+            break;
+        }
+        // Unparseable start times are never "older": keep walking rather than lose battles.
+        let entirely_older = page_battles.iter().all(|battle| {
+            DateTime::parse_from_rfc3339(&battle.start_time)
+                .is_ok_and(|started| started.with_timezone(&Utc) < oldest)
+        });
+        let mut added_on_page = 0;
+        for battle in page_battles {
+            if seen_battle_ids.insert(battle.id) {
+                battles.push(battle);
+                added_on_page += 1;
+            }
+        }
+        if added_on_page == 0 || entirely_older {
+            break;
+        }
+    }
+    GuildBattleWalk {
+        battles,
+        error: None,
+    }
+}
+
+/// Links the listed battles that began inside `window` to the event, then seeds their fights.
+///
+/// A battle already assigned to another event stays with it, so overlapping events never fight
+/// over the same battle; the caller visits events in `started_at` order to make that
+/// deterministic. Returns how many `event_battles` rows were inserted.
+async fn link_window_battles(
+    db: &DatabaseConnection,
+    event_id: i64,
+    context: &BattleLinkingContext,
+    window: (DateTime<Utc>, DateTime<Utc>),
+    battles: Vec<AlbionBbBattleSummary>,
+) -> Result<usize, AppError> {
+    let (window_start, window_end) = window;
+    let mut inserted = 0usize;
+    for battle in battles {
+        let started = match DateTime::parse_from_rfc3339(&battle.start_time) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(_) => continue,
+        };
+        if started < window_start || started > window_end {
+            continue;
+        }
+
+        let snapshot = linked_battle_snapshot(&battle, context);
+        if battle_is_assigned_to_another_event(db, event_id, battle.id).await? {
+            // Expected whenever the padded windows of two events overlap.
+            tracing::debug!(
+                event_id,
+                battle_id = battle.id,
+                "Battle is already assigned to another event, skipping"
+            );
+            continue;
+        }
+
+        let existing = event_battle::Entity::find()
+            .filter(event_battle::Column::EventId.eq(event_id))
+            .filter(event_battle::Column::AlbionbbBattleId.eq(battle.id.to_string()))
+            .one(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        if let Some(existing) = existing {
+            let mut row: event_battle::ActiveModel = existing.into();
+            apply_battle_snapshot(&mut row, &snapshot)?;
+            row.fetched_at = Set(Utc::now().into());
+            row.update(db).await.map_err(AppError::Database)?;
+            continue;
+        }
+
+        let mut row = event_battle::ActiveModel {
+            event_id: Set(event_id),
+            albionbb_battle_id: Set(battle.id.to_string()),
+            battle_started_at: Set(started.into()),
+            fetched_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
+        apply_battle_snapshot(&mut row, &snapshot)?;
+        row.insert(db).await.map_err(AppError::Database)?;
+        inserted += 1;
+    }
+
+    let linked_battles = event_battle::Entity::find()
+        .filter(event_battle::Column::EventId.eq(event_id))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    ensure_seed_fights_for_event(db, event_id, &linked_battles).await?;
+
+    Ok(inserted)
 }
 
 /// Service layer coordinating events operations.
@@ -4848,9 +5029,19 @@ impl EventService {
 
     /// Links every `AlbionBB` battle for the guild that falls in the event's time window.
     ///
-    /// The worker calls this repeatedly because `AlbionBB` can lag up to ~30m. The
-    /// listing is paginated, and no player-count heuristic is applied: the number
-    /// of sign-ups is not a reliable indication of the actual fight size.
+    /// The worker calls this repeatedly because `AlbionBB` can lag up to ~30m. The window is
+    /// [`link_window`]: padded around the Start/Stop presses so a fight that began just before
+    /// Start or ended just after Stop is still found. The listing is paginated newest first and
+    /// walked only back to the window start; no player-count heuristic is applied, because the
+    /// number of sign-ups is not a reliable indication of the actual fight size.
+    ///
+    /// A page that fails does not discard the battles found on earlier pages: they are linked
+    /// first, the attempt is recorded on the event row (`link_attempts`, `link_last_error`,
+    /// cleared again by the next clean attempt) and the upstream error is returned afterwards.
+    ///
+    /// # Errors
+    /// Returns the upstream error of a failed page after linking what was found, or any
+    /// database error raised while linking.
     pub async fn link_battles_for_event(
         db: &DatabaseConnection,
         albionbb: &AlbionBbService,
@@ -4873,105 +5064,69 @@ impl EventService {
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
 
-        let started_at = model.started_at.ok_or_else(|| {
-            AppError::Validation(format!("Event {event_id} has not been started"))
-        })?;
-        let started_at_utc = started_at.with_timezone(&Utc);
-        let window_end = model
-            .stopped_at
-            .map_or_else(Utc::now, |t| t.with_timezone(&Utc));
-
-        // AlbionBB returns a raw array without pagination metadata. Walk pages until
-        // an empty page (or a page with no new IDs) is returned, with a safety cap
-        // so an upstream pagination regression cannot spin the worker forever.
-        const MAX_BATTLE_PAGES: u64 = 100;
-        let mut battles = Vec::new();
-        let mut seen_battle_ids = HashSet::new();
-        for page in 1..=MAX_BATTLE_PAGES {
-            let filters = AlbionBbBattlesFilters {
-                guild_id: Some(context_guild_id.to_string()),
-                page: Some(page),
-                ..Default::default()
-            };
-            let (page_battles, _) = albionbb.get_battles(context.server(), &filters).await?;
-            if page_battles.is_empty() {
-                break;
-            }
-            let mut added_on_page = 0;
-            for battle in page_battles {
-                if seen_battle_ids.insert(battle.id) {
-                    battles.push(battle);
-                    added_on_page += 1;
-                }
-            }
-            if added_on_page == 0 {
-                break;
-            }
+        if model.started_at.is_none() {
+            return Err(AppError::Validation(format!(
+                "Event {event_id} has not been started"
+            )));
         }
-        let next_link_attempts = model.link_attempts + 1;
+        let window = link_window(&model, Utc::now());
 
+        let walk =
+            fetch_guild_battles_since(albionbb, context.server(), context_guild_id, window.0).await;
+        let linked = link_window_battles(db, event_id, context, window, walk.battles).await;
+
+        let failure = walk
+            .error
+            .as_ref()
+            .map(ToString::to_string)
+            .or_else(|| linked.as_ref().err().map(ToString::to_string));
+        if let Err(error) = Self::record_link_attempt(db, event_id, failure.as_deref()).await {
+            tracing::warn!(event_id, error = %error, "could not record the link attempt");
+        }
+
+        match walk.error {
+            Some(upstream) => {
+                if let Err(error) = linked {
+                    tracing::warn!(
+                        event_id,
+                        error = %error,
+                        "linking the pages fetched before the upstream failure also failed"
+                    );
+                }
+                Err(upstream)
+            }
+            None => linked,
+        }
+    }
+
+    /// Counts one linker attempt on the event row and stores (or clears) its error.
+    ///
+    /// A `pending` event is promoted to `in_progress`; any other `link_status` is left alone so
+    /// a late tick cannot undo a finalisation or a cancellation that happened meanwhile.
+    async fn record_link_attempt(
+        db: &DatabaseConnection,
+        event_id: i64,
+        error: Option<&str>,
+    ) -> Result<(), AppError> {
+        let Some(model) = event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+        else {
+            return Ok(());
+        };
+        let next_link_attempts = model.link_attempts + 1;
+        let promote = model.link_status == "pending";
         let mut active: event::ActiveModel = model.into();
         active.link_attempts = Set(next_link_attempts);
-        active.link_status = Set("in_progress".to_string());
-        active.link_last_error = Set(None);
-        active.updated_at = Set(Utc::now().into());
-        let _ = active.update(db).await;
-
-        let mut inserted = 0usize;
-        for battle in battles {
-            let started = match chrono::DateTime::parse_from_rfc3339(&battle.start_time) {
-                Ok(dt) => dt.with_timezone(&Utc),
-                Err(_) => continue,
-            };
-            if started < started_at_utc || started > window_end {
-                continue;
-            }
-
-            let snapshot = linked_battle_snapshot(&battle, context);
-            if battle_is_assigned_to_another_event(db, event_id, battle.id).await? {
-                tracing::warn!(
-                    event_id,
-                    battle_id = battle.id,
-                    "Battle is already assigned to another event, skipping"
-                );
-                continue;
-            }
-
-            let existing = event_battle::Entity::find()
-                .filter(event_battle::Column::EventId.eq(event_id))
-                .filter(event_battle::Column::AlbionbbBattleId.eq(battle.id.to_string()))
-                .one(db)
-                .await
-                .map_err(AppError::Database)?;
-
-            if let Some(existing) = existing {
-                let mut row: event_battle::ActiveModel = existing.into();
-                apply_battle_snapshot(&mut row, &snapshot)?;
-                row.fetched_at = Set(Utc::now().into());
-                row.update(db).await.map_err(AppError::Database)?;
-                continue;
-            }
-
-            let mut row = event_battle::ActiveModel {
-                event_id: Set(event_id),
-                albionbb_battle_id: Set(battle.id.to_string()),
-                battle_started_at: Set(started.into()),
-                fetched_at: Set(Utc::now().into()),
-                ..Default::default()
-            };
-            apply_battle_snapshot(&mut row, &snapshot)?;
-            row.insert(db).await.map_err(AppError::Database)?;
-            inserted += 1;
+        if promote {
+            active.link_status = Set("in_progress".to_string());
         }
-
-        let linked_battles = event_battle::Entity::find()
-            .filter(event_battle::Column::EventId.eq(event_id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        ensure_seed_fights_for_event(db, event_id, &linked_battles).await?;
-
-        Ok(inserted)
+        active.link_last_error =
+            Set(error.map(|text| text.chars().take(LINK_ERROR_MAX_CHARS).collect()));
+        active.updated_at = Set(Utc::now().into());
+        active.update(db).await.map_err(AppError::Database)?;
+        Ok(())
     }
 
     /// Replaces the manually linked battle set for an event.
@@ -5130,8 +5285,9 @@ impl EventService {
 
     /// Returns `true` when the linker should stop polling `AlbionBB` for this
     /// event. Policy: stopped sessions stop after `LINK_GRACE_PERIOD` past
-    /// `stopped_at`; live sessions never auto-complete the linker (the worker
-    /// keeps polling as long as the session is live).
+    /// `stopped_at`; cancelled sessions are done at once (nothing is left to
+    /// link); live sessions never auto-complete the linker (the worker keeps
+    /// polling as long as the session is live).
     pub fn linker_is_done(model: &event::Model) -> bool {
         match model.status.as_str() {
             "stopped" | "auto_stopped" => {
@@ -5142,12 +5298,16 @@ impl EventService {
                 let elapsed = Utc::now().signed_duration_since(stopped_at.with_timezone(&Utc));
                 elapsed > LINK_GRACE_PERIOD
             }
-            "completed" | "failed" => true,
+            "cancelled" | "completed" | "failed" => true,
             _ => false,
         }
     }
 
     /// Marks the linker as completed (or failed) on the event row.
+    ///
+    /// A failed finalisation keeps `link_last_error` so the reason stays visible; a completed
+    /// one clears it, because whoever completes the link (the worker after a clean attempt or an
+    /// officer replacing the battles by hand) has superseded the failure.
     pub async fn finalize_link(
         db: &DatabaseConnection,
         event_id: i64,
@@ -5160,6 +5320,9 @@ impl EventService {
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
         let mut active: event::ActiveModel = model.into();
         active.link_status = Set(if failed { "failed" } else { "completed" }.to_string());
+        if !failed {
+            active.link_last_error = Set(None);
+        }
         active.link_battles_completed_at = Set(Some(Utc::now().into()));
         active.update(db).await.map_err(AppError::Database)?;
         Ok(())

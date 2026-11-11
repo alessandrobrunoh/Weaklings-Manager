@@ -5,7 +5,9 @@
 //! page in the UI — silver-loss stats (user profile, event rollups) were
 //! silently incomplete for any battle nobody clicked into. This worker closes
 //! that gap by mirroring what the Discord poller sees (`/api/battles`, page 1)
-//! and backfilling any battle not yet persisted.
+//! and backfilling any battle not yet persisted. Battles that ended less than
+//! 30 minutes ago are re-fetched (a few per tick) because kills reach `AlbionBB`
+//! late and an early snapshot is partial.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,6 +29,32 @@ use backend_identity::albion_scope::{self, AlbionScope};
 /// Tick interval for the sync worker. Battles that fall off page 1 between
 /// ticks are already covered by whichever tick first saw them.
 const TICK_INTERVAL: Duration = Duration::from_secs(120);
+
+/// A battle that ended less than this long ago may still be receiving kills upstream (`AlbionBB`
+/// documents up to ~15 minutes of lag), so its stored snapshot can be partial and is re-fetched.
+const SNAPSHOT_SETTLE_WINDOW: chrono::Duration = chrono::Duration::minutes(30);
+
+/// Minimum age of a stored snapshot before a recent battle is re-fetched, so a battle is
+/// refreshed every few ticks, not on each one.
+const SNAPSHOT_REFRESH_INTERVAL: chrono::Duration = chrono::Duration::minutes(5);
+
+/// Most already-saved snapshots re-fetched per tick, on top of the battles with no snapshot yet.
+const REFRESHES_PER_TICK: usize = 5;
+
+/// Whether a stored snapshot of a battle should be fetched again.
+///
+/// True when the battle ended inside [`SNAPSHOT_SETTLE_WINDOW`] and the snapshot is at least
+/// [`SNAPSHOT_REFRESH_INTERVAL`] old. A battle with no known end time is left alone.
+fn snapshot_needs_refresh(
+    ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    fetched_at: chrono::DateTime<chrono::Utc>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    let Some(ended_at) = ended_at else {
+        return false;
+    };
+    now - ended_at < SNAPSHOT_SETTLE_WINDOW && now - fetched_at >= SNAPSHOT_REFRESH_INTERVAL
+}
 
 /// Spawns the battle-sync worker on the current runtime. Returns immediately;
 /// the task runs until the process exits.
@@ -100,7 +128,14 @@ async fn prepare_cycle(
     }
     match albion_scope::load_albion_scope(control, tenant_id).await {
         Ok(scope) => Ok(Some(scope)),
-        Err(albion_scope::AlbionScopeError::NotConfigured) => Ok(None),
+        Err(albion_scope::AlbionScopeError::NotConfigured) => {
+            tracing::warn!(
+                tenant_id,
+                "tenant has no Albion guild id or region configured: battle sync is skipped \
+                 until an admin sets them"
+            );
+            Ok(None)
+        }
         Err(albion_scope::AlbionScopeError::Database(err)) => {
             Err(backend_core::errors::AppError::Database(err))
         }
@@ -130,16 +165,27 @@ async fn run_cycle(
         )
         .await?;
 
+    let now = chrono::Utc::now();
+    let mut refreshed = 0usize;
     for summary in page.items {
-        let already_saved = SnapshotEntity::find()
+        let saved = SnapshotEntity::find()
             .filter(SnapshotColumn::BattleId.eq(summary.battle_id))
             .one(db)
             .await
-            .map_err(backend_core::errors::AppError::Database)?
-            .is_some();
+            .map_err(backend_core::errors::AppError::Database)?;
 
-        if already_saved {
-            continue;
+        if let Some(saved) = saved {
+            // Kills keep arriving for a while after a battle ends, so a snapshot taken early is
+            // partial. Re-hydrate recent ones, a handful per tick at most.
+            let ended_at = chrono::DateTime::parse_from_rfc3339(&summary.end_time)
+                .ok()
+                .map(|ended| ended.with_timezone(&chrono::Utc));
+            let stale =
+                snapshot_needs_refresh(ended_at, saved.fetched_at.with_timezone(&chrono::Utc), now);
+            if !stale || refreshed >= REFRESHES_PER_TICK {
+                continue;
+            }
+            refreshed += 1;
         }
 
         if let Err(e) = battles
@@ -176,4 +222,144 @@ async fn run_cycle(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, Duration as ChronoDuration, Utc};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+
+    use super::*;
+    use backend_albion_data::albionbb::client::AlbionBbApiClient;
+    use backend_albion_data::albionbb::test_support::{json_ok, serve};
+    use backend_entities::battles::BattleLossEstimate;
+
+    fn minutes_ago(now: DateTime<Utc>, minutes: i64) -> DateTime<Utc> {
+        now - ChronoDuration::minutes(minutes)
+    }
+
+    #[test]
+    fn only_recently_ended_and_not_freshly_fetched_snapshots_are_refreshed() {
+        let now = Utc::now();
+        // Ended 10 minutes ago, fetched 8 minutes ago: kills may still have arrived since.
+        assert!(snapshot_needs_refresh(
+            Some(minutes_ago(now, 10)),
+            minutes_ago(now, 8),
+            now
+        ));
+        // Fetched a minute ago: too soon to ask again.
+        assert!(!snapshot_needs_refresh(
+            Some(minutes_ago(now, 10)),
+            minutes_ago(now, 1),
+            now
+        ));
+        // Ended 45 minutes ago: settled, the stored snapshot is final.
+        assert!(!snapshot_needs_refresh(
+            Some(minutes_ago(now, 45)),
+            minutes_ago(now, 40),
+            now
+        ));
+        // Unknown end time: left alone.
+        assert!(!snapshot_needs_refresh(None, minutes_ago(now, 40), now));
+    }
+
+    fn battle_json(id: i64, started: DateTime<Utc>, ended: DateTime<Utc>, detail: bool) -> String {
+        let players = if detail { r#", "players": []"# } else { "" };
+        format!(
+            r#"{{"albionId": {id}, "startedAt": "{}", "finishedAt": "{}", "totalFame": 1000, "totalKills": 5, "totalPlayers": 20, "guilds": []{players}}}"#,
+            started.to_rfc3339(),
+            ended.to_rfc3339()
+        )
+    }
+
+    async fn insert_snapshot(
+        db: &DatabaseConnection,
+        battle_id: i64,
+        started: DateTime<Utc>,
+        ended: DateTime<Utc>,
+        fetched: DateTime<Utc>,
+    ) {
+        backend_entities::battles::ActiveModel {
+            battle_id: Set(battle_id),
+            start_time: Set(started.fixed_offset()),
+            end_time: Set(Some(ended.fixed_offset())),
+            total_players: Set(20),
+            total_kills: Set(1),
+            total_fame: Set(1000),
+            guilds_json: Set("[]".to_string()),
+            players_json: Set("[]".to_string()),
+            kills_json: Set("[]".to_string()),
+            losses_json: Set(
+                serde_json::to_string(&BattleLossEstimate::default()).expect("empty loss estimate")
+            ),
+            fetched_at: Set(fetched.fixed_offset()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("snapshot should be inserted");
+    }
+
+    async fn snapshot_fetched_at(db: &DatabaseConnection, battle_id: i64) -> DateTime<Utc> {
+        SnapshotEntity::find()
+            .filter(SnapshotColumn::BattleId.eq(battle_id))
+            .one(db)
+            .await
+            .expect("snapshot query")
+            .expect("snapshot exists")
+            .fetched_at
+            .with_timezone(&Utc)
+    }
+
+    #[tokio::test]
+    async fn a_cycle_refetches_the_snapshot_of_a_battle_that_ended_recently() {
+        let db = backend_migration::testkit::migrated_sqlite().await;
+        let now = Utc::now();
+        // Battle 1 ended 10 minutes ago and was saved an hour ago: partial, to be refreshed.
+        let (recent_start, recent_end) = (minutes_ago(now, 20), minutes_ago(now, 10));
+        let recent_saved = minutes_ago(now, 60);
+        insert_snapshot(&db, 1, recent_start, recent_end, recent_saved).await;
+        // Battle 2 ended two hours ago: settled, never fetched again.
+        let (old_start, old_end) = (minutes_ago(now, 140), minutes_ago(now, 120));
+        let old_saved = minutes_ago(now, 110);
+        insert_snapshot(&db, 2, old_start, old_end, old_saved).await;
+
+        // Requests in order: catalog page 1, the empty page that ends the catalog, the detail of
+        // each listed battle (newest first), then the kill feed of the one battle refreshed.
+        let upstream = serve(vec![
+            json_ok(&format!(
+                "[{},{}]",
+                battle_json(1, recent_start, recent_end, false),
+                battle_json(2, old_start, old_end, false)
+            )),
+            json_ok("[]"),
+            json_ok(&battle_json(1, recent_start, recent_end, true)),
+            json_ok(&battle_json(2, old_start, old_end, true)),
+            json_ok("[]"),
+        ])
+        .await;
+        let albionbb = AlbionBbService::new(AlbionBbApiClient::new(
+            Some(upstream.base_url.clone()),
+            None,
+        ));
+        let battles =
+            BattlesService::new(albionbb, "guild-1".to_string(), &[], &[], "eu".to_string());
+        let context = BattleLinkingContext::new("guild-1", &[], &[]);
+
+        run_cycle(&db, &battles, &AlbionDataService::default(), &context)
+            .await
+            .expect("cycle succeeds");
+
+        assert_eq!(
+            upstream.request_count(),
+            5,
+            "exactly one kill feed was fetched: the recent battle was refreshed, the old one not"
+        );
+        assert!(snapshot_fetched_at(&db, 1).await > recent_saved + ChronoDuration::minutes(30));
+        let untouched = snapshot_fetched_at(&db, 2).await;
+        assert!(
+            (untouched - old_saved).num_seconds().abs() < 1,
+            "the settled battle keeps its snapshot, fetched_at is {untouched}"
+        );
+    }
 }

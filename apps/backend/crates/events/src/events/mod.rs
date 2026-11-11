@@ -4,6 +4,8 @@
 
 pub mod attribution;
 pub mod auto_stop;
+#[cfg(test)]
+mod battle_link_tests;
 pub mod comp_routes;
 #[cfg(test)]
 mod copy_matrix_tests;
