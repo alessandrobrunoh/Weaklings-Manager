@@ -23,6 +23,7 @@ import {
 } from "../embeds/giveaway.embed.js";
 import {
   buildEventEmbed,
+  buildEventReminderMessage,
   buildEventSummaryEmbed,
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
@@ -38,6 +39,8 @@ import {
   resolveJoinGuilds,
 } from "../services/event-join-guild.js";
 import { eventJoinCopy } from "../services/event-join-copy.js";
+import { ensureEventManagementAllowed } from "../services/event-authority.js";
+import { resolveEventReminderThread } from "../services/event-announcement-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import { flashCopy } from "../services/flash-copy.js";
 import {
@@ -517,6 +520,38 @@ async function handleEventButton(
         components: [],
       });
     }
+    return;
+  }
+
+  if (action === "ping") {
+    const [eventIdStr] = rest;
+    const eventId = Number(eventIdStr);
+
+    await interaction.deferReply({ flags: ["Ephemeral"] });
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+      throw new Error("Invalid event ID.");
+    }
+    if (!(await ensureEventManagementAllowed(interaction, api, eventId))) {
+      return;
+    }
+    const thread = resolveEventReminderThread(interaction);
+
+    const event = await api.post<EventView>(
+      `api/events/${eventId}/remind`,
+      {},
+      interaction.user.id,
+    );
+    await thread.send(
+      buildEventReminderMessage(event, interaction.guild?.preferredLocale),
+    );
+
+    const successEmbed = createResponseEmbed(
+      "success",
+      "Reminder Sent",
+      `The reminder for event **#${eventId}** was posted in this thread.`,
+      "GUILD EVENT",
+    );
+    await interaction.editReply({ embeds: [successEmbed] });
     return;
   }
 

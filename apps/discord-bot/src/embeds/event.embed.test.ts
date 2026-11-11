@@ -8,6 +8,7 @@ import {
   buildEventCalendarMessages,
   buildEventEmbed,
   buildEventMassMessage,
+  buildEventReminderMessage,
   buildEventStartMessage,
   buildEventThreadActionRows,
   shouldPingAllianceDiscord,
@@ -212,7 +213,7 @@ test("flash card and controls use Italian when the Discord guild locale is Itali
   assert.match(embed.description ?? "", /\*\*Mass\*\*/);
   assert.match(embed.description ?? "", /\*\*Stato\*\* — PROGRAMMATA/);
   assert.equal(embed.description?.includes("Roster"), false);
-  assert.deepEqual(labels, ["Partecipa", "Esci"]);
+  assert.deepEqual(labels, ["Partecipa", "Esci", "Avvisa"]);
 });
 
 test("event embed renders every active comp build and marks empty seats", () => {
@@ -252,7 +253,7 @@ test("event embed renders every active comp build and marks empty seats", () => 
   ]);
 });
 
-test("thread action rows offer only Join and Leave, enabled while the event is scheduled", () => {
+test("thread action rows offer Join, Leave and Ping, enabled while the event is scheduled", () => {
   const ids = (rows: ReturnType<typeof buildEventThreadActionRows>) =>
     rows
       .flatMap((row) => row.toJSON().components)
@@ -262,32 +263,56 @@ test("thread action rows offer only Join and Leave, enabled while the event is s
 
   const scheduled = buildEventThreadActionRows(event());
   assert.equal(scheduled.length, 1);
-  assert.deepEqual(ids(scheduled), ["event:join:42", "event:leave:42"]);
-  assert.deepEqual(disabled(scheduled), [false, false]);
+  assert.deepEqual(ids(scheduled), ["event:join:42", "event:leave:42", "event:ping:42"]);
+  assert.deepEqual(disabled(scheduled), [false, false, false]);
 
   for (const status of ["live", "stopped", "cancelled"] as const) {
     const rows = buildEventThreadActionRows(event({ status }));
-    assert.deepEqual(ids(rows), ["event:join:42", "event:leave:42"], status);
-    assert.deepEqual(disabled(rows), [true, true], status);
+    assert.deepEqual(ids(rows), ["event:join:42", "event:leave:42", "event:ping:42"], status);
+    assert.deepEqual(disabled(rows), [true, true, true], status);
   }
 });
 
-test("synchronized event copies and detached events show the same Join and Leave controls", () => {
-  for (const isCopy of [true, false]) {
-    const components = buildEventThreadActionRows(
+test("synchronized event copies hide Ping; detached events keep it", () => {
+  const ids = (isCopy: boolean) =>
+    buildEventThreadActionRows(
       event({
         source_tenant_id: "alliance",
         source_event_id: 8,
         is_synchronized_copy: isCopy,
       }),
-    ).flatMap((row) => row.toJSON().components);
-    assert.deepEqual(
-      components.map((component) =>
-        "custom_id" in component ? component.custom_id : undefined,
-      ),
-      ["event:join:42", "event:leave:42"],
-    );
-  }
+    )
+      .flatMap((row) => row.toJSON().components)
+      .map((component) => ("custom_id" in component ? component.custom_id : undefined));
+  assert.deepEqual(ids(true), ["event:join:42", "event:leave:42"]);
+  assert.deepEqual(ids(false), ["event:join:42", "event:leave:42", "event:ping:42"]);
+});
+
+test("reminder uses stable per-event role mentions and a relative event timestamp", () => {
+  const message = buildEventReminderMessage(
+    event({
+      discord_role_ids: [
+        "111111111111111111",
+        "111111111111111111",
+        "222222222222222222",
+      ],
+    }),
+  );
+
+  assert.match(message.content, /<@&111111111111111111> <@&222222222222222222>/);
+  assert.match(message.content, /<t:1788292800:R>/);
+  assert.match(message.content, /Join \/ Change Build/);
+  assert.deepEqual(message.allowedMentions, {
+    parse: [],
+    roles: ["111111111111111111", "222222222222222222"],
+  });
+});
+
+test("reminder without roles disables generic mentions", () => {
+  const message = buildEventReminderMessage(event({ discord_role_ids: [] }));
+
+  assert.doesNotMatch(message.content, /<@&/);
+  assert.deepEqual(message.allowedMentions, { parse: [] });
 });
 
 test("event embed renders distinct Mass and Start timestamps", () => {

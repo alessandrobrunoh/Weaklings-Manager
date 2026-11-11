@@ -128,6 +128,30 @@ export function buildEventMassMessage(
   };
 }
 
+/** Builds the manual pre-event reminder without enabling broad Discord mention parsing. */
+export function buildEventReminderMessage(
+  event: EventView,
+  locale?: string | null,
+): EventReminderMessage {
+  const timestamp = eventTimestamp(event, "start");
+  const roleIds = [...new Set(event.discord_role_ids ?? [])];
+  const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+  const prefix = roleMentions ? `${roleMentions} ` : "";
+
+  return {
+    content: event.event_kind === "flash"
+      ? flashCopy(locale, "reminder", {
+          prefix,
+          title: event.title,
+          timestamp,
+        })
+      : `🔔 ${prefix}Reminder: **${event.title}** starts <t:${timestamp}:R>. Use **Join / Change Build** to sign up!`,
+    allowedMentions: roleIds.length > 0
+      ? { parse: [], roles: roleIds }
+      : { parse: [] },
+  };
+}
+
 /** Builds the live-event notice without allowing arbitrary user or role mentions. */
 export function buildEventStartMessage(
   event: EventView,
@@ -634,9 +658,10 @@ export function buildEventManageActionRow(
 }
 
 /**
- * The control row shown inside an event announcement thread: Join and Leave only.
- * Managing an event (ping, start, stop, cancel, reopen) is done on the site or with
- * the thread slash commands, never from a button on a message everyone can click.
+ * The control row shown inside an event announcement thread: Join, Leave and Ping.
+ * Ping posts the reminder; the bot lets only the organizer or an administrator use it.
+ * Synchronized copies are participant-facing, so they show Join and Leave only. Every
+ * other management action (start, stop, cancel, reopen) is done on the site.
  */
 export function buildEventThreadActionRows(
   event: EventView,
@@ -644,20 +669,31 @@ export function buildEventThreadActionRows(
 ): ActionRowBuilder<ButtonBuilder>[] {
   const isScheduled = event.status === "scheduled";
   const isFlash = event.event_kind === "flash";
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`event:join:${event.id}`)
-        .setLabel(isFlash ? flashCopy(locale, "join") : "Join / Change Build")
-        .setEmoji("✅")
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(!isScheduled),
-      new ButtonBuilder()
-        .setCustomId(`event:leave:${event.id}`)
-        .setLabel(isFlash ? flashCopy(locale, "leave") : "Leave")
-        .setEmoji("🚪")
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!isScheduled),
-    ),
+  const isSynchronizedCopy =
+    event.is_synchronized_copy ?? event.source_event_id != null;
+  const buttons = [
+    new ButtonBuilder()
+      .setCustomId(`event:join:${event.id}`)
+      .setLabel(isFlash ? flashCopy(locale, "join") : "Join / Change Build")
+      .setEmoji("✅")
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!isScheduled),
+    new ButtonBuilder()
+      .setCustomId(`event:leave:${event.id}`)
+      .setLabel(isFlash ? flashCopy(locale, "leave") : "Leave")
+      .setEmoji("🚪")
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!isScheduled),
   ];
+  if (!isSynchronizedCopy) {
+    buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`event:ping:${event.id}`)
+        .setLabel(isFlash ? flashCopy(locale, "ping") : "Ping")
+        .setEmoji("🔔")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!isScheduled),
+    );
+  }
+  return [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)];
 }
