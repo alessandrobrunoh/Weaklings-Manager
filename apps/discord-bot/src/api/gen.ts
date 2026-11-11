@@ -3043,6 +3043,12 @@ export interface paths {
          * List persisted fights
          * @description The tie-breaker on `id` makes pages deterministic when several fights share
          *     the same start timestamp.
+         *
+         *     `outcome` is the stored `fights.outcome` (the same value the event page reports);
+         *     `total_players`, `total_kills` and `total_fame` are battle-wide figures (both sides) summed
+         *     from the segments' snapshots. Sorting by start time or id paginates in SQL and reads only
+         *     the requested page; sorting by a derived value or filtering on `min_players` has to read every
+         *     matching fight's aggregates (scalar snapshot columns only) before paginating.
          */
         get: operations["list_fights"];
         put?: never;
@@ -12547,22 +12553,23 @@ export interface components {
             fetched_at: string;
             /**
              * Format: int64
-             * @description Deaths suffered by the configured guild.
+             * @description Deaths suffered by our side (the configured guild plus its allies, summed).
              */
             guild_deaths: number;
             /**
              * Format: int64
-             * @description Kill fame scored by the configured guild.
+             * @description Kill fame scored by our side (the configured guild plus its allies, summed).
              */
             guild_kill_fame: number;
             /**
              * Format: int64
-             * @description Kills scored by the configured guild.
+             * @description Kills scored by our side (the configured guild plus its allies, summed).
              */
             guild_kills: number;
             /**
              * Format: int32
-             * @description Number of players from the configured guild seen in this battle.
+             * @description Number of players on our side seen in this battle: the configured guild plus its allies,
+             *     summed.
              */
             guild_players_count: number;
             /**
@@ -12771,8 +12778,35 @@ export interface components {
             id: number;
             /** @description Whether this grouping needs officer review. */
             needs_review: boolean;
+            /**
+             * @description The Fight's stored outcome (`fights.outcome`), the same value `stats.wins`/`losses` and
+             *     every battle's `outcome` are built from, and the same shape `GET /api/fights` returns.
+             */
+            outcome: components["schemas"]["FightOutcomeView"];
+            /**
+             * Format: int64
+             * @description Number of persisted battle segments in this Fight.
+             */
+            segment_count: number;
             /** @description When the first segment began (RFC3339). */
             started_at: string;
+            stats?: null | components["schemas"]["FightAggregateStats"];
+            /**
+             * Format: int64
+             * @description Friendly kill fame summed across segments. Absent until analytics have been computed.
+             */
+            total_fame?: number | null;
+            /**
+             * Format: int64
+             * @description Friendly kills summed across segments. Absent until analytics have been computed.
+             */
+            total_kills?: number | null;
+            /**
+             * Format: int64
+             * @description Distinct friendly players across the Fight's segments (our guild plus allies). Absent
+             *     until the Fight's analytics have been computed.
+             */
+            total_players?: number | null;
         };
         /**
          * @description Whether the caller may manage a specific event (start/stop/cancel/ping).
@@ -13187,6 +13221,40 @@ export interface components {
             key: string;
         };
         /**
+         * @description Compact combat totals for one Fight, from the persisted `fight_stats` row.
+         *
+         *     Every figure is for the *friendly* side (the tenant's own guild plus its
+         *     allies, summed) and players are deduplicated across segments. Absent
+         *     entirely when the fight has not been recomputed yet.
+         */
+        FightAggregateStats: {
+            /**
+             * Format: double
+             * @description Friendly kill/death ratio; equals the kill count when there are no deaths.
+             */
+            kill_death_ratio: number;
+            /**
+             * Format: int64
+             * @description Friendly deaths summed across segments.
+             */
+            total_deaths: number;
+            /**
+             * Format: int64
+             * @description Friendly kill fame summed across segments.
+             */
+            total_fame: number;
+            /**
+             * Format: int64
+             * @description Friendly kills summed across segments.
+             */
+            total_kills: number;
+            /**
+             * Format: int64
+             * @description Distinct friendly players across every segment.
+             */
+            total_players: number;
+        };
+        /**
          * @description One fight's persisted analytics: its decided outcome, plus the
          *     `fight_stats` rollup when one has been computed.
          */
@@ -13431,17 +13499,30 @@ export interface components {
              */
             fight_id: number;
         };
+        /**
+         * @description A canonical Fight's outcome from the configured guild's perspective.
+         *
+         *     The one outcome shape every Fight-level API returns (fights list/detail and
+         *     the event page). The verdict itself is `fights.outcome`, persisted by
+         *     [`super::writer::recompute_fight_analytics`].
+         */
         FightOutcomeView: {
             /**
              * Format: int64
              * @description Segments that produced a decided outcome. Compare against `segment_count`
              *     to see how much of the fight the verdict actually rests on.
+             *
+             *     Built from the stored verdict, which keeps the method but not the exact
+             *     count: it is `0` for an `unknown` outcome, the full segment count when
+             *     the method has no `_partial_coverage` suffix, and `1` (a lower bound)
+             *     when it has one.
              */
             evidence_count: number;
             /**
              * @description How the outcome was resolved: `unanimous_segments`, `mixed_segments`,
              *     `no_resolved_segments` or `no_segments`. The first two gain a
              *     `_partial_coverage` suffix when some segments could not be classified.
+             *     `not_computed` when the fight was never recomputed.
              */
             method: string;
             /** @description Deterministic Fight-level outcome derived from persisted segment evidence. */
@@ -13649,7 +13730,11 @@ export interface components {
              *     to multiple fights intentionally contributes to each fight's participation sample.
              */
             planned_participation: components["schemas"]["FightTrendPlannedParticipation"];
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Win percentage in the `0..=100` range, the same scale as every other `win_rate` in the
+             *     API. `None` when no fight has winner data.
+             */
             win_rate?: number | null;
             /**
              * Format: int64
@@ -15136,23 +15221,25 @@ export interface components {
         OpponentPerformanceView: {
             /**
              * Format: int64
-             * @description Number of linked battles against this opponent. Includes battles whose Fight outcome is
-             *     `"draw"` or `"unknown"` — we did fight this guild, even when neither `wins` nor `losses`
-             *     can honestly claim the result.
+             * @description Number of distinct Fights against this opponent (a multi-segment Fight counts once, the
+             *     same unit as `total_battles`). Includes Fights whose outcome is `"draw"` or `"unknown"`:
+             *     we did fight this guild, even when neither `wins` nor `losses` can honestly claim the
+             *     result.
              */
             battles: number;
             /** @description `AlbionBB` guild id when available. */
             guild_id?: string | null;
             /**
              * Format: int64
-             * @description Kill fame scored by our guild in these matchups.
+             * @description Kill fame scored by our side (own guild plus allies) in these matchups, summed over every
+             *     segment.
              */
             guild_kill_fame: number;
             /** @description Human-readable guild name when available. */
             guild_name: string;
             /**
              * Format: int64
-             * @description Losses against this opponent (Fight outcome `"defeat"`).
+             * @description Fights lost against this opponent (Fight outcome `"defeat"`), counted once per Fight.
              */
             losses: number;
             /**
@@ -15162,7 +15249,7 @@ export interface components {
             opponent_kill_fame: number;
             /**
              * Format: int64
-             * @description Wins against this opponent (Fight outcome `"victory"`).
+             * @description Fights won against this opponent (Fight outcome `"victory"`), counted once per Fight.
              */
             wins: number;
         };
