@@ -9,3 +9,11 @@ missing_docs = "warn"
 [workspace.lints.clippy]
 all = "deny"
 pedantic = "warn"
+
+# Dev builds: keep file:line in backtraces for our code, drop the full
+# debuginfo that made target/ grow by gigabytes and slowed linking.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
