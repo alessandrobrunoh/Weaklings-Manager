@@ -875,6 +875,24 @@ mod tests {
     };
     use backend_migration::control as control_migration;
 
+    /// These tests share the real `control` schema. Creating it and running its migrations from
+    /// several tests at once races inside Postgres (`CREATE ... IF NOT EXISTS` is not atomic across
+    /// sessions), so the bootstrap runs one test at a time.
+    async fn bootstrap_control(url: &str, admin: &DatabaseConnection) -> DatabaseConnection {
+        static BOOTSTRAP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _guard = BOOTSTRAP.lock().await;
+        ensure_schema(admin, CONTROL_SCHEMA)
+            .await
+            .expect("control schema");
+        let control = connect_with_search_path(url, CONTROL_SCHEMA)
+            .await
+            .expect("control connect");
+        control_migration::Migrator::up(&control, None)
+            .await
+            .expect("control migrations");
+        control
+    }
+
     #[test]
     fn feature_gate_matches_whole_segments_only() {
         assert_eq!(required_feature("/api/comps"), Some("comps"));
@@ -1245,15 +1263,7 @@ mod tests {
             return;
         };
 
-        ensure_schema(&admin, CONTROL_SCHEMA)
-            .await
-            .expect("control schema");
-        let control = connect_with_search_path(&url, CONTROL_SCHEMA)
-            .await
-            .expect("control connect");
-        control_migration::Migrator::up(&control, None)
-            .await
-            .expect("control migrations");
+        let control = bootstrap_control(&url, &admin).await;
 
         let id_a = unique_schema("ta");
         let id_b = unique_schema("tb");
@@ -1360,15 +1370,7 @@ mod tests {
             return;
         };
 
-        ensure_schema(&admin, CONTROL_SCHEMA)
-            .await
-            .expect("control schema");
-        let control = connect_with_search_path(&url, CONTROL_SCHEMA)
-            .await
-            .expect("control connect");
-        control_migration::Migrator::up(&control, None)
-            .await
-            .expect("control migrations");
+        let control = bootstrap_control(&url, &admin).await;
 
         let id = unique_schema("tp");
         let schema = format!("tenant_{id}");
@@ -1408,15 +1410,7 @@ mod tests {
         let Some((url, admin)) = try_admin_db().await else {
             return;
         };
-        ensure_schema(&admin, CONTROL_SCHEMA)
-            .await
-            .expect("control schema");
-        let control = connect_with_search_path(&url, CONTROL_SCHEMA)
-            .await
-            .expect("control connect");
-        control_migration::Migrator::up(&control, None)
-            .await
-            .expect("control migrations");
+        let control = bootstrap_control(&url, &admin).await;
 
         let id = unique_schema("te");
         let schema = format!("tenant_{id}");
