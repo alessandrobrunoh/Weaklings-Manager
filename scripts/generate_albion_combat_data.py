@@ -63,9 +63,9 @@ from albion_dumps import (
 
 GENERATOR_VERSION = 1
 
-CATALOG = REPO_ROOT / "apps/backend/src/modules/openalbion/catalog.json"
-ABILITIES = REPO_ROOT / "apps/backend/src/modules/openalbion/abilities.json"
-OUT_DIR = REPO_ROOT / "apps/backend/src/modules/combat/data"
+CATALOG = REPO_ROOT / "apps/backend/crates/albion-data/src/openalbion/catalog.json"
+ABILITIES = REPO_ROOT / "apps/backend/crates/albion-data/src/openalbion/abilities.json"
+OUT_DIR = REPO_ROOT / "apps/backend/crates/gamedata/data"
 
 # The tiers the app offers. `equipment-grid.ts` lists T4..T8, and every Destiny Board Item Power
 # bonus declares `@mintier="4"`, so nothing below T4 can differ from its base value anyway.

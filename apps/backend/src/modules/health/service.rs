@@ -2,7 +2,7 @@
 //!
 //! Provides the business logic for the health check endpoint.
 
-use crate::config;
+use backend_core::config;
 
 use super::models::HealthResponse;
 

@@ -5,12 +5,12 @@ use std::sync::atomic::AtomicBool;
 
 use sea_orm::DatabaseConnection;
 
-use crate::modules::albionbb::service::AlbionBbService;
-use crate::modules::albiondata::service::AlbionDataService;
-use crate::tenant::TenantWorkerSpawner;
+use backend_albion_data::albionbb::service::AlbionBbService;
+use backend_albion_data::albiondata::service::AlbionDataService;
+use backend_identity::tenant::TenantWorkerSpawner;
 
 /// Starts `event_sessions` and `battle_sync` for a tenant, holding what starting
-/// them takes. `run_server` hands one to [`crate::tenant::TenantRegistry::set_workers`].
+/// them takes. `run_server` hands one to [`backend_identity::tenant::TenantRegistry::set_workers`].
 #[derive(Clone)]
 pub struct TenantWorkers {
     /// AlbionBB client both workers use.

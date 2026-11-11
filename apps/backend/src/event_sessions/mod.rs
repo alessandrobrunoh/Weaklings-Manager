@@ -17,16 +17,16 @@ use std::time::Duration;
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use tokio::time::interval;
 
-use crate::modules::giveaways::GiveawayService;
-use crate::modules::events::auto_stop::auto_stop_expired_sessions;
+use backend_events::events::auto_stop::auto_stop_expired_sessions;
+use backend_rewards::giveaways::GiveawayService;
 use battle_linker::refresh_pending_links;
 
-use crate::albion_scope::{self, AlbionScope};
-use crate::errors::AppError;
-use crate::modules::albionbb::service::AlbionBbService;
-use crate::modules::albiondata::service::AlbionDataService;
-use crate::modules::events::service::EventService;
-use crate::modules::regear::extractor::ExtractionGuildContext;
+use backend_albion_data::albionbb::service::AlbionBbService;
+use backend_albion_data::albiondata::service::AlbionDataService;
+use backend_core::errors::AppError;
+use backend_events::events::service::EventService;
+use backend_identity::albion_scope::{self, AlbionScope};
+use backend_regear::extractor::ExtractionGuildContext;
 
 /// Tick interval for the worker. Short enough that auto-stop latency stays
 /// within tens of seconds, long enough not to hammer the DB.
@@ -66,7 +66,7 @@ pub fn spawn(
                 tracing::warn!(tenant_id, error = %error, "event completion XP retry cycle failed");
             }
             if last_prune.is_none_or(|at| at.elapsed() >= ACTION_LOG_PRUNE_INTERVAL) {
-                if let Err(error) = crate::modules::actions::action_log::prune(&db).await {
+                if let Err(error) = backend_events::actions::action_log::prune(&db).await {
                     tracing::warn!(tenant_id, error = %error, "action log retention failed");
                 }
                 last_prune = Some(std::time::Instant::now());

@@ -2,48 +2,13 @@
 
 #![recursion_limit = "256"]
 
-pub(crate) mod albion_scope;
 pub(crate) mod battle_sync;
-pub(crate) mod control_migration;
-#[allow(
-    dead_code,
-    reason = "the Discord outbox is inert until the lifecycle, bot API and scheduler slices consume it"
-)]
-pub(crate) mod discord_delivery;
 pub(crate) mod event_sessions;
-pub(crate) mod http_layers;
-pub(crate) mod migration;
 pub(crate) mod modules;
 pub(crate) mod openapi;
-pub(crate) mod platform_admins;
-pub(crate) mod postgres;
-#[allow(
-    dead_code,
-    reason = "wake/fence/state helpers are consumed by the sync and Discord outbox slices"
-)]
-pub(crate) mod runtime;
-pub(crate) mod tenant;
-#[cfg(test)]
-#[allow(
-    dead_code,
-    reason = "fixture surface is extended and consumed by later slices"
-)]
-pub(crate) mod testkit;
-pub(crate) mod ttl_cache;
-
-pub mod config;
-pub(crate) mod errors;
-pub(crate) mod http_client;
-pub(crate) mod pagination;
-pub(crate) mod responses;
-pub(crate) mod serde_helpers;
 
 pub(crate) mod app_runtime;
 pub(crate) mod tenant_workers;
-
-pub(crate) mod albion_common;
-pub(crate) mod ratios;
-pub(crate) mod sync_origin;
 
 use axum::Router;
 use axum::extract::MatchedPath;
@@ -68,7 +33,7 @@ use utoipa_scalar::{Scalar, Servable};
 /// Panics if the configuration cannot be parsed from the environment.
 #[allow(clippy::too_many_lines)]
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = crate::config::Config::from_env();
+    let cfg = backend_core::config::Config::from_env();
 
     // Derive the session cookie encryption key once at startup so a misconfigured
     // `SESSION_SECRET` fails the deployment immediately instead of panicking mid-request.
@@ -81,29 +46,32 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let control_admin = sea_orm::Database::connect(cfg.control_plane_url()).await?;
 
     tracing::info!(
-        schema = crate::postgres::CONTROL_SCHEMA,
+        schema = backend_core::postgres::CONTROL_SCHEMA,
         "ensuring control-plane schema"
     );
-    crate::postgres::ensure_schema(&control_admin, crate::postgres::CONTROL_SCHEMA).await?;
+    backend_core::postgres::ensure_schema(&control_admin, backend_core::postgres::CONTROL_SCHEMA)
+        .await?;
     tracing::info!("connecting to control-plane");
-    let control_db = crate::postgres::connect_with_search_path(
+    let control_db = backend_core::postgres::connect_with_search_path(
         cfg.control_plane_url(),
-        crate::postgres::CONTROL_SCHEMA,
+        backend_core::postgres::CONTROL_SCHEMA,
     )
     .await?;
     tracing::info!("running control-plane migrations");
-    crate::control_migration::Migrator::up(&control_db, None).await?;
+    backend_migration::control::Migrator::up(&control_db, None).await?;
     tracing::info!("control-plane migrations complete");
 
-    let platform_admins =
-        crate::platform_admins::PlatformAdmins::new(Some(cfg.super_admin_discord_id.as_str()));
+    let platform_admins = backend_core::platform_admins::PlatformAdmins::new(Some(
+        cfg.super_admin_discord_id.as_str(),
+    ));
     platform_admins
         .reload(&control_db)
         .await
         .map_err(|e| format!("Failed to load platform admins: {e}"))?;
     tracing::info!("platform admin cache loaded");
 
-    let registry = crate::tenant::TenantRegistry::new(cfg.database_url.clone(), control_db.clone());
+    let registry =
+        backend_identity::tenant::TenantRegistry::new(cfg.database_url.clone(), control_db.clone());
     tracing::info!("warming tenant registry");
     let tenant_contexts = registry.warmup().await?;
     tracing::info!(tenants = tenant_contexts.len(), "tenant registry ready");
@@ -113,24 +81,25 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     // `Extension<Permissions>`, but a request with no tenant has no roles.
     // `resolve_tenant` overwrites this with the real cache for every scoped
     // request, so it never grants anything.
-    let unscoped_permissions = crate::modules::auth::Permissions::new_empty();
+    let unscoped_permissions = backend_identity::auth::Permissions::new_empty();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.backend_port));
 
-    let openalbion_service = crate::modules::openalbion::service::OpenAlbionService::new();
-    let albiondata_service = crate::modules::albiondata::service::AlbionDataService::new(
+    let openalbion_service = backend_albion_data::openalbion::service::OpenAlbionService::new();
+    let albiondata_service = backend_albion_data::albiondata::service::AlbionDataService::new(
         cfg.albion_api_region.clone(),
         Some(cfg.albiondata_request_timeout_secs),
     );
-    let albionbb_client = crate::modules::albionbb::client::AlbionBbApiClient::new(
+    let albionbb_client = backend_albion_data::albionbb::client::AlbionBbApiClient::new(
         Some(cfg.albionbb_base_url.clone()),
         Some(cfg.albionbb_request_timeout_secs),
     );
-    let albionbb_service = crate::modules::albionbb::service::AlbionBbService::new(albionbb_client);
+    let albionbb_service =
+        backend_albion_data::albionbb::service::AlbionBbService::new(albionbb_client);
     // Template only: it carries no guild, allies or region. Every handler derives
     // the requesting tenant's scope (`BattlesService::for_scope`), so an unscoped
     // use classifies nobody as friendly instead of using the env guild.
-    let battles_service = crate::modules::battles::service::BattlesService::new(
+    let battles_service = backend_battles::battles::service::BattlesService::new(
         albionbb_service.clone(),
         String::new(),
         &[],
@@ -145,13 +114,13 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         albiondata_service: albiondata_service.clone(),
     }));
     // The one spawn point for periodic loops (fanout and mirror retry today).
-    let runtime = crate::runtime::spawn_all(
+    let runtime = backend_runtime::spawn_all(
         control_db.clone(),
         registry.clone(),
         crate::app_runtime::production_deps(),
     );
     for ctx in &tenant_contexts {
-        if !crate::tenant::starts_sync_workers(&ctx.kind) {
+        if !backend_identity::tenant::starts_sync_workers(&ctx.kind) {
             tracing::info!(
                 tenant_id = %ctx.tenant_id,
                 kind = %ctx.kind,
@@ -165,7 +134,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Template only, like `battles_service`: handlers call `for_scope` with the tenant row.
-    let regear_guild_context = crate::modules::regear::router::RegearGuildContext {
+    let regear_guild_context = backend_regear::router::RegearGuildContext {
         guild_id: String::new(),
         server: String::new(),
     };
@@ -178,11 +147,11 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .merge(modules::router())
         .nest(
             "/platform",
-            crate::modules::platform::router()
-                .merge(crate::modules::events::platform_routes::platform_routes()),
+            backend_identity::platform::router()
+                .merge(backend_events::events::platform_routes::platform_routes()),
         )
-        .nest("/tenants", crate::modules::platform::public_router())
-        .nest("/alliances", crate::modules::platform::alliance_router());
+        .nest("/tenants", backend_identity::platform::public_router())
+        .nest("/alliances", backend_identity::platform::alliance_router());
 
     // The browser only ever talks to the frontend's own origin — it proxies
     // `/api` server-to-server, which CORS never governs — so the one origin
@@ -215,12 +184,14 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
         .layer(axum::middleware::from_fn_with_state(
             registry.clone(),
-            crate::tenant::resolve_tenant,
+            backend_identity::tenant::resolve_tenant,
         ))
-        .layer(axum::Extension(crate::modules::auth::SessionStore::new(
+        .layer(axum::Extension(backend_identity::auth::SessionStore::new(
             control_db.clone(),
         )))
-        .layer(axum::Extension(crate::tenant::ControlDb(control_db)))
+        .layer(axum::Extension(backend_identity::tenant::ControlDb(
+            control_db,
+        )))
         .layer(axum::Extension(registry.clone()))
         .layer(axum::Extension(cfg.clone()))
         .layer(axum::Extension(openalbion_service))
@@ -228,14 +199,12 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(albionbb_service))
         .layer(axum::Extension(battles_service))
         .layer(axum::Extension(regear_guild_context))
+        .layer(axum::Extension(backend_intel::cache::ReportCache::new()))
         .layer(axum::Extension(
-            crate::modules::intel::cache::ReportCache::new(),
+            backend_comps::price_cache::PriceCache::new(),
         ))
         .layer(axum::Extension(
-            crate::modules::comps::price_cache::PriceCache::new(),
-        ))
-        .layer(axum::Extension(
-            crate::modules::events::roster_hub::RosterHub::new(),
+            backend_events::events::roster_hub::RosterHub::new(),
         ))
         .layer(axum::Extension(runtime))
         .layer(axum::Extension(unscoped_permissions))
@@ -272,9 +241,12 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
                 ),
         );
 
-    let app = crate::http_layers::apply(routes).layer(cors);
+    let app = backend_core::http_layers::apply(routes).layer(cors);
 
-    tracing::info!(version = crate::config::VERSION, "listening on {addr}");
+    tracing::info!(
+        version = backend_core::config::VERSION,
+        "listening on {addr}"
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)

@@ -2,46 +2,8 @@
 //!
 //! Exposes and aggregates all functional modules (users, auth, etc.) in the backend.
 
-pub mod actions;
-pub mod admin;
-pub mod albion;
-pub mod albionbb;
-pub mod albiondata;
-pub mod alliance_share;
-pub mod applications;
-pub mod attention;
-pub mod audit;
-pub mod auth;
-pub mod bank;
-pub mod battles;
-pub mod capabilities;
-pub mod combat;
-pub mod comps;
-pub mod discord_api;
-pub mod economy;
-pub mod enemies;
-pub mod events;
-pub mod fight_analytics;
-pub mod fights;
-pub mod fingerprints;
-pub mod giveaways;
 pub mod health;
-pub mod intel;
-pub mod members;
-pub mod notifications;
-pub mod openalbion;
-pub mod platform;
-pub mod progression;
-pub mod regear;
-pub mod siphoned;
-pub mod splits;
-pub mod sync;
-pub mod tickets;
-pub mod trials;
-pub mod users;
 pub mod utils;
-pub mod vods;
-pub mod warns;
 
 use axum::Router;
 
@@ -51,48 +13,48 @@ use axum::Router;
 pub fn router() -> Router {
     Router::new()
         .nest("/health", health::router())
-        .nest("/users", crate::modules::users::router())
-        .nest("/members", crate::modules::members::router())
-        .nest("/auth", crate::modules::auth::router())
-        .nest("/bank", crate::modules::bank::router())
-        .nest("/splits", crate::modules::splits::router())
-        .nest("/albion", crate::modules::albion::router())
-        .nest("/albionbb", crate::modules::albionbb::router())
-        .nest("/applications", crate::modules::applications::router())
-        .nest("/tickets", crate::modules::tickets::router())
-        .nest("/albiondata", crate::modules::albiondata::router())
-        .nest("/battles", crate::modules::battles::router())
-        .nest("/attention", crate::modules::attention::router())
-        .nest("/enemies", crate::modules::enemies::router())
-        .nest("/fingerprints", crate::modules::fingerprints::router())
-        .nest("/economy", crate::modules::economy::router())
+        .nest("/users", backend_identity::users::router())
+        .nest("/members", backend_identity::members::router())
+        .nest("/auth", backend_identity::auth::router())
+        .nest("/bank", backend_bank::router())
+        .nest("/splits", backend_splits::router())
+        .nest("/albion", backend_identity::albion::router())
+        .nest("/albionbb", backend_albion_data::albionbb::router())
+        .nest("/applications", backend_community::applications::router())
+        .nest("/tickets", backend_community::tickets::router())
+        .nest("/albiondata", backend_albion_data::albiondata::router())
+        .nest("/battles", backend_battles::battles::router())
+        .nest("/attention", backend_fights::attention::router())
+        .nest("/enemies", backend_battles::enemies::router())
+        .nest("/fingerprints", backend_battles::fingerprints::router())
+        .nest("/economy", backend_battles::economy::router())
         .nest(
             "/fight-analytics",
-            crate::modules::fight_analytics::router(),
+            backend_battles::fight_analytics::router(),
         )
-        .nest("/openalbion", crate::modules::openalbion::router())
-        .nest("/combat", crate::modules::combat::router())
+        .nest("/openalbion", backend_albion_data::openalbion::router())
+        .nest("/combat", backend_combat::router())
         .nest(
             "/comps",
-            crate::modules::comps::router()
-                .merge(crate::modules::combat::comp_routes::comp_routes())
-                .merge(crate::modules::events::comp_routes::comp_routes()),
+            backend_comps::router()
+                .merge(backend_combat::comp_routes::comp_routes())
+                .merge(backend_events::events::comp_routes::comp_routes()),
         )
-        .nest("/events", crate::modules::events::router())
-        .nest("/actions", crate::modules::actions::router())
-        .nest("/fights", crate::modules::fights::router())
-        .nest("/giveaways", crate::modules::giveaways::router())
-        .nest("/siphoned", crate::modules::siphoned::router())
-        .nest("/regear", crate::modules::regear::router())
-        .nest("/alliance", crate::modules::alliance_share::router())
-        .nest("/sync", crate::modules::sync::router::router())
-        .nest("/me", crate::modules::capabilities::router())
-        .nest("/admin", crate::modules::admin::router())
+        .nest("/events", backend_events::events::router())
+        .nest("/actions", backend_events::actions::router())
+        .nest("/fights", backend_fights::fights::router())
+        .nest("/giveaways", backend_rewards::giveaways::router())
+        .nest("/siphoned", backend_rewards::siphoned::router())
+        .nest("/regear", backend_regear::router())
+        .nest("/alliance", backend_events::alliance_share::router())
+        .nest("/sync", backend_runtime::sync::router::router())
+        .nest("/me", backend_identity::capabilities::router())
+        .nest("/admin", backend_identity::admin::router())
         .nest("/utils", utils::router())
-        .nest("/audit", crate::modules::audit::router())
-        .nest("/intel", crate::modules::intel::router())
-        .nest("/progression", crate::modules::progression::router())
-        .nest("/vods", crate::modules::vods::router())
-        .nest("/warns", crate::modules::warns::router())
-        .nest("/notifications", crate::modules::notifications::router())
+        .nest("/audit", backend_identity::audit::router())
+        .nest("/intel", backend_intel::router())
+        .nest("/progression", backend_progression::router())
+        .nest("/vods", backend_community::vods::router())
+        .nest("/warns", backend_community::warns::router())
+        .nest("/notifications", backend_identity::notifications::router())
 }

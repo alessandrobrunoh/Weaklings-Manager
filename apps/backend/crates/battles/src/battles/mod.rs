@@ -1,0 +1,17 @@
+//! `Battles` module — guild-scoped battle history for the Weaklings guild.
+//!
+//! Wraps the generic [`backend_albion_data::albionbb`] client and reshapes the data
+//! for the frontend: lists recent battles of the configured guild, fetches full
+//! battle detail (combining battle + kills in one response), and provides a
+//! `/me` endpoint filtered by the calling user's linked Albion character.
+
+pub mod evidence;
+pub mod evidence_writer;
+pub mod models;
+pub mod outcome;
+pub mod roles;
+pub mod router;
+pub mod schemas;
+pub mod service;
+
+pub use router::router;

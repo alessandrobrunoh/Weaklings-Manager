@@ -28,8 +28,8 @@ not run these generators or fetch the source dumps as part of normal application
 - The scripts download source dumps and commit metadata from GitHub when the local cache does not
   contain the required data.
 - Downloads are cached under the repository's ignored `.albion-dumps-cache/` directory.
-- Running the generators writes JSON files under `apps/backend/src/modules/openalbion/` and
-  `apps/backend/src/modules/combat/data/`.
+- Running the generators writes JSON files under `apps/backend/crates/albion-data/src/openalbion/` and
+  `apps/backend/crates/gamedata/data/`.
 
 ## Verification
 

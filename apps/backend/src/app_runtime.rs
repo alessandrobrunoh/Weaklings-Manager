@@ -1,13 +1,13 @@
 //! The app's set of background loops.
 //!
 //! This is the one place that names every feature's [`LoopTask`]s; `run_server`
-//! hands the result to [`crate::runtime::spawn_all`].
+//! hands the result to [`backend_runtime::spawn_all`].
 
 use std::sync::Arc;
 
-use crate::runtime::RuntimeDeps;
-use crate::runtime::supervisor::SupervisorSettings;
-use crate::runtime::tasks::LoopTask;
+use backend_runtime::RuntimeDeps;
+use backend_runtime::supervisor::SupervisorSettings;
+use backend_runtime::tasks::LoopTask;
 
 /// The production set: every loop in [`registered_tasks`].
 #[must_use]
@@ -21,8 +21,8 @@ pub fn production_deps() -> RuntimeDeps {
 /// Every loop the server runs. Owner slices append their loop here.
 #[must_use]
 pub fn registered_tasks() -> Vec<Arc<dyn LoopTask>> {
-    let mut tasks = crate::modules::events::loop_tasks::registered_tasks();
-    tasks.extend(crate::modules::sync::engine::registered_tasks());
+    let mut tasks = backend_events::events::loop_tasks::registered_tasks();
+    tasks.extend(backend_runtime::sync::engine::registered_tasks());
     tasks
 }
 

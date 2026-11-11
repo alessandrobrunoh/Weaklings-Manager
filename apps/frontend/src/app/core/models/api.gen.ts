@@ -5849,7 +5849,7 @@ export interface components {
          *
          *     # Example
          *     ```rust,ignore
-         *     # use backend::modules::albiondata::client::AlbionDataItemIcon;
+         *     # use backend_albion_data::albiondata::client::AlbionDataItemIcon;
          *     let icon = AlbionDataItemIcon::new("T4_HEAD_PLATE_SET1", 1, 64);
          *     assert!(icon.url.contains("T4_HEAD_PLATE_SET1.png"));
          *     ```
@@ -5878,7 +5878,7 @@ export interface components {
          *
          *     # Example
          *     ```rust,ignore
-         *     # use backend::modules::albiondata::client::AlbionDataMarketPrice;
+         *     # use backend_albion_data::albiondata::client::AlbionDataMarketPrice;
          *     let price = AlbionDataMarketPrice {
          *         item_id: "T4_BAG".to_string(),
          *         city: "Caerleon".to_string(),
@@ -16737,7 +16737,7 @@ export interface components {
         };
         /**
          * @description The whole burst, resolved. Persisted verbatim as one `combat_runs.result_json` row, so this
-         *     derives `Deserialize` as well as `Serialize` — see [`crate::modules::combat::service`]'s
+         *     derives `Deserialize` as well as `Serialize` — see [`crate::service`]'s
          *     `get_run`.
          */
         ScenarioResult: {
@@ -18001,7 +18001,7 @@ export interface components {
          *
          *     # Example
          *     ```rust,ignore
-         *     # use backend::modules::events::models::UpdateEventBattlesRequest;
+         *     # use backend_events::events::models::UpdateEventBattlesRequest;
          *     let request = UpdateEventBattlesRequest {
          *         battle_ids: vec!["123456789".to_string()],
          *     };
@@ -30868,7 +30868,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Request rejected (terminal, body = ApiResponse<crate::modules::regear::models::DeathView>) */
+            /** @description Request rejected (terminal, body = ApiResponse<crate::models::DeathView>) */
             200: {
                 headers: {
                     [name: string]: unknown;

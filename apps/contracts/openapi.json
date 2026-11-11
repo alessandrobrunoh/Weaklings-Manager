@@ -696,7 +696,7 @@
         "type": "object"
       },
       "AlbionDataItemIcon": {
-        "description": "Resolved image URL for an Albion item identifier.\n\nThe render service is deterministic and unauthenticated, so the backend returns the URL instead\nof proxying the image bytes. This keeps API responses small and lets browsers cache images.\n\n# Example\n```rust,ignore\n# use backend::modules::albiondata::client::AlbionDataItemIcon;\nlet icon = AlbionDataItemIcon::new(\"T4_HEAD_PLATE_SET1\", 1, 64);\nassert!(icon.url.contains(\"T4_HEAD_PLATE_SET1.png\"));\n```",
+        "description": "Resolved image URL for an Albion item identifier.\n\nThe render service is deterministic and unauthenticated, so the backend returns the URL instead\nof proxying the image bytes. This keeps API responses small and lets browsers cache images.\n\n# Example\n```rust,ignore\n# use backend_albion_data::albiondata::client::AlbionDataItemIcon;\nlet icon = AlbionDataItemIcon::new(\"T4_HEAD_PLATE_SET1\", 1, 64);\nassert!(icon.url.contains(\"T4_HEAD_PLATE_SET1.png\"));\n```",
         "properties": {
           "item_id": {
             "example": "T4_HEAD_PLATE_SET1",
@@ -728,7 +728,7 @@
         "type": "object"
       },
       "AlbionDataMarketPrice": {
-        "description": "Current market values returned by Albion Online Data.\n\nUses optional timestamps because the upstream emits empty strings when no order is available for\na city/quality pair. Keeping those rows lets the UI distinguish \"no order\" from \"row missing\".\n\n# Example\n```rust,ignore\n# use backend::modules::albiondata::client::AlbionDataMarketPrice;\nlet price = AlbionDataMarketPrice {\n    item_id: \"T4_BAG\".to_string(),\n    city: \"Caerleon\".to_string(),\n    quality: 1,\n    sell_price_min: 1200,\n    sell_price_min_date: None,\n    sell_price_max: 1400,\n    sell_price_max_date: None,\n    buy_price_min: 900,\n    buy_price_min_date: None,\n    buy_price_max: 1000,\n    buy_price_max_date: None,\n};\nassert_eq!(price.item_id, \"T4_BAG\");\n```",
+        "description": "Current market values returned by Albion Online Data.\n\nUses optional timestamps because the upstream emits empty strings when no order is available for\na city/quality pair. Keeping those rows lets the UI distinguish \"no order\" from \"row missing\".\n\n# Example\n```rust,ignore\n# use backend_albion_data::albiondata::client::AlbionDataMarketPrice;\nlet price = AlbionDataMarketPrice {\n    item_id: \"T4_BAG\".to_string(),\n    city: \"Caerleon\".to_string(),\n    quality: 1,\n    sell_price_min: 1200,\n    sell_price_min_date: None,\n    sell_price_max: 1400,\n    sell_price_max_date: None,\n    buy_price_min: 900,\n    buy_price_min_date: None,\n    buy_price_max: 1000,\n    buy_price_max_date: None,\n};\nassert_eq!(price.item_id, \"T4_BAG\");\n```",
         "properties": {
           "buy_price_max": {
             "example": 1000,
@@ -9111,7 +9111,7 @@
               },
               {
                 "$ref": "#/components/schemas/BattleOutcome",
-                "description": "Our side's outcome, decided by [`crate::modules::battles::outcome`].\n\nAbsent only on summaries that never passed through a guild-scoped\nservice call, because the rule needs to know which guilds are ours.\nClients must render the value rather than deriving their own."
+                "description": "Our side's outcome, decided by [`crate::battles::outcome`].\n\nAbsent only on summaries that never passed through a guild-scoped\nservice call, because the rule needs to know which guilds are ours.\nClients must render the value rather than deriving their own."
               }
             ]
           },
@@ -21580,7 +21580,7 @@
         "description": "The full scenario version, with its definition."
       },
       "ScenarioResult": {
-        "description": "The whole burst, resolved. Persisted verbatim as one `combat_runs.result_json` row, so this\nderives `Deserialize` as well as `Serialize` — see [`crate::modules::combat::service`]'s\n`get_run`.",
+        "description": "The whole burst, resolved. Persisted verbatim as one `combat_runs.result_json` row, so this\nderives `Deserialize` as well as `Serialize` — see [`crate::service`]'s\n`get_run`.",
         "properties": {
           "average_time_to_kill": {
             "description": "Mean `died_at` across units that died, `None` when nobody did.",
@@ -24094,7 +24094,7 @@
         "type": "object"
       },
       "UpdateEventBattlesRequest": {
-        "description": "Request body used by officers to define the exact battles linked to an event.\n\nReplacing the full list supports the valid `0+ battles` model: an empty array explicitly means\nthe event currently has no battle evidence attached, while one or more IDs become the battle set\nused by analytics.\n\n# Example\n```rust,ignore\n# use backend::modules::events::models::UpdateEventBattlesRequest;\nlet request = UpdateEventBattlesRequest {\n    battle_ids: vec![\"123456789\".to_string()],\n};\nassert_eq!(request.battle_ids.len(), 1);\n```",
+        "description": "Request body used by officers to define the exact battles linked to an event.\n\nReplacing the full list supports the valid `0+ battles` model: an empty array explicitly means\nthe event currently has no battle evidence attached, while one or more IDs become the battle set\nused by analytics.\n\n# Example\n```rust,ignore\n# use backend_events::events::models::UpdateEventBattlesRequest;\nlet request = UpdateEventBattlesRequest {\n    battle_ids: vec![\"123456789\".to_string()],\n};\nassert_eq!(request.battle_ids.len(), 1);\n```",
         "example": {
           "battle_ids": [
             "123456789",
@@ -43617,7 +43617,7 @@
                 }
               }
             },
-            "description": "Request rejected (terminal, body = ApiResponse<crate::modules::regear::models::DeathView>)"
+            "description": "Request rejected (terminal, body = ApiResponse<crate::models::DeathView>)"
           },
           "400": {
             "content": {

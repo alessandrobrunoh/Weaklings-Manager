@@ -1,0 +1,29 @@
+[package]
+name = "backend-intel"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+sea-orm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+backend-core.workspace = true
+backend-entities.workspace = true
+backend-identity.workspace = true
+backend-battles.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+uuid.workspace = true
+backend-core = { workspace = true, features = ["test-support"] }
+backend-migration = { workspace = true, features = ["test-support"] }
+backend-identity = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,70 @@
+//! Sea-ORM entity for the `transactions` table (the Guild Bank ledger).
+
+use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+#[sea_orm(table_name = "transactions")]
+pub struct Model {
+    /// The unique primary key of the transaction.
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    /// The user who paid out the amount (the officer who accepted the withdrawal request).
+    /// `None` until the withdrawal is accepted (the Guild Bank is the notional source until then).
+    pub from_user_id: Option<i64>,
+    /// The user who is owed / receives the amount.
+    pub to_user_id: i64,
+    /// Whether the destination is the virtual Guild Bank instead of the historical recipient.
+    pub to_guild_bank: bool,
+    /// The stored amount, always positive; direction is encoded by from/to and destination.
+    pub amount: Decimal,
+    /// The lifecycle status of the transaction: `"pending"`, `"requested"`, `"rejected"`, `"withdrawn"`, or `"donated"`.
+    pub status: String,
+    /// The kind of transaction, e.g. `"split_credit"`.
+    #[sea_orm(column_name = "type")]
+    pub r#type: String,
+    /// The split that generated this transaction, if any.
+    pub split_id: Option<i64>,
+    /// Stable cross-tenant idempotency key for alliance-owned split projections.
+    pub alliance_distribution_key: Option<String>,
+    /// Alliance that owns a projected split-credit transaction.
+    pub source_alliance_tenant_id: Option<String>,
+    /// Alliance-local split that generated this guild transaction.
+    pub source_alliance_split_id: Option<i64>,
+    /// The timestamp when the transaction was created.
+    pub created_at: DateTimeWithTimeZone,
+    /// The timestamp when the recipient requested withdrawal, if they have.
+    pub requested_at: Option<DateTimeWithTimeZone>,
+    /// The timestamp when an officer accepted the withdrawal (paid it out), if they have.
+    pub withdrawn_at: Option<DateTimeWithTimeZone>,
+    /// Last mutation of this ledger row.
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter)]
+pub enum Relation {
+    FromUser,
+    ToUser,
+    Split,
+}
+
+impl RelationTrait for Relation {
+    fn def(&self) -> RelationDef {
+        match self {
+            Self::FromUser => Entity::belongs_to(crate::users::Entity)
+                .from(Column::FromUserId)
+                .to(crate::users::Column::Id)
+                .into(),
+            Self::ToUser => Entity::belongs_to(crate::users::Entity)
+                .from(Column::ToUserId)
+                .to(crate::users::Column::Id)
+                .into(),
+            Self::Split => Entity::belongs_to(crate::splits::split::Entity)
+                .from(Column::SplitId)
+                .to(crate::splits::split::Column::Id)
+                .into(),
+        }
+    }
+}
+
+impl ActiveModelBehavior for ActiveModel {}
