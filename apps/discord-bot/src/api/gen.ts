@@ -5243,6 +5243,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/me/weapons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's weapons
+         * @description Returns every weapon the caller declared (with its level) and every weapon an officer locked for them. Sorted main, good, basic, then lock-only rows, and by name inside each group.
+         */
+        get: operations["get_my_weapons"];
+        /**
+         * Replace the caller's declared weapons
+         * @description Replaces the caller's declarations with the request body. Unknown or non-weapon keys and duplicate keys are refused, as is a weapon an officer locked. Locked rows are never modified or deleted by this call; unlocked rows missing from the body are deleted. Returns the full list afterwards.
+         */
+        put: operations["update_my_weapons"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/{user_id}": {
         parameters: {
             query?: never;
@@ -5302,6 +5326,30 @@ export interface paths {
          * @description Revokes the Discord role linked to the given gestionale role. If the member no longer holds any staff-eligible role, the generic staff Discord role is also removed. Requires `roles.manage`.
          */
         delete: operations["delete_user_role"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}/weapons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a member's weapons
+         * @description Readable by any authenticated member, like specializations.
+         */
+        get: operations["get_user_weapons"];
+        /**
+         * Replace a member's weapons and locks
+         * @description Officer endpoint: replaces every weapon row of the member, including officer locks. Rows with no level and no lock are dropped. Requires `users.specializations.manage` even for the caller's own rows, because it can clear locks. Returns the full list afterwards.
+         */
+        put: operations["update_user_weapons"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7241,6 +7289,16 @@ export interface components {
              */
             status: string;
         };
+        /** @description `OpenAPI` schema wrapper for a member's weapon list. */
+        ApiResponseUserWeapons: {
+            /** @description The member's weapons: declared levels and officer locks. */
+            data: components["schemas"]["UserWeaponView"][];
+            /**
+             * @description Indicates the outcome of the request, always "success".
+             * @example success
+             */
+            status: string;
+        };
         /** @description `OpenAPI` schema wrapper for a claimed VOD review. */
         ApiResponseVodReviewView: {
             /** @description Claimed VOD row. */
@@ -7685,6 +7743,8 @@ export interface components {
                  * @example Fill
                  */
                 name: string;
+                /** @description `weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`. */
+                weapon_key?: string | null;
             };
             /** @description Indicates the outcome of the request, always "success" for this envelope. */
             status: string;
@@ -7711,6 +7771,11 @@ export interface components {
                 active_comp_name: string;
                 /** @description Concrete builds available to select, including event-specific extra roster slots. */
                 builds: components["schemas"]["EventSignupBuildView"][];
+                /**
+                 * @description Whether the member declared at least one weapon. When `false`, self-service signup is not
+                 *     limited to declared weapons (only to weapons an officer did not lock for them).
+                 */
+                has_declared_weapons: boolean;
                 /**
                  * @description Whether the requesting member is already on the roster and therefore does not increment
                  *     the prospective threshold merely by opening the menu.
@@ -10576,6 +10641,14 @@ export interface components {
              * @example 1
              */
             version: number;
+            /**
+             * @description `weapon:{BASE}` of the weapon in the main loadout's weapon slot (for example
+             *     `weapon:2H_POLEHAMMER`), derived from the stored item and never stored itself. `None` for
+             *     a build with no main-loadout weapon, such as a battle mount.
+             */
+            weapon_key?: string | null;
+            /** @description Tier-less display name of [`Self::weapon_key`] (for example `Polehammer`). */
+            weapon_name?: string | null;
         };
         /**
          * @description One sibling version of a build, for the version switcher.
@@ -11863,6 +11936,13 @@ export interface components {
              */
             user_id?: number | null;
         };
+        /** @description One weapon a member declares. */
+        DeclareWeaponInput: {
+            /** @description How well the member plays it. */
+            proficiency: components["schemas"]["WeaponProficiency"];
+            /** @description Canonical weapon key, for example `weapon:2H_POLEHAMMER`. */
+            weapon_key: string;
+        };
         /** @description One cast in the timeline, naming its own targets explicitly. */
         DeclaredCast: {
             /** @description Which auto-attack category this caster's damage is measured against for focus fire. */
@@ -12755,6 +12835,11 @@ export interface components {
             user_id: number;
             /** @description The username of the participant. */
             username: string;
+            /**
+             * @description The weapons this participant declared and the ones an officer locked for them, so the
+             *     board can warn when a seat's weapon is not one of theirs.
+             */
+            weapons: components["schemas"]["ParticipantWeaponView"][];
         };
         /** @description Cheap fingerprint the Discord poller uses to skip full event-detail hydration. */
         EventRevision: {
@@ -12801,9 +12886,13 @@ export interface components {
              * @example Fill
              */
             name: string;
+            /** @description `weapon:{BASE}` of the build's main-hand weapon, when it has one. Always `None` for `Fill`. */
+            weapon_key?: string | null;
         };
         /** @description A concrete build selectable while joining an event. */
         EventSignupBuildView: {
+            /** @description Whether the requesting member may pick this build for themselves. */
+            availability: components["schemas"]["SignupAvailability"];
             /**
              * Format: int64
              * @description Build identifier submitted to `POST /api/events/{id}/participate`.
@@ -12818,6 +12907,13 @@ export interface components {
             quantity: number;
             /** @description Role category used by the Discord role-selection menu. */
             role: components["schemas"]["BuildRole"];
+            /**
+             * @description `weapon:{BASE}` of the build's main-hand weapon, when it has one. A build without a
+             *     weapon (a battle mount) is never gated.
+             */
+            weapon_key?: string | null;
+            /** @description Tier-less display name of [`Self::weapon_key`]. */
+            weapon_name?: string | null;
         };
         /** @description The server-authoritative choices presented to a member before they select a concrete build. */
         EventSignupOptionsView: {
@@ -12835,6 +12931,11 @@ export interface components {
             active_comp_name: string;
             /** @description Concrete builds available to select, including event-specific extra roster slots. */
             builds: components["schemas"]["EventSignupBuildView"][];
+            /**
+             * @description Whether the member declared at least one weapon. When `false`, self-service signup is not
+             *     limited to declared weapons (only to weapons an officer did not lock for them).
+             */
+            has_declared_weapons: boolean;
             /**
              * @description Whether the requesting member is already on the roster and therefore does not increment
              *     the prospective threshold merely by opening the menu.
@@ -14372,6 +14473,19 @@ export interface components {
              */
             tier?: number | null;
         };
+        /** @description Replaces every weapon row of a member, locks included. */
+        ManageUserWeaponsRequest: {
+            /** @description The complete list of rows. Entries with no proficiency and no lock are dropped. */
+            weapons: components["schemas"]["ManageWeaponInput"][];
+        };
+        /** @description One weapon row an officer sets for a member. */
+        ManageWeaponInput: {
+            /** @description Whether the weapon is locked for the member. */
+            locked: boolean;
+            proficiency?: null | components["schemas"]["WeaponProficiency"];
+            /** @description Canonical weapon key, for example `weapon:2H_POLEHAMMER`. */
+            weapon_key: string;
+        };
         /**
          * @description Every equippable base identifier that has a family mastery node, and which node it is.
          * @example {
@@ -15790,6 +15904,14 @@ export interface components {
              */
             page: number | null;
         };
+        /** @description One weapon row of an event participant: a declared level and/or an officer lock. */
+        ParticipantWeaponView: {
+            /** @description Whether an officer locked this weapon for the participant. */
+            locked: boolean;
+            proficiency?: null | components["schemas"]["WeaponProficiency"];
+            /** @description Canonical weapon key, for example `weapon:2H_POLEHAMMER`. */
+            weapon_key: string;
+        };
         /**
          * @description Request body to participate in an event or update participation builds.
          * @example {
@@ -17121,6 +17243,13 @@ export interface components {
              */
             enemy_count?: number;
         };
+        /**
+         * @description Whether a member's weapons allow them to pick a build for themselves.
+         *
+         *     Only self-service signup is gated; an officer can still put anyone on any build.
+         * @enum {string}
+         */
+        SignupAvailability: "allowed" | "not_declared" | "locked";
         /** @description One scored comparison against another composition. */
         SimilarityHit: {
             /**
@@ -18189,6 +18318,11 @@ export interface components {
              */
             sort_order?: number | null;
         };
+        /** @description Replaces the caller's declared weapons. */
+        UpdateMyWeaponsRequest: {
+            /** @description The complete list of declared weapons. Weapons locked by an officer are left untouched. */
+            weapons: components["schemas"]["DeclareWeaponInput"][];
+        };
         /** @description Partial update of [`ProgressionSettingsView`]. Absent fields are left unchanged. */
         UpdateProgressionSettingsRequest: {
             /** @description Replace the ordered guild rank configuration. */
@@ -18691,6 +18825,21 @@ export interface components {
             /** @description Every gestionale role, with hold/assignable flags. */
             roles: components["schemas"]["UserRoleAssignmentView"][];
         };
+        /** @description One weapon of a member, as returned to clients. */
+        UserWeaponView: {
+            /** @description Whether an officer locked this weapon for the member. */
+            locked: boolean;
+            proficiency?: null | components["schemas"]["WeaponProficiency"];
+            /**
+             * Format: date-time
+             * @description Last update timestamp.
+             */
+            updated_at: string;
+            /** @description Canonical weapon key, for example `weapon:2H_POLEHAMMER`. */
+            weapon_key: string;
+            /** @description Tier-less display name resolved from the bundled catalog. */
+            weapon_name: string;
+        };
         /** @description One claimed VOD review. */
         VodReviewView: {
             /** @description Insert time, RFC 3339. */
@@ -18810,6 +18959,11 @@ export interface components {
             /** @description Raw upstream item type id of the main-hand weapon. */
             main_hand_item_id: string;
         };
+        /**
+         * @description How well a member says they play a weapon.
+         * @enum {string}
+         */
+        WeaponProficiency: "main" | "good" | "basic";
         /** @description One weapon's share of a force. */
         WeaponShare: {
             /** Format: int64 */
@@ -33031,6 +33185,77 @@ export interface operations {
             };
         };
     };
+    get_my_weapons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's weapons */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseUserWeapons"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_my_weapons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMyWeaponsRequest"];
+            };
+        };
+        responses: {
+            /** @description The caller's weapons after the update */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseUserWeapons"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unknown, duplicate or locked weapon */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     get_user: {
         parameters: {
             query?: never;
@@ -33237,6 +33462,110 @@ export interface operations {
             };
             /** @description Discord API unavailable */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_user_weapons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user ID */
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The member's weapons */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseUserWeapons"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_user_weapons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user ID */
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManageUserWeaponsRequest"];
+            };
+        };
+        responses: {
+            /** @description The member's weapons after the update */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseUserWeapons"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing users.specializations.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unknown or duplicate weapon */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
