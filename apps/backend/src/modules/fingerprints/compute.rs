@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
+use crate::modules::battles::roles::{RoleClassifier, normalize_item_id};
 
 /// One occupied equipment slot from a victim's death equipment.
 ///

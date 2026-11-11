@@ -39,6 +39,7 @@ use crate::modules::bank::entities as transaction;
 use crate::modules::battles::entities as snapshot;
 use crate::modules::battles::entities::{BattleLossEstimate, BattlePlayer};
 use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
+use crate::modules::battles::roles::{RoleClassifier, normalize_item_id, weapons_by_player};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::events::entities::{
     event, event_battle, event_participation, fight, fight_battle,
@@ -46,8 +47,6 @@ use crate::modules::events::entities::{
 use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
 use crate::modules::intel::matchups::{MatchupRow, best_counter, matchups};
-use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
-use crate::modules::intel::scout::weapons_by_player;
 use crate::modules::intel::similarity::ROLE_KEYS;
 use crate::modules::regear::entities as regear;
 use crate::modules::siphoned::entities as siphoned;

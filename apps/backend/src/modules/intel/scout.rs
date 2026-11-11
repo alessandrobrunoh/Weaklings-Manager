@@ -17,14 +17,15 @@ use std::collections::BTreeMap;
 
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::battles::entities::{BattlePlayer, Model as SnapshotModel};
 use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
+use crate::modules::battles::roles::{
+    ROLE_UNOBSERVED, RoleClassifier, RoleConfidence, weapons_by_player,
+};
 use crate::modules::intel::entities::scouted_comp;
-use crate::modules::intel::roles::{RoleClassifier, RoleConfidence};
 use crate::modules::intel::similarity::{CompProfile, fingerprint_of};
 use crate::modules::intel::status::IntelScoutCategory;
 
@@ -33,14 +34,6 @@ use crate::modules::intel::status::IntelScoutCategory;
 /// A single straggler caught by a roaming party says nothing about how a guild
 /// fields a group, and would otherwise create a scout per lone player.
 const MIN_ENEMY_PLAYERS: usize = 2;
-
-/// Role bucket for an enemy the kill feed never showed us.
-///
-/// Deliberately not a [`crate::modules::comps::status::BuildRole`]: it is the
-/// absence of a role, not a seventh one. `similarity` builds its role vector
-/// from `ROLE_KEYS`, so this key is ignored there, while `CompProfile::size`
-/// still counts the player and keeps the size penalty honest.
-pub const ROLE_UNOBSERVED: &str = "unobserved";
 
 /// One observed enemy player, as persisted in `scouted_comps.players_json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -100,55 +93,6 @@ impl ScoutDraft {
     pub fn has_full_weapon_coverage(&self) -> bool {
         self.weapon_sample_size >= self.player_count
     }
-}
-
-/// Reads the main-hand item id out of one side of a raw kill event.
-///
-/// The upstream payload is preserved verbatim in `BattleKillEvent::raw`, and
-/// its casing is inconsistent between endpoints, hence the paired lookups.
-/// This deliberately extracts only the weapon: the full-equipment walkers in
-/// `regear::pricing` and `battles::service` exist to price every slot, which is
-/// a different job with a different output type.
-#[must_use]
-pub fn main_hand_of(raw: &Value, side: &str) -> Option<String> {
-    let lower = side.to_ascii_lowercase();
-    let participant = raw.get(side).or_else(|| raw.get(&lower))?;
-    let equipment = participant
-        .get("Equipment")
-        .or_else(|| participant.get("equipment"))?;
-    let main_hand = equipment
-        .get("MainHand")
-        .or_else(|| equipment.get("mainHand"))
-        .or_else(|| equipment.get("main_hand"))?;
-    let item_id = main_hand
-        .get("Type")
-        .or_else(|| main_hand.get("type"))
-        .and_then(Value::as_str)?;
-    let trimmed = item_id.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(trimmed.to_string())
-}
-
-/// Builds a `name -> main-hand item id` index from a battle's kill feed.
-///
-/// Both sides of every kill are harvested, since a player who died in one
-/// exchange may have killed in another. Later observations overwrite earlier
-/// ones, which is harmless: a player who swapped weapons mid-fight is recorded
-/// as whatever they were last seen holding.
-#[must_use]
-pub fn weapons_by_player(kills: &[BattleKillEvent]) -> BTreeMap<String, String> {
-    let mut weapons = BTreeMap::new();
-    for kill in kills {
-        if let Some(item) = main_hand_of(&kill.raw, "Killer") {
-            weapons.insert(kill.killer.name.clone(), item);
-        }
-        if let Some(item) = main_hand_of(&kill.raw, "Victim") {
-            weapons.insert(kill.victim.name.clone(), item);
-        }
-    }
-    weapons
 }
 
 /// Produces one draft per opposing guild present in a battle snapshot.
@@ -353,7 +297,7 @@ pub fn is_same_comp(existing: &scouted_comp::Model, incoming: &ScoutDraft) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn ctx() -> BattleLinkingContext {
         BattleLinkingContext::new("our-guild", &[], &["Friendly".to_string()])
@@ -411,21 +355,6 @@ mod tests {
             "id": id, "name": name, "players": 2, "kills": 1,
             "deaths": 1, "kill_fame": 10, "winner": false
         })
-    }
-
-    #[test]
-    fn extracts_main_hand_from_either_casing() {
-        let upper = json!({"Victim": {"Equipment": {"MainHand": {"Type": "T8_2H_BOW"}}}});
-        assert_eq!(main_hand_of(&upper, "Victim").as_deref(), Some("T8_2H_BOW"));
-        let lower = json!({"victim": {"equipment": {"mainHand": {"type": "T8_2H_BOW"}}}});
-        assert_eq!(main_hand_of(&lower, "Victim").as_deref(), Some("T8_2H_BOW"));
-    }
-
-    #[test]
-    fn missing_or_blank_weapon_yields_none() {
-        assert_eq!(main_hand_of(&json!({}), "Victim"), None);
-        let blank = json!({"Victim": {"Equipment": {"MainHand": {"Type": "  "}}}});
-        assert_eq!(main_hand_of(&blank, "Victim"), None);
     }
 
     #[test]

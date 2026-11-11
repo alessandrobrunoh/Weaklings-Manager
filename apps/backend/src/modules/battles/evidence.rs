@@ -27,8 +27,9 @@ use serde_json::Value;
 use crate::albion_common::FriendlySide;
 use crate::modules::battles::entities::BattlePlayer;
 use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent};
-use crate::modules::intel::roles::{RoleClassifier, RoleConfidence};
-use crate::modules::intel::scout::{ROLE_UNOBSERVED, weapons_by_player};
+use crate::modules::battles::roles::{
+    ROLE_UNOBSERVED, RoleClassifier, RoleConfidence, weapons_by_player,
+};
 
 /// One guild's line for one battle, ready for a `battle_guild_stats`-shaped table.
 #[derive(Debug, Clone, PartialEq)]
@@ -192,7 +193,7 @@ fn saturating_i32(value: i64) -> i32 {
 /// tell us which slot an item stack came from, which `KillItemRow::slot`
 /// needs. Known simplification: each slot key is expected to hold at most one
 /// plain `{"Type"/"type": ..., "Count"/"count": ...}` object, mirroring
-/// `intel::scout::main_hand_of`'s pattern; a slot that is `null`, missing a
+/// `battles::roles::main_hand_of`'s pattern; a slot that is `null`, missing a
 /// string `Type`/`type`, or shaped as an array (multi-item slots) is skipped
 /// rather than guessed at.
 fn victim_equipment_items(raw: &Value) -> Vec<KillItemRow> {

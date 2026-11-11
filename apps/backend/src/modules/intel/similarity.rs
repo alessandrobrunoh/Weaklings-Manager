@@ -298,4 +298,25 @@ mod tests {
         }
         assert_eq!(ROLE_KEYS.len(), 6);
     }
+
+    /// Every role the classifier can emit must be a key the similarity vector
+    /// knows about, or the score silently drops that player.
+    #[test]
+    fn every_emitted_role_is_a_similarity_key() {
+        use crate::modules::comps::status::BuildRole;
+        let roles = [
+            BuildRole::Healer,
+            BuildRole::Tank,
+            BuildRole::Dps,
+            BuildRole::Support,
+            BuildRole::Brawler,
+            BuildRole::BattleMount,
+        ];
+        for role in roles {
+            assert!(
+                ROLE_KEYS.contains(&role.as_str()),
+                "role {role} missing from ROLE_KEYS"
+            );
+        }
+    }
 }

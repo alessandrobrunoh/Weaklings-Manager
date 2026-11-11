@@ -11,6 +11,7 @@ pub mod evidence_entities;
 pub mod evidence_writer;
 pub mod models;
 pub mod outcome;
+pub mod roles;
 pub mod router;
 pub mod schemas;
 pub mod service;

@@ -37,8 +37,8 @@ use crate::errors::AppError;
 use crate::modules::battles::evidence_entities::{
     battle_kill, battle_kill_item, battle_player_stat,
 };
+use crate::modules::battles::roles::RoleClassifier;
 use crate::modules::comps::entities::{build, build_item};
-use crate::modules::intel::roles::RoleClassifier;
 
 use super::compute::{
     BuildCandidate, ComputedFingerprint, FingerprintMode, KillItemSource, MatchStatus,

@@ -27,7 +27,7 @@
 //! `albiondata::service::cheapest_price_index` keys its map by. This mirrors
 //! `regear::pricing`, which prices a victim's raw kill-feed equipment the same
 //! way, and is the opposite of `fingerprints::compute`, which strips
-//! tier/enchantment via `intel::roles::normalize_item_id` for *build
+//! tier/enchantment via `battles::roles::normalize_item_id` for *build
 //! matching* (a different problem, where two tiers of the same weapon should
 //! count as the same build). This file must never import or use
 //! `normalize_item_id`.

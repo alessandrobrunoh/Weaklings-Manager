@@ -7,7 +7,8 @@
 //!
 //! Layering, from pure to stateful:
 //! - [`similarity`] — the scoring maths, DB-free and fixture-tested.
-//! - [`roles`] — weapon → role classification, curated tier plus heuristics.
+//! - [`crate::modules::battles::roles`] — weapon → role classification, curated tier plus
+//!   heuristics.
 
 pub mod auto_scout;
 pub mod cache;
@@ -15,7 +16,6 @@ pub mod entities;
 pub mod matchups;
 pub mod models;
 pub mod report;
-pub mod roles;
 pub mod router;
 pub mod schemas;
 pub mod scout;

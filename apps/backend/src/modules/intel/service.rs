@@ -10,6 +10,7 @@ use sea_orm::{
 use crate::albion_common::BattleLinkingContext;
 use crate::errors::AppError;
 use crate::modules::battles::entities as snapshot_entity;
+use crate::modules::battles::roles::{RoleClassifier, normalize_item_id};
 use crate::modules::comps::entities::{build, build_item, comp, comp_build};
 use crate::modules::comps::status::BuildSlot;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
@@ -18,7 +19,6 @@ use crate::modules::intel::models::{
     CounterSuggestion, ScoutFilters, ScoutOutcome, ScoutedCompDetail, ScoutedCompSummary,
     SimilarityHit, UpdateScoutRequest,
 };
-use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
 use crate::modules::intel::scout::{ScoutDraft, ScoutedPlayer, is_same_comp, scout_from_snapshot};
 use crate::modules::intel::similarity::{CompProfile, similarity};
 use crate::modules::intel::status::IntelScoutCategory;

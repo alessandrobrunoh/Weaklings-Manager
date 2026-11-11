@@ -24,7 +24,6 @@ use crate::modules::enemies;
 use crate::modules::events::entities::{fight, fight_battle};
 use crate::modules::fight_analytics;
 use crate::modules::fingerprints;
-use crate::modules::intel::roles::RoleClassifier;
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
@@ -39,6 +38,7 @@ use crate::modules::battles::entities::{
     Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity, GuildLossEstimate,
     PlayerLossEstimate,
 };
+use crate::modules::battles::roles::RoleClassifier;
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
 /// giving up. Keeps the endpoint from scanning `AlbionBB`'s entire history.
