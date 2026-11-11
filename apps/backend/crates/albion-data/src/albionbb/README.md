@@ -22,6 +22,7 @@ All handlers use session-cookie security and the application mounts this router 
 - Typed battle/guild models tolerate upstream field naming/shape variation and ignore unknown JSON fields. Player stats remain `serde_json::Value`.
 - Battle-detail and guild caches are separate, process-local caches keyed by normalized server and resource ID, with 24-hour freshness and a 500-entry cap. Battle lists, kills, and player stats are not cached.
 - Current battle-list metadata documents totals as unavailable (`None`).
+- The `test_support` loopback upstream (scripted responses, request counting) is compiled for this crate's tests and for dependents that enable the `test-support` feature.
 
 ## Side Effects
 

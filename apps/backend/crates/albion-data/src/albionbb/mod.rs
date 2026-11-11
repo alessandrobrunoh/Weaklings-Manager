@@ -10,7 +10,7 @@ pub mod client;
 pub mod router;
 pub mod schemas;
 pub mod service;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
 pub use router::router;

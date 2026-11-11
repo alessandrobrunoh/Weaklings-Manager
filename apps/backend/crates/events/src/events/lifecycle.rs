@@ -579,6 +579,10 @@ async fn apply_cancel(
     active.status = Set("cancelled".to_string());
     active.stopped_at = Set(Some(now.into()));
     active.auto_stop_deadline = Set(None);
+    // A cancelled event has nothing left to link: end the linker here so the worker never
+    // polls AlbionBB on its behalf. Restoring the event resets it to `pending`.
+    active.link_status = Set("completed".to_string());
+    active.link_battles_completed_at = Set(Some(now.into()));
     active.updated_at = Set(now.into());
     active.update(txn).await.map_err(AppError::Database)
 }
@@ -4075,6 +4079,9 @@ mod transition_tests {
             .unwrap()
             .unwrap();
         assert!(cancelled.stopped_at.is_some() && cancelled.auto_stop_deadline.is_none());
+        // Cancelling ends the linker: no AlbionBB polling for a cancelled event.
+        assert_eq!(cancelled.link_status, "completed");
+        assert!(cancelled.link_battles_completed_at.is_some());
         run(&db, id, Transition::Uncancel, Cause::Web)
             .await
             .unwrap();
@@ -4086,6 +4093,7 @@ mod transition_tests {
         assert_eq!(restored.status, "scheduled");
         assert!(restored.started_at.is_none() && restored.stopped_at.is_none());
         assert_eq!(restored.link_status, "pending");
+        assert!(restored.link_battles_completed_at.is_none());
 
         let (id, split_id) = seed_event(&db, &fx, "stopped", false).await;
         run(&db, id, Transition::Archive, Cause::Web).await.unwrap();
