@@ -370,60 +370,67 @@ describe('Events', () => {
     expect(page.submitAttempted()).toBe(false);
   });
 
-  it('renders the 4 KPI stat cards with correct titles', () => {
-    const text = fixture.nativeElement.textContent;
-    expect(text).toContain('TOTAL EVENTS');
-    expect(text).toContain('LIVE EVENTS');
-    expect(text).toContain('Scheduled');
-    expect(text).toContain('CALL TO ARMS');
+  it('renders the summary band with the four counts and no stat cards', () => {
+    const band: HTMLElement = fixture.nativeElement.querySelector('app-summary-band');
+    expect(band).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-stat-card')).toBeNull();
+    expect(band.textContent).toContain('Total events');
+    expect(band.textContent).toContain('Live');
+    expect(band.textContent).toContain('Scheduled');
+    expect(band.textContent).toContain('Call to arms');
+    expect(band.textContent).toContain('130');
+    expect(band.textContent).toContain('13');
   });
 
   it('labels events shared by another tenant in the list', () => {
     expect(fixture.nativeElement.textContent).toContain('Shared event');
   });
 
-  it('renders the search box and status dropdown', () => {
-    const searchInput = fixture.nativeElement.querySelector('input[placeholder="Search events..."]');
+  it('renders the search box and status filter in the shared filter bar', () => {
+    const bar: HTMLElement = fixture.nativeElement.querySelector('app-filter-bar');
+    expect(bar).toBeTruthy();
+    const searchInput = bar.querySelector('input[placeholder="Search events..."]');
     expect(searchInput).toBeTruthy();
 
-    const select = fixture.nativeElement.querySelector(
-      'app-select button[role="combobox"]',
+    const status = Array.from(bar.querySelectorAll<HTMLLabelElement>('label.filter-field')).find(
+      (label) => label.textContent?.includes('Status'),
     );
-    expect(select).toBeTruthy();
+    expect(status?.querySelector('select')).toBeTruthy();
   });
 
-  it('renders a status column filter instead of status tabs', () => {
-    const triggers = Array.from(
-      fixture.nativeElement.querySelectorAll(
-        'app-select button[role="combobox"]',
-      ) as NodeListOf<HTMLButtonElement>,
-    );
-    const statusTrigger = triggers.find((trigger) =>
-      trigger.getAttribute('aria-label')?.toLowerCase().includes('status'),
-    );
-    expect(statusTrigger).toBeTruthy();
-    statusTrigger!.click();
-    fixture.detectChanges();
-    const options = Array.from(
-      fixture.nativeElement.querySelectorAll(
-        'app-select [role="option"]',
-      ) as NodeListOf<HTMLElement>,
-      (option) => option.textContent ?? '',
-    ).join(' ');
+  it('filters by status through the filter bar and moves the table to its first page', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const select = fixture.nativeElement.querySelector('app-filter-bar select') as HTMLSelectElement;
+    const options = Array.from(select.options, (option) => option.textContent?.trim()).join(' ');
     expect(options).toContain('Live');
     expect(options).toContain('Scheduled');
     expect(options).toContain('Stopped');
     expect(options).toContain('Cancelled');
-    expect(fixture.nativeElement.querySelectorAll('nav button').length).toBe(0);
+
+    mockApiService.get.mockClear();
+    select.value = 'live';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(mockApiService.get).toHaveBeenLastCalledWith(
+      'api/events',
+      expect.objectContaining({ page: 1, status: 'live' }),
+    );
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: expect.objectContaining({ status: 'live', page: null }),
+      }),
+    );
   });
 
-  it('renders the table headers correctly', () => {
+  it('renders the table headers in sentence case', () => {
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('EVENT');
-    expect(text).toContain('DATE');
-    expect(text).toContain('COMPOSITION');
-    expect(text).toContain('STATUS');
-    expect(text).toContain('ACTIONS');
+    expect(text).toContain('Event');
+    expect(text).toContain('Date');
+    expect(text).toContain('Composition');
+    expect(text).toContain('Status');
+    expect(text).toContain('Actions');
   });
 
   it('renders event rows with CTA star, mass time, comp name, status pills, and action buttons', () => {
@@ -478,7 +485,7 @@ describe('Events', () => {
     expect(page.canDelete(mockEvents[2] as EventView)).toBe(true);
   });
 
-  it('takes the stat tiles from the backend summary, not from one page of events', () => {
+  it('takes the summary counts from the backend summary, not from one page of events', () => {
     const page = component as any;
     expect(mockApiService.get).toHaveBeenCalledWith('api/events/summary');
     expect(page.totalEventsCount()).toBe(130);
