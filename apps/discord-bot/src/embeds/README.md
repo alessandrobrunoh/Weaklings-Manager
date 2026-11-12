@@ -22,7 +22,7 @@ This directory builds Discord embeds, components, and message payloads for the b
 ## Side Effects
 
 - The inspected builders return Discord embed, component, or message-payload objects; they do not send messages, call the backend, or persist state.
-- `GUILD_NAME` is read from configuration when the shared theme module initializes.
+- Headers and footers use `brandName()` from `branding.ts`: the tenant name set by `withBrandName` for the current interaction or poll tick, else the `GUILD_NAME` setting.
 
 ## Verification
 
