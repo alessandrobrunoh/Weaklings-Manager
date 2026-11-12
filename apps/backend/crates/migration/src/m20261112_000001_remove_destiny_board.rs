@@ -5,8 +5,10 @@
 //! gate editing another member's specializations now gates officer weapon locks: roles holding
 //! `users.specializations.manage` are moved to `users.weapons.manage`.
 //!
-//! `combat.calibration.view` goes too: the calibration report scored each member's stored
-//! levels against observed battles, so it disappears with them, and its grants are deleted.
+//! `combat.calibration.view` and `combat.readiness.view` go too: the calibration report scored
+//! each member's stored levels against observed battles, and comp readiness rated the guild on
+//! them, so both disappear with the levels and their grants are deleted. The best-fit roster
+//! preview they also gated is now allowed to whoever may manage the event's roster.
 
 use sea_orm_migration::prelude::*;
 
@@ -16,6 +18,7 @@ pub struct Migration;
 const OLD_PERMISSION: &str = "users.specializations.manage";
 const NEW_PERMISSION: &str = "users.weapons.manage";
 const CALIBRATION_PERMISSION: &str = "combat.calibration.view";
+const READINESS_PERMISSION: &str = "combat.readiness.view";
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
@@ -45,7 +48,8 @@ impl MigrationTrait for Migration {
         ))
         .await?;
         db.execute_unprepared(&format!(
-            "DELETE FROM role_permissions WHERE permission = '{CALIBRATION_PERMISSION}'"
+            "DELETE FROM role_permissions \
+             WHERE permission IN ('{CALIBRATION_PERMISSION}', '{READINESS_PERMISSION}')"
         ))
         .await?;
         Ok(())
@@ -126,6 +130,7 @@ mod tests {
             ("both", "users.weapons.manage"),
             ("unrelated", "events.view"),
             ("unrelated", "combat.calibration.view"),
+            ("unrelated", "combat.readiness.view"),
         ] {
             exec(
                 &db,
@@ -153,7 +158,7 @@ mod tests {
         assert_eq!(
             permissions(&db, "r.id = 'unrelated'").await,
             ["events.view"],
-            "the removed calibration permission is dropped, nothing else is touched"
+            "the removed calibration and readiness permissions are dropped, nothing else is touched"
         );
     }
 
@@ -169,5 +174,6 @@ mod tests {
         assert!(admin.iter().any(|p| p == "users.weapons.manage"));
         assert!(!admin.iter().any(|p| p == "users.specializations.manage"));
         assert!(!admin.iter().any(|p| p == "combat.calibration.view"));
+        assert!(!admin.iter().any(|p| p == "combat.readiness.view"));
     }
 }

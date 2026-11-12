@@ -214,12 +214,6 @@ pub enum Permission {
     /// Use the Item Power calculator and read the bundled combat dataset. Member+.
     #[strum(serialize = "combat.calculator.use")]
     CombatCalculatorUse,
-    /// Preview the best-fit roster assignment for an event. Officer+.
-    ///
-    /// Separate from the calculator because it scores every participant's declared weapons at
-    /// once, which is roster management rather than something a member needs about themselves.
-    #[strum(serialize = "combat.readiness.view")]
-    CombatReadinessView,
     /// Read and run a saved combat test scenario. Member+.
     #[strum(serialize = "combat.tests.view")]
     CombatTestsView,

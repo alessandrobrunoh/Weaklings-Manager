@@ -936,9 +936,9 @@ async fn get_roster(
 
 /// Previews the best-fit roster assignment without applying it.
 ///
-/// Gated by `combat.readiness.view` rather than open to every member: it scores every
-/// participant's declared weapons against every open seat at once, which is roster management
-/// rather than something a member needs about themselves.
+/// Gated like `POST .../roster/auto-fill`: whoever may apply the assignment may preview it. It
+/// scores every participant's declared weapons against every open seat at once, which is roster
+/// management rather than something a member needs about themselves.
 #[utoipa::path(
     get,
     path = "/api/events/{id}/roster/suggestions",
@@ -955,7 +955,7 @@ async fn get_roster(
     responses(
         (status = 200, description = "Proposed assignment", body = backend_combat::schemas::ApiResponseRosterSuggestions),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
+        (status = 403, description = "Not allowed to manage this event's roster", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
@@ -965,8 +965,7 @@ async fn get_roster_suggestions(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<backend_combat::fit::Assignment>>, AppError> {
-    user.require(&perms, Permission::CombatReadinessView)
-        .await?;
+    require_event_management_authority(&user, &perms, &db, id).await?;
     let suggestions = EventService::new().get_roster_suggestions(&db, id).await?;
     Ok(Json(ApiResponse::new(suggestions)))
 }
