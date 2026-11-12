@@ -1,7 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import { ApiError, type ApiClient } from '../api/client.js';
 import type { AlbionLinkStatus } from '../api/types.js';
-import { buildPendingLinkEmbed } from '../embeds/link.embed.js';
 import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
@@ -42,13 +41,6 @@ export async function execute(
             { ign },
             interaction.user.id,
           );
-
-    if (result.pending === true && result.linked !== true) {
-      await interaction.editReply({
-        embeds: [buildPendingLinkEmbed(result.pending_albion_player_name ?? ign)],
-      });
-      return;
-    }
 
     const embed = createBaseEmbed({
       category: 'ACCOUNT REGISTER',

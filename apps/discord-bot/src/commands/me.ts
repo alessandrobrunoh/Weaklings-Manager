@@ -49,9 +49,7 @@ export async function execute(
 
   const characterSubtitle = link?.linked
     ? `Linked to **${link.albion_player_name}**`
-    : link?.pending
-      ? `Link to **${link.pending_albion_player_name ?? 'a character'}** waiting for an officer`
-      : 'No linked character';
+    : 'No linked character';
 
   const embed = createBaseEmbed({
     category: 'MEMBER PROFILE',
@@ -70,12 +68,6 @@ export async function execute(
     embed.addFields({
       name: '⚔️ Albion Character',
       value: linkVal,
-      inline: true,
-    });
-  } else if (link?.pending) {
-    embed.addFields({
-      name: '⚔️ Albion Character',
-      value: `• ⚔️ **Name:** **${link.pending_albion_player_name ?? 'unknown'}**\n• 🟡 **Status:** Waiting for an officer to approve`,
       inline: true,
     });
   } else {
