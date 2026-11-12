@@ -7,7 +7,7 @@
 ## Interface
 
 - Required inputs: `versions: readonly VersionRef[]` and `currentId: number`.
-- Optional `canManage` and `busy` default to `false`; labels default to Version and New version.
+- Optional `canManage`, `busy` and `compact` default to `false`; labels default to Version and New version. `compact` renders small neutral chips (current one outlined with the primary colour) and keeps the label for screen readers only, for use inside a header's meta line.
 - `select` emits a version ID; `create` emits `void`.
 
 ## Invariants
