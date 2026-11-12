@@ -144,17 +144,22 @@ async fn try_from_session_cookie(parts: &mut Parts) -> Result<Option<UserContext
     // Prefer the `users` row for this Discord snowflake over the cookie's cached `user_id`.
     // Login used to key that cache by email, so a colliding address could pin the session to
     // someone else's splits and bank while `users.discord_id` in the database stayed correct.
-    let user_id = if let Some(db) = parts.extensions.get::<DatabaseConnection>() {
-        crate::users::identity::user_id_for_discord_id(db, &profile.id)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(profile.user_id)
+    // The same row says whether an officer blocked the member, read on every request so a
+    // block outlives no cached session.
+    let (user_id, blocked) = if let Some(db) = parts.extensions.get::<DatabaseConnection>() {
+        match crate::users::identity::find_by_discord_id(db, &profile.id).await? {
+            Some(row) => (row.id, row.blocked_at.is_some()),
+            None => (profile.user_id, false),
+        }
     } else {
-        profile.user_id
+        (profile.user_id, false)
     };
 
     let is_tenant_owner = tenant_owner_for_request(parts, &profile.id).await;
+    // Platform admins and the tenant owner can never be blocked out of their own server.
+    if blocked && super_admin_id.is_none() && !is_tenant_owner {
+        return Err(AppError::AccountBlocked);
+    }
     let mut ctx = UserContext {
         id: profile.id,
         username: profile.username,
@@ -417,6 +422,10 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
     );
 
     let is_tenant_owner = tenant_owner_for_request(parts, &discord_id).await;
+    // A blocked member's Discord interactions are refused too; the bot answers with a message.
+    if !is_superadmin && !is_tenant_owner {
+        crate::users::block::ensure_not_blocked(&user)?;
+    }
     Ok(Some(UserContext {
         id: discord_id,
         username: user.username,
@@ -587,6 +596,12 @@ where
             })?;
 
         let (user_id, username, roles) = if let Some(user) = user {
+            if user.blocked_at.is_some()
+                && !is_superadmin
+                && !tenant_owner_for_request(parts, &discord_id).await
+            {
+                return Err(AppError::AccountBlocked);
+            }
             let role_ids_header = parts
                 .headers
                 .get("X-Discord-Role-Ids")
@@ -1166,5 +1181,74 @@ mod tests {
             .expect("request")
             .into_parts();
         assert_eq!(decode_username_header(&none), None);
+    }
+
+    async fn blocked_member(db: &sea_orm::DatabaseConnection, discord_id: &str) {
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+        backend_entities::users::ActiveModel {
+            username: Set("blocked".to_string()),
+            email: Set(format!("{discord_id}@discord.invalid")),
+            role: Set("User".to_string()),
+            discord_id: Set(Some(discord_id.to_string())),
+            blocked_at: Set(Some(chrono::Utc::now().fixed_offset())),
+            blocked_reason: Set(Some("spam".to_string())),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("seed blocked member");
+    }
+
+    #[tokio::test]
+    async fn a_blocked_member_is_refused_on_a_live_session_but_unblocked_is_not() {
+        let db = tenant_db().await;
+        blocked_member(&db, "386488773351047168").await;
+        let (mut parts, ..) = session_parts(&admin_profile()).await;
+        parts.extensions.insert(db.clone());
+
+        // The session itself is valid and cached; the block is read from the tenant row.
+        let err = UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect_err("blocked");
+        assert!(matches!(err, AppError::AccountBlocked));
+
+        let member = crate::users::identity::find_by_discord_id(&db, "386488773351047168")
+            .await
+            .unwrap()
+            .unwrap();
+        crate::users::block::unblock_member(&db, member.id, member.id)
+            .await
+            .unwrap();
+        UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect("unblocked member is let back in on the same session");
+    }
+
+    #[tokio::test]
+    async fn a_platform_admin_is_never_blocked_out() {
+        let db = tenant_db().await;
+        blocked_member(&db, "386488773351047168").await;
+        let (mut parts, ..) = session_parts(&admin_profile()).await;
+        parts.extensions.insert(db.clone());
+        let admins = backend_core::platform_admins::PlatformAdmins::new_empty();
+        admins.insert_for_test("386488773351047168");
+        parts.extensions.insert(admins);
+
+        UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect("platform admins ignore a block");
+    }
+
+    #[tokio::test]
+    async fn a_blocked_member_is_refused_on_the_bot_path() {
+        let db = tenant_db().await;
+        blocked_member(&db, "7171").await;
+
+        // With or without proof of Discord presence, a block still refuses the interaction.
+        for claims_member in [false, true] {
+            let mut parts = bot_parts(&db, "7171", claims_member, None).await;
+            let err = try_from_bot_headers(&mut parts).await.expect_err("blocked");
+            assert!(matches!(err, AppError::AccountBlocked));
+        }
     }
 }

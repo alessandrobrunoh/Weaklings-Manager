@@ -2,6 +2,7 @@
 //!
 //! Provides the routes, services, and schemas for managing and inspecting user data.
 
+pub mod block;
 pub mod display_name;
 pub mod identity;
 pub mod member_roles;

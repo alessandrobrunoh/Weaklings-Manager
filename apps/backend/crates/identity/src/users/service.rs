@@ -39,6 +39,19 @@ pub struct UserProfile {
     /// The authorization role of the user (e.g. Admin, User).
     #[schema(example = "Admin")]
     pub role: String,
+    /// `true` when an officer blocked this member from the manager. Always `false` for viewers
+    /// without `roles.manage`, who are not told who is blocked.
+    pub blocked: bool,
+    /// When the member was blocked, RFC 3339. Present only while `blocked` is `true` and only
+    /// for `roles.manage` viewers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_at: Option<String>,
+    /// Display name of the officer who blocked the member. Same visibility as `blocked_at`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_by: Option<String>,
+    /// The officer's optional note. Same visibility as `blocked_at`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
 }
 
 /// The aggregated metrics for a user's profile.
@@ -93,12 +106,42 @@ impl UserProfile {
         model: backend_entities::users::Model,
     ) -> Result<Self, AppError> {
         let username = super::display_name::resolve(db, &model).await?;
-        Ok(Self {
+        let blocked_by = match model.blocked_by {
+            Some(officer) if model.blocked_at.is_some() => {
+                Some(super::display_name::resolve_by_id(db, officer).await?)
+            }
+            _ => None,
+        };
+        Ok(Self::from_row(model, username, blocked_by))
+    }
+
+    /// Builds the profile from a loaded row and its already resolved names.
+    fn from_row(
+        model: backend_entities::users::Model,
+        username: String,
+        blocked_by: Option<String>,
+    ) -> Self {
+        let blocked = model.blocked_at.is_some();
+        Self {
             id: model.id as u64,
             username,
             email: Some(model.email),
             role: model.role,
-        })
+            blocked,
+            blocked_at: model.blocked_at.map(|at| at.to_rfc3339()),
+            blocked_by: blocked_by.filter(|_| blocked),
+            blocked_reason: model.blocked_reason.filter(|_| blocked),
+        }
+    }
+
+    /// Hides the block state from a viewer who may not see it (no `roles.manage`).
+    #[must_use]
+    pub fn without_block_details(mut self) -> Self {
+        self.blocked = false;
+        self.blocked_at = None;
+        self.blocked_by = None;
+        self.blocked_reason = None;
+        self
     }
 
     /// Drops the email unless `viewer_user_id` is this profile or `can_see_emails` is set.
@@ -125,6 +168,11 @@ pub struct UserFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc` when `sort` is set.
     pub order: Option<String>,
+    /// `true` keeps only blocked members, `false` only members who are not blocked. Set from the
+    /// `blocked` query parameter by the router (never deserialized here, because a non-string
+    /// field cannot go through the flattened query struct).
+    #[serde(skip)]
+    pub blocked: Option<bool>,
 }
 
 /// Request body for `POST /api/users` — provision a Discord member and link an Albion character.
@@ -441,6 +489,11 @@ impl UserService {
         if let Some(ref role) = filters.role {
             query = query.filter(UserColumn::Role.eq(role.clone()));
         }
+        match filters.blocked {
+            Some(true) => query = query.filter(UserColumn::BlockedAt.is_not_null()),
+            Some(false) => query = query.filter(UserColumn::BlockedAt.is_null()),
+            None => {}
+        }
 
         let sort_column = resolve_sort_key(
             filters.sort.as_deref(),
@@ -474,15 +527,23 @@ impl UserService {
         let total_pages = paginator.num_pages().await?;
         let models = paginator.fetch_page(page).await?;
 
-        let user_ids: Vec<i64> = models.iter().map(|m| m.id).collect();
-        let mut names = super::display_name::resolve_by_ids(db, &user_ids).await?;
+        // Blocking officers are resolved with the page's own members in one go.
+        let mut user_ids: Vec<i64> = models.iter().map(|m| m.id).collect();
+        user_ids.extend(models.iter().filter_map(|m| m.blocked_by));
+        user_ids.sort_unstable();
+        user_ids.dedup();
+        let names = super::display_name::resolve_by_ids(db, &user_ids).await?;
         let items = models
             .into_iter()
-            .map(|m| UserProfile {
-                username: names.remove(&m.id).unwrap_or_else(|| m.username.clone()),
-                id: m.id as u64,
-                email: Some(m.email),
-                role: m.role,
+            .map(|m| {
+                let username = names
+                    .get(&m.id)
+                    .cloned()
+                    .unwrap_or_else(|| m.username.clone());
+                let blocked_by = m
+                    .blocked_by
+                    .and_then(|officer| names.get(&officer).cloned());
+                UserProfile::from_row(m, username, blocked_by)
             })
             .collect();
 
@@ -607,6 +668,10 @@ mod tests {
             username: format!("user-{id}"),
             email: Some(email.to_string()),
             role: "User".to_string(),
+            blocked: false,
+            blocked_at: None,
+            blocked_by: None,
+            blocked_reason: None,
         }
     }
 

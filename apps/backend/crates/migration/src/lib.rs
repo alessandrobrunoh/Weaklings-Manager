@@ -169,6 +169,7 @@ pub mod m20261111_000001_create_user_weapons;
 pub mod m20261111_000002_create_event_parties;
 pub mod m20261112_000001_remove_destiny_board;
 pub mod m20261113_000001_auto_approve_albion_link_requests;
+pub mod m20261113_000002_add_user_blocked;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
 
@@ -334,6 +335,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261111_000002_create_event_parties::Migration),
             Box::new(m20261112_000001_remove_destiny_board::Migration),
             Box::new(m20261113_000001_auto_approve_albion_link_requests::Migration),
+            Box::new(m20261113_000002_add_user_blocked::Migration),
         ]
     }
 }
