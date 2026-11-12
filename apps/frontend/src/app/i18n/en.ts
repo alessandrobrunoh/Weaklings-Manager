@@ -3470,6 +3470,14 @@ export const en = {
   'admin.alliance.resultsLabel': 'Alliances found',
   'admin.alliance.guildsLabel': 'Member guilds to attach',
   'admin.alliance.linkedDone': 'Alliance linked.',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Closed threads stay in their original channel. This channel gets a link to each resolved application.',
+  'admin.applications.ticketGroup': 'Support tickets',
+  'admin.applications.ticketWelcomeTitle': 'Welcome title',
+  'admin.applications.ticketWelcomeMessage': 'Welcome message',
+  'admin.applications.ticketClosedTitle': 'Closed title',
+  'admin.applications.ticketClosedMessage': 'Closed message',
 } as const;
 
 export type TranslationKey = keyof typeof en;

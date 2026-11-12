@@ -3287,4 +3287,12 @@ export const uk: TranslationDict = {
   'admin.alliance.resultsLabel': 'Знайдені альянси',
   'admin.alliance.guildsLabel': 'Гільдії-учасниці для під’єднання',
   'admin.alliance.linkedDone': 'Альянс пов’язано.',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Закриті гілки лишаються в початковому каналі. Цей канал отримує посилання на кожну завершену заявку.',
+  'admin.applications.ticketGroup': 'Тикети підтримки',
+  'admin.applications.ticketWelcomeTitle': 'Заголовок привітання',
+  'admin.applications.ticketWelcomeMessage': 'Текст привітання',
+  'admin.applications.ticketClosedTitle': 'Заголовок закриття',
+  'admin.applications.ticketClosedMessage': 'Текст закриття',
 };

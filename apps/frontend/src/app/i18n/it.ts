@@ -3482,4 +3482,12 @@ export const it: TranslationDict = {
   'admin.alliance.resultsLabel': 'Alleanze trovate',
   'admin.alliance.guildsLabel': 'Gilde membro da collegare',
   'admin.alliance.linkedDone': 'Alleanza collegata.',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'I thread chiusi restano nel canale originale. Questo canale riceve un collegamento per ogni candidatura conclusa.',
+  'admin.applications.ticketGroup': 'Ticket di supporto',
+  'admin.applications.ticketWelcomeTitle': 'Titolo di benvenuto',
+  'admin.applications.ticketWelcomeMessage': 'Messaggio di benvenuto',
+  'admin.applications.ticketClosedTitle': 'Titolo di chiusura',
+  'admin.applications.ticketClosedMessage': 'Messaggio di chiusura',
 };

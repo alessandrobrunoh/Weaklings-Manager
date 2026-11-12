@@ -3291,4 +3291,12 @@ export const fr: TranslationDict = {
   'admin.alliance.resultsLabel': 'Alliances trouvées',
   'admin.alliance.guildsLabel': 'Guildes membres à rattacher',
   'admin.alliance.linkedDone': 'Alliance liée.',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Les fils fermés restent dans leur salon d’origine. Ce salon reçoit un lien pour chaque candidature résolue.',
+  'admin.applications.ticketGroup': 'Tickets de support',
+  'admin.applications.ticketWelcomeTitle': 'Titre d’accueil',
+  'admin.applications.ticketWelcomeMessage': 'Message d’accueil',
+  'admin.applications.ticketClosedTitle': 'Titre de fermeture',
+  'admin.applications.ticketClosedMessage': 'Message de fermeture',
 };
