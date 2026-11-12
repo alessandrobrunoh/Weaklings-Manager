@@ -3702,4 +3702,13 @@ export const uk: TranslationDict = {
   'siphoned.stat.netHint': 'Сума чистого балансу всіх учасників',
   'siphoned.stat.membersInDebt': 'Учасники з боргом',
   'siphoned.stat.membersInDebtHint': 'Баланс нижче нуля, можна погасити',
+  // design/leaderboards
+  'season.summary.label': 'Підсумки сезону',
+  'season.period.showing': 'Підсумки боїв і таблиці активності охоплюють {period}.',
+  'season.period.recent': 'останні 30 днів',
+  'season.period.range': '{from} – {to}',
+  'season.empty.season': 'Досвіду сезону ще не зафіксовано.',
+  'season.empty.seasonHint': 'Досвід сезону надходить з активності в чаті та участі в подіях.',
+  'season.empty.intel': 'Активності за {period} ще немає.',
+  'season.empty.intelHint': 'Рейтинги враховують лише події, бої та розподіли здобичі, зафіксовані в цей період.',
 };

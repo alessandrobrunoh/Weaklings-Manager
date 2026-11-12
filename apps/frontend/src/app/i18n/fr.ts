@@ -3706,4 +3706,13 @@ export const fr: TranslationDict = {
   'siphoned.stat.netHint': 'Somme du net de tous les membres',
   'siphoned.stat.membersInDebt': 'Membres endettés',
   'siphoned.stat.membersInDebtHint': 'Net négatif, réglable',
+  // design/leaderboards
+  'season.summary.label': 'Résumé de la saison',
+  'season.period.showing': 'Les totaux de combats et les tableaux d\'activité couvrent {period}.',
+  'season.period.recent': 'les 30 derniers jours',
+  'season.period.range': 'du {from} au {to}',
+  'season.empty.season': 'Aucun XP de saison enregistré pour le moment.',
+  'season.empty.seasonHint': 'L\'XP de saison vient de l\'activité sur le chat et de la participation aux événements.',
+  'season.empty.intel': 'Aucune activité enregistrée sur {period} pour le moment.',
+  'season.empty.intelHint': 'Les classements ne comptent que les événements, combats et partages de butin enregistrés sur cette période.',
 };

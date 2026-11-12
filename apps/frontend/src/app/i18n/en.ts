@@ -3885,6 +3885,15 @@ export const en = {
   'siphoned.stat.netHint': "Sum of every member's net",
   'siphoned.stat.membersInDebt': 'Members in debt',
   'siphoned.stat.membersInDebtHint': 'Net below zero, can be settled',
+  // design/leaderboards
+  'season.summary.label': 'Season summary',
+  'season.period.showing': 'Battle totals and the activity boards cover {period}.',
+  'season.period.recent': 'the last 30 days',
+  'season.period.range': '{from} to {to}',
+  'season.empty.season': 'No season XP recorded yet.',
+  'season.empty.seasonHint': 'Season XP comes from chat activity and event participation.',
+  'season.empty.intel': 'No activity recorded in {period} yet.',
+  'season.empty.intelHint': 'Rankings only count events, battles and loot splits recorded inside this period.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

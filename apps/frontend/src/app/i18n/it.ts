@@ -3897,4 +3897,13 @@ export const it: TranslationDict = {
   'siphoned.stat.netHint': 'Somma del netto di tutti i membri',
   'siphoned.stat.membersInDebt': 'Membri in debito',
   'siphoned.stat.membersInDebtHint': 'Netto sotto zero, saldabile',
+  // design/leaderboards
+  'season.summary.label': 'Riepilogo stagione',
+  'season.period.showing': 'I totali di battaglie e le classifiche di attività coprono {period}.',
+  'season.period.recent': 'gli ultimi 30 giorni',
+  'season.period.range': '{from} – {to}',
+  'season.empty.season': 'Nessun XP stagionale registrato ancora.',
+  'season.empty.seasonHint': 'L\'XP stagionale deriva dall\'attività in chat e dalla partecipazione agli eventi.',
+  'season.empty.intel': 'Nessuna attività registrata in {period}.',
+  'season.empty.intelHint': 'Le classifiche contano solo eventi, battaglie e spartizioni di bottino registrati in questo periodo.',
 };
