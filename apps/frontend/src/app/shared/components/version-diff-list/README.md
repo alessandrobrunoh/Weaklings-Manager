@@ -2,21 +2,26 @@
 
 ## Overview
 
-`VersionDiffList` renders version differences as a before/after table or an empty-state message.
+`VersionDiffList` renders the differences between two versions as a grouped list. Each entry is one line (a slot, or a build in a composition) with only the parts that changed shown as `before -> after`.
 
 ## Interface
 
-- Required input: readonly `entries: VersionDiffEntry[]`.
-- Inputs configure the empty-state and column/status labels; defaults are provided.
-- No outputs are declared.
+- Required input: readonly `entries: VersionDiffEntry[]` (from `features/comps/version-diff.ts`).
+- Optional inputs: `emptyLabel`, `beforeLabel`, `afterLabel`, `changeLabel`, `addedLabel`, `removedLabel`, `changedLabel`, `noneLabel` and the column labels. Defaults exist, callers pass translated text.
+- No outputs.
 
 ## Invariants
 
-An empty array renders the empty state; otherwise rows are tracked by `entry.subject`. Nullish before/after values display as an em dash. Added, removed, and changed statuses map to corresponding chip styles and labels.
+- An empty array renders the empty-state message instead of a list.
+- Entries carrying `group` (Main, Swap) are listed under a heading per group in the order given. A flat list has no heading.
+- Entries carrying `tokens` show one `before -> after` pair per changed token (item, ability by key, quality, version, quantity). Entries without tokens fall back to a single before/after pair.
+- The kind of change is written in words with a `+`, `-` or `~` symbol. Colour only reinforces it.
+- A missing side shows `noneLabel`, never a blank.
+- Layout follows the container width (container queries), so the list works in a dialog and on a phone.
 
 ## Side Effects
 
-The component derives text and classes from input entries and renders them; no service, I/O, or external state behavior is present.
+None. The component derives text and classes from its inputs.
 
 ## Verification
 

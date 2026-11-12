@@ -10,53 +10,45 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
-import { buildNeedsWeapon, validateBuildName } from '../../shared/validation/build-validation';
+import { buildNeedsWeapon } from '../../shared/validation/build-validation';
 
 import type {
   BuildCategoryView,
   BuildDetail,
-  BuildItemSlot,
-  BuildItemSpells,
-  BuildLoadout,
-  BuildRole,
-  BuildSlot,
   BuildPerformanceView,
   BuildPriceView,
+  BuildRole,
+  BuildSlot,
   BuildSummary,
+  ItemIpBreakdown,
   ItemPowerView,
-  OpenAlbionItem,
   OpenAlbionItemAbilities,
   PaginatedData,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
-import {
-  albionItemSupportsEnchantment,
-  albionItemSupportsQuality,
-  filterAlbionEquipmentCatalog,
-} from '../../shared/data/albion-equipment-catalog';
-import {
-  DEFAULT_ALBION_ITEM_ENCHANTMENT,
-  normalizeAlbionItemEnchantment,
-} from '../../shared/data/albion-item-enchantment';
-import {
-  DEFAULT_ALBION_ITEM_QUALITY,
-  normalizeAlbionItemQuality,
-} from '../../shared/data/albion-item-quality';
-import { SLOT_ORDER, itemsForLoadout } from './build-loadouts';
-import {
-  abilityCatalogKey,
-  abilityKeyForItem,
-  abilitySlotsFor,
-  withAbilityChoice,
-} from '../../shared/data/albion-abilities';
-import type { AbilitySlotView } from '../../shared/data/albion-abilities';
+import { albionTierLabel } from '../../shared/data/albion-item-enchantment';
+import { DEFAULT_ALBION_ITEM_QUALITY, normalizeAlbionItemQuality } from '../../shared/data/albion-item-quality';
+import { SLOT_LABEL_KEYS, SLOT_ORDER, itemsForLoadout } from './build-loadouts';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
-import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
-import type { AbilityChoiceChange } from '../../shared/components/ability-bar/ability-bar';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
 import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
-import { abilityNameLookup, diffBuildVersions } from './version-diff';
-import type { VersionDiffEntry } from './version-diff';
+import {
+  LoadoutEditor,
+  type LoadoutChange,
+} from '../../shared/components/loadout-editor/loadout-editor';
+import { LoadoutView } from '../../shared/components/loadout-view/loadout-view';
+import { RoleTag, roleLabelKey } from '../../shared/components/role-tag/role-tag';
+import {
+  EntityHeader,
+  type EntityMenuItem,
+} from '../../shared/components/entity-header/entity-header';
+import {
+  DEFAULT_BUILD_DIFF_LABELS,
+  abilityNameLookup,
+  diffBuildVersions,
+  type BuildDiffLabels,
+  type VersionDiffEntry,
+} from './version-diff';
 import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -65,29 +57,8 @@ import type { TranslationKey } from '../../i18n/en';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
-import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
-import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
-import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { Icon } from '../../shared/components/icon/icon';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { canChangeAuthored } from './comp-access';
-
-const SLOT_LABELS: Record<BuildSlot, string> = {
-  weapon: 'equipment.slot.weapon',
-  off_hand: 'equipment.slot.offHand',
-  head: 'equipment.slot.head',
-  armor: 'equipment.slot.armor',
-  shoes: 'equipment.slot.shoes',
-  cape: 'equipment.slot.cape',
-  bag: 'equipment.slot.bag',
-  potion: 'equipment.slot.potion',
-  food: 'equipment.slot.food',
-  mount: 'equipment.slot.mount',
-};
 
 interface AllianceShareStatus {
   shared: boolean;
@@ -97,35 +68,39 @@ interface AllianceShareStatus {
   };
 }
 
-const ROLE_LABELS: Record<BuildRole, string> = {
-  healer: 'Healer',
-  support: 'Support',
-  dps: 'DPS',
-  tank: 'Tank',
-  battle_mount: 'Battle Mount',
-  brawler: 'Brawler',
-};
+/** One slot of the combined item power and price table. */
+interface SlotFigure {
+  readonly slot: BuildSlot;
+  readonly label: string;
+  readonly itemName: string | null;
+  readonly tier: string;
+  /** Item power of the slot at max spec, or `null` when the figure is not available. */
+  readonly itemPower: number | null;
+  /** Why the slot has no specialization bonus, when that is worth saying. */
+  readonly itemPowerNote: string | null;
+  readonly price: number | string | null;
+  readonly city: string | null;
+}
 
-const ITEM_TIERS = [
-  'T2',
-  'T3',
-  'T4',
-  'T5',
-  'T6',
-  'T7',
-  'T8',
-];
+/** Longest build name the lists lay out without truncating awkwardly. */
+const MAX_NAME_LENGTH = 80;
 
 /**
  * Build detail page.
  *
- * Renders each equipment slot as a row; officers can search OpenAlbion items
- * inline and upsert/remove slots without leaving the page. Also exposes the
- * build metadata editor (name, role, category, description).
+ * Leads with a header (name, version, role, category, author, one primary action and an overflow
+ * menu for everything else) and a band of key numbers: item power at max spec, win rate, market
+ * price and signups, each shown once. Below it the loadout reads as slot rows with Main and Swap
+ * side by side and the chosen spells inline; the item power and price of each slot share one table.
+ *
+ * Editing is one mode switched on by the header's Edit loadout action. The loadout becomes
+ * `app-loadout-editor`: slot rows that open a single slot inspector, one Save and Discard for the
+ * whole loadout, and an unsaved-changes count. Save sends every changed slot, one request each, and
+ * leaves edit mode; if a request fails the build is reloaded so the draft shows what is left to do.
  *
  * @example
  * ```ts
- * routes.push({ path: 'comps/builds/:buildId', loadComponent: () => import('./comp-build-detail').then(m => m.CompBuildDetailPage) });
+ * routes.push({ path: 'builds/:buildId', loadComponent: () => import('./comp-build-detail').then(m => m.CompBuildDetailPage) });
  * ```
  */
 @Component({
@@ -133,431 +108,543 @@ const ITEM_TIERS = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
-    PageHeader,
-    PageStack,
-    EmptyState,
-    ErrorState,
-    Loading,
-    EquipmentGrid,
-    AbilityBar,
-    VersionSwitcher,
-    VersionDiffList,
     Dialog,
+    EmptyState,
+    EntityHeader,
+    ErrorState,
     Icon,
-    TooltipDirective,
-    StatCard,
-    ViewToggle,
+    LoadoutEditor,
+    LoadoutView,
+    RoleTag,
+    VersionDiffList,
+    VersionSwitcher,
   ],
-  styles: [`
-    :host { display: block; color: var(--color-text); }
-    :host ::ng-deep .rounded-xl, :host ::ng-deep .rounded-2xl,
-    :host ::ng-deep .rounded-lg, :host ::ng-deep .rounded-md,
-    :host ::ng-deep .shadow-lg, :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards);
-      box-shadow: none;
+  host: { '(window:beforeunload)': 'onBeforeUnload($event)' },
+  styles: `
+    :host {
+      display: block;
+      color: var(--color-text);
     }
-  `],
+    .bd-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .bd-mono {
+      font-family: var(--font-mono);
+    }
+    .bd-muted {
+      color: var(--color-text-secondary);
+    }
+    .bd-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.375rem;
+      padding: 0 0.5rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .bd-tag--state {
+      border-color: color-mix(in oklab, var(--color-warning) 40%, transparent);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+    }
+    .bd-badges {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+    }
+    .bd-badges:empty {
+      display: none;
+    }
+    .bd-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem 1rem;
+    }
+
+    /* ---- summary band -------------------------------------------------- */
+    .bd-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.875rem 1.5rem;
+      margin: 0;
+    }
+    @media (min-width: 40rem) {
+      .bd-stats {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+    .bd-stat dt {
+      font-size: 0.75rem;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+    }
+    .bd-stat dd {
+      margin: 0;
+    }
+    .bd-stat__value {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 500;
+      line-height: 1.75rem;
+      color: var(--color-text-heading);
+    }
+    .bd-stat__hint {
+      font-size: 0.75rem;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+    }
+
+    /* ---- panels -------------------------------------------------------- */
+    .bd-panel {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-surface);
+    }
+    .bd-panel__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.25rem 1rem;
+      margin: 0 0 0.75rem;
+    }
+    .bd-panel__title {
+      margin: 0;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--color-text-heading);
+    }
+    .bd-panel__note {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary);
+    }
+    .bd-notice {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      border: 1px solid color-mix(in oklab, var(--color-warning) 40%, transparent);
+      border-radius: var(--radius-md);
+      background: var(--color-warning-container);
+      font-size: 0.8125rem;
+    }
+    .bd-cols {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+    }
+    @media (min-width: 64rem) {
+      .bd-cols--two {
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+      }
+    }
+
+    /* ---- slot table ---------------------------------------------------- */
+    .bd-table-scroll {
+      overflow-x: auto;
+    }
+    .bd-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .bd-table th,
+    .bd-table td {
+      padding: 0.375rem 0.5rem;
+      border-top: 1px solid var(--color-border);
+      text-align: start;
+      vertical-align: top;
+    }
+    .bd-table thead th {
+      border-top: 0;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+    }
+    .bd-table tfoot th,
+    .bd-table tfoot td {
+      border-top: 1px solid var(--color-border-strong);
+      font-weight: 600;
+    }
+    .bd-table .bd-num {
+      text-align: end;
+      white-space: nowrap;
+      font-family: var(--font-mono);
+    }
+    .bd-table thead th.bd-num {
+      font-family: inherit;
+    }
+    .bd-cell__sub {
+      display: block;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 400;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+      white-space: normal;
+    }
+    .bd-cell__item {
+      display: block;
+      font-size: 0.75rem;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+      overflow-wrap: anywhere;
+    }
+
+    /* ---- battle performance ------------------------------------------- */
+    .bd-facts {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.5rem 1rem;
+      margin: 0;
+      font-size: 0.875rem;
+    }
+    .bd-facts dt {
+      color: var(--color-text-secondary);
+    }
+    .bd-facts dd {
+      margin: 0;
+      font-family: var(--font-mono);
+      text-align: end;
+    }
+
+    /* ---- skeleton ------------------------------------------------------ */
+    .bd-skel__bar,
+    .bd-skel__cell,
+    .bd-skel__row,
+    .bd-skel-inline {
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+    }
+    .bd-skel__bar--title {
+      width: min(18rem, 70%);
+      height: 1.75rem;
+    }
+    .bd-skel__bar--meta {
+      width: min(26rem, 90%);
+      height: 1rem;
+      margin-block-start: 0.625rem;
+    }
+    .bd-skel__stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-block: 1.25rem;
+    }
+    @media (min-width: 40rem) {
+      .bd-skel__stats {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+    .bd-skel__cell {
+      height: 3.25rem;
+    }
+    .bd-skel__row {
+      height: 2.75rem;
+      margin-block-start: 0.5rem;
+    }
+    .bd-skel-inline {
+      display: inline-block;
+      width: 4rem;
+      height: 1.25rem;
+      vertical-align: middle;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .bd-skel__bar,
+      .bd-skel__cell,
+      .bd-skel__row,
+      .bd-skel-inline {
+        animation: bd-pulse 1.4s ease-in-out infinite;
+      }
+    }
+    @keyframes bd-pulse {
+      50% {
+        opacity: 0.5;
+      }
+    }
+  `,
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <div role="status" aria-busy="true">
+        <span class="sr-only">{{ t('common.loading') }}</span>
+        <div aria-hidden="true">
+          <div class="bd-skel__bar bd-skel__bar--title"></div>
+          <div class="bd-skel__bar bd-skel__bar--meta"></div>
+          <div class="bd-skel__stats">
+            <div class="bd-skel__cell"></div>
+            <div class="bd-skel__cell"></div>
+            <div class="bd-skel__cell"></div>
+            <div class="bd-skel__cell"></div>
+          </div>
+          <div class="bd-skel__row"></div>
+          <div class="bd-skel__row"></div>
+          <div class="bd-skel__row"></div>
+          <div class="bd-skel__row"></div>
+          <div class="bd-skel__row"></div>
+        </div>
+      </div>
     } @else if (build(); as current) {
-      <app-page-header
+      <app-entity-header
         [title]="current.name"
-        [subtitle]="roleLabel(current.role) + ' · ' + (current.weapon_name ? current.weapon_name + ' · ' : '') + (current.category_name || t('comps.noCategory'))"
-        [badge]="current.archived_at ? t('comps.archived') : undefined"
+        [description]="current.description"
+        [menuItems]="menuItems()"
+        [menuLabel]="t('entityHeader.moreActions')"
+        (menuSelect)="onMenu($event)"
       >
-        <div pageActions class="flex flex-wrap items-center gap-2">
-          <a class="btn btn--ghost" routerLink="/builds">← {{ t('comps.builds') }}</a>
-          <app-version-switcher
-            [versions]="current.versions ?? []"
-            [currentId]="current.id"
-            [canManage]="canVersion()"
-            [busy]="saving()"
-            [label]="t('comps.version')"
-            [createLabel]="t('comps.newVersion')"
-            (select)="openVersion($event)"
-            (create)="createVersion()"
-          />
-          @if ((current.versions ?? []).length > 1) {
-            <button type="button" class="btn btn--outline" (click)="openCompare()">
-              {{ t('comps.compare') }}
-            </button>
-          }
-          @if (canManage()) {
-            <button
-              type="button"
-              class="btn"
-              [class.btn--primary]="mode() === 'edit'"
-              [class.btn--outline]="mode() === 'view'"
-              (click)="toggleEditMode()"
-              [disabled]="saving()"
-            >
-              <app-icon [name]="mode() === 'edit' ? 'check' : 'edit'" size="0.75rem" />
-              {{ mode() === 'edit' ? t('comps.doneEditing') : t('comps.editEquipment') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--outline"
-              (click)="openEditMeta()"
-              [disabled]="saving()"
-            >
-              {{ t('comps.editBuildDetails') }}
-            </button>
+        <span entityBadges class="bd-badges">
+          @if (current.archived_at) {
+            <span class="bd-tag bd-tag--state">{{ t('comps.archived') }}</span>
           }
           @if (isGuildTenant() && shareStatus()?.shared) {
-            <span class="chip text-xs">{{ t('comps.sharedWithAlliance') }}</span>
+            <span class="bd-tag">{{ t('comps.sharedWithAlliance') }}</span>
           }
-          @if (canShare()) {
-            <button
-              type="button"
-              class="btn btn--outline"
-              (click)="shareWithAlliance()"
-              [disabled]="saving()"
-            >
-              {{ t('comps.shareWithAlliance') }}
-            </button>
-            @if (shareStatus()?.shared) {
-              <button
-                type="button"
-                class="btn btn--ghost"
-                (click)="unshareWithAlliance()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.unshareWithAlliance') }}
-              </button>
-            }
-          }
-          @if (canDelete() && mode() === 'view') {
-            @if (current.archived_at) {
-              <button
-                type="button"
-                class="btn btn--outline"
-                (click)="unarchiveBuild()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.unarchive') }}
-              </button>
-            } @else {
-              <button
-                type="button"
-                class="btn btn--outline"
-                (click)="askArchiveBuild()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.archive') }}
-              </button>
-            }
-          }
-        </div>
-      </app-page-header>
+        </span>
 
-      <app-page-stack>
-        <!-- ================= MISSING WEAPON ================= -->
-        @if (missingWeapon()) {
-          <div
-            class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex items-center gap-2 text-xs"
-            role="status"
+        <div entityMeta class="bd-meta">
+          @if ((current.versions ?? []).length > 1) {
+            <app-version-switcher
+              [versions]="current.versions ?? []"
+              [currentId]="current.id"
+              [busy]="saving()"
+              [label]="t('comps.version')"
+              [compact]="true"
+              (select)="openVersion($event)"
+            />
+          } @else {
+            <span class="bd-mono">v{{ current.version }}</span>
+          }
+          <app-role-tag [role]="current.role" />
+          <span>{{ current.category_name || t('comps.noCategory') }}</span>
+          <span>{{ t('buildDetail.byAuthor', { name: current.created_by_username }) }}</span>
+          <span>{{ t('buildDetail.updatedOn', { date: formatDate(current.updated_at) }) }}</span>
+        </div>
+
+        @if (canManage() && !editing()) {
+          <button
+            entityPrimary
+            type="button"
+            class="btn btn--primary"
+            [disabled]="saving()"
+            (click)="startEdit()"
           >
+            <app-icon name="edit" size="1rem" />
+            {{ t('buildDetail.action.edit') }}
+          </button>
+        }
+
+        <div entitySummary>
+          <dl class="bd-stats">
+            <div class="bd-stat">
+              <dt>{{ t('buildDetail.stat.itemPower') }}</dt>
+              <dd class="bd-stat__value">
+                @if (metricsLoading()) {
+                  <span class="bd-skel-inline" aria-hidden="true"></span>
+                  <span class="sr-only">{{ t('common.loading') }}</span>
+                } @else {
+                  {{ itemPowerText() }}
+                }
+              </dd>
+              @if (!metricsLoading() && itemPowerHint(); as hint) {
+                <dd class="bd-stat__hint">{{ hint }}</dd>
+              }
+            </div>
+            <div class="bd-stat">
+              <dt>{{ t('comps.winrate') }}</dt>
+              <dd class="bd-stat__value">
+                @if (metricsLoading()) {
+                  <span class="bd-skel-inline" aria-hidden="true"></span>
+                  <span class="sr-only">{{ t('common.loading') }}</span>
+                } @else {
+                  {{ winRateText() }}
+                }
+              </dd>
+              @if (!metricsLoading()) {
+                <dd class="bd-stat__hint">{{ winRateHint() }}</dd>
+              }
+            </div>
+            <div class="bd-stat">
+              <dt>{{ t('buildDetail.stat.price') }}</dt>
+              <dd class="bd-stat__value">
+                @if (metricsLoading()) {
+                  <span class="bd-skel-inline" aria-hidden="true"></span>
+                  <span class="sr-only">{{ t('common.loading') }}</span>
+                } @else {
+                  {{ priceText() }}
+                }
+              </dd>
+              @if (!metricsLoading() && marketPrice()) {
+                <dd class="bd-stat__hint">{{ t('buildDetail.stat.priceHint') }}</dd>
+              }
+            </div>
+            <div class="bd-stat">
+              <dt>{{ t('buildDetail.stat.signups') }}</dt>
+              <dd class="bd-stat__value">
+                @if (metricsLoading()) {
+                  <span class="bd-skel-inline" aria-hidden="true"></span>
+                  <span class="sr-only">{{ t('common.loading') }}</span>
+                } @else {
+                  {{ signupsText() }}
+                }
+              </dd>
+              @if (!metricsLoading() && signupsHint(); as hint) {
+                <dd class="bd-stat__hint">{{ hint }}</dd>
+              }
+            </div>
+          </dl>
+        </div>
+      </app-entity-header>
+
+      <div class="bd-stack">
+        @if (missingWeapon()) {
+          <div class="bd-notice" role="status">
             <app-icon name="alert" size="1rem" />
             <span>{{ t('comps.weaponMissingWarning') }}</span>
           </div>
         }
-        <!-- ================= EDIT MODE BANNER ================= -->
-        @if (mode() === 'edit') {
-          <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div class="flex items-center gap-2 text-warning">
-              <app-icon name="edit" size="1rem" />
-              <span>{{ t('comps.equipmentSaveHint') }}</span>
+
+        <!-- ================= LOADOUT ================= -->
+        <section class="bd-panel" aria-labelledby="bd-loadout-title">
+          <div class="bd-panel__head">
+            <h2 class="bd-panel__title" id="bd-loadout-title">{{ t('buildDetail.loadout.title') }}</h2>
+            @if (editing()) {
+              <p class="bd-panel__note">{{ t('buildDetail.edit.hint') }}</p>
+            }
+          </div>
+          @if (editing()) {
+            <app-loadout-editor
+              [items]="current.items"
+              [saving]="saving()"
+              (save)="saveLoadout($event)"
+              (discard)="requestDiscard()"
+              (dirtyChange)="dirty.set($event)"
+            />
+          } @else {
+            <app-loadout-view [items]="current.items" />
+          }
+        </section>
+
+        <div class="bd-cols" [class.bd-cols--two]="!!performance()?.stats">
+          <!-- ================= ITEM POWER AND PRICE ================= -->
+          <section class="bd-panel" aria-labelledby="bd-slots-title">
+            <div class="bd-panel__head">
+              <h2 class="bd-panel__title" id="bd-slots-title">{{ t('buildDetail.slots.title') }}</h2>
             </div>
-            <button type="button" class="btn btn--sm btn--primary" (click)="toggleEditMode()" [disabled]="saving()">
-              {{ t('comps.doneEditing') }}
-            </button>
-          </div>
-        }
-
-        <!-- ================= CORE KPI CARDS ================= -->
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          <app-stat-card
-            label="Item Power (spec 100)"
-            [value]="itemPowerAtMaxFormatted()"
-            [sub]="itemPowerAtMax()?.breakdown?.mastery_levels_known === false ? 'limite inferiore — maestria non nota' : undefined"
-            icon="zap"
-          />
-          <app-stat-card
-            label="Win Rate"
-            [value]="winRateFormatted()"
-            [tone]="performance() && (performance()!.stats?.wins ?? 0) >= (performance()!.stats?.losses ?? 0) ? 'success' : 'default'"
-            icon="trophy"
-          />
-          <app-stat-card
-            label="K / D Ratio"
-            [value]="kdRatioFormatted()"
-            icon="swords"
-          />
-          <app-stat-card
-            label="Stato Equipaggiamento"
-            [value]="equipmentCompletion()"
-            icon="shield"
-          />
-          <app-stat-card
-            label="Registrazioni Giocatori"
-            [value]="totalSignups()"
-            icon="users"
-          />
-        </div>
-
-        <!-- ================= 2-COLUMN MAIN WORKSPACE ================= -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <!-- LEFT COLUMN: Paperdoll Forge & Spells Deck (7 cols) -->
-          <div class="lg:col-span-7 space-y-6">
-            <!-- Loadout Card with Tabs -->
-            <section class="card p-5 border border-[var(--color-border)] space-y-4">
-              <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[var(--color-border)]">
-                <div>
-                  <h2 class="text-base font-bold text-[var(--color-text)]">
-                    Equipaggiamento Personaggio
-                  </h2>
-                  <p class="text-xs text-secondary">
-                    Configurazione visuale Albion Online per slot principali e pezzi swap tattici.
-                  </p>
-                </div>
-                <app-view-toggle
-                  [options]="loadoutOptions()"
-                  [active]="activeLoadout()"
-                  (activeChange)="onLoadoutChange($event)"
-                />
+            @if (metricsLoading()) {
+              <div role="status" aria-busy="true">
+                <span class="sr-only">{{ t('common.loading') }}</span>
+                <div class="bd-skel__row" aria-hidden="true"></div>
+                <div class="bd-skel__row" aria-hidden="true"></div>
+                <div class="bd-skel__row" aria-hidden="true"></div>
               </div>
-
-              <!-- Equipment Paperdoll Grid -->
-              <app-equipment-grid
-                [items]="activeItems()"
-                [canManage]="canManage() && mode() === 'edit' && !saving()"
-                [editingSlot]="editingSlotFor(activeLoadout())"
-                [draftTier]="draftTier()"
-                [draftQuality]="draftQuality()"
-                [draftEnchantment]="draftEnchantment()"
-                [draftSearch]="draftSearch()"
-                [draftItemId]="draftItemId()"
-                [searchResults]="searchResults()"
-                [searchLoading]="searchLoading()"
-                [tiers]="ITEM_TIERS"
-                [draftAbilitySlots]="draftAbilitySlots()"
-                (slotToggle)="onSlotToggle(activeLoadout(), $event)"
-                (tierChange)="onDraftTierChangeValue($event)"
-                (qualityChange)="onDraftQualityChangeValue($event)"
-                (enchantmentChange)="onDraftEnchantmentChangeValue($event)"
-                (searchChange)="onDraftSearchChangeValue($event)"
-                (itemSelect)="onDraftItemChangeValue($event)"
-                (saveSlot)="saveSlot(activeLoadout(), $event)"
-                (cancelEdit)="cancelSlotEdit()"
-                (removeItem)="askRemoveItem(activeLoadout(), $event)"
-                (abilityChoice)="onDraftAbilityChange($event)"
-              />
-            </section>
-
-            <!-- Spells & Abilities Deck (Right underneath paperdoll) -->
-            <section class="card p-5 border border-[var(--color-border)] space-y-4">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <h3 class="text-sm font-bold text-[var(--color-text)]">
-                    Incantesimi & Abilità Selezionate ({{ activeLoadout() === 'main' ? 'Main Set' : 'Swap Set' }})
-                  </h3>
-                  <p class="text-xs text-secondary">
-                    Abilità attive (Q, W, E, R, F) e passive legate agli oggetti equipaggiati.
-                  </p>
-                </div>
-                <span class="chip chip--neutral text-[10px] font-mono">
-                  {{ activeAbilityRows().length }} pezzi con abilità
-                </span>
-              </div>
-
-              @if (activeAbilityRows().length > 0) {
-                <div class="space-y-3">
-                  @for (row of activeAbilityRows(); track row.slot) {
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div class="flex items-center gap-2.5 min-w-0">
-                        @if (row.itemIcon) {
-                          <img [src]="row.itemIcon" [alt]="row.itemName" class="w-9 h-9 object-contain rounded bg-[var(--color-surface-1)] p-0.5 border border-[var(--color-border)] shrink-0" />
-                        }
-                        <div class="min-w-0">
-                          <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ row.itemName }}</span>
-                          <span class="text-[10px] text-secondary uppercase tracking-wider font-semibold">{{ slotLabel(row.slot) }}</span>
-                        </div>
-                      </div>
-
-                      <div class="shrink-0">
-                        <app-ability-bar
-                          [slots]="row.slots"
-                          [canManage]="canManage() && mode() === 'edit' && !saving()"
-                          [emptyLabel]="t('comps.noAbility')"
-                          (choiceChange)="onAbilityChange(activeLoadout(), row.slot, $event)"
-                        />
-                      </div>
-                    </div>
-                  }
-                </div>
-              } @else {
-                <div class="p-6 text-center rounded-[var(--radius-cards)] bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs text-secondary">
-                  Nessuna abilità configurabile per questo set.
-                </div>
-              }
-            </section>
-          </div>
-
-          <!-- RIGHT COLUMN: Tactical Analytics & Guide (5 cols) -->
-          <div class="lg:col-span-5 space-y-6">
-            <!-- Tactical Guide & Role Card -->
-            <section class="card p-5 border border-[var(--color-border)] space-y-3">
-              <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="roleColorHex(current.role)"></span>
-                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                    Ruolo & Note Tattiche
-                  </h3>
-                </div>
-                <span class="chip font-semibold text-xs" [style.color]="roleColorHex(current.role)">
-                  {{ roleLabel(current.role) }}
-                </span>
-              </div>
-
-              @if (current.description) {
-                <p class="text-xs text-[var(--color-text)] leading-relaxed whitespace-pre-line bg-[var(--color-surface-2)] p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-border)]">
-                  {{ current.description }}
-                </p>
-              } @else {
-                <p class="text-xs text-disabled italic">
-                  Nessuna descrizione o linea guida tattica inserita per questa build.
-                </p>
-              }
-            </section>
-
-            <!-- Item Power Breakdown Card -->
-            <section class="card p-5 border border-[var(--color-border)] space-y-4">
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                  Item Power (spec 100)
-                </h3>
-                @if (itemPowerAtMax(); as view) {
-                  <span class="chip text-xs font-mono">{{ itemPowerAtMaxFormatted() }}</span>
+            } @else if (slotFigures().length === 0) {
+              <p class="bd-panel__note">{{ t('buildDetail.slots.unavailable') }}</p>
+            } @else {
+              @if (itemPowerAtMax(); as ip) {
+                @if (ip.breakdown.mastery_levels_known === false) {
+                  <p class="bd-panel__note" role="note">{{ t('buildDetail.slots.lowerBound') }}</p>
                 }
-              </div>
-
-              @if (itemPowerAtMax(); as view) {
-                @if (view.breakdown.mastery_levels_known === false) {
-                  <p class="text-[10px] text-warning">
-                    ⚠ Limite inferiore — i livelli di maestria non sono ancora registrati.
-                  </p>
-                }
-                <div class="space-y-1.5">
-                  @for (item of view.breakdown.items; track item.slot) {
-                    <div class="flex items-center justify-between gap-2 p-2 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] text-xs">
-                      <div class="min-w-0">
-                        <span class="font-semibold text-[var(--color-text)]">{{ slotLabel(item.slot) }}</span>
-                        <span class="text-[10px] text-secondary block">
-                          {{ ipTierLabel(item) }}
-                          @if (item.unknown_item) {
-                            · item sconosciuto al dataset
-                          } @else if (!item.spec_node) {
-                            · nessuna spec per questo slot
+              }
+              <div class="bd-table-scroll">
+                <table class="bd-table">
+                  <caption class="sr-only">{{ t('buildDetail.slots.caption') }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('buildDetail.slots.col.slot') }}</th>
+                      <th scope="col" class="bd-num">{{ t('buildDetail.slots.col.itemPower') }}</th>
+                      <th scope="col" class="bd-num">{{ t('buildDetail.slots.col.price') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of slotFigures(); track row.slot) {
+                      <tr>
+                        <th scope="row">
+                          {{ row.label }}
+                          <span class="bd-cell__item">
+                            {{ row.itemName ?? t('loadoutEditor.row.empty') }}
+                            @if (row.tier) {
+                              <span class="bd-mono">{{ row.tier }}</span>
+                            }
+                          </span>
+                        </th>
+                        <td class="bd-num">
+                          {{ row.itemPower === null ? '—' : formatNumber(row.itemPower) }}
+                          @if (row.itemPowerNote) {
+                            <span class="bd-cell__sub">{{ row.itemPowerNote }}</span>
                           }
-                        </span>
-                      </div>
-                      <strong class="font-mono text-[var(--color-text)] shrink-0">{{ Math.round(item.total) }}</strong>
-                    </div>
-                  }
-                  @if (view.breakdown.empty_slots.length > 0) {
-                    <p class="text-[10px] text-secondary pt-1">
-                      Slot vuoti: {{ view.breakdown.empty_slots.length }} (contano comunque nella media)
-                    </p>
-                  }
-                </div>
-              } @else {
-                <p class="text-xs text-disabled italic">Calcolo Item Power non disponibile.</p>
-              }
-            </section>
-
-            <!-- Market Price Card -->
-            <section class="card p-5 border border-[var(--color-border)] space-y-4">
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                  {{ t('comps.price.title') }}
-                </h3>
-                @if (marketPrice(); as price) {
-                  <span class="chip text-xs font-mono">{{ formatSilver(price.total) }}</span>
-                }
-              </div>
-
-              @if (marketPrice(); as price) {
-                @if (price.items.length > 0) {
-                  <div class="space-y-1.5">
-                    @for (item of price.items; track item.openalbion_item_id + item.slot) {
-                      <div class="flex items-center justify-between gap-2 p-2 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] text-xs">
-                        <div class="min-w-0">
-                          <span class="font-semibold text-[var(--color-text)]">{{ slotLabel(item.slot) }}</span>
-                          <span class="text-[10px] text-secondary block truncate">{{ item.openalbion_item_name }} · {{ item.city }}</span>
-                        </div>
-                        <strong class="font-mono text-[var(--color-text)] shrink-0">{{ formatSilver(item.unit_price) }}</strong>
-                      </div>
+                        </td>
+                        <td class="bd-num">
+                          {{ row.price === null ? '—' : formatSilver(row.price) }}
+                          @if (row.city) {
+                            <span class="bd-cell__sub">{{ row.city }}</span>
+                          }
+                        </td>
+                      </tr>
                     }
-                  </div>
-                } @else {
-                  <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
-                }
-              } @else {
-                <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
-              }
-            </section>
-
-            <!-- Combat Telemetry Card -->
-            <section class="card p-5 border border-[var(--color-border)] space-y-4">
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                  Telemetria di Combattimento · v{{ current.version }}
-                </h3>
-                <span class="chip text-xs font-mono">
-                  {{ totalSignups() }} Registrazioni
-                </span>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row">{{ t('buildDetail.slots.wholeSet') }}</th>
+                      <td class="bd-num">
+                        {{ itemPowerAtMax() ? formatNumber(itemPowerAtMax()!.breakdown.average) : '—' }}
+                        <span class="bd-cell__sub">{{ t('buildDetail.slots.average') }}</span>
+                      </td>
+                      <td class="bd-num">
+                        {{ marketPrice() ? formatSilver(marketPrice()!.total) : '—' }}
+                        <span class="bd-cell__sub">{{ t('buildDetail.slots.total') }}</span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-
-              @if (performance(); as report) {
-                @if (report.stats; as stats) {
-                  <div class="grid grid-cols-2 gap-2.5">
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
-                      <span class="text-[10px] text-disabled block">Win Rate</span>
-                      <strong class="text-base font-bold text-[var(--color-text)]">{{ winRate(stats.wins, stats.losses) }}</strong>
-                      <span class="text-[10px] text-secondary block mt-0.5">{{ stats.wins }}W - {{ stats.losses }}L</span>
-                    </div>
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
-                      <span class="text-[10px] text-disabled block">K / D Ratio</span>
-                      <strong class="text-base font-bold text-[var(--color-text)]">{{ kdRatioFormatted() }}</strong>
-                      <span class="text-[10px] text-secondary block mt-0.5">{{ stats.kills }}K / {{ stats.deaths }}D</span>
-                    </div>
-                  </div>
-
-                  <div class="text-xs space-y-2 pt-2 border-t border-[var(--color-border)] text-secondary">
-                    <div class="flex justify-between">
-                      <span>Battaglie Tracciate:</span>
-                      <strong class="text-[var(--color-text)] font-mono">{{ stats.battles }}</strong>
-                    </div>
-                    <div class="flex justify-between">
-                      <span>Giocatori Associati:</span>
-                      <strong class="text-[var(--color-text)] font-mono">{{ stats.matched_players }}</strong>
-                    </div>
-                    <div class="flex justify-between">
-                      <span>Kill Fame Accumulata:</span>
-                      <strong class="text-warning font-mono">{{ stats.kill_fame }}</strong>
-                    </div>
-                  </div>
-                } @else {
-                  <p class="text-xs text-secondary">{{ t('comps.noBattleData') }}</p>
-                }
+              @if (!itemPowerAtMax()) {
+                <p class="bd-panel__note">{{ t('buildDetail.slots.itemPowerUnavailable') }}</p>
+              } @else if (emptySlotCount() > 0) {
+                <p class="bd-panel__note">
+                  {{ t('buildDetail.slots.emptyNote', { count: emptySlotCount() }) }}
+                </p>
               }
-            </section>
-          </div>
-        </div>
-      </app-page-stack>
+              @if (!marketPrice()) {
+                <p class="bd-panel__note">{{ t('comps.price.unavailable') }}</p>
+              }
+            }
+          </section>
 
-      <!-- Edit Metadata Modal Dialog -->
+          <!-- ================= BATTLE PERFORMANCE ================= -->
+          @if (performance()?.stats; as stats) {
+            <section class="bd-panel" aria-labelledby="bd-perf-title">
+              <div class="bd-panel__head">
+                <h2 class="bd-panel__title" id="bd-perf-title">{{ t('buildDetail.performance.title') }}</h2>
+              </div>
+              <dl class="bd-facts">
+                <dt>{{ t('buildDetail.performance.battles') }}</dt>
+                <dd>{{ formatNumber(stats.battles) }}</dd>
+                <dt>{{ t('buildDetail.performance.players') }}</dt>
+                <dd>{{ formatNumber(stats.matched_players) }}</dd>
+                <dt>{{ t('buildDetail.performance.killsDeaths') }}</dt>
+                <dd>{{ formatNumber(stats.kills) }} / {{ formatNumber(stats.deaths) }}</dd>
+                <dt>{{ t('buildDetail.performance.kd') }}</dt>
+                <dd>{{ kdRatioText() }}</dd>
+                <dt>{{ t('buildDetail.performance.killFame') }}</dt>
+                <dd>{{ formatNumber(stats.kill_fame) }}</dd>
+              </dl>
+            </section>
+          }
+        </div>
+      </div>
+
+      <!-- ================= EDIT DETAILS ================= -->
       @if (editMetaOpen()) {
         <app-dialog [title]="t('comps.editBuildDetails')" size="md" (closed)="closeEditMeta()">
           <form class="grid gap-4" (submit)="saveEdit($event)">
@@ -569,20 +656,22 @@ const ITEM_TIERS = [
                   class="input"
                   type="text"
                   required
+                  [attr.aria-invalid]="nameError() ? 'true' : null"
+                  [attr.aria-describedby]="nameError() ? 'bd-name-error' : null"
                   [value]="editName()"
                   (input)="onEditNameChange($event)"
                 />
+                @if (nameError(); as message) {
+                  <span id="bd-name-error" class="text-xs text-error" role="alert">{{ message }}</span>
+                }
               </label>
               <label>
                 <span class="label">{{ t('common.category') }} <span class="text-error" aria-hidden="true">*</span></span>
-                <select
-                  class="select"
-                  required
-                  [value]="editCategoryId()"
-                  (change)="onEditCategoryChange($event)"
-                >
+                <select class="select" required (change)="onEditCategoryChange($event)">
                   @for (category of editCategoryOptions(); track category.id) {
-                    <option [value]="category.id">{{ category.name }}</option>
+                    <option [value]="category.id" [selected]="'' + category.id === editCategoryId()">
+                      {{ category.name }}
+                    </option>
                   }
                 </select>
                 <span class="text-xs text-secondary">{{ t('comps.categoryRequired') }}</span>
@@ -590,10 +679,9 @@ const ITEM_TIERS = [
             </div>
             <label>
               <span class="label">{{ t('common.role') }}</span>
-              <select class="select" [value]="editRole()" (change)="onEditRoleChange($event)">
-                <option value="">{{ t('common.role') }}</option>
+              <select class="select" (change)="onEditRoleChange($event)">
                 @for (role of roles; track role) {
-                  <option [value]="role">{{ roleLabel(role) }}</option>
+                  <option [value]="role" [selected]="role === editRole()">{{ roleLabel(role) }}</option>
                 }
               </select>
             </label>
@@ -618,51 +706,52 @@ const ITEM_TIERS = [
         </app-dialog>
       }
 
+      <!-- ================= COMPARE VERSIONS ================= -->
       @if (comparing()) {
         <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
           <div class="grid gap-4">
             <label>
               <span class="label">{{ t('comps.compareWith') }}</span>
-              <select
-                class="select"
-                [value]="compareWithId()"
-                (change)="onCompareTargetChange($event)"
-              >
+              <select class="select" (change)="onCompareTargetChange($event)">
                 @for (entry of current.versions ?? []; track entry.id) {
                   @if (entry.id !== current.id) {
-                    <option [value]="entry.id">v{{ entry.version }}</option>
+                    <option [value]="entry.id" [selected]="compareWithId() === '' + entry.id">
+                      v{{ entry.version }}
+                    </option>
                   }
                 }
               </select>
             </label>
 
-            @if (compareWith(); as other) {
+            @if (comparison(); as pair) {
+              <p class="text-sm bd-muted">
+                {{ t('compDetail.compare.direction', { from: 'v' + pair.before.version, to: 'v' + pair.after.version }) }}
+              </p>
               <div class="grid gap-3 sm:grid-cols-2">
-                <div class="card p-4">
-                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                    v{{ other.version }} — {{ t('comps.performance') }}
-                  </h3>
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ performanceSummary(comparePerformance()) }}
-                  </p>
-                </div>
-                <div class="card p-4">
-                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                    v{{ current.version }} — {{ t('comps.performance') }}
-                  </h3>
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ performanceSummary(performance()) }}
-                  </p>
-                </div>
+                <section class="bd-panel">
+                  <h3 class="text-sm font-semibold">{{ t('compDetail.compare.older', { version: pair.before.version }) }}</h3>
+                  <p class="text-sm bd-muted mt-1">{{ performanceSummary(pair.beforePerformance) }}</p>
+                </section>
+                <section class="bd-panel">
+                  <h3 class="text-sm font-semibold">{{ t('compDetail.compare.newer', { version: pair.after.version }) }}</h3>
+                  <p class="text-sm bd-muted mt-1">{{ performanceSummary(pair.afterPerformance) }}</p>
+                </section>
               </div>
 
               <app-version-diff-list
                 [entries]="compareDiff()"
                 [emptyLabel]="t('comps.noDifferences')"
+                [subjectLabel]="t('versionDiff.what')"
+                [beforeLabel]="'v' + pair.before.version"
+                [afterLabel]="'v' + pair.after.version"
+                [changeLabel]="t('versionDiff.change')"
+                [noneLabel]="t('versionDiff.none')"
                 [addedLabel]="t('comps.added')"
                 [removedLabel]="t('comps.removed')"
                 [changedLabel]="t('comps.changed')"
               />
+            } @else if (compareLoading()) {
+              <p class="text-sm bd-muted" role="status">{{ t('common.loading') }}</p>
             }
           </div>
           <div dialogFooter>
@@ -673,34 +762,26 @@ const ITEM_TIERS = [
         </app-dialog>
       }
 
-      @if (pendingDelete(); as pending) {
-        <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
-          <p>{{ t('comps.deleteItem') }}</p>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-            {{ slotLabel(pending.slot) }}
-          </p>
+      <!-- ================= DISCARD CONFIRM ================= -->
+      @if (pendingDiscard()) {
+        <app-dialog [title]="t('buildDetail.discard.title')" size="sm" (closed)="keepEditing()">
+          <p>{{ t('buildDetail.discard.message', { count: dirty() }) }}</p>
           <div dialogFooter>
-            <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-              {{ t('common.cancel') }}
+            <button type="button" class="btn btn--ghost" (click)="keepEditing()">
+              {{ t('buildDetail.discard.keep') }}
             </button>
-            <button
-              type="button"
-              class="btn btn--danger"
-              [disabled]="saving()"
-              (click)="confirmPendingDelete()"
-            >
-              {{ t('common.delete') }}
+            <button type="button" class="btn btn--tonal" (click)="confirmDiscard()">
+              {{ t('buildDetail.discard.confirm') }}
             </button>
           </div>
         </app-dialog>
       }
 
+      <!-- ================= ARCHIVE CONFIRM ================= -->
       @if (pendingArchive()) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeArchiveConfirm()">
           <p>{{ t('comps.archiveConfirm') }}</p>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-            {{ current.name }}
-          </p>
+          <p class="mt-2 text-sm bd-muted">{{ current.name }}</p>
           <div dialogFooter>
             <button type="button" class="btn btn--ghost" (click)="closeArchiveConfirm()">
               {{ t('common.cancel') }}
@@ -716,14 +797,24 @@ const ITEM_TIERS = [
           </div>
         </app-dialog>
       }
-    } @else if (loadFailed()) {
+    } @else if (notFound()) {
+      <app-empty-state
+        icon="package"
+        [message]="t('comps.buildNotFound')"
+        [hint]="t('buildDetail.notFound.hint')"
+      >
+        <a class="btn btn--outline btn--sm" routerLink="/builds">
+          <app-icon name="chevron-left" size="0.875rem" />
+          {{ t('buildDetail.notFound.back') }}
+        </a>
+      </app-empty-state>
+    } @else {
       <app-error-state
         [message]="t('common.error')"
+        [hint]="t('buildDetail.error.load')"
         [retryLabel]="t('common.retry')"
         (retry)="load(buildId())"
       />
-    } @else if (!loading()) {
-      <app-empty-state [message]="t('comps.buildNotFound')" icon="package" />
     }
   `,
 })
@@ -734,12 +825,9 @@ export class CompBuildDetailPage {
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly albionAbilities = inject(AlbionAbilitiesService);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly SLOT_ORDER = SLOT_ORDER;
-  protected readonly ITEM_TIERS = ITEM_TIERS;
   protected readonly roles: BuildRole[] = [
     'healer',
     'support',
@@ -751,8 +839,11 @@ export class CompBuildDetailPage {
 
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
+  protected readonly notFound = signal(false);
   protected readonly saving = signal(false);
   protected readonly build = signal<BuildDetail | null>(null);
+  /** The key numbers (item power, win rate, price, signups) are still being fetched. */
+  protected readonly metricsLoading = signal(true);
   /** A non-mount build without a main-hand weapon in its main loadout cannot be saved. */
   protected readonly missingWeapon = computed(() => {
     const current = this.build();
@@ -775,78 +866,26 @@ export class CompBuildDetailPage {
     ];
   });
 
-  protected readonly mode = signal<'view' | 'edit'>('view');
-  protected readonly activeLoadout = signal<BuildLoadout>('main');
+  /** True while the loadout editor is open. */
+  protected readonly editing = signal(false);
+  /** Slots the editor reports as different from the saved loadout. */
+  protected readonly dirty = signal(0);
+  /** Set while the discard dialog is up: what to do once the user confirms. */
+  protected readonly pendingDiscard = signal(false);
+  private discardAction: (() => void) | null = null;
   protected readonly editMetaOpen = signal(false);
 
-  protected readonly loadoutOptions = computed<readonly ViewToggleOption[]>(() => [
-    { id: 'main', label: `Main Set (${this.mainItems().length}/${this.SLOT_ORDER.length})` },
-    { id: 'swap', label: `Tactical Swap (${this.swapItems().length} Pezzi)` },
-  ]);
-
-  protected readonly activeItems = computed(() =>
-    this.activeLoadout() === 'main' ? this.mainItems() : this.swapItems(),
-  );
-
-  protected readonly activeAbilityRows = computed(() => this.abilityRows(this.activeLoadout()));
-
-  protected readonly winRateFormatted = computed(() => {
-    const stats = this.performance()?.stats;
-    return stats ? this.winRate(stats.wins, stats.losses) : '—';
-  });
-
-  protected readonly kdRatioFormatted = computed(() => {
-    const stats = this.performance()?.stats;
-    if (!stats) return '—';
-    return stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
-  });
-
-  protected readonly equipmentCompletion = computed(() => {
-    return `${this.mainItems().length}/${this.SLOT_ORDER.length}`;
-  });
-
-  protected readonly itemPowerAtMaxFormatted = computed(() => {
-    const view = this.itemPowerAtMax();
-    return view ? Math.round(view.breakdown.average).toLocaleString() : '—';
-  });
-
-  protected readonly totalSignups = computed(() => {
-    const p = this.performance();
-    return (p?.signups_as_primary ?? 0) + (p?.signups_as_secondary ?? 0);
-  });
-
-  protected readonly pendingDelete = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(
-    null,
-  );
   protected readonly pendingArchive = signal(false);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
+  protected readonly nameError = signal<string | null>(null);
   /** Existing build names, fetched lazily so a rename can be checked for duplicates. */
   protected readonly existingBuildNames = signal<string[]>([]);
   protected readonly editRole = signal('');
 
-  /** The slot whose picker is open, together with the loadout it belongs to. */
-  protected readonly editing = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(null);
-  protected readonly draftTier = signal('T8');
-  protected readonly draftQuality = signal(DEFAULT_ALBION_ITEM_QUALITY);
-  protected readonly draftEnchantment = signal<number>(DEFAULT_ALBION_ITEM_ENCHANTMENT);
-  protected readonly draftSearch = signal('');
-  protected readonly draftItemId = signal('');
-  protected readonly draftItemName = signal('');
-  protected readonly draftItemType = signal('');
-  protected readonly draftItemIcon = signal<string | null>(null);
-  protected readonly searchResults = signal<OpenAlbionItem[]>([]);
-  protected readonly searchLoading = signal(false);
-  /** Ability-catalog key of the drafted item, so its ability bar can render before it is saved. */
-  protected readonly draftAbilityKey = signal<string | null>(null);
-  /** Abilities picked in the popover, applied together with the item on save. */
-  protected readonly draftSpells = signal<BuildItemSpells>({ active: {}, passive: {} });
-
-  protected readonly t = (key: TranslationKey) => this.translate.t(key);
-
-  /** Exposed for the Item Power breakdown template, which rounds figures inline. */
-  protected readonly Math = Math;
+  protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   /** Edit and delete apply to builds the caller authored; `comps.builds.manage` covers anyone's. */
   private canChange(own: string): boolean {
@@ -869,42 +908,221 @@ export class CompBuildDetailPage {
     () => this.isGuildTenant() && this.auth.hasPermission('alliance.share'),
   );
   protected readonly shareStatus = signal<AllianceShareStatus | null>(null);
-  /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
+  /** The bundled ability catalog, loaded once, so the version diff can name spells. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
   protected readonly performance = signal<BuildPerformanceView | null>(null);
   /**
    * This build's Item Power with every specialization node at 100 — the ceiling every member is
-   * measured against, not any one person's actual figure. `null` while loading or on failure, so
-   * the KPI card and breakdown panel can render nothing rather than a stale number.
+   * measured against, not any one person's actual figure. `null` while loading or on failure.
    */
   protected readonly itemPowerAtMax = signal<ItemPowerView | null>(null);
   /** The build's total market price, priced live from Albion Online Data. `null` while loading
-   * or when pricing failed (e.g. the market API is unreachable) — the card degrades quietly. */
+   * or when pricing failed (e.g. the market API is unreachable) — the page degrades quietly. */
   protected readonly marketPrice = signal<BuildPriceView | null>(null);
+
   protected readonly comparing = signal(false);
+  protected readonly compareLoading = signal(false);
   protected readonly compareWithId = signal('');
   protected readonly compareWith = signal<BuildDetail | null>(null);
   protected readonly comparePerformance = signal<BuildPerformanceView | null>(null);
-  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
+
+  /** The pair being compared, oldest first, so the diff always reads older to newer. */
+  protected readonly comparison = computed(() => {
     const current = this.build();
     const other = this.compareWith();
-    return current && other
-      ? diffBuildVersions(other, current, abilityNameLookup(this.abilityCatalog()))
-      : [];
-  });
-  protected readonly mainItems = computed<BuildItemSlot[]>(() => this.itemsFor('main'));
-  protected readonly swapItems = computed<BuildItemSlot[]>(() => this.itemsFor('swap'));
-  /** Ability slots for the item currently open in the picker, so it can be chosen before saving. */
-  protected readonly draftAbilitySlots = computed<AbilitySlotView[]>(() => {
-    const editingState = this.editing();
-    const key = this.draftAbilityKey();
-    if (!editingState || !key) {
-      return [];
+    if (!current || !other) {
+      return null;
     }
-    return abilitySlotsFor(editingState.slot, this.abilityCatalog()[key], this.draftSpells());
+    return other.version < current.version
+      ? {
+          before: other,
+          after: current,
+          beforePerformance: this.comparePerformance(),
+          afterPerformance: this.performance(),
+        }
+      : {
+          before: current,
+          after: other,
+          beforePerformance: this.performance(),
+          afterPerformance: this.comparePerformance(),
+        };
   });
 
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
+    const pair = this.comparison();
+    return pair
+      ? diffBuildVersions(
+          pair.before,
+          pair.after,
+          abilityNameLookup(this.abilityCatalog()),
+          this.diffLabels(),
+        )
+      : [];
+  });
+
+  /** The words the diff uses, in the active language. */
+  private readonly diffLabels = computed<BuildDiffLabels>(() => {
+    const slot = { ...DEFAULT_BUILD_DIFF_LABELS.slot };
+    for (const key of SLOT_ORDER) {
+      slot[key] = this.t(SLOT_LABEL_KEYS[key]);
+    }
+    return {
+      loadout: { main: this.t('loadout.main'), swap: this.t('loadout.swap') },
+      slot,
+      passive: this.t('loadout.passive'),
+      item: this.t('versionDiff.item'),
+      quality: (quality) => this.t(`loadout.quality.${normalizeAlbionItemQuality(quality)}` as TranslationKey),
+    };
+  });
+
+  protected readonly menuItems = computed<EntityMenuItem[]>(() => {
+    const current = this.build();
+    if (!current) {
+      return [];
+    }
+    const disabled = this.saving();
+    const items: EntityMenuItem[] = [];
+    if (this.canManage()) {
+      items.push({ id: 'editDetails', label: this.t('buildDetail.action.editDetails'), disabled });
+    }
+    if ((current.versions ?? []).length > 1) {
+      items.push({ id: 'compare', label: this.t('buildDetail.action.compareVersions') });
+    }
+    if (this.canVersion()) {
+      items.push({ id: 'newVersion', label: this.t('comps.newVersion'), disabled });
+    }
+    if (this.canShare()) {
+      items.push(
+        this.shareStatus()?.shared
+          ? { id: 'unshare', label: this.t('comps.unshareWithAlliance'), disabled }
+          : { id: 'share', label: this.t('comps.shareWithAlliance'), disabled },
+      );
+    }
+    if (this.canDelete()) {
+      items.push(
+        current.archived_at
+          ? { id: 'unarchive', label: this.t('comps.unarchive'), disabled, separatorBefore: true }
+          : {
+              id: 'archive',
+              label: this.t('comps.archive'),
+              disabled,
+              danger: true,
+              separatorBefore: true,
+            },
+      );
+    }
+    return items;
+  });
+
+  // ---- key numbers ------------------------------------------------------------------------
+
+  protected readonly itemPowerText = computed(() => {
+    const view = this.itemPowerAtMax();
+    return view ? this.formatNumber(view.breakdown.average) : '—';
+  });
+
+  protected readonly itemPowerHint = computed(() => {
+    const view = this.itemPowerAtMax();
+    if (!view) {
+      return this.t('compDetail.perf.unavailableShort');
+    }
+    return view.breakdown.mastery_levels_known === false
+      ? this.t('buildDetail.stat.itemPowerHint')
+      : null;
+  });
+
+  protected readonly winRateText = computed(() => {
+    const stats = this.performance()?.stats;
+    return stats ? this.winRate(stats.wins, stats.losses) : '—';
+  });
+
+  protected readonly winRateHint = computed(() => {
+    const report = this.performance();
+    if (!report) {
+      return this.t('compDetail.perf.unavailableShort');
+    }
+    return report.stats
+      ? this.t('compDetail.stat.record', { wins: report.stats.wins, losses: report.stats.losses })
+      : this.t('compDetail.perf.noBattles');
+  });
+
+  protected readonly priceText = computed(() => {
+    const price = this.marketPrice();
+    return price ? this.formatSilver(price.total) : '—';
+  });
+
+  protected readonly signupsText = computed(() => {
+    const report = this.performance();
+    return report ? this.formatNumber(this.totalSignups()) : '—';
+  });
+
+  protected readonly signupsHint = computed(() => {
+    const report = this.performance();
+    return report
+      ? this.t('buildDetail.stat.signupsHint', {
+          primary: report.signups_as_primary,
+          secondary: report.signups_as_secondary,
+        })
+      : this.t('compDetail.perf.unavailableShort');
+  });
+
+  private readonly totalSignups = computed(() => {
+    const report = this.performance();
+    return (report?.signups_as_primary ?? 0) + (report?.signups_as_secondary ?? 0);
+  });
+
+  protected readonly kdRatioText = computed(() => {
+    const stats = this.performance()?.stats;
+    if (!stats) {
+      return '—';
+    }
+    return stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
+  });
+
+  /** One row per slot of the main loadout, with its item power and price side by side. */
+  protected readonly slotFigures = computed<SlotFigure[]>(() => {
+    const current = this.build();
+    if (!current) {
+      return [];
+    }
+    const main = new Map(itemsForLoadout(current.items ?? [], 'main').map((item) => [item.slot, item]));
+    const power = new Map<BuildSlot, ItemIpBreakdown>(
+      (this.itemPowerAtMax()?.breakdown.items ?? []).map((row) => [row.slot, row]),
+    );
+    const price = new Map((this.marketPrice()?.items ?? []).map((row) => [row.slot, row]));
+    return SLOT_ORDER.flatMap((slot) => {
+      const item = main.get(slot);
+      const powerRow = power.get(slot);
+      const priceRow = price.get(slot);
+      if (!item && !powerRow && !priceRow) {
+        return [];
+      }
+      return [
+        {
+          slot,
+          label: this.t(SLOT_LABEL_KEYS[slot]),
+          itemName: item?.openalbion_item_name ?? priceRow?.openalbion_item_name ?? null,
+          tier: powerRow
+            ? this.ipTierLabel(powerRow)
+            : item
+              ? albionTierLabel(item.openalbion_item_tier, item.openalbion_item_enchantment)
+              : '',
+          itemPower: powerRow ? Math.round(powerRow.total) : null,
+          itemPowerNote: powerRow?.unknown_item
+            ? this.t('buildDetail.slots.unknownItem')
+            : powerRow && !powerRow.spec_node
+              ? this.t('buildDetail.slots.noSpec')
+              : null,
+          price: priceRow ? priceRow.unit_price : null,
+          city: priceRow?.city ?? null,
+        },
+      ];
+    });
+  });
+
+  protected readonly emptySlotCount = computed(
+    () => this.itemPowerAtMax()?.breakdown.empty_slots.length ?? 0,
+  );
 
   /**
    * The build row on screen.
@@ -921,7 +1139,7 @@ export class CompBuildDetailPage {
         return;
       }
       this.buildId.set(id);
-      this.mode.set('view');
+      this.resetForNewBuild();
       void this.load(id);
     });
     // Static application data; one fetch serves every build page in the session.
@@ -930,68 +1148,179 @@ export class CompBuildDetailPage {
       .then((abilities) => this.abilityCatalog.set(abilities))
       .catch(() => this.abilityCatalog.set({}));
 
-    this.destroyRef.onDestroy(() => {
-      if (this.searchTimer) {
-        clearTimeout(this.searchTimer);
-      }
-    });
+    this.destroyRef.onDestroy(() => (this.discardAction = null));
+  }
+
+  private resetForNewBuild(): void {
+    this.editing.set(false);
+    this.dirty.set(0);
+    this.pendingDiscard.set(false);
+    this.discardAction = null;
+    this.comparing.set(false);
+    this.editMetaOpen.set(false);
   }
 
   protected roleLabel(role: BuildRole): string {
-    return ROLE_LABELS[role] ?? role;
+    return this.t(roleLabelKey(role));
   }
 
-  protected slotLabel(slot: BuildSlot): string {
-    return this.t(SLOT_LABELS[slot] as TranslationKey);
+  // ===========================================================================
+  // Header
+  // ===========================================================================
+
+  protected onMenu(id: string): void {
+    switch (id) {
+      case 'editDetails':
+        this.openEditMeta();
+        break;
+      case 'compare':
+        this.openCompare();
+        break;
+      case 'newVersion':
+        this.guardUnsaved(() => void this.createVersion());
+        break;
+      case 'share':
+        void this.shareWithAlliance();
+        break;
+      case 'unshare':
+        void this.unshareWithAlliance();
+        break;
+      case 'archive':
+        this.pendingArchive.set(true);
+        break;
+      case 'unarchive':
+        void this.unarchiveBuild();
+        break;
+    }
   }
 
-  /**
-   * Toggle the equipment popover for a slot.
-   *
-   * Selecting the active slot again closes the popover; otherwise we
-   * pre-fill the draft from the existing persisted item so officers can
-   * tweak tier without re-searching from scratch.
-   */
-  protected onSlotToggle(loadout: BuildLoadout, slot: BuildSlot): void {
-    const editing = this.editing();
-    if (editing?.loadout === loadout && editing.slot === slot) {
-      this.cancelSlotEdit();
+  // ===========================================================================
+  // Loadout editing
+  // ===========================================================================
+
+  protected startEdit(): void {
+    if (!this.canManage() || this.saving()) {
       return;
     }
-    this.startSlotEdit(loadout, slot);
-  }
-
-  /**
-   * Items of one loadout, in canonical slot order.
-   *
-   * Items stored before swaps existed carry no `loadout`, so they read as `'main'`.
-   */
-  private itemsFor(loadout: BuildLoadout): BuildItemSlot[] {
-    return itemsForLoadout(this.build()?.items ?? [], loadout);
-  }
-
-  /** The open slot, but only for the grid that owns it, so one picker is open at a time. */
-  protected editingSlotFor(loadout: BuildLoadout): BuildSlot | null {
-    const editing = this.editing();
-    return editing?.loadout === loadout ? editing.slot : null;
-  }
-
-  protected itemForSlot(loadout: BuildLoadout, slot: BuildSlot): BuildItemSlot | null {
-    return this.itemsFor(loadout).find((item) => item.slot === slot) ?? null;
-  }
-
-  protected enterEdit(): void {
-    const current = this.build();
-    if (!current) {
-      return;
-    }
-    this.editName.set(current.name);
-    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
-    this.editRole.set(current.role);
-    this.editDescription.set(current.description ?? '');
-    this.mode.set('edit');
+    this.dirty.set(0);
+    this.editing.set(true);
     void this.loadExistingBuildNames();
   }
+
+  private exitEdit(): void {
+    this.editing.set(false);
+    this.dirty.set(0);
+  }
+
+  /** Discard from the editor: leave at once when nothing changed, otherwise ask first. */
+  protected requestDiscard(): void {
+    this.guardUnsaved(() => this.exitEdit());
+  }
+
+  /** Runs `action` now, or after the user confirms losing the unsaved loadout changes. */
+  private guardUnsaved(action: () => void): void {
+    if (this.editing() && this.dirty() > 0) {
+      this.discardAction = action;
+      this.pendingDiscard.set(true);
+      return;
+    }
+    action();
+  }
+
+  protected keepEditing(): void {
+    this.discardAction = null;
+    this.pendingDiscard.set(false);
+  }
+
+  protected confirmDiscard(): void {
+    const action = this.discardAction;
+    this.discardAction = null;
+    this.pendingDiscard.set(false);
+    this.exitEdit();
+    action?.();
+  }
+
+  /** Closing the tab or reloading with unsaved loadout changes asks the browser to confirm. */
+  protected onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.editing() && this.dirty() > 0) {
+      event.preventDefault();
+    }
+  }
+
+  /**
+   * Saves every changed slot, one request each, then leaves edit mode.
+   *
+   * The requests run in order and stop at the first failure. The build is then reloaded so the
+   * editor's unsaved count shows only what has still to be done, and the editor stays open.
+   */
+  protected async saveLoadout(changes: readonly LoadoutChange[]): Promise<void> {
+    const build = this.build();
+    if (!build || changes.length === 0 || this.saving()) {
+      return;
+    }
+    // The server refuses a build without a main-hand weapon (battle mounts excepted), so say so
+    // before sending anything instead of leaving half the changes applied.
+    if (buildNeedsWeapon(build.role) && !this.hasMainWeaponAfter(build, changes)) {
+      this.toasts.error(this.t('comps.weaponRequired'));
+      return;
+    }
+    this.saving.set(true);
+    try {
+      for (const change of changes) {
+        await this.applyChange(build.id, change);
+      }
+      this.build.set(await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${build.id}`)));
+      this.exitEdit();
+      this.toasts.success(this.t('buildDetail.toast.loadoutSaved'));
+      void this.loadMetrics(build.id);
+    } catch {
+      this.toasts.error(this.t('buildDetail.error.save'));
+      try {
+        this.build.set(
+          await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${build.id}`)),
+        );
+      } catch {
+        // The error toast above already told the user; the editor keeps their draft.
+      }
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private hasMainWeaponAfter(build: BuildDetail, changes: readonly LoadoutChange[]): boolean {
+    const change = changes.find((entry) => entry.loadout === 'main' && entry.slot === 'weapon');
+    if (change) {
+      return change.item !== null;
+    }
+    return itemsForLoadout(build.items ?? [], 'main').some((item) => item.slot === 'weapon');
+  }
+
+  private async applyChange(buildId: number, change: LoadoutChange): Promise<void> {
+    const url = `api/comps/builds/${buildId}/items/${change.slot}?loadout=${change.loadout}`;
+    const item = change.item;
+    if (!item) {
+      await firstValueFrom(this.api.delete(url));
+      return;
+    }
+    // The abilities always travel with the item so the server stores both or neither; sending an
+    // empty selection clears what the slot had instead of keeping spells the draft removed.
+    await firstValueFrom(
+      this.api.put<BuildDetail>(url, {
+        openalbion_item_type: item.openalbion_item_type,
+        openalbion_item_id: item.openalbion_item_id,
+        openalbion_item_name: item.openalbion_item_name,
+        openalbion_item_icon: item.openalbion_item_icon ?? null,
+        openalbion_item_tier: item.openalbion_item_tier ?? null,
+        openalbion_item_quality: item.openalbion_item_quality ?? DEFAULT_ALBION_ITEM_QUALITY,
+        openalbion_item_enchantment: item.openalbion_item_enchantment ?? 0,
+        spells: item.spells ?? { active: {}, passive: {} },
+      }),
+    );
+  }
+
+  // ===========================================================================
+  // Edit details dialog
+  // ===========================================================================
 
   /** Fetches every build name once, so a rename can be checked for duplicates like the create path. */
   private async loadExistingBuildNames(): Promise<void> {
@@ -1008,29 +1337,6 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected roleColorHex(role: BuildRole): string {
-    switch (role) {
-      case 'tank': return 'var(--color-info)';
-      case 'healer': return 'var(--color-success)';
-      case 'support': return 'var(--color-warning)';
-      case 'dps': return 'var(--color-error)';
-      case 'brawler': return 'var(--color-primary)';
-      case 'battle_mount': return 'var(--color-lavender)';
-      default: return 'var(--color-text-secondary)';
-    }
-  }
-
-  protected onLoadoutChange(id: string): void {
-    this.activeLoadout.set(id as BuildLoadout);
-  }
-
-  protected toggleEditMode(): void {
-    this.mode.set(this.mode() === 'edit' ? 'view' : 'edit');
-    if (this.mode() === 'view') {
-      this.cancelSlotEdit();
-    }
-  }
-
   protected openEditMeta(): void {
     const current = this.build();
     if (!current) return;
@@ -1038,6 +1344,7 @@ export class CompBuildDetailPage {
     this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
     this.editRole.set(current.role);
     this.editDescription.set(current.description ?? '');
+    this.nameError.set(null);
     this.editMetaOpen.set(true);
     void this.loadExistingBuildNames();
   }
@@ -1046,15 +1353,9 @@ export class CompBuildDetailPage {
     this.editMetaOpen.set(false);
   }
 
-  protected cancelEdit(): void {
-    this.mode.set('view');
-    this.editMetaOpen.set(false);
-    this.cancelSlotEdit();
-    void this.load(this.buildId());
-  }
-
   protected onEditNameChange(event: Event): void {
     this.editName.set((event.target as HTMLInputElement).value);
+    this.nameError.set(null);
   }
 
   protected onEditDescriptionChange(event: Event): void {
@@ -1069,162 +1370,21 @@ export class CompBuildDetailPage {
     this.editRole.set((event.target as HTMLSelectElement).value);
   }
 
-  protected startSlotEdit(loadout: BuildLoadout, slot: BuildSlot): void {
-    const current = this.itemForSlot(loadout, slot);
-    this.editing.set({ loadout, slot });
-    this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
-    this.draftQuality.set(
-      slot === 'potion' || slot === 'food' || slot === 'mount'
-        ? DEFAULT_ALBION_ITEM_QUALITY
-        : normalizeAlbionItemQuality(current?.openalbion_item_quality),
-    );
-    this.draftEnchantment.set(
-      slot === 'mount'
-        ? DEFAULT_ALBION_ITEM_ENCHANTMENT
-        : normalizeAlbionItemEnchantment(current?.openalbion_item_enchantment),
-    );
-    this.draftSearch.set(current?.openalbion_item_name ?? '');
-    this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
-    this.draftItemName.set(current?.openalbion_item_name ?? '');
-    this.draftItemType.set(current?.openalbion_item_type ?? '');
-    this.draftItemIcon.set(current?.openalbion_item_icon ?? null);
-    this.draftAbilityKey.set(current ? abilityKeyForItem(current) : null);
-    this.draftSpells.set(current?.spells ?? { active: {}, passive: {} });
-    this.searchResults.set([]);
-    if (current) {
-      void this.runItemSearch();
+  /** The name rules, as translated messages: required, not too long, not already taken. */
+  private validateName(name: string, current: string): string | null {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return this.t('validation.required');
     }
-  }
-
-  protected cancelSlotEdit(): void {
-    this.editing.set(null);
-    this.draftSearch.set('');
-    this.draftItemId.set('');
-    this.draftAbilityKey.set(null);
-    this.draftSpells.set({ active: {}, passive: {} });
-    this.searchResults.set([]);
-  }
-
-  protected onDraftTierChangeValue(tier: string): void {
-    this.draftTier.set(tier);
-    this.draftItemId.set('');
-    this.draftItemName.set('');
-    this.draftItemType.set('');
-    this.draftItemIcon.set(null);
-    this.draftAbilityKey.set(null);
-    this.draftSpells.set({ active: {}, passive: {} });
-    void this.runItemSearch();
-  }
-
-  protected onDraftQualityChangeValue(quality: number): void {
-    this.draftQuality.set(normalizeAlbionItemQuality(quality));
-  }
-
-  protected onDraftEnchantmentChangeValue(enchantment: number): void {
-    this.draftEnchantment.set(normalizeAlbionItemEnchantment(enchantment));
-  }
-
-  protected onDraftSearchChangeValue(query: string): void {
-    this.draftSearch.set(query);
-    if (this.searchTimer) {
-      clearTimeout(this.searchTimer);
+    if (trimmed.length > MAX_NAME_LENGTH) {
+      return this.t('compDetail.validation.nameLong', { max: MAX_NAME_LENGTH });
     }
-    this.searchTimer = setTimeout(() => {
-      void this.runItemSearch();
-    }, 250);
-  }
-
-  protected onDraftItemChangeValue(itemId: string): void {
-    this.draftItemId.set(itemId);
-    const item = this.searchResults().find((result) => String(result.id) === itemId);
-    if (item) {
-      this.draftTier.set(`T${item.tier.replace(/^T/i, '').split('.')[0]}`);
-      if (!albionItemSupportsQuality(item.identifier)) {
-        this.draftQuality.set(DEFAULT_ALBION_ITEM_QUALITY);
-      }
-      if (!albionItemSupportsEnchantment(item.identifier)) {
-        this.draftEnchantment.set(DEFAULT_ALBION_ITEM_ENCHANTMENT);
-      }
-      this.draftItemName.set(item.name);
-      this.draftItemType.set(item.type);
-      this.draftItemIcon.set(item.icon ?? null);
-      const key = item.identifier ? abilityCatalogKey(item.identifier) : null;
-      // A different weapon family offers different slots, so a stale choice from whatever was
-      // picked before does not silently carry over onto abilities it cannot actually cast.
-      if (key !== this.draftAbilityKey()) {
-        this.draftSpells.set({ active: {}, passive: {} });
-      }
-      this.draftAbilityKey.set(key);
-    }
-  }
-
-  protected onDraftAbilityChange(change: AbilityChoiceChange): void {
-    this.draftSpells.update((spells) =>
-      withAbilityChoice(spells, change.kind, change.index, change.spellId),
-    );
-  }
-
-  protected async saveSlot(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
-    const build = this.build();
-    if (!build || !this.draftItemId() || this.saving()) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      // The item and the abilities picked in the same popover are one request, so the backend
-      // saves both or neither: a refused ability leaves the slot as it was.
-      const spells = this.draftSpells();
-      const hasSpells = Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0;
-      const updated = await firstValueFrom(
-        this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`, {
-          openalbion_item_type: this.draftItemType(),
-          openalbion_item_id: Number(this.draftItemId()),
-          openalbion_item_name: this.draftItemName(),
-          openalbion_item_icon: this.draftItemIcon(),
-          openalbion_item_tier: this.draftTier(),
-          openalbion_item_quality: this.draftQuality(),
-          openalbion_item_enchantment: this.draftEnchantment(),
-          ...(hasSpells ? { spells } : {}),
-        }),
-      );
-      this.build.set(updated);
-      void this.loadItemPowerAtMax(build.id);
-      void this.loadMarketPrice(build.id);
-      this.cancelSlotEdit();
-      this.toasts.success('Item saved');
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected askRemoveItem(loadout: BuildLoadout, slot: BuildSlot): void {
-    this.pendingDelete.set({ loadout, slot });
-  }
-
-  protected async removeItem(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
-    const build = this.build();
-    if (!build || this.saving()) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      // The endpoint answers 204 No Content, so there is no body to adopt:
-      // reload the build instead of replacing it with an empty response.
-      await firstValueFrom(
-        this.api.delete<BuildDetail>(
-          `api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`,
-        ),
-      );
-      this.build.set(await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${build.id}`)));
-      this.pendingDelete.set(null);
-      this.toasts.success(this.t('common.delete'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
+    const lowered = trimmed.toLowerCase();
+    const taken = this.existingBuildNames().some((existing) => {
+      const normalized = existing.trim().toLowerCase();
+      return normalized === lowered && normalized !== current.trim().toLowerCase();
+    });
+    return taken ? this.t('buildDetail.validation.nameTaken') : null;
   }
 
   protected async saveEdit(event: Event): Promise<void> {
@@ -1233,15 +1393,9 @@ export class CompBuildDetailPage {
     if (!build) {
       return;
     }
-    // The name is validated even when unchanged: the previous version only
-    // applied it `if (editName())`, so clearing the field was silently ignored
-    // rather than rejected, and the user was told the save succeeded.
-    const nameError = validateBuildName(this.editName(), {
-      existingNames: this.existingBuildNames(),
-      currentName: build.name,
-    });
-    if (nameError) {
-      this.toasts.error(nameError.message);
+    const error = this.validateName(this.editName(), build.name);
+    this.nameError.set(error);
+    if (error) {
       return;
     }
 
@@ -1267,7 +1421,6 @@ export class CompBuildDetailPage {
       request.role = this.editRole() as BuildRole;
 
     if (Object.keys(request).length === 0) {
-      this.mode.set('view');
       this.editMetaOpen.set(false);
       return;
     }
@@ -1275,33 +1428,19 @@ export class CompBuildDetailPage {
     this.saving.set(true);
     try {
       await firstValueFrom(this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request));
-      this.mode.set('view');
       this.editMetaOpen.set(false);
-      this.cancelSlotEdit();
-      await this.load(this.buildId());
-      this.toasts.success(this.t('common.save'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      await this.load(this.buildId(), true);
+      this.toasts.success(this.t('buildDetail.toast.detailsSaved'));
+    } catch {
+      this.toasts.error(this.t('buildDetail.error.save'));
     } finally {
       this.saving.set(false);
     }
   }
 
-  protected closeDelete(): void {
-    this.pendingDelete.set(null);
-  }
-
-  protected async confirmPendingDelete(): Promise<void> {
-    const pending = this.pendingDelete();
-    if (!pending) {
-      return;
-    }
-    await this.removeItem(pending.loadout, pending.slot);
-  }
-
-  protected askArchiveBuild(): void {
-    this.pendingArchive.set(true);
-  }
+  // ===========================================================================
+  // Archive
+  // ===========================================================================
 
   protected closeArchiveConfirm(): void {
     this.pendingArchive.set(false);
@@ -1321,9 +1460,9 @@ export class CompBuildDetailPage {
       await firstValueFrom(this.api.post(`api/comps/builds/${build.id}/archive`, {}));
       this.pendingArchive.set(false);
       this.toasts.success(this.t('comps.archiveSuccess'));
-      await this.load(this.buildId());
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      await this.load(this.buildId(), true);
+    } catch {
+      this.toasts.error(this.t('buildDetail.error.action'));
     } finally {
       this.saving.set(false);
     }
@@ -1339,65 +1478,17 @@ export class CompBuildDetailPage {
     try {
       await firstValueFrom(this.api.post(`api/comps/builds/${build.id}/unarchive`, {}));
       this.toasts.success(this.t('comps.unarchiveSuccess'));
-      await this.load(this.buildId());
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      await this.load(this.buildId(), true);
+    } catch {
+      this.toasts.error(this.t('buildDetail.error.action'));
     } finally {
       this.saving.set(false);
     }
   }
 
-  /**
-   * One ability bar per equipped item that actually offers abilities.
-   *
-   * Items with nothing to choose — off-hands, capes, bags, consumables, mounts — produce no row, so
-   * the block stays as short as the build is.
-   */
-  protected abilityRows(
-    loadout: BuildLoadout,
-  ): { slot: BuildSlot; itemName: string; itemIcon?: string | null; slots: AbilitySlotView[] }[] {
-    const catalog = this.abilityCatalog();
-    return this.itemsFor(loadout).flatMap((item) => {
-      const key = abilityKeyForItem(item);
-      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
-      return slots.length === 0
-        ? []
-        : [{ slot: item.slot, itemName: item.openalbion_item_name, itemIcon: item.openalbion_item_icon, slots }];
-    });
-  }
-
-  protected async onAbilityChange(
-    loadout: BuildLoadout,
-    slot: BuildSlot,
-    change: AbilityChoiceChange,
-  ): Promise<void> {
-    const build = this.build();
-    const item = this.itemForSlot(loadout, slot);
-    if (!build || !item || this.saving()) {
-      return;
-    }
-
-    const next: BuildItemSpells = withAbilityChoice(
-      item.spells,
-      change.kind,
-      change.index,
-      change.spellId,
-    );
-    this.saving.set(true);
-    try {
-      const updated = await firstValueFrom(
-        this.api.put<BuildDetail>(
-          `api/comps/builds/${build.id}/items/${slot}/spells?loadout=${loadout}`,
-          next,
-        ),
-      );
-      this.build.set(updated);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
+  // ===========================================================================
+  // Numbers
+  // ===========================================================================
 
   /**
    * Formats a win rate, or a dash when there is nothing to divide.
@@ -1415,8 +1506,41 @@ export class CompBuildDetailPage {
     if (!stats) {
       return this.t('comps.noBattleData');
     }
-    return `${this.winRate(stats.wins, stats.losses)} · ${stats.kills}/${stats.deaths} · ${stats.battles} battles · ${stats.matched_players} players`;
+    return this.t('compDetail.compare.summary', {
+      rate: this.winRate(stats.wins, stats.losses),
+      kills: stats.kills,
+      deaths: stats.deaths,
+      battles: stats.battles,
+    });
   }
+
+  protected formatSilver(value: number | string): string {
+    const numeric = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(numeric)) {
+      return String(value);
+    }
+    return numeric.toLocaleString(this.translate.locale(), { maximumFractionDigits: 0 });
+  }
+
+  protected formatNumber(value: number): string {
+    return new Intl.NumberFormat(this.translate.locale(), { maximumFractionDigits: 0 }).format(value);
+  }
+
+  protected formatDate(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : new Intl.DateTimeFormat(this.translate.locale(), { dateStyle: 'medium' }).format(date);
+  }
+
+  /** `T8.2` from a tier and an enchantment, the way the game writes it. */
+  private ipTierLabel(entry: { tier: number; enchantment: number }): string {
+    return entry.enchantment > 0 ? `T${entry.tier}.${entry.enchantment}` : `T${entry.tier}`;
+  }
+
+  // ===========================================================================
+  // Compare versions
+  // ===========================================================================
 
   protected openCompare(): void {
     const versions = this.build()?.versions ?? [];
@@ -1441,6 +1565,8 @@ export class CompBuildDetailPage {
   }
 
   private async loadComparison(buildId: number): Promise<void> {
+    this.compareLoading.set(true);
+    this.compareWith.set(null);
     try {
       const [detail, performance] = await Promise.all([
         firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
@@ -1452,17 +1578,25 @@ export class CompBuildDetailPage {
       if (Number(this.compareWithId()) !== buildId) return;
       this.compareWith.set(detail);
       this.comparePerformance.set(performance);
-    } catch (error) {
+    } catch {
       if (Number(this.compareWithId()) !== buildId) return;
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.toasts.error(this.t('buildDetail.error.compare'));
+    } finally {
+      if (Number(this.compareWithId()) === buildId) {
+        this.compareLoading.set(false);
+      }
     }
   }
 
-  protected async openVersion(buildId: number): Promise<void> {
+  // ===========================================================================
+  // Versions
+  // ===========================================================================
+
+  protected openVersion(buildId: number): void {
     if (buildId === this.build()?.id) {
       return;
     }
-    await this.router.navigate(['/builds', buildId]);
+    this.guardUnsaved(() => void this.router.navigate(['/builds', buildId]));
   }
 
   protected async createVersion(): Promise<void> {
@@ -1477,87 +1611,16 @@ export class CompBuildDetailPage {
       );
       this.toasts.success(this.t('comps.versionCreated'));
       await this.router.navigate(['/builds', created.id]);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('buildDetail.error.action'));
     } finally {
       this.saving.set(false);
     }
   }
 
-  /** Performance is per version, so it reloads whenever the page shows a different build row. */
-  private async loadPerformance(buildId: number): Promise<void> {
-    try {
-      const performance = await firstValueFrom(
-        this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
-      );
-      // Discard if the page has since switched to a different version.
-      if (buildId !== this.buildId()) return;
-      this.performance.set(performance);
-    } catch {
-      if (buildId !== this.buildId()) return;
-      this.performance.set(null);
-    }
-  }
-
-  private async loadMarketPrice(buildId: number): Promise<void> {
-    try {
-      const price = await firstValueFrom(
-        this.api.get<BuildPriceView>(`api/comps/builds/${buildId}/price`),
-      );
-      if (buildId !== this.buildId()) return;
-      this.marketPrice.set(price);
-    } catch {
-      if (buildId !== this.buildId()) return;
-      this.marketPrice.set(null);
-    }
-  }
-
-  protected formatSilver(value: number | string): string {
-    const numeric = typeof value === 'string' ? Number(value) : value;
-    if (Number.isNaN(numeric)) {
-      return String(value);
-    }
-    return numeric.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  }
-
-  private async loadItemPowerAtMax(buildId: number): Promise<void> {
-    try {
-      const itemPower = await firstValueFrom(
-        this.api.get<ItemPowerView>(`api/comps/builds/${buildId}/item-power?spec=max`),
-      );
-      if (buildId !== this.buildId()) return;
-      this.itemPowerAtMax.set(itemPower);
-    } catch {
-      if (buildId !== this.buildId()) return;
-      this.itemPowerAtMax.set(null);
-    }
-  }
-
-  /** `T8.2` from a tier and an enchantment, the way the game writes it. */
-  protected ipTierLabel(entry: { tier: number; enchantment: number }): string {
-    return entry.enchantment > 0 ? `T${entry.tier}.${entry.enchantment}` : `T${entry.tier}`;
-  }
-
-  private async runItemSearch(): Promise<void> {
-    const slot = this.editing()?.slot;
-    if (!slot) {
-      this.searchResults.set([]);
-      return;
-    }
-
-    this.searchLoading.set(true);
-    try {
-      const catalog = await this.albionCatalog.load();
-      this.searchResults.set(
-        filterAlbionEquipmentCatalog(catalog, this.draftSearch(), slot, this.draftTier()),
-      );
-    } catch {
-      this.searchResults.set([]);
-      this.toasts.error(this.translate.t('common.error'));
-    } finally {
-      this.searchLoading.set(false);
-    }
-  }
+  // ===========================================================================
+  // Alliance sharing
+  // ===========================================================================
 
   protected async shareWithAlliance(): Promise<void> {
     const build = this.build();
@@ -1598,6 +1661,7 @@ export class CompBuildDetailPage {
     }
   }
 
+  /** Only the one conflict a person can act on gets its own message; the rest stay generic. */
   private shareErrorMessage(error: unknown): string {
     if (
       error instanceof ApiError &&
@@ -1606,7 +1670,7 @@ export class CompBuildDetailPage {
     ) {
       return this.t('comps.shareNoAlliance');
     }
-    return error instanceof Error ? error.message : this.t('common.error');
+    return this.t('buildDetail.error.action');
   }
 
   private async loadShareStatus(buildId: number): Promise<void> {
@@ -1630,13 +1694,82 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected async load(buildId: number): Promise<void> {
+  // ===========================================================================
+  // Loading
+  // ===========================================================================
+
+  /** Performance is per version, so it reloads whenever the page shows a different build row. */
+  private async loadPerformance(buildId: number): Promise<void> {
+    try {
+      const performance = await firstValueFrom(
+        this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
+      );
+      // Discard if the page has since switched to a different version.
+      if (buildId !== this.buildId()) return;
+      this.performance.set(performance);
+    } catch {
+      if (buildId !== this.buildId()) return;
+      this.performance.set(null);
+    }
+  }
+
+  private async loadMarketPrice(buildId: number): Promise<void> {
+    try {
+      const price = await firstValueFrom(
+        this.api.get<BuildPriceView>(`api/comps/builds/${buildId}/price`),
+      );
+      if (buildId !== this.buildId()) return;
+      this.marketPrice.set(price);
+    } catch {
+      if (buildId !== this.buildId()) return;
+      this.marketPrice.set(null);
+    }
+  }
+
+  private async loadItemPowerAtMax(buildId: number): Promise<void> {
+    try {
+      const itemPower = await firstValueFrom(
+        this.api.get<ItemPowerView>(`api/comps/builds/${buildId}/item-power?spec=max`),
+      );
+      if (buildId !== this.buildId()) return;
+      this.itemPowerAtMax.set(itemPower);
+    } catch {
+      if (buildId !== this.buildId()) return;
+      this.itemPowerAtMax.set(null);
+    }
+  }
+
+  /** Item power, price and battle numbers, fetched together so the key numbers appear as one. */
+  private async loadMetrics(buildId: number): Promise<void> {
+    this.metricsLoading.set(true);
+    await Promise.all([
+      this.loadPerformance(buildId),
+      this.loadItemPowerAtMax(buildId),
+      this.loadMarketPrice(buildId),
+    ]);
+    if (buildId === this.buildId()) {
+      this.metricsLoading.set(false);
+    }
+  }
+
+  /**
+   * Loads the build and the numbers around it.
+   *
+   * `silent` refreshes in place (after saving details, an archive) without swapping the page for
+   * the loading skeleton.
+   */
+  protected async load(buildId: number, silent = false): Promise<void> {
     if (!Number.isFinite(buildId) || buildId <= 0) {
+      this.build.set(null);
+      this.notFound.set(true);
       this.loading.set(false);
       return;
     }
-    this.loading.set(true);
+    if (!silent) {
+      this.loading.set(true);
+    }
     this.loadFailed.set(false);
+    this.notFound.set(false);
     try {
       const [build, categories] = await Promise.all([
         firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
@@ -1648,14 +1781,19 @@ export class CompBuildDetailPage {
       if (buildId !== this.buildId()) return;
       this.build.set(build);
       this.buildCategories.set(categories);
-      void this.loadPerformance(buildId);
-      void this.loadItemPowerAtMax(buildId);
-      void this.loadMarketPrice(buildId);
+      void this.loadMetrics(buildId);
       void this.loadShareStatus(buildId);
     } catch (error) {
       if (buildId !== this.buildId()) return;
-      this.loadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (silent) {
+        this.toasts.error(this.t('buildDetail.error.action'));
+      } else if (error instanceof ApiError && error.status === 404) {
+        this.build.set(null);
+        this.notFound.set(true);
+      } else {
+        this.build.set(null);
+        this.loadFailed.set(true);
+      }
     } finally {
       if (buildId === this.buildId()) {
         this.loading.set(false);

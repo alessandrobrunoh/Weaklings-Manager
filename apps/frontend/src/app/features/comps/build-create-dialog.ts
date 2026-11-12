@@ -72,7 +72,7 @@ import {
   type BuildCreateError,
   type BuildCreateStep,
 } from './build-create-model';
-import { ITEM_TIERS, mainSlotCapacity, weaponKeyOfItems } from './build-loadouts';
+import { BUILD_ITEM_TIERS, mainSlotCapacity, weaponKeyOfItems } from './build-loadouts';
 import { LIST_FETCH_LIMIT } from './comps-list-model';
 import type { FilterCategory } from './list-filter-bar';
 
@@ -637,7 +637,7 @@ export class BuildCreateDialog {
   protected readonly roles = BUILD_ROLES;
   protected readonly roleKey = roleLabelKey;
   protected readonly glyph = roleGlyph;
-  protected readonly tiers = ITEM_TIERS;
+  protected readonly tiers = BUILD_ITEM_TIERS;
   protected readonly normalizeQuality = normalizeAlbionItemQuality;
   protected readonly normalizeEnchantment = normalizeAlbionItemEnchantment;
 
