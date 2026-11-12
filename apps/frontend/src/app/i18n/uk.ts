@@ -3368,4 +3368,11 @@ export const uk: TranslationDict = {
   'admin.hub.regearRequestsHint': 'Перевіряйте та схвалюйте компенсації regear для учасників.',
   'admin.hub.actorUser': 'Користувач #{id}',
   'admin.hub.actorSystem': 'Автоматична системна дія',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Міста',
+  'admin.islands.summary.sourceGuilds': 'Гільдії-джерела',
+  'admin.islands.detail.manage': 'Хто керує цим островом',
+  'admin.islands.detail.manageOwn': 'Ваша гільдія керує цим островом і його скринями.',
+  'admin.islands.detail.manageSource':
+    'Керує {guild}. Ви можете переглянути його тут, але зміни вносяться в цій гільдії.',
 };

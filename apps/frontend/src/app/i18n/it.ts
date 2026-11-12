@@ -3563,4 +3563,11 @@ export const it: TranslationDict = {
   'admin.hub.regearRequestsHint': 'Controlla e approva i rimborsi regear dei membri.',
   'admin.hub.actorUser': 'Utente #{id}',
   'admin.hub.actorSystem': 'Sistema automatico',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Città',
+  'admin.islands.summary.sourceGuilds': 'Gilde di origine',
+  'admin.islands.detail.manage': 'Chi gestisce quest’isola',
+  'admin.islands.detail.manageOwn': 'La tua gilda gestisce quest’isola e le sue casse.',
+  'admin.islands.detail.manageSource':
+    'Gestita da {guild}. Puoi consultarla qui, ma le modifiche si fanno in quella gilda.',
 };

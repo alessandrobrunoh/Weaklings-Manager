@@ -105,13 +105,9 @@ describe('AdminIslands', () => {
     TestBed.resetTestingModule();
   });
 
-  it('marks and validates the inline tab name and create fields', async () => {
+  it('marks and validates the create fields', async () => {
     const { fixture } = await createComponent(guildIslands, 'guild');
     const compiled = fixture.nativeElement as HTMLElement;
-    const inline = compiled.querySelector('form input') as HTMLInputElement;
-    expect(inline.required).toBe(true);
-    expect(inline.checkValidity()).toBe(false);
-    expect(inline.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
     const create = [...compiled.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('admin.islands.create'));
     create?.click();
@@ -130,10 +126,18 @@ describe('AdminIslands', () => {
     expect(api.get).toHaveBeenCalledWith('api/splits/islands');
     expect(compiled.textContent).toContain('Guild Island Prime');
     expect(compiled.textContent).toContain('admin.islands.create');
-    expect(compiled.textContent).toContain('admin.islands.addTab');
     expect(compiled.textContent).toContain('common.edit');
-    expect(compiled.textContent).toContain('common.delete');
+    expect(compiled.textContent).toContain('common.actions');
+    expect(compiled.querySelector('app-summary-band')).not.toBeNull();
     expect(compiled.querySelectorAll('h2').length).toBe(0);
+  });
+
+  it('puts delete behind the row actions menu for a guild tenant', async () => {
+    const { fixture } = await createComponent(guildIslands, 'guild');
+    const compiled = fixture.nativeElement as HTMLElement;
+    const trigger = compiled.querySelector('app-menu button') as HTMLButtonElement;
+    expect(trigger.getAttribute('aria-label')).toBe('common.actions');
+    expect(compiled.textContent).not.toContain('common.delete');
   });
 
   it('groups alliance catalog rows by source guild and hides mutations', async () => {
@@ -146,11 +150,12 @@ describe('AdminIslands', () => {
     expect(compiled.textContent).toContain('Bank Island');
     expect(compiled.textContent).toContain('Vault');
     expect(compiled.textContent).toContain('admin.islands.readonlyHint');
-    expect(compiled.textContent).toContain('common.view');
+    expect(compiled.textContent).toContain('admin.islands.summary.sourceGuilds');
     expect(compiled.textContent).not.toContain('admin.islands.create');
     expect(compiled.textContent).not.toContain('admin.islands.addTab');
     expect(compiled.textContent).not.toContain('common.edit');
-    expect(compiled.textContent).not.toContain('common.delete');
+    expect(compiled.textContent).not.toContain('common.actions');
+    expect(compiled.querySelector('app-menu')).toBeNull();
   });
 
   it('does not post a new island when the tenant is an alliance', async () => {

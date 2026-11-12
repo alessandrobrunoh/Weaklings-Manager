@@ -3372,4 +3372,11 @@ export const fr: TranslationDict = {
   'admin.hub.regearRequestsHint': 'Examiner et approuver les remboursements regear des membres.',
   'admin.hub.actorUser': 'Utilisateur #{id}',
   'admin.hub.actorSystem': 'Système automatique',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Villes',
+  'admin.islands.summary.sourceGuilds': 'Guildes d’origine',
+  'admin.islands.detail.manage': 'Qui gère cette île',
+  'admin.islands.detail.manageOwn': 'Votre guilde gère cette île et ses coffres.',
+  'admin.islands.detail.manageSource':
+    'Gérée par {guild}. Vous pouvez la consulter ici, mais les modifications se font dans cette guilde.',
 };

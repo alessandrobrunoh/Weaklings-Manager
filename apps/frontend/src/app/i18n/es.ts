@@ -3554,4 +3554,11 @@ export const es: TranslationDict = {
   'admin.hub.regearRequestsHint': 'Revisa y aprueba los reembolsos de regear de los miembros.',
   'admin.hub.actorUser': 'Usuario #{id}',
   'admin.hub.actorSystem': 'Sistema automático',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Ciudades',
+  'admin.islands.summary.sourceGuilds': 'Gremios de origen',
+  'admin.islands.detail.manage': 'Quién gestiona esta isla',
+  'admin.islands.detail.manageOwn': 'Tu gremio gestiona esta isla y sus cofres.',
+  'admin.islands.detail.manageSource':
+    'Gestionada por {guild}. Puedes verla aquí, pero los cambios se hacen en ese gremio.',
 };

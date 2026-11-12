@@ -29,6 +29,8 @@ This directory contains administrative pages and helpers for tenant configuratio
 - Finance income comes only from splits the user created (`split_*` economics); battle data is never used to infer earnings.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
 - `AdminGeneral` saves the brand colours as one `PUT api/admin/branding`; an empty string clears a slot. The save state is `clean | dirty | saving | saved | error`, `saved` lasts until the next edit, and a failed save keeps the draft. Leaving with unsaved edits drops the preview; saved colours stay painted.
+- Island list (`admin-islands`): a summary band, then one `app-data-table` per source guild for alliance tenants (headed by the guild name) or a single table for guild tenants. Each table has its own URL sync turned off. Edit is a row button and delete sits in the row menu. Adding tabs happens on the detail page only.
+- Island detail (`admin-island-detail`): `app-entity-header` (delete in its menu) with a summary band, then sections for the island details (guild tenants only), its chest tabs (`app-data-table` with a row menu for move and delete), and who manages it.
 
 ## Side Effects
 
