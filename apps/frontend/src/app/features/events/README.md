@@ -25,7 +25,7 @@ Validation is inline and tied to fields (`aria-invalid`, `aria-describedby` to t
 
 ## Interface
 
-- The list component manages paginated events, search/status filters, sorting, load state, and summary counts.
+- The list component manages paginated events, search/status filters, sorting, load state, and summary counts. Its counts sit in the summary band; search, status and the archived switch sit in the shared filter bar. The page owns those filters and mirrors them to the URL (with page, size and sort); the data table only reports paging and sorting. Search waits 300 ms after typing. The header keeps "New event" as the one primary action and puts Refresh in its menu.
 - The detail page uses the selected event, roster operations, compositions, linked battles, and realtime roster service.
 - `CompPartyGroup` describes party number/name, slots, and filled/total counts.
 
