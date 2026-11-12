@@ -8,6 +8,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
+- `AdminProgression` loads `ProgressionSettingsView` and the season list. Guild ranks and seasons are edited in dialogs; ranks are saved as one ordered list to `api/progression/settings`.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 
@@ -15,6 +16,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 
 - Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
+- Progression ranks are capped at 20. The first rank cannot be removed, and its minimum XP is read-only in the rank dialog.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
 
 ## Side Effects

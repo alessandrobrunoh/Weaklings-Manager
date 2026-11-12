@@ -3448,6 +3448,33 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+
+  // design/admin-progression
+  'admin.progression.curveHint': 'Total XP needed to reach level n is base × (n − 1) ^ exponent, rounded.',
+  'admin.progression.ratesHint': 'XP awarded for each activity. Set a value to 0 to stop awarding XP for it.',
+  'admin.progression.messageLimits': 'Message limits',
+  'admin.progression.messageLimitsHint': 'Limits on message XP. A message that is too short, or sent during the cooldown, earns no XP.',
+  'admin.progression.moderation': 'Warnings and VODs',
+  'admin.progression.moderationHint': 'Warnings open an escalation at the threshold. VOD threads are created in the forum channel below.',
+  'admin.progression.helpXpBase': 'Scales the whole curve. Higher values need more XP for every level.',
+  'admin.progression.helpXpExponent': 'Controls how fast the XP needed grows. Higher values make later levels much harder.',
+  'admin.progression.helpMaxLevel': 'Highest level anyone can reach.',
+  'admin.progression.helpXpMessage': 'XP for each eligible Discord message.',
+  'admin.progression.helpXpEventCreate': 'XP for creating an event.',
+  'admin.progression.helpXpEventJoin': 'XP for joining an event.',
+  'admin.progression.helpXpEventComplete': 'XP for still being on the roster when the event stops.',
+  'admin.progression.helpXpVod': 'XP for a claimed VOD.',
+  'admin.progression.helpCooldown': 'Minimum seconds between message XP awards for the same member.',
+  'admin.progression.helpMinChars': 'Messages with fewer characters than this earn no message XP.',
+  'admin.progression.helpWarnThreshold': 'Number of active warnings that opens an admin escalation.',
+  'admin.progression.helpVodForum': 'Forum channel where VOD threads are created.',
+  'admin.progression.levelsHint': 'Total XP needed to reach each level, from the saved curve. Save settings to update it.',
+  'admin.progression.rankFloorHint': 'The first rank always starts at 0 XP.',
+  'admin.progression.rankEditTitle': 'Edit rank',
+  'admin.progression.editNamed': 'Edit {name}',
+  'admin.progression.seasonsHint': 'Levels reset when a season ends. XP counts toward the active season.',
+  'admin.progression.seasonEditTitle': 'Edit season',
+  'admin.progression.inactive': 'Inactive',
 } as const;
 
 export type TranslationKey = keyof typeof en;
