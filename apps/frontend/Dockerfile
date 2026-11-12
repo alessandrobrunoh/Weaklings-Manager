@@ -21,6 +21,9 @@ RUN npm ci --legacy-peer-deps
 # The build needs the whole project: templates, styles, assets, server routes.
 COPY . .
 
+# Node's default heap (about 2 GB in the container) runs out while Nitro bundles the SSR server;
+# a local build peaks near 4 GB. The limit only caps growth, it reserves nothing.
+ENV NODE_OPTIONS=--max-old-space-size=6144
 RUN npm run build
 
 # Stage 2: Minimal Node runtime serving the Nitro server.
