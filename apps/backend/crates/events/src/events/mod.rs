@@ -8,14 +8,14 @@ pub mod auto_stop;
 mod battle_link_tests;
 pub mod comp_routes;
 #[cfg(test)]
-mod copy_matrix_tests;
-#[cfg(test)]
 mod effects_tests;
 pub mod fanout_outbox;
 pub mod fanout_worker;
 pub mod fight_grouping;
 pub mod lifecycle;
 pub mod link_proxy;
+#[cfg(test)]
+mod link_proxy_tests;
 pub mod links;
 pub mod loop_tasks;
 pub mod mirror_retry;

@@ -485,8 +485,7 @@ pub async fn emit_manual_reminder(
 }
 
 /// What happens after a stop wrote the status: the completion-XP snapshot (per `xp`) and the
-/// local-split roster sync in a SAVEPOINT. Shared by the stop transition and
-/// [`EventService::finish_copy_session`].
+/// local-split roster sync in a SAVEPOINT. Run by the stop transition.
 pub(super) async fn finish_session_in_txn(
     txn: &DatabaseTransaction,
     stopped: &event::Model,
@@ -681,24 +680,60 @@ async fn apply_unarchive(
     Ok(updated)
 }
 
-/// Converges one copy's content and lifecycle state to the current source.
+/// Converges the display fields of one link to the current state of the event it points at.
 ///
-/// Content and status follow the source unconditionally. Discord voice channels
-/// and battle-linker progress stay tenant-local. A cancelled or archived
-/// source archives the copy; an unarchived source restores it.
+/// A link (see [`super::links`]) carries only what its Discord server needs to announce and list
+/// the event: title, description, kind, times, status, session timestamps and the roster
+/// revision (which makes the server's poller refresh its signup card). Its Discord-local data
+/// (announcement ids, delivery mode, voice channel) is never touched. A cancelled or archived
+/// origin archives the link; an unarchived origin restores it.
+///
+/// Writes nothing, and leaves `updated_at` alone, when the link already matches, so a periodic
+/// reconcile does not make every server re-render its cards. Returns whether the link changed.
+///
+/// # Errors
+///
+/// Returns `AppError::Database` when the link cannot be read or written.
 pub async fn converge_copy_to_source(
     target_db: &DatabaseConnection,
     source: &event::Model,
     copy_id: i64,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let Some(copy) = event::Entity::find_by_id(copy_id).one(target_db).await? else {
-        return Ok(());
+        return Ok(false);
     };
-    let copy_archived = copy.archived_at.is_some();
-    let requeue_deleted_vod =
-        source.vod_forum_post_enabled && copy.vod_forum_post_status == "deleted";
+    let source_terminal = source.archived_at.is_some() || source.status == "cancelled";
+    let archived_at = if source_terminal {
+        Some(copy.archived_at.unwrap_or_else(|| Utc::now().into()))
+    } else {
+        None
+    };
+    // A terminal origin keeps the session timestamps the link already shows.
+    let (started_at, stopped_at, auto_stop_deadline) = if source_terminal {
+        (copy.started_at, copy.stopped_at, copy.auto_stop_deadline)
+    } else {
+        (source.started_at, source.stopped_at, source.auto_stop_deadline)
+    };
+    let unchanged = copy.title == source.title
+        && copy.description == source.description
+        && copy.call_to_arms == source.call_to_arms
+        && copy.regear == source.regear
+        && copy.event_kind == source.event_kind
+        && copy.player_cap == source.player_cap
+        && copy.event_date_utc == source.event_date_utc
+        && copy.mass_time_utc == source.mass_time_utc
+        && copy.start_time_utc == source.start_time_utc
+        && copy.status == source.status
+        && copy.started_at == started_at
+        && copy.stopped_at == stopped_at
+        && copy.auto_stop_deadline == auto_stop_deadline
+        && copy.archived_at.is_some() == archived_at.is_some()
+        && copy.roster_version == source.roster_version;
+    if unchanged {
+        return Ok(false);
+    }
     // A schedule moved into the future re-arms the mass notice and the reminder on the origin;
-    // the copy must follow or its Discord server never announces the postponed event again.
+    // the link must follow or its Discord server never announces the postponed event again.
     let rescheduled = (copy.mass_time_utc != source.mass_time_utc
         || copy.start_time_utc != source.start_time_utc)
         && source
@@ -713,35 +748,20 @@ pub async fn converge_copy_to_source(
     active.description = Set(source.description.clone());
     active.call_to_arms = Set(source.call_to_arms);
     active.regear = Set(source.regear);
+    active.event_kind = Set(source.event_kind.clone());
     active.player_cap = Set(source.player_cap);
     active.event_date_utc = Set(source.event_date_utc);
     active.mass_time_utc = Set(source.mass_time_utc);
     active.start_time_utc = Set(source.start_time_utc);
-    active.vod_forum_post_enabled = Set(source.vod_forum_post_enabled);
-    let source_terminal = source.archived_at.is_some() || source.status == "cancelled";
-    if source_terminal {
-        active.status = Set(source.status.clone());
-        if !copy_archived {
-            active.archived_at = Set(Some(chrono::Utc::now().into()));
-        }
-    } else {
-        active.status = Set(source.status.clone());
-        active.started_at = Set(source.started_at);
-        active.stopped_at = Set(source.stopped_at);
-        active.auto_stop_deadline = Set(source.auto_stop_deadline);
-        if requeue_deleted_vod {
-            // A confirmed archive deletion is safe to replace with a new
-            // tenant-local VOD post after the source event is restored.
-            active.vod_forum_post_status = Set("pending".to_owned());
-            active.vod_forum_thread_id = Set(None);
-        }
-        // Source session state is authoritative, but its Discord voice channel
-        // and local battle-link progress remain destination-specific.
-        active.archived_at = Set(None);
-    }
+    active.status = Set(source.status.clone());
+    active.started_at = Set(started_at);
+    active.stopped_at = Set(stopped_at);
+    active.auto_stop_deadline = Set(auto_stop_deadline);
+    active.archived_at = Set(archived_at);
+    active.roster_version = Set(source.roster_version);
     active.updated_at = Set(chrono::Utc::now().into());
     active.update(target_db).await?;
-    Ok(())
+    Ok(true)
 }
 
 /// Propagates an owner-authorized source change to every active copy.
@@ -838,10 +858,8 @@ mod tests {
         connect_with_search_path, drop_schema, ensure_schema,
         test_support::{try_admin_db, unique_schema},
     };
-    use backend_core::sync_origin::SyncKind;
     use backend_identity::tenant::TenantRegistry;
     use backend_identity::users::identity::upsert_discord_user;
-    use backend_runtime::sync::{LegacyLinks, assert_writable};
     use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
     use sea_orm_migration::MigratorTrait;
 
@@ -1036,43 +1054,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guild_copies_reject_management_and_owner_changes_converge() {
+    async fn owner_changes_converge_to_every_link() {
         let Some(world) = TestWorld::new().await else {
             return;
         };
         let source = publish_alliance_event(&world, "Owner-managed event").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-
-        // Guild copies reject management; the owner tenant does not.
-        let guild_a_db = &world.tenant_dbs[1];
+        let link_a = world.guild_copy(1, source.id).await;
+        assert_eq!(link_a.comp_id, None, "a link carries no comp");
+        assert_eq!(
+            link_a.discord_delivery, "message",
+            "a link is announced publicly"
+        );
         let alliance_db = &world.tenant_dbs[0];
-        assert!(matches!(
-            assert_writable(
-                guild_a_db,
-                LegacyLinks {
-                    control: &world.control,
-                    tenant_id: "guild-a",
-                },
-                SyncKind::Event,
-                copy_a.id,
-            )
-            .await,
-            Err(AppError::ReadOnlyCopy(_))
-        ));
-        assert_writable(
-            alliance_db,
-            LegacyLinks {
-                control: &world.control,
-                tenant_id: "alliance",
-            },
-            SyncKind::Event,
-            source.id,
-        )
-        .await
-        .expect("owner tenant may manage");
 
-        // An owner update converges every active copy.
-        let alliance_db = &world.tenant_dbs[0];
+        // An owner update converges every link.
         EventService::new()
             .update_event(alliance_db, source.id, rename_event("Renamed by owner"))
             .await
@@ -1097,7 +1092,7 @@ mod tests {
             assert!(copy.archived_at.is_none());
         }
 
-        // Starting/stopping is owner state; the copy's Discord voice channel
+        // Starting/stopping is owner state; the link's Discord voice channel
         // remains local, but its visible event status and timestamps converge.
         EventService::new()
             .start_event(alliance_db, source.id)
@@ -1868,11 +1863,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_guild_mirror_is_retried_without_duplicating_the_alliance_event() {
-        use crate::alliance_share::{
-            AllianceShareService, ShareParams,
-            models::{ArtifactType, CreateAllianceShareRequest},
-        };
+    async fn failed_guild_mirror_is_retried_without_duplicating_the_alliance_link() {
         use backend_comps::{
             models::{
                 AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
@@ -2030,25 +2021,8 @@ mod tests {
             .await
             .expect("restore membership");
 
-        // Simulate a crash after the alliance event commits but before its
+        // Simulate a crash after the alliance link commits but before its
         // control-plane link or retry acknowledgement is written.
-        let shared_comp = AllianceShareService::share_comp(
-            &world.control,
-            &world.registry,
-            guild_db,
-            ShareParams {
-                source_tenant_id: "guild-a",
-                source_kind: "guild",
-                actor: &actor,
-                authorized: true,
-            },
-            CreateAllianceShareRequest {
-                artifact_type: ArtifactType::Comp,
-                id: comp.summary.id,
-            },
-        )
-        .await
-        .expect("share comp before simulated crash");
         let alliance_creator_id = upsert_discord_user(
             &world.tenant_dbs[0],
             "mirror-creator",
@@ -2059,24 +2033,20 @@ mod tests {
         )
         .await
         .expect("alliance creator");
-        let mut orphan_request = flash_event("Guild event for the alliance");
-        orphan_request.event_kind = Some(view.event_kind.clone());
-        orphan_request.comp_id = Some(shared_comp.published_id);
-        orphan_request.player_cap = view.player_cap;
-        orphan_request.event_date_utc = Some(view.event_date_utc.clone());
-        orphan_request.mass_time_utc = Some(view.mass_time_utc.clone());
-        orphan_request.start_time_utc = Some(view.start_time_utc.clone());
-        orphan_request.vod_forum_post_enabled = view.vod_forum_post_enabled;
-        orphan_request.discord_delivery = view.discord_delivery.clone();
-        let orphan_mirror = EventService::new()
-            .create_event_with_source_identity(
-                &world.tenant_dbs[0],
-                alliance_creator_id,
-                orphan_request,
-                Some(("guild-a".to_owned(), event.id)),
-            )
+        let source_row = event::Entity::find_by_id(event.id)
+            .one(guild_db)
             .await
-            .expect("create mirror before simulated crash");
+            .expect("reload guild event")
+            .expect("guild event row");
+        let orphan_mirror = super::super::links::insert_link_row(
+            &world.tenant_dbs[0],
+            alliance_creator_id,
+            "guild-a",
+            &source_row,
+            "message",
+        )
+        .await
+        .expect("create link before simulated crash");
         let orphan_mirror_id = orphan_mirror.id;
 
         super::super::mirror_retry::requeue(&world.control, "guild-a", event.id)
@@ -2098,7 +2068,7 @@ mod tests {
                 .await
                 .expect("alliance events"),
             1,
-            "exactly one alliance mirror exists"
+            "exactly one alliance link exists"
         );
 
         // A completed request is never claimed again, so no duplicate appears.
@@ -2167,7 +2137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_stop_goes_through_the_transition_core_and_skips_xp_for_mirrors() {
+    async fn auto_stop_goes_through_the_transition_core_and_leaves_links_to_their_origin() {
         use super::transition_tests::{fixture, seed_event};
         use crate::events::auto_stop::auto_stop_expired_sessions;
         use backend_entities::events::event_completion_xp;
@@ -2179,46 +2149,26 @@ mod tests {
         let fx = fixture(db).await;
         // `seed_event` gives a live event whose auto-stop deadline is already due.
         let (own, own_split) = seed_event(db, &fx, "live", false).await;
-        let (mirror, _) = seed_event(db, &fx, "live", false).await;
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "INSERT INTO event_sync_links \
-                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
-                 VALUES ($1,'guild-b',1,'guild-a',$2)",
-                [uuid::Uuid::new_v4().into(), mirror.into()],
-            ))
-            .await
-            .expect("link mirror");
-        // A copy whose link was disabled (membership departure) is local now: it must
-        // still stop, and still award nothing.
-        let (detached, _) = seed_event(db, &fx, "live", false).await;
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "INSERT INTO event_sync_links \
-                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id, \
-                  sync_enabled) \
-                 VALUES ($1,'guild-b',2,'guild-a',$2,false)",
-                [uuid::Uuid::new_v4().into(), detached.into()],
-            ))
-            .await
-            .expect("link detached copy");
+        let (link, _) = seed_event(db, &fx, "live", false).await;
+        db.execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE events SET source_tenant_id='guild-b', source_event_id=1 WHERE id=$1",
+            [link.into()],
+        ))
+        .await
+        .expect("mark the link");
 
-        auto_stop_expired_sessions(db, &EventService::new(), &world.control, "guild-a")
+        auto_stop_expired_sessions(db, &EventService::new())
             .await
             .expect("auto-stop pass");
 
-        for id in [own, mirror, detached] {
-            let row = event::Entity::find_by_id(id)
-                .one(db)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(row.status, "auto_stopped");
-        }
+        let own_row = event::Entity::find_by_id(own).one(db).await.unwrap().unwrap();
+        assert_eq!(own_row.status, "auto_stopped");
+        let link_row = event::Entity::find_by_id(link).one(db).await.unwrap().unwrap();
+        assert_eq!(
+            link_row.status, "live",
+            "a link stops when its origin stops, never by its own deadline"
+        );
         let xp = |id| {
             event_completion_xp::Entity::find()
                 .filter(event_completion_xp::Column::EventId.eq(id))
@@ -2229,12 +2179,7 @@ mod tests {
             3,
             "own event snapshots creator + participants"
         );
-        assert_eq!(xp(mirror).await.unwrap(), 0, "a mirror never awards XP");
-        assert_eq!(
-            xp(detached).await.unwrap(),
-            0,
-            "a detached copy awards no XP"
-        );
+        assert_eq!(xp(link).await.unwrap(), 0, "a link never awards XP");
         let split_row = backend_entities::splits::split::Entity::find_by_id(own_split)
             .one(db)
             .await
@@ -2248,32 +2193,32 @@ mod tests {
     }
 }
 
-/// Auto-stop must treat every copy role the same way on SQLite: all roles stop, none but
-/// origins and unsynced events award XP, and a detached copy is not special-cased.
+/// Auto-stop stops origins and standalone events, and leaves links to the event they point at.
 #[cfg(test)]
-mod copy_role_auto_stop_tests {
-    use super::transition_tests::{fixture, seed_event, sqlite_db as bare_sqlite_db};
+mod link_auto_stop_tests {
+    use super::transition_tests::{fixture, seed_event, sqlite_db};
     use super::*;
     use crate::events::auto_stop::auto_stop_expired_sessions;
     use backend_entities::events::event_completion_xp;
-    use backend_runtime::sync::test_support::{link_event, sqlite_db};
     use sea_orm::PaginatorTrait;
 
-    const TENANT: &str = "guild-a";
-
     #[tokio::test]
-    async fn every_copy_role_auto_stops_and_only_origins_award_xp() {
+    async fn origins_stop_and_award_xp_while_links_stay_with_their_origin() {
         let db = sqlite_db().await;
         let fx = fixture(&db).await;
-        let (unsynced, _) = seed_event(&db, &fx, "live", false).await;
         let (origin, _) = seed_event(&db, &fx, "live", false).await;
-        let (active_copy, _) = seed_event(&db, &fx, "live", false).await;
-        let (detached_copy, _) = seed_event(&db, &fx, "live", false).await;
-        link_event(&db, (TENANT, origin), ("guild-b", 900), true).await;
-        link_event(&db, ("guild-b", 1), (TENANT, active_copy), true).await;
-        link_event(&db, ("guild-b", 2), (TENANT, detached_copy), false).await;
+        let (link, _) = seed_event(&db, &fx, "live", false).await;
+        let mut link_row: event::ActiveModel = event::Entity::find_by_id(link)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        link_row.source_tenant_id = Set(Some("alliance".to_owned()));
+        link_row.source_event_id = Set(Some(1));
+        link_row.update(&db).await.expect("mark the link");
 
-        auto_stop_expired_sessions(&db, &EventService::new(), &db, TENANT)
+        auto_stop_expired_sessions(&db, &EventService::new())
             .await
             .expect("auto-stop pass");
 
@@ -2287,40 +2232,20 @@ mod copy_role_auto_stop_tests {
                     .unwrap()
             }
         };
-        for (id, expected_xp) in [
-            (unsynced, 3),
-            (origin, 3),
-            (active_copy, 0),
-            // The regression this guards: a disabled link must neither keep the event live
-            // forever nor start awarding XP the origin tenant owns.
-            (detached_copy, 0),
-        ] {
-            let row = event::Entity::find_by_id(id)
-                .one(&db)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(row.status, "auto_stopped", "event {id} must stop");
-            assert_eq!(xp_rows(id).await, expected_xp, "xp rows of event {id}");
-        }
-    }
-
-    #[tokio::test]
-    async fn a_failing_control_lookup_leaves_the_session_live() {
-        // Without the link table the copy role cannot be resolved; stopping blindly could
-        // award XP to a copy, so the session is left for the next pass.
-        let db = bare_sqlite_db().await;
-        let fx = fixture(&db).await;
-        let (id, _) = seed_event(&db, &fx, "live", false).await;
-        auto_stop_expired_sessions(&db, &EventService::new(), &db, TENANT)
-            .await
-            .expect("pass");
-        let row = event::Entity::find_by_id(id)
+        let origin_row = event::Entity::find_by_id(origin)
             .one(&db)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(row.status, "live");
+        assert_eq!(origin_row.status, "auto_stopped");
+        assert_eq!(xp_rows(origin).await, 3);
+        let link_after = event::Entity::find_by_id(link)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(link_after.status, "live", "the origin's worker stops it");
+        assert_eq!(xp_rows(link).await, 0);
     }
 }
 
@@ -2978,33 +2903,6 @@ mod transition_tests {
         assert!(run(&db, id, stop, Cause::Web).await.is_err());
         assert_eq!(row_effects(&db, id, split_id).await, before);
         assert_eq!(before.status, "live");
-    }
-
-    #[tokio::test]
-    async fn finish_copy_session_runs_the_stop_body_for_an_already_stopped_event() {
-        let db = sqlite_db().await;
-        let fx = fixture(&db).await;
-        let (id, split_id) = seed_event(&db, &fx, "stopped", false).await;
-        let service = EventService::new();
-
-        let txn = db.begin().await.unwrap();
-        let state = service
-            .finish_copy_session(&txn, id, XpFilter::Everyone)
-            .await
-            .unwrap();
-        txn.commit().await.unwrap();
-        assert_eq!(state, SplitSyncState::Synced);
-        let effects = row_effects(&db, id, split_id).await;
-        assert_eq!(effects.xp_rows.len(), 3);
-        assert_eq!(effects.split_status, "pending");
-
-        let (live, _) = seed_event(&db, &fx, "live", false).await;
-        let txn = db.begin().await.unwrap();
-        let error = service
-            .finish_copy_session(&txn, live, XpFilter::Everyone)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, AppError::Conflict(_)));
     }
 
     #[tokio::test]

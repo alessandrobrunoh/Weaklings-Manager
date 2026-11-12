@@ -21,11 +21,25 @@ pub async fn sqlite_db() -> DatabaseConnection {
             source_event_id BIGINT NOT NULL,
             mirror_tenant_id TEXT NOT NULL,
             mirror_event_id BIGINT NOT NULL,
-            sync_enabled BOOLEAN NOT NULL DEFAULT TRUE
+            sync_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
     )
     .await
     .expect("event_sync_links");
+    db.execute_unprepared(
+        "CREATE TABLE event_participant_attributions (
+            id TEXT PRIMARY KEY,
+            source_tenant_id TEXT NOT NULL,
+            source_event_id BIGINT NOT NULL,
+            discord_id TEXT NOT NULL,
+            guild_tenant_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (source_tenant_id, source_event_id, discord_id)
+        )",
+    )
+    .await
+    .expect("event_participant_attributions");
     db.execute_unprepared(
         "CREATE TABLE alliance_shares (
             alliance_tenant_id TEXT NOT NULL,

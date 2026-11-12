@@ -20,6 +20,30 @@ pub fn matrix_app(
         .layer(Extension(AlbionBbService::default()))
 }
 
+/// [`matrix_app`] for a request that may be routed to other tenants: the caller supplies the
+/// registry that holds their contexts and the roster hub whose notifications the test inspects.
+pub fn link_app(
+    routes: axum::Router,
+    db: &DatabaseConnection,
+    tenant_id: &str,
+    tenant_kind: &str,
+    registry: backend_identity::tenant::TenantRegistry,
+    hub: crate::events::roster_hub::RosterHub,
+) -> axum::Router {
+    use axum::Extension;
+    use backend_albion_data::albionbb::service::AlbionBbService;
+
+    backend_runtime::sync::test_support::matrix_app_with_registry(
+        routes,
+        db,
+        tenant_id,
+        tenant_kind,
+        registry,
+    )
+    .layer(Extension(hub))
+    .layer(Extension(AlbionBbService::default()))
+}
+
 /// `items` for a `CreateBuildRequest` in tests: a Broadsword in the main loadout, so the build
 /// satisfies the main-hand weapon rule that every non-mount build must meet.
 pub fn main_weapon_items() -> Option<Vec<backend_comps::models::CreateBuildItemRequest>> {

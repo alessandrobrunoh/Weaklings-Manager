@@ -30,7 +30,7 @@ use super::fight_grouping::{
     FIGHT_GROUPING_VERSION, FightEvidence, FightGroupingDecision, score_fight_grouping,
 };
 use super::lifecycle::{
-    Cause, Transition, Transitioned, XpFilter, finish_session_in_txn, transition_in_txn,
+    Cause, Transition, Transitioned, XpFilter, transition_in_txn,
 };
 use super::parties::{
     EventSeatPlan, concrete_signup_count, insert_first_party, load_event_parties, unseat_missing_seats,
@@ -57,7 +57,7 @@ use backend_entities::status::comps::{BuildLoadout, BuildRole};
 use backend_entities::status::splits::SplitStatus;
 use backend_identity::audit::service::AuditService;
 use backend_identity::users::weapons::{self, UserWeaponSet};
-use backend_splits::service::{SplitService, SplitSyncState};
+use backend_splits::service::SplitService;
 
 /// Hard cap on how long an event session can stay live before the background
 /// worker auto-stops it. Tuned to 3 hours per product requirement.
@@ -440,9 +440,10 @@ fn event_view_from_parts(
         alliance_discord_channel_id: None,
         alliance_discord_role_ids: Vec::new(),
         origin_guild_id: None,
+        is_link: model.source_tenant_id.is_some(),
         source_tenant_id: model.source_tenant_id,
         source_event_id: model.source_event_id,
-        is_synchronized_copy: false,
+        source_tenant_name: None,
     }
 }
 
@@ -4053,26 +4054,15 @@ impl EventService {
         })
     }
 
-    /// Creates a new event.
+    /// Creates a new event, owned by this tenant.
+    ///
+    /// Links to events other tenants own are not created here: they are display rows made by
+    /// [`super::links::insert_link_row`].
     pub async fn create_event(
         &self,
         db: &DatabaseConnection,
         creator_id: i64,
         req: CreateEventRequest,
-    ) -> Result<EventView, AppError> {
-        self.create_event_with_source_identity(db, creator_id, req, None)
-            .await
-    }
-
-    /// Create an event copy with its origin identity persisted atomically with
-    /// the event and its dependent records. Callers can query this identity
-    /// before retrying and rely on the unique constraint for concurrent retries.
-    pub async fn create_event_with_source_identity(
-        &self,
-        db: &DatabaseConnection,
-        creator_id: i64,
-        req: CreateEventRequest,
-        source_identity: Option<(String, i64)>,
     ) -> Result<EventView, AppError> {
         let discord_role_ids = normalize_discord_role_ids(req.discord_role_ids)?;
         if let Some(player_cap) = req.player_cap
@@ -4196,10 +4186,6 @@ impl EventService {
             } else {
                 "not_requested".to_string()
             }),
-            source_tenant_id: Set(source_identity
-                .as_ref()
-                .map(|(tenant_id, _)| tenant_id.clone())),
-            source_event_id: Set(source_identity.map(|(_, event_id)| event_id)),
             ..Default::default()
         }
         .insert(&txn)
@@ -4459,38 +4445,6 @@ impl EventService {
         }
         let view = self.to_event_view(db, outcome.model.clone()).await?;
         Ok(Transitioned { outcome, view })
-    }
-
-    /// Finishes a session that a copy follows from its origin: completion-XP snapshot (per
-    /// `xp`) and local-split roster sync, i.e. the body of a stop after the status write.
-    ///
-    /// Signature stub for the sync engine (SY-3b), which will call it from
-    /// `transition_in_txn(Cause::Sync)`; the stop transition already shares its body.
-    ///
-    /// # Errors
-    ///
-    /// [`AppError::NotFound`] for an unknown event, [`AppError::Conflict`] when the event
-    /// has not stopped.
-    #[allow(dead_code)]
-    pub async fn finish_copy_session(
-        &self,
-        txn: &sea_orm::DatabaseTransaction,
-        event_id: i64,
-        xp: XpFilter,
-    ) -> Result<SplitSyncState, AppError> {
-        let model = event::Entity::find_by_id(event_id)
-            .lock_exclusive()
-            .one(txn)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
-        if model.status != "stopped" && model.status != "auto_stopped" {
-            return Err(AppError::Conflict(format!(
-                "Event {event_id} has not stopped (status={})",
-                model.status
-            )));
-        }
-        finish_session_in_txn(txn, &model, xp).await
     }
 
     // --- Session lifecycle -------------------------------------------------
