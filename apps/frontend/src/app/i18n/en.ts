@@ -1380,7 +1380,6 @@ export const en = {
   'regears.build': 'Signed up',
   'regears.detail.back': 'Back to regears',
   'regears.detail.breakdown': 'Breakdown',
-  'regears.detail.notFound': 'This death was not found.',
   'regears.confirmAccept': 'Accept & credit',
   'regears.accepted': 'Regear accepted. Bank credited.',
   'regears.rejected': 'Regear rejected (terminal).',
@@ -3448,6 +3447,19 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/regear-detail
+  'regears.excluded': 'Excluded',
+  'regears.detail.battleNumber': 'Battle #{id}',
+  'regears.detail.context': 'Death and battle',
+  'regears.detail.history': 'History',
+  'regears.detail.historyRequested': 'Requested',
+  'regears.detail.historyCredited': 'Bank credited',
+  'regears.detail.includedItems': 'Included items',
+  'regears.detail.includedOf': 'of {count} items',
+  'regears.detail.lineValue': 'Value',
+  'regears.detail.noItems': 'No items recorded.',
+  'regears.detail.notDecided': 'Not decided yet',
+  'regears.detail.summary': 'Key figures',
 } as const;
 
 export type TranslationKey = keyof typeof en;
