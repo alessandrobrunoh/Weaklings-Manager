@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { BattleDetail, BattleGuildSummary } from '../../core/models/api.models';
@@ -12,6 +12,7 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 
 interface AggregatedGuildStats {
   readonly name: string;
@@ -34,145 +35,98 @@ interface AggregatedGuildStats {
 @Component({
   selector: 'app-battle-group-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, ErrorState, DataTable, PageHeader, PageStack],
+  imports: [DataTable, ErrorState, Loading, PageHeader, PageStack, RouterLink, SummaryBand],
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <app-loading variant="detail" [label]="t('common.loading')" />
     } @else if (loadFailed()) {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
       <app-page-header
         [title]="t('battles.group.personalTitle')"
         [subtitle]="t('battles.group.personalSubtitle', { count: battleDetails().length })"
-      >
-        <button type="button" class="btn btn--ghost btn--sm" (click)="backToBattles()">
-          ← {{ t('nav.battles') }}
-        </button>
-      </app-page-header>
-
-      <p class="mb-4 max-w-3xl text-sm text-[var(--color-text-secondary)]">
-        {{ t('battles.group.personalDescription') }}
-      </p>
-
-      <div class="mb-5 flex flex-wrap gap-1">
-        @for (id of battleIds(); track id) {
-          <span class="chip font-mono text-xs">#{{ id }}</span>
-        }
-      </div>
+        [backLink]="['/battles']"
+        [backLabel]="t('nav.battles')"
+      />
 
       <app-page-stack>
-      <!-- Aggregate KPIs -->
-      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Group KPIs">
-        <article class="surface p-4">
-          <p class="battle-group__label">{{ t('battles.total_fame') }}</p>
-          <p class="battle-group__value mono text-warning">{{ formatCompact(totalFame()) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-group__label">{{ t('battles.players') }}</p>
-          <p class="battle-group__value mono">{{ formatAmount(totalPlayers()) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-group__label">{{ t('battles.kills') }}</p>
-          <p class="battle-group__value mono text-success">{{ formatAmount(totalKills()) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-group__label">{{ t('battles.deaths') }}</p>
-          <p class="battle-group__value mono text-error">{{ formatAmount(totalDeaths()) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-group__label">{{ t('battles.kill_death') }}</p>
-          <p class="battle-group__value mono" [class.text-success]="groupKdRatio() >= 1">
-            {{ formatDecimal(groupKdRatio()) }}
-          </p>
-        </article>
-      </section>
+        <p class="hint max-w-3xl">{{ t('battles.group.personalDescription') }}</p>
 
-      <!-- Comparative Bar Charts -->
-      <section class="grid gap-4 xl:grid-cols-2">
-        <article class="surface p-5">
-          <h2 class="battle-group__panel-title">{{ t('battles.fame_chart') }}</h2>
-          @for (guild of aggregatedGuilds().slice(0, 8); track guild.name) {
-            <div class="battle-group__bar-row">
-              <span class="truncate" [class.font-bold]="guild.isOurGuild">
-                {{ guild.name }}
-                @if (guild.alliance_name) {
-                  <small class="text-disabled mono">[{{ guild.alliance_name }}]</small>
+        <div class="flex flex-wrap gap-1.5">
+          @for (id of battleIds(); track id) {
+            <a class="chip font-mono text-xs no-underline" [routerLink]="['/battles', id]">#{{ id }}</a>
+          }
+        </div>
+
+        <app-summary-band [ariaLabel]="t('battleDetail.group.summaryLabel')" [items]="summaryItems()" />
+
+        <section class="grid gap-4 xl:grid-cols-2">
+          <article class="card">
+            <h2 class="section-title">{{ t('battles.fame_chart') }}</h2>
+            @for (guild of aggregatedGuilds().slice(0, 8); track guild.name) {
+              <div class="bg__bar-row">
+                <span class="truncate" [class.font-bold]="guild.isOurGuild">
+                  {{ guild.name }}
+                  @if (guild.alliance_name) {
+                    <small class="text-secondary mono">[{{ guild.alliance_name }}]</small>
+                  }
+                </span>
+                <div class="bg__bar" [class.bg__bar--our]="guild.isOurGuild">
+                  <span [style.width.%]="percentage(guild.kill_fame, maxGuildFame())"></span>
+                </div>
+                <strong class="mono">{{ formatCompact(guild.kill_fame) }}</strong>
+              </div>
+            }
+          </article>
+
+          <article class="card">
+            <h2 class="section-title">{{ t('battles.kill_chart') }}</h2>
+            @for (guild of aggregatedGuilds().slice(0, 8); track guild.name) {
+              <div class="bg__bar-row">
+                <span class="truncate" [class.font-bold]="guild.isOurGuild">{{ guild.name }}</span>
+                <div class="bg__bar bg__bar--kills">
+                  <span [style.width.%]="percentage(guild.kills, maxGuildKills())"></span>
+                </div>
+                <strong class="mono">{{ guild.kills }} / {{ guild.deaths }} ({{ t('battles.kill_death') }} {{ formatDecimal(guild.kdRatio) }})</strong>
+              </div>
+            }
+          </article>
+        </section>
+
+        <section class="card p-0">
+          <div class="bg__head">
+            <h2 class="section-title">{{ t('battles.guild_breakdown') }}</h2>
+          </div>
+          <app-data-table
+            [syncUrl]="false"
+            [columns]="guildColumns"
+            [rows]="aggregatedGuilds()"
+            [trackBy]="trackGuild"
+            [pageSize]="12"
+            [stickyFirstColumn]="true"
+            [ariaLabel]="t('battles.guild_breakdown')"
+          >
+            <ng-template dataTableCell="name" let-row>
+              <span class="bg__cell">
+                <span class="font-medium" [class.text-primary]="row.isOurGuild">{{ row.name }}</span>
+                @if (row.alliance_name) {
+                  <span class="chip text-xs py-0 px-1 font-mono">[{{ row.alliance_name }}]</span>
+                }
+                @if (row.isOurGuild) {
+                  <span class="chip chip--success text-xs py-0">{{ t('battleDetail.ourGuild') }}</span>
                 }
               </span>
-              <div class="battle-group__bar" [class.battle-group__bar--our]="guild.isOurGuild">
-                <span [style.width.%]="percentage(guild.kill_fame, maxGuildFame())"></span>
-              </div>
-              <strong class="mono text-warning">{{ formatCompact(guild.kill_fame) }}</strong>
-            </div>
-          }
-        </article>
+            </ng-template>
 
-        <article class="surface p-5">
-          <h2 class="battle-group__panel-title">{{ t('battles.kill_chart') }}</h2>
-          @for (guild of aggregatedGuilds().slice(0, 8); track guild.name) {
-            <div class="battle-group__bar-row">
-              <span class="truncate" [class.font-bold]="guild.isOurGuild">
-                {{ guild.name }}
-              </span>
-              <div class="battle-group__bar battle-group__bar--kills">
-                <span [style.width.%]="percentage(guild.kills, maxGuildKills())"></span>
-              </div>
-              <strong class="mono">{{ guild.kills }}/{{ guild.deaths }} (K/D {{ formatDecimal(guild.kdRatio) }})</strong>
-            </div>
-          }
-        </article>
-      </section>
+            <ng-template dataTableCell="kill_fame" let-row>
+              <span class="mono">{{ formatCompact(row.kill_fame) }}</span>
+            </ng-template>
 
-      <!-- Guild Breakdown Table -->
-      <article class="surface overflow-hidden">
-        <header class="battle-group__table-header">
-          <h2 class="font-bold text-base" style="color: var(--color-text)">{{ t('battles.guild_breakdown') }}</h2>
-        </header>
-        <app-data-table
-          [columns]="guildColumns"
-          [rows]="aggregatedGuilds()"
-          [trackBy]="trackGuild"
-          [pageSize]="12"
-        >
-          <ng-template dataTableCell="name" let-row>
-            <div class="flex items-center gap-2">
-              <span class="font-medium" [class.text-primary]="row.isOurGuild">{{ row.name }}</span>
-              @if (row.alliance_name) {
-                <span class="chip text-xs py-0 px-1 font-mono">[{{ row.alliance_name }}]</span>
-              }
-              @if (row.isOurGuild) {
-                <span class="chip chip--success text-xs py-0">Our Guild</span>
-              }
-            </div>
-          </ng-template>
-
-          <ng-template dataTableCell="battles" let-row>
-            <span class="mono">{{ row.battles }}</span>
-          </ng-template>
-
-          <ng-template dataTableCell="players" let-row>
-            <span class="mono">{{ row.players }}</span>
-          </ng-template>
-
-          <ng-template dataTableCell="kills" let-row>
-            <span class="mono font-bold text-success">{{ row.kills }}</span>
-          </ng-template>
-
-          <ng-template dataTableCell="deaths" let-row>
-            <span class="mono font-bold text-error">{{ row.deaths }}</span>
-          </ng-template>
-
-          <ng-template dataTableCell="kill_fame" let-row>
-            <span class="mono text-warning font-medium">{{ formatCompact(row.kill_fame) }}</span>
-          </ng-template>
-
-          <ng-template dataTableCell="kill_death" let-row>
-            <span class="mono" [class.text-success]="row.kdRatio >= 1">
-              {{ formatDecimal(row.kdRatio) }}
-            </span>
-          </ng-template>
-        </app-data-table>
-      </article>
+            <ng-template dataTableCell="kill_death" let-row>
+              <span class="mono" [class.text-success]="row.kdRatio >= 1">{{ formatDecimal(row.kdRatio) }}</span>
+            </ng-template>
+          </app-data-table>
+        </section>
       </app-page-stack>
     }
   `,
@@ -181,35 +135,20 @@ interface AggregatedGuildStats {
       display: block;
       color: var(--color-text);
     }
-    :host ::ng-deep .rounded-xl,
-    :host ::ng-deep .rounded-2xl,
-    :host ::ng-deep .rounded-lg,
-    :host ::ng-deep .rounded-md,
-    :host ::ng-deep .shadow-lg,
-    :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards);
-      box-shadow: none;
-    }
     @layer components {
-      .battle-group__label {
-        color: var(--color-text-disabled);
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        font-weight: 600;
+      .bg__head {
+        padding: var(--card-padding) var(--card-padding) 0;
       }
-      .battle-group__value {
-        color: var(--color-text);
-        font-size: clamp(1.25rem, 2vw, 1.65rem);
-        font-weight: 700;
+      .bg__head .section-title {
+        margin-bottom: 0;
       }
-      .battle-group__panel-title {
-        color: var(--color-text);
-        font-size: 0.95rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
+      .bg__cell {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
       }
-      .battle-group__bar-row {
+      .bg__bar-row {
         align-items: center;
         display: grid;
         gap: 0.75rem;
@@ -217,49 +156,46 @@ interface AggregatedGuildStats {
         margin-top: 0.75rem;
       }
       @media (max-width: 640px) {
-        .battle-group__bar-row {
+        .bg__bar-row {
           gap: 0.35rem 0.6rem;
           grid-template-columns: minmax(0, 1fr) auto;
         }
-        .battle-group__bar-row > span {
+        .bg__bar-row > span {
           grid-column: 1;
         }
-        .battle-group__bar-row > .battle-group__bar {
+        .bg__bar-row > .bg__bar {
           grid-column: 1 / -1;
           grid-row: 2;
         }
-        .battle-group__bar-row > strong {
+        .bg__bar-row > strong {
           grid-column: 2;
           grid-row: 1;
-          font-size: 0.75rem;
+          font-size: var(--ui-text-xs);
         }
       }
-      .battle-group__bar {
+      .bg__bar {
         background: var(--color-surface-2);
         border-radius: var(--radius-full);
         height: 0.65rem;
         overflow: hidden;
       }
-      .battle-group__bar span {
+      .bg__bar span {
         background: var(--color-primary);
         border-radius: inherit;
         display: block;
         height: 100%;
         min-width: 0.25rem;
       }
-      .battle-group__bar--our span {
+      .bg__bar--our span {
         background: var(--color-success);
       }
-      .battle-group__bar--kills span {
+      .bg__bar--kills span {
         background: var(--color-warning);
-      }
-      .battle-group__table-header {
-        border-bottom: 1px solid var(--color-border);
-        padding: 1rem;
       }
     }
   `,
 })
+
 export class BattleGroupPage {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
@@ -289,6 +225,15 @@ export class BattleGroupPage {
     const deaths = this.totalDeaths();
     return deaths === 0 ? (kills > 0 ? kills : 0) : kills / deaths;
   });
+
+  /** Group headline numbers as one summary band. */
+  protected readonly summaryItems = computed<SummaryItem[]>(() => [
+    { label: this.t('battles.total_fame'), value: this.formatCompact(this.totalFame()) },
+    { label: this.t('battles.players'), value: this.formatAmount(this.totalPlayers()) },
+    { label: this.t('battles.kills'), value: this.formatAmount(this.totalKills()) },
+    { label: this.t('battles.deaths'), value: this.formatAmount(this.totalDeaths()) },
+    { label: this.t('battles.kill_death'), value: this.formatDecimal(this.groupKdRatio()) },
+  ]);
 
   protected readonly aggregatedGuilds = computed(() => this.aggregateGuilds());
   protected readonly maxGuildFame = computed(() =>
