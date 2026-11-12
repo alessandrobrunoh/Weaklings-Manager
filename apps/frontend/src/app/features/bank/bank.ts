@@ -1,5 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -15,6 +22,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { ErrorState } from '../../shared/components/error-state/error-state';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import {
   DataTable,
   type DataTableColumn,
@@ -22,12 +31,17 @@ import {
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { DataTableFooterCell } from '../../shared/components/data-table/data-table-footer-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
+import type { MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { Select, type SelectOption } from '../../shared/components/select/select';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 export interface WithdrawalSelectableGroup {
@@ -42,6 +56,10 @@ export interface WithdrawalSelectableGroup {
   readonly guildName?: string | null;
 }
 
+type BankSection = 'movements' | 'balances';
+
+const SEARCH_DEBOUNCE_MS = 300;
+
 /**
  * Personal Guild Bank ledger.
  *
@@ -51,6 +69,8 @@ export interface WithdrawalSelectableGroup {
  * this page used to switch shape depending on who was looking at it, which
  * made "where do I go to see/request my split" ambiguous. Now it only ever
  * shows one thing.
+ *
+ * Alliance tenants also get a per-guild balance table, switched in with tabs.
  */
 @Component({
   selector: 'app-bank',
@@ -58,78 +78,29 @@ export interface WithdrawalSelectableGroup {
   imports: [
     DataTable,
     DataTableCell,
+    DataTableFooterCell,
     Dialog,
+    ErrorState,
+    FilterBar,
     Icon,
+    Loading,
     PageHeader,
     PageStack,
     RouterLink,
+    Select,
     StatusChip,
+    SummaryBand,
+    Tabs,
     TooltipDirective,
   ],
-  styles: `
-    .workbench-page {
-      min-width: 0;
-      overflow: hidden;
-    }
-    .workbench-page > section,
-    .workbench-page > app-data-table {
-      min-width: 0;
-    }
-    .workbench-page .kpi-card {
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-md);
-    }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
-    }
-  `,
   template: `
     <app-page-header
       [title]="t(isAlliance() ? 'bank.alliance.title' : 'bank.title')"
       [subtitle]="t(isAlliance() ? 'bank.alliance.subtitle' : 'bank.subtitle')"
+      [menuItems]="menuItems()"
+      [menuLabel]="t('ui.menu.moreActions')"
+      (menuSelect)="onMenu($event)"
     >
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('bank.refreshTooltip')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-
-      @if (canReviewRequests()) {
-        <a
-          routerLink="/admin/withdrawals"
-          class="btn btn--ghost btn--sm"
-          [appTooltip]="t('bank.reviewRequestsTooltip')"
-          tooltipPosition="bottom"
-        >
-          <app-icon name="bank" size="0.875rem" />
-          {{ t('bank.reviewRequests') }}
-        </a>
-      }
-
       <button
         type="button"
         class="btn btn--primary btn--sm"
@@ -143,213 +114,157 @@ export interface WithdrawalSelectableGroup {
       </button>
     </app-page-header>
 
-    <app-page-stack class="workbench-page">
-      <!-- KPI Row: 4 modern cards -->
-      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.personalSummary')">
-        <!-- Card 1: Available credits -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('bank.balance.pending') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCompact(balance()?.pending_total) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 }) }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-              <app-icon name="bank" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 2: In Review / Requested -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('bank.balance.requested') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCompact(balance()?.requested_total) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('bank.withdrawalsInReview', { count: balance()?.requested_count ?? 0 }) }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-              <app-icon name="alert" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 3: Total Withdrawn -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('bank.status.withdrawn') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCompact(totalWithdrawn()) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('bank.balance.payouts') }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-              <app-icon name="coins" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 4: Ledger Entries -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('bank.transactions.title') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ transactionTotal() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('bank.queue.entryCount', { count: transactionTotal() }) }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-              <app-icon name="users" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-      </section>
-
-      @if (isAlliance() && (balance()?.guilds?.length ?? 0) > 0) {
-        <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" [attr.aria-label]="t('bank.alliance.breakdown')">
-          <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase mb-3">
-            {{ t('bank.alliance.breakdown') }}
-          </p>
-          <ul class="grid gap-2 sm:grid-cols-2">
-            @for (guild of balance()?.guilds ?? []; track guild.guild_tenant_id) {
-              <li class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-2">
-                <span class="text-sm font-medium text-[var(--color-text)] truncate">{{ guild.guild_name }}</span>
-                <span class="font-mono text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
-                  {{ formatCompact(guild.pending_total) }}
-                  · {{ t('bank.creditsAvailable', { count: guild.pending_count }) }}
-                </span>
-              </li>
-            }
-          </ul>
-        </section>
+    <app-page-stack>
+      @if (balanceFailed()) {
+        <app-error-state
+          [message]="t('common.error')"
+          [retryLabel]="t('common.retry')"
+          (retry)="loadBalance()"
+        />
+      } @else if (!balance()) {
+        <app-loading variant="summary" [label]="t('common.loading')" />
+      } @else {
+        <app-summary-band [ariaLabel]="t('bank.personalSummary')" [items]="summaryItems()" />
       }
 
-      <app-data-table
-        [columns]="transactionColumns()"
-        [rows]="transactions()"
-        [loading]="loading()"
-        [error]="transactionsLoadFailed()"
-        (retry)="loadTransactions()"
-        [trackBy]="trackRow"
-        [serverMode]="true"
-        [totalItems]="transactionTotal()"
-        [pageSize]="10"
-        searchPlaceholder="Search transactions..."
-        itemLabel="transactions"
-        emptyIcon="bank"
-        emptyTitle="No transactions found"
-        emptySubtitle="There are no transactions matching the selected filters."
-        (pageChange)="onTableChange($event)"
-      >
-        <ng-template dataTableCell="guild" let-row>
-          <span class="text-sm text-[var(--color-text)] whitespace-nowrap">{{ row.guild_name || '—' }}</span>
-        </ng-template>
+      @if (isAlliance()) {
+        <app-tabs
+          [ariaLabel]="t('bank.tabs.label')"
+          [options]="sectionTabs()"
+          [active]="activeSection()"
+          (activeChange)="onSectionChange($event)"
+        />
+      }
 
-        <ng-template dataTableCell="transaction" let-row>
-          <div class="min-w-[200px]">
-            <div class="flex items-center gap-2">
-              <span class="text-sm font-semibold text-[var(--color-text)]">
-                @if (row.split_id) {
-                  {{ t('bank.withdraw.split', { id: row.split_id }) }}
-                } @else if (row.type === 'split_credit' || row.type === 'split') {
-                  {{ t('bank.type.splitCredit') }} #{{ row.id }}
-                } @else if (row.type === 'split_donation') {
-                  {{ t('bank.type.splitDonation') }} #{{ row.id }}
-                } @else {
-                  {{ t('bank.withdraw.credit', { id: row.id }) }}
+      @if (activeSection() === 'movements') {
+        <div class="space-y-3">
+          <app-filter-bar
+            [searchLabel]="t('bank.search.label')"
+            [searchPlaceholder]="t('bank.search.placeholder')"
+            [query]="search()"
+            [activeCount]="activeFilterCount()"
+            (queryChange)="onSearch($event)"
+            (clear)="clearFilters()"
+          >
+            <label class="filter-field">
+              <span class="filter-field__label">{{ t('common.status') }}</span>
+              <select class="select select--sm" (change)="onStatusChange($event)">
+                <option value="" [selected]="!status()">{{ t('common.all') }}</option>
+                @for (option of statusOptions; track option) {
+                  <option [value]="option" [selected]="status() === option">{{ statusLabel(option) }}</option>
                 }
-              </span>
-              @if (toNumber(row.amount) < 0) {
-                <span class="rounded bg-[var(--color-error-container)] px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-error">
-                  {{ t('bank.type.clawback') }}
-                </span>
-              }
-            </div>
-            <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-              {{ row.from_label || 'Guild Bank' }} &rarr; {{ row.to_label || row.to_username || 'Member' }}
-            </div>
-          </div>
-        </ng-template>
+              </select>
+            </label>
+          </app-filter-bar>
 
-        <ng-template dataTableCell="created_at" let-row>
-          <div class="whitespace-nowrap">
-            <div class="text-xs font-medium text-[var(--color-text)]">
-              {{ formatDateDay(row.created_at) }}
-            </div>
-            <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-              {{ formatDateTime(row.created_at) }}
-            </div>
-          </div>
-        </ng-template>
+          <app-data-table
+            [ariaLabel]="t('bank.transactions.title')"
+            [columns]="transactionColumns()"
+            [rows]="transactions()"
+            [loading]="loading()"
+            [error]="transactionsLoadFailed()"
+            (retry)="loadTransactions()"
+            [trackBy]="trackRow"
+            [serverMode]="true"
+            [totalItems]="transactionTotal()"
+            [pageSize]="10"
+            [hideSearch]="true"
+            [itemLabel]="t('bank.transactions.itemLabel')"
+            [emptyLabel]="'bank.transactions.empty'"
+            emptyIcon="bank"
+            mobileLayout="stack"
+            (pageChange)="onTableChange($event)"
+          >
+            <ng-template dataTableCell="transaction" let-row>
+              <div class="min-w-[12rem]">
+                <div class="flex flex-wrap items-center gap-2">
+                  @if (row.split_id) {
+                    <a
+                      [routerLink]="['/splits', row.split_id]"
+                      class="text-sm font-medium text-[var(--color-text)] hover:underline"
+                    >
+                      {{ t('bank.withdraw.split', { id: row.split_id }) }}
+                    </a>
+                  } @else {
+                    <span class="text-sm font-medium text-[var(--color-text)]">
+                      {{ transactionTypeLabel(row) }} #{{ row.id }}
+                    </span>
+                  }
+                  @if (toNumber(row.amount) < 0) {
+                    <span class="chip chip--neutral">{{ t('bank.type.clawback') }}</span>
+                  }
+                </div>
+                <div class="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                  {{ row.from_label || t('bank.label.guildBank') }} &rarr;
+                  {{ row.to_label || row.to_username || t('bank.label.member') }}
+                </div>
+              </div>
+            </ng-template>
 
-        <ng-template dataTableCell="type" let-row>
-          <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)] whitespace-nowrap">
-            <app-icon
-              [name]="row.type === 'split_credit' || row.type === 'split' ? 'swords' : row.type === 'split_donation' ? 'bank' : 'coins'"
-              size="0.875rem"
-              class="text-[var(--color-text-tertiary)] shrink-0"
-            />
-            <span>{{ transactionTypeLabel(row) }}</span>
-          </div>
-        </ng-template>
+            <ng-template dataTableCell="guild" let-row>
+              <span class="text-sm text-[var(--color-text)]">{{ row.guild_name || '—' }}</span>
+            </ng-template>
 
-        <ng-template dataTableCell="status" let-row>
-          <app-status-chip
-            [value]="row.status"
-            [label]="statusLabel(row.status)"
-            [icon]="statusIcon(row.status)"
-          />
-        </ng-template>
+            <ng-template dataTableCell="created_at" let-row>
+              <div class="whitespace-nowrap">
+                <div class="text-sm text-[var(--color-text)]">{{ formatDateDay(row.created_at) }}</div>
+                <div class="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                  {{ formatDateTime(row.created_at) }}
+                </div>
+              </div>
+            </ng-template>
 
-        <ng-template dataTableCell="amount" let-row>
-          <div class="whitespace-nowrap text-right">
-            <span
-              class="font-mono text-sm font-semibold"
-              [class.text-success]="toNumber(row.amount) > 0 && (row.status === 'withdrawn' || row.status === 'pending')"
-              [class.text-warning]="toNumber(row.amount) > 0 && row.status === 'requested'"
-              [class.text-error]="toNumber(row.amount) < 0 || row.status === 'rejected'"
-            >
-              {{ formatAmount(row.amount) }}
-            </span>
-            <span class="text-xs font-mono text-[var(--color-text-tertiary)] uppercase ml-1">silver</span>
-          </div>
-        </ng-template>
+            <ng-template dataTableCell="status" let-row>
+              <app-status-chip
+                [value]="row.status"
+                [label]="statusLabel(row.status)"
+                [icon]="statusIcon(row.status)"
+              />
+            </ng-template>
 
-        <ng-template dataTableCell="actions" let-row>
-          <div class="inline-flex items-center justify-end gap-1.5 whitespace-nowrap text-right">
-            @if (row.split_id) {
-              <a
-                [routerLink]="['/splits', row.split_id]"
-                class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] border border-[var(--color-border)] rounded-md transition-all no-underline"
-              >
-                Split #{{ row.split_id }}
-              </a>
-            }
-          </div>
-        </ng-template>
-      </app-data-table>
+            <ng-template dataTableCell="amount" let-row>
+              <span
+                class="num text-sm font-semibold"
+                [class.text-success]="toNumber(row.amount) > 0 && (row.status === 'withdrawn' || row.status === 'pending')"
+                [class.text-warning]="toNumber(row.amount) > 0 && row.status === 'requested'"
+                [class.text-error]="toNumber(row.amount) < 0 || row.status === 'rejected'"
+              >{{ formatAmount(row.amount) }}</span>
+              <span class="hint ml-1">{{ t('bank.unit.silver') }}</span>
+            </ng-template>
+          </app-data-table>
+        </div>
+      } @else {
+        <app-data-table
+          [ariaLabel]="t('bank.alliance.breakdown')"
+          [columns]="balanceColumns()"
+          [rows]="guildRows()"
+          [trackBy]="trackGuild"
+          [hideSearch]="true"
+          [hidePageSize]="true"
+          [emptyLabel]="'bank.balances.empty'"
+          emptyIcon="bank"
+        >
+          <ng-template dataTableCell="pending" let-row>
+            <span class="num text-sm font-semibold text-[var(--color-text)]">{{ formatAmount(row.pending_total) }}</span>
+            <span class="hint ml-1">{{ t('bank.unit.silver') }}</span>
+            <div class="hint">{{ t('bank.creditsAvailable', { count: row.pending_count }) }}</div>
+          </ng-template>
+
+          <ng-template dataTableCell="requested" let-row>
+            <span class="num text-sm font-semibold text-[var(--color-text)]">{{ formatAmount(row.requested_total) }}</span>
+            <span class="hint ml-1">{{ t('bank.unit.silver') }}</span>
+            <div class="hint">{{ t('bank.withdrawalsInReview', { count: row.requested_count }) }}</div>
+          </ng-template>
+
+          <ng-template dataTableFooterCell="pending">
+            <span class="num font-semibold">{{ formatAmount(balanceTotals().pending) }}</span>
+          </ng-template>
+
+          <ng-template dataTableFooterCell="requested">
+            <span class="num font-semibold">{{ formatAmount(balanceTotals().requested) }}</span>
+          </ng-template>
+        </app-data-table>
+      }
     </app-page-stack>
 
     @if (confirmWithdrawalOpen()) {
@@ -360,55 +275,42 @@ export interface WithdrawalSelectableGroup {
         size="md"
         (closed)="confirmWithdrawalOpen.set(false)"
       >
-        <div class="space-y-3">
+        <div class="space-y-4">
           @if (isAlliance() && pendingGuilds().length > 1) {
-            <label class="block space-y-1.5">
-              <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
-                {{ t('bank.withdraw.chooseGuild') }}
-              </span>
-              <select
-                class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+            <div class="space-y-1.5">
+              <span id="withdrawal-guild-label" class="label">{{ t('bank.withdraw.chooseGuild') }}</span>
+              <app-select
+                ariaLabelledBy="withdrawal-guild-label"
                 [value]="withdrawGuildId()"
-                (change)="onWithdrawGuildChange($event)"
-              >
-                @for (guild of pendingGuilds(); track guild.guild_tenant_id) {
-                  <option [value]="guild.guild_tenant_id">
-                    {{ guild.guild_name }} — {{ formatAmount(guild.pending_total) }}
-                  </option>
-                }
-              </select>
-            </label>
+                [options]="guildOptions()"
+                (valueChange)="onWithdrawGuildChange($event)"
+              />
+            </div>
           }
 
           <!-- Net balance available for selected guild -->
-          <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3 flex items-center justify-between gap-4">
+          <div class="flex items-center justify-between gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3">
             <div>
-              <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
-                {{ t('bank.withdraw.netAvailable') }}
-              </span>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+              <span class="label">{{ t('bank.withdraw.netAvailable') }}</span>
+              <p class="hint">
                 {{ t('bank.creditsAvailable', { count: groupedRequestableCredits().length || withdrawalAvailableCount() }) }}
               </p>
             </div>
             <div class="text-right">
-              <span class="font-mono text-2xl font-bold text-success">
+              <span class="num text-2xl font-bold text-success">
                 {{ formatAmount(withdrawalAvailableBalance()) }}
               </span>
-              <span class="block text-xs font-mono text-[var(--color-text-secondary)] uppercase">
-                silver
-              </span>
+              <span class="hint block">{{ t('bank.unit.silver') }}</span>
             </div>
           </div>
 
           <fieldset class="space-y-2">
             <div class="flex items-center justify-between gap-2">
-              <legend class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
-                {{ t('bank.withdraw.selectCredits') }}
-              </legend>
+              <legend class="label">{{ t('bank.withdraw.selectCredits') }}</legend>
               @if (groupedRequestableCredits().length > 0) {
                 <button
                   type="button"
-                  class="btn btn--outline btn--sm text-xs py-1 px-2.5"
+                  class="btn btn--outline btn--sm"
                   [disabled]="withdrawing() || loadingRequestableCredits()"
                   (click)="toggleSelectAllWithdrawalCredits()"
                 >
@@ -417,23 +319,18 @@ export interface WithdrawalSelectableGroup {
                 </button>
               }
             </div>
-            <p id="withdrawal-selection-hint" class="text-xs text-[var(--color-text-secondary)]">
+            <p id="withdrawal-selection-hint" class="hint">
               {{ t('bank.withdraw.selectionHint') }}
             </p>
 
             @if (loadingRequestableCredits()) {
-              <p role="status" aria-live="polite" class="py-3 text-sm text-[var(--color-text-secondary)]">
-                {{ t('common.loading') }}
-              </p>
+              <app-loading variant="lines" [rows]="3" [label]="t('common.loading')" />
             } @else if (requestableCreditsLoadFailed()) {
-              <div role="alert" class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] p-3">
-                <span class="text-sm text-[var(--color-text-secondary)]">
-                  {{ t('bank.withdraw.creditsLoadFailed') }}
-                </span>
-                <button type="button" class="btn btn--ghost btn--sm" (click)="retryRequestableCredits()">
-                  {{ t('common.retry') }}
-                </button>
-              </div>
+              <app-error-state
+                [message]="t('bank.withdraw.creditsLoadFailed')"
+                [retryLabel]="t('common.retry')"
+                (retry)="retryRequestableCredits()"
+              />
             } @else if (groupedRequestableCredits().length === 0) {
               <p class="py-3 text-sm text-[var(--color-text-secondary)]">
                 {{ t('bank.withdraw.noCredits') }}
@@ -471,7 +368,7 @@ export interface WithdrawalSelectableGroup {
                           <span>{{ t('bank.withdraw.credit', { id: group.primaryId }) }}</span>
                         }
                         @if (group.transactionIds.length > 1) {
-                          <span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-secondary)]">
+                          <span class="chip chip--neutral">
                             {{ t('bank.withdraw.consolidatedHint', { count: group.transactionIds.length }) }}
                           </span>
                         }
@@ -487,12 +384,10 @@ export interface WithdrawalSelectableGroup {
                       </span>
                     </span>
                     <span class="whitespace-nowrap text-right">
-                      <span class="block font-mono text-sm font-bold text-success">
+                      <span class="num block text-sm font-bold text-success">
                         +{{ formatAmount(group.amount) }}
                       </span>
-                      <span class="block text-xs font-mono uppercase text-[var(--color-text-tertiary)]">
-                        silver
-                      </span>
+                      <span class="hint block">{{ t('bank.unit.silver') }}</span>
                     </span>
                   </label>
                 }
@@ -507,20 +402,20 @@ export interface WithdrawalSelectableGroup {
           >
             <span class="text-sm font-medium text-[var(--color-text)]">
               {{ t('bank.withdraw.selectedTotal') }}
-              <span class="text-xs text-[var(--color-text-secondary)] ml-1">
+              <span class="ml-1 text-xs text-[var(--color-text-secondary)]">
                 ({{ t('bank.withdraw.selectedCount', { count: selectedGroupCount() }) }})
               </span>
             </span>
-            <span class="whitespace-nowrap font-mono text-base font-bold text-success">
-              {{ formatAmount(withdrawalSelectionTotal()) }} silver
+            <span class="num whitespace-nowrap text-base font-bold text-success">
+              {{ formatAmount(withdrawalSelectionTotal()) }} {{ t('bank.unit.silver') }}
             </span>
           </div>
 
           <!-- Info Card -->
-          <div class="p-3.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-start gap-3">
-            <app-icon name="info" size="1.125rem" class="text-warning flex-shrink-0 mt-0.5" />
-            <div class="text-xs text-[var(--color-text-secondary)] space-y-1">
-              <p class="text-[var(--color-text)] font-medium">
+          <div class="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5">
+            <app-icon name="info" size="1.125rem" class="mt-0.5 shrink-0 text-warning" />
+            <div class="space-y-1 text-xs text-[var(--color-text-secondary)]">
+              <p class="font-medium text-[var(--color-text)]">
                 {{ t('bank.withdraw.requestConfirmBody') }}
               </p>
               <p>
@@ -557,29 +452,91 @@ export class Bank {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   protected readonly translate = inject(TranslateService);
 
   protected readonly balance = signal<BalanceSummary | null>(null);
+  protected readonly balanceFailed = signal(false);
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly transactionTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly transactionsLoadFailed = signal(false);
 
-  protected readonly totalWithdrawn = computed(() => {
-    return this.transactions()
-      .filter((t) => t.status === 'withdrawn' && Number(t.amount) > 0)
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  });
+  /** Movement filters. The table's own search box is hidden; these drive the server query. */
+  protected readonly search = signal('');
+  protected readonly status = signal<TransactionStatus | ''>('');
+  protected readonly statusOptions: readonly TransactionStatus[] = [
+    'pending',
+    'requested',
+    'withdrawn',
+    'rejected',
+    'donated',
+  ];
+  protected readonly activeFilterCount = computed(
+    () => (this.search().trim() ? 1 : 0) + (this.status() ? 1 : 0),
+  );
+
+  protected readonly section = signal<BankSection>('movements');
 
   protected readonly confirmWithdrawalOpen = signal(false);
   protected readonly withdrawing = signal(false);
 
   protected readonly isAlliance = computed(() => this.auth.profile()?.tenant_kind === 'alliance');
+  protected readonly activeSection = computed<BankSection>(() =>
+    this.isAlliance() ? this.section() : 'movements',
+  );
   protected readonly pendingGuilds = computed<GuildBalanceBreakdown[]>(() =>
     (this.balance()?.guilds ?? []).filter((guild) => Number(guild.pending_total) > 0),
   );
+  protected readonly guildRows = computed<readonly GuildBalanceBreakdown[]>(
+    () => this.balance()?.guilds ?? [],
+  );
+  protected readonly balanceTotals = computed(() =>
+    this.guildRows().reduce(
+      (totals, guild) => ({
+        pending: totals.pending + (Number(guild.pending_total) || 0),
+        requested: totals.requested + (Number(guild.requested_total) || 0),
+      }),
+      { pending: 0, requested: 0 },
+    ),
+  );
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    const balance = this.balance();
+    if (!balance) {
+      return [];
+    }
+    return [
+      {
+        label: this.t('bank.balance.available'),
+        value: `${this.formatAmount(balance.pending_total)} ${this.t('bank.unit.silver')}`,
+        hint: this.t('bank.creditsAvailable', { count: balance.pending_count }),
+      },
+      {
+        label: this.t('bank.balance.requested'),
+        value: `${this.formatAmount(balance.requested_total)} ${this.t('bank.unit.silver')}`,
+        hint: this.t('bank.withdrawalsInReview', { count: balance.requested_count }),
+        tone: balance.requested_count > 0 ? 'warning' : 'default',
+      },
+    ];
+  });
+  protected readonly sectionTabs = computed<TabOption[]>(() => [
+    { id: 'movements', label: this.t('bank.tabs.movements'), count: this.transactionTotal() },
+    { id: 'balances', label: this.t('bank.alliance.breakdown'), count: this.guildRows().length },
+  ]);
+  protected readonly menuItems = computed<MenuItem[]>(() => [
+    { id: 'refresh', label: this.t('common.refreshNow'), icon: 'sparkles' },
+    ...(this.canReviewRequests()
+      ? [{ id: 'review', label: this.t('bank.reviewRequests'), icon: 'bank' as IconName }]
+      : []),
+  ]);
   protected readonly withdrawGuildId = signal('');
+  protected readonly guildOptions = computed<SelectOption[]>(() =>
+    this.pendingGuilds().map((guild) => ({
+      value: guild.guild_tenant_id,
+      label: `${guild.guild_name} — ${this.formatAmount(guild.pending_total)}`,
+    })),
+  );
   protected readonly requestableCredits = signal<TransactionView[]>([]);
   protected readonly selectedWithdrawalIds = signal<number[]>([]);
   protected readonly loadingRequestableCredits = signal(false);
@@ -675,70 +632,79 @@ export class Bank {
   );
   protected readonly trackRow = (row: TransactionView): string =>
     `${row.guild_tenant_id ?? ''}:${row.id}`;
+  protected readonly trackGuild = (row: GuildBalanceBreakdown): string => row.guild_tenant_id;
   private requestableCreditsLoadSequence = 0;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly tableQuery = signal<DataTablePageChange>(
-    parseDataTableQuery(this.route.snapshot.queryParamMap, {
-      defaultPageSize: 10,
-      filterKeys: ['status'],
-    }),
+    parseDataTableQuery(this.route.snapshot.queryParamMap, { defaultPageSize: 10 }),
   );
 
   protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
     this.translate.dict();
     return [
-    {
-      key: 'transaction',
-      label: 'bank.transactions.title',
-      sortable: false,
-      accessor: (row) => row.id,
-    },
-    ...(this.isAlliance()
-      ? [
-          {
-            key: 'guild',
-            label: 'bank.guild',
-            sortable: true,
-            accessor: (row: TransactionView) => row.guild_name ?? '',
-          } satisfies DataTableColumn<TransactionView>,
-        ]
-      : []),
-    {
-      key: 'created_at',
-      label: 'common.date',
-      sortable: true,
-      accessor: (row) => row.created_at,
-    },
-    {
-      key: 'type',
-      label: 'common.type',
-      sortable: true,
-      accessor: (row) => row.type,
-    },
-    {
-      key: 'status',
-      label: 'common.status',
-      sortable: true,
-      accessor: (row) => row.status,
-      filterOptions: (['pending', 'requested', 'withdrawn', 'rejected', 'donated'] as const).map(
-        (status) => ({ value: status, label: this.statusLabel(status) }),
-      ),
-    },
-    {
-      key: 'amount',
-      label: 'common.amount',
-      sortable: true,
-      accessor: (row) => Number(row.amount) || 0,
-      align: 'right',
-    },
-    {
-      key: 'actions',
-      label: 'common.actions',
-      sortable: false,
-      accessor: (row) => row.id,
-      align: 'right',
-    },
-  ];
+      {
+        key: 'transaction',
+        label: 'bank.col.movement',
+        sortable: false,
+        accessor: (row) => row.id,
+      },
+      ...(this.isAlliance()
+        ? [
+            {
+              key: 'guild',
+              label: 'bank.guild',
+              sortable: true,
+              accessor: (row: TransactionView) => row.guild_name ?? '',
+            } satisfies DataTableColumn<TransactionView>,
+          ]
+        : []),
+      {
+        key: 'created_at',
+        label: 'common.date',
+        sortable: true,
+        accessor: (row) => row.created_at,
+      },
+      {
+        key: 'status',
+        label: 'common.status',
+        sortable: true,
+        accessor: (row) => row.status,
+      },
+      {
+        key: 'amount',
+        label: 'common.amount',
+        sortable: true,
+        accessor: (row) => Number(row.amount) || 0,
+        align: 'right',
+      },
+    ];
+  });
+
+  protected readonly balanceColumns = computed<DataTableColumn<GuildBalanceBreakdown>[]>(() => {
+    this.translate.dict();
+    return [
+      {
+        key: 'guild',
+        label: 'bank.guild',
+        sortable: false,
+        accessor: (row) => row.guild_name,
+      },
+      {
+        key: 'pending',
+        label: 'bank.balance.available',
+        sortable: false,
+        accessor: (row) => Number(row.pending_total) || 0,
+        align: 'right',
+      },
+      {
+        key: 'requested',
+        label: 'bank.balance.requested',
+        sortable: false,
+        accessor: (row) => Number(row.requested_total) || 0,
+        align: 'right',
+      },
+    ];
   });
 
   protected formatDateDay(dateStr: string | null | undefined): string {
@@ -761,6 +727,12 @@ export class Bank {
     this.translate.t(key, params);
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => {
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer);
+        this.searchTimer = null;
+      }
+    });
     void this.load();
   }
 
@@ -768,8 +740,45 @@ export class Bank {
     return this.auth.hasPermission('bank.withdraw.accept');
   }
 
-  protected onWithdrawGuildChange(event: Event): void {
-    const guildTenantId = (event.target as HTMLSelectElement).value;
+  protected onMenu(id: string): void {
+    if (id === 'refresh') {
+      void this.refreshNow();
+    } else if (id === 'review') {
+      void this.router.navigate(['/admin/withdrawals']);
+    }
+  }
+
+  protected onSectionChange(id: string): void {
+    this.section.set(id === 'balances' ? 'balances' : 'movements');
+  }
+
+  protected onSearch(value: string): void {
+    this.search.set(value);
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.applyFilters();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected onStatusChange(event: Event): void {
+    this.status.set((event.target as HTMLSelectElement).value as TransactionStatus | '');
+    this.applyFilters();
+  }
+
+  protected clearFilters(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.search.set('');
+    this.status.set('');
+    this.applyFilters();
+  }
+
+  protected onWithdrawGuildChange(guildTenantId: string): void {
     this.withdrawGuildId.set(guildTenantId);
     this.selectedWithdrawalIds.set([]);
     void this.loadRequestableCredits(guildTenantId);
@@ -966,12 +975,13 @@ export class Bank {
     await Promise.all([this.loadBalance(), this.loadTransactions()]);
   }
 
-  private async loadBalance(): Promise<void> {
+  protected async loadBalance(): Promise<void> {
+    this.balanceFailed.set(false);
     try {
       const data = await firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance'));
       this.balance.set(data);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.balanceFailed.set(true);
     }
   }
 
@@ -984,14 +994,15 @@ export class Bank {
         page: query.page,
         limit: query.pageSize,
       };
-      if (query.search.trim()) {
-        params['search'] = query.search.trim();
+      const search = this.search().trim();
+      if (search) {
+        params['search'] = search;
       }
       if (query.sort) {
         params['sort'] = query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
-      const status = query.columnFilters['status'] as TransactionStatus | undefined;
+      const status = this.status();
       if (status) {
         params['status'] = status;
       }
@@ -1000,28 +1011,27 @@ export class Bank {
       );
       this.transactions.set(data.items);
       this.transactionTotal.set(data.total_items);
-    } catch (error) {
+    } catch {
       this.transactionsLoadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
     }
   }
 
-  protected formatCompact(value: number | string | null | undefined): string {
-    const num = Number(value ?? 0);
-    if (!Number.isFinite(num) || num === 0) return '0';
-    const abs = Math.abs(num);
-    if (abs >= 1_000_000_000) {
-      return `${(num / 1_000_000_000).toFixed(2)}B`;
-    }
-    if (abs >= 1_000_000) {
-      return `${(num / 1_000_000).toFixed(2)}M`;
-    }
-    if (abs >= 1_000) {
-      return `${(num / 1_000).toFixed(1)}k`;
-    }
-    return num.toLocaleString(this.translate.locale());
+  /**
+   * Any filter change resets the table to page 1. The table's page lives in its own state (kept
+   * in sync with the URL), so the page is reset there too; the navigation may also make the table
+   * emit `pageChange`, which only re-fetches the same page.
+   */
+  private applyFilters(): void {
+    this.tableQuery.update((query) => ({ ...query, page: 1 }));
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { page: 1 },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    void this.loadTransactions();
   }
 
   private async mutate(
@@ -1044,30 +1054,6 @@ export class Bank {
     return new Intl.NumberFormat(lang, { maximumFractionDigits: 0 }).format(
       Number.isFinite(numeric) ? numeric : 0,
     );
-  }
-
-  protected formatDate(iso: string | null | undefined): string {
-    if (!iso) {
-      return '—';
-    }
-    return new Date(iso).toLocaleDateString(this.translate.locale());
-  }
-
-  protected statusChipClass(status: TransactionStatus): string {
-    switch (status) {
-      case 'pending':
-        return 'chip--info';
-      case 'requested':
-        return 'chip--warning';
-      case 'rejected':
-        return 'chip--error';
-      case 'withdrawn':
-        return 'chip--success';
-      case 'donated':
-        return 'chip--success';
-      default:
-        return '';
-    }
   }
 
   protected statusIcon(status: TransactionStatus): IconName {

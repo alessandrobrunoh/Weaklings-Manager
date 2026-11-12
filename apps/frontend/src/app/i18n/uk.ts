@@ -3509,4 +3509,16 @@ export const uk: TranslationDict = {
   'admin.withdrawals.transactionNo': 'Транзакція №{id}',
   'admin.withdrawals.paidToast': 'Виплату записано.',
   'admin.withdrawals.rejectedToast': 'Запит відхилено.',
+  // design/bank
+  'bank.tabs.label': 'Розділи банку',
+  'bank.tabs.movements': 'Рухи',
+  'bank.balance.available': 'Доступно',
+  'bank.search.label': 'Пошук рухів',
+  'bank.search.placeholder': 'Пошук транзакцій',
+  'bank.transactions.itemLabel': 'рухів',
+  'bank.balances.empty': 'Ще немає балансів за гільдіями.',
+  'bank.col.movement': 'Рух',
+  'bank.label.guildBank': 'Банк гільдії',
+  'bank.label.member': 'Учасник',
+  'bank.unit.silver': 'срібло',
 };

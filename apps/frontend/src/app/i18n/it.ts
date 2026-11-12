@@ -3704,4 +3704,16 @@ export const it: TranslationDict = {
   'admin.withdrawals.transactionNo': 'Transazione #{id}',
   'admin.withdrawals.paidToast': 'Pagamento registrato.',
   'admin.withdrawals.rejectedToast': 'Richiesta rifiutata.',
+  // design/bank
+  'bank.tabs.label': 'Sezioni della banca',
+  'bank.tabs.movements': 'Movimenti',
+  'bank.balance.available': 'Disponibile',
+  'bank.search.label': 'Cerca movimenti',
+  'bank.search.placeholder': 'Cerca transazioni',
+  'bank.transactions.itemLabel': 'movimenti',
+  'bank.balances.empty': 'Nessun saldo per gilda ancora.',
+  'bank.col.movement': 'Movimento',
+  'bank.label.guildBank': 'Banca di gilda',
+  'bank.label.member': 'Membro',
+  'bank.unit.silver': 'argento',
 };

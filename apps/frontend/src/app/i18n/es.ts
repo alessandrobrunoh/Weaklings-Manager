@@ -3695,4 +3695,16 @@ export const es: TranslationDict = {
   'admin.withdrawals.transactionNo': 'Transacción #{id}',
   'admin.withdrawals.paidToast': 'Pago registrado.',
   'admin.withdrawals.rejectedToast': 'Solicitud rechazada.',
+  // design/bank
+  'bank.tabs.label': 'Secciones del banco',
+  'bank.tabs.movements': 'Movimientos',
+  'bank.balance.available': 'Disponible',
+  'bank.search.label': 'Buscar movimientos',
+  'bank.search.placeholder': 'Buscar transacciones',
+  'bank.transactions.itemLabel': 'movimientos',
+  'bank.balances.empty': 'Aún no hay saldos por gremio.',
+  'bank.col.movement': 'Movimiento',
+  'bank.label.guildBank': 'Banco del gremio',
+  'bank.label.member': 'Miembro',
+  'bank.unit.silver': 'plata',
 };

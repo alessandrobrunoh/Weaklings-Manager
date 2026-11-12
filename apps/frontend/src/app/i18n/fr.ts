@@ -3513,4 +3513,16 @@ export const fr: TranslationDict = {
   'admin.withdrawals.transactionNo': 'Transaction n° {id}',
   'admin.withdrawals.paidToast': 'Paiement enregistré.',
   'admin.withdrawals.rejectedToast': 'Demande refusée.',
+  // design/bank
+  'bank.tabs.label': 'Sections de la banque',
+  'bank.tabs.movements': 'Mouvements',
+  'bank.balance.available': 'Disponible',
+  'bank.search.label': 'Rechercher des mouvements',
+  'bank.search.placeholder': 'Rechercher des transactions',
+  'bank.transactions.itemLabel': 'mouvements',
+  'bank.balances.empty': 'Aucun solde par guilde pour le moment.',
+  'bank.col.movement': 'Mouvement',
+  'bank.label.guildBank': 'Banque de guilde',
+  'bank.label.member': 'Membre',
+  'bank.unit.silver': 'argent',
 };

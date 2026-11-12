@@ -3692,6 +3692,18 @@ export const en = {
   'admin.withdrawals.transactionNo': 'Transaction #{id}',
   'admin.withdrawals.paidToast': 'Payout recorded.',
   'admin.withdrawals.rejectedToast': 'Request rejected.',
+  // design/bank
+  'bank.tabs.label': 'Bank sections',
+  'bank.tabs.movements': 'Movements',
+  'bank.balance.available': 'Available',
+  'bank.search.label': 'Search movements',
+  'bank.search.placeholder': 'Search transactions',
+  'bank.transactions.itemLabel': 'movements',
+  'bank.balances.empty': 'No guild balances yet.',
+  'bank.col.movement': 'Movement',
+  'bank.label.guildBank': 'Guild Bank',
+  'bank.label.member': 'Member',
+  'bank.unit.silver': 'silver',
 } as const;
 
 export type TranslationKey = keyof typeof en;
