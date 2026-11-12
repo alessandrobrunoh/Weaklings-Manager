@@ -11,6 +11,8 @@ This directory contains the battle list, battle detail analytics, multi-battle g
 - The summary band shows figures for the rows on the page. The guild tab shows K/D or win rate and the largest fight; the personal tab shows deaths and players. Guild fights do not expose deaths yet, so the deaths column is personal only.
 - The table is in server mode with no cell accessors or comparators, so the client never filters the server's page again. Outcome uses `app-status-chip` with a tone override: victory is success, defeat is error, draw and unknown are neutral.
 - Detail types include tab/filter/role unions and enriched player/guild rows. The group page derives totals and K/D from loaded battles.
+- Battle detail has four tabs (overview, players, guilds, kills). Its header is `app-entity-header` with a summary band of six figures and an overflow menu (copy link, open on Albion Battles). Players, alliances, guilds and the kill feed are `app-data-table`; the kill feed filters with `app-tabs` (segmented) and `app-filter-bar`, and a kill's gear opens in a dialog.
+- Detail types include tab/filter/role unions and enriched player/guild rows. The group page derives totals and K/D from loaded battles; it uses a page header with a back link, one summary band, and a guild table.
 - `battle-outcome.ts` defines the displayed outcome vocabulary and translation lookup.
 
 ## Invariants
@@ -21,7 +23,7 @@ This directory contains the battle list, battle detail analytics, multi-battle g
 
 ## Side Effects
 
-Templates expose refresh, tab, navigation, copy-link, and scout actions. Handler effects for the larger pages were outside the inspected ranges; the outcome helper performs a translation-key lookup.
+Templates expose refresh, tab, navigation, copy-link, and scout actions. Clicking a timeline minute filters the kill feed to that minute and opens the kills tab. Handler effects for the larger pages were outside the inspected ranges; the outcome helper performs a translation-key lookup.
 
 ## Verification
 
