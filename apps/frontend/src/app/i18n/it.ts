@@ -2825,12 +2825,7 @@ export const it: TranslationDict = {
 
   'addServer.title': 'Aggiungi un server',
   'addServer.railTooltip': 'Aggiungi un server',
-  'addServer.eyebrow': 'Primi passi',
-  'addServer.heroTitle': 'Gestisci la gilda da Discord',
-  'addServer.heroBody':
-    'Weaklings Manager si collega a qualsiasi server Discord: invita il bot, registra il server e la tua gilda ottiene eventi, comps, battaglie, banca e split — tutto limitato a quel server.',
   'addServer.inviteCta': 'Invita il bot',
-  'addServer.stepsCta': 'Vedi i passaggi',
   'addServer.inviteUnavailable': 'Il link di invito non è disponibile ora. Riprova tra poco.',
   'addServer.stepsTitle': 'Passaggi di configurazione',
   'addServer.requirements.title': 'Prima di iniziare',
@@ -3929,4 +3924,12 @@ export const it: TranslationDict = {
   'users.searchPlaceholder': 'Cerca per nome',
   'users.summaryLabel': 'Riepilogo membri',
   'users.rowActions': 'Azioni per {name}',
+  // design/onboarding
+  'addServer.intro': 'Collega un server Discord a Weaklings Manager. Ogni server mantiene i propri dati di gilda e nulla passa da un server all’altro.',
+  'addServer.progress': 'Passo {current} di {total}',
+  'addServer.progressLabel': 'Avanzamento configurazione',
+  'addServer.stepAria': 'Vai al passo {n}: {title}',
+  'addServer.back': 'Indietro',
+  'addServer.finish': 'Apri la dashboard',
+  'addServer.guildsError': 'Impossibile caricare i tuoi server Discord.',
 };

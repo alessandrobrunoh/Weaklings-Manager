@@ -2814,12 +2814,7 @@ export const en = {
   // Add-a-server onboarding guide (the `+` orb in the server rail)
   'addServer.title': 'Add a server',
   'addServer.railTooltip': 'Add a server',
-  'addServer.eyebrow': 'Onboarding',
-  'addServer.heroTitle': 'Run your guild from Discord',
-  'addServer.heroBody':
-    'Weaklings Manager plugs into any Discord server: invite the bot, register the server, and your guild gets events, comps, battles, bank and splits — all scoped to that server alone.',
   'addServer.inviteCta': 'Invite the bot',
-  'addServer.stepsCta': 'See the steps',
   'addServer.inviteUnavailable': 'The invite link is unavailable right now. Try again in a moment.',
   'addServer.stepsTitle': 'Setup steps',
   'addServer.requirements.title': 'Before you start',
@@ -3917,6 +3912,14 @@ export const en = {
   'users.searchPlaceholder': 'Search by name',
   'users.summaryLabel': 'Members summary',
   'users.rowActions': 'Actions for {name}',
+  // design/onboarding
+  'addServer.intro': 'Connect a Discord server to Weaklings Manager. Each server keeps its own guild data, and nothing crosses over.',
+  'addServer.progress': 'Step {current} of {total}',
+  'addServer.progressLabel': 'Setup progress',
+  'addServer.stepAria': 'Go to step {n}: {title}',
+  'addServer.back': 'Back',
+  'addServer.finish': 'Open the dashboard',
+  'addServer.guildsError': 'Could not load your Discord servers.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
