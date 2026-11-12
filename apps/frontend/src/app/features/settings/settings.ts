@@ -1,5 +1,12 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -25,7 +32,6 @@ import { ThemeService, type ThemePreference } from '../../core/services/theme.se
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { Avatar } from '../../shared/components/avatar/avatar';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { WeaponRoster } from '../../shared/components/weapon-roster/weapon-roster';
@@ -35,12 +41,16 @@ import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { SearchableSelect, type SearchableSelectOption } from '../../shared/components/searchable-select/searchable-select';
+import { Select, type SelectOption } from '../../shared/components/select/select';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { Stat, SummaryBand } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
-type ProfileTab = 'overview' | 'weapons' | 'ledgers' | 'battles' | 'preferences';
+type ProfileTab = 'overview' | 'weapons' | 'ledgers' | 'battles' | 'settings';
+
+/** Debounce for the Albion player lookup while the officer types. */
+const PLAYER_SEARCH_DELAY_MS = 300;
 
 function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   return {
@@ -52,20 +62,61 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   };
 }
 
-
 /**
- * Unified Personal Profile & Preferences Workspace.
+ * Personal profile and settings workspace.
  *
- * Integrates account identity, season XP progression, attendance and combat metrics,
- * personal bank and siphoned energy ledgers, fight records, Albion character link,
- * and user preferences (theme & language).
+ * Overview shows season progression and activity; Weapons, Ledger and Battles hold the member's
+ * records. Settings groups the account details (read only), the Albion character link, and the
+ * device preferences (theme and language), each with its own heading and a note on where it is
+ * saved.
  */
 @Component({
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
+  styles: [
+    COMPACT_FEATURE_STYLES,
+    `
+      .settings-stack {
+        display: grid;
+        gap: 1rem;
+        max-width: 48rem;
+      }
+      .settings-list {
+        display: grid;
+        gap: 0.5rem 1rem;
+        margin: 0;
+      }
+      .settings-list__row {
+        display: grid;
+        gap: 0.125rem;
+      }
+      .settings-list__row dt {
+        font-size: var(--ui-text-xs);
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .settings-list__row dd {
+        margin: 0;
+        font-size: var(--ui-text-sm);
+        color: var(--color-text);
+        overflow-wrap: anywhere;
+      }
+      @media (min-width: 40rem) {
+        .settings-list__row {
+          grid-template-columns: 10rem 1fr;
+          align-items: baseline;
+        }
+      }
+      .settings-field {
+        display: grid;
+        gap: 0.375rem;
+      }
+      .settings-select {
+        max-width: 16rem;
+      }
+    `,
+  ],
   imports: [
-    Avatar,
     DecimalPipe,
     DataTable,
     DataTableCell,
@@ -77,21 +128,16 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
     PageHeader,
     PageStack,
     RouterLink,
-    StatCard,
+    SearchableSelect,
+    Select,
     StatusChip,
-    TooltipDirective,
+    Stat,
+    SummaryBand,
     Tabs,
   ],
   template: `
     <app-page-header [title]="t('nav.profile')" [subtitle]="t('profile.subtitle')">
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="load()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
+      <button type="button" class="btn btn--outline btn--sm" [disabled]="loading()" (click)="load()">
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('common.refreshNow') }}
       </button>
@@ -105,9 +151,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
     </app-page-header>
 
     @if (loading()) {
-      <div class="p-12 flex justify-center">
-        <app-loading [label]="t('common.loading')" />
-      </div>
+      <app-loading variant="detail" [label]="t('common.loading')" />
     } @else if (loadFailed()) {
       <app-error-state
         [message]="t('common.error')"
@@ -116,136 +160,53 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       />
     } @else {
       <app-page-stack>
-        <!-- Profile Identity & Hero Card -->
-        <section class="card p-6">
-          <div class="flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center gap-4">
-              <app-avatar
-                [userId]="profile()?.id"
-                [avatar]="profile()?.avatar"
-                [username]="profile()?.username ?? 'U'"
-                size="lg"
-                shape="rounded"
-              />
-              <div>
-                <div class="flex items-center gap-2">
-                  <h1 class="text-xl font-bold tracking-tight" style="color: var(--color-text)">
-                    {{ profile()?.username }}
-                  </h1>
-                  <span class="chip" [class]="roleChip(profile()?.highest_role)">
-                    {{ profile()?.highest_role || 'User' }}
-                  </span>
-                </div>
-                <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">
-                  {{ profile()?.email || t('common.noEmail') }} · ID #{{ profile()?.id }}
-                </p>
-              </div>
-            </div>
-
-            <!-- Albion Character Link Capsule -->
-            <div
-              class="flex items-center gap-3 rounded-xl p-3 border"
-              style="background: var(--color-surface-2); border-color: var(--color-border)"
-            >
-              <div class="flex items-center gap-2">
-                <span
-                  class="h-2.5 w-2.5 rounded-full"
-                  [style.background]="albionLink()?.linked ? 'var(--color-success)' : 'var(--color-warning)'"
-                ></span>
-                <div>
-                  <p class="text-xs uppercase tracking-wider font-semibold" style="color: var(--color-text-secondary)">
-                    {{ t('albion.title') }}
-                  </p>
-                  <p class="text-sm font-semibold mono" style="color: var(--color-text)">
-                    {{ albionLinkLabel() }}
-                  </p>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-1.5 ml-2">
-                @if (albionLink()?.linked) {
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm text-xs py-1 px-2.5"
-                    (click)="unlinkConfirmOpen.set(true)"
-                    [appTooltip]="t('settings.albion.unlinkTooltip')"
-                    tooltipPosition="top"
-                  >
-                    {{ t('albion.unlink') }}
-                  </button>
-                } @else {
-                  <button
-                    type="button"
-                    class="btn btn--primary btn--sm text-xs py-1 px-2.5 flex items-center gap-1"
-                    (click)="openLinkDialog()"
-                    [appTooltip]="t('settings.albion.linkTooltip')"
-                    tooltipPosition="top"
-                  >
-                    <app-icon name="plus" size="0.75rem" />
-                    {{ t('dashboard.attention.link_albion_action') }}
-                  </button>
-                }
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB: MY WEAPONS -->
+        <!-- MY WEAPONS -->
         @if (activeTab() === 'weapons') {
           <app-weapon-roster mode="self" />
         }
 
-        <!-- TAB 1: OVERVIEW & PROGRESSION -->
+        <!-- OVERVIEW: season progression and activity -->
         @if (activeTab() === 'overview') {
-          <!-- Season Progression Card -->
           @if (progression(); as xp) {
-            <article class="card p-6">
-              <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <section class="card p-5" aria-labelledby="profile-xp-title">
+              <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <span class="text-xs uppercase tracking-wider font-semibold" style="color: var(--color-text-secondary)">
-                    {{ t('profile.xp.title') }}
-                  </span>
-                  <h2 class="text-lg font-bold" style="color: var(--color-text)">
-                    {{ xp.season?.name || t('profile.xp.noSeason') }}
-                  </h2>
+                  <h2 class="section-title" id="profile-xp-title">{{ t('profile.xp.title') }}</h2>
+                  <p class="hint mt-1">{{ xp.season?.name || t('profile.xp.noSeason') }}</p>
                 </div>
                 @if (showMultiplier(xp.multiplier)) {
-                  <span class="chip chip--warning font-mono">
+                  <span class="chip chip--warning num">
                     {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
                   </span>
                 }
               </div>
 
-              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-4">
-                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.level') }}</p>
-                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-text)">{{ xp.level }}</p>
-                </div>
-                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.xp') }}</p>
-                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-primary)">{{ formatAmount(xp.xp) }}</p>
-                </div>
-                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.rank') }}</p>
-                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-success)">
-                    {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
-                  </p>
-                </div>
-                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.lifetime') }}</p>
-                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-text)">{{ formatAmount(xp.lifetime_xp) }}</p>
-                </div>
-              </div>
+              <app-summary-band [ariaLabel]="t('profile.xp.title')">
+                <app-stat [label]="t('profile.xp.level')" [value]="xp.level" />
+                <app-stat [label]="t('profile.xp.xp')" [value]="formatAmount(xp.xp)" />
+                <app-stat
+                  [label]="t('profile.xp.rank')"
+                  [value]="xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked')"
+                />
+                <app-stat [label]="t('profile.xp.lifetime')" [value]="formatAmount(xp.lifetime_xp)" />
+              </app-summary-band>
 
-              <!-- XP Progress Bar -->
-              <div>
-                <div class="flex items-center justify-between text-xs mb-1.5" style="color: var(--color-text-secondary)">
-                  <span>{{ t('profile.xp.toNext') }}</span>
-                  <span class="mono font-semibold" style="color: var(--color-text)">
+              <div class="mt-4">
+                <div class="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                  <span class="hint">{{ t('profile.xp.toNext') }}</span>
+                  <span class="num font-semibold" style="color: var(--color-text)">
                     {{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}
                   </span>
                 </div>
-                <div class="h-2 rounded-full overflow-hidden" style="background: var(--color-surface-2)">
+                <div
+                  class="h-2 overflow-hidden rounded-full"
+                  style="background: var(--color-surface-2)"
+                  role="progressbar"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-valuenow]="progressionBarPercent(xp)"
+                  [attr.aria-label]="t('profile.xp.toNext')"
+                >
                   <div
                     class="h-full rounded-full transition-all duration-300"
                     style="background: var(--color-primary)"
@@ -253,145 +214,144 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                   ></div>
                 </div>
               </div>
-            </article>
+            </section>
           }
 
-          <!-- Activity, Regear & Loot Split Cards -->
           <section class="grid gap-4 md:grid-cols-3">
             <!-- Attendance -->
-            <article class="card p-5">
-              <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
+            <section class="card p-5" aria-labelledby="profile-attendance-title">
+              <h2 class="section-title section-title--sm mb-3" id="profile-attendance-title">
                 {{ t('settings.presence.title') }}
               </h2>
               @if (userMetrics(); as m) {
-                <div class="flex items-baseline justify-between mb-2">
-                  <span class="text-2xl font-bold mono" style="color: var(--color-text)">
+                <div class="mb-2 flex items-baseline justify-between gap-2">
+                  <span class="num text-2xl font-semibold" style="color: var(--color-text)">
                     {{ m.attendance_rate | number: '1.0-0' }}%
                   </span>
-                  <span class="text-xs" style="color: var(--color-text-secondary)">
+                  <span class="hint">
                     {{ t('settings.presence.eventsCount', { attended: m.events_attended, total: m.events_total }) }}
                   </span>
                 </div>
-                <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
+                <div
+                  class="mb-3 h-1.5 overflow-hidden rounded-full"
+                  style="background: var(--color-surface-2)"
+                  role="progressbar"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-valuenow]="clampPercent(m.attendance_rate)"
+                  [attr.aria-label]="t('settings.presence.title')"
+                >
                   <div
                     class="h-full rounded-full"
                     style="background: var(--color-primary)"
                     [style.width.%]="clampPercent(m.attendance_rate)"
                   ></div>
                 </div>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  @if (m.attendance_streak > 0) {
-                    {{ t('settings.presence.streak', { count: m.attendance_streak }) }}
-                  }
-                </p>
+                @if (m.attendance_streak > 0) {
+                  <p class="hint">{{ t('settings.presence.streak', { count: m.attendance_streak }) }}</p>
+                }
                 @if (m.next_event_title) {
                   <p class="mt-2 text-xs" style="color: var(--color-primary)">
                     {{ t('settings.presence.next', { title: m.next_event_title }) }}
                   </p>
                 }
               }
-            </article>
+            </section>
 
             <!-- Regear -->
-            <article class="card p-5">
-              <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
+            <section class="card p-5" aria-labelledby="profile-regear-title">
+              <h2 class="section-title section-title--sm mb-3" id="profile-regear-title">
                 {{ t('regears.title') }}
               </h2>
               @if (userMetrics(); as m) {
-                <div class="flex items-baseline justify-between mb-1">
-                  <span class="text-2xl font-bold mono" style="color: var(--color-text)">
+                <div class="mb-1 flex items-baseline justify-between gap-2">
+                  <span class="num text-lg font-semibold" style="color: var(--color-text)">
                     {{ budget()?.weekly_balance ?? 0 }} / {{ budget()?.weekly_cap ?? 0 }}
                   </span>
-                  <span class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('regears.budget.weekly') }}
-                  </span>
+                  <span class="hint">{{ t('regears.budget.weekly') }}</span>
                 </div>
-                <div class="h-1.5 rounded-full overflow-hidden mb-2" style="background: var(--color-surface-2)">
+                <div
+                  class="mb-3 h-1.5 overflow-hidden rounded-full"
+                  style="background: var(--color-surface-2)"
+                  role="progressbar"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-valuenow]="regearWeeklyPercent()"
+                  [attr.aria-label]="t('regears.budget.weekly')"
+                >
                   <div
                     class="h-full rounded-full"
                     style="background: var(--color-warning)"
                     [style.width.%]="regearWeeklyPercent()"
                   ></div>
                 </div>
-                <div class="flex items-baseline justify-between mb-1">
-                  <span class="text-lg font-bold mono" style="color: var(--color-text)">
+                <div class="mb-1 flex items-baseline justify-between gap-2">
+                  <span class="num text-lg font-semibold" style="color: var(--color-text)">
                     {{ budget()?.bonus_balance ?? 0 }} / {{ budget()?.bonus_cap ?? 0 }}
                   </span>
-                  <span class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('regears.budget.bonus') }}
-                  </span>
+                  <span class="hint">{{ t('regears.budget.bonus') }}</span>
                 </div>
-                <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
+                <div
+                  class="mb-3 h-1.5 overflow-hidden rounded-full"
+                  style="background: var(--color-surface-2)"
+                  role="progressbar"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-valuenow]="regearBonusPercent()"
+                  [attr.aria-label]="t('regears.budget.bonus')"
+                >
                   <div
                     class="h-full rounded-full"
                     style="background: var(--color-success)"
                     [style.width.%]="regearBonusPercent()"
                   ></div>
                 </div>
-                <div class="grid grid-cols-2 gap-1 text-xs" style="color: var(--color-text-secondary)">
+                <div class="hint grid grid-cols-2 gap-1">
                   <span>{{ t('regears.status.approved') }}: <strong>{{ m.regears_approved }}</strong></span>
                   <span>{{ t('regears.status.pending') }}: <strong>{{ m.regears_pending }}</strong></span>
-                  <span class="col-span-2 mt-1">{{ t('regears.stat.totalReimbursed') }}: <strong style="color: var(--color-success)">{{ formatAmount(m.regear_silver) }}</strong></span>
+                  <span class="col-span-2 mt-1">
+                    {{ t('regears.stat.totalReimbursed') }}:
+                    <strong style="color: var(--color-success)">{{ formatAmount(m.regear_silver) }}</strong>
+                  </span>
                 </div>
               }
-            </article>
+            </section>
 
-            <!-- Loot Splits -->
-            <article class="card p-5">
-              <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
+            <!-- Loot splits -->
+            <section class="card p-5" aria-labelledby="profile-splits-title">
+              <h2 class="section-title section-title--sm mb-3" id="profile-splits-title">
                 {{ t('splits.title') }}
               </h2>
               @if (userMetrics(); as m) {
-                <div class="mb-2">
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('intel.splitEarnings') }}</p>
-                  <p class="text-2xl font-bold mono" style="color: var(--color-success)">
-                    {{ formatAmount(m.split_earnings) }}
-                  </p>
-                </div>
-                <div class="grid grid-cols-2 gap-1 text-xs mt-3 pt-3 border-t" style="border-color: var(--color-border); color: var(--color-text-secondary)">
+                <p class="hint">{{ t('intel.splitEarnings') }}</p>
+                <p class="num mb-3 text-2xl font-semibold" style="color: var(--color-success)">
+                  {{ formatAmount(m.split_earnings) }}
+                </p>
+                <div class="hint grid grid-cols-2 gap-1 border-t pt-3" style="border-color: var(--color-border)">
                   <span>{{ t('splits.participants') }}: <strong>{{ m.splits_joined }}</strong></span>
                   <span>{{ t('settings.splits.average') }}: <strong>{{ formatAmount(averageSplitShare()) }}</strong></span>
-                  <span class="col-span-2 mt-1">K/D: <strong>{{ m.kills }}K / {{ m.deaths }}D</strong> ({{ formatCompact(m.kill_fame) }} fame)</span>
+                  <span class="col-span-2 mt-1">
+                    K/D: <strong>{{ m.kills }}K / {{ m.deaths }}D</strong> ({{ formatCompact(m.kill_fame) }} fame)
+                  </span>
                 </div>
               }
-            </article>
+            </section>
           </section>
         }
 
-        <!-- TAB 2: LEDGERS & ECONOMY -->
+        <!-- LEDGER & BANK -->
         @if (activeTab() === 'ledgers') {
-          <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Economy snapshot">
-            <app-stat-card
-              [label]="t('bank.balance.pending')"
-              [value]="formatAmount(balance()?.pending_total ?? 0)"
-              icon="bank"
-              tone="primary"
-            />
-            <app-stat-card
-              [label]="t('bank.balance.requested')"
-              [value]="formatAmount(balance()?.requested_total ?? 0)"
-              icon="bank"
-              tone="warning"
-            />
-            <app-stat-card
-              [label]="t('bank.finance.paidOut')"
-              [value]="formatAmount(withdrawnTotal())"
-              icon="bank"
-              tone="success"
-            />
-            <app-stat-card
-              [label]="t('bank.finance.siphonedNet')"
-              [value]="formatAmount(siphonedBalance()?.net ?? 0)"
-              icon="activity"
-              tone="neutral"
-            />
-          </section>
+          <app-summary-band [ariaLabel]="t('settings.ledger.summary')">
+            <app-stat [label]="t('bank.balance.pending')" [value]="formatAmount(balance()?.pending_total ?? 0)" />
+            <app-stat [label]="t('bank.balance.requested')" [value]="formatAmount(balance()?.requested_total ?? 0)" />
+            <app-stat [label]="t('bank.finance.paidOut')" [value]="formatAmount(withdrawnTotal())" />
+            <app-stat [label]="t('bank.finance.siphonedNet')" [value]="formatAmount(siphonedBalance()?.net ?? 0)" />
+          </app-summary-band>
 
           <section class="grid gap-4 lg:grid-cols-2">
-            <!-- Bank Transactions Table -->
-            <div class="card p-0 overflow-hidden">
-              <div class="p-4 border-b" style="border-color: var(--color-border)">
-                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+            <section class="card overflow-hidden p-0" aria-labelledby="profile-transactions-title">
+              <div class="border-b p-4" style="border-color: var(--color-border)">
+                <h2 class="section-title section-title--sm" id="profile-transactions-title">
                   {{ t('bank.transactions.title') }}
                 </h2>
               </div>
@@ -405,22 +365,19 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                   <app-status-chip [value]="row.status" />
                 </ng-template>
                 <ng-template dataTableCell="amount" let-row>
-                  <span class="mono font-semibold" style="color: var(--color-success)">
+                  <span class="num font-semibold" style="color: var(--color-success)">
                     {{ formatAmount(row.amount) }}
                   </span>
                 </ng-template>
                 <ng-template dataTableCell="created_at" let-row>
-                  <span class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ formatDate(row.created_at) }}
-                  </span>
+                  <span class="hint">{{ formatDate(row.created_at) }}</span>
                 </ng-template>
               </app-data-table>
-            </div>
+            </section>
 
-            <!-- Siphoned Energy Table -->
-            <div class="card p-0 overflow-hidden">
-              <div class="p-4 border-b" style="border-color: var(--color-border)">
-                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+            <section class="card overflow-hidden p-0" aria-labelledby="profile-siphoned-title">
+              <div class="border-b p-4" style="border-color: var(--color-border)">
+                <h2 class="section-title section-title--sm" id="profile-siphoned-title">
                   {{ t('siphoned.title') }}
                 </h2>
               </div>
@@ -431,28 +388,26 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                 [pageSize]="10"
               >
                 <ng-template dataTableCell="amount" let-row>
-                  <span class="mono font-semibold" [style.color]="row.amount >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
+                  <span class="num font-semibold" [style.color]="row.amount >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
                     {{ formatAmount(row.amount) }}
                   </span>
                 </ng-template>
                 <ng-template dataTableCell="occurred_at" let-row>
-                  <span class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ formatDate(row.occurred_at) }}
-                  </span>
+                  <span class="hint">{{ formatDate(row.occurred_at) }}</span>
                 </ng-template>
               </app-data-table>
-            </div>
+            </section>
           </section>
         }
 
-        <!-- TAB 3: BATTLES & COMBAT -->
+        <!-- BATTLES -->
         @if (activeTab() === 'battles') {
-          <div class="card p-0 overflow-hidden">
-            <div class="p-4 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-              <h2 class="text-base font-semibold" style="color: var(--color-text)">
+          <section class="card overflow-hidden p-0" aria-labelledby="profile-battles-title">
+            <div class="flex items-center justify-between gap-2 border-b p-4" style="border-color: var(--color-border)">
+              <h2 class="section-title section-title--sm" id="profile-battles-title">
                 {{ t('profile.battles.title') }}
               </h2>
-              <span class="chip font-mono text-xs">{{ t('profile.battles.recorded', { count: battles().length }) }}</span>
+              <span class="chip num">{{ t('profile.battles.recorded', { count: battles().length }) }}</span>
             </div>
             <app-data-table
               [columns]="battleColumns"
@@ -463,155 +418,145 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
               <ng-template dataTableCell="battle_id" let-row>
                 <a
                   [routerLink]="['/battles', row.battle_id]"
-                  class="btn btn--tonal btn--sm text-xs py-1 px-2 mono"
-                  [appTooltip]="t('events.detail.open_battle') + ' #' + row.battle_id"
-                  tooltipPosition="top"
+                  class="btn btn--tonal btn--sm num px-2 py-1 text-xs"
                 >
                   #{{ row.battle_id }}
                 </a>
               </ng-template>
               <ng-template dataTableCell="start_time" let-row>
-                <span class="text-xs" style="color: var(--color-text-secondary)">
-                  {{ formatDate(row.start_time) }}
-                </span>
+                <span class="hint">{{ formatDate(row.start_time) }}</span>
               </ng-template>
               <ng-template dataTableCell="total_fame" let-row>
-                <span class="mono font-semibold" style="color: var(--color-warning)">
+                <span class="num font-semibold" style="color: var(--color-warning)">
                   {{ formatCompact(row.total_fame) }}
                 </span>
               </ng-template>
             </app-data-table>
-          </div>
+          </section>
         }
 
-        <!-- TAB 4: PREFERENCES & SETTINGS -->
-        @if (activeTab() === 'preferences') {
-          <section class="grid gap-6 md:grid-cols-2">
-            <!-- Theme Preference -->
-            <section class="card p-6">
-              <div class="flex items-center gap-2 mb-4">
-                <app-icon name="sparkles" size="1.25rem" style="color: var(--color-primary)" />
-                <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                  {{ t('settings.appearance') }}
-                </h2>
-              </div>
-              <div class="grid gap-3">
-                @for (option of themeOptions; track option.value) {
-                  <button
-                    type="button"
-                    class="flex items-center justify-between p-4 rounded-xl border text-left transition-all"
-                    [style.border-color]="theme.preference() === option.value ? 'var(--color-primary)' : 'var(--color-border)'"
-                    [style.background]="theme.preference() === option.value ? 'var(--color-primary-soft)' : 'var(--color-surface-1)'"
-                    (click)="onThemeChange(option.value)"
-                  >
-                    <div class="flex items-center gap-3">
-                      <span class="h-3 w-3 rounded-full border flex items-center justify-center"
-                        [style.border-color]="theme.preference() === option.value ? 'var(--color-primary)' : 'var(--color-border-strong)'"
-                        [style.background]="theme.preference() === option.value ? 'var(--color-primary)' : 'transparent'"
-                      ></span>
-                      <span class="font-medium text-sm" style="color: var(--color-text)">
-                        {{ t(option.labelKey) }}
-                      </span>
-                    </div>
+        <!-- SETTINGS -->
+        @if (activeTab() === 'settings') {
+          <div class="settings-stack">
+            <!-- Profile: read only -->
+            <section class="card p-5" aria-labelledby="settings-profile-title">
+              <h2 class="section-title section-title--sm" id="settings-profile-title">
+                {{ t('settings.profile.title') }}
+              </h2>
+              <p class="hint mt-1 mb-3">{{ t('settings.profile.hint') }}</p>
+              <dl class="settings-list">
+                <div class="settings-list__row">
+                  <dt>{{ t('common.username') }}</dt>
+                  <dd>{{ profile()?.username }}</dd>
+                </div>
+                <div class="settings-list__row">
+                  <dt>{{ t('common.email') }}</dt>
+                  <dd>{{ profile()?.email || t('common.noEmail') }}</dd>
+                </div>
+                <div class="settings-list__row">
+                  <dt>{{ t('common.role') }}</dt>
+                  <dd>
+                    <span [class]="roleChip(profile()?.highest_role)">
+                      {{ profile()?.highest_role || 'User' }}
+                    </span>
+                  </dd>
+                </div>
+                <div class="settings-list__row">
+                  <dt>{{ t('settings.profile.userId') }}</dt>
+                  <dd class="num">{{ profile()?.id }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <!-- Albion character -->
+            <section class="card p-5" aria-labelledby="settings-albion-title">
+              <h2 class="section-title section-title--sm" id="settings-albion-title">
+                {{ t('settings.albion.sectionTitle') }}
+              </h2>
+              <p class="hint mt-1 mb-3">{{ t('settings.albion.sectionHint') }}</p>
+
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  @if (albionLink()?.linked) {
+                    <app-status-chip value="linked" toneOverride="success" [label]="t('settings.albion.linked')" />
+                  } @else {
+                    <app-status-chip value="not_linked" toneOverride="warning" [label]="t('albion.not_linked')" />
+                  }
+                  <span class="num min-w-0 truncate font-semibold" style="color: var(--color-text)">
+                    {{ albionLinked() ? albionLinkLabel() : '' }}
+                  </span>
+                </div>
+
+                @if (albionLinked()) {
+                  <button type="button" class="btn btn--outline btn--sm" (click)="unlinkConfirmOpen.set(true)">
+                    {{ t('albion.unlink') }}
+                  </button>
+                } @else {
+                  <button type="button" class="btn btn--primary btn--sm" (click)="openLinkDialog()">
+                    <app-icon name="plus" size="0.75rem" />
+                    {{ t('dashboard.attention.link_albion_action') }}
                   </button>
                 }
               </div>
             </section>
 
-            <!-- Language Preference -->
-            <section class="card p-6">
-              <div class="flex items-center gap-2 mb-4">
-                <app-icon name="users" size="1.25rem" style="color: var(--color-primary)" />
-                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+            <!-- Appearance -->
+            <section class="card p-5" aria-labelledby="settings-appearance-title">
+              <h2 class="section-title section-title--sm" id="settings-appearance-title">
+                {{ t('settings.appearance') }}
+              </h2>
+              <p class="hint mt-1 mb-3">{{ t('settings.appearance.hint') }}</p>
+              <app-tabs
+                variant="segmented"
+                [ariaLabel]="t('settings.appearance')"
+                [options]="themeTabs()"
+                [active]="theme.preference()"
+                (activeChange)="onThemeChange($event)"
+              />
+            </section>
+
+            <!-- Language -->
+            <section class="card p-5" aria-labelledby="settings-language-title">
+              <div class="settings-field">
+                <h2 class="section-title section-title--sm" id="settings-language-title">
                   {{ t('language.label') }}
                 </h2>
-              </div>
-              <div class="grid gap-3">
-                @for (lang of translate.supportedLanguages; track lang) {
-                  <button
-                    type="button"
-                    class="flex items-center justify-between p-4 rounded-xl border text-left transition-all"
-                    [style.border-color]="translate.language() === lang ? 'var(--color-primary)' : 'var(--color-border)'"
-                    [style.background]="translate.language() === lang ? 'var(--color-primary-soft)' : 'var(--color-surface-1)'"
-                    (click)="onLanguageChange(lang)"
-                  >
-                    <div class="flex items-center gap-3">
-                      <span class="h-3 w-3 rounded-full border flex items-center justify-center"
-                        [style.border-color]="translate.language() === lang ? 'var(--color-primary)' : 'var(--color-border-strong)'"
-                        [style.background]="translate.language() === lang ? 'var(--color-primary)' : 'transparent'"
-                      ></span>
-                      <span class="font-medium text-sm" style="color: var(--color-text)">
-                        {{ translate.languageLabels[lang] }}
-                      </span>
-                    </div>
-                  </button>
-                }
+                <p class="hint">{{ t('settings.language.hint') }}</p>
+                <div class="settings-select">
+                  <app-select
+                    [options]="languageOptions"
+                    [value]="translate.language()"
+                    ariaLabelledBy="settings-language-title"
+                    (valueChange)="onLanguageChange($event)"
+                  />
+                </div>
               </div>
             </section>
-          </section>
+          </div>
         }
       </app-page-stack>
     }
 
-    <!-- Link Albion Character Dialog -->
+    <!-- Link Albion character dialog -->
     @if (linkDialogOpen()) {
       <app-dialog [title]="t('albion.required.title')" (closed)="closeLinkDialog()">
-        <div class="grid gap-3">
-          <p id="albion-link-search-hint" class="text-xs" style="color: var(--color-text-secondary)">
-            {{ t('settings.albion.searchHint') }}
-          </p>
-
-          <form class="flex gap-2" (submit)="searchPlayers($event)">
-            <label class="sr-only" for="albion-link-search">{{ t('settings.albion.searchPlaceholder') }}</label>
-            <input
-              id="albion-link-search"
-              name="albion-player-search"
-              type="search"
-              class="input min-w-0 flex-1"
-              [placeholder]="t('settings.albion.searchPlaceholder')"
-              [value]="playerSearch()"
-              (input)="onPlayerSearchInput($event)"
-              aria-describedby="albion-link-search-hint"
-              autofocus
-            />
-            <button type="submit" class="btn btn--primary btn--sm" [disabled]="playerSearch().trim().length < 2 || playerSearchLoading()">
-              {{ t('common.search') }}
-            </button>
-          </form>
-
-          @if (playerSearchLoading()) {
-            <div class="p-6 flex justify-center">
-              <app-loading [label]="t('common.loading')" />
-            </div>
-          } @else if (playerSearchDone()) {
-            <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1" aria-live="polite">
-              @for (player of playerSearchResults(); track player.id) {
-                <button
-                  type="button"
-                  class="flex items-center justify-between p-2.5 rounded-xl border text-left transition-colors hover:border-primary hover:bg-surface-2"
-                  style="border-color: var(--color-border); background: var(--color-surface-1)"
-                  (click)="confirmLink(player)"
-                  [disabled]="savingLink()"
-                >
-                  <div>
-                    <p class="text-sm font-semibold mono" style="color: var(--color-text)">
-                      {{ player.name }}
-                    </p>
-                    <p class="text-xs" style="color: var(--color-text-secondary)">
-                      {{ player.guild_name ?? t('albionSettings.lookup.noGuild') }} · ID: {{ player.id }}
-                    </p>
-                  </div>
-                  <span class="btn btn--primary btn--sm text-xs py-1 px-2.5">
-                    {{ t('dashboard.attention.link_albion_action') }}
-                  </span>
-                </button>
-              } @empty {
-                <p class="text-sm text-center py-4" style="color: var(--color-text-secondary)">
-                  {{ t('settings.albion.noPlayers') }}
-                </p>
-              }
-            </div>
-          }
+        <div class="settings-field">
+          <p class="label" id="albion-link-label">{{ t('settings.albion.searchLabel') }}</p>
+          <app-searchable-select
+            [options]="playerOptions()"
+            [remote]="true"
+            [loading]="playerSearchLoading()"
+            [allowEmpty]="false"
+            [emptyLabel]="t('settings.albion.searchPlaceholder')"
+            [searchPlaceholder]="t('settings.albion.searchPlaceholder')"
+            [emptyOptionsLabel]="playerSearchDone() ? t('settings.albion.noPlayers') : t('settings.albion.typeToSearch')"
+            [noMatchesLabel]="t('settings.albion.noPlayers')"
+            [disabled]="savingLink()"
+            [ariaLabel]="t('settings.albion.searchLabel')"
+            (searchChange)="onPlayerSearch($event)"
+            (valueChange)="onPlayerPicked($event)"
+          />
+          <p class="hint">{{ t('settings.albion.searchHint') }}</p>
         </div>
 
         <div dialogFooter class="flex justify-end gap-2">
@@ -622,7 +567,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       </app-dialog>
     }
 
-    <!-- Unlink Confirmation Dialog -->
+    <!-- Unlink confirmation dialog -->
     @if (unlinkConfirmOpen()) {
       <app-dialog [title]="t('settings.albion.unlinkConfirmTitle')" (closed)="unlinkConfirmOpen.set(false)">
         <p class="text-sm" style="color: var(--color-text-secondary)">
@@ -632,12 +577,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           <button type="button" class="btn btn--ghost btn--sm" (click)="unlinkConfirmOpen.set(false)">
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
-            class="btn btn--outline btn--sm text-[var(--color-error)] border-[color-mix(in_oklab,var(--color-error)_35%,transparent)] hover:bg-[var(--color-error-container)]"
-            (click)="confirmUnlink()"
-            [disabled]="savingLink()"
-          >
+          <button type="button" class="btn btn--danger btn--sm" (click)="confirmUnlink()" [disabled]="savingLink()">
             {{ t('settings.albion.unlinkConfirmTitle') }}
           </button>
         </div>
@@ -662,6 +602,7 @@ export class Settings {
   protected readonly siphonedEntries = signal<SiphonedEntryView[]>([]);
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
+  protected readonly albionLinked = computed(() => this.albionLink()?.linked === true);
   protected readonly albionLinkLabel = computed(() => {
     const link = this.albionLink();
     if (link?.linked) return link.albion_player_name ?? '';
@@ -672,35 +613,44 @@ export class Settings {
   protected readonly progression = signal<ProgressionMeView | null>(null);
   protected readonly profile = this.auth.profile;
 
-  // Albion Link state
+  // Albion link state
   protected readonly linkDialogOpen = signal(false);
   protected readonly unlinkConfirmOpen = signal(false);
   protected readonly playerSearchLoading = signal(false);
   protected readonly playerSearchDone = signal(false);
   protected readonly savingLink = signal(false);
-  protected readonly playerSearch = signal('');
   protected readonly playerSearchResults = signal<AlbionPlayer[]>([]);
+  protected readonly playerOptions = computed<SearchableSelectOption[]>(() =>
+    this.playerSearchResults().map((player) => ({
+      id: player.id,
+      label: player.name,
+      hint: player.guild_name ?? this.t('albionSettings.lookup.noGuild'),
+    })),
+  );
+  private playerSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  private playerSearchSeq = 0;
 
   protected readonly tabs = computed<readonly TabOption[]>(() => [
     { id: 'overview', label: this.t('profile.tab.overview'), icon: 'trophy' },
     { id: 'weapons', label: this.t('weapons.tab'), icon: 'swords' },
     { id: 'ledgers', label: this.t('profile.tab.ledgers'), icon: 'bank' },
     { id: 'battles', label: this.t('profile.tab.battles'), icon: 'shield' },
-    { id: 'preferences', label: this.t('profile.tab.preferences'), icon: 'sparkles' },
+    { id: 'settings', label: this.t('settings.title'), icon: 'sparkles' },
   ]);
+
+  protected readonly themeTabs = computed<readonly TabOption[]>(() => [
+    { id: 'light', label: this.t('theme.light') },
+    { id: 'dark', label: this.t('theme.dark') },
+    { id: 'system', label: this.t('theme.system') },
+  ]);
+
+  protected readonly languageOptions: readonly SelectOption[] = this.translate.supportedLanguages.map(
+    (language) => ({ value: language, label: this.translate.languageLabels[language] }),
+  );
 
   protected onTabChange(id: string): void {
     this.activeTab.set(id as ProfileTab);
   }
-
-  protected readonly themeOptions: ReadonlyArray<{
-    value: ThemePreference;
-    labelKey: TranslationKey;
-  }> = [
-    { value: 'light', labelKey: 'theme.light' },
-    { value: 'dark', labelKey: 'theme.dark' },
-    { value: 'system', labelKey: 'theme.system' },
-  ];
 
   protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
     {
@@ -807,6 +757,7 @@ export class Settings {
     this.translate.t(key, params);
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.playerSearchTimer));
     void this.load();
     // Deep link from the event signup dialog: `/profile?tab=weapons` opens "My weapons".
     if (this.route.snapshot.queryParamMap.get('tab') === 'weapons') {
@@ -863,16 +814,20 @@ export class Settings {
     return Math.round(m.split_earnings / m.splits_joined);
   }
 
-  protected onThemeChange(value: ThemePreference): void {
-    this.theme.setPreference(value);
+  protected onThemeChange(value: string): void {
+    const preference = value as ThemePreference;
+    this.theme.setPreference(preference);
     this.toasts.success(
-      this.t(value === 'light' ? 'theme.light' : value === 'dark' ? 'theme.dark' : 'theme.system'),
+      this.t(
+        preference === 'light' ? 'theme.light' : preference === 'dark' ? 'theme.dark' : 'theme.system',
+      ),
     );
   }
 
-  protected onLanguageChange(value: Language): void {
-    this.translate.use(value);
-    this.toasts.success(this.translate.languageLabels[value]);
+  protected onLanguageChange(value: string): void {
+    const language = value as Language;
+    this.translate.use(language);
+    this.toasts.success(this.translate.languageLabels[language]);
   }
 
   protected progressionBarPercent(xp: ProgressionMeView): number {
@@ -893,39 +848,59 @@ export class Settings {
 
   protected openLinkDialog(): void {
     this.linkDialogOpen.set(true);
-    this.playerSearch.set('');
-    this.playerSearchResults.set([]);
-    this.playerSearchDone.set(false);
+    this.resetPlayerSearch();
   }
 
   protected closeLinkDialog(): void {
     this.linkDialogOpen.set(false);
-    this.playerSearch.set('');
-    this.playerSearchResults.set([]);
-    this.playerSearchDone.set(false);
+    this.resetPlayerSearch();
   }
 
-  protected onPlayerSearchInput(event: Event): void {
-    this.playerSearch.set((event.target as HTMLInputElement).value);
+  /** Called on every keystroke of the lookup; searches once the text is long enough, debounced. */
+  protected onPlayerSearch(query: string): void {
+    clearTimeout(this.playerSearchTimer);
+    const q = query.trim();
+    if (q.length < 2) {
+      this.resetPlayerSearch();
+      return;
+    }
+    this.playerSearchTimer = setTimeout(() => void this.runPlayerSearch(q), PLAYER_SEARCH_DELAY_MS);
   }
 
-  protected async searchPlayers(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    const q = this.playerSearch().trim();
-    if (q.length < 2 || this.playerSearchLoading()) return;
+  /** Picking a result links that character, the same action as before the lookup became a list. */
+  protected onPlayerPicked(id: string): void {
+    const player = this.playerSearchResults().find((candidate) => candidate.id === id);
+    if (player) void this.confirmLink(player);
+  }
 
+  private async runPlayerSearch(q: string): Promise<void> {
+    const seq = ++this.playerSearchSeq;
     this.playerSearchLoading.set(true);
     this.playerSearchDone.set(false);
     try {
-      const result = await firstValueFrom(this.api.get<AlbionSearchResult>('api/albion/search', { q }));
-      this.playerSearchResults.set(result.players);
-      this.playerSearchDone.set(true);
-    } catch (error) {
-      this.playerSearchResults.set([]);
-      this.toasts.error(error instanceof Error ? error.message : this.t('settings.albion.searchFailed'));
+      const result = await firstValueFrom(
+        this.api.get<AlbionSearchResult>('api/albion/search', { q }),
+      );
+      if (seq === this.playerSearchSeq) {
+        this.playerSearchResults.set(result.players);
+        this.playerSearchDone.set(true);
+      }
+    } catch {
+      if (seq === this.playerSearchSeq) {
+        this.playerSearchResults.set([]);
+        this.toasts.error(this.t('settings.albion.searchFailed'));
+      }
     } finally {
-      this.playerSearchLoading.set(false);
+      if (seq === this.playerSearchSeq) this.playerSearchLoading.set(false);
     }
+  }
+
+  private resetPlayerSearch(): void {
+    clearTimeout(this.playerSearchTimer);
+    this.playerSearchSeq += 1;
+    this.playerSearchLoading.set(false);
+    this.playerSearchDone.set(false);
+    this.playerSearchResults.set([]);
   }
 
   protected async confirmLink(player: AlbionPlayer): Promise<void> {
@@ -942,8 +917,8 @@ export class Settings {
       this.closeLinkDialog();
       this.toasts.success(this.t('albion.linked', { name: player.name }));
       await this.load();
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.savingLink.set(false);
     }
@@ -958,8 +933,8 @@ export class Settings {
       this.unlinkConfirmOpen.set(false);
       this.toasts.success(this.t('albionSettings.link.unlinked'));
       await this.load();
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.savingLink.set(false);
     }
@@ -996,9 +971,8 @@ export class Settings {
       this.budget.set(budget);
       this.progression.set(progression);
       await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
-    } catch (error) {
+    } catch {
       this.loadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
     }

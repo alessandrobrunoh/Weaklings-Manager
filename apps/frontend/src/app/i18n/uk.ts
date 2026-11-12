@@ -3756,4 +3756,16 @@ export const uk: TranslationDict = {
   'audit.splitId': 'Split #{id}',
   'audit.detailsTitle': 'Запис журналу',
   'audit.noDetails': 'Для цього запису додаткові деталі не збережено.',
+  // design/settings
+  'settings.profile.title': 'Профіль',
+  'settings.profile.hint': 'Лише для читання. Ці дані беруться з вашого облікового запису входу.',
+  'settings.profile.userId': 'ID користувача',
+  'settings.albion.sectionTitle': 'Персонаж Albion',
+  'settings.albion.sectionHint': 'Ваш персонаж у грі. Прив’язка пов’язує вашу активність в Albion із цим обліковим записом.',
+  'settings.albion.searchLabel': 'Ім’я гравця Albion',
+  'settings.albion.typeToSearch': 'Введіть щонайменше 2 літери для пошуку.',
+  'settings.albion.linked': 'Прив’язано',
+  'settings.appearance.hint': 'Зберігається на цьому пристрої. Зміни застосовуються одразу.',
+  'settings.language.hint': 'Зберігається на цьому пристрої.',
+  'settings.ledger.summary': 'Підсумок обліку',
 };

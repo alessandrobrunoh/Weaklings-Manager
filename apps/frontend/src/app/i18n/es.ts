@@ -3941,4 +3941,16 @@ export const es: TranslationDict = {
   'audit.splitId': 'Split #{id}',
   'audit.detailsTitle': 'Entrada del registro',
   'audit.noDetails': 'No se registraron detalles adicionales para esta entrada.',
+  // design/settings
+  'settings.profile.title': 'Perfil',
+  'settings.profile.hint': 'Solo lectura. Proceden de tu cuenta de inicio de sesión.',
+  'settings.profile.userId': 'ID de usuario',
+  'settings.albion.sectionTitle': 'Personaje de Albion',
+  'settings.albion.sectionHint': 'Tu personaje en el juego. Vincularlo asocia tu actividad de Albion a esta cuenta.',
+  'settings.albion.searchLabel': 'Nombre de jugador de Albion',
+  'settings.albion.typeToSearch': 'Escribe al menos 2 letras para buscar.',
+  'settings.albion.linked': 'Vinculado',
+  'settings.appearance.hint': 'Guardado en este dispositivo. Los cambios se aplican al momento.',
+  'settings.language.hint': 'Guardado en este dispositivo.',
+  'settings.ledger.summary': 'Resumen del libro',
 };

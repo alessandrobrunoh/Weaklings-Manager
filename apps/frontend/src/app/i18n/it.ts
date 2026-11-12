@@ -3950,4 +3950,16 @@ export const it: TranslationDict = {
   'audit.splitId': 'Split #{id}',
   'audit.detailsTitle': 'Voce di log',
   'audit.noDetails': 'Per questa voce non sono stati registrati dettagli aggiuntivi.',
+  // design/settings
+  'settings.profile.title': 'Profilo',
+  'settings.profile.hint': 'Sola lettura. Provengono dal tuo account di accesso.',
+  'settings.profile.userId': 'ID utente',
+  'settings.albion.sectionTitle': 'Personaggio Albion',
+  'settings.albion.sectionHint': 'Il tuo personaggio in gioco. Collegarlo associa la tua attività di Albion a questo account.',
+  'settings.albion.searchLabel': 'Nome giocatore Albion',
+  'settings.albion.typeToSearch': 'Scrivi almeno 2 lettere per cercare.',
+  'settings.albion.linked': 'Collegato',
+  'settings.appearance.hint': 'Salvato su questo dispositivo. Le modifiche valgono subito.',
+  'settings.language.hint': 'Salvato su questo dispositivo.',
+  'settings.ledger.summary': 'Riepilogo contabile',
 };
