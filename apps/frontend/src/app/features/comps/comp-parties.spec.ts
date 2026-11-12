@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { BuildRole, BuildSummary, CompBuildEntry } from '../../core/models/api.models';
-import { COMP_PARTY_SIZE, simulateCompParties } from './comp-parties';
+import { COMP_PARTY_SIZE, groupPartySeats, partyRoleMix, simulateCompParties } from './comp-parties';
 
 function build(id: number, name: string, role: BuildRole): BuildSummary {
   return {
@@ -58,5 +58,39 @@ describe('simulateCompParties', () => {
       entry(3, 'Healer', 'healer', 1),
     ]);
     expect(parties[0]?.seats.map((seat) => seat.role)).toEqual(['tank', 'healer', 'dps']);
+  });
+});
+
+describe('groupPartySeats and partyRoleMix', () => {
+  const party = () =>
+    simulateCompParties([
+      entry(1, 'Great Hammer', 'tank', 3),
+      entry(2, 'Hallowfall', 'healer', 2),
+      entry(3, 'Bow', 'dps', 4),
+      entry(4, 'Blazing Staff', 'dps', 1),
+    ])[0]!;
+
+  it('collapses the seats of one build into a single counted line', () => {
+    const groups = groupPartySeats(party());
+    expect(groups.map((group) => [group.build.name, group.count])).toEqual([
+      ['Great Hammer', 3],
+      ['Hallowfall', 2],
+      ['Bow', 4],
+      ['Blazing Staff', 1],
+    ]);
+  });
+
+  it('counts a build again in the party its seats spill into', () => {
+    const parties = simulateCompParties([entry(1, 'Bow', 'dps', 25)]);
+    expect(groupPartySeats(parties[0]!).map((group) => group.count)).toEqual([20]);
+    expect(groupPartySeats(parties[1]!).map((group) => group.count)).toEqual([5]);
+  });
+
+  it('reports the role mix in role-priority order', () => {
+    expect(partyRoleMix(party())).toEqual([
+      { role: 'tank', count: 3 },
+      { role: 'healer', count: 2 },
+      { role: 'dps', count: 5 },
+    ]);
   });
 });

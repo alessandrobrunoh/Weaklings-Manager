@@ -70,3 +70,47 @@ export function simulateCompParties(
 
   return parties;
 }
+
+/** Consecutive seats of one build in a party, collapsed into a single line. */
+export interface CompPartyBuildGroup {
+  readonly buildId: number;
+  readonly build: BuildSummary;
+  readonly role: BuildRole;
+  readonly count: number;
+}
+
+/** How many seats of one role a party holds. */
+export interface CompPartyRoleCount {
+  readonly role: BuildRole;
+  readonly count: number;
+}
+
+/**
+ * Collapses a party's seats into one entry per build (`Great Hammer x3` rather than three rows).
+ *
+ * Seats are already sorted by role, so a build's seats sit together; grouping is by build id so the
+ * order of first appearance is kept.
+ */
+export function groupPartySeats(party: CompPartyView): CompPartyBuildGroup[] {
+  const groups = new Map<number, { buildId: number; build: BuildSummary; role: BuildRole; count: number }>();
+  for (const seat of party.seats) {
+    const existing = groups.get(seat.buildId);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      groups.set(seat.buildId, { buildId: seat.buildId, build: seat.build, role: seat.role, count: 1 });
+    }
+  }
+  return [...groups.values()];
+}
+
+/** The role mix of a party in role-priority order, e.g. tank 4, healer 5, dps 11. */
+export function partyRoleMix(party: CompPartyView): CompPartyRoleCount[] {
+  const counts = new Map<BuildRole, number>();
+  for (const seat of party.seats) {
+    counts.set(seat.role, (counts.get(seat.role) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([role, count]) => ({ role, count }))
+    .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
+}
