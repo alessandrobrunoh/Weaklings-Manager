@@ -1,6 +1,6 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -76,6 +76,9 @@ describe('Events', () => {
       if (path === 'api/events/summary') {
         return of({ total: 130, live: 3, scheduled: 127, call_to_arms: 13 });
       }
+      if (path === 'api/comps') {
+        return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 100 });
+      }
       return of([]);
     }),
     delete: vi.fn().mockReturnValue(of({})),
@@ -125,61 +128,245 @@ describe('Events', () => {
     }
   });
 
-  it('updates create options and reveals split settings when selected', () => {
+  function openCreateDialog(): HTMLFormElement {
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
       configurable: true,
       value: function (this: HTMLDialogElement) { this.open = true; },
     });
     (component as any).openCreate();
     fixture.detectChanges();
-    const split: HTMLInputElement = fixture.nativeElement.querySelector('#event-create-split');
-    const cta: HTMLInputElement = fixture.nativeElement.querySelector('#event-call-to-arms');
-    const vodForumPost: HTMLInputElement = fixture.nativeElement.querySelector('#event-vod-forum-post');
+    return fixture.nativeElement.querySelector('#create-event-form');
+  }
+
+  function submitCreate(): Promise<void> {
+    return (component as any).onCreateSubmit(new Event('submit', { cancelable: true }));
+  }
+
+  it('updates create options and reveals split settings when selected', () => {
+    const form = openCreateDialog();
+    const split: HTMLInputElement = form.querySelector('#event-create-split')!;
+    const cta: HTMLInputElement = form.querySelector('#event-call-to-arms')!;
     expect(split.checked).toBe(false);
-    expect(vodForumPost.checked).toBe(true);
-    expect(fixture.nativeElement.textContent).not.toContain('Select island');
+    expect(form.querySelector('#event-island')).toBeNull();
     split.click();
     cta.click();
     fixture.detectChanges();
     expect((component as any).draftCreateSplit()).toBe(true);
     expect((component as any).draftCallToArms()).toBe(true);
-    expect(fixture.nativeElement.textContent).toContain('Select island');
+    expect(form.querySelector('#event-island')).toBeTruthy();
+    expect(form.textContent).toContain('Select island');
     split.click();
     fixture.detectChanges();
     expect((component as any).draftCreateSplit()).toBe(false);
-    expect(fixture.nativeElement.textContent).not.toContain('Select island');
+    expect(form.querySelector('#event-island')).toBeNull();
   });
 
-  it('marks required event fields and conditional split fields', () => {
-    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
-      configurable: true,
-      value: function (this: HTMLDialogElement) { this.open = true; },
-    });
-    (component as any).openCreate();
-    fixture.detectChanges();
-    const form: HTMLFormElement = fixture.nativeElement.querySelector('#create-event-form');
+  it('groups the dialog into labelled sections', () => {
+    const form = openCreateDialog();
+    const headings = Array.from(form.querySelectorAll('section > h3, section > div > h3'), (h) =>
+      h.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(headings).toHaveLength(5);
+    expect(headings[0]).toBe('Details');
+    expect(headings[1]).toBe('Schedule');
+    expect(headings[2]).toBe('Roster');
+    expect(headings[3]).toContain('Discord');
+    expect(headings[4]).toBe('Extras');
+    for (const section of Array.from(form.querySelectorAll('section.ev-section'))) {
+      expect(section.getAttribute('aria-labelledby')).toBeTruthy();
+    }
+  });
+
+  it('labels every control and marks the required ones', () => {
+    const form = openCreateDialog();
     expect(form.textContent).toContain('* indicates a required field.');
-    const required = Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[required], select[required]'));
-    expect(required).toHaveLength(5);
+    const required = Array.from(
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[required], select[required]'),
+    );
+    expect(required.map((control) => control.id)).toEqual([
+      'event-title',
+      'event-date',
+      'event-mass-time',
+      'event-start-time',
+      'event-comp',
+    ]);
     for (const control of required) {
       const marker = control.labels?.[0]?.querySelector<HTMLElement>('[aria-hidden="true"]');
       expect(marker?.textContent).toBe('*');
-      expect(marker?.getAttribute('style')).toContain('var(--color-error)');
+    }
+    for (const control of Array.from(form.querySelectorAll<HTMLElement>('input, select, textarea'))) {
+      if ((control as HTMLInputElement).type === 'checkbox') continue;
+      expect((control as HTMLInputElement).labels?.length, control.id).toBeGreaterThan(0);
     }
     expect(form.querySelector<HTMLTextAreaElement>('textarea')?.required).toBe(false);
     expect(form.querySelector<HTMLInputElement>('#event-player-cap')?.required).toBe(false);
 
     form.querySelector<HTMLInputElement>('#event-create-split')!.click();
     fixture.detectChanges();
-    const selects = Array.from(form.querySelectorAll<HTMLSelectElement>('select[required]'));
-    expect(selects).toHaveLength(3);
-    for (const control of selects) {
+    const splitSelects = Array.from(form.querySelectorAll<HTMLSelectElement>('select[required]')).filter(
+      (control) => control.id === 'event-island' || control.id === 'event-tab',
+    );
+    expect(splitSelects).toHaveLength(2);
+    for (const control of splitSelects) {
       expect(control.labels?.[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
     }
-    expect((selects[2] as HTMLSelectElement).disabled).toBe(true);
+    expect(splitSelects[1].disabled).toBe(true);
     form.querySelector<HTMLInputElement>('#event-create-split')!.click();
     fixture.detectChanges();
     expect(form.querySelectorAll('select[required]')).toHaveLength(1);
+  });
+
+  it('collapses the Discord section and creates the VOD forum post only when asked', () => {
+    const form = openCreateDialog();
+    const toggle: HTMLButtonElement = form.querySelector('#event-section-discord')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-controls')).toBe('event-discord-panel');
+    expect(toggle.textContent).toContain('No extra pings or posts');
+    expect(form.querySelector('#event-vod-forum-post')).toBeNull();
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const vodForumPost: HTMLInputElement = form.querySelector('#event-vod-forum-post')!;
+    expect(vodForumPost.checked).toBe(false);
+    expect((component as any).draftVodForumPost()).toBe(false);
+
+    vodForumPost.click();
+    fixture.detectChanges();
+    expect((component as any).draftVodForumPost()).toBe(true);
+    expect(toggle.textContent).toContain('VOD post');
+  });
+
+  it('spells out the timezone next to the mass and start times', () => {
+    const form = openCreateDialog();
+    const note = form.querySelector('#event-schedule-note')!;
+    expect(note.textContent).toContain('Times use your local timezone');
+    expect(note.textContent).toContain('In game time (UTC): mass');
+    for (const id of ['event-mass-time', 'event-start-time']) {
+      expect(form.querySelector(`#${id}`)!.getAttribute('aria-describedby')).toContain(
+        'event-schedule-note',
+      );
+    }
+  });
+
+  it('shows inline errors tied to their fields and a validation summary on submit', async () => {
+    const form = openCreateDialog();
+    mockApiService.post.mockClear();
+    expect(form.querySelector('#event-error-summary')).toBeNull();
+    expect(form.querySelector('#event-title-error')).toBeNull();
+
+    await submitCreate();
+    fixture.detectChanges();
+
+    const summary = form.querySelector<HTMLElement>('#event-error-summary')!;
+    expect(summary).toBeTruthy();
+    expect(summary.textContent).toContain('Fix the following before creating the event:');
+    expect(summary.textContent).toContain('Name: This field is required.');
+    expect(summary.textContent).toContain('Composition: Composition is required.');
+    const title = form.querySelector<HTMLInputElement>('#event-title')!;
+    expect(title.getAttribute('aria-invalid')).toBe('true');
+    expect(title.getAttribute('aria-describedby')).toBe('event-title-error');
+    expect(form.querySelector('#event-title-error')?.textContent).toContain('This field is required.');
+    const comp = form.querySelector<HTMLSelectElement>('#event-comp')!;
+    expect(comp.getAttribute('aria-invalid')).toBe('true');
+    expect(comp.getAttribute('aria-describedby')).toContain('event-comp-error');
+    expect(mockApiService.post).not.toHaveBeenCalled();
+
+    // A second failed attempt puts focus on the (already rendered) summary.
+    await submitCreate();
+    fixture.detectChanges();
+    expect(document.activeElement).toBe(summary);
+
+    // A summary entry moves focus to its field.
+    summary.querySelector<HTMLButtonElement>('button')!.click();
+    expect(document.activeElement).toBe(title);
+
+    // Errors clear live once the field is fixed.
+    (component as any).draftTitle.set('Outposts');
+    fixture.detectChanges();
+    expect(form.querySelector('#event-title-error')).toBeNull();
+    expect(title.getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('rejects past dates, a mass time after the start and an invalid player cap', async () => {
+    const form = openCreateDialog();
+    mockApiService.post.mockClear();
+    const page = component as any;
+    page.draftTitle.set('Outposts');
+    page.draftCompId.set('7');
+    page.draftEventDate.set('2000-01-01');
+    page.draftMassTime.set('21:00');
+    page.draftStartTime.set('20:00');
+    page.draftPlayerCap.set('0');
+
+    await submitCreate();
+    fixture.detectChanges();
+
+    expect(form.querySelector('#event-date-error')?.textContent).toContain(
+      'The date cannot be in the past.',
+    );
+    expect(form.querySelector('#event-mass-time-error')?.textContent).toContain(
+      'Mass time must be at or before the start time.',
+    );
+    expect(form.querySelector('#event-player-cap-error')?.textContent).toContain(
+      'Player cap must be a whole number greater than zero.',
+    );
+    expect(form.querySelector('#event-player-cap')!.getAttribute('aria-describedby')).toBe(
+      'event-player-cap-hint event-player-cap-error',
+    );
+    expect(mockApiService.post).not.toHaveBeenCalled();
+  });
+
+  it('requires an island tab when a correlated split is requested', async () => {
+    const form = openCreateDialog();
+    const page = component as any;
+    page.draftTitle.set('Outposts');
+    page.draftCompId.set('7');
+    page.draftCreateSplit.set(true);
+    await submitCreate();
+    fixture.detectChanges();
+    expect(form.querySelector('#event-island-error')).toBeTruthy();
+    expect(form.querySelector('#event-tab-error')).toBeNull();
+  });
+
+  it('creates the event with the VOD forum post off by default', async () => {
+    openCreateDialog();
+    const page = component as any;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    mockApiService.post.mockClear();
+    mockApiService.post.mockReturnValueOnce(of({ id: 9 }));
+    page.draftTitle.set('  Outposts  ');
+    page.draftCompId.set('7');
+
+    await submitCreate();
+
+    expect(mockApiService.post).toHaveBeenCalledTimes(1);
+    const [path, body] = mockApiService.post.mock.calls[0];
+    expect(path).toBe('api/events');
+    expect(body).toMatchObject({
+      title: 'Outposts',
+      comp_id: 7,
+      call_to_arms: false,
+      regear: false,
+      ping_alliance: false,
+      vod_forum_post_enabled: false,
+      discord_role_ids: [],
+      create_split: false,
+    });
+    expect(Date.parse(body.mass_time_utc)).toBeLessThanOrEqual(Date.parse(body.start_time_utc));
+    expect(navigate).toHaveBeenCalledWith(['/events', 9]);
+  });
+
+  it('resets the draft, including the VOD forum post, when the dialog opens again', () => {
+    openCreateDialog();
+    const page = component as any;
+    page.draftVodForumPost.set(true);
+    page.discordOpen.set(true);
+    page.submitAttempted.set(true);
+    page.openCreate();
+    expect(page.draftVodForumPost()).toBe(false);
+    expect(page.discordOpen()).toBe(false);
+    expect(page.submitAttempted()).toBe(false);
   });
 
   it('renders the 4 KPI stat cards with correct titles', () => {

@@ -406,6 +406,37 @@ export const fr: TranslationDict = {
   'events.vodForumPost': 'Créer une publication dans le forum VOD',
   'events.vodForumPostHint': 'Crée une publication dans le forum VOD configuré pour que les membres répondent avec des liens vidéo.',
   'events.new': 'Nouvel événement',
+  'events.create.subtitle':
+    'Renseignez l\'essentiel, choisissez une composition et le mode d\'annonce de l\'événement.',
+  'events.create.section.details': 'Détails',
+  'events.create.section.schedule': 'Planning',
+  'events.create.section.scheduleHint':
+    'La masse est le moment où les joueurs se rassemblent ; le départ est le début de l\'activité.',
+  'events.create.section.roster': 'Roster',
+  'events.create.section.rosterHint': 'Les joueurs s\'inscrivent aux builds de la composition choisie.',
+  'events.create.section.discord': 'Discord',
+  'events.create.section.discordHint': 'Qui est mentionné et ce qui est publié avec l\'annonce.',
+  'events.create.section.options': 'Extras',
+  'events.create.section.optionsHint': 'Options et enregistrements liés à cet événement.',
+  'events.create.mass': 'Heure de masse',
+  'events.create.start': 'Heure de départ',
+  'events.create.timezoneNote': 'Les heures utilisent votre fuseau horaire local : {zone} ({offset}).',
+  'events.create.utcPreview':
+    'En heure de jeu (UTC) : masse {mass}, départ {start}. Discord affiche à chaque membre sa propre heure locale.',
+  'events.create.dateInPast': 'La date ne peut pas être dans le passé.',
+  'events.create.massAfterStart': 'L\'heure de masse doit être égale ou antérieure à l\'heure de départ.',
+  'events.create.compNone':
+    'Aucune composition dans cette liste. Essayez l\'autre liste ou créez-en une d\'abord.',
+  'events.create.errorSummary': 'Corrigez les points suivants avant de créer l\'événement :',
+  'events.create.creating': 'Création…',
+  'events.create.summary.roles': 'Rôles mentionnés : {count}',
+  'events.create.summary.alliance': 'Synchronisation d\'alliance',
+  'events.create.summary.vod': 'Publication VOD',
+  'events.create.summary.none': 'Aucune mention ni publication supplémentaire',
+  'events.callToArmsHint':
+    'Marque l\'événement comme obligatoire pour la guilde et l\'annonce dans le canal Call to Arms.',
+  'events.regearHint':
+    'Les membres qui ont participé peuvent demander le remboursement de leur équipement pour cet événement.',
   'events.create.comp_required': 'Une composition est requise.',
   'events.create.playerCap': 'Limite de joueurs',
   'events.create.playerCapHint': 'Seuil de planification optionnel. Lorsqu\'il est atteint, l\'événement passe automatiquement à l\'expansion de composition suivante et ne bloque jamais les inscriptions.',

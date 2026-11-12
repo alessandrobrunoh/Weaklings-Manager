@@ -874,7 +874,7 @@ pub struct CreateEventRequest {
     /// Also ping the alliance Discord events channel (guild events only; default off).
     #[serde(default)]
     pub ping_alliance: bool,
-    /// Create a VOD forum post for members to reply to with video links (default: true).
+    /// Create a VOD forum post for members to reply to with video links (default: false).
     #[serde(default = "default_vod_forum_post_enabled")]
     pub vod_forum_post_enabled: bool,
     /// `calendar`, `message`, or `forum`. Missing values keep the channel-message path.
@@ -883,7 +883,7 @@ pub struct CreateEventRequest {
 }
 
 fn default_vod_forum_post_enabled() -> bool {
-    true
+    false
 }
 
 fn default_discord_delivery() -> String {

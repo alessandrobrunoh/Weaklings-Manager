@@ -429,6 +429,36 @@ export const it: TranslationDict = {
   'events.vodForumPost': 'Crea un post nel forum VOD',
   'events.vodForumPostHint': 'Crea un post nel forum VOD configurato, dove i membri possono rispondere con link video.',
   'events.new': 'Nuovo evento',
+  'events.create.subtitle': 'Imposta le basi, scegli una composizione e decidi come annunciare l\'evento.',
+  'events.create.section.details': 'Dettagli',
+  'events.create.section.schedule': 'Programma',
+  'events.create.section.scheduleHint':
+    'La massa è quando i giocatori si radunano; lo start è quando inizia l\'attività.',
+  'events.create.section.roster': 'Roster',
+  'events.create.section.rosterHint': 'I giocatori si iscrivono alle build della composizione scelta.',
+  'events.create.section.discord': 'Discord',
+  'events.create.section.discordHint': 'Chi viene taggato e cos\'altro viene pubblicato con l\'annuncio.',
+  'events.create.section.options': 'Extra',
+  'events.create.section.optionsHint': 'Opzioni e record collegati a questo evento.',
+  'events.create.mass': 'Orario massa',
+  'events.create.start': 'Orario start',
+  'events.create.timezoneNote': 'Gli orari usano il tuo fuso orario locale: {zone} ({offset}).',
+  'events.create.utcPreview':
+    'In orario di gioco (UTC): massa {mass}, start {start}. Discord mostra a ogni membro il proprio orario locale.',
+  'events.create.dateInPast': 'La data non può essere nel passato.',
+  'events.create.massAfterStart': 'L\'orario della massa deve essere uguale o precedente a quello di start.',
+  'events.create.compNone':
+    'Nessuna composizione in questo elenco. Prova l\'altro elenco o creane una prima.',
+  'events.create.errorSummary': 'Correggi quanto segue prima di creare l\'evento:',
+  'events.create.creating': 'Creazione…',
+  'events.create.summary.roles': 'Ruoli taggati: {count}',
+  'events.create.summary.alliance': 'Sync alleanza',
+  'events.create.summary.vod': 'Post VOD',
+  'events.create.summary.none': 'Nessun tag o post aggiuntivo',
+  'events.callToArmsHint':
+    'Segna l\'evento come obbligatorio per la gilda e lo annuncia nel canale Call to Arms.',
+  'events.regearHint':
+    'I membri che hanno partecipato possono richiedere il rimborso dell\'equipaggiamento per questo evento.',
   'events.create.comp_required': 'La composizione è obbligatoria.',
   'events.create.playerCap': 'Cap giocatori',
   'events.create.playerCapHint':
