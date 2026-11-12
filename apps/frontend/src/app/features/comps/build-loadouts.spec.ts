@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { BuildItemSlot, BuildLoadout } from '../../core/models/api.models';
-import { itemsForLoadout } from './build-loadouts';
+import {
+  ITEM_TIERS,
+  SLOT_ORDER,
+  isTwoHandedWeaponKey,
+  itemsForLoadout,
+  mainSlotCapacity,
+  mainSlotProgress,
+  weaponKeyOfItems,
+} from './build-loadouts';
 
 function item(
   slot: BuildItemSlot['slot'],
@@ -59,5 +67,41 @@ describe('build loadouts', () => {
 
   it('returns an empty swap for a build that has none', () => {
     expect(itemsForLoadout([item('weapon', 'main', 'Polehammer')], 'swap')).toEqual([]);
+  });
+
+  it('counts the off-hand as missing only when the weapon leaves room for one', () => {
+    expect(isTwoHandedWeaponKey('weapon:2H_BOW')).toBe(true);
+    expect(isTwoHandedWeaponKey('weapon:MAIN_SWORD')).toBe(false);
+    expect(isTwoHandedWeaponKey(null)).toBe(false);
+    expect(mainSlotCapacity('weapon:2H_BOW')).toBe(SLOT_ORDER.length - 1);
+    expect(mainSlotCapacity('weapon:MAIN_SWORD')).toBe(SLOT_ORDER.length);
+  });
+
+  it('reports a fully equipped two-hander as 9 of 9, never 9 of 10', () => {
+    expect(mainSlotProgress({ main_item_count: 9, weapon_key: 'weapon:2H_BOW' })).toEqual({
+      filled: 9,
+      total: 9,
+    });
+    expect(mainSlotProgress({ main_item_count: 9, weapon_key: 'weapon:MAIN_SWORD' })).toEqual({
+      filled: 9,
+      total: 10,
+    });
+    expect(mainSlotProgress({ main_item_count: 12, weapon_key: null }).filled).toBe(10);
+  });
+
+  it('offers every tier from T2 to T8', () => {
+    expect(ITEM_TIERS).toEqual(['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8']);
+  });
+
+  it('reads the weapon key of a draft from the weapon icon', () => {
+    const weapon = {
+      ...item('weapon', 'main', 'Bow'),
+      openalbion_item_icon: 'https://render.albiononline.com/v1/item/T8_2H_BOW%401.png?quality=4&size=96',
+    };
+
+    expect(weaponKeyOfItems([weapon])).toBe('weapon:2H_BOW');
+    expect(isTwoHandedWeaponKey(weaponKeyOfItems([weapon]))).toBe(true);
+    expect(weaponKeyOfItems([item('head', 'main', 'Hood')])).toBeNull();
+    expect(weaponKeyOfItems([item('weapon', 'swap', 'Sword')])).toBeNull();
   });
 });
