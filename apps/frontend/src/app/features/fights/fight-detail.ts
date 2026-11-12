@@ -768,7 +768,7 @@ type PendingFightMutation =
             </div>
             <div class="surface p-2.5 rounded-lg">
               <dt class="hint">{{ t('battles.item_power') }}</dt>
-              <dd class="num font-semibold">{{ formatDecimal(p.item_power ?? 0) }}</dd>
+              <dd class="num font-semibold">{{ formatDecimal(p.item_power) }}</dd>
             </div>
             <div class="surface p-2.5 rounded-lg col-span-2">
               <dt class="hint">{{ t('battles.estimated_value') }}</dt>

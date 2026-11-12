@@ -155,7 +155,7 @@ describe('AdminIslands', () => {
     expect(compiled.textContent).not.toContain('admin.islands.addTab');
     expect(compiled.textContent).not.toContain('common.edit');
     expect(compiled.textContent).not.toContain('common.actions');
-    expect(compiled.querySelector('app-menu')).toBeNull();
+    expect(compiled.querySelector('app-menu button')).toBeNull();
   });
 
   it('does not post a new island when the tenant is an alliance', async () => {

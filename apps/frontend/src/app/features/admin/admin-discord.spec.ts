@@ -150,7 +150,7 @@ describe('AdminDiscord', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Member');
     expect(text).toContain('#events');
-    expect(text).toContain('admin.allianceRole.title');
+    expect(text).toContain('admin.allianceRole.role');
     expect(text).toContain('admin.allianceRole.hintGuild');
     expect(text).not.toContain('admin.discord.applicationPanelChannel');
     expect(text).not.toContain('admin.discord.applicationsOpen');
@@ -190,7 +190,7 @@ describe('AdminDiscord', () => {
   });
 
   it('shows a retry status and keeps the form when the Discord catalog cannot load', async () => {
-    const defaultGet = api.get.getMockImplementation()!;
+    const defaultGet = api.get.getMockImplementation() as (path: string) => unknown;
     api.get.mockImplementation((path: string) =>
       path.startsWith('api/admin/discord/') || path === 'api/admin/autorole/roles'
         ? throwError(() => new Error('offline'))
@@ -209,7 +209,7 @@ describe('AdminDiscord', () => {
   });
 
   it('hides the form instead of saving blank defaults when settings fail to load', async () => {
-    const defaultGet = api.get.getMockImplementation()!;
+    const defaultGet = api.get.getMockImplementation() as (path: string) => unknown;
     api.get.mockImplementation((path: string) =>
       path === 'api/admin/settings' ? throwError(() => new Error('boom')) : defaultGet(path),
     );

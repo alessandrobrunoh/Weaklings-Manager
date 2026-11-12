@@ -476,7 +476,7 @@ const MAGNET_PX = 6;
       align-items: center;
       justify-content: center;
       border: 1px solid var(--color-border-strong, var(--color-border));
-      border-radius: 3px;
+      border-radius: var(--radius-chip);
       background-color: var(--color-surface-2, var(--color-surface));
       font-size: var(--ui-text-xs);
       font-weight: 700;

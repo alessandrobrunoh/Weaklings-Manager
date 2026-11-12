@@ -25,6 +25,21 @@ const context: AllianceContext = {
   members: [{ guild_tenant_id: 'g1', name: 'Alpha', status: 'active' }],
 };
 
+function stubDialogApi(): void {
+  if (typeof HTMLDialogElement === 'undefined') {
+    return;
+  }
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+    Object.defineProperty(this, 'open', { configurable: true, get: () => true });
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    Object.defineProperty(this, 'open', { configurable: true, get: () => false });
+    this.dispatchEvent(new Event('close'));
+  };
+}
+
 describe('AdminAlliance', () => {
   let fixture: ComponentFixture<AdminAlliance>;
   let api: {
@@ -35,6 +50,7 @@ describe('AdminAlliance', () => {
   };
 
   beforeEach(async () => {
+    stubDialogApi();
     api = {
       get: vi.fn((path: string) => {
         if (path === 'api/alliances/me') {

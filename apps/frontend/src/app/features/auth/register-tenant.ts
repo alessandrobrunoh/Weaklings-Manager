@@ -16,7 +16,6 @@ import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Checkbox } from '../../shared/components/checkbox/checkbox';
-import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
 
@@ -36,7 +35,7 @@ const STEP_COUNT = 3;
   selector: 'app-register-tenant',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [AUTH_LAYOUT_STYLES],
-  imports: [Checkbox, Icon, Loading, RouterLink, WeaklingsLogo],
+  imports: [Checkbox, Loading, RouterLink, WeaklingsLogo],
   template: `
     <div class="auth-page">
       <main class="auth-main">
@@ -343,7 +342,7 @@ export class RegisterTenant implements OnInit {
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) => this.translate.t(key, params);
 
   protected regionLabelKey(): TranslationKey {
     return REGIONS.find((region) => region.id === this.regionId())?.labelKey ?? 'register.region.europe';

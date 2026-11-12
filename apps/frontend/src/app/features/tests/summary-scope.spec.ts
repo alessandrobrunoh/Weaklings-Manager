@@ -31,7 +31,7 @@ describe('paginated summaries', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
-    expect(element.textContent?.match(/common.currentPage/g)).toHaveLength(3);
+    expect(element.textContent?.match(/common.currentPage/g)).toHaveLength(1);
     expect(element.querySelector('a[href="/users/7"]')).not.toBeNull();
     expect(element.textContent).not.toContain('warns.stat.escalations');
     (fixture.componentInstance as unknown as { switchTab: (tab: string) => void }).switchTab('escalations');
@@ -47,8 +47,8 @@ describe('paginated summaries', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
-    expect(element.textContent?.match(/common.currentPage/g)).toHaveLength(2);
-    expect(element.textContent).not.toContain('audit.stat.today');
+    // The audit log no longer shows page-scoped counters at all.
+    expect(element.textContent).not.toContain('audit.stat.');
     expect(element.querySelector('a[href="/users/7"]')).not.toBeNull();
     fixture.destroy();
   });

@@ -152,7 +152,7 @@ describe('Dashboard', () => {
     expect(blocks[0].querySelector('h2')?.textContent).toContain('Requires your attention');
     expect(blocks[1].querySelector('h2')?.textContent).toContain('Live & upcoming events');
     expect(blocks[2].tagName.toLowerCase()).toBe('app-summary-band');
-    expect(blocks[2].getAttribute('aria-label')).toBe('Your snapshot');
+    expect(blocks[2].querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Your snapshot');
     expect(blocks[3].querySelector('h2')?.textContent).toContain('Recent activity');
   });
 

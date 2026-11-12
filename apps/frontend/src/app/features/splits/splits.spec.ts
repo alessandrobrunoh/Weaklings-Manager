@@ -330,7 +330,7 @@ describe('Splits Component', () => {
     expect(tabs).toContain('Pending');
     expect(tabs).toContain('Awaiting event');
     expect(tabs).toContain('Completed');
-    expect(fixture.nativeElement.querySelector('app-select button[role="combobox"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.data-table__filters')).toBeNull();
   });
 
   it('keeps the table toolbar search out of the page; search lives in the filter bar', () => {

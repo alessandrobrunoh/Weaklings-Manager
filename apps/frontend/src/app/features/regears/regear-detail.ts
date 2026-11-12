@@ -551,7 +551,7 @@ export class RegearDetailPage {
 
   protected readonly trackEditableRow = (row: EditableBreakdownRow): number => row.index;
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) => this.translate.t(key, params);
 
   constructor() {
     void this.load();

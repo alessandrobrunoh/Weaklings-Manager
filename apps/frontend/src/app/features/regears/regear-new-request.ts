@@ -107,7 +107,7 @@ const SLOT_ORDER: readonly BuildSlot[] = [
       width: 1.5rem;
       height: 1.5rem;
       border: 1px solid var(--color-border-strong);
-      border-radius: 999px;
+      border-radius: var(--radius-full);
       color: var(--color-text-secondary);
       font-size: var(--ui-text-xs);
       font-weight: 600;

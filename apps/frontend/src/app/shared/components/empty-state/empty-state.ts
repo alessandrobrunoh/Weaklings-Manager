@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 import { Icon, type IconName } from '../icon/icon';
 
@@ -79,5 +79,5 @@ export class EmptyState {
   readonly hint = input<string>();
   readonly icon = input<IconName>('sparkles');
   /** Tighter padding and a smaller icon, for use inside a card or table. */
-  readonly compact = input(false);
+  readonly compact = input(false, { transform: booleanAttribute });
 }

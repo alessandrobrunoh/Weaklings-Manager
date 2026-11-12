@@ -109,14 +109,16 @@ const STATS_FETCH_LIMIT = 1000;
       (menuSelect)="onHeaderMenu($event)"
     >
       @if (canIngest()) {
-        <button type="button" class="btn btn--outline btn--sm" (click)="openEntryForm()">
-          <app-icon name="plus" size="0.875rem" />
-          {{ t('siphoned.addEntry') }}
-        </button>
-        <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
-          <app-icon name="sparkles" size="0.875rem" />
-          {{ t('siphoned.ingest') }}
-        </button>
+        <ng-container ngProjectAs="[pageActions]">
+          <button type="button" class="btn btn--outline btn--sm" (click)="openEntryForm()">
+            <app-icon name="plus" size="0.875rem" />
+            {{ t('siphoned.addEntry') }}
+          </button>
+          <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
+            <app-icon name="sparkles" size="0.875rem" />
+            {{ t('siphoned.ingest') }}
+          </button>
+        </ng-container>
       }
       <app-tabs
         pageTabs

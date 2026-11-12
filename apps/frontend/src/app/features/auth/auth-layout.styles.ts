@@ -235,7 +235,7 @@ export const AUTH_LAYOUT_STYLES = `
     flex: none;
     width: 2rem;
     height: 2rem;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
   }
 
   :host .auth-row__chevron {
@@ -265,7 +265,7 @@ export const AUTH_LAYOUT_STYLES = `
 
   :host .auth-steps__segment {
     height: 0.25rem;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     background: var(--color-border);
   }
 
@@ -297,7 +297,7 @@ export const AUTH_LAYOUT_STYLES = `
     justify-content: center;
     width: 3rem;
     height: 3rem;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     background: var(--color-error-container);
     color: var(--color-error);
   }

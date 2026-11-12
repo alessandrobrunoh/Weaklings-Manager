@@ -24,6 +24,21 @@ const mockView: TenantFeaturesView = {
 const SPLITS = '[id="flag-splits.paid"]';
 const RULES = '#flag-regolamento';
 
+function stubDialogApi(): void {
+  if (typeof HTMLDialogElement === 'undefined') {
+    return;
+  }
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+    Object.defineProperty(this, 'open', { configurable: true, get: () => true });
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    Object.defineProperty(this, 'open', { configurable: true, get: () => false });
+    this.dispatchEvent(new Event('close'));
+  };
+}
+
 describe('PlatformFeatureFlags', () => {
   let fixture: ComponentFixture<PlatformFeatureFlags>;
   let api: { get: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
@@ -43,6 +58,7 @@ describe('PlatformFeatureFlags', () => {
   };
 
   beforeEach(async () => {
+    stubDialogApi();
     api = {
       get: vi.fn().mockReturnValue(of(mockView)),
       put: vi.fn().mockReturnValue(

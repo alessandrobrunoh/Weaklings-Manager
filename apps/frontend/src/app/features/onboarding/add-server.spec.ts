@@ -102,6 +102,7 @@ describe('AddServer', () => {
 
   it('shows a guild load failure as an error with retry, not as an empty list', async () => {
     fixture.destroy();
+    authMock.registerableGuilds.mockClear();
     authMock.registerableGuilds.mockRejectedValueOnce(new Error('boom'));
     await createPage();
     dots()[1].click();

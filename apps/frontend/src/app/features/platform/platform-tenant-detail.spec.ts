@@ -60,6 +60,7 @@ describe('PlatformTenantDetail', () => {
   const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
   async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
     fixture.detectChanges();
   }

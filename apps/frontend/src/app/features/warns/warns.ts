@@ -454,13 +454,13 @@ export class Warns {
       const active = this.activeOnPage();
       return [
         { label: this.t('warns.stat.total'), value: this.warnTotal(), hint: this.t('warns.stat.totalHint') },
-        { label: this.t('warns.stat.activeOnPage'), value: active, tone: active > 0 ? 'warning' : 'default' },
+        { label: this.t('warns.stat.activeOnPage'), value: active, hint: this.t('common.currentPage'), tone: active > 0 ? 'warning' : 'default' },
       ];
     }
     const open = this.openOnPage();
     return [
       { label: this.t('warns.stat.escalations'), value: this.escalationTotal(), hint: this.t('warns.stat.escalationsHint') },
-      { label: this.t('warns.stat.openOnPage'), value: open, tone: open > 0 ? 'warning' : 'default' },
+      { label: this.t('warns.stat.openOnPage'), value: open, hint: this.t('common.currentPage'), tone: open > 0 ? 'warning' : 'default' },
     ];
   });
 
