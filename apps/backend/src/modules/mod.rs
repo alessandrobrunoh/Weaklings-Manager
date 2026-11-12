@@ -43,7 +43,10 @@ pub fn router() -> Router {
                 .merge(backend_combat::comp_routes::comp_routes())
                 .merge(backend_events::events::comp_routes::comp_routes()),
         )
-        .nest("/events", backend_events::events::router())
+        // `nest_service`, not `nest`: the events router is a fallback service (the link proxy runs
+        // before routing), and axum 0.8 drops a nested router's fallback, answering 404 for
+        // every `/api/events` path. `nest_service` strips the prefix and hands it the request.
+        .nest_service("/events", backend_events::events::router())
         .nest("/actions", backend_events::actions::router())
         .nest("/fights", backend_fights::fights::router())
         .nest("/giveaways", backend_rewards::giveaways::router())
@@ -61,3 +64,6 @@ pub fn router() -> Router {
         .nest("/warns", backend_community::warns::router())
         .nest("/notifications", backend_identity::notifications::router())
 }
+
+#[cfg(test)]
+mod tests;
