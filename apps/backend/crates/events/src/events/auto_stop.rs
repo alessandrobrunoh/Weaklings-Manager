@@ -11,14 +11,16 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use crate::events::lifecycle::{Cause, Transition, XpFilter};
 use crate::events::service::EventService;
 use backend_core::errors::AppError;
-use backend_core::sync_origin::SyncKind;
 use backend_entities::events::event;
-use backend_runtime::sync::{LegacyLinks, copy_role};
 
 /// Stops every `live` session whose `auto_stop_deadline` has already elapsed.
 ///
 /// Sessions without a deadline, or not yet past it, are skipped. A failure on
 /// one session is logged and does not abort the remaining batch.
+///
+/// A link to another tenant's event (`source_tenant_id` set) is never stopped here: the owning
+/// event stops in its own tenant and the link follows it (see
+/// [`crate::events::links::reconcile_link_state`]).
 ///
 /// # Example
 /// ```ignore
@@ -27,13 +29,12 @@ use backend_runtime::sync::{LegacyLinks, copy_role};
 pub async fn auto_stop_expired_sessions(
     db: &DatabaseConnection,
     service: &EventService,
-    control: &DatabaseConnection,
-    tenant_id: &str,
 ) -> Result<(), AppError> {
     let now = Utc::now();
 
     let live_sessions = event::Entity::find()
         .filter(event::Column::Status.eq("live"))
+        .filter(event::Column::SourceTenantId.is_null())
         .all(db)
         .await
         .map_err(AppError::Database)?;
@@ -47,24 +48,9 @@ pub async fn auto_stop_expired_sessions(
             continue;
         }
         tracing::info!(event_id = session.id, "auto-stopping expired event session");
-        // Every role stops: an active copy follows local times, a detached copy is
-        // local and behaves as an origin. Progression rewards stay with the origin
-        // tenant, so any copy (detached included) awards nothing.
-        let legacy = LegacyLinks { control, tenant_id };
-        let award_xp = match copy_role(db, legacy, SyncKind::Event, session.id).await {
-            Ok(role) => !role.is_copy(),
-            Err(error) => {
-                tracing::warn!(
-                    event_id = session.id,
-                    error = %error,
-                    "could not resolve event copy role; leaving session live"
-                );
-                continue;
-            }
-        };
         let stop = Transition::Stop {
             auto: true,
-            xp: XpFilter::from_award_xp(award_xp),
+            xp: XpFilter::Everyone,
         };
         if let Err(e) = service
             .transition(db, session.id, stop, Cause::Scheduler, None)

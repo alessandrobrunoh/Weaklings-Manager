@@ -91,6 +91,15 @@ impl UserContext {
     }
 }
 
+/// A [`UserContext`] a middleware already authenticated for this request.
+///
+/// The event-link proxy authenticates the caller against their own tenant (roles, owner flag,
+/// permissions), then runs the handler against the event's origin tenant with `user_id` swapped
+/// to the caller's row there. The extractor returns this context as is: authenticating again
+/// would read the caller's roles from the origin's Discord server and database.
+#[derive(Debug, Clone)]
+pub struct ResolvedUserContext(pub UserContext);
+
 impl<S> FromRequestParts<S> for UserContext
 where
     S: Send + Sync,
@@ -98,6 +107,11 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // ── Path 0: already authenticated by a middleware ────────────────────
+        if let Some(resolved) = parts.extensions.get::<ResolvedUserContext>() {
+            return Ok(resolved.0.clone());
+        }
+
         // ── Path 1: session cookie (browser / frontend) ──────────────────────
         if let Some(ctx) = try_from_session_cookie(parts).await? {
             return Ok(ctx);

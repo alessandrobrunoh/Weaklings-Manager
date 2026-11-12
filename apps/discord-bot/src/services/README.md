@@ -10,6 +10,7 @@ This directory contains reusable bot workflows and lifecycle services used by co
 - `tenant-gate.ts` checks guild registration and supplies a guild-scoped `ApiClient` for registered tenants.
 - `registry.ts` serializes slash commands and registers them with Discord.
 - `event-lifecycle.ts` coordinates Mass, Start, Stop, and voice-channel lifecycle operations.
+- `event-shared.ts` decides how shared events are announced. An event is owned by the server that created it; every other server holds a link (`is_link`) that its own poller announces. A shared event (a link, a guild event with `ping_alliance`, or any event of an alliance server) is announced publicly even where the server uses calendar delivery. A link pings the server's own event role, and the poller runs no Mass, Start, Stop or voice work for a link: those belong to the owner. The guild poller no longer posts to the alliance channel.
 - `application-ticket.ts` and `event-announcement-thread.ts` provide reusable ticket and event-thread operations.
 - Other service modules cover additional bot workflows; see their implementation for their specific entry points.
 

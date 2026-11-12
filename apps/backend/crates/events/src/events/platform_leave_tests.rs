@@ -1,14 +1,13 @@
-//! Platform alliance departure, checked through event sync.
+//! Platform alliance departure, checked through event links.
 //!
-//! Leaving an alliance (and rejoining it) must keep the old event sync links disabled, so
-//! these tests drive `PlatformService` and then run the events participation sync. They
+//! Leaving an alliance (and rejoining it) must keep the old event links disabled, so
+//! these tests drive `PlatformService` and then resolve the event's linked peers. They
 //! live with events because platform sits below events in the crate graph.
 
 use sea_orm::{ConnectionTrait, Statement};
 use sea_orm_migration::MigratorTrait;
 
-use crate::alliance_share::ShareActor;
-use crate::events::sync::sync_participation;
+use crate::events::sync::linked_event_peers;
 use backend_core::errors::AppError;
 use backend_core::postgres::{
     connect_with_search_path, drop_schema, ensure_schema,
@@ -248,20 +247,13 @@ async fn leave_keeps_history_stops_sync_and_retries_discord() {
         .expect("count");
     assert_eq!(link_count, 1);
 
-    sync_participation(
-        &control,
-        &registry,
-        &guild_id,
-        3,
-        &ShareActor {
-            discord_id: "discord-user".into(),
-            username: "user".into(),
-            email: None,
-        },
-        None,
-    )
-    .await
-    .expect("disabled sync link does not fan out");
+    // A disabled link is no longer a link: its event is not re-addressed to the origin.
+    assert!(
+        linked_event_peers(&control, &guild_id, 3)
+            .await
+            .expect("disabled sync link does not fan out")
+            .is_empty()
+    );
 
     let revocations = control
         .query_all(Statement::from_sql_and_values(
@@ -504,20 +496,13 @@ async fn rejoin_from_left_reuses_the_row_and_leaves_history_unsynced() {
         .expect("flag");
     assert!(!sync_enabled);
 
-    sync_participation(
-        &control,
-        &registry,
-        &guild_id,
-        3,
-        &ShareActor {
-            discord_id: "discord-user".into(),
-            username: "user".into(),
-            email: None,
-        },
-        None,
-    )
-    .await
-    .expect("old link stays unsynced after rejoin");
+    // A disabled link is no longer a link: its event is not re-addressed to the origin.
+    assert!(
+        linked_event_peers(&control, &guild_id, 3)
+            .await
+            .expect("old link stays unsynced after rejoin")
+            .is_empty()
+    );
 
     let ambiguous: i64 = control
         .query_one(Statement::from_sql_and_values(

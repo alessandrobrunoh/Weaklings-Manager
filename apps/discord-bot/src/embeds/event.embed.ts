@@ -57,41 +57,6 @@ export function buildEventAnnouncementMessage(event: EventView): EventAnnounceme
   };
 }
 
-/** True when the guild event should also be posted on the alliance events channel. */
-export function shouldPingAllianceDiscord(event: EventView): boolean {
-  return Boolean(event.ping_alliance && event.alliance_discord_channel_id);
-}
-
-/** Copies alliance ping roles onto the shared announcement/lifecycle payload. */
-export function withAlliancePingRoles(event: EventView): EventView {
-  return {
-    ...event,
-    discord_role_ids: [...new Set(event.alliance_discord_role_ids ?? [])],
-  };
-}
-
-export type AllianceLifecycleKind = "mass" | "start" | "cancel";
-
-/** Alliance-channel follow-up that pings alliance roles, never guild roster users. */
-export function buildAllianceLifecycleMessage(
-  event: EventView,
-  kind: AllianceLifecycleKind,
-): EventReminderMessage {
-  const roleIds = [...new Set(event.alliance_discord_role_ids ?? [])];
-  const mentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
-  const prefix = mentions ? `${mentions} ` : "";
-  const body =
-    kind === "mass"
-      ? `**${event.title}** mass is starting.`
-      : kind === "start"
-        ? `**${event.title}** is live.`
-        : `**${event.title}** has been cancelled.`;
-  return {
-    content: `🔔 ${prefix}${body}`,
-    allowedMentions: roleIds.length > 0 ? { parse: [], roles: roleIds } : { parse: [] },
-  };
-}
-
 export interface EventStartMessage {
   content: string;
   allowedMentions: { parse: []; users: string[] };
@@ -660,8 +625,8 @@ export function buildEventManageActionRow(
 /**
  * The control row shown inside an event announcement thread: Join, Leave and Ping.
  * Ping posts the reminder; the bot lets only the organizer or an administrator use it.
- * Synchronized copies are participant-facing, so they show Join and Leave only. Every
- * other management action (start, stop, cancel, reopen) is done on the site.
+ * A link to another server's event is participant-facing, so it shows Join and Leave only.
+ * Every other management action (start, stop, cancel, reopen) is done on the site.
  */
 export function buildEventThreadActionRows(
   event: EventView,
@@ -669,8 +634,7 @@ export function buildEventThreadActionRows(
 ): ActionRowBuilder<ButtonBuilder>[] {
   const isScheduled = event.status === "scheduled";
   const isFlash = event.event_kind === "flash";
-  const isSynchronizedCopy =
-    event.is_synchronized_copy ?? event.source_event_id != null;
+  const isLink = event.is_link ?? false;
   const buttons = [
     new ButtonBuilder()
       .setCustomId(`event:join:${event.id}`)
@@ -685,7 +649,7 @@ export function buildEventThreadActionRows(
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!isScheduled),
   ];
-  if (!isSynchronizedCopy) {
+  if (!isLink) {
     buttons.push(
       new ButtonBuilder()
         .setCustomId(`event:ping:${event.id}`)

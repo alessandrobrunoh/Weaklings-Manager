@@ -183,39 +183,6 @@ pub(super) async fn insert_first_party<C: ConnectionTrait>(
     .map_err(AppError::Database)
 }
 
-/// Board position of the party an extra role belongs to; a role without a party counts for the
-/// first party.
-pub(super) async fn party_position_of_role<C: ConnectionTrait>(
-    db: &C,
-    event_id: i64,
-    party_id: Option<i64>,
-) -> Result<i32, AppError> {
-    let Some(party_id) = party_id else {
-        return Ok(1);
-    };
-    Ok(event_party::Entity::find_by_id(party_id)
-        .one(db)
-        .await
-        .map_err(AppError::Database)?
-        .filter(|party| party.event_id == event_id)
-        .map_or(1, |party| party.position))
-}
-
-/// Id of the party at `position`, when the event has one.
-pub(super) async fn party_id_at_position<C: ConnectionTrait>(
-    db: &C,
-    event_id: i64,
-    position: i32,
-) -> Result<Option<i64>, AppError> {
-    Ok(event_party::Entity::find()
-        .filter(event_party::Column::EventId.eq(event_id))
-        .filter(event_party::Column::Position.eq(position))
-        .one(db)
-        .await
-        .map_err(AppError::Database)?
-        .map(|party| party.id))
-}
-
 /// Deletes the assignments whose seat was in `before` but is not in `after`, returning how many
 /// members that put back on the waiting list.
 pub(super) async fn unseat_missing_seats<C: ConnectionTrait>(

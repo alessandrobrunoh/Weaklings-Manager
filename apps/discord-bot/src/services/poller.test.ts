@@ -663,7 +663,7 @@ test("flash announce retries thread creation without repeating the public role p
   }
 });
 
-test("ping_alliance dual-posts to alliance Discord without a signup thread", async () => {
+test("a shared event is announced once by its own server; the alliance announces its own link", async () => {
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
     writeFileSync(
@@ -704,7 +704,6 @@ test("ping_alliance dual-posts to alliance Discord without a signup thread", asy
       ping_alliance: true,
       alliance_discord_channel_id: "ally-events",
       alliance_discord_role_ids: ["999999999999999999"],
-      origin_guild_id: "origin-guild",
     };
     const eventDetail = {
       ...event,
@@ -787,17 +786,142 @@ test("ping_alliance dual-posts to alliance Discord without a signup thread", asy
 
     assert.equal(guildSends.length, 1);
     assert.match(String(guildSends[0]?.content), /<@&111111111111111111>/);
-    assert.equal(allySends.length, 1);
-    assert.match(String(allySends[0]?.content), /<@&999999999999999999>/);
-    assert.doesNotMatch(String(allySends[0]?.content), /<@&111111111111111111>/);
-    assert.equal("components" in allySends[0]!, false);
-    assert.deepEqual(patches, [
-      {
-        guildId: "origin-guild",
-        path: "api/events/41",
-        body: { alliance_discord_message_id: "ally-msg" },
+    assert.equal(allySends.length, 0, "the alliance channel is announced by the alliance bot, not this one");
+    assert.deepEqual(patches, []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a link is announced publicly with this server's own event role", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 40,
+        lastBattleId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+      }),
+      "utf-8",
+    );
+
+    const event = {
+      id: 41,
+      title: "Castle Fight",
+      description: "Bring sets",
+      call_to_arms: false,
+      discord_role_ids: [],
+      regear: false,
+      comp_id: 7,
+      comp_name: "Main ZvZ",
+      created_by: 1,
+      created_by_username: "Officer",
+      event_date_utc: "2027-01-01T20:00:00Z",
+      created_at: "2026-09-01T10:00:00Z",
+      updated_at: "2026-09-01T10:00:00Z",
+      status: "scheduled",
+      started_at: null,
+      stopped_at: null,
+      auto_stop_deadline: null,
+      link_status: "pending",
+      discord_voice_channel_id: null,
+      ping_alliance: false,
+      is_link: true,
+      source_tenant_id: "900000000000000001",
+      source_event_id: 7,
+      source_tenant_name: "Guild A",
+    };
+    const eventDetail = {
+      ...event,
+      active_comp_id: 7,
+      active_comp_name: "Main ZvZ",
+      active_comp_capacity: 20,
+      comp_builds: [],
+      participants: [],
+    };
+
+    const guildSends: Array<Record<string, unknown>> = [];
+    const allySends: Array<Record<string, unknown>> = [];
+    const patches: Array<{ guildId?: string; path: string; body: unknown }> = [];
+    const thread = {
+      id: "thread-41",
+      isThread: () => true,
+      send: async () => ({ id: "thread-msg" }),
+    };
+    const eventsChannel = {
+      id: "events-channel",
+      isTextBased: () => true,
+      send: async (payload: Record<string, unknown>) => {
+        guildSends.push(payload);
+        return { id: "announce-msg", startThread: async () => thread };
       },
-    ]);
+    };
+    const allyChannel = {
+      id: "ally-events",
+      isTextBased: () => true,
+      send: async (payload: Record<string, unknown>) => {
+        allySends.push(payload);
+        return { id: "ally-msg" };
+      },
+    };
+
+    const makeApi = (guildId: string): ApiClient =>
+      ({
+        guildId,
+        withGuild: (id: string) => makeApi(id),
+        get: async (path: string) => {
+          if (path === "api/events/calendar") return [event];
+          if (path === "api/events") {
+            return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+          }
+          if (path === "api/events/revisions") {
+            return [eventRevision(41, event.status, { roster_version: 0 })];
+          }
+          if (path === "api/events/41") return eventDetail;
+          if (path === "api/battles" || path === "api/giveaways") return emptyPage();
+          throw new Error(`unexpected GET ${path}`);
+        },
+        patch: async (path: string, body: unknown) => {
+          patches.push({ guildId, path, body });
+        },
+      }) as unknown as ApiClient;
+
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventDelivery: async () => "calendar" as const,
+      eventRoleId: async () => "333333333333333333",
+      eventsChannelId: async () => "events-channel",
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "events-channel") return eventsChannel;
+          if (id === "ally-events") return allyChannel;
+          if (id === "thread-41") return thread;
+          throw new Error(`unexpected channel ${id}`);
+        },
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, makeApi("100000000000000001"), settings, 60_000, directory);
+    await poller.pollNow();
+
+    assert.equal(guildSends.length, 1, "calendar mode still announces a link publicly");
+    assert.match(String(guildSends[0]?.content), /<@&333333333333333333>/);
+    assert.equal(allySends.length, 0);
+    assert.deepEqual(patches, []);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

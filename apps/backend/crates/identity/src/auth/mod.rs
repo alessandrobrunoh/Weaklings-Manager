@@ -15,6 +15,6 @@ pub mod session_store;
 
 pub use permission_cache::Permissions;
 pub use permissions::Permission;
-pub use rbac::{BotDiscordUser, BotSecret, UserContext};
+pub use rbac::{BotDiscordUser, BotSecret, ResolvedUserContext, UserContext};
 pub use router::router;
 pub use session_store::SessionStore;

@@ -25,14 +25,10 @@ import type {
   GiveawayDetailView,
 } from "../api/types.js";
 import {
-  buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
   buildEventCalendarMessages,
   buildEventEmbed,
   buildEventThreadActionRows,
-  shouldPingAllianceDiscord,
-  withAlliancePingRoles,
-  type AllianceLifecycleKind,
 } from "../embeds/event.embed.js";
 import {
   buildGiveawayAnnouncementMessage,
@@ -72,6 +68,12 @@ import {
   stopDiscordEvent,
   voiceChannelOccupantCount,
 } from "./event-lifecycle.js";
+import {
+  announcementRoleIds,
+  effectiveEventDelivery,
+  eventIsShared,
+  tenantKindOf,
+} from "./event-shared.js";
 import { SplitForumAdapter } from "./split-forum.js";
 import {
   discordErrorCode,
@@ -1198,13 +1200,16 @@ export class Poller {
         return;
       }
 
-      // Fetch the detail before resolving the guild channel so an alliance
-      // announcement does not depend on the originating guild having its
-      // own event channel configured. The alliance channel is a separate
-      // delivery target and should still receive the event when the guild
-      // announcement cannot be sent.
-      const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
-      const delivery = await this.eventDelivery();
+      const eventDetail = await this.withServerRoles(
+        await this.api.get<EventDetailView>(`api/events/${event.id}`),
+      );
+      // A shared event is one event announced by every server it reaches: its owner announces
+      // it here, and each other server announces its own link. Either way the announcement
+      // must be public, so a calendar-mode server posts it like a message-mode one.
+      const delivery = effectiveEventDelivery(
+        await this.eventDelivery(),
+        eventIsShared(eventDetail, await tenantKindOf(this.api)),
+      );
       if (delivery === "forum") {
         const posted = await this.postEventForum(eventDetail);
         if (!posted) {
@@ -1218,14 +1223,11 @@ export class Poller {
       }
       // Calendar delivery keeps organized events off the public channel: the
       // persistent calendar panel links to a private discussion thread that
-      // only invited members can read, and no alliance ping is sent. Flash
-      // masses stay on the public message flow even in calendar mode — a flash
-      // call is time-critical and must reach everyone.
+      // only invited members can read. Flash masses stay on the public message
+      // flow even in calendar mode — a flash call is time-critical and must
+      // reach everyone. Shared events were switched to message delivery above.
       const privateThreadDelivery =
         delivery === "calendar" && event.event_kind !== "flash";
-      if (!privateThreadDelivery) {
-        await this.postAllianceAnnouncement(eventDetail);
-      }
 
       const label = destinationChannelLabel(event);
       const channelId = destinationChannel(event, routes);
@@ -1330,6 +1332,17 @@ export class Poller {
     } catch (error) {
       fail("unexpected", error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /**
+   * A link carries none of the owning server's Discord roles (they belong to another server), so
+   * its announcement pings this server's own event role instead.
+   */
+  private async withServerRoles<T extends EventView>(event: T): Promise<T> {
+    if (!event.is_link) return event;
+    const read = this.settings.eventRoleId;
+    const roleId = typeof read === "function" ? await read.call(this.settings) : null;
+    return { ...event, discord_role_ids: announcementRoleIds(event, roleId) };
   }
 
   private async eventDelivery(): Promise<"calendar" | "message" | "forum"> {
@@ -1851,7 +1864,7 @@ export class Poller {
       try {
         const thread = await this.getEventThread(eventId);
         if (thread) {
-          const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
+          const detail = await this.api.get<EventDetailView>(`api/events/${eventId}`);
           const messageId = await refreshEventSignupCard(
             thread,
             detail,
@@ -1871,7 +1884,7 @@ export class Poller {
    * Locks a cancelled event thread without forgetting it, so restore can reopen it.
    *
    * An already-archived thread means Discord cancel already closed it; skip the
-   * alliance ping so a kept mapping does not re-announce cancellation every poll.
+   * final card so a kept mapping does not re-render it every poll.
    */
   private async closeCancelledEvent(event: EventRevision, threadId: string | undefined): Promise<void> {
     const eventId = event.id;
@@ -1890,8 +1903,7 @@ export class Poller {
     }
 
     try {
-      const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
-      await this.postAllianceLifecycle(detail, "cancel");
+      const detail = await this.api.get<EventDetailView>(`api/events/${eventId}`);
       const messageId = await refreshEventSignupCard(
         thread,
         detail,
@@ -1905,7 +1917,7 @@ export class Poller {
         this.save();
       }
     } catch (error) {
-      console.warn(`[Poller] Could not ping alliance Discord for cancelled event #${eventId}:`, error);
+      console.warn(`[Poller] Could not render the cancelled card for event #${eventId}:`, error);
     }
     await this.closeEventThread(eventId, { keepMapping: true });
   }
@@ -1963,7 +1975,9 @@ export class Poller {
       const revision = `${fingerprint.roster_version}:${fingerprint.status}:${updatedAt ?? ""}`;
       if (this.state.eventSignupRevisions[eventId] === revision) continue;
       try {
-        const detail = await this.api.get<EventDetailView>(`api/events/${eventId}`);
+        const detail = await this.withServerRoles(
+          await this.api.get<EventDetailView>(`api/events/${eventId}`),
+        );
 
         const thread = await this.getEventThread(Number(eventId));
         if (!thread) continue;
@@ -2053,20 +2067,22 @@ export class Poller {
       for (const event of [...scheduled, ...live]) {
         if (seenEventIds.has(event.id)) continue;
         seenEventIds.add(event.id);
+        // A link to another server's event has no lifecycle here: mass, start, stop and the
+        // voice channel belong to the owning server (the backend answers 409 to a voice channel
+        // write), and the link follows the owner's status on its own. Trying would stop the
+        // owner's event or create and delete a voice channel on every poll.
+        if (event.is_link) {
+          this.forgetLiveVoiceWatch(event.id);
+          continue;
+        }
         if (event.status === "scheduled") {
-          // A synchronized copy is read-only here: mass, start and the voice channel belong to
-          // the origin server (the backend answers 403 copy_read_only), and the copy converges
-          // to the origin's status on its own. Trying would create and delete a voice channel
-          // on every poll.
-          if (event.is_synchronized_copy) continue;
           const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(startAt) && now - startAt > LIFECYCLE_MAX_OVERDUE_MS) continue;
           const massAt = new Date(event.mass_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(massAt) && now >= massAt && !this.state.massedEvents.includes(event.id)) {
             try {
               const thread = await this.getEventThread(event.id);
-              const massed = await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
-              await this.postAllianceLifecycle(massed.event, "mass");
+              await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
               this.state.massedEvents.push(event.id);
               // Only ids of still-scheduled events matter; keep the list bounded.
               if (this.state.massedEvents.length > 500) {
@@ -2080,8 +2096,7 @@ export class Poller {
           if (Number.isFinite(startAt) && now >= startAt) {
             try {
               const thread = await this.getEventThread(event.id);
-              const started = await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
-              await this.postAllianceLifecycle(started.event, "start");
+              await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
               this.save();
             } catch (error) {
               console.warn(`[Poller] Could not start event #${event.id}:`, error);
@@ -2605,58 +2620,6 @@ export class Poller {
         }
         console.warn(`[Poller] Could not update giveaway #${giveawayId}:`, error);
       }
-    }
-  }
-
-  private eventApi(event?: { origin_guild_id?: string | null }): ApiClient {
-    const origin = event?.origin_guild_id?.trim();
-    if (origin && origin !== this.api.guildId) {
-      return this.api.withGuild(origin);
-    }
-    return this.api;
-  }
-
-  private async postAllianceAnnouncement(event: EventView): Promise<void> {
-    if (!shouldPingAllianceDiscord(event)) return;
-    // The originating guild announcement may fail after the alliance post
-    // succeeds (for example, when its channel is not configured). The event
-    // is retried on the next poll, so use the persisted message id as the
-    // idempotency key and do not duplicate the alliance announcement.
-    if (event.alliance_discord_message_id) return;
-    const channel = await this.getTextChannel(event.alliance_discord_channel_id ?? null);
-    if (!channel) {
-      console.warn(
-        `[Poller] Cannot announce event #${event.id} on alliance Discord: channel missing`,
-      );
-      return;
-    }
-    try {
-      const message = await channel.send(
-        buildEventAnnouncementMessage(withAlliancePingRoles(event)),
-      );
-      await this.eventApi(event).patch(`api/events/${event.id}`, {
-        alliance_discord_message_id: message.id,
-      });
-      console.log(`[Poller] Announced event #${event.id} on alliance Discord`);
-    } catch (error) {
-      console.warn(`[Poller] Could not announce event #${event.id} on alliance Discord:`, error);
-    }
-  }
-
-  private async postAllianceLifecycle(
-    event: EventView,
-    kind: AllianceLifecycleKind,
-  ): Promise<void> {
-    if (!shouldPingAllianceDiscord(event)) return;
-    const channel = await this.getTextChannel(event.alliance_discord_channel_id ?? null);
-    if (!channel) return;
-    try {
-      await channel.send(buildAllianceLifecycleMessage(event, kind));
-    } catch (error) {
-      console.warn(
-        `[Poller] Could not post alliance ${kind} notice for event #${event.id}:`,
-        error,
-      );
     }
   }
 

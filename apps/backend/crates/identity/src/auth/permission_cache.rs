@@ -64,6 +64,27 @@ impl PermissionCache {
         })
     }
 
+    /// A copy of this snapshot in which no role holds `events.manage`.
+    ///
+    /// The granular event permissions that `events.manage` implies are granted explicitly
+    /// first, so a role keeps everything it could do on its own events and only loses the
+    /// right to manage other people's.
+    #[must_use]
+    pub fn without_events_manage(&self) -> Self {
+        let mut inner = self.inner.clone();
+        for permissions in inner.values_mut() {
+            if permissions.remove(&Permission::EventsManage) {
+                permissions.extend([
+                    Permission::EventsView,
+                    Permission::EventsCreate,
+                    Permission::EventsEdit,
+                    Permission::EventsDelete,
+                ]);
+            }
+        }
+        Self { inner }
+    }
+
     /// Load a fresh snapshot from the database.
     ///
     /// Joins `role_permissions` to `roles` so the cache is keyed by role name
@@ -110,6 +131,14 @@ impl Permissions {
     #[must_use]
     pub fn new_empty() -> Self {
         Self(Arc::new(RwLock::new(PermissionCache::default())))
+    }
+
+    /// A detached handle over this snapshot in which no role holds `events.manage` (see
+    /// [`PermissionCache::without_events_manage`]). It does not follow later reloads, so it is
+    /// meant for the duration of one request.
+    pub async fn without_events_manage(&self) -> Self {
+        let snapshot = self.0.read().await.without_events_manage();
+        Self(Arc::new(RwLock::new(snapshot)))
     }
 
     /// Replace the in-memory snapshot with a fresh one read from the database.
@@ -218,6 +247,39 @@ mod tests {
             assert!(cache.role_has("Legacy event manager", permission));
         }
         assert!(!cache.role_has("Member", Permission::EventsEdit));
+    }
+
+    #[test]
+    fn dropping_events_manage_keeps_the_granular_event_permissions() {
+        let cache = PermissionCache {
+            inner: HashMap::from([
+                (
+                    "Officer".to_string(),
+                    HashSet::from([Permission::EventsManage, Permission::CompsCompsView]),
+                ),
+                (
+                    "Member".to_string(),
+                    HashSet::from([Permission::EventsView]),
+                ),
+            ]),
+        };
+
+        let reduced = cache.without_events_manage();
+        assert!(!reduced.role_has("Officer", Permission::EventsManage));
+        for permission in [
+            Permission::EventsView,
+            Permission::EventsCreate,
+            Permission::EventsEdit,
+            Permission::EventsDelete,
+            Permission::CompsCompsView,
+        ] {
+            assert!(reduced.role_has("Officer", permission), "{permission:?}");
+        }
+        assert!(reduced.role_has("Member", Permission::EventsView));
+        assert!(
+            cache.role_has("Officer", Permission::EventsManage),
+            "the original snapshot is untouched"
+        );
     }
 
     #[test]

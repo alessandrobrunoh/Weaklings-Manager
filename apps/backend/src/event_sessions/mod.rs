@@ -89,7 +89,7 @@ pub fn spawn(
                          draws keep running"
                     );
                     if let Err(e) =
-                        run_cycle(&db, &control, &tenant_id, &albionbb, &albiondata, None).await
+                        run_cycle(&db, &albionbb, &albiondata, None).await
                     {
                         tracing::error!(tenant_id, error = %e, "event-sessions worker cycle failed");
                     }
@@ -98,8 +98,6 @@ pub fn spawn(
                     let albiondata = albiondata.with_default_server(scope.region.clone());
                     if let Err(e) = run_cycle(
                         &db,
-                        &control,
-                        &tenant_id,
                         &albionbb,
                         &albiondata,
                         Some(&scope),
@@ -174,14 +172,12 @@ async fn prepare_cycle(
 /// the link refresh, and each link failure is logged per session.
 async fn run_cycle(
     db: &DatabaseConnection,
-    control: &DatabaseConnection,
-    tenant_id: &str,
     albionbb: &AlbionBbService,
     albiondata: &AlbionDataService,
     scope: Option<&AlbionScope>,
 ) -> Result<(), AppError> {
     let events = EventService::new();
-    auto_stop_expired_sessions(db, &events, control, tenant_id).await?;
+    auto_stop_expired_sessions(db, &events).await?;
     if let Err(error) = GiveawayService::new().draw_due(db).await {
         tracing::warn!(error = %error, "giveaway auto-draw cycle failed");
     }
@@ -258,8 +254,6 @@ mod tests {
 
         run_cycle(
             &db,
-            &db,
-            "tenant-a",
             &AlbionBbService::default(),
             &AlbionDataService::default(),
             None,
