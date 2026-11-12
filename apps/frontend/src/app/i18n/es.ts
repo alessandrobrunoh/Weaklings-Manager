@@ -3604,21 +3604,21 @@ export const es: TranslationDict = {
   'admin.progression.seasonEditTitle': 'Editar temporada',
   'admin.progression.inactive': 'Inactiva',
   // design/admin-regears
-  'admin.regears.summaryLabel': 'Resumen de la política de regear'
-  'admin.regears.perWeek': 'por semana'
-  'admin.regears.capHint': 'por semana, no se acumula'
-  'admin.regears.bonusHint': 'máximo por miembro'
-  'admin.regears.pricingHint': 'fuente de precios de mercado'
-  'admin.regears.slotsHint': 'slots de equipo reembolsados'
-  'admin.regears.sectionPools': 'Fondos de solicitudes'
-  'admin.regears.sectionPricing': 'Precios'
-  'admin.regears.sectionSlots': 'Slots reembolsables'
-  'admin.regears.topupHelp': 'Plata añadida al fondo semanal cada semana.'
-  'admin.regears.capHelp': 'El fondo semanal nunca se acumula más allá de esta cantidad.'
-  'admin.regears.bonusHelp': 'Máximo de solicitudes obtenidas por sorteos que un miembro puede tener a la vez.'
-  'admin.regears.pricingLocationHelp': 'Ciudad cuyos precios de mercado valoran cada objeto de un regear.'
-  'admin.regears.pricingFallbackHelp': 'Se usa cuando la ciudad de precios no tiene precio para un objeto.'
-  'admin.regears.slotsHelp': 'En un regear aprobado solo se reembolsan los slots marcados.'
+  'admin.regears.summaryLabel': 'Resumen de la política de regear',
+  'admin.regears.perWeek': 'por semana',
+  'admin.regears.capHint': 'por semana, no se acumula',
+  'admin.regears.bonusHint': 'máximo por miembro',
+  'admin.regears.pricingHint': 'fuente de precios de mercado',
+  'admin.regears.slotsHint': 'slots de equipo reembolsados',
+  'admin.regears.sectionPools': 'Fondos de solicitudes',
+  'admin.regears.sectionPricing': 'Precios',
+  'admin.regears.sectionSlots': 'Slots reembolsables',
+  'admin.regears.topupHelp': 'Plata añadida al fondo semanal cada semana.',
+  'admin.regears.capHelp': 'El fondo semanal nunca se acumula más allá de esta cantidad.',
+  'admin.regears.bonusHelp': 'Máximo de solicitudes obtenidas por sorteos que un miembro puede tener a la vez.',
+  'admin.regears.pricingLocationHelp': 'Ciudad cuyos precios de mercado valoran cada objeto de un regear.',
+  'admin.regears.pricingFallbackHelp': 'Se usa cuando la ciudad de precios no tiene precio para un objeto.',
+  'admin.regears.slotsHelp': 'En un regear aprobado solo se reembolsan los slots marcados.',
   // design/admin-roles
   'admin.roles.edit': 'Editar rol',
   'admin.roles.priority': 'Prioridad',
