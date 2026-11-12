@@ -56,6 +56,12 @@ pub async fn refresh_pending_links(
 
     for session in pending_sessions {
         if EventService::linker_is_done(&session) {
+            let Some(session) =
+                last_attempt_if_never_tried(db, albionbb, battles, albiondata, context, session)
+                    .await
+            else {
+                continue;
+            };
             finalize_expired_link(db, battles, albiondata, guild, &session).await;
             continue;
         }
@@ -63,6 +69,41 @@ pub async fn refresh_pending_links(
     }
 
     Ok(())
+}
+
+/// Runs one linking attempt for a finished session that was never attempted, and returns the
+/// reloaded session to finalize.
+///
+/// This happens when the tenant had no Albion guild configured while the event ran: the linker
+/// did not run at all, and the first tick after the guild is configured finds the grace period
+/// long over. Finalizing straight away would mark the event `completed` with no battle ever
+/// looked up. The attempt links what it finds; if it fails, `link_last_error` is set and the
+/// session is finalized as `failed`. A cancelled session is closed without an attempt.
+/// Returns `None` when the session cannot be reloaded; the next tick retries.
+async fn last_attempt_if_never_tried(
+    db: &DatabaseConnection,
+    albionbb: &AlbionBbService,
+    battles: &BattlesService,
+    albiondata: &AlbionDataService,
+    context: &BattleLinkingContext,
+    session: event::Model,
+) -> Option<event::Model> {
+    if session.link_attempts > 0 || session.status == "cancelled" {
+        return Some(session);
+    }
+    tracing::info!(
+        event_id = session.id,
+        "finished event was never linked; running one attempt before finalizing"
+    );
+    link_or_retry(db, albionbb, battles, albiondata, context, &session).await;
+    match event::Entity::find_by_id(session.id).one(db).await {
+        Ok(Some(reloaded)) => Some(reloaded),
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(event_id = session.id, error = %error, "could not reload the session");
+            None
+        }
+    }
 }
 
 /// Fetches and stores the snapshot of linked battles that have none, at most `limit` per call.
@@ -258,7 +299,7 @@ mod tests {
 
     use super::*;
     use backend_albion_data::albionbb::client::AlbionBbApiClient;
-    use backend_albion_data::albionbb::test_support::{FakeUpstream, json_ok, serve};
+    use backend_albion_data::albionbb::test_support::{FakeUpstream, json_ok, serve, status};
     use backend_runtime::sync::test_support::insert_user;
 
     const GUILD: &str = "guild-1";
@@ -328,6 +369,12 @@ mod tests {
         .id
     }
 
+    async fn set_attempts(db: &DatabaseConnection, id: i64, attempts: i64) {
+        let mut active: event::ActiveModel = load_event(db, id).await.into();
+        active.link_attempts = Set(attempts);
+        active.update(db).await.expect("attempts should be stored");
+    }
+
     async fn load_event(db: &DatabaseConnection, id: i64) -> event::Model {
         event::Entity::find_by_id(id)
             .one(db)
@@ -386,6 +433,7 @@ mod tests {
             Some("AlbionBB API returned 503"),
         )
         .await;
+        set_attempts(&db, failed, 3).await;
         // Grace period over and the last attempt was fine.
         let clean = insert_session(
             &db,
@@ -397,6 +445,7 @@ mod tests {
             None,
         )
         .await;
+        set_attempts(&db, clean, 2).await;
 
         // The one live event asks for one (empty) page; nobody else may touch the upstream.
         let upstream = serve(vec![json_ok("[]")]).await;
@@ -431,6 +480,86 @@ mod tests {
         let clean = load_event(&db, clean).await;
         assert_eq!(clean.link_status, "completed");
         assert_eq!(clean.link_last_error, None);
+    }
+
+    #[tokio::test]
+    async fn a_finished_event_never_attempted_gets_one_attempt_before_it_is_finalized() {
+        let db = backend_migration::testkit::migrated_sqlite().await;
+        let creator = insert_user(&db, "creator").await;
+        let now = Utc::now();
+        // Ran while the tenant had no Albion guild configured: the linker never looked at it.
+        let id = insert_session(
+            &db,
+            creator,
+            "stopped",
+            "in_progress",
+            Some(now - Duration::hours(4)),
+            Some(now - Duration::hours(3)),
+            None,
+        )
+        .await;
+
+        let upstream = serve(vec![json_ok("[]")]).await;
+        let service = albionbb(&upstream);
+        refresh_pending_links(
+            &db,
+            &service,
+            &battles_service(&service),
+            &AlbionDataService::default(),
+            &context(),
+            &guild(),
+        )
+        .await
+        .expect("refresh succeeds");
+
+        assert_eq!(upstream.request_count(), 1, "the battles were looked up once");
+        let event = load_event(&db, id).await;
+        assert_eq!(
+            (event.link_status.as_str(), event.link_attempts),
+            ("completed", 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_never_attempted_event_whose_only_attempt_fails_is_finalized_as_failed() {
+        let db = backend_migration::testkit::migrated_sqlite().await;
+        let creator = insert_user(&db, "creator").await;
+        let now = Utc::now();
+        let id = insert_session(
+            &db,
+            creator,
+            "auto_stopped",
+            "pending",
+            Some(now - Duration::hours(4)),
+            Some(now - Duration::hours(3)),
+            None,
+        )
+        .await;
+
+        let upstream = serve(vec![status("403 Forbidden", "")]).await;
+        let service = albionbb(&upstream);
+        refresh_pending_links(
+            &db,
+            &service,
+            &battles_service(&service),
+            &AlbionDataService::default(),
+            &context(),
+            &guild(),
+        )
+        .await
+        .expect("refresh succeeds");
+
+        let event = load_event(&db, id).await;
+        assert_eq!(event.link_status, "failed", "not silently completed");
+        assert_eq!(event.link_attempts, 1);
+        assert!(
+            event
+                .link_last_error
+                .as_deref()
+                .is_some_and(|error| error.contains("403")),
+            "the reason stays visible: {:?}",
+            event.link_last_error
+        );
     }
 
     #[tokio::test]
