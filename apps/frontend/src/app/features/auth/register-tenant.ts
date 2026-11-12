@@ -1,4 +1,4 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
+import { AUTH_LAYOUT_STYLES } from './auth-layout.styles';
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -17,6 +17,7 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { Icon } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
 
 const REGIONS = [
@@ -25,6 +26,8 @@ const REGIONS = [
   { id: 'asia', labelKey: 'register.region.asia' as const },
 ] as const;
 
+const STEP_COUNT = 3;
+
 /**
  * First-time tenant onboarding wizard. The Discord user who completes it
  * becomes Super Admin of this tenant (`owner_discord_id`), not a platform admin.
@@ -32,252 +35,283 @@ const REGIONS = [
 @Component({
   selector: 'app-register-tenant',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
-  imports: [Checkbox, Icon, RouterLink, WeaklingsLogo],
+  styles: [AUTH_LAYOUT_STYLES],
+  imports: [Checkbox, Icon, Loading, RouterLink, WeaklingsLogo],
   template: `
-    <div class="auth-shell">
-      <section class="auth-card auth-card--wide" aria-labelledby="register-title">
-        <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo [compact]="true" />
-          <h1 id="register-title" class="auth-card__title mt-5">
-            {{ t('register.title') }}
-          </h1>
-          <p class="auth-card__subtitle">{{ t('register.subtitle') }}</p>
-        </div>
+    <div class="auth-page">
+      <main class="auth-main">
+        <section class="auth-card" aria-labelledby="register-title">
+          <header class="auth-head">
+            <app-weaklings-logo [compact]="true" />
+            <p class="auth-brand">{{ t('app.title') }}</p>
+            <h1 id="register-title" class="auth-title">{{ t('register.title') }}</h1>
+            <p class="auth-hint">{{ t('register.subtitle') }}</p>
+          </header>
 
-        @if (alreadyRegistered()) {
-          <p class="text-sm text-center">{{ t('register.already') }}</p>
-          <a routerLink="/dashboard" class="btn btn--primary mt-4 w-full no-underline">
-            {{ t('nav.dashboard') }}
-          </a>
-        } @else if (!guildId) {
-          <p class="text-sm text-center" style="color: var(--color-danger)">
-            {{ t('register.missingGuild') }}
-          </p>
-        } @else {
-          <ol class="flex gap-2 mb-6 text-xs" aria-label="Steps">
-            @for (n of [1, 2, 3]; track n) {
-              <li
-                class="flex-1 rounded-full py-1 text-center"
-                [class.bg-[var(--color-primary)]]="step() === n"
-                [class.text-[var(--color-on-primary)]]="step() === n"
-                [class.bg-[var(--color-surface-2)]]="step() !== n"
-              >
-                {{ n }}
-              </li>
-            }
-          </ol>
-
-          @if (step() === 1) {
-            <form class="grid gap-4" ngNativeValidate (submit)="nextFromWelcome($event)">
-              <p class="text-sm">{{ t('register.welcome') }}</p>
-              <p class="font-mono text-sm">{{ guildId }}</p>
-              <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
-              <label class="block" for="tenant-display-name">
-                <span class="label">{{ t('register.displayName') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-                <input
-                  id="tenant-display-name"
-                  class="input"
-                  name="name"
-                  type="text"
-                  required
-                  autocomplete="organization"
-                  [value]="displayName()"
-                  (input)="onDisplayName($event)"
-                />
-              </label>
-              <fieldset class="grid gap-2">
-                <legend class="label">{{ t('register.kind') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></legend>
-                <label class="flex items-center gap-2" for="kind-guild">
-                  <input
-                    class="radio"
-                    type="radio"
-                    name="kind"
-                    id="kind-guild"
-                    value="guild"
-                    required
-                    [checked]="kind() === 'guild'"
-                    (change)="kind.set('guild')"
-                  />
-                  <span>{{ t('register.kind.guild') }}</span>
-                </label>
-                <label class="flex items-center gap-2" for="kind-alliance">
-                  <input
-                    class="radio"
-                    type="radio"
-                    name="kind"
-                    id="kind-alliance"
-                    value="alliance"
-                    [checked]="kind() === 'alliance'"
-                    (change)="kind.set('alliance')"
-                  />
-                  <span>{{ t('register.kind.alliance') }}</span>
-                </label>
-              </fieldset>
-              @if (kind() === 'alliance') {
-                <p class="text-sm">{{ t('register.memberGuildsAfterAlliance') }}</p>
-              }
-              <button type="submit" class="btn btn--primary">
-                {{ t('common.next') }}
-              </button>
-            </form>
-          } @else if (step() === 2 && kind() === 'alliance') {
-            <form class="grid gap-4" ngNativeValidate (submit)="nextFromAlliance($event)">
-              <fieldset class="grid gap-2">
-                <legend class="label">{{ t('register.region') }}</legend>
-                @for (region of regions; track region.id) {
-                  <label class="flex items-center gap-2" [attr.for]="'alliance-region-' + region.id">
-                    <input class="radio" type="radio" name="alliance-region" [id]="'alliance-region-' + region.id"
-                      [checked]="regionId() === region.id" (change)="selectRegion(region.id)" />
-                    <span>{{ t(region.labelKey) }}</span>
-                  </label>
+          @if (alreadyRegistered()) {
+            <p class="auth-alert auth-alert--neutral">{{ t('register.already') }}</p>
+            <div class="auth-foot">
+              <a routerLink="/dashboard" class="btn btn--primary w-full no-underline">
+                {{ t('nav.dashboard') }}
+              </a>
+            </div>
+          } @else if (!guildId) {
+            <p class="auth-alert" role="alert">{{ t('register.missingGuild') }}</p>
+          } @else {
+            <div class="auth-steps">
+              <p class="auth-steps__label">{{ t('register.step', { current: step(), total: stepCount }) }}</p>
+              <ol class="auth-steps__bar" aria-hidden="true">
+                @for (n of stepNumbers; track n) {
+                  <li
+                    class="auth-steps__segment"
+                    [class.auth-steps__segment--reached]="n <= step()"
+                  ></li>
                 }
-              </fieldset>
-              <label class="block" for="albion-alliance-search">
-                <span class="label">{{ t('register.albionAlliance') }}</span>
-                <input id="albion-alliance-search" class="input" type="search" autocomplete="off"
-                  [value]="searchQ()" (input)="onAllianceSearch($event)"
-                  [attr.placeholder]="t('register.albionAllianceHint')" />
-              </label>
-              @if (searching()) {
-                <p class="text-sm">{{ t('common.loading') }}</p>
-              }
-              @for (alliance of allianceHits(); track alliance.id) {
-                <button type="button" class="btn btn--tonal w-full justify-start"
-                  [class.ring-1]="pickedAlliance()?.id === alliance.id"
-                  (click)="pickAlliance(alliance)">
-                  {{ alliance.name }} <span class="font-mono text-xs opacity-70">{{ alliance.id }}</span>
-                </button>
-              }
-              @if (pickedAlliance() && attachableGuilds().length === 0 && !searching()) {
-                <p class="text-sm" role="status">{{ t('register.allianceNeedsGuilds') }}</p>
-              }
-              @for (guild of attachableGuilds(); track guild.id) {
-                <app-checkbox [inputId]="'member-' + guild.id" [label]="guild.name"
-                  [checked]="selectedMemberIds().includes(guild.id)"
-                  (checkedChange)="toggleMember(guild.id)" />
-              }
-              <div class="flex gap-2">
-                <button type="button" class="btn btn--ghost" (click)="step.set(1)">
-                  {{ t('common.prev') }}
-                </button>
-                <button type="submit" class="btn btn--primary" [disabled]="selectedMemberIds().length === 0">
-                  {{ t('common.next') }}
-                </button>
-              </div>
-            </form>
-          } @else if (step() === 2) {
-            <form class="grid gap-4" ngNativeValidate (submit)="nextFromAlbion($event)">
-              <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
-              <fieldset class="grid gap-2">
-                <legend class="label">{{ t('register.region') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></legend>
-                @for (region of regions; track region.id) {
-                  <label class="flex items-center gap-2" [attr.for]="'region-' + region.id">
+              </ol>
+            </div>
+
+            @if (step() === 1) {
+              <form class="auth-stack" ngNativeValidate (submit)="nextFromWelcome($event)">
+                <p class="auth-hint">{{ t('register.welcome') }}</p>
+                <p class="auth-meta">
+                  {{ t('register.discordServer') }}: <span class="num">{{ guildId }}</span>
+                </p>
+                <p class="hint">{{ t('validation.requiredLegend') }}</p>
+                <label class="auth-field" for="tenant-display-name">
+                  <span class="label">
+                    {{ t('register.displayName') }} <span class="auth-required" aria-hidden="true">*</span>
+                  </span>
+                  <input
+                    id="tenant-display-name"
+                    class="input"
+                    name="name"
+                    type="text"
+                    required
+                    autocomplete="organization"
+                    [value]="displayName()"
+                    (input)="onDisplayName($event)"
+                  />
+                </label>
+                <fieldset class="auth-choices">
+                  <legend class="label">
+                    {{ t('register.kind') }} <span class="auth-required" aria-hidden="true">*</span>
+                  </legend>
+                  <label class="auth-choice" for="kind-guild">
                     <input
                       class="radio"
                       type="radio"
-                      name="region"
+                      name="kind"
+                      id="kind-guild"
+                      value="guild"
                       required
-                      [id]="'region-' + region.id"
-                      [value]="region.id"
-                      [checked]="regionId() === region.id"
-                      (change)="selectRegion(region.id)"
+                      [checked]="kind() === 'guild'"
+                      (change)="kind.set('guild')"
                     />
-                    <span>{{ t(region.labelKey) }}</span>
+                    <span>{{ t('register.kind.guild') }}</span>
                   </label>
+                  <label class="auth-choice" for="kind-alliance">
+                    <input
+                      class="radio"
+                      type="radio"
+                      name="kind"
+                      id="kind-alliance"
+                      value="alliance"
+                      [checked]="kind() === 'alliance'"
+                      (change)="kind.set('alliance')"
+                    />
+                    <span>{{ t('register.kind.alliance') }}</span>
+                  </label>
+                </fieldset>
+                @if (kind() === 'alliance') {
+                  <p class="hint">{{ t('register.memberGuildsAfterAlliance') }}</p>
                 }
-              </fieldset>
-              <label class="block" for="albion-guild-search">
-                <span class="label">{{ t('register.albionGuild') }}</span>
-                <input
-                  id="albion-guild-search"
-                  class="input"
-                  name="q"
-                  type="search"
-                  autocomplete="off"
-                  [value]="searchQ()"
-                  (input)="onSearchInput($event)"
-                  [attr.placeholder]="t('register.albionGuildHint')"
-                />
-              </label>
-              @if (searching()) {
-                <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.loading') }}</p>
-              }
-              @if (guildHits().length) {
-                <ul class="grid gap-1 max-h-48 overflow-y-auto">
-                  @for (guild of guildHits(); track guild.id) {
-                    <li>
-                      <button
-                        type="button"
-                        class="btn btn--tonal w-full justify-start"
-                        [class.ring-1]="pickedGuild()?.id === guild.id"
-                        (click)="pickedGuild.set(guild)"
-                      >
-                        {{ guild.name }}
-                        <span class="font-mono text-xs opacity-70">{{ guild.id }}</span>
-                      </button>
-                    </li>
+                <div class="auth-actions">
+                  <button type="submit" class="btn btn--primary">{{ t('common.next') }}</button>
+                </div>
+              </form>
+            } @else if (step() === 2 && kind() === 'alliance') {
+              <form class="auth-stack" ngNativeValidate (submit)="nextFromAlliance($event)">
+                <fieldset class="auth-choices">
+                  <legend class="label">{{ t('register.region') }}</legend>
+                  @for (region of regions; track region.id) {
+                    <label class="auth-choice" [attr.for]="'alliance-region-' + region.id">
+                      <input
+                        class="radio"
+                        type="radio"
+                        name="alliance-region"
+                        [id]="'alliance-region-' + region.id"
+                        [checked]="regionId() === region.id"
+                        (change)="selectRegion(region.id)"
+                      />
+                      <span>{{ t(region.labelKey) }}</span>
+                    </label>
                   }
-                </ul>
-              }
-              <div class="flex gap-2">
-                <button type="button" class="btn btn--ghost" (click)="step.set(1)">
-                  {{ t('common.prev') }}
-                </button>
-                <button type="submit" class="btn btn--primary" [disabled]="!pickedGuild()">
-                  {{ t('common.next') }}
-                </button>
-              </div>
-            </form>
-          } @else {
-            <form class="grid gap-4" (submit)="submit($event)">
-              <dl class="grid gap-2 text-sm">
-                <div>
-                  <dt class="label">{{ t('register.displayName') }}</dt>
-                  <dd>{{ displayName() }}</dd>
-                </div>
-                <div>
-                  <dt class="label">{{ t('register.kind') }}</dt>
-                  <dd>{{ t(kind() === 'alliance' ? 'register.kind.alliance' : 'register.kind.guild') }}</dd>
-                </div>
-                @if (kind() === 'guild') {
-                  <div>
-                    <dt class="label">{{ t('register.region') }}</dt>
-                    <dd>{{ regionId() }}</dd>
-                  </div>
-                  <div>
-                    <dt class="label">{{ t('register.albionGuild') }}</dt>
-                    <dd>{{ pickedGuild()?.name }} ({{ pickedGuild()?.id }})</dd>
-                  </div>
-                } @else {
-                  <div>
-                    <dt class="label">{{ t('register.albionAlliance') }}</dt>
-                    <dd>{{ pickedAlliance()?.name }} ({{ pickedAlliance()?.id }})</dd>
-                  </div>
-                  <div>
-                    <dt class="label">{{ t('register.memberGuilds') }}</dt>
-                    <dd>{{ selectedMemberNames() }}</dd>
-                  </div>
+                </fieldset>
+                <label class="auth-field" for="albion-alliance-search">
+                  <span class="label">{{ t('register.albionAlliance') }}</span>
+                  <input
+                    id="albion-alliance-search"
+                    class="input"
+                    type="search"
+                    autocomplete="off"
+                    [value]="searchQ()"
+                    (input)="onAllianceSearch($event)"
+                    [attr.placeholder]="t('register.albionAllianceHint')"
+                  />
+                </label>
+                @if (searching()) {
+                  <app-loading variant="spinner" [label]="t('common.loading')" />
                 }
-              </dl>
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('register.superadminHint') }}
-              </p>
-              @if (error()) {
-                <p class="text-sm" style="color: var(--color-danger)" role="alert">{{ error() }}</p>
-              }
-              <div class="flex gap-2">
-                <button type="button" class="btn btn--ghost" (click)="step.set(2)">
-                  {{ t('common.prev') }}
-                </button>
-                <button type="submit" class="btn btn--primary" [disabled]="submitting()">
-                  {{ submitting() ? t('common.loading') : t('register.submit') }}
-                </button>
-              </div>
-            </form>
+                @if (allianceHits().length) {
+                  <ul class="auth-list" [attr.aria-label]="t('register.albionAlliance')">
+                    @for (alliance of allianceHits(); track alliance.id) {
+                      <li>
+                        <button
+                          type="button"
+                          class="auth-row"
+                          [attr.aria-pressed]="pickedAlliance()?.id === alliance.id"
+                          (click)="pickAlliance(alliance)"
+                        >
+                          <span class="auth-row__name">{{ alliance.name }}</span>
+                          <span class="auth-row__meta num">{{ alliance.id }}</span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                }
+                @if (pickedAlliance() && attachableGuilds().length === 0 && !searching()) {
+                  <p class="hint" role="status">{{ t('register.allianceNeedsGuilds') }}</p>
+                }
+                @for (guild of attachableGuilds(); track guild.id) {
+                  <app-checkbox
+                    [inputId]="'member-' + guild.id"
+                    [label]="guild.name"
+                    [checked]="selectedMemberIds().includes(guild.id)"
+                    (checkedChange)="toggleMember(guild.id)"
+                  />
+                }
+                <div class="auth-actions">
+                  <button type="button" class="btn btn--ghost" (click)="step.set(1)">
+                    {{ t('common.prev') }}
+                  </button>
+                  <button type="submit" class="btn btn--primary" [disabled]="selectedMemberIds().length === 0">
+                    {{ t('common.next') }}
+                  </button>
+                </div>
+              </form>
+            } @else if (step() === 2) {
+              <form class="auth-stack" ngNativeValidate (submit)="nextFromAlbion($event)">
+                <p class="hint">{{ t('validation.requiredLegend') }}</p>
+                <fieldset class="auth-choices">
+                  <legend class="label">
+                    {{ t('register.region') }} <span class="auth-required" aria-hidden="true">*</span>
+                  </legend>
+                  @for (region of regions; track region.id) {
+                    <label class="auth-choice" [attr.for]="'region-' + region.id">
+                      <input
+                        class="radio"
+                        type="radio"
+                        name="region"
+                        required
+                        [id]="'region-' + region.id"
+                        [value]="region.id"
+                        [checked]="regionId() === region.id"
+                        (change)="selectRegion(region.id)"
+                      />
+                      <span>{{ t(region.labelKey) }}</span>
+                    </label>
+                  }
+                </fieldset>
+                <label class="auth-field" for="albion-guild-search">
+                  <span class="label">{{ t('register.albionGuild') }}</span>
+                  <input
+                    id="albion-guild-search"
+                    class="input"
+                    name="q"
+                    type="search"
+                    autocomplete="off"
+                    [value]="searchQ()"
+                    (input)="onSearchInput($event)"
+                    [attr.placeholder]="t('register.albionGuildHint')"
+                  />
+                </label>
+                @if (searching()) {
+                  <app-loading variant="spinner" [label]="t('common.loading')" />
+                }
+                @if (guildHits().length) {
+                  <ul class="auth-list auth-list--scroll" [attr.aria-label]="t('register.albionGuild')">
+                    @for (guild of guildHits(); track guild.id) {
+                      <li>
+                        <button
+                          type="button"
+                          class="auth-row"
+                          [attr.aria-pressed]="pickedGuild()?.id === guild.id"
+                          (click)="pickedGuild.set(guild)"
+                        >
+                          <span class="auth-row__name">{{ guild.name }}</span>
+                          <span class="auth-row__meta num">{{ guild.id }}</span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                }
+                <div class="auth-actions">
+                  <button type="button" class="btn btn--ghost" (click)="step.set(1)">
+                    {{ t('common.prev') }}
+                  </button>
+                  <button type="submit" class="btn btn--primary" [disabled]="!pickedGuild()">
+                    {{ t('common.next') }}
+                  </button>
+                </div>
+              </form>
+            } @else {
+              <form class="auth-stack" (submit)="submit($event)">
+                <dl class="auth-review">
+                  <div>
+                    <dt>{{ t('register.displayName') }}</dt>
+                    <dd>{{ displayName() }}</dd>
+                  </div>
+                  <div>
+                    <dt>{{ t('register.kind') }}</dt>
+                    <dd>{{ t(kind() === 'alliance' ? 'register.kind.alliance' : 'register.kind.guild') }}</dd>
+                  </div>
+                  @if (kind() === 'guild') {
+                    <div>
+                      <dt>{{ t('register.region') }}</dt>
+                      <dd>{{ t(regionLabelKey()) }}</dd>
+                    </div>
+                    <div>
+                      <dt>{{ t('register.albionGuild') }}</dt>
+                      <dd>{{ pickedGuild()?.name }} ({{ pickedGuild()?.id }})</dd>
+                    </div>
+                  } @else {
+                    <div>
+                      <dt>{{ t('register.albionAlliance') }}</dt>
+                      <dd>{{ pickedAlliance()?.name }} ({{ pickedAlliance()?.id }})</dd>
+                    </div>
+                    <div>
+                      <dt>{{ t('register.memberGuilds') }}</dt>
+                      <dd>{{ selectedMemberNames() }}</dd>
+                    </div>
+                  }
+                </dl>
+                <p class="hint">{{ t('register.superadminHint') }}</p>
+                @if (error()) {
+                  <p class="auth-alert" role="alert">{{ error() }}</p>
+                }
+                <div class="auth-actions">
+                  <button type="button" class="btn btn--ghost" (click)="step.set(2)">
+                    {{ t('common.prev') }}
+                  </button>
+                  <button type="submit" class="btn btn--primary" [disabled]="submitting()">
+                    {{ submitting() ? t('common.loading') : t('register.submit') }}
+                  </button>
+                </div>
+              </form>
+            }
           }
-        }
-      </section>
+        </section>
+      </main>
     </div>
   `,
 })
@@ -289,6 +323,8 @@ export class RegisterTenant implements OnInit {
   private readonly translate = inject(TranslateService);
 
   protected readonly regions = REGIONS;
+  protected readonly stepCount = STEP_COUNT;
+  protected readonly stepNumbers = Array.from({ length: STEP_COUNT }, (_, index) => index + 1);
   protected readonly guildId = this.route.snapshot.queryParamMap.get('guild') ?? '';
   protected readonly queryName = this.route.snapshot.queryParamMap.get('name') ?? '';
   protected readonly step = signal(1);
@@ -308,6 +344,10 @@ export class RegisterTenant implements OnInit {
   protected readonly error = signal<string | null>(null);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
+
+  protected regionLabelKey(): TranslationKey {
+    return REGIONS.find((region) => region.id === this.regionId())?.labelKey ?? 'register.region.europe';
+  }
 
   async ngOnInit(): Promise<void> {
     const profile = this.auth.profile() ?? (await this.auth.load());
@@ -438,8 +478,9 @@ export class RegisterTenant implements OnInit {
       await firstValueFrom(this.api.post('api/tenants/register', body));
       await this.auth.switchTenant(this.guildId);
       await this.router.navigateByUrl('/dashboard');
-    } catch (err) {
-      this.error.set(err instanceof Error ? err.message : this.t('common.error'));
+    } catch {
+      // The API message is not shown: it is English, server-side text. The localised copy says what to do.
+      this.error.set(this.t('register.submitFailed'));
     } finally {
       this.submitting.set(false);
     }

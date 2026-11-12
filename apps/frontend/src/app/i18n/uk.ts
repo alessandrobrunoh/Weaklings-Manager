@@ -3838,4 +3838,9 @@ export const uk: TranslationDict = {
   'users.block.effect.discord': 'Discord: нічого не змінюється. Його не виганяють і не банять, історія зберігається.',
   'users.block.reversible': 'Розблокувати можна будь-коли.',
   'users.link.searchLabel': 'Пошук у ростері гільдії',
+  // design/auth
+  'auth.login_title': 'Вхід',
+  'register.step': 'Крок {current} з {total}',
+  'register.discordServer': 'ID сервера Discord',
+  'register.submitFailed': 'Не вдалося зареєструвати сервер. Перевірте дані та спробуйте ще раз.',
 };

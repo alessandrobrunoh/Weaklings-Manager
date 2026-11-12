@@ -3842,4 +3842,9 @@ export const fr: TranslationDict = {
   'users.block.effect.discord': 'Discord : rien ne change. Il n’est ni expulsé ni banni, et son historique est conservé.',
   'users.block.reversible': 'Tu peux le débloquer à tout moment.',
   'users.link.searchLabel': 'Rechercher dans le roster de la guilde',
+  // design/auth
+  'auth.login_title': 'Se connecter',
+  'register.step': 'Étape {current} sur {total}',
+  'register.discordServer': 'ID du serveur Discord',
+  'register.submitFailed': 'Impossible d\'enregistrer le serveur. Vérifiez les informations et réessayez.',
 };

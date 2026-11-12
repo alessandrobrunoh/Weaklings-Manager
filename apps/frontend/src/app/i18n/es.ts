@@ -4023,4 +4023,9 @@ export const es: TranslationDict = {
   'users.block.effect.discord': 'Discord: no cambia nada. No se le expulsa ni se le banea, y el historial se conserva.',
   'users.block.reversible': 'Puedes desbloquearlo en cualquier momento.',
   'users.link.searchLabel': 'Buscar en el roster del gremio',
+  // design/auth
+  'auth.login_title': 'Iniciar sesión',
+  'register.step': 'Paso {current} de {total}',
+  'register.discordServer': 'ID del servidor de Discord',
+  'register.submitFailed': 'No se pudo registrar el servidor. Revisa los datos e inténtalo de nuevo.',
 };

@@ -4032,4 +4032,9 @@ export const it: TranslationDict = {
   'users.block.effect.discord': 'Discord: non cambia nulla. Non viene espulso né bannato e la cronologia resta.',
   'users.block.reversible': 'Puoi sbloccarlo in qualsiasi momento.',
   'users.link.searchLabel': 'Cerca nel roster della gilda',
+  // design/auth
+  'auth.login_title': 'Accedi',
+  'register.step': 'Passo {current} di {total}',
+  'register.discordServer': 'ID del server Discord',
+  'register.submitFailed': 'Impossibile registrare il server. Controlla i dati e riprova.',
 };

@@ -4020,6 +4020,11 @@ export const en = {
   'users.block.effect.discord': 'Discord: nothing changes. They are not kicked or banned, and their history is kept.',
   'users.block.reversible': 'You can unblock them at any time.',
   'users.link.searchLabel': 'Search the guild roster',
+  // design/auth
+  'auth.login_title': 'Sign in',
+  'register.step': 'Step {current} of {total}',
+  'register.discordServer': 'Discord server ID',
+  'register.submitFailed': 'The server could not be registered. Check the details and try again.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
