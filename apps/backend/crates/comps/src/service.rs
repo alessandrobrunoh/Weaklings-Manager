@@ -1180,7 +1180,7 @@ impl CompService {
                     loadout: Set(BuildLoadout::Main.to_string()),
                     slot: Set(slot),
                     openalbion_item_type: Set(item.openalbion_item_type),
-                    openalbion_item_id: Set(item.openalbion_item_id),
+                    openalbion_item_id: Set(catalog_item.id),
                     openalbion_item_name: Set(resolved.name),
                     openalbion_item_icon: Set(resolved.icon),
                     openalbion_item_tier: Set(resolved.tier),
@@ -1585,7 +1585,7 @@ impl CompService {
         let stored = if let Some(model) = existing {
             let mut active: build_item::ActiveModel = model.into();
             active.openalbion_item_type = Set(req.openalbion_item_type);
-            active.openalbion_item_id = Set(req.openalbion_item_id);
+            active.openalbion_item_id = Set(catalog_item.id);
             active.openalbion_item_name = Set(resolved.name);
             active.openalbion_item_icon = Set(resolved.icon);
             active.openalbion_item_tier = Set(resolved.tier);
@@ -1602,7 +1602,7 @@ impl CompService {
                 loadout: Set(loadout.to_string()),
                 slot: Set(slot.to_string()),
                 openalbion_item_type: Set(req.openalbion_item_type),
-                openalbion_item_id: Set(req.openalbion_item_id),
+                openalbion_item_id: Set(catalog_item.id),
                 openalbion_item_name: Set(resolved.name),
                 openalbion_item_icon: Set(resolved.icon),
                 openalbion_item_tier: Set(resolved.tier),
@@ -4414,6 +4414,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_id_rounded_by_the_browser_saves_the_canonical_catalog_id() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let catalog =
+            backend_albion_data::openalbion::service::catalog_item_by_identifier("T8_MAIN_SWORD")
+                .expect("T8_MAIN_SWORD is in the catalog");
+        // What `JSON.parse` turns the id into: the nearest double.
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        let rounded = (catalog.id as f64) as i64;
+
+        let detail = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                UpsertBuildItemRequest {
+                    openalbion_item_id: rounded,
+                    ..broadsword()
+                },
+            )
+            .await
+            .expect("a browser-rounded catalog id is accepted");
+
+        let stored = detail
+            .items
+            .iter()
+            .find(|item| item.slot == BuildSlot::Weapon)
+            .expect("the weapon is stored");
+        assert_eq!(stored.openalbion_item_id, catalog.id);
+    }
+
+    #[tokio::test]
     async fn the_stored_name_icon_and_tier_come_from_the_catalog_not_the_client() {
         let db = seed_db().await;
         let (service, build_id) = seed_build(&db).await;
@@ -5695,7 +5728,10 @@ mod tests {
         let (service, build_id) = seed_build(&db).await;
 
         let detail = service.get_build(&db, build_id).await.unwrap();
-        assert_eq!(detail.summary.weapon_key.as_deref(), Some("weapon:MAIN_SWORD"));
+        assert_eq!(
+            detail.summary.weapon_key.as_deref(),
+            Some("weapon:MAIN_SWORD")
+        );
         assert_eq!(detail.summary.weapon_name.as_deref(), Some("Broadsword"));
 
         // A swap-loadout weapon is not the build's weapon.
@@ -5857,7 +5893,10 @@ mod tests {
             )
             .await
             .expect("existing rows are not rewritten and stay editable");
-        assert_eq!(renamed.summary.description.as_deref(), Some("still editable"));
+        assert_eq!(
+            renamed.summary.description.as_deref(),
+            Some("still editable")
+        );
 
         let error = service
             .create_build_version(&db, legacy, user)
