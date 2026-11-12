@@ -3451,4 +3451,11 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Ciudades',
+  'admin.islands.summary.sourceGuilds': 'Gremios de origen',
+  'admin.islands.detail.manage': 'Quién gestiona esta isla',
+  'admin.islands.detail.manageOwn': 'Tu gremio gestiona esta isla y sus cofres.',
+  'admin.islands.detail.manageSource':
+    'Gestionada por {guild}. Puedes verla aquí, pero los cambios se hacen en ese gremio.',
 };

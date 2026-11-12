@@ -16,6 +16,8 @@ This directory contains administrative pages and helpers for tenant configuratio
 - Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
+- Island list (`admin-islands`): a summary band, then one `app-data-table` per source guild for alliance tenants (headed by the guild name) or a single table for guild tenants. Each table has its own URL sync turned off. Edit is a row button and delete sits in the row menu. Adding tabs happens on the detail page only.
+- Island detail (`admin-island-detail`): `app-entity-header` (delete in its menu) with a summary band, then sections for the island details (guild tenants only), its chest tabs (`app-data-table` with a row menu for move and delete), and who manages it.
 
 ## Side Effects
 

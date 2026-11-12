@@ -3448,6 +3448,13 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Cities',
+  'admin.islands.summary.sourceGuilds': 'Source guilds',
+  'admin.islands.detail.manage': 'Who manages this island',
+  'admin.islands.detail.manageOwn': 'Your guild manages this island and its chest tabs.',
+  'admin.islands.detail.manageSource':
+    'Managed by {guild}. You can view it here, but changes are made in that guild.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

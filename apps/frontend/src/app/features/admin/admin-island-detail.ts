@@ -16,11 +16,15 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { EntityHeader, type EntityMenuItem } from '../../shared/components/entity-header/entity-header';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 
 const ISLAND_CITIES: readonly SplitIslandCity[] = [
   'lymhurst',
@@ -32,19 +36,33 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
   'brecilien',
 ];
 
+const NO_MENU_ITEMS: readonly MenuItem[] = [];
+
 /**
- * Dedicated island detail and edit page (`/admin/islands/:islandId`).
+ * Island detail and edit page (`/admin/islands/:islandId`).
  *
- * Allows admins to rename an island, move it to another city, and manage
- * (add, rename, reorder, delete) its loot chest tabs.
+ * Sections: the island itself (guild tenants edit name and city), its chest tabs
+ * (add, rename, reorder, delete) and who manages it. Alliance tenants see the same
+ * page read-only, with the source guild named in the summary and in the management note.
  */
 @Component({
   selector: 'app-admin-island-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [Dialog, ErrorState, Loading, PageHeader, PageStack, RouterLink],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    EntityHeader,
+    ErrorState,
+    Loading,
+    Menu,
+    PageStack,
+    RouterLink,
+    SummaryBand,
+  ],
   template: `
-    <a routerLink="/admin/islands" class="btn btn--ghost mb-4 inline-flex">
+    <a routerLink="/admin/islands" class="btn btn--ghost btn--sm mb-3 inline-flex">
       ← {{ t('admin.islands.detail.back') }}
     </a>
 
@@ -58,38 +76,31 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
       />
     } @else {
       @if (island(); as detail) {
-        <app-page-header
+        <app-entity-header
           [title]="detail.name"
-          [subtitle]="detailSubtitle(detail)"
+          [menuItems]="headerMenu()"
+          [menuLabel]="t('entityHeader.moreActions')"
+          (menuSelect)="onHeaderMenu($event)"
         >
-          @if (canMutateCatalog()) {
-            <button type="button" class="btn btn--danger" (click)="deleteIslandOpen.set(true)">
-              {{ t('common.delete') }}
-            </button>
-          }
-        </app-page-header>
+          <app-summary-band entitySummary [ariaLabel]="t('admin.islands.detail.title')" [items]="summaryItems()" />
+        </app-entity-header>
 
         <app-page-stack>
           @if (!canMutateCatalog()) {
-            <p class="text-sm" style="color: var(--color-text-secondary)">
-              {{ t('admin.islands.readonlyHint') }}
-            </p>
+            <p class="hint">{{ t('admin.islands.readonlyHint') }}</p>
           }
 
-          <!-- Edit Island Details Card -->
-          <section class="card p-5">
-            <header class="mb-4">
-              <h2 class="text-base font-semibold" style="color: var(--color-text)">
+          <!-- What the island is: name and city, editable by guild tenants -->
+          @if (canMutateCatalog()) {
+            <section class="card p-4" aria-labelledby="island-details-title">
+              <h2 id="island-details-title" class="section-title">
                 {{ t('admin.islands.detail.overview') }}
               </h2>
-            </header>
-
-            @if (canMutateCatalog()) {
-              <form class="grid gap-4" (submit)="onSaveIsland($event)">
-                <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+              <form class="mt-3 grid gap-4" (submit)="onSaveIsland($event)">
+                <p class="hint">{{ t('validation.requiredLegend') }}</p>
                 <div class="grid gap-4 sm:grid-cols-2">
                   <label class="block">
-                    <span class="label font-medium">{{ t('admin.islands.location') }}</span>
+                    <span class="label">{{ t('admin.islands.location') }}</span>
                     <select
                       class="select"
                       [value]="editCity()"
@@ -102,7 +113,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
                   </label>
 
                   <label class="block">
-                    <span class="label font-medium">{{ t('admin.islands.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
+                    <span class="label">{{ t('admin.islands.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
                     <input
                       class="input"
                       type="text"
@@ -123,108 +134,73 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
                   </button>
                 </div>
               </form>
-            } @else {
-              <dl class="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt class="label font-medium">{{ t('admin.islands.location') }}</dt>
-                  <dd>{{ cityLabel(detail.city) }}</dd>
-                </div>
-                <div>
-                  <dt class="label font-medium">{{ t('admin.islands.island') }}</dt>
-                  <dd>{{ detail.name }}</dd>
-                </div>
-                <div>
-                  <dt class="label font-medium">{{ t('admin.islands.sourceGuild') }}</dt>
-                  <dd>{{ sourceGuildLabel(detail) }}</dd>
-                </div>
-              </dl>
-            }
-          </section>
+            </section>
+          }
 
-          <!-- Manage Chest Tabs Section -->
-          <section class="card p-5">
-            <header class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <!-- What is on the island: its chest tabs -->
+          <section class="card p-4" aria-labelledby="island-tabs-title">
+            <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+                <h2 id="island-tabs-title" class="section-title">
                   {{ t(canMutateCatalog() ? 'admin.islands.detail.tabsTitle' : 'admin.islands.detail.tabsTitleReadonly') }} ({{ sortedTabs().length }})
                 </h2>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
+                <p class="hint">
                   {{ t(canMutateCatalog() ? 'admin.islands.detail.tabsHint' : 'admin.islands.detail.tabsHintReadonly') }}
                 </p>
               </div>
               @if (canMutateCatalog()) {
-                <button type="button" class="btn btn--primary btn--sm" (click)="openAddTab()">
-                  + {{ t('admin.islands.addTab') }}
+                <button type="button" class="btn btn--outline btn--sm" (click)="openAddTab()">
+                  {{ t('admin.islands.addTab') }}
                 </button>
               }
             </header>
 
-            @if (sortedTabs().length === 0) {
-              <p class="py-6 text-center text-xs" style="color: var(--color-text-secondary)">
-                {{ t('admin.islands.detail.noTabs') }}
-              </p>
-            } @else {
-              <div class="flex flex-col gap-2.5">
-                @for (tab of sortedTabs(); track tab.id; let idx = $index; let isFirst = $first; let isLast = $last) {
-                  <article
-                    class="surface flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3.5"
-                    style="border-color: var(--color-border)"
-                  >
-                    <div class="flex items-center gap-3">
-                      <span class="chip mono text-xs font-bold">#{{ idx + 1 }}</span>
-                      <div>
-                        <h3 class="font-semibold" style="color: var(--color-text)">
-                          {{ tab.name }}
-                        </h3>
-                        <p class="text-xs" style="color: var(--color-text-secondary)">
-                          {{ t('admin.islands.detail.sortOrder') }}: {{ tab.sort_order }}
-                        </p>
-                      </div>
-                    </div>
+            <app-data-table
+              [columns]="tabColumns()"
+              [rows]="sortedTabs()"
+              [trackBy]="trackTabById"
+              [emptyLabel]="noTabsLabel"
+              emptyIcon="list"
+              [hideSearch]="true"
+              [hidePageSize]="true"
+              [pageSize]="50"
+              [syncUrl]="false"
+              [ariaLabel]="t('admin.islands.detail.tabsTitleReadonly')"
+            >
+              @if (canMutateCatalog()) {
+                <ng-template dataTableCell="actions" let-row>
+                  <div class="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      (click)="openEditTab(row)"
+                    >
+                      {{ t('common.edit') }}
+                    </button>
+                    <app-menu
+                      [items]="tabMenus()[row.id] ?? noMenuItems"
+                      [label]="t('common.actions')"
+                      align="end"
+                      (itemSelect)="onTabMenu(row, $event)"
+                    />
+                  </div>
+                </ng-template>
+              }
+            </app-data-table>
+          </section>
 
-                    @if (canMutateCatalog()) {
-                      <div class="flex flex-wrap items-center gap-1.5">
-                        <button
-                          type="button"
-                          class="btn btn--ghost btn--sm"
-                          [disabled]="isFirst || reordering()"
-                          (click)="moveTab(idx, -1)"
-                          [title]="t('admin.islands.detail.moveUp')"
-                          [attr.aria-label]="t('admin.islands.detail.moveUp')"
-                        >
-                          ↑ {{ t('admin.islands.detail.moveUp') }}
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn--ghost btn--sm"
-                          [disabled]="isLast || reordering()"
-                          (click)="moveTab(idx, 1)"
-                          [title]="t('admin.islands.detail.moveDown')"
-                          [attr.aria-label]="t('admin.islands.detail.moveDown')"
-                        >
-                          ↓ {{ t('admin.islands.detail.moveDown') }}
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm"
-                          (click)="openEditTab(tab)"
-                        >
-                          {{ t('common.edit') }}
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn--danger btn--sm"
-                          [disabled]="detail.tabs.length <= 1"
-                          (click)="askDeleteTab(tab)"
-                        >
-                          {{ t('common.delete') }}
-                        </button>
-                      </div>
-                    }
-                  </article>
-                }
-              </div>
-            }
+          <!-- Who manages it -->
+          <section class="card p-4" aria-labelledby="island-manage-title">
+            <h2 id="island-manage-title" class="section-title">
+              {{ t('admin.islands.detail.manage') }}
+            </h2>
+            <p class="mt-2 text-sm">
+              @if (canMutateCatalog()) {
+                {{ t('admin.islands.detail.manageOwn') }}
+              } @else {
+                {{ t('admin.islands.detail.manageSource', { guild: sourceGuildLabel(detail) }) }}
+              }
+            </p>
           </section>
         </app-page-stack>
       }
@@ -234,7 +210,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
     @if (addTabOpen()) {
       <app-dialog [title]="t('admin.islands.addTab')" size="sm" (closed)="addTabOpen.set(false)">
         <form id="add-tab-form" class="grid gap-3" (submit)="onAddTabSubmit($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
             <span class="label">{{ t('admin.islands.detail.tabName') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
@@ -271,7 +247,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         (closed)="editingTab.set(null)"
       >
         <form id="edit-tab-form" class="grid gap-3" (submit)="onEditTabSubmit($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
             <span class="label">{{ t('admin.islands.detail.tabName') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
             <input
@@ -369,6 +345,8 @@ export class AdminIslandDetail {
   );
 
   protected readonly islandCities = ISLAND_CITIES;
+  protected readonly noMenuItems = NO_MENU_ITEMS;
+  protected readonly noTabsLabel: TranslationKey = 'admin.islands.detail.noTabs';
 
   protected readonly island = signal<SplitIsland | null>(null);
   protected readonly loading = signal(true);
@@ -398,6 +376,8 @@ export class AdminIslandDetail {
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
+  protected readonly trackTabById = (tab: SplitIslandTab): number => tab.id;
+
   protected readonly sortedTabs = computed<readonly SplitIslandTab[]>(() => {
     const current = this.island();
     if (!current) {
@@ -409,6 +389,74 @@ export class AdminIslandDetail {
       }
       return a.name.localeCompare(b.name);
     });
+  });
+
+  protected readonly tabColumns = computed<readonly DataTableColumn<SplitIslandTab>[]>(() => {
+    const columns: DataTableColumn<SplitIslandTab>[] = [
+      {
+        key: 'name',
+        label: 'admin.islands.detail.tabName',
+        accessor: (tab) => tab.name,
+      },
+      {
+        key: 'sort_order',
+        label: 'admin.islands.detail.sortOrder',
+        align: 'right',
+        accessor: (tab) => tab.sort_order,
+      },
+    ];
+    if (this.canMutateCatalog()) {
+      columns.push({ key: 'actions', label: 'common.actions', align: 'right' });
+    }
+    return columns;
+  });
+
+  /** Overflow menu entries per chest tab, keyed by tab id (move, delete). */
+  protected readonly tabMenus = computed<Partial<Record<number, readonly MenuItem[]>>>(() => {
+    const tabs = this.sortedTabs();
+    const busy = this.reordering();
+    const menus: Record<number, readonly MenuItem[]> = {};
+    tabs.forEach((tab, index) => {
+      menus[tab.id] = [
+        {
+          id: 'up',
+          label: this.t('admin.islands.detail.moveUp'),
+          disabled: busy || index === 0,
+        },
+        {
+          id: 'down',
+          label: this.t('admin.islands.detail.moveDown'),
+          disabled: busy || index === tabs.length - 1,
+        },
+        {
+          id: 'delete',
+          label: this.t('common.delete'),
+          danger: true,
+          separatorBefore: true,
+          disabled: tabs.length <= 1,
+        },
+      ];
+    });
+    return menus;
+  });
+
+  protected readonly headerMenu = computed<readonly EntityMenuItem[]>(() =>
+    this.canMutateCatalog() ? [{ id: 'delete', label: this.t('common.delete'), danger: true }] : [],
+  );
+
+  protected readonly summaryItems = computed<readonly SummaryItem[]>(() => {
+    const current = this.island();
+    if (!current) {
+      return [];
+    }
+    const items: SummaryItem[] = [
+      { label: this.t('admin.islands.location'), value: this.cityLabel(current.city) },
+      { label: this.t('admin.islands.tabs'), value: current.tabs.length },
+    ];
+    if (!this.canMutateCatalog()) {
+      items.push({ label: this.t('admin.islands.sourceGuild'), value: this.sourceGuildLabel(current) });
+    }
+    return items;
   });
 
   protected readonly isIslandChanged = computed(() => {
@@ -458,15 +506,10 @@ export class AdminIslandDetail {
     return this.t('admin.islands.unknownGuild');
   }
 
-  protected detailSubtitle(island: SplitIsland): string {
-    const parts = [
-      this.cityLabel(island.city),
-      `${island.tabs.length} ${this.t('admin.islands.tabs').toLowerCase()}`,
-    ];
-    if (!this.canMutateCatalog()) {
-      parts.push(this.sourceGuildLabel(island));
+  protected onHeaderMenu(id: string): void {
+    if (id === 'delete' && this.canMutateCatalog()) {
+      this.deleteIslandOpen.set(true);
     }
-    return parts.join(' · ');
   }
 
   protected onEditCityChange(event: Event): void {
@@ -589,6 +632,17 @@ export class AdminIslandDetail {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.savingTab.set(false);
+    }
+  }
+
+  protected onTabMenu(tab: SplitIslandTab, id: string): void {
+    if (id === 'up' || id === 'down') {
+      const index = this.sortedTabs().findIndex((item) => item.id === tab.id);
+      if (index >= 0) {
+        void this.moveTab(index, id === 'up' ? -1 : 1);
+      }
+    } else if (id === 'delete') {
+      this.askDeleteTab(tab);
     }
   }
 

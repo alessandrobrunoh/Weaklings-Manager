@@ -3269,4 +3269,11 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Villes',
+  'admin.islands.summary.sourceGuilds': 'Guildes d’origine',
+  'admin.islands.detail.manage': 'Qui gère cette île',
+  'admin.islands.detail.manageOwn': 'Votre guilde gère cette île et ses coffres.',
+  'admin.islands.detail.manageSource':
+    'Gérée par {guild}. Vous pouvez la consulter ici, mais les modifications se font dans cette guilde.',
 };

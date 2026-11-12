@@ -13,8 +13,10 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon } from '../../shared/components/icon/icon';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import {
   groupIslandsBySourceGuild,
   type SourceGuildIslandGroup,
@@ -33,37 +35,16 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 /**
  * Island catalog: cities, islands, and loot tabs used when locating splits.
  *
- * Moved out of the splits page so members pick a location there and admins
- * maintain the catalog here (`splits.islands.manage`). Create uses the shared
- * native `<dialog>` shell so focus, Esc, and light-dismiss stay with the browser.
+ * Members pick a location on the splits page; admins maintain the catalog here
+ * (guild tenants). Alliance tenants see the islands synced from each member guild,
+ * grouped by source guild, read-only. Create uses the shared native `<dialog>`
+ * shell so focus, Esc, and light-dismiss stay with the browser.
  */
 @Component({
   selector: 'app-admin-islands',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, RouterLink],
-  styles: [COMPACT_FEATURE_STYLES, `
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
-    }
-  `],
+  imports: [DataTable, DataTableCell, Dialog, Icon, Menu, PageHeader, PageStack, RouterLink, SummaryBand],
+  styles: [COMPACT_FEATURE_STYLES],
   template: `
     <app-page-header [title]="t('admin.islands.title')" [subtitle]="pageSubtitle()">
       @if (canMutateCatalog()) {
@@ -76,75 +57,15 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 
     <app-page-stack>
       @if (!canMutateCatalog()) {
-        <p class="text-sm" style="color: var(--color-text-secondary)">
-          {{ t('admin.islands.readonlyHint') }}
-        </p>
+        <p class="hint">{{ t('admin.islands.readonlyHint') }}</p>
       }
 
-      <!-- KPI cards -->
-      <section class="grid gap-4 sm:gap-5 sm:grid-cols-3" aria-label="Islands summary">
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.islands.title') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ islands().length }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Registered guild islands
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-              <app-icon name="bank" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.islands.tabs') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
-                {{ totalTabsCount() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Loot split deposit tabs
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-              <app-icon name="list" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.islands.location') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
-                {{ uniqueCitiesCount() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Royal cities & portals
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-              <app-icon name="sparkles" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-      </section>
+      <app-summary-band [ariaLabel]="t('admin.islands.title')" [items]="summaryItems()" />
 
       @for (group of displayGroups(); track group.sourceGuildTenantId ?? 'unknown') {
         <section class="grid gap-3">
           @if (!canMutateCatalog() && group.items.length > 0) {
-            <h2 class="text-base font-semibold" style="color: var(--color-text)">
+            <h2 class="section-title">
               {{ group.sourceGuildName ?? t('admin.islands.unknownGuild') }}
             </h2>
           }
@@ -158,53 +79,29 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             [emptyLabel]="emptyLabel()"
             emptyIcon="swords"
             [pageSize]="25"
+            [syncUrl]="false"
+            [ariaLabel]="group.sourceGuildName ?? t('admin.islands.title')"
             [rowClickable]="true"
             (rowClick)="openIsland($event)"
           >
             <ng-template dataTableCell="name" let-row>
               <a
-                class="font-medium text-(--color-text) no-underline hover:underline cursor-pointer"
+                class="font-medium text-(--color-text) no-underline hover:underline"
                 [routerLink]="['/admin/islands', row.id]"
               >
                 {{ row.name }}
               </a>
             </ng-template>
             <ng-template dataTableCell="tabs" let-row>
-              <div class="flex flex-col gap-2">
-                <div class="flex flex-wrap gap-1.5">
-                  @for (tab of row.tabs; track tab.id) {
-                    <span class="chip">{{ tab.name }}</span>
-                  }
-                </div>
-                @if (canMutateCatalog()) {
-                  <form class="flex flex-wrap gap-2" (submit)="onAddTab($event, row.id)">
-                    <label>
-                      <span class="label">{{ t('admin.islands.newTab') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-                      <input
-                        class="input"
-                        style="max-width: 12rem"
-                        type="text"
-                        required
-                        [value]="newTabNameByIsland()[row.id] ?? ''"
-                        (input)="onNewTabName(row.id, $event)"
-                        [attr.placeholder]="t('admin.islands.newTab')"
-                      />
-                    </label>
-                    <p class="text-xs w-full" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
-                    <button
-                      type="submit"
-                      class="btn btn--outline btn--sm"
-                      [disabled]="addingTabId() === row.id"
-                    >
-                      {{ t('admin.islands.addTab') }}
-                    </button>
-                  </form>
+              <div class="flex flex-wrap gap-1.5">
+                @for (tab of row.tabs; track tab.id) {
+                  <span class="chip">{{ tab.name }}</span>
                 }
               </div>
             </ng-template>
-            <ng-template dataTableCell="actions" let-row>
-              <div class="flex items-center justify-end gap-2">
-                @if (canMutateCatalog()) {
+            @if (canMutateCatalog()) {
+              <ng-template dataTableCell="actions" let-row>
+                <div class="flex items-center justify-end gap-2">
                   <button
                     type="button"
                     class="btn btn--outline btn--sm"
@@ -212,25 +109,15 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
                   >
                     {{ t('common.edit') }}
                   </button>
-                }
-                <a
-                  [routerLink]="['/admin/islands', row.id]"
-                  class="btn btn--ghost btn--sm"
-                >
-                  {{ t('common.view') }}
-                </a>
-                @if (canMutateCatalog()) {
-                  <button
-                    type="button"
-                    class="btn btn--danger btn--sm"
-                    [disabled]="deletingId() === row.id"
-                    (click)="askDelete(row)"
-                  >
-                    {{ t('common.delete') }}
-                  </button>
-                }
-              </div>
-            </ng-template>
+                  <app-menu
+                    [items]="rowMenuItems()"
+                    [label]="t('common.actions')"
+                    align="end"
+                    (itemSelect)="onRowMenu(row, $event)"
+                  />
+                </div>
+              </ng-template>
+            }
           </app-data-table>
         </section>
       }
@@ -239,7 +126,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
     @if (createOpen()) {
       <app-dialog [title]="t('admin.islands.create')" (closed)="closeCreate()">
         <form id="create-island-form" class="grid gap-4" (submit)="onCreateIsland($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label>
             <span class="label">{{ t('admin.islands.location') }}</span>
             <select class="select" [value]="newIslandCity()" (change)="onNewIslandCity($event)">
@@ -269,9 +156,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
               (input)="onNewIslandTabs($event)"
               [attr.placeholder]="t('admin.islands.tabsPlaceholder')"
             />
-            <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-              {{ t('admin.islands.tabsHint') }}
-            </span>
+            <span class="hint mt-1 block">{{ t('admin.islands.tabsHint') }}</span>
           </label>
         </form>
         <div dialogFooter>
@@ -293,7 +178,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
     @if (editTarget(); as island) {
       <app-dialog [title]="t('admin.islands.editTitle')" size="sm" (closed)="closeEdit()">
         <form id="edit-island-form" class="grid gap-4" (submit)="onEditIsland($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
             <span class="label">{{ t('admin.islands.location') }}</span>
             <select
@@ -381,10 +266,26 @@ export class AdminIslands {
   protected readonly uniqueCitiesCount = computed(() => {
     return new Set(this.islands().map((i) => i.city)).size;
   });
+  protected readonly sourceGuildCount = computed(
+    () => this.displayGroups().filter((group) => group.sourceGuildTenantId !== null).length,
+  );
+  protected readonly summaryItems = computed<readonly SummaryItem[]>(() => {
+    const items: SummaryItem[] = [
+      { label: this.t('admin.stat.islands'), value: this.islands().length },
+      { label: this.t('admin.islands.tabs'), value: this.totalTabsCount() },
+      { label: this.t('admin.islands.summary.cities'), value: this.uniqueCitiesCount() },
+    ];
+    if (!this.canMutateCatalog()) {
+      items.push({
+        label: this.t('admin.islands.summary.sourceGuilds'),
+        value: this.sourceGuildCount(),
+      });
+    }
+    return items;
+  });
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly catalogSaving = signal(false);
-  protected readonly addingTabId = signal<number | null>(null);
   protected readonly deletingId = signal<number | null>(null);
   protected readonly createOpen = signal(false);
   protected readonly deleteTarget = signal<SplitIsland | null>(null);
@@ -395,36 +296,49 @@ export class AdminIslands {
   protected readonly newIslandCity = signal<SplitIslandCity>('lymhurst');
   protected readonly newIslandName = signal('');
   protected readonly newIslandTabs = signal('');
-  protected readonly newTabNameByIsland = signal<Record<number, string>>({});
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   protected readonly trackById = (row: SplitIsland): number => row.id;
 
-  protected readonly columns = computed<readonly DataTableColumn<SplitIsland>[]>(() => [
+  protected readonly rowMenuItems = computed<readonly MenuItem[]>(() => [
     {
-      key: 'city',
-      label: 'admin.islands.location',
-      sortable: true,
-      searchable: true,
-      accessor: (row) => this.cityLabel(row.city),
-      comparator: (a, b) => this.cityLabel(a.city).localeCompare(this.cityLabel(b.city)),
-      filterOptions: this.islandCities.map((city) => ({
-        value: this.cityLabel(city),
-        label: this.cityLabel(city),
-      })),
+      id: 'delete',
+      label: this.t('common.delete'),
+      danger: true,
+      disabled: this.deletingId() !== null,
     },
-    {
-      key: 'name',
-      label: 'admin.islands.island',
-      sortable: true,
-      searchable: true,
-      accessor: (row) => row.name,
-      comparator: (a, b) => a.name.localeCompare(b.name),
-    },
-    { key: 'tabs', label: 'admin.islands.tabs' },
-    { key: 'actions', label: 'common.actions', align: 'right' },
   ]);
+
+  protected readonly columns = computed<readonly DataTableColumn<SplitIsland>[]>(() => {
+    const columns: DataTableColumn<SplitIsland>[] = [
+      {
+        key: 'city',
+        label: 'admin.islands.location',
+        sortable: true,
+        searchable: true,
+        accessor: (row) => this.cityLabel(row.city),
+        comparator: (a, b) => this.cityLabel(a.city).localeCompare(this.cityLabel(b.city)),
+        filterOptions: this.islandCities.map((city) => ({
+          value: this.cityLabel(city),
+          label: this.cityLabel(city),
+        })),
+      },
+      {
+        key: 'name',
+        label: 'admin.islands.island',
+        sortable: true,
+        searchable: true,
+        accessor: (row) => row.name,
+        comparator: (a, b) => a.name.localeCompare(b.name),
+      },
+      { key: 'tabs', label: 'admin.islands.tabs' },
+    ];
+    if (this.canMutateCatalog()) {
+      columns.push({ key: 'actions', label: 'common.actions', align: 'right' });
+    }
+    return columns;
+  });
 
   constructor() {
     void this.load();
@@ -463,6 +377,12 @@ export class AdminIslands {
 
   protected closeEdit(): void {
     this.editTarget.set(null);
+  }
+
+  protected onRowMenu(island: SplitIsland, id: string): void {
+    if (id === 'delete') {
+      this.askDelete(island);
+    }
   }
 
   protected onEditIslandCity(event: Event): void {
@@ -516,11 +436,6 @@ export class AdminIslands {
     this.newIslandTabs.set((event.target as HTMLInputElement).value);
   }
 
-  protected onNewTabName(islandId: number, event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.newTabNameByIsland.update((current) => ({ ...current, [islandId]: value }));
-  }
-
   protected async onCreateIsland(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (!this.canMutateCatalog()) {
@@ -551,31 +466,6 @@ export class AdminIslands {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.catalogSaving.set(false);
-    }
-  }
-
-  protected async onAddTab(event: SubmitEvent, islandId: number): Promise<void> {
-    event.preventDefault();
-    if (!this.canMutateCatalog()) {
-      return;
-    }
-    const name = (this.newTabNameByIsland()[islandId] ?? '').trim();
-    if (!name) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-    this.addingTabId.set(islandId);
-    try {
-      await firstValueFrom(
-        this.api.post<SplitIsland>(`api/splits/islands/${islandId}/tabs`, { name }),
-      );
-      this.newTabNameByIsland.update((current) => ({ ...current, [islandId]: '' }));
-      await this.refresh();
-      this.toasts.success(this.t('admin.islands.tabAdded'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.addingTabId.set(null);
     }
   }
 

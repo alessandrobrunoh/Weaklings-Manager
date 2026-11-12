@@ -3460,4 +3460,11 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/admin-islands
+  'admin.islands.summary.cities': 'Città',
+  'admin.islands.summary.sourceGuilds': 'Gilde di origine',
+  'admin.islands.detail.manage': 'Chi gestisce quest’isola',
+  'admin.islands.detail.manageOwn': 'La tua gilda gestisce quest’isola e le sue casse.',
+  'admin.islands.detail.manageSource':
+    'Gestita da {guild}. Puoi consultarla qui, ma le modifiche si fanno in quella gilda.',
 };
