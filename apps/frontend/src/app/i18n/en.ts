@@ -1883,7 +1883,6 @@ export const en = {
   'albionSettings.title': 'Albion account',
   'albionSettings.subtitle': 'Your character link, and live lookups against the Albion API.',
   'albionSettings.link.title': 'Character link',
-  'albionSettings.link.linkedAs': 'Linked to',
   'albionSettings.link.since': 'Since',
   'albionSettings.link.unlink': 'Unlink',
   'albionSettings.link.unlinkConfirm':
@@ -1899,7 +1898,6 @@ export const en = {
   'albionSettings.lookup.noResults': 'Nothing matched that search.',
   'albionSettings.lookup.players': 'Players',
   'albionSettings.lookup.guilds': 'Guilds',
-  'albionSettings.lookup.members': 'members',
   'albionSettings.lookup.noGuild': 'No guild',
   'albionSettings.lookup.killFame': 'Kill fame',
   'albionSettings.lookup.deathFame': 'Death fame',
@@ -3989,6 +3987,22 @@ export const en = {
   'tests.timeline.legendHeal': '▲ healing received',
   'tests.timeline.legendDied': '✕ died',
   'tests.timeline.legendCooldown': 'Cooldown after the cast',
+
+  // design/albion-settings
+  'albionSettings.link.helper': 'Linking applies at once, with no officer approval. Battles, leaderboards and regear lookups use the character linked here.',
+  'albionSettings.link.character': 'Character',
+  'albionSettings.link.linkedStatus': 'Linked',
+  'albionSettings.link.rowActions': 'Character actions',
+  'albionSettings.lookup.searchLabel': 'Search players and guilds',
+  'albionSettings.lookup.minChars': 'Type at least 2 characters to search.',
+  'albionSettings.lookup.partial': 'Albion search is unavailable right now, so only guild members are shown.',
+  'albionSettings.lookup.selectHint': 'Select a player to see their fame.',
+  'albionSettings.lookup.memberCount': 'Members',
+  'albionSettings.lookup.dossierLabel': 'Player fame',
+  'albionSettings.lookup.noPlayers': 'No players matched.',
+  'albionSettings.lookup.noGuilds': 'No guilds matched.',
+  'albionSettings.save.saving': 'Unlinking character…',
+  'albionSettings.save.failed': 'The character could not be unlinked. Try again.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
