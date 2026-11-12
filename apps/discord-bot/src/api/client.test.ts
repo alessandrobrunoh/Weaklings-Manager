@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiClient, ApiError } from "./client.js";
+import { ACCOUNT_BLOCKED_MESSAGE, ApiClient, ApiError } from "./client.js";
 
 test("ApiClient sends member roles only with the matching Discord actor", async () => {
   const originalFetch = globalThis.fetch;
@@ -81,6 +81,48 @@ test("ApiClient bounds every request and reports a timeout as ApiError 504", asy
       (error: unknown) => error instanceof ApiError && error.status === 504,
     );
     assert.ok(signals[0] instanceof AbortSignal, "the request carries an AbortSignal");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ApiClient turns a 403 account_blocked into one clear message and keeps the code", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({ code: "account_blocked", detail: "Your access to the manager has been blocked by an officer." }),
+      { status: 403, headers: { "Content-Type": "application/problem+json" } },
+    );
+
+  try {
+    const api = new ApiClient("https://guild-manager.example", "secret");
+    await assert.rejects(
+      () => api.post("api/albion/link", {}, "42"),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 403 &&
+        error.code === "account_blocked" &&
+        error.message === ACCOUNT_BLOCKED_MESSAGE,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ApiClient leaves an ordinary 403 untouched", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: "Forbidden: missing permission" }), { status: 403 });
+
+  try {
+    const api = new ApiClient("https://guild-manager.example", "secret");
+    await assert.rejects(
+      () => api.get("api/events", "42"),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.code === undefined &&
+        error.message === "Forbidden: missing permission",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -27,6 +27,8 @@ import type {
 export interface TransferredSession {
   readonly profile: DiscordUserProfile | null;
   readonly sessionUnreachable: boolean;
+  /** Present (true) only when an officer blocked this member from the manager. */
+  readonly blocked?: boolean;
 }
 
 /** `TransferState` key under which the server stores its session probe. */
@@ -72,6 +74,12 @@ export class AuthService {
    * "not signed in" (network or server). The cookie may still be valid.
    */
   readonly sessionUnreachable = signal(false);
+
+  /**
+   * True when the backend refused the session because an officer blocked this member
+   * (`403 account_blocked`). The guards then send the user to `/blocked` instead of `/login`.
+   */
+  readonly accessBlocked = signal(false);
 
   /** Reactive flag derived from the presence of a profile. */
   readonly isAuthenticated = signal(false);
@@ -168,6 +176,15 @@ export class AuthService {
   setProfile(profile: DiscordUserProfile | null): void {
     this._profile.set(profile);
     this.isAuthenticated.set(profile !== null);
+    if (profile !== null) {
+      this.accessBlocked.set(false);
+    }
+  }
+
+  /** Records that the backend refused this member as blocked and drops the local session. */
+  markBlocked(): void {
+    this.accessBlocked.set(true);
+    this.setProfile(null);
   }
 
   /** True when the backend grants the requested capability to this session. */
@@ -195,6 +212,7 @@ export class AuthService {
 
     this.sessionUnreachable.set(session.sessionUnreachable);
     this.setProfile(session.profile);
+    this.accessBlocked.set(session.blocked === true);
     return session.profile;
   }
 
@@ -234,6 +252,9 @@ export class AuthService {
       const profile = await firstValueFrom(this.api.get<DiscordUserProfile>('api/auth/me'));
       return { profile: profile ?? null, sessionUnreachable: false };
     } catch (err) {
+      if (isAccessBlocked(err)) {
+        return { profile: null, sessionUnreachable: false, blocked: true };
+      }
       if (isSignedOut(err)) {
         return { profile: null, sessionUnreachable: false };
       }
@@ -247,6 +268,11 @@ export class AuthService {
     const tail = path.startsWith('/') ? path : `/${path}`;
     return `${base}${tail}`;
   }
+}
+
+/** `403 account_blocked`: an officer blocked this member from the manager. */
+export function isAccessBlocked(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403 && err.problem?.code === 'account_blocked';
 }
 
 /** 401/403 are a missing session. Status 0 and 5xx are not. */

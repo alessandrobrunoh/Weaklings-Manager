@@ -7,6 +7,13 @@ import type { ApiResponse } from './types.js';
  */
 export const API_REQUEST_TIMEOUT_MS = 15_000;
 
+/** Problem code the backend sends (HTTP 403) when an officer blocked the member from the manager. */
+export const ACCOUNT_BLOCKED_CODE = 'account_blocked';
+
+/** What a blocked member is told in Discord. Nothing is changed on Discord itself. */
+export const ACCOUNT_BLOCKED_MESSAGE =
+  'An officer blocked your access to the manager, so the bot cannot act on your behalf. Ask an officer to unblock you if this is a mistake.';
+
 /**
  * HTTP client for the Albion Guild Manager backend.
  *
@@ -126,13 +133,20 @@ export class ApiClient {
 
     if (!res.ok) {
       let detail: string = res.statusText;
+      let code: string | undefined;
       try {
-        const err = (await res.json()) as { detail?: string; message?: string };
+        const err = (await res.json()) as { detail?: string; message?: string; code?: string };
         detail = err.detail ?? err.message ?? detail;
+        code = err.code;
       } catch {
         // ignore JSON parse errors
       }
-      throw new ApiError(res.status, detail);
+      if (res.status === 403 && code === ACCOUNT_BLOCKED_CODE) {
+        // Every command surfaces `error.message`, so one clear sentence reaches the member
+        // whichever command they ran.
+        throw new ApiError(res.status, ACCOUNT_BLOCKED_MESSAGE, code);
+      }
+      throw new ApiError(res.status, detail, code);
     }
 
     // 204 No Content
@@ -179,6 +193,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Stable machine-readable problem code from the backend, e.g. `account_blocked`. */
+    public readonly code?: string,
   ) {
     super(message);
     this.name = 'ApiError';

@@ -30,7 +30,7 @@ import { SearchableSelect } from '../../shared/components/searchable-select/sear
 import { searchAlbionPlayers } from '../../shared/albion/albion-player-search';
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { AlbionLinkRequests } from './albion-link-requests';
+import { BlockUserDialog } from './block-user-dialog';
 
 const PAGE_SIZE = 10;
 
@@ -52,8 +52,8 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    AlbionLinkRequests,
     Avatar,
+    BlockUserDialog,
     Dialog,
     PageHeader,
     PageStack,
@@ -155,7 +155,6 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     </app-page-header>
 
     <app-page-stack class="workbench-page">
-      <app-albion-link-requests />
       @if (!loading() && !loadFailed()) {
       <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
         <!-- Card 1: Total -->
@@ -295,18 +294,53 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
           }
         </ng-template>
 
+        <ng-template dataTableCell="status" let-row>
+          @if (row.blocked) {
+            <span class="chip chip--error">
+              <app-icon name="user-x" size="0.75rem" />
+              {{ t('users.status.blocked') }}
+            </span>
+          } @else {
+            <span class="chip chip--success">
+              <app-icon name="check" size="0.75rem" />
+              {{ t('users.status.active') }}
+            </span>
+          }
+        </ng-template>
+
         <ng-template dataTableCell="actions" let-row>
-          <a
-            class="btn btn--outline btn--sm inline-flex items-center gap-1.5 text-xs"
-            [routerLink]="['/users', row.id]"
-            (click)="$event.stopPropagation()"
-          >
-            <app-icon name="users" size="0.75rem" />
-            {{ t('common.view') }}
-          </a>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <a
+              class="btn btn--outline btn--sm inline-flex items-center gap-1.5 text-xs"
+              [routerLink]="['/users', row.id]"
+              (click)="$event.stopPropagation()"
+            >
+              <app-icon name="users" size="0.75rem" />
+              {{ t('common.view') }}
+            </a>
+            @if (canBlock() && row.id !== ownUserId()) {
+              <button
+                type="button"
+                class="btn btn--outline btn--sm inline-flex items-center gap-1.5 text-xs"
+                (click)="askBlock(row, $event)"
+              >
+                <app-icon name="user-x" size="0.75rem" />
+                {{ row.blocked ? t('users.unblock.action') : t('users.block.action') }}
+              </button>
+            }
+          </div>
         </ng-template>
       </app-data-table>
     </app-page-stack>
+
+    @if (blockTarget(); as target) {
+      <app-block-user-dialog
+        [member]="target.member"
+        [mode]="target.mode"
+        (updated)="onBlockUpdated()"
+        (closed)="blockTarget.set(null)"
+      />
+    }
 
     @if (createOpen()) {
       <app-dialog
@@ -376,6 +410,14 @@ export class Users {
   private readonly translate = inject(TranslateService);
 
   protected readonly canCreate = computed(() => this.auth.hasPermission('users.create'));
+  /** Blocking is gated by `roles.manage`, the same permission as role assignment. */
+  protected readonly canBlock = computed(() => this.auth.hasPermission('roles.manage'));
+  protected readonly ownUserId = computed(() => this.auth.profile()?.user_id ?? null);
+  /** The member the block/unblock dialog is open for. */
+  protected readonly blockTarget = signal<{
+    member: UserProfile;
+    mode: 'block' | 'unblock';
+  } | null>(null);
 
   protected readonly pageSize = PAGE_SIZE;
   protected readonly users = signal<UserProfile[]>([]);
@@ -401,7 +443,7 @@ export class Users {
 
   private readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
     defaultPageSize: PAGE_SIZE,
-    filterKeys: ['role'],
+    filterKeys: ['role', 'status'],
   });
   private readonly tablePage = signal(this.initialQuery.page);
   private readonly tablePageSize = signal(this.initialQuery.pageSize);
@@ -438,16 +480,32 @@ export class Users {
     },
   ];
 
+  /** Blocked state is only reported to `roles.manage` holders, so only they get the column. */
+  private readonly statusColumn = computed<DataTableColumn<UserProfile>>(() => ({
+    key: 'status',
+    label: 'users.status',
+    accessor: (user) => (user.blocked ? 'blocked' : 'active'),
+    filterOptions: [
+      { value: 'active', label: this.t('users.status.active') },
+      { value: 'blocked', label: this.t('users.status.blocked') },
+    ],
+  }));
+
   /**
    * Emails are only returned to `users.create`/`roles.manage` holders (plus a member's own row), so
    * the column is hidden for everyone else instead of rendering a column of blanks.
    */
   protected readonly columns = computed<readonly DataTableColumn<UserProfile>[]>(() => {
-    if (!this.auth.hasPermission('users.create') && !this.auth.hasPermission('roles.manage')) {
-      return this.baseColumns;
-    }
-    const [username, ...rest] = this.baseColumns;
-    return [username, this.emailColumn, ...rest];
+    const [username, role, actions] = this.baseColumns;
+    const showEmail =
+      this.auth.hasPermission('users.create') || this.auth.hasPermission('roles.manage');
+    return [
+      username,
+      ...(showEmail ? [this.emailColumn] : []),
+      role,
+      ...(this.canBlock() ? [this.statusColumn()] : []),
+      actions,
+    ];
   });
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
@@ -511,6 +569,15 @@ export class Users {
 
   protected openMember(row: UserProfile): void {
     void this.router.navigate(['/users', row.id]);
+  }
+
+  protected askBlock(row: UserProfile, event: Event): void {
+    event.stopPropagation();
+    this.blockTarget.set({ member: row, mode: row.blocked ? 'unblock' : 'block' });
+  }
+
+  protected onBlockUpdated(): void {
+    void this.load();
   }
 
   protected onTableChange(event: DataTablePageChange): void {
@@ -651,12 +718,14 @@ export class Users {
     try {
       const sort = this.tableSort();
       const role = this.tableFilters()['role']?.trim();
+      const status = this.canBlock() ? this.tableFilters()['status']?.trim() : undefined;
       const data = await firstValueFrom(
         this.api.get<PaginatedData<UserProfile>>('api/users', {
           page: this.tablePage(),
           limit: this.tablePageSize(),
           username: this.tableSearch().trim() || undefined,
           role: role || undefined,
+          blocked: status === 'blocked' ? true : status === 'active' ? false : undefined,
           sort: sort?.columnKey,
           order: sort?.direction,
         }),

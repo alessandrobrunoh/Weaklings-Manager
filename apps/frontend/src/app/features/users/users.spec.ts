@@ -234,3 +234,122 @@ describe('Users new member', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 });
+
+describe('Users block action', () => {
+  let fixture: ComponentFixture<Users>;
+  let apiGet: ReturnType<typeof vi.fn>;
+  let apiPost: ReturnType<typeof vi.fn>;
+  let apiDelete: ReturnType<typeof vi.fn>;
+  let allowed: Set<string>;
+
+  const page = (items: unknown[]) =>
+    of({ items, total_items: items.length, total_pages: 1, current_page: 1, limit: 10 });
+
+  async function create(): Promise<HTMLElement> {
+    fixture = TestBed.createComponent(Users);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  function button(element: HTMLElement, text: string): HTMLButtonElement | undefined {
+    return [...element.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+      b.textContent?.includes(text),
+    );
+  }
+
+  beforeEach(async () => {
+    stubDialogApi();
+    allowed = new Set(['roles.manage']);
+    apiGet = vi.fn().mockImplementation(() =>
+      page([
+        { id: 9, username: 'Kay', email: 'k@x', role: 'Member', blocked: false },
+        { id: 10, username: 'Ana', email: 'a@x', role: 'Member', blocked: true },
+        { id: 1, username: 'Me', email: 'm@x', role: 'Admin', blocked: false },
+      ]),
+    );
+    apiPost = vi.fn().mockReturnValue(of({ id: 9, username: 'Kay', role: 'Member', blocked: true }));
+    apiDelete = vi
+      .fn()
+      .mockReturnValue(of({ id: 10, username: 'Ana', role: 'Member', blocked: false }));
+
+    await TestBed.configureTestingModule({
+      imports: [Users],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ApiService, useValue: { get: apiGet, post: apiPost, delete: apiDelete } },
+        {
+          provide: AuthService,
+          useValue: {
+            hasPermission: (perm: string) => allowed.has(perm),
+            profile: () => ({ user_id: 1 }),
+          },
+        },
+        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+      ],
+    }).compileComponents();
+  });
+
+  afterEach(() => fixture?.destroy());
+
+  it('marks blocked members with a text chip and offers block or unblock per row', async () => {
+    const element = await create();
+    const rows = [...element.querySelectorAll('tbody tr')];
+    expect(rows[0].textContent).toContain('users.status.active');
+    expect(rows[0].textContent).toContain('users.block.action');
+    expect(rows[1].textContent).toContain('users.status.blocked');
+    expect(rows[1].textContent).toContain('users.unblock.action');
+    // Nobody blocks themselves from the list.
+    expect(rows[2].textContent).not.toContain('users.block.action');
+  });
+
+  it('lists everyone by default and only filters on the status column', async () => {
+    await create();
+    expect(apiGet).toHaveBeenCalledWith(
+      'api/users',
+      expect.objectContaining({ blocked: undefined }),
+    );
+  });
+
+  it('explains the consequence, takes an optional reason and blocks', async () => {
+    const element = await create();
+    button(element, 'users.block.action')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(element.textContent).toContain('users.block.consequence');
+    const reason = element.querySelector<HTMLTextAreaElement>('#block-user-reason');
+    reason!.value = ' spam ';
+    reason!.dispatchEvent(new Event('input'));
+    element
+      .querySelector('form#block-user-form')
+      ?.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+
+    expect(apiPost).toHaveBeenCalledWith('api/users/9/block', { reason: 'spam' });
+  });
+
+  it('unblocks without asking for a reason', async () => {
+    const element = await create();
+    button(element, 'users.unblock.action')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(element.querySelector('#block-user-reason')).toBeNull();
+    element
+      .querySelector('form#block-user-form')
+      ?.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+
+    expect(apiDelete).toHaveBeenCalledWith('api/users/10/block');
+  });
+
+  it('hides the status column and the actions without roles.manage', async () => {
+    allowed.clear();
+    const element = await create();
+    expect(element.textContent).not.toContain('users.block.action');
+    expect(element.textContent).not.toContain('users.status.active');
+  });
+});

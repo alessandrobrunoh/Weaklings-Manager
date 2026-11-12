@@ -10,25 +10,23 @@ The bounded client excerpt exposes search, player, guild, guild-member, and alli
 
 (Details pending/documentation failed) HTTP route mappings, authorization, and service behavior need a compliant bounded review.
 
-## Link approval
+## Linking
 
-Albion has no way to prove who owns a character, so a self-service link (`POST /albion/link`,
-`POST /albion/register`) is a **request**, not a link:
+A self-service link (`POST /albion/link`, `POST /albion/register`) applies immediately; there is
+no approval step (`claim_character` in `router.rs`):
 
-- The claim goes to `albion_link_requests` (one open request per Discord account; asking again
-  replaces it). It is deliberately *not* in `albion_links`, which loot, regear and split
-  attribution all read, so an unvetted claim reaches none of it. No nickname change, Guild role
-  or alliance copy happens either.
-- A caller holding `roles.manage` is linked at once (`claim_character` in `router.rs`).
-- Officers (`roles.manage`) list claims with `GET /albion/link/requests`, then
-  `POST /albion/link/requests/{id}/approve` or `/reject`. Approval creates the link, drops
-  competing claims on the same character, then applies the nickname, Guild role and alliance
-  fan-out (`apply_link_effects`). It never displaces an existing link (`409`).
-- When a member files a request, `notify.rs` posts it to the guild's audit-log channel (`discord_audit_log_channel_id`) with a link to the Members page. Best-effort and in the background; no role is pinged, and with no channel or bot token configured it does nothing.
-- `DELETE /albion/link` on an account with only a request withdraws it.
-- Audited as `ALBION_LINK_REQUEST`, `ALBION_LINK` (`via: approval`), `ALBION_LINK_REJECT` and
-  `ALBION_LINK_REQUEST_CANCEL`. Creating a real link (admin or fan-out) clears the account's
-  open request.
+- `create_link` inserts the `albion_links` row and the audit row in one transaction. One
+  Discord account holds one link and one character belongs to one account (unique columns, `409`
+  otherwise); only a `roles.manage` holder can re-assign a character
+  (`POST /albion/link/users/{user_id}`).
+- Then, best effort, `apply_link_effects` sets the nickname, the Guild role (only for a character
+  in the configured Albion guild) and copies the link to paired alliance/guild tenants.
+- `notify.rs` posts a "character linked" notice to the guild's audit-log channel
+  (`discord_audit_log_channel_id`) so officers still see links happen. Best-effort, in the
+  background, never pings a role; with no channel or bot token configured it does nothing.
+- Audited as `ALBION_LINK`, `ALBION_UNLINK` and `ALBION_RELINK` (`via` says which door).
+- Migration `m20261113_000001` applied every claim still waiting in the old
+  `albion_link_requests` queue and dropped the table.
 
 ## Invariants
 

@@ -9,6 +9,7 @@ This directory contains the server-paged guild member directory and individual m
 - The bounded beginning of `users.ts` describes a member directory and shows username, email, role, and actions with page size 10.
 - `UserDetailPage` takes a required `userId` input and exposes permission-gated profile operations.
 - Member-creation request details are not documented from the compliant bounded excerpt.
+- Blocking: holders of `roles.manage` get a Status column (text and icon chip, filterable through the `blocked` query param) and a Block/Unblock action per row and on the detail page. `BlockUserDialog` (`block-user-dialog.ts`) confirms, takes an optional reason (max 500 characters) and calls `POST` / `DELETE api/users/{id}/block`. Nobody sees the action on their own row.
 
 ## Invariants
 

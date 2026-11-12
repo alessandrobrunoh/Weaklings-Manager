@@ -9,16 +9,9 @@ import { ToastService } from '../../../core/services/toast.service';
 import { TranslateService } from '../../../core/services/translate.service';
 import { AlbionLinkGate } from './albion-link-gate';
 
-const NONE: AlbionLinkStatus = { linked: false, pending: false };
-const PENDING: AlbionLinkStatus = {
-  linked: false,
-  pending: true,
-  pending_albion_player_id: 'p1',
-  pending_albion_player_name: 'Kay',
-};
+const NONE: AlbionLinkStatus = { linked: false };
 const LINKED: AlbionLinkStatus = {
   linked: true,
-  pending: false,
   albion_player_id: 'p1',
   albion_player_name: 'Kay',
 };
@@ -28,7 +21,6 @@ describe('AlbionLinkGate', () => {
   let status: AlbionLinkStatus;
   let get: ReturnType<typeof vi.fn>;
   let post: ReturnType<typeof vi.fn>;
-  let del: ReturnType<typeof vi.fn>;
   let toasts: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 
   async function create(): Promise<HTMLElement> {
@@ -45,15 +37,14 @@ describe('AlbionLinkGate', () => {
         ? of(status)
         : of({ players: [{ id: 'p1', name: 'Kay', guild_name: 'Weaklings' }] }),
     );
-    post = vi.fn().mockImplementation(() => of(PENDING));
-    del = vi.fn().mockImplementation(() => of(null));
+    post = vi.fn().mockImplementation(() => of(LINKED));
     toasts = { success: vi.fn(), error: vi.fn() };
 
     await TestBed.configureTestingModule({
       imports: [AlbionLinkGate],
       providers: [
         provideZonelessChangeDetection(),
-        { provide: ApiService, useValue: { get, post, delete: del } },
+        { provide: ApiService, useValue: { get, post } },
         { provide: ToastService, useValue: toasts },
         { provide: TranslateService, useValue: { t: (key: string) => key } },
       ],
@@ -68,20 +59,13 @@ describe('AlbionLinkGate', () => {
     expect(element.querySelector('form')).not.toBeNull();
   });
 
-  it('keeps blocking a member whose request is waiting, and says so', async () => {
-    status = PENDING;
-    const element = await create();
-    expect(element.textContent).toContain('albion.pending.title');
-    expect(element.querySelector('form')).toBeNull();
-  });
-
   it('shows nothing once the member is linked', async () => {
     status = LINKED;
     const element = await create();
     expect(element.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('does not report a link when the answer is only a pending request', async () => {
+  it('links at once when a character is picked and drops the gate', async () => {
     const element = await create();
     const emitted = vi.fn();
     fixture.componentInstance.linked.subscribe(emitted);
@@ -100,40 +84,8 @@ describe('AlbionLinkGate', () => {
       albion_player_id: 'p1',
       albion_player_name: 'Kay',
     });
-    expect(emitted).not.toHaveBeenCalled();
-    expect(element.textContent).toContain('albion.pending.title');
-    expect(toasts.success).toHaveBeenCalledWith('albion.pending.sent');
-  });
-
-  it('lets a waiting member withdraw and pick another character', async () => {
-    status = PENDING;
-    const element = await create();
-    const withdraw = [...element.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
-      b.textContent?.includes('albion.pending.withdraw'),
-    );
-    withdraw?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(del).toHaveBeenCalledWith('api/albion/link');
-    expect(element.querySelector('form')).not.toBeNull();
-  });
-
-  it('drops the gate and reports the link once an officer has approved', async () => {
-    status = PENDING;
-    const element = await create();
-    const emitted = vi.fn();
-    fixture.componentInstance.linked.subscribe(emitted);
-
-    status = LINKED;
-    const check = [...element.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
-      b.textContent?.includes('albion.pending.refresh'),
-    );
-    check?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
     expect(emitted).toHaveBeenCalledWith(LINKED);
+    expect(toasts.success).toHaveBeenCalledWith('albion.linked');
     expect(element.querySelector('[role="dialog"]')).toBeNull();
   });
 });

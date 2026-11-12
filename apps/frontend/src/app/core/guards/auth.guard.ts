@@ -24,6 +24,10 @@ export const authGuard: CanActivateFn = async (_route, state) => {
     return true;
   }
 
+  if (auth.accessBlocked()) {
+    return router.createUrlTree(['/blocked']);
+  }
+
   return router.createUrlTree(['/login'], {
     queryParams: auth.sessionUnreachable()
       ? { next: state.url, error: 'session_unreachable' }
@@ -75,6 +79,9 @@ export const tenantGuard: CanActivateFn = async () => {
   const auth = inject(AuthService);
   const router = inject(Router);
   const profile = auth.profile() ?? (await auth.load());
+  if (!profile && auth.accessBlocked()) {
+    return router.createUrlTree(['/blocked']);
+  }
   if (auth.sessionUnreachable() && !profile) {
     return router.createUrlTree(['/login'], { queryParams: { error: 'session_unreachable' } });
   }
