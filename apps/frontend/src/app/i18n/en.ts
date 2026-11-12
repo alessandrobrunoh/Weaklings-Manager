@@ -3448,6 +3448,21 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/platform-tenant-detail
+  'platform.tenant.sections': 'Sections',
+  'platform.tenant.tab.overview': 'Overview',
+  'platform.tenant.tab.access': 'Access',
+  'platform.tenant.tab.albion': 'Albion',
+  'platform.tenant.error.load': 'This tenant could not be loaded.',
+  'platform.tenant.features.error': 'Feature flags could not be loaded.',
+  'platform.tenant.summary': 'Tenant summary',
+  'platform.tenant.section.record': 'Record',
+  'platform.tenant.section.nameHint': 'Shown in the platform list and at the top of this page.',
+  'platform.tenant.section.access': 'SuperAdmin and rank',
+  'platform.tenant.section.accessHint': 'The Discord user who owns this tenant, and the rank it is assigned.',
+  'platform.tenant.section.albion': 'Albion Online',
+  'platform.tenant.section.albionHint': 'The guild this tenant reads from the Albion gameinfo API, its region and its allied guilds.',
+  'platform.tenant.suspendConfirm': 'Suspend {name}? You can resume it at any time from this page.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
