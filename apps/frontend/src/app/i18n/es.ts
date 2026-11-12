@@ -3501,4 +3501,16 @@ export const es: TranslationDict = {
   'admin.discord.saveHint': 'Guarda todas las secciones de esta página a la vez.',
   'admin.discord.saveFailed': 'No se pudieron guardar los ajustes de Discord. Inténtalo de nuevo.',
   'admin.discord.loadFailed': 'No se pudieron cargar los ajustes de Discord.',
+  // design/admin-features
+  'admin.features.area.combat': 'Combates e inteligencia',
+  'admin.features.area.members': 'Miembros y eventos',
+  'admin.features.area.economy': 'Dinero y botín',
+  'admin.features.area.platform': 'Gremio y plataforma',
+  'admin.features.area.other': 'Otros módulos',
+  'admin.features.lock.rank': 'Bloqueado: no incluido en tu Rango.',
+  'admin.features.lock.noRank': 'Bloqueado: el gremio no tiene Rango, así que no se incluye ningún módulo opcional.',
+  'admin.features.lock.platform': 'Bloqueado: lo gestiona la plataforma, no tu Rango.',
+  'admin.features.unsaved': 'Tienes cambios sin guardar.',
+  'admin.features.noChanges': 'No hay cambios que guardar.',
+  'admin.features.saveFailed': 'No se pudieron guardar los módulos. Tus cambios siguen aquí.',
 };

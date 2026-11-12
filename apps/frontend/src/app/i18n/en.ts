@@ -3498,6 +3498,18 @@ export const en = {
   'admin.discord.saveHint': 'Saves every section on this page at once.',
   'admin.discord.saveFailed': 'Discord settings could not be saved. Try again.',
   'admin.discord.loadFailed': 'Discord settings could not be loaded.',
+  // design/admin-features
+  'admin.features.area.combat': 'Fights and intel',
+  'admin.features.area.members': 'Members and events',
+  'admin.features.area.economy': 'Money and loot',
+  'admin.features.area.platform': 'Guild and platform',
+  'admin.features.area.other': 'Other modules',
+  'admin.features.lock.rank': 'Locked: not included in your Rank.',
+  'admin.features.lock.noRank': 'Locked: the guild has no Rank, so no optional modules are included.',
+  'admin.features.lock.platform': 'Locked: the platform manages this module, not your Rank.',
+  'admin.features.unsaved': 'You have unsaved changes.',
+  'admin.features.noChanges': 'No changes to save.',
+  'admin.features.saveFailed': 'Modules could not be saved. Your changes are still here.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
