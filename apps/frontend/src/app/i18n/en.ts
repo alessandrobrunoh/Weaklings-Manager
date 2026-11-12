@@ -3448,6 +3448,20 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/test-detail
+  'tests.resultsSummary': 'Run summary',
+  'tests.deathsHint': 'Units that reached 0 HP',
+  'tests.timeline.legend': 'Legend',
+  'tests.timeline.legendForeign': 'Spell not on this weapon',
+  'tests.timeline.legendUnknown': 'Engine does not know this spell',
+  'tests.timeline.legendNoTargets': 'No targets yet',
+  'tests.timeline.legendHpHigh': 'HP above 60%',
+  'tests.timeline.legendHpMid': 'HP 30 to 60%',
+  'tests.timeline.legendHpLow': 'HP below 30%',
+  'tests.timeline.legendDamage': '▼ damage taken',
+  'tests.timeline.legendHeal': '▲ healing received',
+  'tests.timeline.legendDied': '✕ died',
+  'tests.timeline.legendCooldown': 'Cooldown after the cast',
 } as const;
 
 export type TranslationKey = keyof typeof en;

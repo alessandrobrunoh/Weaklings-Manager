@@ -168,6 +168,13 @@ describe('TestDetailPage timeline tab', () => {
     expect(JSON.stringify(page.draft())).toBe(before);
   });
 
+  it('heads the page with the entity header and keeps one primary action in it', async () => {
+    const { fixture } = await openTimeline();
+    const header = fixture.nativeElement.querySelector('app-entity-header') as HTMLElement;
+    expect(header.querySelector('h1')?.textContent?.trim()).toBe('Burst check');
+    expect(header.querySelectorAll('.btn--primary')).toHaveLength(1);
+  });
+
   it('starts clean even though the server sent its own key order and no attacker style', async () => {
     const { page } = await openTimeline();
     expect(page.dirty()).toBe(false);

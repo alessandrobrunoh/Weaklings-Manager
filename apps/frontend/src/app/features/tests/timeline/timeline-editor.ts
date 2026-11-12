@@ -133,6 +133,40 @@ const MAGNET_PX = 6;
         </div>
       </div>
 
+      <ul class="timeline-legend" role="list" [attr.aria-label]="t('tests.timeline.legend')">
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--foreign" aria-hidden="true"></span>
+          {{ t('tests.timeline.legendForeign') }}
+        </li>
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--unknown" aria-hidden="true"></span>
+          {{ t('tests.timeline.legendUnknown') }}
+        </li>
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--no-targets" aria-hidden="true">!</span>
+          {{ t('tests.timeline.legendNoTargets') }}
+        </li>
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--hp-high" aria-hidden="true"></span>
+          {{ t('tests.timeline.legendHpHigh') }}
+        </li>
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--hp-mid" aria-hidden="true"></span>
+          {{ t('tests.timeline.legendHpMid') }}
+        </li>
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--hp-low" aria-hidden="true"></span>
+          {{ t('tests.timeline.legendHpLow') }}
+        </li>
+        <li class="legend-item">{{ t('tests.timeline.legendDamage') }}</li>
+        <li class="legend-item">{{ t('tests.timeline.legendHeal') }}</li>
+        <li class="legend-item">{{ t('tests.timeline.legendDied') }}</li>
+        <li class="legend-item">
+          <span class="legend-swatch legend-swatch--cooldown" aria-hidden="true"></span>
+          {{ t('tests.timeline.legendCooldown') }}
+        </li>
+      </ul>
+
       @if (staleResult()) {
         <div class="chip chip--warning flex w-fit items-center gap-2 text-xs">
           {{ t('tests.timeline.staleRun') }}
@@ -232,6 +266,7 @@ const MAGNET_PX = 6;
                       [class.clip--unknown]="isUnknown(clip)"
                       [attr.aria-pressed]="clip.castIndex === selectedCastIndex()"
                       [attr.aria-label]="clipLabel(clip)"
+                      [attr.title]="clipLabel(clip)"
                       [attr.data-cast-index]="clip.castIndex"
                       [style.transform]="'translateX(' + clipX(clip) + 'px)'"
                       [style.top.px]="clip.row * (clipHeight + clipGap) + 4"
@@ -248,6 +283,7 @@ const MAGNET_PX = 6;
                         [src]="iconFor(clip.cast.spell_id)"
                         (error)="onIconError($event)"
                       />
+                      <span class="clip__time" aria-hidden="true">{{ clipTime(clip) }}</span>
                       @if (clip.cast.target_ids.length === 0) {
                         <span class="clip__badge" aria-hidden="true">!</span>
                       }
@@ -416,7 +452,63 @@ const MAGNET_PX = 6;
       padding: 0.25rem 0.5rem;
     }
     .timeline-gutter--enemy {
-      border-left-color: var(--color-error);
+      /* Side is named in the text beside the label; the edge only separates the lanes. */
+      border-left-color: var(--color-text-tertiary);
+    }
+    .timeline-legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem 1rem;
+      font-size: var(--ui-text-xs);
+      color: var(--color-text-secondary);
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+    .legend-swatch {
+      display: inline-flex;
+      height: 0.875rem;
+      width: 0.875rem;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--color-border-strong, var(--color-border));
+      border-radius: 3px;
+      background-color: var(--color-surface-2, var(--color-surface));
+      font-size: var(--ui-text-xs);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .legend-swatch--foreign {
+      border: 1px dashed var(--color-warning);
+    }
+    .legend-swatch--unknown {
+      border: 1px solid var(--color-error);
+    }
+    .legend-swatch--no-targets {
+      color: var(--color-warning);
+    }
+    .legend-swatch--hp-high {
+      background-color: var(--color-success);
+      border-color: var(--color-success);
+    }
+    .legend-swatch--hp-mid {
+      background-color: var(--color-warning);
+      border-color: var(--color-warning);
+    }
+    .legend-swatch--hp-low {
+      background-color: var(--color-error);
+      border-color: var(--color-error);
+    }
+    .legend-swatch--cooldown {
+      background-image: repeating-linear-gradient(
+        45deg,
+        color-mix(in oklab, var(--color-text) 25%, transparent) 0 2px,
+        transparent 2px 4px
+      );
     }
     .timeline-gutter--orphan {
       border-left-color: var(--color-warning);
@@ -470,8 +562,11 @@ const MAGNET_PX = 6;
       display: flex;
       height: 30px;
       width: 44px;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 1px;
+      padding: 0;
       border: 1px solid var(--color-border-strong, var(--color-border));
       border-left: 2px solid var(--color-primary);
       border-radius: var(--radius-sm);
@@ -488,13 +583,12 @@ const MAGNET_PX = 6;
       border-color: var(--color-primary);
       box-shadow: 0 0 0 2px var(--color-primary-container);
     }
-    .clip--selected::after {
-      content: '✓';
-      position: absolute;
-      right: 1px;
-      bottom: 0;
-      font-size: 0.5rem;
-      color: var(--color-primary);
+    .clip__time {
+      font-size: var(--ui-text-xs);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      color: var(--color-text-secondary);
+      white-space: nowrap;
     }
     .clip--foreign {
       border-style: dashed;
@@ -511,8 +605,8 @@ const MAGNET_PX = 6;
       top: 4px;
     }
     .clip__icon {
-      height: 1.25rem;
-      width: 1.25rem;
+      height: 1rem;
+      width: 1rem;
     }
     .clip__badge {
       position: absolute;
@@ -729,6 +823,11 @@ export class TimelineEditor {
       side: lane.group.side === 'enemy' ? this.t('tests.enemy') : this.t('tests.ally'),
       count: lane.clips.length,
     });
+  }
+
+  /** The cast time printed under the spell icon, short enough to fit a clip. */
+  protected clipTime(clip: TimelineClip): string {
+    return `${clip.cast.cast_at.toFixed(1)}s`;
   }
 
   protected clipLabel(clip: TimelineClip): string {

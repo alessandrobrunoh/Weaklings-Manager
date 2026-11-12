@@ -36,7 +36,7 @@ interface TargetSection {
   template: `
     <div class="card p-3">
       <div class="mb-2 flex items-center justify-between gap-2">
-        <h3 class="text-xs font-bold uppercase tracking-wide text-[var(--color-text-secondary)]">
+        <h3 class="text-sm font-semibold text-[var(--color-text)]">
           {{ t('tests.timeline.inspector') }}
         </h3>
         <button

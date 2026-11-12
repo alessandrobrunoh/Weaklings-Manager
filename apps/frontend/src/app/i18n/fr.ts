@@ -3269,4 +3269,18 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/test-detail
+  'tests.resultsSummary': 'Résumé de l’exécution',
+  'tests.deathsHint': 'Unités tombées à 0 PV',
+  'tests.timeline.legend': 'Légende',
+  'tests.timeline.legendForeign': 'Sort absent de cette arme',
+  'tests.timeline.legendUnknown': 'Le moteur ne connaît pas ce sort',
+  'tests.timeline.legendNoTargets': 'Aucune cible',
+  'tests.timeline.legendHpHigh': 'PV au-dessus de 60 %',
+  'tests.timeline.legendHpMid': 'PV entre 30 et 60 %',
+  'tests.timeline.legendHpLow': 'PV en dessous de 30 %',
+  'tests.timeline.legendDamage': '▼ dégâts subis',
+  'tests.timeline.legendHeal': '▲ soins reçus',
+  'tests.timeline.legendDied': '✕ mort',
+  'tests.timeline.legendCooldown': 'Recharge après l’incantation',
 };
