@@ -102,9 +102,8 @@ impl OpenAlbionService {
         &self,
         weapon_id: i64,
     ) -> Result<Vec<OpenAlbionWeaponStats>, AppError> {
-        if catalog_items()
-            .iter()
-            .any(|item| item.id == weapon_id && item.item_type.as_deref() == Some("weapon"))
+        if catalog_item_by_id(weapon_id)
+            .is_some_and(|item| item.item_type.as_deref() == Some("weapon"))
         {
             Ok(Vec::new())
         } else {
@@ -137,9 +136,23 @@ fn catalog_items() -> &'static [OpenAlbionItem] {
 ///
 /// Item ids are the stable ids exposed by `/openalbion/catalog`; keeping this lookup here makes
 /// validation and the compatibility endpoints use the same filtered source of truth.
+///
+/// Catalog ids are 64-bit hashes, almost all above JavaScript's exact-integer range (2^53), so a
+/// browser sends back the nearest double (`113633623000799881` arrives as `113633623000799890`).
+/// An id with no exact match is therefore matched by its double value. That is unambiguous: no two
+/// catalog ids round to the same double (`catalog_ids_stay_distinct_as_doubles`). Callers store
+/// the returned row's `id`, never the request's, so the canonical id is what gets persisted.
 #[must_use]
 pub fn catalog_item_by_id(item_id: i64) -> Option<&'static OpenAlbionItem> {
-    catalog_items().iter().find(|item| item.id == item_id)
+    let items = catalog_items();
+    items.iter().find(|item| item.id == item_id).or_else(|| {
+        #[allow(clippy::cast_precision_loss)]
+        let rounded = (item_id as f64).to_bits();
+        #[allow(clippy::cast_precision_loss)]
+        items
+            .iter()
+            .find(|item| (item.id as f64).to_bits() == rounded)
+    })
 }
 
 /// Test helper: the catalog row for an identifier such as `T8_MAIN_SWORD`.
@@ -337,6 +350,11 @@ pub fn aodp_identifier_for_stored_item(
 
     let base = if let Some(identifier) = by_id.get(&item_id) {
         identifier.clone()
+    } else if let Some(identifier) =
+        catalog_item_by_id(item_id).and_then(|item| item.identifier.clone())
+    {
+        // A browser-rounded id (see `catalog_item_by_id`).
+        identifier
     } else {
         // Icon-URL fallback, same technique as `base_identifier_for_stored_item`.
         let icon = icon?;
@@ -757,5 +775,48 @@ mod weapon_key_tests {
         let icon = "https://render.albiononline.com/v1/item/T4_BAG.png?quality=1&size=64";
         assert_eq!(weapon_key_for_stored_item(-1, Some(icon)), None);
         assert_eq!(weapon_key_for_stored_item(-1, None), None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{catalog_item_by_id, catalog_item_by_identifier, catalog_items};
+
+    #[test]
+    fn catalog_ids_stay_distinct_as_doubles() {
+        let mut seen = std::collections::HashSet::new();
+        for item in catalog_items() {
+            #[allow(clippy::cast_precision_loss)]
+            let as_double = (item.id as f64).to_bits();
+            assert!(
+                seen.insert(as_double),
+                "catalog id {} collides with another id once a browser rounds it",
+                item.id
+            );
+        }
+    }
+
+    #[test]
+    fn an_id_rounded_by_a_javascript_client_finds_its_item() {
+        let longbow =
+            catalog_item_by_identifier("T8_2H_LONGBOW").expect("longbow is in the catalog");
+        let rounded: i64 = 113_633_623_000_799_890;
+        assert_ne!(
+            rounded, longbow.id,
+            "the browser-rounded id differs from the stored one"
+        );
+        assert_eq!(
+            catalog_item_by_id(rounded).map(|item| item.id),
+            Some(longbow.id)
+        );
+        assert_eq!(
+            catalog_item_by_id(longbow.id).map(|item| item.id),
+            Some(longbow.id)
+        );
+        assert!(catalog_item_by_id(1).is_none());
+        assert_eq!(
+            super::aodp_identifier_for_stored_item(rounded, None, 2).as_deref(),
+            Some("T8_2H_LONGBOW@2")
+        );
     }
 }
