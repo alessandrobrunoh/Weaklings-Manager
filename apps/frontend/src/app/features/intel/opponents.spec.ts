@@ -5,7 +5,9 @@ import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EnemyGuildSummary, EnemyPlayerSummary, PaginatedData } from '../../core/models/api.models';
+import { AuthService } from '../../core/services/auth.service';
 import { EnemiesService } from '../../core/services/enemies.service';
+import { IntelService } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { Opponents } from './opponents';
@@ -73,6 +75,15 @@ describe('Opponents list page', () => {
         provideRouter([]),
         TranslateService,
         { provide: EnemiesService, useValue: { listGuilds, listPlayers } },
+        { provide: AuthService, useValue: { hasPermission: () => true } },
+        {
+          provide: IntelService,
+          useValue: {
+            listScouts: vi.fn().mockReturnValue(of(paginated([]))),
+            matchups: vi.fn().mockReturnValue(of({ rows: [], coverage: { total_battles: 0, battles_with_comp: 0 } })),
+            report: vi.fn().mockReturnValue(NEVER),
+          },
+        },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
       ],
     }).compileComponents();
@@ -210,5 +221,37 @@ describe('Opponents list page', () => {
     await settle(fixture);
     expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Weaklings Nemesis');
+  });
+  it('shows members only the scout views and never loads the officer dossiers', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [Opponents],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        TranslateService,
+        { provide: EnemiesService, useValue: { listGuilds, listPlayers } },
+        { provide: AuthService, useValue: { hasPermission: () => false } },
+        {
+          provide: IntelService,
+          useValue: {
+            listScouts: vi.fn().mockReturnValue(of(paginated([]))),
+            matchups: vi.fn().mockReturnValue(of({ rows: [], coverage: { total_battles: 0, battles_with_comp: 0 } })),
+            report: vi.fn().mockReturnValue(NEVER),
+          },
+        },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
+      ],
+    }).compileComponents();
+    TestBed.inject(TranslateService).use('en');
+
+    fixture = TestBed.createComponent(Opponents);
+    await settle(fixture);
+
+    const tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')).map(
+      (tab) => (tab as HTMLElement).textContent?.trim(),
+    );
+    expect(tabs).toEqual(['Scouted comps', 'Matchups']);
+    expect(listGuilds).not.toHaveBeenCalled();
   });
 });

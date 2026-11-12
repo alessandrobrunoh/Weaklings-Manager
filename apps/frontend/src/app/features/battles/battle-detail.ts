@@ -2692,7 +2692,7 @@ export class BattleDetailPage {
           ? 'Extracted 1 enemy comp into intel'
           : `Extracted ${count} enemy comps into intel`,
       );
-      void this.router.navigate(['/intel']);
+      void this.router.navigate(['/intel/opponents']);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {

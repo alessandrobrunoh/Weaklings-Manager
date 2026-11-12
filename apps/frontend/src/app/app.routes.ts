@@ -104,15 +104,12 @@ export const routes: Routes = [
         canActivate: [guildOnlyGuard],
         loadComponent: () => import('./features/battles/battles').then((m) => m.Battles),
       },
+      // Detail routes first: they are deeper than the Intel shell's tab routes and must win.
       {
-        path: 'intel',
+        path: 'intel/players/:userId',
         canActivate: [guildOnlyGuard, permissionGuard('intel.view')],
-        loadComponent: () => import('./features/intel/intel').then((m) => m.Intel),
-      },
-      {
-        path: 'intel/opponents',
-        canActivate: [permissionGuard('intel.opponents.view')],
-        loadComponent: () => import('./features/intel/opponents').then((m) => m.Opponents),
+        loadComponent: () =>
+          import('./features/intel/intel-player-detail').then((m) => m.IntelPlayerDetailPage),
       },
       {
         path: 'intel/opponents/guilds/:id',
@@ -127,10 +124,42 @@ export const routes: Routes = [
           import('./features/intel/enemy-player-detail').then((m) => m.EnemyPlayerDetailPage),
       },
       {
-        path: 'intel/:scoutId',
+        path: 'intel/opponents/scouts/:scoutId',
         canActivate: [guildOnlyGuard, permissionGuard('intel.view')],
         loadComponent: () =>
           import('./features/intel/intel-detail').then((m) => m.IntelDetailPage),
+      },
+      {
+        path: 'intel',
+        canActivate: [guildOnlyGuard, permissionGuard('intel.view')],
+        loadComponent: () => import('./features/intel/intel-shell').then((m) => m.IntelShell),
+        children: [
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () =>
+              import('./features/intel/intel-overview').then((m) => m.IntelOverviewPage),
+          },
+          {
+            path: 'players',
+            loadComponent: () =>
+              import('./features/intel/intel-players').then((m) => m.IntelPlayersPage),
+          },
+          {
+            path: 'fights',
+            loadComponent: () =>
+              import('./features/intel/intel-fights').then((m) => m.IntelFightsPage),
+          },
+          {
+            path: 'comps',
+            loadComponent: () =>
+              import('./features/intel/intel-comps').then((m) => m.IntelCompsPage),
+          },
+          {
+            path: 'opponents',
+            loadComponent: () => import('./features/intel/opponents').then((m) => m.Opponents),
+          },
+        ],
       },
       {
         path: 'comps',
