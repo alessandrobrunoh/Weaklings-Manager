@@ -15,6 +15,7 @@ This directory contains control-plane pages for the platform hub, platform admin
 - `PlatformFeatureFlags` lists the feature catalog for one tenant as a table (rank allowance, tenant override, toggle), filters it by search, state and changed rows, confirms before turning any feature off, and saves the flag values.
 - `PlatformRanks` lists ranks with the modules each unlocks; creating a rank and editing its modules happen in dialogs, and deleting asks for confirmation.
 - `PlatformTenants` lists, creates, suspends, and resumes tenants.
+- `PlatformTenantDetail` shows one tenant: status and the next action in the entity header (resume when suspended; suspend sits in the overflow menu behind a confirmation), then tabs for the record and display name, SuperAdmin and rank, the Albion guild link, and feature flags (loaded the first time that tab opens).
 
 ## Invariants
 
@@ -23,6 +24,7 @@ This directory contains control-plane pages for the platform hub, platform admin
 - Admin assignment trims IDs, avoids duplicate rows, and blocks self-revocation.
 - Feature display uses local override, API value, then `false`; tenant state changes are limited to `active` and `suspended`.
 - Feature saves send every flag. Save stays disabled until a flag differs from the saved value, and a save that turns a feature off waits for confirmation. A failed save keeps the edits.
+- Each tenant detail section saves only its own fields in one PATCH; suspending always asks for confirmation first.
 
 ## Side Effects
 
@@ -30,4 +32,4 @@ The inspected pages issue platform tenant/admin/feature API requests and show su
 
 ## Verification
 
-Run `npm test --prefix apps/frontend` from the repository root. `platform-ranks.ts` and `platform-tenant-detail.ts` were not inspected because each exceeds 300 lines.
+Run `npm test --prefix apps/frontend` from the repository root. `platform-ranks.ts` was not inspected because it exceeds 300 lines.
