@@ -3269,4 +3269,19 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/siphoned
+  'siphoned.summary': 'Résumé de l\'énergie siphonnée',
+  'siphoned.hint':
+    'Déposé est l\'énergie versée par les membres, retiré l\'énergie qui leur a été versée et net la différence. Un net négatif est une dette : le membre a retiré plus qu\'il n\'a déposé. Régler la dette crée une transaction bancaire.',
+  'siphoned.balancesHint': 'La ligne des totaux additionne les membres de cette vue.',
+  'siphoned.entriesHint': 'Chaque ligne est un mouvement d\'énergie. Les soldes sont calculés à partir de ces lignes.',
+  'siphoned.batchesHint': 'Chaque lot est un export collé, conservé comme enregistrement immuable.',
+  'siphoned.filter.status': 'Solde',
+  'siphoned.filter.debt': 'Endettés',
+  'siphoned.filter.credit': 'Créditeurs',
+  'siphoned.settle.button': 'Régler la dette',
+  'siphoned.settle.total': 'Total : {amount} argent',
+  'siphoned.stat.netHint': 'Somme du net de tous les membres',
+  'siphoned.stat.membersInDebt': 'Membres endettés',
+  'siphoned.stat.membersInDebtHint': 'Net négatif, réglable',
 };

@@ -3460,4 +3460,19 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/siphoned
+  'siphoned.summary': 'Riepilogo energia sifonata',
+  'siphoned.hint':
+    'Depositato è l\'energia versata dai membri, prelevato è l\'energia pagata loro e netto è la differenza. Un netto negativo è un debito: il membro ha prelevato più di quanto ha depositato. Salda debito crea una transazione bancaria.',
+  'siphoned.balancesHint': 'La riga dei totali somma i membri in questa vista.',
+  'siphoned.entriesHint': 'Ogni riga è un movimento di energia. I saldi derivano da queste righe.',
+  'siphoned.batchesHint': 'Ogni lotto è un\'esportazione incollata, conservata come registro immutabile.',
+  'siphoned.filter.status': 'Saldo',
+  'siphoned.filter.debt': 'In debito',
+  'siphoned.filter.credit': 'In credito',
+  'siphoned.settle.button': 'Salda debito',
+  'siphoned.settle.total': 'Totale: {amount} argento',
+  'siphoned.stat.netHint': 'Somma del netto di tutti i membri',
+  'siphoned.stat.membersInDebt': 'Membri in debito',
+  'siphoned.stat.membersInDebtHint': 'Netto sotto zero, saldabile',
 };

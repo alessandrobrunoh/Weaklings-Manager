@@ -24,20 +24,29 @@ import {
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { DataTableFooterCell } from '../../shared/components/data-table/data-table-footer-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
+import type { MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type SiphonedTab = 'balances' | 'entries' | 'batches';
+type BalanceStatus = 'all' | 'debt' | 'credit';
 type SiphonedIngestRow = SiphonedIngestRequest['rows'][number];
 type EntryDraft = Record<'occurred_at' | 'player_name' | 'reason' | 'amount', string>;
 type ConfirmTarget = { kind: 'entry'; id: number } | { kind: 'batch'; id: string };
 
 function isSiphonedTab(value: string): value is SiphonedTab {
   return value === 'balances' || value === 'entries' || value === 'batches';
+}
+
+function isBalanceStatus(value: string): value is BalanceStatus {
+  return value === 'all' || value === 'debt' || value === 'credit';
 }
 
 function emptyEntryDraft(): EntryDraft {
@@ -56,9 +65,8 @@ function emptyPageChange(): DataTablePageChange {
 /**
  * The backend exposes no single guild-wide balance/aggregate endpoint for
  * siphoned energy (only per-player balances via `GET /balances`, paginated).
- * The KPI cards need the true guild-wide totals, so a separate fetch pulls a
- * large enough page of every player's balance — independent of the table's
- * own small page size — to sum from.
+ * The summary band and the per-member table need every player, so one fetch
+ * pulls a large enough page of balances to sum and sort from.
  */
 const STATS_FETCH_LIMIT = 1000;
 
@@ -76,10 +84,14 @@ const STATS_FETCH_LIMIT = 1000;
   imports: [
     DataTable,
     DataTableCell,
+    DataTableFooterCell,
     Dialog,
+    FilterBar,
     Icon,
     PageHeader,
     PageStack,
+    StatusChip,
+    SummaryBand,
     Tabs,
   ],
   styles: `
@@ -87,57 +99,20 @@ const STATS_FETCH_LIMIT = 1000;
       display: block;
       color: var(--color-text);
     }
-    :host ::ng-deep .rounded-xl,
-    :host ::ng-deep .rounded-2xl,
-    :host ::ng-deep .rounded-lg,
-    :host ::ng-deep .rounded-md,
-    :host ::ng-deep .shadow-lg,
-    :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards);
-      box-shadow: none;
-    }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
-    }
-    .siphoned-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: var(--radius-badges); color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
   `,
   template: `
-    <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-
+    <app-page-header
+      [title]="t('siphoned.title')"
+      [subtitle]="t('siphoned.subtitle')"
+      [menuItems]="headerMenu()"
+      [menuLabel]="t('ui.menu.moreActions')"
+      (menuSelect)="onHeaderMenu($event)"
+    >
       @if (canIngest()) {
-        <button type="button" class="btn btn--tonal btn--sm" (click)="openEntryForm()">
+        <button type="button" class="btn btn--outline btn--sm" (click)="openEntryForm()">
           <app-icon name="plus" size="0.875rem" />
           {{ t('siphoned.addEntry') }}
         </button>
-      }
-      @if (canIngest()) {
         <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
           <app-icon name="sparkles" size="0.875rem" />
           {{ t('siphoned.ingest') }}
@@ -153,137 +128,90 @@ const STATS_FETCH_LIMIT = 1000;
 
     <app-page-stack>
       @if (!canIngest()) {
-        <p class="siphoned-permission-note" role="status">{{ t('siphoned.missingManagePermission') }}</p>
+        <p class="hint" role="status">{{ t('siphoned.missingManagePermission') }}</p>
       }
-      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
-        <!-- Card 1: Deposited -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('siphoned.stat.deposited') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
-                {{ formatAmount(totalDeposited()) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Total energy banked
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-border)]">
-              <app-icon name="bank" size="1.25rem" />
-            </div>
-          </div>
-        </article>
 
-        <!-- Card 2: Withdrawn -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('siphoned.stat.withdrawn') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
-                {{ formatAmount(totalWithdrawn()) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Distributed energy
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
-              <app-icon name="bank" size="1.25rem" />
-            </div>
-          </div>
-        </article>
+      <app-summary-band [ariaLabel]="t('siphoned.summary')" [items]="summaryItems()" />
 
-        <!-- Card 3: Net Total -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('siphoned.stat.net') }}
-              </p>
-              <p
-                class="font-mono text-2xl font-bold tracking-tight mt-1"
-                [class.text-success]="netTotal() >= 0"
-                [class.text-error]="netTotal() < 0"
-              >
-                {{ formatAmount(netTotal()) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('siphoned.lastUpdated') }}: {{ lastUpdatedLabel() }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
-              <app-icon name="chart" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 4: Active Records -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('siphoned.stat.entries') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                {{ tab() === 'balances' ? balanceTotal() : tab() === 'entries' ? entryTotal() : batches().length }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Logged transactions
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
-              <app-icon name="list" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-      </section>
+      <div class="grid gap-1">
+        <p class="hint">{{ t('siphoned.hint') }}</p>
+        <p class="hint">{{ t('siphoned.lastUpdated') }}: {{ lastUpdatedLabel() }}</p>
+      </div>
 
       @if (tab() === 'balances') {
+        <app-filter-bar
+          [searchLabel]="t('common.search')"
+          [query]="balanceSearch()"
+          [activeCount]="balanceFilterCount()"
+          (queryChange)="balanceSearch.set($event)"
+          (clear)="clearBalanceFilters()"
+        >
+          <app-tabs
+            filterPrimary
+            variant="segmented"
+            [ariaLabel]="t('siphoned.filter.status')"
+            [options]="balanceStatusOptions()"
+            [active]="balanceStatus()"
+            (activeChange)="onBalanceStatus($event)"
+          />
+        </app-filter-bar>
+        <p class="hint">{{ t('siphoned.balancesHint') }}</p>
+
         <app-data-table
           [columns]="balanceColumns"
-          [rows]="balances()"
+          [rows]="visibleBalances()"
           [loading]="loading()"
           [error]="loadFailed()"
           (retry)="load()"
           [trackBy]="trackBalance"
-          [serverMode]="true"
-          [totalItems]="balanceTotal()"
+          [hideSearch]="true"
           [pageSize]="10"
+          [stickyFirstColumn]="true"
+          [footerLabel]="t('common.total')"
           emptyIcon="activity"
-          (pageChange)="onBalancesChange($event)"
+          [ariaLabel]="t('siphoned.balances')"
         >
           <ng-template dataTableCell="net" let-row>
-            <span
-              class="chip"
-              [class.chip--error]="toNumber(row.net) < 0"
-              [class.chip--success]="toNumber(row.net) > 0"
-            >
-              {{ balanceStatusLabel(row.net) }}
-              {{ formatAmount(absoluteAmount(row.net)) }}
+            <span class="flex items-center justify-end gap-2">
+              <span class="num">{{ formatAmount(row.net) }}</span>
+              <app-status-chip [value]="balanceStatusKey(row.net)" [label]="balanceStatusLabel(row.net)" [toneOverride]="balanceTone(row.net)" />
             </span>
           </ng-template>
           <ng-template dataTableCell="total_deposited" let-row>
-            {{ formatAmount(row.total_deposited) }}
+            <span class="num">{{ formatAmount(row.total_deposited) }}</span>
           </ng-template>
           <ng-template dataTableCell="total_withdrawn" let-row>
-            {{ formatAmount(row.total_withdrawn) }}
+            <span class="num">{{ formatAmount(row.total_withdrawn) }}</span>
+          </ng-template>
+          <ng-template dataTableCell="entry_count" let-row>
+            <span class="num">{{ row.entry_count }}</span>
           </ng-template>
           <ng-template dataTableCell="last_seen" let-row>
             {{ formatDate(row.last_seen) }}
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             @if (toNumber(row.net) < 0 && canSettle()) {
-              <button type="button" class="btn btn--primary btn--sm" (click)="openDebtSettlement(row)">
+              <button type="button" class="btn btn--outline btn--sm" (click)="openDebtSettlement(row)">
                 <app-icon name="bank" size="0.75rem" />
-                Salda debito
+                {{ t('siphoned.settle.button') }}
               </button>
             }
           </ng-template>
+          <ng-template dataTableFooterCell="total_deposited">
+            <span class="num">{{ formatAmount(visibleTotals().deposited) }}</span>
+          </ng-template>
+          <ng-template dataTableFooterCell="total_withdrawn">
+            <span class="num">{{ formatAmount(visibleTotals().withdrawn) }}</span>
+          </ng-template>
+          <ng-template dataTableFooterCell="net">
+            <span class="num">{{ formatAmount(visibleTotals().net) }}</span>
+          </ng-template>
+          <ng-template dataTableFooterCell="entry_count">
+            <span class="num">{{ visibleTotals().entries }}</span>
+          </ng-template>
         </app-data-table>
       } @else if (tab() === 'entries') {
+        <p class="hint">{{ t('siphoned.entriesHint') }}</p>
         <app-data-table
           [columns]="entryColumns()"
           [rows]="entries()"
@@ -301,10 +229,10 @@ const STATS_FETCH_LIMIT = 1000;
             {{ formatDate(row.occurred_at) }}
           </ng-template>
           <ng-template dataTableCell="reason" let-row>
-            <span class="chip">{{ row.reason }}</span>
+            <span class="chip chip--neutral">{{ row.reason }}</span>
           </ng-template>
           <ng-template dataTableCell="amount" let-row>
-            {{ formatAmount(row.amount) }}
+            <span class="num">{{ formatAmount(row.amount) }}</span>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             @if (canIngest()) {
@@ -320,6 +248,7 @@ const STATS_FETCH_LIMIT = 1000;
           </ng-template>
         </app-data-table>
       } @else {
+        <p class="hint">{{ t('siphoned.batchesHint') }}</p>
         <app-data-table
           [columns]="batchColumns()"
           [rows]="batches()"
@@ -347,7 +276,7 @@ const STATS_FETCH_LIMIT = 1000;
     @if (showIngestForm()) {
       <app-dialog [title]="t('siphoned.ingest')" (closed)="showIngestForm.set(false)">
         <form id="siphoned-ingest-form" class="grid gap-3" (submit)="onIngestSubmit($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label>
             <span class="label">{{ t('siphoned.exportRows') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <textarea
@@ -360,9 +289,7 @@ const STATS_FETCH_LIMIT = 1000;
               placeholder='"Date"&#9;"Player"&#9;"Reason"&#9;"Amount"&#10;"2026-08-10 20:37:41"&#9;"Galvdon"&#9;"Withdrawal"&#9;"-10"'
             ></textarea>
           </label>
-          <p class="text-xs" style="color: var(--color-text-secondary)">
-            {{ t('siphoned.ingestHint') }}
-          </p>
+          <p class="hint">{{ t('siphoned.ingestHint') }}</p>
         </form>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="showIngestForm.set(false)">
@@ -383,7 +310,7 @@ const STATS_FETCH_LIMIT = 1000;
     @if (showEntryForm()) {
       <app-dialog [title]="entryDialogTitle()" (closed)="closeEntryForm()">
         <form id="siphoned-entry-form" class="grid gap-3" (submit)="onEntrySubmit($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label>
             <span class="label">{{ t('common.date') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
             <input
@@ -475,8 +402,8 @@ const STATS_FETCH_LIMIT = 1000;
           {{ t('siphoned.settle.debt', { player: quote.player_name, amount: formatAmount(quote.debt) }) }}
           {{ t('siphoned.settle.price', { price: formatAmount(quote.unit_price) }) }}
         </p>
-        <p class="font-mono text-lg font-bold">{{ formatAmount(quote.total) }} silver</p>
-        <p class="text-xs text-secondary">{{ t('siphoned.settle.expires', { time: quote.expiresAt }) }}</p>
+        <p class="num text-lg font-bold">{{ t('siphoned.settle.total', { amount: formatAmount(quote.total) }) }}</p>
+        <p class="hint">{{ t('siphoned.settle.expires', { time: quote.expiresAt }) }}</p>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="settlement.set(null)">{{ t('common.cancel') }}</button>
           <button type="button" class="btn btn--primary" [disabled]="saving()" (click)="confirmSettlement()">
@@ -507,33 +434,124 @@ export class Siphoned {
   protected readonly showIngestForm = signal(false);
   protected readonly showEntryForm = signal(false);
   protected readonly rawExport = signal('');
+  /** Every member's balance (up to `STATS_FETCH_LIMIT`), loaded with every tab. */
   protected readonly balances = signal<SiphonedPlayerBalance[]>([]);
-  protected readonly balanceTotal = signal(0);
   protected readonly entries = signal<SiphonedEntryView[]>([]);
   protected readonly entryTotal = signal(0);
   protected readonly batches = signal<SiphonedBatchSummary[]>([]);
   protected readonly lastUpdatedAt = signal<string | null>(null);
 
-  /**
-   * Every player's balance (up to `STATS_FETCH_LIMIT`), fetched independently
-   * of the `balances()` table page so the KPI cards below reflect the whole
-   * guild instead of whichever page — or tab — happens to be on screen.
-   */
-  private readonly statsBalances = signal<SiphonedPlayerBalance[]>([]);
+  protected readonly balanceSearch = signal('');
+  protected readonly balanceStatus = signal<BalanceStatus>('all');
+  protected readonly balanceStatusOptions = computed<TabOption[]>(() => [
+    { id: 'all', label: this.t('common.all') },
+    { id: 'debt', label: this.t('siphoned.filter.debt') },
+    { id: 'credit', label: this.t('siphoned.filter.credit') },
+  ]);
+  protected readonly balanceFilterCount = computed(
+    () => (this.balanceStatus() === 'all' ? 0 : 1) + (this.balanceSearch().trim() ? 1 : 0),
+  );
 
+  /** Balances after the filter bar's search and status filters; the table shows these. */
+  protected readonly visibleBalances = computed(() => {
+    const query = this.balanceSearch().trim().toLowerCase();
+    const status = this.balanceStatus();
+    return this.balances().filter((row) => {
+      const net = this.toNumber(row.net);
+      if (status === 'debt' && net >= 0) return false;
+      if (status === 'credit' && net <= 0) return false;
+      return !query || row.player_name.toLowerCase().includes(query);
+    });
+  });
+
+  /** Totals of the members in the current view, shown in the table's totals row. */
+  protected readonly visibleTotals = computed(() =>
+    this.visibleBalances().reduce(
+      (sum, row) => ({
+        deposited: sum.deposited + this.toNumber(row.total_deposited || 0),
+        withdrawn: sum.withdrawn + this.toNumber(row.total_withdrawn || 0),
+        net: sum.net + this.toNumber(row.net || 0),
+        entries: sum.entries + row.entry_count,
+      }),
+      { deposited: 0, withdrawn: 0, net: 0, entries: 0 },
+    ),
+  );
+
+  /** Guild-wide figures for the summary band, always computed over every member. */
   protected readonly totalDeposited = computed(() =>
-    this.statsBalances().reduce((sum, b) => sum + this.toNumber(b.total_deposited || 0), 0),
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_deposited || 0), 0),
   );
   protected readonly totalWithdrawn = computed(() =>
-    this.statsBalances().reduce((sum, b) => sum + this.toNumber(b.total_withdrawn || 0), 0),
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_withdrawn || 0), 0),
   );
   protected readonly netTotal = computed(() =>
-    this.statsBalances().reduce((sum, b) => sum + this.toNumber(b.net || 0), 0),
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.net || 0), 0),
+  );
+  protected readonly debtorCount = computed(
+    () => this.balances().filter((b) => this.toNumber(b.net) < 0).length,
   );
 
-  protected async refreshNow(): Promise<void> {
-    await Promise.all([this.refreshLastUpdated(), this.load(), this.loadStats()]);
+  protected readonly summaryItems = computed<SummaryItem[]>(() => [
+    {
+      label: this.t('siphoned.stat.deposited'),
+      value: this.formatAmount(this.totalDeposited()),
+    },
+    {
+      label: this.t('siphoned.stat.withdrawn'),
+      value: this.formatAmount(this.totalWithdrawn()),
+    },
+    {
+      label: this.t('siphoned.stat.net'),
+      value: this.formatAmount(this.netTotal()),
+      hint: this.t('siphoned.stat.netHint'),
+    },
+    {
+      label: this.t('siphoned.stat.membersInDebt'),
+      value: this.debtorCount(),
+      hint: this.t('siphoned.stat.membersInDebtHint'),
+      tone: this.debtorCount() > 0 ? 'warning' : 'default',
+    },
+  ]);
+
+  protected readonly headerMenu = computed<MenuItem[]>(() => [
+    { id: 'refresh', label: this.t('common.refreshNow'), disabled: this.loading() },
+  ]);
+
+  protected onHeaderMenu(id: string): void {
+    if (id === 'refresh') {
+      void this.refreshNow();
+    }
   }
+
+  protected async refreshNow(): Promise<void> {
+    await Promise.all([this.refreshLastUpdated(), this.load()]);
+  }
+
+  protected onBalanceStatus(id: string): void {
+    if (isBalanceStatus(id)) {
+      this.balanceStatus.set(id);
+    }
+  }
+
+  protected clearBalanceFilters(): void {
+    this.balanceSearch.set('');
+    this.balanceStatus.set('all');
+  }
+
+  protected balanceStatusKey(value: number | string): 'debt' | 'credit' | 'even' {
+    const amount = this.toNumber(value);
+    if (amount > 0) return 'credit';
+    if (amount < 0) return 'debt';
+    return 'even';
+  }
+
+  protected balanceTone(value: number | string): 'error' | 'success' | 'neutral' {
+    const amount = this.toNumber(value);
+    if (amount > 0) return 'success';
+    if (amount < 0) return 'error';
+    return 'neutral';
+  }
+
   protected readonly editingEntryId = signal<number | null>(null);
   protected readonly entryDraft = signal<EntryDraft>(emptyEntryDraft());
   protected readonly confirm = signal<ConfirmTarget | null>(null);
@@ -546,9 +564,6 @@ export class Siphoned {
       defaultPageSize: 10,
       filterKeys: ['reason'],
     }),
-  );
-  private readonly balanceQuery = signal<DataTablePageChange>(
-    parseDataTableQuery(this.route.snapshot.queryParamMap, { defaultPageSize: 10 }),
   );
 
   protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
@@ -579,7 +594,7 @@ export class Siphoned {
       ));
       this.settlement.set(null);
       this.toasts.success(this.t('siphoned.settle.success'));
-      await Promise.all([this.load(), this.loadStats()]);
+      await this.load();
     } catch {
       this.toasts.error(this.t('siphoned.settle.createFailed'));
     } finally {
@@ -592,7 +607,6 @@ export class Siphoned {
       key: 'player_name',
       label: 'common.player',
       sortable: true,
-      searchable: true,
       accessor: (row) => row.player_name,
       comparator: (a, b) => a.player_name.localeCompare(b.player_name),
     },
@@ -726,7 +740,6 @@ export class Siphoned {
   constructor() {
     void this.refreshLastUpdated();
     void this.load();
-    void this.loadStats();
   }
 
   protected entryDialogTitle(): string {
@@ -762,12 +775,6 @@ export class Siphoned {
     }
     this.tab.set(tab);
     this.entryQuery.set(emptyPageChange());
-    this.balanceQuery.set(emptyPageChange());
-    void this.load();
-  }
-
-  protected onBalancesChange(event: DataTablePageChange): void {
-    this.balanceQuery.set(event);
     void this.load();
   }
 
@@ -845,7 +852,7 @@ export class Siphoned {
         this.translate.t('siphoned.ingestSuccess', { count: response.ingested_count }),
       );
       await this.refreshLastUpdated();
-      await Promise.all([this.load(), this.loadStats()]);
+      await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -872,7 +879,7 @@ export class Siphoned {
         this.toasts.success(this.t('siphoned.entryUpdated'));
       }
       this.closeEntryForm();
-      await Promise.all([this.load(), this.loadStats()]);
+      await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -884,7 +891,7 @@ export class Siphoned {
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/entries/${entryId}`));
       this.toasts.success(this.t('common.delete'));
-      await Promise.all([this.load(), this.loadStats()]);
+      await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
@@ -894,7 +901,7 @@ export class Siphoned {
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/batches/${encodeURIComponent(batchId)}`));
       await this.refreshLastUpdated();
-      await Promise.all([this.load(), this.loadStats()]);
+      await this.load();
       this.toasts.success(this.t('common.delete'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -919,10 +926,6 @@ export class Siphoned {
 
   protected toNumber(value: number | string): number {
     return typeof value === 'number' ? value : Number(value);
-  }
-
-  protected absoluteAmount(value: number | string): number {
-    return Math.abs(this.toNumber(value));
   }
 
   protected balanceStatusLabel(value: number | string): string {
@@ -1125,26 +1128,6 @@ export class Siphoned {
     return date.toISOString();
   }
 
-  /**
-   * Fetches every player's balance (up to `STATS_FETCH_LIMIT`) so the
-   * Deposited/Withdrawn/Net KPI cards reflect the whole guild ledger. Kept
-   * separate from `load()`, which only ever holds one page of whichever tab
-   * is active.
-   */
-  private async loadStats(): Promise<void> {
-    try {
-      const data = await firstValueFrom(
-        this.api.get<PaginatedData<SiphonedPlayerBalance>>('api/siphoned/balances', {
-          page: 1,
-          limit: STATS_FETCH_LIMIT,
-        }),
-      );
-      this.statsBalances.set(data.items);
-    } catch {
-      // KPI cards are supplementary; load() already surfaces errors to the user.
-    }
-  }
-
   private async refreshLastUpdated(): Promise<void> {
     try {
       const batches = await firstValueFrom(
@@ -1163,27 +1146,17 @@ export class Siphoned {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
+      // Every member is fetched once: the summary band and the balances table both need the
+      // whole guild, and the table sorts, filters and totals client-side.
+      const balances = await firstValueFrom(
+        this.api.get<PaginatedData<SiphonedPlayerBalance>>('api/siphoned/balances', {
+          page: 1,
+          limit: STATS_FETCH_LIMIT,
+        }),
+      );
+      this.balances.set(balances.items);
+
       if (this.tab() === 'balances') {
-        const query = this.balanceQuery();
-        const params: Record<string, string | number> = {
-          page: query.page,
-          limit: query.pageSize,
-        };
-        if (query.search.trim()) {
-          params['search'] = query.search.trim();
-        }
-        if (query.sort) {
-          const sortMap: Record<string, string> = {
-            player_name: 'name_asc',
-            net: query.sort.direction === 'desc' ? 'net_desc' : 'net_asc',
-          };
-          params['sort'] = sortMap[query.sort.columnKey] ?? 'net_asc';
-        }
-        const data = await firstValueFrom(
-          this.api.get<PaginatedData<SiphonedPlayerBalance>>('api/siphoned/balances', params),
-        );
-        this.balances.set(data.items);
-        this.balanceTotal.set(data.total_items);
         return;
       }
 
