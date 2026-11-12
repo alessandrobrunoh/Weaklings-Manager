@@ -3451,4 +3451,8 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/battles-list
+  'battles.search': 'Buscar batallas',
+  'battles.participants': 'Participantes',
+  'battles.summaryLabel': 'Totales de batallas',
 };

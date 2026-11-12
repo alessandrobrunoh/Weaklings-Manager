@@ -3269,4 +3269,8 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/battles-list
+  'battles.search': 'Rechercher des batailles',
+  'battles.participants': 'Participants',
+  'battles.summaryLabel': 'Totaux des batailles',
 };

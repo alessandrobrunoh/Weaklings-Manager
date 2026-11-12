@@ -3265,4 +3265,8 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/battles-list
+  'battles.search': 'Пошук битв',
+  'battles.participants': 'Учасники',
+  'battles.summaryLabel': 'Підсумки битв',
 };

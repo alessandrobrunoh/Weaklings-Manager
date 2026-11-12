@@ -3,12 +3,15 @@ import {
   Component,
   DestroyRef,
   computed,
+  effect,
   inject,
   PLATFORM_ID,
   signal,
+  untracked,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, type Params } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -25,17 +28,16 @@ import type { TranslationKey } from '../../i18n/en';
 import {
   DataTable,
   type DataTableColumn,
-  type DataTablePageChange,
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
-
-import { Icon } from '../../shared/components/icon/icon';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { battleOutcomeLabel, type BattleOutcomeType } from './battle-outcome';
 import { winRatePercent } from './battle-metrics';
 import {
@@ -46,6 +48,10 @@ import {
 
 const PAGE_SIZE = 10;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
+const SEARCH_DEBOUNCE_MS = 300;
+const OUTCOME_PARAM = 'outcome';
+const TAB_PARAM = 'tab';
+const OUTCOMES: readonly BattleOutcomeType[] = ['victory', 'defeat', 'draw', 'unknown'];
 
 type BattleTab = 'guild' | 'me';
 type BattleListRow = BattleSummary | FightListItem;
@@ -54,8 +60,16 @@ function isBattleTab(value: string): value is BattleTab {
   return value === 'guild' || value === 'me';
 }
 
+function isOutcome(value: string): value is BattleOutcomeType {
+  return (OUTCOMES as readonly string[]).includes(value);
+}
+
 /**
  * Battle list for recent guild and personal fights.
+ *
+ * The page reads its state from the URL: the tab (`tab`), the search (`search`), the outcome
+ * (`outcome`) and the table's page, size and sort. The data table writes the last three, the
+ * filter bar and tabs write the rest, and every change reloads the list.
  *
  * The guild tab reads canonical Fight aggregates; the personal tab retains
  * the raw AlbionBB battle view for per-battle detail and grouping workflows.
@@ -64,123 +78,72 @@ function isBattleTab(value: string): value is BattleTab {
   selector: 'app-battles',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    PageHeader,
-    PageStack,
     DataTable,
     DataTableCell,
-    TooltipDirective,
-    Tabs,
+    FilterBar,
     Icon,
+    PageHeader,
+    PageStack,
     RouterLink,
+    StatusChip,
+    SummaryBand,
+    Tabs,
   ],
   styles: `
     :host {
       display: block;
       color: var(--color-text);
     }
-    :host ::ng-deep .rounded-xl,
-    :host ::ng-deep .rounded-2xl,
-    :host ::ng-deep .rounded-lg,
-    :host ::ng-deep .rounded-md,
-    :host ::ng-deep .shadow-lg,
-    :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards);
-      box-shadow: none;
+    .battles-scope {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
     }
-    :host ::ng-deep input,
-    :host ::ng-deep select,
-    :host ::ng-deep button {
-      border-radius: var(--radius-sm);
-    }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
+    .battles-scope__meta {
+      display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
+      gap: 0.5rem 0.75rem;
     }
-    .outcome-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.2rem 0.55rem;
-      border-radius: var(--radius-pills);
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
+    .battle-date {
+      white-space: nowrap;
     }
-    .outcome-pill--victory {
-      background: var(--color-success-container);
-      color: var(--color-success);
-      border: 1px solid var(--color-success);
-    }
-    .outcome-pill--defeat {
-      background: var(--color-error-container);
-      color: var(--color-error);
-      border: 1px solid var(--color-error);
-    }
-    .outcome-pill--draw {
-      background: var(--color-warning-container);
-      color: var(--color-warning);
-      border: 1px solid var(--color-warning);
-    }
-    .outcome-pill--unknown {
-      background: var(--color-surface-2);
+    .battle-duration {
+      display: block;
+      font-size: var(--ui-text-xs);
       color: var(--color-text-secondary);
-      border: 1px solid var(--color-border-strong);
     }
-    .battle-list__refresh-chip {
-      font-variant-numeric: tabular-nums;
-      font-family: var(--font-mono);
+    .battles-selection {
+      position: fixed;
+      inset-inline: var(--page-gap);
+      bottom: max(1rem, env(safe-area-inset-bottom));
+      z-index: 50;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
     }
-    .battle-list__scope {
-      border-inline-start: 3px solid var(--color-primary);
+    @media (min-width: 40rem) {
+      .battles-scope {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: space-between;
+      }
+      .battles-selection {
+        inset-inline: auto;
+        left: 50%;
+        transform: translateX(-50%);
+        justify-content: center;
+      }
     }
   `,
   template: `
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
-      <span
-        class="chip battle-list__refresh-chip"
-        [appTooltip]="t('battles.next_refresh')"
-        tooltipPosition="bottom"
-      >
-        {{ t('battles.next_refresh') }} {{ refreshCountdown() }}
-      </span>
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('battles.refresh_now')"
-        tooltipPosition="bottom"
-      >
+      <button type="button" class="btn btn--outline btn--sm" [disabled]="loading()" (click)="refreshNow()">
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('battles.refresh_now') }}
       </button>
-      <a
-        routerLink="/fights/trends"
-        class="btn btn--outline btn--sm inline-flex items-center gap-1.5"
-        [appTooltip]="'View fight trends and attendance'"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="chart" size="0.875rem" />
-        Fight Trends
-      </a>
       <app-tabs
         pageTabs
         [options]="tabOptions()"
@@ -191,165 +154,50 @@ function isBattleTab(value: string): value is BattleTab {
 
     <app-page-stack>
       @if (!loading() || battles().length > 0) {
-        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
-          <!-- Card 1: Visible Battles -->
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('battles.visible_battles') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                  {{ scopeStats().battles }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('battles.scope.onPage') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                <app-icon name="shield" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 2: Total Fame -->
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('battles.total_fame') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
-                  {{ formatCompact(scopeStats().fame) }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('battles.scope.onPage') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                <app-icon name="sparkles" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 3: Total Kills -->
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('battles.kills') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
-                  {{ formatAmount(scopeStats().kills) }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('battles.scope.onPage') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                <app-icon name="swords" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 4: Deaths / Segments -->
-          @if (tab() === 'me') {
-            <article class="kpi-card">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                    {{ t('battles.deaths') }}
-                  </p>
-                  <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
-                    {{ formatAmount(scopeStats().deaths) }}
-                  </p>
-                  <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                    {{ t('battles.scope.onPage') }}
-                  </p>
-                </div>
-                <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
-                  <app-icon name="alert" size="1.25rem" />
-                </div>
-              </div>
-            </article>
-          } @else {
-            <article class="kpi-card">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                    {{ scopeStats().deaths > 0 ? t('battles.kill_death') : t('events.detail.win_rate') }}
-                  </p>
-                  <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                    @if (scopeStats().deaths > 0) {
-                      {{ (scopeStats().kills / scopeStats().deaths).toFixed(2) }}
-                    } @else {
-                      {{ winRateLabel() }}
-                    }
-                  </p>
-                  <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                    @if (scopeStats().deaths > 0) {
-                      {{ t('battles.scope.onPage') }}
-                    } @else {
-                      {{
-                        t('battles.scope.winRateSub', {
-                          wins: scopeStats().victories,
-                          losses: scopeStats().defeats,
-                        })
-                      }}
-                    }
-                  </p>
-                </div>
-                <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                  <app-icon [name]="scopeStats().deaths > 0 ? 'coins' : 'trophy'" size="1.25rem" />
-                </div>
-              </div>
-            </article>
-          }
-
-          <!-- Card 5: Total Players -->
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t(tab() === 'guild' ? 'battles.scope.largestFight' : 'battles.players') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                  {{ formatAmount(tab() === 'guild' ? scopeStats().peakPlayers : scopeStats().players) }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('battles.scope.onPage') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
-                <app-icon name="users" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-        </section>
+        <app-summary-band [ariaLabel]="t('battles.summaryLabel')" [items]="summaryItems()" />
       }
 
-      <section class="battle-list__scope surface flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" aria-live="polite">
+      <div class="battles-scope">
         <div class="min-w-0">
-          <h2 class="font-semibold text-sm text-[var(--color-text)]">
+          <h2 class="section-title">
             {{ t(tab() === 'guild' ? 'battles.scope.guildTitle' : 'battles.scope.personalTitle') }}
           </h2>
-          <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
-            @if (tab() === 'guild') {
-              {{ t('battles.scope.guildDescription') }}
-            } @else {
-              {{ t('battles.scope.personalDescription') }}
-            }
+          <p class="hint" aria-live="polite">
+            {{ t(tab() === 'guild' ? 'battles.scope.guildDescription' : 'battles.scope.personalDescription') }}
           </p>
+          @if (tab() === 'me') {
+            <p class="hint">{{ t('battles.scope.selectHint') }}</p>
+          }
         </div>
-        @if (tab() === 'me') {
-          <span class="chip chip--neutral shrink-0 text-xs">{{ t('battles.scope.selectHint') }}</span>
-        } @else {
-          <a routerLink="/fights/trends" class="btn btn--outline btn--sm shrink-0">
-            <app-icon name="chart" size="0.875rem" />
-            {{ t('battles.scope.reviewTrends') }}
-          </a>
-        }
-      </section>
+        <div class="battles-scope__meta">
+          @if (tab() === 'guild') {
+            <a routerLink="/fights/trends" class="btn btn--ghost btn--sm">
+              <app-icon name="chart" size="0.875rem" />
+              {{ t('battles.scope.reviewTrends') }}
+            </a>
+          }
+          <span class="hint num">{{ t('battles.next_refresh') }} {{ refreshCountdown() }}</span>
+        </div>
+      </div>
+
+      <app-filter-bar
+        [searchLabel]="t('battles.search')"
+        [searchPlaceholder]="t('battles.search')"
+        [query]="search()"
+        [activeCount]="activeFilterCount()"
+        (queryChange)="onSearch($event)"
+        (clear)="clearFilters()"
+      >
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('battles.outcome') }}</span>
+          <select class="select select--sm" [value]="outcome()" (change)="onOutcome($event)">
+            <option value="">{{ t('common.all') }}</option>
+            @for (option of outcomeOptions(); track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+      </app-filter-bar>
 
       @for (_ of [tab()]; track _) {
         <app-data-table
@@ -361,10 +209,11 @@ function isBattleTab(value: string): value is BattleTab {
           [pageSize]="PAGE_SIZE"
           [serverMode]="true"
           [totalItems]="totalItems()"
+          [hideSearch]="true"
+          [ariaLabel]="t('battles.title')"
           emptyIcon="shield"
           [rowClickable]="true"
           (rowClick)="openRow($event)"
-          (pageChange)="onTableChange($event)"
           (retry)="refreshNow()"
         >
           <ng-template dataTableCell="select" let-row>
@@ -380,92 +229,61 @@ function isBattleTab(value: string): value is BattleTab {
             }
           </ng-template>
 
-          <ng-template dataTableCell="id" let-row>
-            <span class="font-mono font-medium text-xs text-[var(--color-text)]">#{{ rowId(row) }}</span>
-          </ng-template>
-
           <ng-template dataTableCell="time" let-row>
-            <div class="flex items-center gap-1.5 text-xs text-[var(--color-text)]">
-              <span>{{ formatDate(rowStartTime(row)) }}</span>
-              <span class="text-[var(--color-text-tertiary)]">
-                &middot; {{ formatDuration(row) }}
-              </span>
-            </div>
+            <span class="battle-date">{{ formatDate(rowStartTime(row)) }}</span>
+            <span class="battle-duration">{{ formatDuration(row) }}</span>
           </ng-template>
 
           <ng-template dataTableCell="outcome" let-row>
             @if (rowOutcome(row); as outcome) {
-              @switch (outcome.type) {
-                @case ('victory') {
-                  <span class="outcome-pill outcome-pill--victory">
-                    {{ outcome.label }}
-                  </span>
-                }
-                @case ('defeat') {
-                  <span class="outcome-pill outcome-pill--defeat">
-                    {{ outcome.label }}
-                  </span>
-                }
-                @case ('draw') {
-                  <span class="outcome-pill outcome-pill--draw">
-                    {{ outcome.label }}
-                  </span>
-                }
-                @default {
-                  <span class="outcome-pill outcome-pill--unknown">
-                    {{ outcome.label }}
-                  </span>
-                }
-              }
+              <app-status-chip
+                [value]="outcome.type"
+                [label]="outcome.label"
+                [toneOverride]="outcomeTone(outcome.type)"
+              />
             }
           </ng-template>
 
-          <ng-template dataTableCell="fame" let-row>
-            <span class="font-mono text-xs font-medium text-warning">{{ formatCompact(row.total_fame) }}</span>
-          </ng-template>
-
           <ng-template dataTableCell="kills" let-row>
-            <span class="font-mono text-xs font-semibold text-success">{{ formatAmount(row.total_kills) }}</span>
+            <span class="num">{{ formatAmount(row.total_kills) }}</span>
           </ng-template>
 
           <ng-template dataTableCell="deaths" let-row>
             @if (isBattle(row)) {
-              <span class="font-mono text-xs text-error">{{ formatAmount(battleDeaths(row)) }}</span>
+              <span class="num">{{ formatAmount(battleDeaths(row)) }}</span>
             }
           </ng-template>
 
+          <ng-template dataTableCell="fame" let-row>
+            <span class="num">{{ formatCompact(row.total_fame) }}</span>
+          </ng-template>
+
           <ng-template dataTableCell="players" let-row>
-            <span class="font-mono text-xs text-[var(--color-text-secondary)]">{{ formatAmount(row.total_players) }}</span>
+            <span class="num">{{ formatAmount(row.total_players) }}</span>
           </ng-template>
 
           <ng-template dataTableCell="segments" let-row>
             @if (isFight(row)) {
-              <span class="font-mono text-xs text-[var(--color-text-secondary)]">{{ formatAmount(row.segment_count) }}</span>
+              <span class="num">{{ formatAmount(row.segment_count) }}</span>
             }
           </ng-template>
         </app-data-table>
       }
 
       @if (tab() === 'me' && selectedBattleIds().length > 0) {
-        <div class="fixed inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-2xl backdrop-blur sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:justify-center sm:gap-3 sm:px-5">
-          <span class="font-mono text-xs font-bold text-[var(--color-text)] bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)] px-2 py-0.5 rounded-full">
+        <div class="card battles-selection">
+          <span class="num text-sm font-medium">
             {{ selectedBattleIds().length }} {{ t('battles.selected') }}
           </span>
-          <button
-            type="button"
-            class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
-            (click)="openSelectedGroup()"
-          >
-            <app-icon name="swords" size="0.75rem" />
-            {{ t('battles.group_selected') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm text-xs"
-            (click)="clearSelection()"
-          >
-            {{ t('common.cancel') }}
-          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn btn--primary btn--sm inline-flex items-center gap-1.5" (click)="openSelectedGroup()">
+              <app-icon name="swords" size="0.75rem" />
+              {{ t('battles.group_selected') }}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" (click)="clearSelection()">
+              {{ t('common.cancel') }}
+            </button>
+          </div>
         </div>
       }
     </app-page-stack>
@@ -486,17 +304,12 @@ export class Battles {
    * table with a different tab's mismatched row shape.
    */
   private loadGeneration = 0;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly battles = signal<BattleListRow[]>([]);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly tab = signal<BattleTab>('guild');
-  protected readonly tabOptions = computed<TabOption[]>(() => [
-    { id: 'guild', label: this.t('battles.guild') },
-    { id: 'me', label: this.t('battles.my') },
-  ]);
-  protected readonly page = signal(1);
   protected readonly totalItems = signal(0);
   protected readonly selectedBattleIds = signal<number[]>([]);
   protected readonly scopeStats = signal<BattleScopeStats>(this.emptyScopeStats());
@@ -505,105 +318,129 @@ export class Battles {
     this.formatCountdown(this.secondsUntilRefresh()),
   );
 
-  private readonly tableQuery = signal<DataTablePageChange>(
-    parseDataTableQuery(this.route.snapshot.queryParamMap, {
-      defaultPageSize: PAGE_SIZE,
-      filterKeys: ['outcome'],
-    }),
+  /** Query params, the single source of the list state. */
+  private readonly params = toSignal(this.route.queryParamMap, {
+    initialValue: this.route.snapshot.queryParamMap,
+  });
+  /** Page, size, search and sort. The data table writes these keys to the URL. */
+  protected readonly query = computed(() =>
+    parseDataTableQuery(this.params(), { defaultPageSize: PAGE_SIZE }),
+  );
+  protected readonly tab = computed<BattleTab>(() => {
+    const raw = this.params().get(TAB_PARAM) ?? 'guild';
+    return isBattleTab(raw) ? raw : 'guild';
+  });
+  protected readonly search = computed(() => this.query().search);
+  protected readonly outcome = computed<BattleOutcomeType | ''>(() => {
+    const raw = this.params().get(OUTCOME_PARAM) ?? '';
+    return isOutcome(raw) ? raw : '';
+  });
+  protected readonly activeFilterCount = computed(
+    () => (this.search().trim() ? 1 : 0) + (this.outcome() ? 1 : 0),
   );
 
+  protected readonly tabOptions = computed<TabOption[]>(() => [
+    { id: 'guild', label: this.t('battles.guild') },
+    { id: 'me', label: this.t('battles.my') },
+  ]);
+  protected readonly outcomeOptions = computed(() =>
+    OUTCOMES.map((value) => ({ value, label: this.t(battleOutcomeLabel(value)) })),
+  );
+
+  /** Any change to what the server is asked for reloads the list. */
+  private readonly requestKey = computed(() => {
+    const query = this.query();
+    return JSON.stringify([
+      this.tab(),
+      query.page,
+      query.pageSize,
+      query.search,
+      query.sort,
+      this.outcome(),
+    ]);
+  });
+
+  protected readonly summaryItems = computed<readonly SummaryItem[]>(() => {
+    const stats = this.scopeStats();
+    const onPage = this.t('battles.scope.onPage');
+    const items: SummaryItem[] = [
+      { label: this.t('battles.visible_battles'), value: stats.battles, hint: onPage },
+      { label: this.t('battles.total_fame'), value: this.formatCompact(stats.fame), hint: onPage },
+      { label: this.t('battles.kills'), value: this.formatAmount(stats.kills), hint: onPage },
+    ];
+    if (this.tab() === 'me') {
+      items.push(
+        { label: this.t('battles.deaths'), value: this.formatAmount(stats.deaths), hint: onPage },
+        { label: this.t('battles.players'), value: this.formatAmount(stats.players), hint: onPage },
+      );
+      return items;
+    }
+    if (stats.deaths > 0) {
+      items.push({
+        label: this.t('battles.kill_death'),
+        value: (stats.kills / stats.deaths).toFixed(2),
+        hint: onPage,
+      });
+    } else {
+      items.push({
+        label: this.t('events.detail.win_rate'),
+        value: this.winRateLabel(),
+        hint: this.t('battles.scope.winRateSub', { wins: stats.victories, losses: stats.defeats }),
+      });
+    }
+    items.push({
+      label: this.t('battles.scope.largestFight'),
+      value: this.formatAmount(stats.peakPlayers),
+      hint: this.t('battles.participants'),
+    });
+    return items;
+  });
+
+  /**
+   * Server mode: the API sorts and searches, so the columns carry no accessor or comparator. An
+   * accessor would make the table filter the server's page again on the client, which hides
+   * matches the server found on a field the table does not show (a player name, for one).
+   */
   protected readonly columns = computed<readonly DataTableColumn<BattleListRow>[]>(() => {
-    const shared: DataTableColumn<BattleListRow>[] = [
-      {
-        key: 'id',
-        label: 'battles.id',
-        sortable: true,
-        searchable: true,
-        accessor: (row) => this.rowId(row),
-        comparator: (a, b) => this.rowId(a) - this.rowId(b),
-      },
+    const isPersonal = this.tab() === 'me';
+    const columns: DataTableColumn<BattleListRow>[] = [];
+    if (isPersonal) {
+      columns.push({ key: 'select', label: '' });
+    }
+    columns.push(
       {
         key: 'time',
-        label: 'battles.time',
+        label: 'common.date',
         sortable: true,
-        accessor: (row) => this.rowStartTime(row),
-        comparator: (a, b) => this.rowStartTime(a).localeCompare(this.rowStartTime(b)),
       },
       {
         key: 'outcome',
         label: 'battles.outcome',
         sortable: true,
-        accessor: (row) => this.rowOutcome(row).type,
-        comparator: (a, b) => this.rowOutcome(a).type.localeCompare(this.rowOutcome(b).type),
-        // Both tabs now speak the same outcome vocabulary: the guild tab reads
-        // fights and the personal tab reads battles, but the backend resolves
-        // both with one rule. The personal tab used to offer "contested"
-        // instead of draw/unknown, which filtered on a value the guild tab
-        // could never produce.
-        filterOptions: [
-          { value: 'victory', label: this.t('battles.victory') },
-          { value: 'defeat', label: this.t('battles.defeat') },
-          { value: 'draw', label: this.t('battles.draw') },
-          { value: 'unknown', label: this.t('battles.unknown') },
-        ],
-      },
-      {
-        key: 'fame',
-        label: 'battles.fame',
-        sortable: true,
-        accessor: (row) => row.total_fame,
-        comparator: (a, b) => a.total_fame - b.total_fame,
-        align: 'right',
       },
       {
         key: 'kills',
         label: 'battles.kills',
         sortable: true,
-        accessor: (row) => row.total_kills,
-        comparator: (a, b) => a.total_kills - b.total_kills,
         align: 'right',
       },
-      {
-        key: 'players',
-        label: 'battles.players',
-        sortable: true,
-        searchable: true,
-        accessor: (row) => row.total_players,
-        comparator: (a, b) => a.total_players - b.total_players,
-        align: 'right',
-      },
-    ];
-
-    if (this.tab() === 'guild') {
-      return [
-        ...shared,
-        {
-          key: 'segments',
-          label: 'battles.segments',
-          sortable: true,
-          accessor: (row) => (this.isFight(row) ? row.segment_count : 0),
-          comparator: (a, b) =>
-            (this.isFight(a) ? a.segment_count : 0) - (this.isFight(b) ? b.segment_count : 0),
-          align: 'right',
-        },
-      ];
-    }
-
-    return [
-      { key: 'select', label: '' },
-      ...shared.slice(0, 5),
-      {
+    );
+    if (isPersonal) {
+      columns.push({
         key: 'deaths',
         label: 'battles.deaths',
         sortable: true,
-        accessor: (row) => (this.isBattle(row) ? this.battleDeaths(row) : 0),
-        comparator: (a, b) =>
-          (this.isBattle(a) ? this.battleDeaths(a) : 0) -
-          (this.isBattle(b) ? this.battleDeaths(b) : 0),
         align: 'right',
-      },
-      shared[5],
-    ];
+      });
+    }
+    columns.push(
+      { key: 'fame', label: 'battles.fame', sortable: true, align: 'right' },
+      { key: 'players', label: 'battles.participants', sortable: true, align: 'right' },
+    );
+    if (!isPersonal) {
+      columns.push({ key: 'segments', label: 'battles.segments', sortable: true, align: 'right' });
+    }
+    return columns;
   });
 
   protected readonly tableRows = computed(() => this.battles());
@@ -614,14 +451,14 @@ export class Battles {
     this.translate.t(key, params);
 
   constructor() {
-    void this.load();
+    effect(() => {
+      this.requestKey();
+      untracked(() => void this.load());
+    });
+    this.destroyRef.onDestroy(() => {
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+    });
     this.startRefreshTimer();
-  }
-
-  protected onTableChange(event: DataTablePageChange): void {
-    this.tableQuery.set(event);
-    this.page.set(event.page);
-    void this.load();
   }
 
   protected openRow(row: BattleListRow): void {
@@ -657,16 +494,30 @@ export class Battles {
 
   protected switchTab(tab: string): void {
     if (!isBattleTab(tab) || this.tab() === tab) return;
-    this.tab.set(tab);
-    this.page.set(1);
-    this.tableQuery.set({
-      page: 1,
-      pageSize: PAGE_SIZE,
-      search: '',
-      sort: null,
-      columnFilters: {},
-    });
-    void this.load();
+    // Clearing sort, search and outcome with the tab keeps the new scope's list at its first page.
+    this.updateQuery({ [TAB_PARAM]: tab, page: '1', search: '', sort: '', [OUTCOME_PARAM]: null });
+  }
+
+  protected onSearch(value: string): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      // An empty string, not null: the data table keeps its last search when the key is absent.
+      this.updateQuery({ search: value.trim(), page: '1' });
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected onOutcome(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.updateQuery({ [OUTCOME_PARAM]: isOutcome(value) ? value : null, page: '1' });
+  }
+
+  protected clearFilters(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.updateQuery({ search: '', [OUTCOME_PARAM]: null, page: '1' });
   }
 
   protected formatDate(isoDate: string): string {
@@ -712,8 +563,36 @@ export class Battles {
     return { label: this.t(battleOutcomeLabel(type)), type };
   }
 
+  /** Victory and defeat carry colour; a draw or an unknown result is neutral, never a loss. */
+  protected outcomeTone(outcome: BattleOutcomeType): 'success' | 'error' | 'neutral' {
+    switch (outcome) {
+      case 'victory':
+        return 'success';
+      case 'defeat':
+        return 'error';
+      default:
+        return 'neutral';
+    }
+  }
+
   protected battleDeaths(battle: BattleSummary): number {
     return battle.guilds.reduce((sum, guild) => sum + guild.deaths, 0);
+  }
+
+  /** wins / (wins + losses) of the loaded fights; "—" when none was decided. */
+  protected winRateLabel(): string {
+    const stats = this.scopeStats();
+    const rate = winRatePercent(stats.victories, stats.defeats);
+    return rate === null ? '—' : `${Math.round(rate)}%`;
+  }
+
+  private updateQuery(changes: Params): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: changes,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   private startRefreshTimer(): void {
@@ -750,7 +629,7 @@ export class Battles {
     try {
       const isGuildTab = this.tab() === 'guild';
       const path = isGuildTab ? 'api/fights' : 'api/battles/me';
-      const query = this.tableQuery();
+      const query = this.query();
       const params: Record<string, string | number> = {
         page: query.page,
         limit: query.pageSize,
@@ -765,7 +644,7 @@ export class Battles {
         params['sort'] = query.sort.columnKey === 'time' ? 'start_time' : query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
-      const outcome = query.columnFilters['outcome'];
+      const outcome = this.outcome();
       if (outcome) {
         params['outcome'] = outcome;
       }
@@ -797,13 +676,6 @@ export class Battles {
         this.loading.set(false);
       }
     }
-  }
-
-  /** wins / (wins + losses) of the loaded fights; "—" when none was decided. */
-  protected winRateLabel(): string {
-    const stats = this.scopeStats();
-    const rate = winRatePercent(stats.victories, stats.defeats);
-    return rate === null ? '—' : `${Math.round(rate)}%`;
   }
 
   private emptyScopeStats(): BattleScopeStats {

@@ -3448,6 +3448,10 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/battles-list
+  'battles.search': 'Search battles',
+  'battles.participants': 'Participants',
+  'battles.summaryLabel': 'Battle totals',
 } as const;
 
 export type TranslationKey = keyof typeof en;
