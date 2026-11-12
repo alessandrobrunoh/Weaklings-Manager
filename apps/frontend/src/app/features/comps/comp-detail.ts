@@ -1253,6 +1253,7 @@ const QUANTITY_SAVE_DELAY_MS = 450;
                 [beforeLabel]="'v' + pair.before.version"
                 [afterLabel]="'v' + pair.after.version"
                 [changeLabel]="t('compDetail.compare.change')"
+                [noneLabel]="t('versionDiff.none')"
                 [addedLabel]="t('comps.added')"
                 [removedLabel]="t('comps.removed')"
                 [changedLabel]="t('comps.changed')"
@@ -1371,7 +1372,12 @@ export class CompDetailPage {
 
   protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
     const pair = this.comparison();
-    return pair ? diffCompVersions(pair.before, pair.after) : [];
+    return pair
+      ? diffCompVersions(pair.before, pair.after, {
+          version: this.t('versionDiff.version'),
+          players: this.t('versionDiff.players'),
+        })
+      : [];
   });
 
   /**

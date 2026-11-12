@@ -8,8 +8,8 @@ This directory groups the build/composition workspace components with helpers fo
 
 - `Builds` and `Compositions` delegate to `Comps` with different `page` values.
 - `CompDetailPage` (`comp-detail.ts`) is the `/comps/:id` page: an `app-entity-header` summary (key numbers, one Edit/Done action, an overflow menu) over three views, Roster, Parties and Analytics. `CompAddBuildDialog` (`comp-add-build-dialog.ts`) is its single "Add build" surface (inputs `assignedIds`, `saving`; outputs `add`, `closed`).
-- `build-loadouts.ts` exposes canonical slot ordering and item selection helpers; `comp-parties.ts` exposes party view types, `simulateCompParties`, `groupPartySeats` (seats of one party grouped by build) and `partyRoleMix`.
-- `comp-tree.ts` exposes forest construction/filtering/flattening; `version-diff.ts` returns added/removed/changed entries; `group-by-creator.ts` groups builds by creator.
+- `build-loadouts.ts` is the single source of truth for slots: `SLOT_ORDER`, `SLOT_LABEL_KEYS`, `CORE_SLOTS`, `BUILD_ITEM_TIERS`, quality/enchantment support and item selection helpers; `comp-parties.ts` exposes party view types, `simulateCompParties`, `groupPartySeats` (seats of one party grouped by build) and `partyRoleMix`.
+- `comp-tree.ts` exposes forest construction/filtering/flattening; `version-diff.ts` returns grouped added/removed/changed entries with per-token before/after (item, ability, quality, version, quantity), and matches a composition's builds by lineage so v1 to v3 is one line; `group-by-creator.ts` groups builds by creator.
 
 ## Invariants
 
