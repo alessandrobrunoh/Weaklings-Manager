@@ -1,5 +1,5 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -14,11 +14,16 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { DataTable } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import type { DataTableColumn } from '../../shared/components/data-table/data-table-column';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { channelSelectOptions } from '../../shared/discord/discord-options';
 
 interface ProgressionDraft {
@@ -36,13 +41,24 @@ interface ProgressionDraft {
   vod_forum_channel_id: string;
 }
 
-interface SeasonEdit {
-  name: string;
-  starts_at: string;
-  ends_at: string;
+type ProgressionLevel = ProgressionSettingsView['level_preview'][number];
+
+interface RankRow {
+  readonly rank: GuildRankView;
+  readonly index: number;
 }
 
-interface NewSeasonDraft {
+/** Rank being edited in the dialog. `index` is null while adding a new rank. */
+interface RankDialog {
+  index: number | null;
+  name: string;
+  min_xp: number;
+  discord_role_id: string;
+}
+
+/** Season being edited in the dialog. `id` is null while opening a new season. */
+interface SeasonDialog {
+  id: number | null;
   name: string;
   starts_at: string;
   ends_at: string;
@@ -64,14 +80,26 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
   vod_forum_channel_id: '',
 };
 
+const MAX_GUILD_RANKS = 20;
+
 /**
- * Season XP curve, rates, and season calendar.
+ * XP curve, activity rates, guild ranks, and season calendar.
  */
 @Component({
   selector: 'app-admin-progression',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [ErrorState, Loading, PageHeader, PageStack, SearchableSelect],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    ErrorState,
+    Loading,
+    PageHeader,
+    PageStack,
+    SearchableSelect,
+    StatusChip,
+  ],
   template: `
     <app-page-header
       [title]="t('admin.progression.title')"
@@ -79,314 +107,461 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
     />
 
     @if (progressionLoading()) {
-      <app-loading />
+      <app-loading variant="detail" />
     } @else if (progressionSettings(); as settings) {
       <app-page-stack>
-      <section class="card p-5">
-        <form class="grid gap-4 sm:grid-cols-3" (submit)="saveProgressionSettings($event)">
-          <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
-            {{ t('validation.requiredLegend') }}
-          </p>
-          <p class="sm:col-span-3 eyebrow">{{ t('admin.progression.curve') }}</p>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpBase') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="1" required [value]="progressionDraft().xp_base"
-              (input)="updateProgressionNumber('xp_base', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpExponent') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="1" step="0.1" required
-              [value]="progressionDraft().xp_exponent"
-              (input)="updateProgressionNumber('xp_exponent', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.maxLevel') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="1" required [value]="progressionDraft().max_level"
-              (input)="updateProgressionNumber('max_level', $event)" />
-          </label>
-
-          <p class="sm:col-span-3 eyebrow mt-2">{{ t('admin.progression.rates') }}</p>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpMessage') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_message"
-              (input)="updateProgressionNumber('xp_message', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpEventCreate') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_event_create"
-              (input)="updateProgressionNumber('xp_event_create', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpEventJoin') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_event_join"
-              (input)="updateProgressionNumber('xp_event_join', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpEventComplete') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_event_complete"
-              (input)="updateProgressionNumber('xp_event_complete', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.xpVod') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().xp_vod"
-              (input)="updateProgressionNumber('xp_vod', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.warnThreshold') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="1" required [value]="progressionDraft().warn_threshold"
-              (input)="updateProgressionNumber('warn_threshold', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.cooldown') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().message_cooldown_secs"
-              (input)="updateProgressionNumber('message_cooldown_secs', $event)" />
-          </label>
-          <label>
-            <span class="label">
-              {{ t('admin.progression.minChars') }}
-              <span style="color: var(--color-error)" aria-hidden="true">*</span>
-            </span>
-            <input class="input mono" type="number" min="0" required [value]="progressionDraft().message_min_chars"
-              (input)="updateProgressionNumber('message_min_chars', $event)" />
-          </label>
-          <label class="sm:col-span-3">
-            <span class="label">{{ t('admin.progression.vodForum') }}</span>
-            <app-searchable-select
-              class="mt-1 block"
-              [options]="forumChannelOptions()"
-              [value]="progressionDraft().vod_forum_channel_id"
-              [emptyLabel]="t('admin.discord.placeholder')"
-              [searchPlaceholder]="t('common.search')"
-              [noMatchesLabel]="t('picker.noMatches')"
-              [emptyOptionsLabel]="t('picker.empty')"
-              [ariaLabel]="t('admin.progression.vodForum')"
-              (valueChange)="setVodForumChannel($event)"
-            />
-          </label>
-          <div class="sm:col-span-3">
-            <button type="submit" class="btn btn--primary" [disabled]="progressionSaving()">
-              {{ t('admin.progression.save') }}
-            </button>
-          </div>
-        </form>
-
-        <form class="mt-8 border-t pt-6" style="border-color: var(--color-border)"
-          (submit)="saveGuildRanks($event)">
-          <h3 class="eyebrow mb-2">{{ t('admin.progression.ranksTitle') }}</h3>
-          <p class="mb-4 text-sm" style="color: var(--color-text-secondary)">
-            {{ t('admin.progression.ranksHint') }}
-          </p>
-          <p class="mb-4 text-xs" style="color: var(--color-text-secondary)">
-            {{ t('validation.requiredLegend') }}
-          </p>
-          <ul class="grid gap-3" role="list">
-            @for (rank of guildRanks(); track $index; let i = $index) {
-              <li class="grid gap-3 sm:grid-cols-3">
-                <label>
-                  <span class="label">
-                    {{ t('admin.progression.rankName') }}
-                    <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                  </span>
-                  <input class="input" [id]="'guild-rank-name-' + i" [value]="rank.name"
-                    maxlength="40" required
-                    (input)="updateGuildRank(i, 'name', $event)" />
-                </label>
-                <label>
-                  <span class="label">
-                    {{ t('admin.progression.rankMinXp') }}
-                    <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                  </span>
-                  <input class="input mono" type="number" min="0" [value]="rank.min_xp"
-                    [readonly]="i === 0" required
-                    (input)="updateGuildRank(i, 'min_xp', $event)" />
-                </label>
-                <label>
-                  <span class="label">{{ t('admin.progression.rankDiscordRole') }}</span>
-                  <select class="input" [value]="rank.discord_role_id ?? ''"
-                    (change)="updateGuildRole(i, $event)">
-                    <option value="">{{ t('admin.progression.rankUnmapped') }}</option>
-                    @for (role of discordRoles(); track role.id) {
-                      <option [value]="role.id">{{ role.name }} ({{ role.id }})</option>
-                    }
-                    @if (rank.discord_role_id && !hasDiscordRole(rank.discord_role_id)) {
-                      <option [value]="rank.discord_role_id">
-                        {{ rank.discord_role_id }} ({{ t('admin.progression.rankUnavailable') }})
-                      </option>
-                    }
-                  </select>
-                </label>
-                @if (i > 0) {
-                  <button type="button" class="btn btn--outline btn--sm sm:col-span-3 justify-self-start"
-                    (click)="removeGuildRank(i)">
-                    {{ t('admin.progression.rankRemove', { name: rank.name }) }}
-                  </button>
-                }
-              </li>
-            }
-          </ul>
-          <div class="mt-4 flex flex-wrap gap-3">
-            <button type="button" class="btn btn--outline" [disabled]="guildRanks().length >= 20"
-              (click)="addGuildRank()">
-              {{ t('admin.progression.rankAdd') }}
-            </button>
-            <button type="submit" class="btn btn--primary" [disabled]="rankSaving()">
-              {{ t('admin.progression.rankSave') }}
-            </button>
-          </div>
-        </form>
-
-        @if (settings.level_preview.length > 0) {
-          <div class="mt-6 overflow-x-auto">
-            <h3 class="eyebrow mb-2">{{ t('admin.progression.preview') }}</h3>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>{{ t('admin.progression.level') }}</th>
-                  <th>{{ t('admin.progression.xpNeeded') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of settings.level_preview; track row.level) {
-                  <tr>
-                    <td class="mono">{{ row.level }}</td>
-                    <td class="mono">{{ row.xp }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        }
-
-        <div class="mt-8">
-          <h3 class="eyebrow mb-3">{{ t('admin.progression.seasons') }}</h3>
-          <ul class="flex flex-col gap-3" role="list">
-            @for (season of progressionSeasons(); track season.id) {
-              <li class="rounded-2xl p-3" style="background: var(--color-surface-2); border: 1px solid var(--color-border)">
-                <div class="mb-2 flex flex-wrap items-center gap-2">
-                  <strong>{{ season.name }}</strong>
-                  @if (season.is_active) {
-                    <span class="chip">{{ t('admin.progression.active') }}</span>
-                  } @else {
-                    <button type="button" class="btn btn--outline btn--sm"
-                      (click)="activateSeason(season.id)">
-                      {{ t('admin.progression.activate') }}
-                    </button>
-                  }
-                </div>
-                <form class="grid gap-3 sm:grid-cols-3" (submit)="saveSeason($event, season.id)">
-                  <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
-                    {{ t('validation.requiredLegend') }}
-                  </p>
-                  <label>
-                    <span class="label">
-                      {{ t('admin.progression.seasonName') }}
-                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                    </span>
-                    <input class="input" type="text" [value]="seasonEdits()[season.id]?.name ?? season.name"
-                      required (input)="updateSeasonEdit(season.id, 'name', $event)" />
-                  </label>
-                  <label>
-                    <span class="label">
-                      {{ t('admin.progression.startsAt') }}
-                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                    </span>
-                    <input class="input mono" type="datetime-local"
-                      required
-                      [value]="seasonEdits()[season.id]?.starts_at ?? toLocalInput(season.starts_at)"
-                      (input)="updateSeasonEdit(season.id, 'starts_at', $event)" />
-                  </label>
-                  <label>
-                    <span class="label">
-                      {{ t('admin.progression.endsAt') }}
-                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                    </span>
-                    <input class="input mono" type="datetime-local"
-                      required
-                      [value]="seasonEdits()[season.id]?.ends_at ?? toLocalInput(season.ends_at)"
-                      (input)="updateSeasonEdit(season.id, 'ends_at', $event)" />
-                  </label>
-                  <div class="sm:col-span-3">
-                    <button type="submit" class="btn btn--outline btn--sm">
-                      {{ t('common.save') }}
-                    </button>
-                  </div>
-                </form>
-              </li>
-            }
-          </ul>
-
-          <form class="mt-4 grid gap-3 sm:grid-cols-3" (submit)="createSeason($event)">
-            <p class="text-xs sm:col-span-3" style="color: var(--color-text-secondary)">
+        <section class="card p-5">
+          <form class="grid gap-6" (submit)="saveProgressionSettings($event)">
+            <p class="text-xs" style="color: var(--color-text-secondary)">
               {{ t('validation.requiredLegend') }}
             </p>
-            <label>
+
+            <div class="grid gap-4">
+              <div>
+                <h3 class="section-title section-title--sm">{{ t('admin.progression.curve') }}</h3>
+                <p class="hint">{{ t('admin.progression.curveHint') }}</p>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpBase') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="1" required
+                      aria-describedby="progression-help-xp-base"
+                      [value]="progressionDraft().xp_base"
+                      (input)="updateProgressionNumber('xp_base', $event)" />
+                  </label>
+                  <p id="progression-help-xp-base" class="hint">{{ t('admin.progression.helpXpBase') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpExponent') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="1" step="0.1" required
+                      aria-describedby="progression-help-xp-exponent"
+                      [value]="progressionDraft().xp_exponent"
+                      (input)="updateProgressionNumber('xp_exponent', $event)" />
+                  </label>
+                  <p id="progression-help-xp-exponent" class="hint">{{ t('admin.progression.helpXpExponent') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.maxLevel') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="1" required
+                      aria-describedby="progression-help-max-level"
+                      [value]="progressionDraft().max_level"
+                      (input)="updateProgressionNumber('max_level', $event)" />
+                  </label>
+                  <p id="progression-help-max-level" class="hint">{{ t('admin.progression.helpMaxLevel') }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-4">
+              <div>
+                <h3 class="section-title section-title--sm">{{ t('admin.progression.rates') }}</h3>
+                <p class="hint">{{ t('admin.progression.ratesHint') }}</p>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpMessage') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-xp-message"
+                      [value]="progressionDraft().xp_message"
+                      (input)="updateProgressionNumber('xp_message', $event)" />
+                  </label>
+                  <p id="progression-help-xp-message" class="hint">{{ t('admin.progression.helpXpMessage') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpEventCreate') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-xp-event-create"
+                      [value]="progressionDraft().xp_event_create"
+                      (input)="updateProgressionNumber('xp_event_create', $event)" />
+                  </label>
+                  <p id="progression-help-xp-event-create" class="hint">{{ t('admin.progression.helpXpEventCreate') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpEventJoin') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-xp-event-join"
+                      [value]="progressionDraft().xp_event_join"
+                      (input)="updateProgressionNumber('xp_event_join', $event)" />
+                  </label>
+                  <p id="progression-help-xp-event-join" class="hint">{{ t('admin.progression.helpXpEventJoin') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpEventComplete') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-xp-event-complete"
+                      [value]="progressionDraft().xp_event_complete"
+                      (input)="updateProgressionNumber('xp_event_complete', $event)" />
+                  </label>
+                  <p id="progression-help-xp-event-complete" class="hint">{{ t('admin.progression.helpXpEventComplete') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.xpVod') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-xp-vod"
+                      [value]="progressionDraft().xp_vod"
+                      (input)="updateProgressionNumber('xp_vod', $event)" />
+                  </label>
+                  <p id="progression-help-xp-vod" class="hint">{{ t('admin.progression.helpXpVod') }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-4">
+              <div>
+                <h3 class="section-title section-title--sm">{{ t('admin.progression.messageLimits') }}</h3>
+                <p class="hint">{{ t('admin.progression.messageLimitsHint') }}</p>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.cooldown') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-cooldown"
+                      [value]="progressionDraft().message_cooldown_secs"
+                      (input)="updateProgressionNumber('message_cooldown_secs', $event)" />
+                  </label>
+                  <p id="progression-help-cooldown" class="hint">{{ t('admin.progression.helpCooldown') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.minChars') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="0" required
+                      aria-describedby="progression-help-min-chars"
+                      [value]="progressionDraft().message_min_chars"
+                      (input)="updateProgressionNumber('message_min_chars', $event)" />
+                  </label>
+                  <p id="progression-help-min-chars" class="hint">{{ t('admin.progression.helpMinChars') }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-4">
+              <div>
+                <h3 class="section-title section-title--sm">{{ t('admin.progression.moderation') }}</h3>
+                <p class="hint">{{ t('admin.progression.moderationHint') }}</p>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <div class="grid content-start gap-1.5">
+                  <label class="grid gap-1.5">
+                    <span class="label">
+                      {{ t('admin.progression.warnThreshold') }}
+                      <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                    </span>
+                    <input class="input mono" type="number" min="1" required
+                      aria-describedby="progression-help-warn-threshold"
+                      [value]="progressionDraft().warn_threshold"
+                      (input)="updateProgressionNumber('warn_threshold', $event)" />
+                  </label>
+                  <p id="progression-help-warn-threshold" class="hint">{{ t('admin.progression.helpWarnThreshold') }}</p>
+                </div>
+                <div class="grid content-start gap-1.5 sm:col-span-2">
+                  <label class="grid gap-1.5">
+                    <span class="label">{{ t('admin.progression.vodForum') }}</span>
+                    <app-searchable-select
+                      class="block"
+                      [options]="forumChannelOptions()"
+                      [value]="progressionDraft().vod_forum_channel_id"
+                      [emptyLabel]="t('admin.discord.placeholder')"
+                      [searchPlaceholder]="t('common.search')"
+                      [noMatchesLabel]="t('picker.noMatches')"
+                      [emptyOptionsLabel]="t('picker.empty')"
+                      [ariaLabel]="t('admin.progression.vodForum')"
+                      (valueChange)="setVodForumChannel($event)"
+                    />
+                  </label>
+                  <p class="hint">{{ t('admin.progression.helpVodForum') }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <button type="submit" class="btn btn--primary" [disabled]="progressionSaving()">
+                {{ t('admin.progression.save') }}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        @if (settings.level_preview.length > 0) {
+          <section class="card p-5">
+            <div class="mb-3">
+              <h3 class="section-title section-title--sm">{{ t('admin.progression.preview') }}</h3>
+              <p class="hint">{{ t('admin.progression.levelsHint') }}</p>
+            </div>
+            <app-data-table
+              [columns]="levelColumns"
+              [rows]="settings.level_preview"
+              [trackBy]="trackLevel"
+              [ariaLabel]="t('admin.progression.preview')"
+              [hideSearch]="true"
+              [hidePageSize]="true"
+              [pageSize]="20"
+              [syncUrl]="false"
+              mobileLayout="stack"
+              emptyIcon="sparkles"
+            >
+              <ng-template dataTableCell="xp" let-row>
+                <span class="num">{{ row.xp }}</span>
+              </ng-template>
+            </app-data-table>
+          </section>
+        }
+
+        <section class="card p-5">
+          <form class="grid gap-4" (submit)="saveGuildRanks($event)">
+            <div>
+              <h3 class="section-title section-title--sm">{{ t('admin.progression.ranksTitle') }}</h3>
+              <p class="hint">{{ t('admin.progression.ranksHint') }}</p>
+            </div>
+            <app-data-table
+              [columns]="rankColumns"
+              [rows]="rankRows()"
+              [trackBy]="trackRank"
+              [ariaLabel]="t('admin.progression.ranksTitle')"
+              [hideSearch]="true"
+              [hidePageSize]="true"
+              [pageSize]="20"
+              [syncUrl]="false"
+              mobileLayout="stack"
+              emptyIcon="sparkles"
+            >
+              <ng-template dataTableCell="role" let-row>
+                {{ roleLabel(row.rank.discord_role_id) }}
+              </ng-template>
+              <ng-template dataTableCell="actions" let-row>
+                <div class="flex justify-end">
+                  <button type="button" class="btn btn--outline btn--sm"
+                    [attr.aria-label]="t('admin.progression.editNamed', { name: row.rank.name })"
+                    (click)="openRankDialog(row.index)">
+                    {{ t('common.edit') }}
+                  </button>
+                </div>
+              </ng-template>
+            </app-data-table>
+            <div class="flex flex-wrap items-center gap-3">
+              <button type="button" class="btn btn--outline"
+                [disabled]="guildRanks().length >= maxGuildRanks"
+                (click)="openRankDialog(null)">
+                {{ t('admin.progression.rankAdd') }}
+              </button>
+              <button type="submit" class="btn btn--primary" [disabled]="rankSaving()">
+                {{ t('admin.progression.rankSave') }}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card p-5">
+          <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 class="section-title section-title--sm">{{ t('admin.progression.seasons') }}</h3>
+              <p class="hint">{{ t('admin.progression.seasonsHint') }}</p>
+            </div>
+            <button type="button" class="btn btn--primary" (click)="openSeasonDialog(null)">
+              {{ t('admin.progression.createSeason') }}
+            </button>
+          </div>
+          <app-data-table
+            [columns]="seasonColumns"
+            [rows]="progressionSeasons()"
+            [trackBy]="trackSeason"
+            [ariaLabel]="t('admin.progression.seasons')"
+            [hideSearch]="true"
+            [hidePageSize]="true"
+            [pageSize]="20"
+            [syncUrl]="false"
+            mobileLayout="stack"
+            emptyIcon="sparkles"
+          >
+            <ng-template dataTableCell="starts_at" let-row>
+              {{ formatDateTime(row.starts_at) }}
+            </ng-template>
+            <ng-template dataTableCell="ends_at" let-row>
+              {{ formatDateTime(row.ends_at) }}
+            </ng-template>
+            <ng-template dataTableCell="status" let-row>
+              @if (row.is_active) {
+                <app-status-chip value="active" [toneOverride]="'success'" [label]="t('admin.progression.active')" />
+              } @else {
+                <app-status-chip value="inactive" [label]="t('admin.progression.inactive')" />
+              }
+            </ng-template>
+            <ng-template dataTableCell="actions" let-row>
+              <div class="flex flex-wrap justify-end gap-2">
+                @if (!row.is_active) {
+                  <button type="button" class="btn btn--outline btn--sm"
+                    (click)="activateSeason(row.id)">
+                    {{ t('admin.progression.activate') }}
+                  </button>
+                }
+                <button type="button" class="btn btn--outline btn--sm"
+                  [attr.aria-label]="t('admin.progression.editNamed', { name: row.name })"
+                  (click)="openSeasonDialog(row)">
+                  {{ t('common.edit') }}
+                </button>
+              </div>
+            </ng-template>
+          </app-data-table>
+        </section>
+      </app-page-stack>
+
+      @if (rankDialog(); as dialog) {
+        <app-dialog
+          [title]="t(dialog.index === null ? 'admin.progression.rankAdd' : 'admin.progression.rankEditTitle')"
+          (closed)="closeRankDialog()"
+        >
+          <form id="rank-dialog-form" class="grid gap-4" (submit)="saveRankDialog($event)">
+            <p class="text-xs" style="color: var(--color-text-secondary)">
+              {{ t('validation.requiredLegend') }}
+            </p>
+            <label class="grid gap-1.5">
+              <span class="label">
+                {{ t('admin.progression.rankName') }}
+                <span style="color: var(--color-error)" aria-hidden="true">*</span>
+              </span>
+              <input class="input" type="text" maxlength="40" required [value]="dialog.name"
+                (input)="updateRankDialog('name', $event)" />
+            </label>
+            <div class="grid content-start gap-1.5">
+              <label class="grid gap-1.5">
+                <span class="label">
+                  {{ t('admin.progression.rankMinXp') }}
+                  <span style="color: var(--color-error)" aria-hidden="true">*</span>
+                </span>
+                <input class="input mono" type="number" min="0" required
+                  [readonly]="dialog.index === 0"
+                  [attr.aria-describedby]="dialog.index === 0 ? 'rank-dialog-floor-hint' : null"
+                  [value]="dialog.min_xp"
+                  (input)="updateRankDialog('min_xp', $event)" />
+              </label>
+              @if (dialog.index === 0) {
+                <p id="rank-dialog-floor-hint" class="hint">{{ t('admin.progression.rankFloorHint') }}</p>
+              }
+            </div>
+            <label class="grid gap-1.5">
+              <span class="label">{{ t('admin.progression.rankDiscordRole') }}</span>
+              <select class="input" [value]="dialog.discord_role_id" (change)="updateRankDialogRole($event)">
+                <option value="">{{ t('admin.progression.rankUnmapped') }}</option>
+                @for (role of discordRoles(); track role.id) {
+                  <option [value]="role.id">{{ role.name }} ({{ role.id }})</option>
+                }
+                @if (dialog.discord_role_id && !hasDiscordRole(dialog.discord_role_id)) {
+                  <option [value]="dialog.discord_role_id">
+                    {{ dialog.discord_role_id }} ({{ t('admin.progression.rankUnavailable') }})
+                  </option>
+                }
+              </select>
+            </label>
+          </form>
+          <div dialogFooter class="flex w-full flex-wrap items-center justify-between gap-2">
+            @if (dialog.index !== null && dialog.index > 0) {
+              <button type="button" class="btn btn--outline" (click)="removeRankFromDialog()">
+                {{ t('admin.progression.rankRemove', { name: dialog.name }) }}
+              </button>
+            } @else {
+              <span></span>
+            }
+            <div class="flex gap-2">
+              <button type="button" class="btn btn--ghost" (click)="closeRankDialog()">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="submit" form="rank-dialog-form" class="btn btn--primary">
+                {{ t('common.save') }}
+              </button>
+            </div>
+          </div>
+        </app-dialog>
+      }
+
+      @if (seasonDialog(); as dialog) {
+        <app-dialog
+          [title]="t(dialog.id === null ? 'admin.progression.createSeason' : 'admin.progression.seasonEditTitle')"
+          (closed)="closeSeasonDialog()"
+        >
+          <form id="season-dialog-form" class="grid gap-4" (submit)="saveSeasonDialog($event)">
+            <p class="text-xs" style="color: var(--color-text-secondary)">
+              {{ t('validation.requiredLegend') }}
+            </p>
+            <label class="grid gap-1.5">
               <span class="label">
                 {{ t('admin.progression.seasonName') }}
                 <span style="color: var(--color-error)" aria-hidden="true">*</span>
               </span>
-              <input class="input" type="text" [value]="newSeason().name"
-                (input)="updateNewSeason('name', $event)" required />
+              <input class="input" type="text" [value]="dialog.name" required
+                (input)="updateSeasonDialog('name', $event)" />
             </label>
-            <label>
+            <label class="grid gap-1.5">
               <span class="label">
                 {{ t('admin.progression.startsAt') }}
                 <span style="color: var(--color-error)" aria-hidden="true">*</span>
               </span>
-              <input class="input mono" type="datetime-local" [value]="newSeason().starts_at"
-                (input)="updateNewSeason('starts_at', $event)" required />
+              <input class="input mono" type="datetime-local" required [value]="dialog.starts_at"
+                (input)="updateSeasonDialog('starts_at', $event)" />
             </label>
-            <label>
+            <label class="grid gap-1.5">
               <span class="label">
                 {{ t('admin.progression.endsAt') }}
                 <span style="color: var(--color-error)" aria-hidden="true">*</span>
               </span>
-              <input class="input mono" type="datetime-local" [value]="newSeason().ends_at"
-                (input)="updateNewSeason('ends_at', $event)" required />
+              <input class="input mono" type="datetime-local" required [value]="dialog.ends_at"
+                (input)="updateSeasonDialog('ends_at', $event)" />
             </label>
-            <label class="flex items-center gap-2 sm:col-span-2">
-              <input class="checkbox" type="checkbox" [checked]="newSeason().activate"
-                (change)="toggleNewSeasonActivate($event)" />
-              <span>{{ t('admin.progression.activateOnCreate') }}</span>
-            </label>
-            <div>
-              <button type="submit" class="btn btn--primary">
-                {{ t('admin.progression.createSeason') }}
-              </button>
-            </div>
+            @if (dialog.id === null) {
+              <label class="flex items-center gap-2">
+                <input class="checkbox" type="checkbox" [checked]="dialog.activate"
+                  (change)="toggleSeasonDialogActivate($event)" />
+                <span>{{ t('admin.progression.activateOnCreate') }}</span>
+              </label>
+            }
           </form>
-        </div>
-      </section>
-      </app-page-stack>
+          <div dialogFooter class="flex w-full flex-wrap justify-end gap-2">
+            <button type="button" class="btn btn--ghost" (click)="closeSeasonDialog()">
+              {{ t('common.cancel') }}
+            </button>
+            <button type="submit" form="season-dialog-form" class="btn btn--primary">
+              {{ t(dialog.id === null ? 'admin.progression.createSeason' : 'common.save') }}
+            </button>
+          </div>
+        </app-dialog>
+      }
     } @else {
       <app-error-state
         [message]="t('common.error')"
@@ -401,6 +576,7 @@ export class AdminProgression {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
+  protected readonly maxGuildRanks = MAX_GUILD_RANKS;
   protected readonly progressionLoading = signal(true);
   protected readonly progressionSaving = signal(false);
   protected readonly progressionSettings = signal<ProgressionSettingsView | null>(null);
@@ -410,13 +586,35 @@ export class AdminProgression {
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
   protected readonly guildRanks = signal<GuildRankView[]>([]);
   protected readonly rankSaving = signal(false);
-  protected readonly seasonEdits = signal<Record<number, SeasonEdit>>({});
-  protected readonly newSeason = signal<NewSeasonDraft>({
-    name: '',
-    starts_at: '',
-    ends_at: '',
-    activate: true,
-  });
+  protected readonly rankDialog = signal<RankDialog | null>(null);
+  protected readonly seasonDialog = signal<SeasonDialog | null>(null);
+  protected readonly rankRows = computed<RankRow[]>(() =>
+    this.guildRanks().map((rank, index) => ({ rank, index })),
+  );
+
+  protected readonly levelColumns: readonly DataTableColumn<ProgressionLevel>[] = [
+    { key: 'level', label: 'admin.progression.level' },
+    { key: 'xp', label: 'admin.progression.xpNeeded', align: 'right' },
+  ];
+
+  protected readonly rankColumns: readonly DataTableColumn<RankRow>[] = [
+    { key: 'name', label: 'admin.progression.rankName', accessor: (row) => row.rank.name },
+    { key: 'min_xp', label: 'admin.progression.rankMinXp', align: 'right', accessor: (row) => row.rank.min_xp },
+    { key: 'role', label: 'admin.progression.rankDiscordRole' },
+    { key: 'actions', label: 'common.actions', align: 'right' },
+  ];
+
+  protected readonly seasonColumns: readonly DataTableColumn<ProgressionSeasonView>[] = [
+    { key: 'name', label: 'admin.progression.seasonName' },
+    { key: 'starts_at', label: 'admin.progression.startsAt' },
+    { key: 'ends_at', label: 'admin.progression.endsAt' },
+    { key: 'status', label: 'common.status' },
+    { key: 'actions', label: 'common.actions', align: 'right' },
+  ];
+
+  protected readonly trackLevel = (row: ProgressionLevel) => row.level;
+  protected readonly trackRank = (row: RankRow) => row.index;
+  protected readonly trackSeason = (row: ProgressionSeasonView) => row.id;
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
@@ -487,37 +685,81 @@ export class AdminProgression {
     return this.discordRoles().some((role) => role.id === roleId);
   }
 
-  protected updateGuildRank(index: number, field: 'name' | 'min_xp', event: Event): void {
-    const value = field === 'name'
-      ? (event.target as HTMLInputElement).value
-      : Number((event.target as HTMLInputElement).value);
-    this.guildRanks.update((ranks) => ranks.map((rank, i) =>
-      i === index ? { ...rank, [field]: value } : rank,
-    ));
+  protected roleLabel(roleId: string | null): string {
+    if (!roleId) {
+      return this.t('admin.progression.rankUnmapped');
+    }
+    const role = this.discordRoles().find((row) => row.id === roleId);
+    return role
+      ? role.name
+      : `${roleId} (${this.t('admin.progression.rankUnavailable')})`;
   }
 
-  protected updateGuildRole(index: number, event: Event): void {
+  protected openRankDialog(index: number | null): void {
+    if (index === null) {
+      const ranks = this.guildRanks();
+      if (ranks.length >= MAX_GUILD_RANKS) {
+        return;
+      }
+      this.rankDialog.set({
+        index: null,
+        name: this.t('admin.progression.rankNewName'),
+        min_xp: (ranks.at(-1)?.min_xp ?? -1) + 1,
+        discord_role_id: '',
+      });
+      return;
+    }
+    const rank = this.guildRanks()[index];
+    if (!rank) {
+      return;
+    }
+    this.rankDialog.set({
+      index,
+      name: rank.name,
+      min_xp: rank.min_xp,
+      discord_role_id: rank.discord_role_id ?? '',
+    });
+  }
+
+  protected closeRankDialog(): void {
+    this.rankDialog.set(null);
+  }
+
+  protected updateRankDialog(field: 'name' | 'min_xp', event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const value = field === 'name' ? input.value : Number(input.value);
+    this.rankDialog.update((dialog) => (dialog ? { ...dialog, [field]: value } : dialog));
+  }
+
+  protected updateRankDialogRole(event: Event): void {
     const roleId = (event.target as HTMLSelectElement).value;
-    this.guildRanks.update((ranks) => ranks.map((rank, i) =>
-      i === index ? { ...rank, discord_role_id: roleId || null } : rank,
-    ));
+    this.rankDialog.update((dialog) => (dialog ? { ...dialog, discord_role_id: roleId } : dialog));
   }
 
-  protected addGuildRank(): void {
-    this.guildRanks.update((ranks) => ranks.length >= 20
-      ? ranks
-      : [...ranks, {
-          name: this.t('admin.progression.rankNewName'),
-          min_xp: (ranks.at(-1)?.min_xp ?? -1) + 1,
-          discord_role_id: null,
-        }]);
+  protected saveRankDialog(submit: SubmitEvent): void {
+    submit.preventDefault();
+    const dialog = this.rankDialog();
+    if (!dialog) {
+      return;
+    }
+    const rank: GuildRankView = {
+      name: dialog.name.trim(),
+      min_xp: dialog.min_xp,
+      discord_role_id: dialog.discord_role_id || null,
+    };
+    this.guildRanks.update((ranks) => dialog.index === null
+      ? [...ranks, rank]
+      : ranks.map((row, i) => (i === dialog.index ? rank : row)));
+    this.rankDialog.set(null);
   }
 
-  protected removeGuildRank(index: number): void {
-    if (index === 0) {
+  protected removeRankFromDialog(): void {
+    const index = this.rankDialog()?.index ?? null;
+    if (index === null || index === 0) {
       return;
     }
     this.guildRanks.update((ranks) => ranks.filter((_, i) => i !== index));
+    this.rankDialog.set(null);
   }
 
   protected async saveGuildRanks(submit: SubmitEvent): Promise<void> {
@@ -570,41 +812,70 @@ export class AdminProgression {
     }
   }
 
-  protected toLocalInput(iso: string): string {
-    return toLocalInput(iso);
+  protected formatDateTime(iso: string): string {
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime())
+      ? iso
+      : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
   }
 
-  protected updateSeasonEdit(id: number, field: keyof SeasonEdit, event: Event): void {
+  protected openSeasonDialog(season: ProgressionSeasonView | null): void {
+    this.seasonDialog.set(season
+      ? {
+          id: season.id,
+          name: season.name,
+          starts_at: toLocalInput(season.starts_at),
+          ends_at: toLocalInput(season.ends_at),
+          activate: false,
+        }
+      : { id: null, name: '', starts_at: '', ends_at: '', activate: true });
+  }
+
+  protected closeSeasonDialog(): void {
+    this.seasonDialog.set(null);
+  }
+
+  protected updateSeasonDialog(field: 'name' | 'starts_at' | 'ends_at', event: Event): void {
     const value = (event.target as HTMLInputElement).value;
-    this.seasonEdits.update((edits) => {
-      const current = edits[id] ?? this.seedSeasonEdit(id);
-      return { ...edits, [id]: { ...current, [field]: value } };
-    });
+    this.seasonDialog.update((dialog) => (dialog ? { ...dialog, [field]: value } : dialog));
   }
 
-  private seedSeasonEdit(id: number): SeasonEdit {
-    const season = this.progressionSeasons().find((row) => row.id === id);
-    return {
-      name: season?.name ?? '',
-      starts_at: season ? toLocalInput(season.starts_at) : '',
-      ends_at: season ? toLocalInput(season.ends_at) : '',
-    };
+  protected toggleSeasonDialogActivate(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.seasonDialog.update((dialog) => (dialog ? { ...dialog, activate: checked } : dialog));
   }
 
-  protected async saveSeason(submit: SubmitEvent, id: number): Promise<void> {
+  protected async saveSeasonDialog(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
-    const edit = this.seasonEdits()[id] ?? this.seedSeasonEdit(id);
+    const dialog = this.seasonDialog();
+    if (!dialog) {
+      return;
+    }
     try {
+      const body = {
+        name: dialog.name.trim(),
+        starts_at: fromLocalInput(dialog.starts_at),
+        ends_at: fromLocalInput(dialog.ends_at),
+      };
+      if (dialog.id === null) {
+        await firstValueFrom(
+          this.api.post<ProgressionSeasonView>('api/progression/seasons', {
+            ...body,
+            activate: dialog.activate,
+          }),
+        );
+        this.seasonDialog.set(null);
+        await this.loadProgression();
+        this.toasts.success(this.t('admin.progression.seasonCreated'));
+        return;
+      }
       const updated = await firstValueFrom(
-        this.api.put<ProgressionSeasonView>(`api/progression/seasons/${id}`, {
-          name: edit.name.trim(),
-          starts_at: fromLocalInput(edit.starts_at),
-          ends_at: fromLocalInput(edit.ends_at),
-        }),
+        this.api.put<ProgressionSeasonView>(`api/progression/seasons/${dialog.id}`, body),
       );
       this.progressionSeasons.update((rows) =>
-        rows.map((row) => (row.id === id ? updated : row)),
+        rows.map((row) => (row.id === dialog.id ? updated : row)),
       );
+      this.seasonDialog.set(null);
       this.toasts.success(this.t('admin.progression.seasonSaved'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -618,36 +889,6 @@ export class AdminProgression {
       );
       await this.loadProgression();
       this.toasts.success(this.t('admin.progression.seasonActivated'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    }
-  }
-
-  protected updateNewSeason(field: 'name' | 'starts_at' | 'ends_at', event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.newSeason.update((draft) => ({ ...draft, [field]: value }));
-  }
-
-  protected toggleNewSeasonActivate(event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    this.newSeason.update((draft) => ({ ...draft, activate: checked }));
-  }
-
-  protected async createSeason(submit: SubmitEvent): Promise<void> {
-    submit.preventDefault();
-    const draft = this.newSeason();
-    try {
-      await firstValueFrom(
-        this.api.post<ProgressionSeasonView>('api/progression/seasons', {
-          name: draft.name.trim(),
-          starts_at: fromLocalInput(draft.starts_at),
-          ends_at: fromLocalInput(draft.ends_at),
-          activate: draft.activate,
-        }),
-      );
-      this.newSeason.set({ name: '', starts_at: '', ends_at: '', activate: true });
-      await this.loadProgression();
-      this.toasts.success(this.t('admin.progression.seasonCreated'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
