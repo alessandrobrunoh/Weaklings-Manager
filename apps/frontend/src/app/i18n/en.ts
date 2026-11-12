@@ -3448,6 +3448,24 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/audit
+  'audit.filter.search': 'Search actions',
+  'audit.filter.searchPlaceholder': 'Action contains...',
+  'audit.filter.action': 'Action type',
+  'audit.filter.allActions': 'All actions',
+  'audit.filter.entity': 'Target type',
+  'audit.filter.allEntities': 'All target types',
+  'audit.filter.actor': 'Actor',
+  'audit.filter.anyActor': 'Anyone',
+  'audit.filter.from': 'From',
+  'audit.filter.to': 'To',
+  'audit.filter.dateHint': 'Dates narrow the rows loaded for this page.',
+  'audit.actor': 'Actor',
+  'audit.target': 'Target',
+  'audit.userId': 'User #{id}',
+  'audit.splitId': 'Split #{id}',
+  'audit.detailsTitle': 'Log entry',
+  'audit.noDetails': 'No extra details were recorded for this entry.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
