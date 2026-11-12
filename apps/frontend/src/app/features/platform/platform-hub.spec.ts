@@ -44,15 +44,39 @@ describe('PlatformHub', () => {
     fixture.destroy();
   });
 
-  it('renders workspace cards and counts', () => {
+  it('shows the platform counts in the summary band', () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain('nav.platform.tenants');
-    expect(compiled.textContent).toContain('nav.platform.admins');
-    expect(compiled.textContent).toContain('2');
-    expect(compiled.textContent).toContain('1');
-    expect(compiled.querySelectorAll('article.card')).toHaveLength(2);
+    const band = compiled.querySelector('[role="group"]');
+    expect(band?.getAttribute('aria-label')).toBe('platform.hub.summary');
+    const stats = Array.from(compiled.querySelectorAll('app-stat')).map((stat) => stat.textContent);
+    expect(stats).toHaveLength(2);
+    expect(stats[0]).toContain('nav.platform.tenants');
+    expect(stats[0]).toContain('2');
+    expect(stats[1]).toContain('nav.platform.admins');
+    expect(stats[1]).toContain('1');
+  });
+
+  it('groups the entries under Tenants, Access and Configuration', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const headings = Array.from(compiled.querySelectorAll('section h2')).map((h) => h.textContent?.trim());
+    expect(headings).toEqual([
+      'platform.hub.groupTenants',
+      'platform.hub.groupAccess',
+      'platform.hub.groupConfig',
+    ]);
+    expect(compiled.querySelectorAll('section ul > li')).toHaveLength(4);
+  });
+
+  it('links each entry to its existing route, with a description', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('a[href="/platform/tenants"]')).toBeTruthy();
     expect(compiled.querySelector('a[href="/platform/admins"]')).toBeTruthy();
     expect(compiled.querySelector('a[href="/platform/ranks"]')).toBeTruthy();
+    // Feature flags are per tenant, so their entry opens the tenant list.
+    const tenantLinks = compiled.querySelectorAll('a[href="/platform/tenants"]');
+    expect(tenantLinks).toHaveLength(2);
+    expect(compiled.querySelector('a[href="/platform/ranks"]')?.textContent).toContain(
+      'platform.hub.ranksHint',
+    );
   });
 });

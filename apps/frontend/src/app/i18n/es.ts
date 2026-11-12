@@ -2748,7 +2748,6 @@ export const es: TranslationDict = {
 
   'platform.title': 'Plataforma',
   'platform.hub.subtitle': 'Registra tenants, activa funciones y asigna operadores del plano de control.',
-  'platform.hub.panels': 'Espacios de trabajo',
   'platform.hub.tenantsHint': 'Registra, suspende y reanuda servidores de Discord.',
   'platform.hub.adminsHint': 'Concede o revoca SuperAdmin en el plano de control.',
   'platform.hub.ranksHint': 'Crea rangos de tenant y los módulos que cada uno desbloquea.',
@@ -3797,4 +3796,13 @@ export const es: TranslationDict = {
   'platform.features.confirmBody': 'Los miembros de este tenant podrían perder el acceso a estas funciones en cuanto guardes.',
   'platform.features.confirmAction': 'Desactivar y guardar',
   'platform.features.saveFailed': 'No se pudieron guardar los flags. Tus cambios siguen aquí.',
+  // design/platform-hub
+  'platform.hub.summary': 'Resumen de la plataforma',
+  'platform.hub.groupTenants': 'Tenants',
+  'platform.hub.groupTenantsHint': 'Cada servidor de Discord registrado en esta plataforma.',
+  'platform.hub.groupAccess': 'Acceso',
+  'platform.hub.groupAccessHint': 'Quién puede operar el plano de control.',
+  'platform.hub.groupConfig': 'Configuración',
+  'platform.hub.groupConfigHint': 'Qué puede usar cada tenant y cómo se configuran sus funciones.',
+  'platform.hub.flagsHint': 'Activa o desactiva las funciones del catálogo. Los flags se definen por tenant: abre primero un tenant.',
 };

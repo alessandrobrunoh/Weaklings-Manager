@@ -2755,7 +2755,6 @@ export const it: TranslationDict = {
 
   'platform.title': 'Piattaforma',
   'platform.hub.subtitle': 'Registra tenant, attiva le feature e assegna gli operatori del control-plane.',
-  'platform.hub.panels': 'Aree di lavoro',
   'platform.hub.tenantsHint': 'Registra, sospendi e riattiva i server Discord.',
   'platform.hub.adminsHint': 'Concedi o revoca SuperAdmin sul control-plane.',
   'platform.hub.ranksHint': 'Crea i Rank tenant e i moduli che ciascuno sblocca.',
@@ -3806,4 +3805,13 @@ export const it: TranslationDict = {
   'platform.features.confirmBody': 'I membri di questo tenant potrebbero perdere l’accesso a queste funzionalità appena salvi.',
   'platform.features.confirmAction': 'Disattiva e salva',
   'platform.features.saveFailed': 'Impossibile salvare i flag. Le modifiche sono ancora qui.',
+  // design/platform-hub
+  'platform.hub.summary': 'Riepilogo piattaforma',
+  'platform.hub.groupTenants': 'Tenant',
+  'platform.hub.groupTenantsHint': 'Ogni server Discord registrato su questa piattaforma.',
+  'platform.hub.groupAccess': 'Accesso',
+  'platform.hub.groupAccessHint': 'Chi può gestire il control-plane.',
+  'platform.hub.groupConfig': 'Configurazione',
+  'platform.hub.groupConfigHint': 'Cosa può usare ogni tenant e come sono impostate le sue feature.',
+  'platform.hub.flagsHint': 'Attiva o disattiva le feature del catalogo. I flag si impostano per tenant: apri prima un tenant.',
 };

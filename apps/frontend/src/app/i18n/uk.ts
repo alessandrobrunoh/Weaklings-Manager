@@ -2576,7 +2576,6 @@ export const uk: TranslationDict = {
   'guild.leaderboard.fullStandings': 'Повний рейтинг за сезон',
   'platform.title': 'Платформа',
   'platform.hub.subtitle': 'Реєструйте орендарів, перемикайте функції та призначайте операторів контрольної площини.',
-  'platform.hub.panels': 'Робочі простори',
   'platform.hub.tenantsHint': 'Реєструйте, призупиняйте та відновлюйте Discord‑сервери.',
   'platform.hub.adminsHint': 'Надайте або відкличте SuperAdmin на контрольній площині.',
   'platform.hub.ranksHint': 'Створюйте ранги орендарів та модулі, які вони розблоковують.',
@@ -3611,4 +3610,13 @@ export const uk: TranslationDict = {
   'platform.features.confirmBody': 'Учасники цього тенанта можуть втратити доступ до цих функцій одразу після збереження.',
   'platform.features.confirmAction': 'Вимкнути і зберегти',
   'platform.features.saveFailed': 'Не вдалося зберегти прапорці. Ваші зміни збережено тут.',
+  // design/platform-hub
+  'platform.hub.summary': 'Підсумок платформи',
+  'platform.hub.groupTenants': 'Тенанти',
+  'platform.hub.groupTenantsHint': 'Кожен Discord-сервер, зареєстрований на цій платформі.',
+  'platform.hub.groupAccess': 'Доступ',
+  'platform.hub.groupAccessHint': 'Хто може керувати control-plane.',
+  'platform.hub.groupConfig': 'Налаштування',
+  'platform.hub.groupConfigHint': 'Що може використовувати кожен тенант і як налаштовані його функції.',
+  'platform.hub.flagsHint': 'Вмикає або вимикає функції каталогу. Флаги задаються для кожного тенанта, тож спершу відкрийте тенант.',
 };
