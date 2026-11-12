@@ -3974,4 +3974,17 @@ export const it: TranslationDict = {
   'fights.sectionsAria': 'Sezioni dello scontro',
   'fights.alliances': 'Alleanze',
   'fights.allianceColumn': 'Alleanza',
+  // design/guild-overview
+  'guild.sections': 'Sezioni della gilda',
+  'guild.overview.recordHint': '{fights} scontri · {rate} di vittorie',
+  'guild.notable.title': 'Scontri da ricordare',
+  'guild.notable.kind': 'Scontro',
+  'guild.timeline.item': 'Attività',
+  'guild.timeline.kind.battle': 'Battaglia',
+  'guild.timeline.kind.event': 'Evento',
+  'guild.timeline.kind.scout': 'Ricognizione',
+  'guild.roster.shortBy': 'Mancano {count}',
+  'guild.roster.covered': 'Coperto',
+  'guild.leaderboard.rank': 'Posizione',
+  'guild.leaderboard.value': 'Valore',
 };

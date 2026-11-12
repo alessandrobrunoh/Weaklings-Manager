@@ -3780,4 +3780,17 @@ export const uk: TranslationDict = {
   'fights.sectionsAria': 'Розділи бою',
   'fights.alliances': 'Альянси',
   'fights.allianceColumn': 'Альянс',
+  // design/guild-overview
+  'guild.sections': 'Розділи гільдії',
+  'guild.overview.recordHint': '{fights} боїв · {rate} перемог',
+  'guild.notable.title': 'Важливі бої',
+  'guild.notable.kind': 'Бій',
+  'guild.timeline.item': 'Активність',
+  'guild.timeline.kind.battle': 'Битва',
+  'guild.timeline.kind.event': 'Подія',
+  'guild.timeline.kind.scout': 'Розвідка',
+  'guild.roster.shortBy': 'Бракує {count}',
+  'guild.roster.covered': 'Покрито',
+  'guild.leaderboard.rank': 'Місце',
+  'guild.leaderboard.value': 'Значення',
 };
