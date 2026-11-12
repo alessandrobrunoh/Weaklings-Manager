@@ -16,204 +16,284 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
+import { ChoiceGroup } from '../../shared/components/choice-group/choice-group';
+import { DataTable } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import type { DataTableColumn } from '../../shared/components/data-table/data-table-column';
+import { Dialog } from '../../shared/components/dialog/dialog';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Loading } from '../../shared/components/loading/loading';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { type SummaryItem, SummaryBand } from '../../shared/components/summary-band/summary-band';
 import { roleSelectOptions } from '../../shared/discord/discord-options';
 
-/** Dedicated alliance settings: membership plus the Discord roles applied on register. */
+/** A destructive or consequential action waiting for confirmation in a dialog. */
+type PendingAction =
+  | { readonly kind: 'leave'; readonly name: string }
+  | { readonly kind: 'reset' }
+  | { readonly kind: 'reinvite'; readonly guildId: string; readonly name: string };
+
+/**
+ * Alliance settings. Sections: what this Discord's alliance is, who is in it (with pending
+ * invites counted), and what is shared (the Discord roles and pings the alliance uses).
+ * Linking, leaving and re-inviting happen in dialogs; the header carries one primary action.
+ */
 @Component({
   selector: 'app-admin-alliance',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [Loading, PageHeader, PageStack, SearchableSelect],
+  imports: [
+    Checkbox,
+    ChoiceGroup,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    EmptyState,
+    ErrorState,
+    FilterBar,
+    Loading,
+    Menu,
+    PageHeader,
+    PageStack,
+    SearchableSelect,
+    StatusChip,
+    SummaryBand,
+  ],
   template: `
-    <app-page-header [title]="t('admin.alliance.title')" [subtitle]="t('admin.alliance.subtitle')" />
+    <app-page-header
+      [title]="t('admin.alliance.title')"
+      [subtitle]="t('admin.alliance.subtitle')"
+      [menuItems]="menuItems()"
+      (menuSelect)="onMenu($event)"
+    >
+      <div pageActions>
+        @if (canAccept()) {
+          <button type="button" class="btn btn--primary" (click)="acceptInvite()" [disabled]="saving()">
+            {{ t('admin.alliance.accept') }}
+          </button>
+        } @else if (needsSetup()) {
+          <button type="button" class="btn btn--primary" (click)="openSetup()" [disabled]="saving()">
+            {{ t('admin.alliance.setup') }}
+          </button>
+        }
+      </div>
+    </app-page-header>
 
     <app-page-stack>
       @if (loading()) {
-        <app-loading [label]="t('common.loading')" />
+        <app-loading variant="detail" [label]="t('common.loading')" />
       } @else if (loadFailed()) {
-        <p class="text-sm" style="color: var(--color-danger)">{{ t('common.error') }}</p>
-        <button type="button" class="btn btn--outline btn--sm" (click)="load()">
-          {{ t('common.retry') }}
-        </button>
+        <app-error-state [retryLabel]="t('common.retry')" (retry)="load()" />
       } @else {
-        <section class="card p-5 grid gap-2">
-          <h2 class="eyebrow">{{ t('admin.alliance.status') }}</h2>
-          <p class="text-sm">{{ statusCopy() }}</p>
-          @if (canAccept()) {
-            <div>
-              <button type="button" class="btn btn--primary btn--sm" (click)="acceptInvite()" [disabled]="saving()">
-                {{ t('admin.alliance.accept') }}
-              </button>
+        <section class="card p-4" aria-labelledby="alliance-about-heading">
+          <h2 id="alliance-about-heading" class="section-title">{{ t('admin.alliance.about') }}</h2>
+          <p class="mt-1 text-sm">{{ statusCopy() }}</p>
+          <dl class="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+            <div class="min-w-0">
+              <dt class="hint">{{ t('admin.alliance.title') }}</dt>
+              <dd class="truncate">{{ context()?.alliance_name || t('common.none') }}</dd>
             </div>
-          }
-          @if (canLeave()) {
-            <div>
-              <button type="button" class="btn btn--outline btn--sm" (click)="leaveAlliance()" [disabled]="saving()">
-                {{ t('admin.alliance.leave') }}
-              </button>
-            </div>
-          }
-          @if (isAlliance()) {
-            <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('admin.alliance.resetHint') }}</p>
-            <div>
-              <button type="button" class="btn btn--outline btn--sm" (click)="resetSetup()" [disabled]="saving()">
-                {{ t('admin.alliance.reset') }}
-              </button>
-            </div>
-            @if (!context()?.albion_alliance_id) {
-              <form class="grid gap-3" (submit)="saveSetup($event)">
-                <label class="block">
-                  <span class="label">{{ t('register.albionAlliance') }}</span>
-                  <input class="input" type="search" [value]="setupQuery()" (input)="onSetupSearch($event)"
-                    [attr.placeholder]="t('register.albionAllianceHint')" />
-                </label>
-                @for (alliance of setupHits(); track alliance.id) {
-                  <button type="button" class="btn btn--tonal w-full justify-start"
-                    [class.ring-1]="setupAlliance()?.id === alliance.id" (click)="pickSetupAlliance(alliance)">
-                    {{ alliance.name }}
-                  </button>
-                }
-                @for (guild of setupGuilds(); track guild.id) {
-                  <label class="flex items-center gap-2">
-                    <input type="checkbox" [checked]="setupMembers().includes(guild.id)" (change)="toggleSetupMember(guild.id)" />
-                    <span>{{ guild.name }}</span>
-                  </label>
-                }
-                <button type="submit" class="btn btn--primary btn--sm" [disabled]="saving() || !setupAlliance() || setupMembers().length === 0">
-                  {{ t('admin.alliance.setup') }}
-                </button>
-              </form>
+            @if (context()?.kind === 'guild' && context()?.membership_status) {
+              <div>
+                <dt class="hint">{{ t('admin.alliance.yourStatus') }}</dt>
+                <dd class="mt-0.5">
+                  <app-status-chip [value]="context()!.membership_status!" [label]="statusLabel(context()!.membership_status!)" />
+                </dd>
+              </div>
             }
-          }
+            @if (isAlliance()) {
+              <div>
+                <dt class="hint">{{ t('admin.alliance.albionLink') }}</dt>
+                <dd>{{ context()?.albion_alliance_id ? t('admin.alliance.linked') : t('admin.alliance.notLinked') }}</dd>
+              </div>
+            }
+          </dl>
         </section>
 
         <form class="grid gap-4" data-testid="alliance-settings-form" (submit)="save($event)">
-        @if (context()?.members?.length) {
-          <section class="card p-5">
-            <h2 class="eyebrow mb-3">{{ t('admin.alliance.members') }}</h2>
-            @if (isAlliance()) {
-              <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
-                {{ t('admin.alliance.memberRolesHint') }}
+          @if (isAlliance() || members().length > 0) {
+            <section class="card p-4" aria-labelledby="alliance-members-heading">
+              <h2 id="alliance-members-heading" class="section-title">{{ t('admin.alliance.members') }}</h2>
+              <p class="hint mt-1 max-w-2xl">
+                {{ isAlliance() ? t('admin.alliance.memberRolesHint') : t('admin.alliance.membersHint') }}
               </p>
-            }
-            <table class="w-full text-sm">
-              <caption class="sr-only">{{ t('admin.alliance.members') }}</caption>
-              <thead>
-                <tr class="text-left text-xs" style="color: var(--color-text-secondary)">
-                  <th scope="col" class="py-1 font-medium">{{ t('common.name') }}</th>
-                  <th scope="col" class="py-1 font-medium">{{ t('common.status') }}</th>
-                  @if (isAlliance()) {
-                    <th scope="col" class="py-1 font-medium">{{ t('admin.alliance.memberRole') }}</th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (member of context()!.members; track member.guild_tenant_id) {
-                  <tr>
-                    <td class="py-2">{{ member.name }}</td>
-                    <td class="py-2">
-                      <span class="chip text-xs">{{ member.status }}</span>
-                      @if (isAlliance() && member.status === 'left') {
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm ml-2"
-                          (click)="reinvite(member.guild_tenant_id, member.name)"
-                          [disabled]="saving()"
-                        >
-                          {{ t('admin.alliance.reinvite') }}
-                        </button>
-                      }
-                    </td>
-                    @if (isAlliance()) {
-                      <td class="py-2 min-w-56">
-                        <app-searchable-select
-                          class="block"
-                          [options]="roleOptions(memberRoleDraft(member.guild_tenant_id))"
-                          [value]="memberRoleDraft(member.guild_tenant_id)"
-                          [emptyLabel]="t('admin.allianceRole.disabled')"
-                          [searchPlaceholder]="t('common.search')"
-                          [noMatchesLabel]="t('picker.noMatches')"
-                          [emptyOptionsLabel]="t('picker.empty')"
-                          [loading]="catalogLoading()"
-                          [ariaLabel]="t('admin.alliance.memberRole') + ' ' + member.name"
-                          (valueChange)="setMemberRole(member.guild_tenant_id, $event)"
-                        />
-                      </td>
+
+              @if (members().length > 0) {
+                <app-summary-band class="mt-3 block" [items]="summaryItems()" [ariaLabel]="t('admin.alliance.members')" />
+
+                <app-data-table
+                  class="mt-3 block"
+                  [columns]="memberColumns()"
+                  [rows]="members()"
+                  [trackBy]="trackMember"
+                  [ariaLabel]="t('admin.alliance.members')"
+                  [hideSearch]="true"
+                  [syncUrl]="false"
+                  mobileLayout="stack"
+                >
+                  <ng-template dataTableCell="name" let-row>
+                    <span class="font-medium">{{ row.name }}</span>
+                  </ng-template>
+                  <ng-template dataTableCell="status" let-row>
+                    <app-status-chip [value]="row.status" [label]="statusLabel(row.status)" />
+                  </ng-template>
+                  <ng-template dataTableCell="role" let-row>
+                    <app-searchable-select
+                      class="block min-w-48"
+                      [options]="roleOptions(memberRoleDraft(row.guild_tenant_id))"
+                      [value]="memberRoleDraft(row.guild_tenant_id)"
+                      [emptyLabel]="t('admin.allianceRole.disabled')"
+                      [searchPlaceholder]="t('common.search')"
+                      [noMatchesLabel]="t('picker.noMatches')"
+                      [emptyOptionsLabel]="t('picker.empty')"
+                      [loading]="catalogLoading()"
+                      [ariaLabel]="t('admin.alliance.memberRole') + ' ' + row.name"
+                      (valueChange)="setMemberRole(row.guild_tenant_id, $event)"
+                    />
+                  </ng-template>
+                  <ng-template dataTableCell="actions" let-row>
+                    @if (row.status === 'left') {
+                      <app-menu
+                        appearance="ghost"
+                        [items]="reinviteItems()"
+                        [label]="t('admin.alliance.memberActions', { name: row.name })"
+                        (itemSelect)="onMemberAction(row, $event)"
+                      />
                     }
-                  </tr>
-                }
-              </tbody>
-            </table>
+                  </ng-template>
+                </app-data-table>
+              } @else {
+                <app-empty-state class="mt-3 block" compact [message]="t('admin.alliance.membersEmpty')" />
+              }
+            </section>
+          }
+
+          <section class="card p-4" aria-labelledby="alliance-shared-heading">
+            <h2 id="alliance-shared-heading" class="section-title">{{ t('admin.alliance.sharedTitle') }}</h2>
+            <p class="hint mt-1 max-w-2xl">{{ t('admin.alliance.sharedHint') }}</p>
+
+            <div class="mt-4 grid max-w-md gap-1">
+              @if (isAlliance()) {
+                <span class="label">{{ t('admin.alliance.eventRole') }}</span>
+                <app-searchable-select
+                  [options]="roleOptions(eventRoleDraft())"
+                  [value]="eventRoleDraft()"
+                  [emptyLabel]="t('admin.allianceRole.disabled')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [loading]="catalogLoading()"
+                  [ariaLabel]="t('admin.alliance.eventRole')"
+                  (valueChange)="eventRoleDraft.set($event)"
+                />
+                <span class="hint">{{ t('admin.alliance.eventRoleHint') }}</span>
+              } @else {
+                <span class="label">{{ t('admin.allianceRole.title') }}</span>
+                <app-searchable-select
+                  [options]="roleOptions(allianceRoleDraft())"
+                  [value]="allianceRoleDraft()"
+                  [emptyLabel]="t('admin.allianceRole.disabled')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [loading]="catalogLoading()"
+                  [ariaLabel]="t('admin.allianceRole.title')"
+                  (valueChange)="allianceRoleDraft.set($event)"
+                />
+                <span class="hint">{{ allianceRoleHint() }}</span>
+                <span class="hint">{{ t('admin.allianceRole.roleHint') }}</span>
+              }
+            </div>
+
+            <div class="mt-4 flex justify-end">
+              <button type="submit" class="btn btn--primary" [disabled]="saving()">
+                {{ t('admin.discord.save') }}
+              </button>
+            </div>
           </section>
-        }
-
-          @if (!isAlliance()) {
-            <section class="card p-5">
-              <fieldset>
-                <legend class="eyebrow mb-1">{{ t('admin.allianceRole.title') }}</legend>
-                <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
-                  {{ allianceRoleHint() }}
-                </p>
-                <label>
-                  <span class="label">{{ t('admin.allianceRole.role') }}</span>
-                  <app-searchable-select
-                    class="mt-1 block"
-                    [options]="roleOptions(allianceRoleDraft())"
-                    [value]="allianceRoleDraft()"
-                    [emptyLabel]="t('admin.allianceRole.disabled')"
-                    [searchPlaceholder]="t('common.search')"
-                    [noMatchesLabel]="t('picker.noMatches')"
-                    [emptyOptionsLabel]="t('picker.empty')"
-                    [loading]="catalogLoading()"
-                    [ariaLabel]="t('admin.allianceRole.role')"
-                    (valueChange)="allianceRoleDraft.set($event)"
-                  />
-                  <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('admin.allianceRole.roleHint') }}
-                  </span>
-                </label>
-              </fieldset>
-            </section>
-          }
-
-          @if (isAlliance()) {
-            <section class="card p-5">
-              <fieldset>
-                <legend class="eyebrow mb-1">{{ t('admin.alliance.eventRole') }}</legend>
-                <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.alliance.eventRoleHint') }}
-                </p>
-                <label>
-                  <span class="label">{{ t('admin.alliance.eventRole') }}</span>
-                  <app-searchable-select
-                    class="mt-1 block"
-                    [options]="roleOptions(eventRoleDraft())"
-                    [value]="eventRoleDraft()"
-                    [emptyLabel]="t('admin.allianceRole.disabled')"
-                    [searchPlaceholder]="t('common.search')"
-                    [noMatchesLabel]="t('picker.noMatches')"
-                    [emptyOptionsLabel]="t('picker.empty')"
-                    [loading]="catalogLoading()"
-                    [ariaLabel]="t('admin.alliance.eventRole')"
-                    (valueChange)="eventRoleDraft.set($event)"
-                  />
-                </label>
-              </fieldset>
-            </section>
-          }
-
-          <div>
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">
-              {{ t('admin.discord.save') }}
-            </button>
-          </div>
         </form>
       }
     </app-page-stack>
+
+    @if (setupOpen()) {
+      <app-dialog size="md" [title]="t('admin.alliance.setup')" [subtitle]="t('admin.alliance.setupHint')" (closed)="closeSetup()">
+        <div class="grid gap-4">
+          <app-filter-bar
+            [searchLabel]="t('register.albionAlliance')"
+            [searchPlaceholder]="t('register.albionAllianceHint')"
+            [query]="setupQuery()"
+            (queryChange)="onSetupSearch($event)"
+          />
+
+          @if (setupOptions().length > 0) {
+            <app-choice-group
+              [options]="setupOptions()"
+              [value]="setupAlliance()?.id ?? null"
+              [ariaLabel]="t('admin.alliance.resultsLabel')"
+              (valueChange)="pickSetupAlliance($event)"
+            />
+          } @else if (setupQuery().trim().length >= 2) {
+            <p class="hint">{{ t('picker.noMatches') }}</p>
+          }
+
+          @if (setupAlliance()) {
+            <form id="alliance-setup-form" class="grid gap-2" (submit)="saveSetup($event)">
+              <fieldset class="grid gap-1">
+                <legend class="label mb-1">{{ t('admin.alliance.guildsLabel') }}</legend>
+                @for (guild of setupGuilds(); track guild.id) {
+                  <app-checkbox
+                    [inputId]="'alliance-guild-' + guild.id"
+                    [label]="guild.name"
+                    [checked]="setupMembers().includes(guild.id)"
+                    (checkedChange)="setSetupMember(guild.id, $event)"
+                  />
+                } @empty {
+                  <p class="hint">{{ t('picker.empty') }}</p>
+                }
+              </fieldset>
+            </form>
+          }
+        </div>
+
+        <div dialogFooter>
+          <button type="button" class="btn btn--outline" (click)="closeSetup()">{{ t('common.cancel') }}</button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="alliance-setup-form"
+            [disabled]="saving() || !setupAlliance() || setupMembers().length === 0"
+          >
+            {{ t('admin.alliance.setup') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    @if (pendingAction(); as action) {
+      <app-dialog size="sm" [title]="t(actionTitleKey(action))" (closed)="cancelAction()">
+        <p class="text-sm">{{ actionBody(action) }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--outline" (click)="cancelAction()">{{ t('common.cancel') }}</button>
+          <button
+            type="button"
+            class="btn"
+            [class.btn--primary]="action.kind === 'reinvite'"
+            [class.btn--danger]="action.kind !== 'reinvite'"
+            [disabled]="saving()"
+            (click)="confirmAction()"
+          >
+            {{ t(actionTitleKey(action)) }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class AdminAlliance {
@@ -231,13 +311,19 @@ export class AdminAlliance {
   protected readonly allianceRoleDraft = signal('');
   protected readonly eventRoleDraft = signal('');
   protected readonly memberRoleDrafts = signal<Record<string, string>>({});
+  protected readonly pendingAction = signal<PendingAction | null>(null);
+  protected readonly setupOpen = signal(false);
   protected readonly setupQuery = signal('');
   protected readonly setupHits = signal<AlbionAllianceChoice[]>([]);
   protected readonly setupAlliance = signal<AlbionAllianceChoice | null>(null);
   protected readonly setupGuilds = signal<AttachableGuild[]>([]);
   protected readonly setupMembers = signal<string[]>([]);
 
+  protected readonly members = computed(() => this.context()?.members ?? []);
   protected readonly isAlliance = computed(() => this.context()?.kind === 'alliance');
+  protected readonly needsSetup = computed(
+    () => this.isAlliance() && !this.context()?.albion_alliance_id,
+  );
   protected readonly canAccept = computed(
     () => this.context()?.kind === 'guild' && this.context()?.membership_status === 'pending',
   );
@@ -252,6 +338,61 @@ export class AdminAlliance {
       this.isAlliance() ? 'admin.allianceRole.hintAlliance' : 'admin.allianceRole.hintGuild',
     ),
   );
+
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    const members = this.members();
+    const count = (status: AllianceMember['status']) =>
+      members.filter((member) => member.status === status).length;
+    const pending = count('pending');
+    return [
+      { label: this.t('admin.alliance.statActive'), value: count('active') },
+      {
+        label: this.t('admin.alliance.statPending'),
+        value: pending,
+        hint: this.t('admin.alliance.statPendingHint'),
+        tone: pending > 0 ? 'warning' : 'default',
+      },
+      { label: this.t('admin.alliance.statLeft'), value: count('left') },
+    ];
+  });
+
+  protected readonly memberColumns = computed<readonly DataTableColumn<AllianceMember>[]>(() => {
+    const columns: DataTableColumn<AllianceMember>[] = [
+      { key: 'name', label: 'common.name', sortable: true, accessor: (member) => member.name },
+      { key: 'status', label: 'common.status', sortable: true, accessor: (member) => member.status },
+    ];
+    if (this.isAlliance()) {
+      columns.push({ key: 'role', label: 'admin.alliance.memberRole' });
+      columns.push({ key: 'actions', label: '' });
+    }
+    return columns;
+  });
+
+  protected readonly reinviteItems = computed<MenuItem[]>(() => [
+    { id: 'reinvite', label: this.t('admin.alliance.reinvite') },
+  ]);
+
+  protected readonly menuItems = computed<MenuItem[]>(() => {
+    const items: MenuItem[] = [];
+    if (this.isAlliance()) {
+      items.push({ id: 'reset', label: this.t('admin.alliance.reset'), danger: true });
+    }
+    if (this.canLeave()) {
+      items.push({
+        id: 'leave',
+        label: this.t('admin.alliance.leave'),
+        danger: true,
+        separatorBefore: items.length > 0,
+      });
+    }
+    return items;
+  });
+
+  protected readonly setupOptions = computed(() =>
+    this.setupHits().map((hit) => ({ id: hit.id, label: hit.name })),
+  );
+
+  protected readonly trackMember = (member: AllianceMember) => member.guild_tenant_id;
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
@@ -270,6 +411,19 @@ export class AdminAlliance {
 
   protected setMemberRole(guildTenantId: string, roleId: string): void {
     this.memberRoleDrafts.update((drafts) => ({ ...drafts, [guildTenantId]: roleId }));
+  }
+
+  protected statusLabel(status: string): string {
+    switch (status) {
+      case 'active':
+        return this.t('admin.alliance.statusActive');
+      case 'pending':
+        return this.t('admin.alliance.statusPending');
+      case 'left':
+        return this.t('admin.alliance.statusLeft');
+      default:
+        return status;
+    }
   }
 
   protected statusCopy(): string {
@@ -319,6 +473,65 @@ export class AdminAlliance {
     }
   }
 
+  protected onMenu(id: string): void {
+    if (id === 'reset') {
+      this.pendingAction.set({ kind: 'reset' });
+    } else if (id === 'leave') {
+      this.pendingAction.set({ kind: 'leave', name: this.context()?.alliance_name ?? '' });
+    }
+  }
+
+  protected onMemberAction(member: AllianceMember, id: string): void {
+    if (id === 'reinvite') {
+      this.pendingAction.set({
+        kind: 'reinvite',
+        guildId: member.guild_tenant_id,
+        name: member.name,
+      });
+    }
+  }
+
+  protected cancelAction(): void {
+    this.pendingAction.set(null);
+  }
+
+  protected async confirmAction(): Promise<void> {
+    const action = this.pendingAction();
+    if (!action) {
+      return;
+    }
+    this.pendingAction.set(null);
+    if (action.kind === 'leave') {
+      await this.leaveAlliance();
+    } else if (action.kind === 'reset') {
+      await this.resetSetup();
+    } else {
+      await this.reinvite(action.guildId);
+    }
+  }
+
+  protected actionTitleKey(action: PendingAction): TranslationKey {
+    switch (action.kind) {
+      case 'leave':
+        return 'admin.alliance.leave';
+      case 'reset':
+        return 'admin.alliance.reset';
+      case 'reinvite':
+        return 'admin.alliance.reinvite';
+    }
+  }
+
+  protected actionBody(action: PendingAction): string {
+    switch (action.kind) {
+      case 'leave':
+        return this.t('admin.alliance.leaveConfirm', { name: action.name });
+      case 'reset':
+        return this.t('admin.alliance.resetHint');
+      case 'reinvite':
+        return this.t('admin.alliance.reinviteConfirm', { name: action.name });
+    }
+  }
+
   protected async acceptInvite(): Promise<void> {
     const ctx = this.context();
     const guildId = this.auth.profile()?.tenant_id;
@@ -339,12 +552,9 @@ export class AdminAlliance {
     }
   }
 
-  protected async reinvite(guildId: string, name: string): Promise<void> {
+  protected async reinvite(guildId: string): Promise<void> {
     const ctx = this.context();
     if (!ctx?.alliance_id) {
-      return;
-    }
-    if (!globalThis.confirm(this.t('admin.alliance.reinviteConfirm', { name }))) {
       return;
     }
     this.saving.set(true);
@@ -366,10 +576,22 @@ export class AdminAlliance {
     }
   }
 
-  protected onSetupSearch(event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.setupQuery.set(value);
-    const q = value.trim();
+  protected openSetup(): void {
+    this.setupQuery.set('');
+    this.setupHits.set([]);
+    this.setupAlliance.set(null);
+    this.setupGuilds.set([]);
+    this.setupMembers.set([]);
+    this.setupOpen.set(true);
+  }
+
+  protected closeSetup(): void {
+    this.setupOpen.set(false);
+  }
+
+  protected onSetupSearch(query: string): void {
+    this.setupQuery.set(query);
+    const q = query.trim();
     if (q.length < 2) {
       this.setupHits.set([]);
       return;
@@ -380,7 +602,11 @@ export class AdminAlliance {
     })).then((hits) => this.setupHits.set(hits ?? [])).catch(() => this.setupHits.set([]));
   }
 
-  protected async pickSetupAlliance(alliance: AlbionAllianceChoice): Promise<void> {
+  protected async pickSetupAlliance(id: string | null): Promise<void> {
+    const alliance = this.setupHits().find((hit) => hit.id === id);
+    if (!alliance) {
+      return;
+    }
     this.setupAlliance.set(alliance);
     this.setupMembers.set([]);
     try {
@@ -394,8 +620,10 @@ export class AdminAlliance {
     }
   }
 
-  protected toggleSetupMember(id: string): void {
-    this.setupMembers.update((ids) => ids.includes(id) ? ids.filter((current) => current !== id) : [...ids, id]);
+  protected setSetupMember(id: string, checked: boolean): void {
+    this.setupMembers.update((ids) =>
+      checked ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter((current) => current !== id),
+    );
   }
 
   protected async resetSetup(): Promise<void> {
@@ -404,9 +632,6 @@ export class AdminAlliance {
     this.saving.set(true);
     try {
       await firstValueFrom(this.api.post(`api/alliances/${allianceId}/reset-setup`, {}));
-      this.setupAlliance.set(null);
-      this.setupGuilds.set([]);
-      this.setupMembers.set([]);
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -427,6 +652,8 @@ export class AdminAlliance {
         albion_api_region: 'europe',
         member_guild_ids: this.setupMembers(),
       }));
+      this.setupOpen.set(false);
+      this.toasts.success(this.t('admin.alliance.linkedDone'));
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -438,10 +665,7 @@ export class AdminAlliance {
   protected async leaveAlliance(): Promise<void> {
     const ctx = this.context();
     const guildId = this.auth.profile()?.tenant_id;
-    if (!ctx?.alliance_id || !ctx.alliance_name || !guildId) {
-      return;
-    }
-    if (!globalThis.confirm(this.t('admin.alliance.leaveConfirm', { name: ctx.alliance_name }))) {
+    if (!ctx?.alliance_id || !guildId) {
       return;
     }
     this.saving.set(true);

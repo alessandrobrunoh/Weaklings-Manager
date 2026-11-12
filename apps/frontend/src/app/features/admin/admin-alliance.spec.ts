@@ -79,15 +79,19 @@ describe('AdminAlliance', () => {
     fixture?.destroy();
   });
 
-  it('leaves the active alliance after confirmation', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((node) =>
-      (node as HTMLButtonElement).textContent?.includes('admin.alliance.leave'),
-    ) as HTMLButtonElement;
-    button.click();
+  it('leaves the active alliance only after the confirmation dialog', async () => {
+    const page = fixture.componentInstance as unknown as {
+      onMenu(id: string): void;
+      confirmAction(): Promise<void>;
+    };
+    page.onMenu('leave');
+    fixture.detectChanges();
+    expect(api.post).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('app-dialog')).not.toBeNull();
+
+    await page.confirmAction();
     await fixture.whenStable();
     expect(api.post).toHaveBeenCalledWith('api/alliances/ally-1/members/g1/leave', {});
-    vi.unstubAllGlobals();
   });
 
   it('shows alliance membership and the role picker', () => {
@@ -146,7 +150,10 @@ describe('AdminAlliance', () => {
     expect(text).toContain('admin.alliance.memberRolesHint');
     expect(text).not.toContain('admin.allianceRole.title');
 
-    // A hub without a linked Albion alliance also renders a setup form first.
+    // A hub without a linked Albion alliance offers linking as its primary header action.
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.some((node) => node.textContent?.includes('admin.alliance.setup'))).toBe(true);
+
     const form = fixture.nativeElement.querySelector(
       '[data-testid="alliance-settings-form"]',
     ) as HTMLFormElement;
