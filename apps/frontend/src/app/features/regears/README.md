@@ -2,7 +2,7 @@
 
 ## Overview
 
-The direct source filenames and their opening comments identify a regear list, detail page, and self-service request page.
+`regears.ts` is the queue and history list. `regear-detail.ts` is one death's page: an entity header with the status chip, the primary action (Request for the member, Accept for an officer on a pending request) and a Reject menu entry for officers, the key figures band, the requested items table (unit price, line value, included state), the death and battle context, and the history (killed, requested, decided with the officer note, bank credited). Officer accept and reject run in dialogs. `regear-new-request.ts` is the self-service request page.
 
 ## Interface
 
