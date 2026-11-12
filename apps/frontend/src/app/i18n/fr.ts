@@ -1070,7 +1070,6 @@ export const fr: TranslationDict = {
   'comps.price.unavailable': 'Prix du marché indisponible.',
   'tests.title': 'Tests de combat',
   'tests.subtitle': 'Simulez un engagement et vérifiez si le burst tue.',
-  'tests.all': 'Tous',
   'tests.archived': 'Archivés',
   'tests.new': 'Nouveau test',
   'tests.createTitle': 'Créer un test',
@@ -3269,4 +3268,12 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/tests-list
+  'tests.searchLabel': 'Rechercher des tests',
+  'tests.statusFilter': 'Statut du test',
+  'tests.statusActive': 'Actif',
+  'tests.status': 'Statut',
+  'tests.tableLabel': 'Tests de combat',
+  'tests.emptyActive': 'Aucun test pour l’instant. Créez-en un pour simuler un affrontement.',
+  'tests.emptyArchived': 'Aucun test archivé.',
 };

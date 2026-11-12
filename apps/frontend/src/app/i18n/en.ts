@@ -1114,7 +1114,6 @@ export const en = {
   // Tests
   'tests.title': 'Combat Tests',
   'tests.subtitle': 'Simulate an engagement and see whether the burst kills.',
-  'tests.all': 'All',
   'tests.archived': 'Archived',
   'tests.new': 'New test',
   'tests.createTitle': 'Create test',
@@ -3448,6 +3447,14 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/tests-list
+  'tests.searchLabel': 'Search tests',
+  'tests.statusFilter': 'Test status',
+  'tests.statusActive': 'Active',
+  'tests.status': 'Status',
+  'tests.tableLabel': 'Combat tests',
+  'tests.emptyActive': 'No tests yet. Create one to simulate an engagement.',
+  'tests.emptyArchived': 'No archived tests.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

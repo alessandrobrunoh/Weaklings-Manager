@@ -1066,7 +1066,6 @@ export const uk: TranslationDict = {
   'comps.price.unavailable': 'Ринкова ціна недоступна.',
   'tests.title': 'Бойові тести',
   'tests.subtitle': 'Симулюйте сутичку та подивіться, чи вбиває вибух.',
-  'tests.all': 'Усі',
   'tests.archived': 'Архівовано',
   'tests.new': 'Новий тест',
   'tests.createTitle': 'Створити тест',
@@ -3265,4 +3264,12 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/tests-list
+  'tests.searchLabel': 'Пошук тестів',
+  'tests.statusFilter': 'Статус тесту',
+  'tests.statusActive': 'Активні',
+  'tests.status': 'Статус',
+  'tests.tableLabel': 'Бойові тести',
+  'tests.emptyActive': 'Тестів поки немає. Створіть перший, щоб змоделювати бій.',
+  'tests.emptyArchived': 'Архівованих тестів немає.',
 };

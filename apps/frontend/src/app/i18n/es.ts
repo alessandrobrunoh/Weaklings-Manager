@@ -1106,7 +1106,6 @@ export const es: TranslationDict = {
   // Pruebas
   'tests.title': 'Pruebas de combate',
   'tests.subtitle': 'Simula un enfrentamiento y comprueba si el burst mata.',
-  'tests.all': 'Todas',
   'tests.archived': 'Archivadas',
   'tests.new': 'Nueva prueba',
   'tests.createTitle': 'Crear prueba',
@@ -3451,4 +3450,12 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/tests-list
+  'tests.searchLabel': 'Buscar pruebas',
+  'tests.statusFilter': 'Estado de la prueba',
+  'tests.statusActive': 'Activa',
+  'tests.status': 'Estado',
+  'tests.tableLabel': 'Pruebas de combate',
+  'tests.emptyActive': 'Aún no hay pruebas. Crea una para simular un enfrentamiento.',
+  'tests.emptyArchived': 'No hay pruebas archivadas.',
 };
