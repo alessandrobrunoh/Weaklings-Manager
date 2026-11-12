@@ -3528,6 +3528,23 @@ export const en = {
   'admin.general.stateError': 'Not saved',
   'admin.general.saveError': 'Could not save. Your changes are still here; try again.',
   'admin.general.loadError': 'Could not load the brand colours.',
+  // design/admin-giveaways
+  'giveaways.searchLabel': 'Search giveaways',
+  'giveaways.searchPlaceholder': 'Search by title',
+  'giveaways.removePrize': 'Remove prize',
+  'giveaways.backToList': 'Back to giveaways',
+  'giveaways.item': 'Item',
+  'giveaways.tier': 'Tier',
+  'giveaways.prizesEmpty': 'No prizes were attached to this giveaway.',
+  'giveaways.noEntrants': 'No one has entered yet.',
+  'giveaways.entrant': 'Entrant',
+  'giveaways.enteredAt': 'Entered',
+  'giveaways.drawConfirm.title': 'Draw a winner now?',
+  'giveaways.drawConfirm.body': 'One entrant is picked at random and wins the prizes. Silver is credited to the winner’s Guild Bank.',
+  'giveaways.cancelConfirm.title': 'Cancel this giveaway?',
+  'giveaways.cancelConfirm.body': 'No winner will be drawn and the giveaway stops taking entries.',
+  'giveaways.cancelConfirm.keep': 'Keep giveaway',
+  'giveaways.cancelConfirm.confirm': 'Cancel giveaway',
 } as const;
 
 export type TranslationKey = keyof typeof en;
