@@ -11300,7 +11300,7 @@ export interface components {
             start_time_utc?: string | null;
             /** @description The title of the event. */
             title: string;
-            /** @description Create a VOD forum post for members to reply to with video links (default: true). */
+            /** @description Create a VOD forum post for members to reply to with video links (default: false). */
             vod_forum_post_enabled?: boolean;
         };
         /**

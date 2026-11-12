@@ -136,7 +136,7 @@ describe('Events', () => {
     const cta: HTMLInputElement = fixture.nativeElement.querySelector('#event-call-to-arms');
     const vodForumPost: HTMLInputElement = fixture.nativeElement.querySelector('#event-vod-forum-post');
     expect(split.checked).toBe(false);
-    expect(vodForumPost.checked).toBe(true);
+    expect(vodForumPost.checked).toBe(false);
     expect(fixture.nativeElement.textContent).not.toContain('Select island');
     split.click();
     cta.click();

@@ -596,7 +596,7 @@ export class Events {
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
   protected readonly draftPingAlliance = signal(false);
-  protected readonly draftVodForumPost = signal(true);
+  protected readonly draftVodForumPost = signal(false);
   protected readonly allianceId = signal<string | null>(null);
   protected readonly allianceMembershipStatus = signal<string | null>(null);
   protected readonly canPingAlliance = computed(
@@ -994,7 +994,7 @@ export class Events {
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);
     this.draftPingAlliance.set(false);
-    this.draftVodForumPost.set(true);
+    this.draftVodForumPost.set(false);
     this.draftDiscordRoleIds.set([]);
     this.roleError.set(null);
     this.draftCreateSplit.set(false);

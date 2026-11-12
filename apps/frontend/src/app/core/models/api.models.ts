@@ -1224,7 +1224,7 @@ export interface CreateEventRequest {
   /** Member guild that owns `island_tab_id`. Required on alliance tenants, rejected on guilds. */
   origin_guild_id?: string;
   ping_alliance?: boolean;
-  /** Create a VOD forum post for members to reply to with video links. Defaults on. */
+  /** Create a VOD forum post for members to reply to with video links. Defaults off. */
   vod_forum_post_enabled?: boolean;
   discord_delivery?: 'calendar' | 'message' | 'forum';
 }
