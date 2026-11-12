@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -27,26 +34,39 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  type SortState,
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { DataTableFooterCell } from '../../shared/components/data-table/data-table-footer-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   SearchDialog,
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { actionablePendingSplits, canActOnSplit } from './split-access';
-
-
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const SORT_WHITELIST = new Set(['created_at', 'status', 'note']);
 const DEFAULT_SPLIT_FEE = 20;
+const DEFAULT_PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
+const STATUS_ORDER: readonly SplitStatus[] = [
+  'pending',
+  'awaiting_event',
+  'completed',
+  'not_completed',
+  'lost',
+];
+const NO_MENU_ITEMS: readonly MenuItem[] = [];
 
 function parsePercentageInput(raw: string): number | null {
   const normalized = raw.trim().replace(/%\s*$/, '').replace(',', '.');
@@ -55,6 +75,10 @@ function parsePercentageInput(raw: string): number | null {
   }
   const value = Number(normalized);
   return Number.isFinite(value) ? value : null;
+}
+
+function sameSort(a: SortState | null, b: SortState | null): boolean {
+  return (a?.columnKey ?? '') === (b?.columnKey ?? '') && (a?.direction ?? '') === (b?.direction ?? '');
 }
 
 interface SplitParticipantDraft {
@@ -76,10 +100,11 @@ function newSplitBag(amount = 0): SplitBagDraft {
 }
 
 /**
- * Loot-split index: KPI strip plus a server-driven table.
+ * Loot-split index: a summary band, status tabs, a filter bar and a server-paged table.
  *
- * Create lives in an `app-dialog`. Viewing and editing a row is a dedicated
- * route (`/splits/:splitId`). Island catalog management belongs to admin.
+ * The page owns search, status, island and archived state; the URL carries it (`q`, `status`,
+ * `island`, `archived`) and the table carries page, size and sort. Rows open the split detail.
+ * Create lives in an `app-dialog`. Island catalog management belongs to admin.
  */
 @Component({
   selector: 'app-splits',
@@ -87,16 +112,25 @@ function newSplitBag(amount = 0): SplitBagDraft {
   imports: [
     DataTable,
     DataTableCell,
+    DataTableFooterCell,
     Dialog,
     EmptyState,
+    FilterBar,
     Icon,
+    Menu,
     PageHeader,
     PageStack,
     RouterLink,
     SearchDialog,
-    TooltipDirective,
+    StatusChip,
+    SummaryBand,
+    Tabs,
   ],
   styles: `
+    :host {
+      display: block;
+      width: 100%;
+    }
     .workbench-page {
       min-width: 0;
       overflow: hidden;
@@ -105,140 +139,121 @@ function newSplitBag(amount = 0): SplitBagDraft {
     .workbench-page > app-data-table {
       min-width: 0;
     }
-    .workbench-page .kpi-card {
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-md);
-    }
-    :host {
-      display: block;
-      width: 100%;
-    }
-
-    .kpi-card {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-cards);
-      padding: 1.125rem 1.25rem;
-      transition: border-color 150ms ease, background-color 150ms ease;
-      display: flex;
-      flex-direction: column;
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-strong);
-      background-color: var(--color-surface-hover);
-    }
-
-    .icon-capsule {
-      width: 2.125rem;
-      height: 2.125rem;
-      border-radius: var(--radius-badges);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .icon-capsule--green {
-      background: var(--color-success-container);
-      color: var(--color-success);
-    }
-    .icon-capsule--amber {
-      background: var(--color-warning-container);
-      color: var(--color-warning);
-    }
-    .icon-capsule--purple {
-      background: var(--color-surface-2);
-      color: var(--color-text-secondary);
-    }
-    .icon-capsule--primary {
-      background: var(--color-surface-2);
-      color: var(--color-primary);
-    }
 
     .batch-bar {
-      background-color: var(--color-surface);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem 1rem;
+      padding: 0.5rem 0.75rem;
       border: 1px solid var(--color-border);
-      border-radius: var(--radius-cards);
-      transition: all 150ms ease;
+      border-radius: var(--radius-md);
+      background: var(--color-surface);
     }
     .batch-bar--active {
       border-color: var(--color-primary);
-      background: color-mix(in srgb, var(--color-primary-container) 35%, var(--color-surface));
     }
-
-    .status-pill {
+    .batch-bar__main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 0.875rem;
+      min-width: 0;
+      font-size: var(--ui-text-sm);
+    }
+    .batch-bar__all {
       display: inline-flex;
       align-items: center;
-      gap: 0.375rem;
-      padding: 0.25rem 0.625rem;
-      border-radius: var(--radius-pills);
-      font-size: 0.75rem;
+      gap: 0.5rem;
       font-weight: 500;
-      line-height: 1;
+      cursor: pointer;
     }
-    .status-pill--completed {
-      background-color: var(--color-success-container);
-      border: 1px solid var(--color-success);
-      color: var(--color-success);
+    .batch-bar__count {
+      font-weight: 600;
     }
-    .status-pill--pending {
-      background-color: var(--color-warning-container);
-      border: 1px solid var(--color-warning);
-      color: var(--color-warning);
-    }
-    .status-pill--awaiting {
-      background-color: var(--color-surface-2);
-      border: 1px solid var(--color-primary);
-      color: var(--color-primary);
-    }
-    .status-pill--neutral {
-      background-color: var(--color-surface-2);
-      border: 1px solid var(--color-border);
+    .batch-bar__sum {
       color: var(--color-text-secondary);
+      font-size: var(--ui-text-xs);
+    }
+    .batch-bar__actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-inline-start: auto;
+    }
+    .batch-bar__note {
+      display: flex;
+      flex-basis: 100%;
+      align-items: center;
+      gap: 0.375rem;
+      margin: 0;
+      color: var(--color-warning);
+      font-size: var(--ui-text-xs);
+    }
+
+    .split-name {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+    .split-name__check {
+      margin-top: 0.1875rem;
+    }
+    .split-name__body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
+      min-width: 0;
+    }
+    .split-name__title {
+      overflow-wrap: anywhere;
+      font-weight: 600;
+      color: var(--color-text);
+    }
+    .split-name__meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem 0.5rem;
+      color: var(--color-text-secondary);
+      font-size: var(--ui-text-xs);
+    }
+    .split-name__event {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      color: var(--color-primary);
+      text-decoration: none;
+    }
+    .split-name__event:hover {
+      text-decoration: underline;
+    }
+    .split-name__tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+    .split-sub {
+      display: block;
+      color: var(--color-text-secondary);
+      font-size: var(--ui-text-xs);
     }
   `,
   template: `
-    <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
-      @if (canDelete()) {
-        <button
-          type="button"
-          class="btn btn--sm"
-          [class.btn--tonal]="showArchived()"
-          [class.btn--outline]="!showArchived()"
-          (click)="toggleShowArchived()"
-        >
-          {{ t('splits.showArchived') }}
-        </button>
-      }
-      <button
-        type="button"
-        class="btn btn--outline btn--sm inline-flex items-center gap-1.5"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="refresh" size="0.875rem" [class.animate-spin]="loading()" />
-        <span>{{ t('common.refreshNow') }}</span>
-      </button>
-
-      @if (canManageIslands()) {
-        <a
-          routerLink="/admin/islands"
-          class="btn btn--ghost btn--sm inline-flex items-center gap-1.5"
-          [appTooltip]="t('splits.catalog.manage')"
-          tooltipPosition="bottom"
-        >
-          <app-icon name="bank" size="0.875rem" />
-          <span>{{ t('splits.catalog.manage') }}</span>
-        </a>
-      }
+    <app-page-header
+      [title]="t('splits.title')"
+      [subtitle]="t('splits.subtitle')"
+      [menuItems]="headerMenuItems()"
+      [menuLabel]="t('ui.menu.moreActions')"
+      (menuSelect)="onHeaderMenu($event)"
+    >
       @if (canCreate()) {
         <button
           type="button"
           class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
           (click)="openCreateDialog()"
-          [appTooltip]="t('splits.new')"
-          tooltipPosition="bottom"
         >
           <app-icon name="plus" size="0.875rem" />
           <span>{{ t('splits.new') }}</span>
@@ -247,89 +262,16 @@ function newSplitBag(amount = 0): SplitBagDraft {
     </app-page-header>
 
     <app-page-stack class="workbench-page">
-      <!-- Row 1: KPI Summary Cards -->
-      <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5" aria-label="Split KPI Summary">
-        <!-- Card 1: Total Distributed -->
-        <div class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="icon-capsule icon-capsule--green">
-              <app-icon name="bank" size="1.125rem" />
-            </div>
-            <span class="text-xs font-medium text-[var(--color-text-secondary)]">
-              {{ t('splits.total_distributed') }}
-            </span>
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
-            {{ formatCompact(kpi()?.total_net_distributed ?? 0) }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('splits.kpi.completed_across', { count: kpi()?.completed_count ?? 0 }) }}
-          </div>
-        </div>
+      <app-summary-band [ariaLabel]="t('splits.kpi.label')" [items]="summaryItems()" />
 
-        <!-- Card 2: Pending Splits -->
-        <div class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="icon-capsule icon-capsule--amber">
-              <app-icon name="alert" size="1.125rem" />
-            </div>
-            <span class="text-xs font-medium text-[var(--color-text-secondary)]">
-              {{ t('splits.pending_splits') }}
-            </span>
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
-            {{ (kpi()?.pending_count ?? 0).toString() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('splits.kpi.pending_sub') }}
-          </div>
-        </div>
-
-        <!-- Card 3: Total Volume -->
-        <div class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="icon-capsule icon-capsule--purple">
-              <app-icon name="coins" size="1.125rem" />
-            </div>
-            <span class="text-xs font-medium text-[var(--color-text-secondary)]">
-              {{ t('splits.total_silver_volume') }}
-            </span>
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
-            {{ formatCompact(kpi()?.total_estimated_volume ?? 0) }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('splits.kpi.volume_sub') }}
-          </div>
-        </div>
-
-        <!-- Card 4: Participants -->
-        <div class="kpi-card">
-          <div class="flex items-center gap-3">
-            <div class="icon-capsule icon-capsule--primary">
-              <app-icon name="users" size="1.125rem" />
-            </div>
-            <span class="text-xs font-medium text-[var(--color-text-secondary)]">
-              {{ t('splits.participants') }}
-            </span>
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
-            {{ (kpi()?.total_participants ?? 0).toString() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ t('splits.kpi.recipients_sub') }}
-          </div>
-        </div>
-      </section>
-
-      <!-- Row 3: Batch Selection Command Bar -->
       @if (actionablePendingSplits().length > 0) {
         <section
-          class="batch-bar p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3"
+          class="batch-bar"
           [class.batch-bar--active]="selectedCount() > 0"
+          [attr.aria-label]="t('splits.batch.selected', { count: selectedCount() })"
         >
-          <div class="flex items-center gap-3 min-w-0">
-            <label class="flex cursor-pointer select-none items-center gap-2 text-sm text-(--color-text) font-medium">
+          <div class="batch-bar__main">
+            <label class="batch-bar__all">
               <input
                 class="checkbox"
                 type="checkbox"
@@ -340,57 +282,81 @@ function newSplitBag(amount = 0): SplitBagDraft {
             </label>
 
             @if (selectedCount() > 0) {
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-primary)] text-[var(--color-on-primary)]">
-                {{ selectedCount() }}
+              <span class="batch-bar__count">{{ t('splits.batch.selected', { count: selectedCount() }) }}</span>
+              <span class="batch-bar__sum">
+                {{ t('splits.batch.totalNetPayout') }}:
+                <strong class="num">{{ formatAmount(selectedTotalNet()) }}</strong>
+                &middot; {{ selectedTotalParticipants() }} {{ t('splits.participants') }}
               </span>
-
-              <div class="hidden sm:flex items-center gap-3 pl-3 border-l border-[var(--color-border)] text-xs text-[var(--color-text-secondary)]">
-                <span>
-                  {{ t('splits.batch.totalNetPayout') }}:
-                  <strong class="text-success font-mono font-bold">{{ formatAmount(selectedTotalNet()) }}</strong>
-                </span>
-                <span>&middot;</span>
-                <span>
-                  {{ selectedTotalParticipants() }} {{ t('splits.participants') }}
-                </span>
-              </div>
             }
           </div>
 
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="batch-bar__actions">
             @if (selectedCount() > 0) {
-              <button
-                type="button"
-                class="btn btn--ghost btn--sm text-xs text-[var(--color-text-secondary)] hover:text-(--color-text)"
-                (click)="clearSelection()"
-              >
+              <button type="button" class="btn btn--ghost btn--sm" (click)="clearSelection()">
                 {{ t('common.clear') }}
               </button>
             }
             <button
               type="button"
-              class="btn btn--primary btn--sm flex items-center gap-1.5"
+              class="btn btn--tonal btn--sm inline-flex items-center gap-1.5"
               [disabled]="selectedCount() === 0 || batchRunning()"
               (click)="completeSelected()"
             >
               <app-icon name="check" size="0.875rem" />
               <span>{{ t('splits.batch.complete') }}</span>
               @if (selectedCount() > 0) {
-                <span class="font-mono">({{ selectedCount() }})</span>
+                <span class="num">({{ selectedCount() }})</span>
               }
             </button>
           </div>
 
           @if (awaitingEventSplits().length > 0) {
-            <div class="basis-full flex items-center gap-2 pt-2 border-t border-[var(--color-border)] text-xs text-warning">
+            <p class="batch-bar__note">
               <app-icon name="alert" size="0.875rem" class="shrink-0" />
               <span>{{ t('splits.awaiting_event.message') }}</span>
-            </div>
+            </p>
           }
         </section>
       }
 
-      <!-- Row 4: Data Table with integrated Search and Status Tabs -->
+      <app-tabs
+        [options]="statusTabs()"
+        [active]="activeStatusTab()"
+        [ariaLabel]="t('splits.list.statusTabs')"
+        (activeChange)="onStatusTab($event)"
+      />
+
+      <app-filter-bar
+        [searchLabel]="t('common.search')"
+        [searchPlaceholder]="t('splits.search_splits')"
+        [query]="searchInput()"
+        [activeCount]="activeFilterCount()"
+        (queryChange)="onSearchInput($event)"
+        (clear)="clearFilters()"
+      >
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('splits.island') }}</span>
+          <select class="select select--sm" [value]="islandFilter()" (change)="onIslandChange($event)">
+            <option value="">{{ t('splits.all_islands') }}</option>
+            @for (island of islands(); track island.id) {
+              <option [value]="island.id">{{ cityLabel(island.city) }} &middot; {{ island.name }}</option>
+            }
+          </select>
+        </label>
+        @if (canDelete()) {
+          <label class="filter-check">
+            <input
+              class="checkbox"
+              type="checkbox"
+              [checked]="showArchived()"
+              (change)="onArchivedChange($event)"
+            />
+            <span>{{ t('splits.showArchived') }}</span>
+          </label>
+        }
+      </app-filter-bar>
+
       <app-data-table
         [columns]="columns()"
         [rows]="splits()"
@@ -404,180 +370,115 @@ function newSplitBag(amount = 0): SplitBagDraft {
         [rowClickable]="true"
         (rowClick)="openSplit($event)"
         (pageChange)="onPageChange($event)"
-        searchPlaceholder="Search splits by note or ID..."
-        [initialSearch]="initialQuery.search"
-        [initialColumnFilters]="initialQuery.columnFilters"
-        itemLabel="splits"
+        [hideSearch]="true"
+        [stickyFirstColumn]="true"
+        [ariaLabel]="t('nav.splits')"
+        [itemLabel]="t('nav.splits')"
+        [footerLabel]="t('splits.list.pageTotal')"
         emptyIcon="swords"
-        emptyTitle="No splits found"
-        emptySubtitle="There are no splits matching the selected filters."
+        [emptyTitle]="t('splits.list.emptyTitle')"
+        [emptySubtitle]="filtersActive() ? t('splits.list.emptyFiltered') : t('splits.list.emptyNone')"
       >
-        <ng-template dataTableCell="select" let-row>
-          @if (canActOn(row) && row.status === 'pending' && !row.archived_at) {
-            <input
-              class="checkbox"
-              type="checkbox"
-              [checked]="isSelected(row.id)"
-              (click)="$event.stopPropagation()"
-              (change)="toggleSelected(row.id, $event)"
-              [attr.aria-label]="t('splits.batch.selectOne')"
-            />
-          }
-        </ng-template>
-
         <ng-template dataTableCell="note" let-row>
-          <span class="flex items-center gap-2 font-semibold text-(--color-text) group-hover:text-error transition-colors">
-            <span>{{ row.note || t('splits.untitled', { id: row.id }) }}</span>
-            @if (row.origin_read_only) {
-              <span class="chip chip--neutral text-xs">{{ t('splits.readOnlyCopy') }}</span>
+          <div class="split-name">
+            @if (canActOn(row) && row.status === 'pending' && !row.archived_at) {
+              <input
+                class="checkbox split-name__check"
+                type="checkbox"
+                [checked]="isSelected(row.id)"
+                (change)="toggleSelected(row.id, $event)"
+                [attr.aria-label]="t('splits.batch.selectOne')"
+              />
             }
-            @if (row.archived_at) {
-              <span class="chip chip--neutral text-xs">{{ t('splits.archived') }}</span>
-            }
-          </span>
-        </ng-template>
-
-        <ng-template dataTableCell="status" let-row>
-          @switch (row.status) {
-            @case ('completed') {
-              <span class="status-pill status-pill--completed">
-                <app-icon name="check" size="0.75rem" />
-                <span>{{ statusLabel(row.status) }}</span>
+            <span class="split-name__body">
+              <span class="split-name__title">{{ row.note || t('splits.untitled', { id: row.id }) }}</span>
+              <span class="split-name__meta">
+                @if (row.event_id && row.event_title) {
+                  <a
+                    class="split-name__event"
+                    [routerLink]="['/events', row.event_id]"
+                    (click)="$event.stopPropagation()"
+                  >
+                    <app-icon name="swords" size="0.75rem" />
+                    <span>{{ row.event_title }}</span>
+                  </a>
+                } @else {
+                  <span>{{ t('splits.no_event') }}</span>
+                }
               </span>
-            }
-            @case ('pending') {
-              <span class="status-pill status-pill--pending">
-                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                <span>{{ statusLabel(row.status) }}</span>
-              </span>
-            }
-            @case ('awaiting_event') {
-              <span class="status-pill status-pill--awaiting">
-                <app-icon name="calendar" size="0.75rem" />
-                <span>{{ statusLabel(row.status) }}</span>
-              </span>
-            }
-            @default {
-              <span class="status-pill status-pill--neutral">
-                <span>{{ statusLabel(row.status) }}</span>
-              </span>
-            }
-          }
-        </ng-template>
-
-        <ng-template dataTableCell="island" let-row>
-          @if (row.island_name) {
-            <div class="flex items-center gap-1.5 text-xs text-[var(--color-text)]">
-              <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-                {{ cityLabel(row.island_city) }}
-              </span>
-              <span class="truncate">{{ row.island_name }} &middot; {{ row.island_tab_name }}</span>
-            </div>
-          } @else {
-            <span class="text-xs text-[var(--color-text-tertiary)]">{{ t('splits.no_location') }}</span>
-          }
-        </ng-template>
-
-        <ng-template dataTableCell="event" let-row>
-          @if (row.event_id && row.event_title) {
-            <a
-              class="text-xs text-[var(--color-primary)] font-medium no-underline hover:underline inline-flex items-center gap-1"
-              [routerLink]="['/events', row.event_id]"
-              (click)="$event.stopPropagation()"
-            >
-              <app-icon name="swords" size="0.75rem" class="opacity-70" />
-              <span class="truncate">{{ row.event_title }}</span>
-            </a>
-          } @else {
-            <span class="text-xs text-[var(--color-text-tertiary)]">{{ t('splits.no_event') }}</span>
-          }
-        </ng-template>
-
-        <ng-template dataTableCell="net" let-row>
-          <span class="mono font-bold text-sm text-success">{{ formatAmount(netOf(row)) }}</span>
-        </ng-template>
-
-        <ng-template dataTableCell="participants" let-row>
-          <div class="flex items-center justify-end gap-1 text-xs text-[var(--color-text-secondary)]">
-            <app-icon name="users" size="0.75rem" class="opacity-60" />
-            <span class="font-medium font-mono">{{ row.participant_count }}</span>
+              @if (row.origin_read_only || row.archived_at) {
+                <span class="split-name__tags">
+                  @if (row.origin_read_only) {
+                    <span class="chip chip--neutral">{{ t('splits.readOnlyCopy') }}</span>
+                  }
+                  @if (row.archived_at) {
+                    <span class="chip chip--neutral">{{ t('splits.archived') }}</span>
+                  }
+                </span>
+              }
+            </span>
           </div>
         </ng-template>
 
         <ng-template dataTableCell="created_at" let-row>
-          <span class="text-xs text-[var(--color-text-tertiary)]">{{ formatDate(row.created_at) }}</span>
+          <span class="text-sm">{{ formatDate(row.created_at) }}</span>
+        </ng-template>
+
+        <ng-template dataTableCell="net" let-row>
+          <span class="num font-semibold">{{ formatAmount(netOf(row)) }}</span>
+        </ng-template>
+
+        <ng-template dataTableCell="perMember" let-row>
+          <span class="num">{{ perMemberText(row) }}</span>
+          <span class="split-sub">{{ t('splits.list.membersCount', { count: row.participant_count }) }}</span>
+        </ng-template>
+
+        <ng-template dataTableCell="status" let-row>
+          <app-status-chip
+            [value]="row.status"
+            [label]="statusLabel(row.status)"
+            [toneOverride]="statusTone(row.status)"
+          />
+        </ng-template>
+
+        <ng-template dataTableCell="created_by" let-row>
+          <span class="text-sm">{{ row.created_by_username }}</span>
         </ng-template>
 
         <ng-template dataTableCell="actions" let-row>
-          <div class="flex items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
-            @if (canActOn(row) && row.status === 'pending' && !row.archived_at) {
-              <button
-                type="button"
-                class="btn btn--primary btn--sm py-1 px-2.5 text-xs flex items-center gap-1"
-                [appTooltip]="'Accetta e liquida questo split'"
-                tooltipPosition="bottom"
-                (click)="openSingleAccept(row)"
-              >
-                <app-icon name="check" size="0.75rem" />
-                <span>{{ t('splits.batch.complete') }}</span>
-              </button>
-            }
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm py-1 px-2 text-xs flex items-center gap-1 text-[var(--color-text-secondary)] hover:text-(--color-text)"
-              (click)="openSplit(row)"
-            >
-              <span>{{ t('common.open') }}</span>
-              <app-icon name="arrow-right" size="0.75rem" />
-            </button>
-            @if (canDeleteOn(row)) {
-              @if (row.archived_at) {
-                <button
-                  type="button"
-                  class="btn btn--outline btn--sm py-1 px-2 text-xs"
-                  [disabled]="saving()"
-                  (click)="unarchiveSplit(row)"
-                >
-                  {{ t('splits.unarchive') }}
-                </button>
-              } @else {
-                <button
-                  type="button"
-                  class="btn btn--outline btn--sm py-1 px-2 text-xs"
-                  (click)="askArchive(row)"
-                >
-                  {{ t('splits.archive') }}
-                </button>
-              }
-            }
-          </div>
+          <app-menu
+            appearance="ghost"
+            align="end"
+            [items]="rowMenus().get(row.id) ?? noMenuItems"
+            [label]="t('splits.list.rowMenu')"
+            (itemSelect)="onRowMenu($event, row)"
+          />
+        </ng-template>
+
+        <ng-template dataTableFooterCell="net">
+          <span class="num font-semibold">{{ formatAmount(pageNetTotal()) }}</span>
         </ng-template>
       </app-data-table>
     </app-page-stack>
 
-    <!-- NEW SPLIT MODAL -->
+    <!-- NEW SPLIT DIALOG -->
     @if (showCreateForm()) {
       <app-dialog [title]="t('splits.new')" size="lg" (closed)="closeCreateDialog()">
         <form id="create-split-form" class="space-y-4" (submit)="onCreateSubmit($event)">
-          <p class="text-xs text-[var(--color-text-secondary)] -mt-2">
-            {{ t('splits.create_hint') }}
-          </p>
+          <p class="hint -mt-2">{{ t('splits.create_hint') }}</p>
 
           <div class="grid gap-3 lg:grid-cols-2">
-            <!-- LEFT COLUMN: CONFIGURATION & FINANCIALS -->
+            <!-- LEFT COLUMN: NOTE, LOCATION, AMOUNTS -->
             <div class="space-y-4">
-              <!-- Card 1: Note & Location -->
               <section class="card p-3 space-y-2.5">
-                <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.location') }} &middot; {{ t('splits.note') }}
-                </h3>
+                <h3 class="section-title">{{ t('splits.create.sectionDetails') }}</h3>
 
                 <label class="block">
-                  <span class="label font-medium">{{ t('common.name') }} / {{ t('splits.note') }} *</span>
+                  <span class="label">{{ t('common.name') }} / {{ t('splits.note') }} *</span>
                   <input
                     class="input text-xs"
                     type="text"
-                    [placeholder]="'e.g. Castle Fight & Outpost Loot'"
+                    [placeholder]="t('splits.create.namePlaceholder')"
                     [value]="draftTitle()"
                     (input)="onTitleChange($event)"
                     required
@@ -585,16 +486,14 @@ function newSplitBag(amount = 0): SplitBagDraft {
                 </label>
 
                 <div>
-                  <span class="label font-medium">{{ t('splits.event_linked') }}</span>
+                  <span class="label">{{ t('splits.event_linked') }}</span>
                   <div class="flex items-center gap-2">
-                    <div
-                      class="input flex flex-1 items-center bg-[var(--color-surface-1)] text-xs truncate"
-                    >
+                    <div class="input flex flex-1 items-center bg-[var(--color-surface-1)] text-xs truncate">
                       <span class="truncate">{{ draftEventTitle() || t('splits.no_event') }}</span>
                     </div>
                     <button
                       type="button"
-                      class="btn btn--outline btn--sm whitespace-nowrap text-xs"
+                      class="btn btn--outline btn--sm whitespace-nowrap"
                       (click)="showEventSearch.set(true)"
                     >
                       {{ t('splits.link_event') }}
@@ -614,12 +513,8 @@ function newSplitBag(amount = 0): SplitBagDraft {
 
                 <div class="grid gap-2 sm:grid-cols-2">
                   <label class="block">
-                    <span class="label font-medium">{{ t('splits.island') }} *</span>
-                    <select
-                      class="select text-xs"
-                      [value]="draftIslandId()"
-                      (change)="onDraftIslandChange($event)"
-                    >
+                    <span class="label">{{ t('splits.island') }} *</span>
+                    <select class="select text-xs" [value]="draftIslandId()" (change)="onDraftIslandChange($event)">
                       <option value="">{{ t('splits.pick_island') }}</option>
                       @for (island of islands(); track island.id) {
                         <option [value]="island.id">
@@ -629,7 +524,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     </select>
                   </label>
                   <label class="block">
-                    <span class="label font-medium">{{ t('splits.tab') }} *</span>
+                    <span class="label">{{ t('splits.tab') }} *</span>
                     <select
                       class="select text-xs"
                       [value]="draftTabId()"
@@ -644,21 +539,16 @@ function newSplitBag(amount = 0): SplitBagDraft {
                   </label>
                 </div>
                 @if (islands().length === 0) {
-                  <p class="text-xs text-[var(--color-warning)]">
-                    {{ t('splits.catalog.empty') }}
-                  </p>
+                  <p class="hint text-[var(--color-warning)]">{{ t('splits.catalog.empty') }}</p>
                 }
               </section>
 
-              <!-- Card 2: Silver & Live Net Calculation -->
               <section class="card p-3 space-y-2.5">
-                <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.net_value') }}
-                </h3>
+                <h3 class="section-title">{{ t('splits.create.sectionAmounts') }}</h3>
 
                 <div class="grid gap-2 sm:grid-cols-3">
                   <label class="block">
-                    <span class="label font-medium text-xs">{{ t('splits.estimated') }}</span>
+                    <span class="label">{{ t('splits.estimated') }}</span>
                     <input
                       class="input font-mono text-xs"
                       type="number"
@@ -668,7 +558,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     />
                   </label>
                   <label class="block">
-                    <span class="label font-medium text-xs">{{ t('splits.fee') }}</span>
+                    <span class="label">{{ t('splits.fee') }}</span>
                     <div class="flex items-center gap-1">
                       <input
                         class="input font-mono text-xs"
@@ -679,7 +569,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                         [attr.aria-describedby]="!draftFeeValid() ? 'split-fee-error' : null"
                         (input)="onFeeChange($event)"
                       />
-                      <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                      <span class="hint font-mono">%</span>
                     </div>
                     @if (!draftFeeValid()) {
                       <span id="split-fee-error" class="mt-1 block text-xs text-error" role="alert">
@@ -688,7 +578,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     }
                   </label>
                   <label class="block">
-                    <span class="label font-medium text-xs">{{ t('splits.repair_cost') }} (-)</span>
+                    <span class="label">{{ t('splits.repair_cost') }} (-)</span>
                     <input
                       class="input font-mono text-xs"
                       type="number"
@@ -698,14 +588,11 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     />
                   </label>
                 </div>
+
                 <div class="space-y-2">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="label font-medium text-xs">{{ t('splits.bags_value') }} (+)</span>
-                    <button
-                      type="button"
-                      class="btn btn--outline btn--sm"
-                      (click)="addBag()"
-                    >
+                    <span class="label">{{ t('splits.bags_value') }} (+)</span>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="addBag()">
                       {{ t('splits.add_bag') }}
                     </button>
                   </div>
@@ -729,62 +616,49 @@ function newSplitBag(amount = 0): SplitBagDraft {
                       </button>
                     </div>
                   } @empty {
-                    <p class="text-xs text-[var(--color-text-secondary)]">{{ t('splits.bags_empty') }}</p>
+                    <p class="hint">{{ t('splits.bags_empty') }}</p>
                   }
                   @if (draftBags() > 0) {
-                    <p class="text-xs font-mono text-[var(--color-text-secondary)]">
-                      {{ t('splits.bags_total') }} +{{ formatAmount(draftBags()) }}
-                    </p>
+                    <p class="hint font-mono">{{ t('splits.bags_total') }} +{{ formatAmount(draftBags()) }}</p>
                   }
                 </div>
 
-                <!-- Live Net Silver Banner -->
-                <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between">
-                  <div>
-                    <span class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                      {{ t('splits.net_value') }} ({{ t('splits.net_preview') }})
-                    </span>
-                    <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between gap-3">
+                  <div class="min-w-0">
+                    <span class="label">{{ t('splits.net_value') }} ({{ t('splits.net_preview') }})</span>
+                    <p class="hint">
                       {{ t('splits.estimated') }} − {{ t('splits.repair_cost') }} + {{ t('splits.bags_value') }}
                       − {{ t('splits.fee') }} ({{ formatAmount(draftFeeAmount()) }})
                     </p>
                     @if (participants().length > 0 && draftFeeValid()) {
-                      <p class="text-xs font-mono text-[var(--color-text-secondary)] mt-1">
-                        ~{{ formatAmount(perParticipantShare()) }} / player
+                      <p class="hint font-mono">
+                        {{ t('splits.create.perPlayer', { amount: formatAmount(perParticipantShare()) }) }}
                       </p>
                     }
                   </div>
                   <div class="text-right">
-                    <span class="font-mono text-xl font-medium text-[var(--color-success)]">
+                    <span class="num text-xl font-semibold text-[var(--color-success)]">
                       {{ draftFeeValid() ? formatAmount(draftNetPreview()) : '—' }}
                     </span>
-                    <span class="block text-xs font-mono text-[var(--color-text-secondary)]">
-                      silver
-                    </span>
+                    <span class="hint block">{{ t('splits.create.silver') }}</span>
                   </div>
                 </div>
               </section>
             </div>
 
-            <!-- RIGHT COLUMN: ROSTER & OCR PARSING -->
+            <!-- RIGHT COLUMN: ROSTER -->
             <div class="space-y-4">
-              <!-- Card 3: Smart OCR / Raw Names Import -->
               <section class="card p-3 space-y-2.5">
-                <div class="flex items-center justify-between">
-                  <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                    {{ t('splits.match_ocr') }}
-                  </h3>
-                  <button
-                    type="button"
-                    class="btn btn--ghost btn--sm text-xs py-0.5"
-                    (click)="clearParticipants()"
-                  >
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="section-title">{{ t('splits.create.sectionRoster') }}</h3>
+                  <button type="button" class="btn btn--ghost btn--sm" (click)="clearParticipants()">
                     {{ t('splits.clear_roster') }}
                   </button>
                 </div>
 
-                <div
-                  class="border border-dashed border-[var(--color-border)] rounded-md p-3 text-center bg-[var(--color-surface-1)] hover:border-[var(--color-primary)] transition-colors cursor-pointer"
+                <button
+                  type="button"
+                  class="w-full rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-1)] p-3 text-center hover:border-[var(--color-primary)]"
                   (click)="fileInput.click()"
                 >
                   <input
@@ -794,20 +668,16 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     accept="image/*"
                     (change)="onScreenshotChange($event)"
                   />
-                  <p class="text-xs font-medium text-[var(--color-text)]">
-                    {{ t('splits.match_ocr') }}
-                  </p>
-                  <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
-                    PNG, JPG screenshot from party / chest log
-                  </p>
-                </div>
+                  <span class="block text-xs font-medium text-[var(--color-text)]">{{ t('splits.match_ocr') }}</span>
+                  <span class="hint block">{{ t('splits.create.screenshotHint') }}</span>
+                </button>
 
                 <label class="block">
-                  <span class="label font-medium text-xs">{{ t('splits.ocr_names') }}</span>
+                  <span class="label">{{ t('splits.ocr_names') }}</span>
                   <textarea
                     class="textarea font-mono text-xs"
                     rows="2"
-                    [placeholder]="'PlayerOne, PlayerTwo\nPlayerThree'"
+                    [placeholder]="t('splits.create.rosterPlaceholder')"
                     [value]="rawNames()"
                     (input)="onRawNamesChange($event)"
                   ></textarea>
@@ -815,7 +685,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
 
                 <button
                   type="button"
-                  class="w-full btn btn--tonal btn--sm text-xs py-1"
+                  class="btn btn--tonal btn--sm w-full"
                   [disabled]="matching() || !rawNames().trim()"
                   (click)="matchParticipants()"
                 >
@@ -823,31 +693,17 @@ function newSplitBag(amount = 0): SplitBagDraft {
                 </button>
               </section>
 
-              <!-- Card 4: Active Roster & Weights -->
               <section class="card p-3 space-y-2.5">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2">
-                    <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
-                      {{ t('splits.participants') }} ({{ participants().length }})
-                    </h3>
-                  </div>
-
+                  <h3 class="section-title">{{ t('splits.participants') }} ({{ participants().length }})</h3>
                   <div class="flex items-center gap-1.5">
                     @if (participants().length > 0) {
-                      <button
-                        type="button"
-                        class="btn btn--outline btn--sm text-xs py-0.5 px-2"
-                        (click)="distributeDraftWeightsEvenly()"
-                      >
+                      <button type="button" class="btn btn--outline btn--sm" (click)="distributeDraftWeightsEvenly()">
                         {{ t('splits.distribute_evenly') }}
                       </button>
                     }
-                    <button
-                      type="button"
-                      class="btn btn--primary btn--sm text-xs py-0.5 px-2"
-                      (click)="showParticipantSearch.set(true)"
-                    >
-                      + {{ t('splits.add_participant') }}
+                    <button type="button" class="btn btn--outline btn--sm" (click)="showParticipantSearch.set(true)">
+                      {{ t('splits.add_participant') }}
                     </button>
                   </div>
                 </div>
@@ -860,31 +716,17 @@ function newSplitBag(amount = 0): SplitBagDraft {
                   <div class="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                     @for (participant of participants(); track participant.user_id) {
                       <div class="flex items-center justify-between gap-2 p-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
-                        <div class="flex items-center gap-2 min-w-0">
-                          <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-xs font-mono text-[var(--color-text)] flex-shrink-0">
-                            {{ participant.raw_name.slice(0, 1).toUpperCase() }}
-                          </div>
-                          <div class="min-w-0">
-                            <p class="truncate text-xs font-medium text-[var(--color-text)]">
-                              {{ participant.raw_name }}
-                            </p>
-                            <p class="truncate text-xs text-[var(--color-text-secondary)]">
-                              {{ participant.username }} &middot;
-                              @if (draftFeeValid()) {
-                              <span class="font-mono text-[var(--color-success)]">
-                                ~{{
-                                  formatAmount(
-                                    estimatedShare(
-                                      draftNetPreview(),
-                                      participant.weight,
-                                      totalWeight()
-                                    )
-                                  )
-                                }}
+                        <div class="min-w-0">
+                          <p class="truncate text-xs font-medium text-[var(--color-text)]">{{ participant.raw_name }}</p>
+                          <p class="truncate text-xs text-[var(--color-text-secondary)]">
+                            {{ participant.username }}
+                            @if (draftFeeValid()) {
+                              &middot;
+                              <span class="num text-[var(--color-success)]">
+                                ~{{ formatAmount(estimatedShare(draftNetPreview(), participant.weight, totalWeight())) }}
                               </span>
-                              }
-                            </p>
-                          </div>
+                            }
+                          </p>
                         </div>
 
                         <div class="flex items-center gap-2 flex-shrink-0">
@@ -895,13 +737,14 @@ function newSplitBag(amount = 0): SplitBagDraft {
                               min="0.01"
                               step="0.01"
                               [value]="participant.weight"
+                              [attr.aria-label]="t('splits.detail.weightLabel', { name: participant.raw_name })"
                               (input)="onWeightChange(participant.user_id, $event)"
                             />
-                            <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                            <span class="hint font-mono">%</span>
                           </div>
                           <button
                             type="button"
-                            class="btn btn--ghost btn--sm p-1 text-xs text-[var(--color-danger)]"
+                            class="btn btn--ghost btn--sm p-1 text-[var(--color-danger)]"
                             (click)="removeParticipant(participant.user_id)"
                             [attr.aria-label]="t('splits.remove_participant')"
                           >
@@ -948,12 +791,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
           <button type="button" class="btn btn--ghost" (click)="archiveTarget.set(null)">
             {{ t('common.cancel') }}
           </button>
-          <button
-            type="button"
-            class="btn btn--tonal"
-            [disabled]="saving()"
-            (click)="confirmArchive()"
-          >
+          <button type="button" class="btn btn--tonal" [disabled]="saving()" (click)="confirmArchive()">
             {{ t('splits.archive') }}
           </button>
         </div>
@@ -968,101 +806,50 @@ function newSplitBag(amount = 0): SplitBagDraft {
         (closed)="showBatchConfirmDialog.set(false)"
       >
         <div class="space-y-4">
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div
-              class="rounded-xl p-3 border"
-              style="background: var(--color-surface-2); border-color: var(--color-border)"
-            >
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('splits.batch.selectedSplits') }}
-              </p>
-              <p class="text-lg font-bold mono mt-0.5" style="color: var(--color-text)">
-                {{ selectedSplits().length }}
-              </p>
-            </div>
-            <div
-              class="rounded-xl p-3 border"
-              style="background: var(--color-surface-2); border-color: var(--color-border)"
-            >
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('splits.batch.totalNetPayout') }}
-              </p>
-              <p class="text-lg font-bold mono mt-0.5 text-success">
-                {{ formatAmount(selectedTotalNet()) }}
-              </p>
-            </div>
-            <div
-              class="rounded-xl p-3 border"
-              style="background: var(--color-surface-2); border-color: var(--color-border)"
-            >
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('splits.batch.totalRecipients') }}
-              </p>
-              <p class="text-lg font-bold mono mt-0.5 text-primary">
-                {{ selectedTotalParticipants() }}
-              </p>
-            </div>
+          <app-summary-band [ariaLabel]="t('splits.batch.splitsList')" [items]="batchSummaryItems()" />
+
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('common.name') }}</th>
+                  <th scope="col" class="text-right">{{ t('splits.net_value') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (split of selectedSplits(); track split.id) {
+                  <tr>
+                    <td>
+                      <span class="font-medium">{{ split.note || t('splits.untitled', { id: split.id }) }}</span>
+                      <span class="split-sub">
+                        {{ locationLabel(split) }} &middot; {{ split.participant_count }} {{ t('splits.participants') }}
+                      </span>
+                    </td>
+                    <td class="text-right num">{{ formatAmount(netOf(split)) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
 
-          <div
-            class="rounded-xl border overflow-hidden"
-            style="border-color: var(--color-border)"
-          >
-            <div
-              class="px-3.5 py-2.5 border-b text-xs font-semibold uppercase tracking-wider"
-              style="border-color: var(--color-border); background: var(--color-surface-2); color: var(--color-text-secondary)"
-            >
-              {{ t('splits.batch.splitsList') }}
-            </div>
-            <div class="max-h-72 overflow-y-auto divide-y" style="border-color: var(--color-border)">
-              @for (split of selectedSplits(); track split.id) {
-                <div
-                  class="p-3 flex items-center justify-between gap-3 text-sm"
-                  style="background: var(--color-surface-1)"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
-                      <p class="font-semibold truncate" style="color: var(--color-text)">
-                        {{ split.note || t('splits.untitled', { id: split.id }) }}
-                      </p>
-                      @if (split.event_title) {
-                        <span class="chip chip--tonal text-xs">{{ split.event_title }}</span>
-                      }
-                    </div>
-                    <p class="text-xs mt-0.5 truncate" style="color: var(--color-text-secondary)">
-                      {{ locationLabel(split) }} · {{ split.participant_count }} {{ t('splits.participants') }}
-                    </p>
-                  </div>
-                  <div class="text-right shrink-0">
-                    <span class="mono font-bold text-success">{{ formatAmount(netOf(split)) }}</span>
-                    <span class="block text-xs font-mono text-secondary">#{{ split.id }}</span>
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-
-          <p class="text-xs" style="color: var(--color-text-secondary)">
-            {{ t('splits.batch.confirmWarning') }}
-          </p>
+          <p class="hint">{{ t('splits.batch.confirmWarning') }}</p>
         </div>
 
         <div dialogFooter class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="btn btn--ghost"
-            (click)="showBatchConfirmDialog.set(false)"
-          >
+          <button type="button" class="btn btn--ghost" (click)="showBatchConfirmDialog.set(false)">
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--primary flex items-center gap-2"
+            class="btn btn--primary inline-flex items-center gap-2"
             [disabled]="batchRunning() || selectedSplits().length === 0"
             (click)="runBatchComplete()"
           >
             <app-icon name="check" size="1rem" />
-            {{ batchRunning() ? t('common.loading') : t('splits.batch.acceptAndPay') }} ({{ selectedSplits().length }})
+            <span>
+              {{ batchRunning() ? t('common.loading') : t('splits.batch.acceptAndPay') }}
+              ({{ selectedSplits().length }})
+            </span>
           </button>
         </div>
       </app-dialog>
@@ -1100,36 +887,42 @@ export class Splits {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
-  protected readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
-    defaultPageSize: 10,
-    filterKeys: ['status', 'island'],
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly noMenuItems = NO_MENU_ITEMS;
+
+  private readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
+    defaultPageSize: DEFAULT_PAGE_SIZE,
   });
+  private readonly initialParams = this.route.snapshot.queryParamMap;
 
   protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly kpi = signal<SplitKpiSummary | null>(null);
   protected readonly totalItems = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly islandFilter = signal(this.initialQuery.columnFilters['island'] ?? '');
   protected readonly islands = signal<SplitIsland[]>([]);
   protected readonly page = signal(this.initialQuery.page);
   protected readonly pageSize = signal(this.initialQuery.pageSize);
-  protected readonly searchQuery = signal(this.initialQuery.search);
+  protected readonly sort = signal<SortState | null>(this.initialQuery.sort);
+
+  /** Filter state owned by the page. `searchInput` is what the officer typed; `searchQuery` is applied. */
+  protected readonly searchInput = signal(this.initialParams.get('q') ?? '');
+  protected readonly searchQuery = signal(this.initialParams.get('q') ?? '');
   protected readonly statusFilter = signal<SplitStatus | ''>(
-    isSplitStatus(this.initialQuery.columnFilters['status'] ?? '')
-      ? (this.initialQuery.columnFilters['status'] as SplitStatus)
+    isSplitStatus(this.initialParams.get('status') ?? '')
+      ? (this.initialParams.get('status') as SplitStatus)
       : '',
   );
-  protected readonly sortKey = signal<string | null>(this.initialQuery.sort?.columnKey ?? null);
-  protected readonly sortOrder = signal<'asc' | 'desc' | null>(
-    this.initialQuery.sort?.direction ?? null,
-  );
+  protected readonly islandFilter = signal(this.initialParams.get('island') ?? '');
+  protected readonly showArchived = signal(this.initialParams.get('archived') === 'true');
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private loadRequest = 0;
 
   private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
   protected readonly batchRunning = signal(false);
   protected readonly showBatchConfirmDialog = signal(false);
   protected readonly archiveTarget = signal<SplitSummary | null>(null);
-  protected readonly showArchived = signal(this.route.snapshot.queryParamMap.get('archived') === 'true');
 
   protected readonly showCreateForm = signal(false);
   protected readonly draftTitle = signal('');
@@ -1166,11 +959,6 @@ export class Splits {
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
-  protected readonly pendingSplits = computed(() =>
-    this.splits().filter(
-      (split) => isSplitBatchSelectable(split.status) && !split.archived_at,
-    ),
-  );
   protected readonly actionablePendingSplits = computed(() =>
     actionablePendingSplits(
       this.splits(),
@@ -1202,10 +990,15 @@ export class Splits {
     const pending = this.actionablePendingSplits();
     return pending.length > 0 && pending.every((split) => this.selectedIds().has(split.id));
   });
+  protected readonly pageNetTotal = computed(() =>
+    this.splits().reduce((sum, split) => sum + this.netOf(split), 0),
+  );
+
   protected readonly draftFee = computed(() => parsePercentageInput(this.draftFeeInput()) ?? 0);
-  protected readonly draftFeeAmount = computed(() =>
-    Math.max(0, this.draftEstimated() - this.draftRepair() + this.draftBags()) *
-    this.draftFee() / 100,
+  protected readonly draftFeeAmount = computed(
+    () =>
+      (Math.max(0, this.draftEstimated() - this.draftRepair() + this.draftBags()) * this.draftFee()) /
+      100,
   );
   protected readonly draftFeeValid = computed(() => {
     const fee = parsePercentageInput(this.draftFeeInput());
@@ -1228,9 +1021,6 @@ export class Splits {
   });
   protected readonly isAllianceTenant = computed(
     () => this.auth.profile()?.tenant_kind === 'alliance',
-  );
-  protected readonly canAct = computed(
-    () => this.auth.hasPermission('splits.edit') && !this.isAllianceTenant(),
   );
   protected canActOn(split: SplitSummary): boolean {
     return (
@@ -1256,75 +1046,218 @@ export class Splits {
     () => this.auth.hasPermission('splits.islands.manage') && !this.isAllianceTenant(),
   );
 
-  protected clearSelection(): void {
-    this.selectedIds.set(new Set<number>());
-  }
+  protected readonly activeFilterCount = computed(
+    () =>
+      (this.searchQuery() ? 1 : 0) +
+      (this.statusFilter() ? 1 : 0) +
+      (this.islandFilter() ? 1 : 0) +
+      (this.showArchived() ? 1 : 0),
+  );
+  protected readonly filtersActive = computed(() => this.activeFilterCount() > 0);
+
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    this.translate.dict();
+    const kpi = this.kpi();
+    return [
+      {
+        label: this.t('splits.total_distributed'),
+        value: kpi ? this.formatCompact(kpi.total_net_distributed) : null,
+        hint: kpi ? this.t('splits.kpi.completed_across', { count: kpi.completed_count }) : undefined,
+      },
+      {
+        label: this.t('splits.pending_splits'),
+        value: kpi ? kpi.pending_count : null,
+        hint: this.t('splits.kpi.pending_sub'),
+        tone: kpi && kpi.pending_count > 0 ? 'warning' : 'default',
+      },
+      {
+        label: this.t('splits.total_silver_volume'),
+        value: kpi ? this.formatCompact(kpi.total_estimated_volume) : null,
+        hint: this.t('splits.kpi.volume_sub'),
+      },
+      {
+        label: this.t('splits.participants'),
+        value: kpi ? kpi.total_participants : null,
+        hint: this.t('splits.kpi.recipients_sub'),
+      },
+    ];
+  });
+
+  protected readonly batchSummaryItems = computed<SummaryItem[]>(() => {
+    this.translate.dict();
+    return [
+      { label: this.t('splits.batch.selectedSplits'), value: this.selectedSplits().length },
+      { label: this.t('splits.batch.totalNetPayout'), value: this.formatAmount(this.selectedTotalNet()) },
+      { label: this.t('splits.batch.totalRecipients'), value: this.selectedTotalParticipants() },
+    ];
+  });
+
+  protected readonly statusTabs = computed<TabOption[]>(() => {
+    this.translate.dict();
+    return [
+      { id: 'all', label: this.t('common.all') },
+      ...STATUS_ORDER.map((status) => ({ id: status, label: this.statusLabel(status) })),
+    ];
+  });
+  protected readonly activeStatusTab = computed(() => this.statusFilter() || 'all');
+
+  protected readonly headerMenuItems = computed<MenuItem[]>(() => {
+    this.translate.dict();
+    const items: MenuItem[] = [
+      { id: 'refresh', label: this.t('common.refreshNow'), disabled: this.loading() },
+    ];
+    if (this.canManageIslands()) {
+      items.push({ id: 'islands', label: this.t('splits.catalog.manage') });
+    }
+    return items;
+  });
+
+  /** Row menus are built once per data change so the template bindings keep stable references. */
+  protected readonly rowMenus = computed(() => {
+    this.translate.dict();
+    const menus = new Map<number, MenuItem[]>();
+    for (const split of this.splits()) {
+      const items: MenuItem[] = [];
+      if (this.canActOn(split) && split.status === 'pending' && !split.archived_at) {
+        items.push({ id: 'complete', label: this.t('splits.payout_complete'), icon: 'check' });
+      }
+      if (this.canDeleteOn(split)) {
+        items.push(
+          split.archived_at
+            ? { id: 'unarchive', label: this.t('splits.unarchive') }
+            : {
+                id: 'archive',
+                label: this.t('splits.archive'),
+                danger: true,
+                separatorBefore: items.length > 0,
+              },
+        );
+      }
+      menus.set(split.id, items);
+    }
+    return menus;
+  });
 
   protected readonly columns = computed<readonly DataTableColumn<SplitSummary>[]>(() => {
     this.translate.dict();
-    const cols: DataTableColumn<SplitSummary>[] = [];
-    if (this.canAct() || this.actionablePendingSplits().length > 0) {
-      cols.push({ key: 'select', label: '', accessor: () => null });
-    }
-    cols.push(
+    return [
       {
         key: 'note',
-        label: 'splits.note',
+        label: 'common.name',
         sortable: true,
-        searchable: true,
         accessor: (row) => row.note ?? '',
+      },
+      {
+        key: 'created_at',
+        label: 'common.date',
+        sortable: true,
+        accessor: (row) => row.created_at,
+      },
+      {
+        key: 'net',
+        label: 'splits.list.total',
+        align: 'right',
+        accessor: (row) => this.netOf(row),
+      },
+      {
+        key: 'perMember',
+        label: 'splits.list.perMember',
+        align: 'right',
+        accessor: (row) => this.perMemberShare(row),
       },
       {
         key: 'status',
         label: 'common.status',
         sortable: true,
         accessor: (row) => row.status,
-        filterOptions: [
-          { value: 'pending', label: this.t('splits.status.pending') },
-          { value: 'awaiting_event', label: this.t('splits.status.awaiting_event') },
-          { value: 'completed', label: this.t('splits.status.completed') },
-          { value: 'not_completed', label: this.t('splits.status.not_completed') },
-          { value: 'lost', label: this.t('splits.status.lost') },
-        ],
       },
       {
-        key: 'island',
-        label: 'splits.island',
-        accessor: (row) => this.locationLabel(row),
-        filterValue: (row) => (row.island_id == null ? '' : String(row.island_id)),
-        filterOptions: this.islands().map((island) => ({
-          value: String(island.id),
-          label: `${this.cityLabel(island.city)} · ${island.name}`,
-        })),
-      },
-      { key: 'event', label: 'splits.event', accessor: (row) => row.event_title ?? '' },
-      { key: 'net', label: 'splits.net_value', align: 'right', accessor: (row) => this.netOf(row) },
-      {
-        key: 'participants',
-        label: 'splits.participants',
-        align: 'right',
-        accessor: (row) => row.participant_count,
-      },
-      {
-        key: 'created_at',
-        label: 'splits.created',
-        sortable: true,
-        accessor: (row) => row.created_at,
+        key: 'created_by',
+        label: 'splits.list.createdBy',
+        accessor: (row) => row.created_by_username,
       },
       { key: 'actions', label: 'common.actions', align: 'right', accessor: () => null },
-    );
-    return cols;
+    ];
   });
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer);
+      }
+    });
+    void this.loadIslands();
+    void this.loadKpi();
+    void this.load();
+    void this.onEventSearchFilter({ search: '', dateFrom: '', dateTo: '' });
+  }
 
   protected async refreshNow(): Promise<void> {
     await Promise.all([this.loadKpi(), this.loadIslands(), this.load()]);
   }
 
-  constructor() {
-    void this.loadIslands();
-    void this.loadKpi();
-    void this.load();
-    void this.onEventSearchFilter({ search: '', dateFrom: '', dateTo: '' });
+  protected onHeaderMenu(id: string): void {
+    if (id === 'refresh') {
+      void this.refreshNow();
+    } else if (id === 'islands') {
+      void this.router.navigate(['/admin/islands']);
+    }
+  }
+
+  protected onRowMenu(id: string, row: SplitSummary): void {
+    switch (id) {
+      case 'complete':
+        this.openSingleAccept(row);
+        break;
+      case 'archive':
+        this.askArchive(row);
+        break;
+      case 'unarchive':
+        void this.unarchiveSplit(row);
+        break;
+    }
+  }
+
+  protected onStatusTab(id: string): void {
+    const next: SplitStatus | '' = id === 'all' ? '' : isSplitStatus(id) ? id : '';
+    if (next === this.statusFilter()) {
+      return;
+    }
+    this.statusFilter.set(next);
+    this.applyFilters();
+  }
+
+  protected onIslandChange(event: Event): void {
+    this.islandFilter.set((event.target as HTMLSelectElement).value);
+    this.applyFilters();
+  }
+
+  protected onArchivedChange(event: Event): void {
+    this.showArchived.set((event.target as HTMLInputElement).checked);
+    this.applyFilters();
+  }
+
+  protected onSearchInput(value: string): void {
+    this.searchInput.set(value);
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.applyFilters();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected clearFilters(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.searchInput.set('');
+    this.statusFilter.set('');
+    this.islandFilter.set('');
+    this.showArchived.set(false);
+    this.applyFilters();
   }
 
   protected cityLabel(city: SplitIslandCity): string {
@@ -1335,11 +1268,12 @@ export class Splits {
     return this.t(`splits.status.${status}` as TranslationKey);
   }
 
-  protected statusTone(status: SplitStatus): 'warning' | 'success' | 'neutral' | 'error' {
+  protected statusTone(status: SplitStatus): 'warning' | 'success' | 'neutral' | 'error' | 'info' {
     switch (status) {
       case 'pending':
-      case 'awaiting_event':
         return 'warning';
+      case 'awaiting_event':
+        return 'info';
       case 'completed':
         return 'success';
       case 'lost':
@@ -1373,6 +1307,15 @@ export class Splits {
     );
   }
 
+  /** Net divided evenly by participants. Weighted shares are shown in the split detail. */
+  protected perMemberShare(split: SplitSummary): number {
+    return split.participant_count > 0 ? Math.round(this.netOf(split) / split.participant_count) : 0;
+  }
+
+  protected perMemberText(split: SplitSummary): string {
+    return split.participant_count > 0 ? this.formatAmount(this.perMemberShare(split)) : '—';
+  }
+
   protected totalWeight(): number {
     return this.participants().reduce((sum, participant) => sum + participant.weight, 0);
   }
@@ -1389,9 +1332,7 @@ export class Splits {
   }
 
   protected openCreateDialog(): void {
-    this.participants.set(
-      addCurrentUserToParticipants(this.participants(), this.auth.profile()),
-    );
+    this.participants.set(addCurrentUserToParticipants(this.participants(), this.auth.profile()));
     this.showCreateForm.set(true);
   }
 
@@ -1403,18 +1344,6 @@ export class Splits {
 
   protected openSplit(row: SplitSummary): void {
     void this.router.navigate(['/splits', row.id]);
-  }
-
-  protected toggleShowArchived(): void {
-    this.showArchived.update((value) => !value);
-    this.page.set(1);
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { archived: this.showArchived() ? 'true' : null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
-    void this.load();
   }
 
   protected askArchive(row: SplitSummary): void {
@@ -1432,8 +1361,8 @@ export class Splits {
       this.archiveTarget.set(null);
       this.toasts.success(this.t('splits.archiveSuccess'));
       await Promise.all([this.load(), this.loadKpi()]);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.action'));
     } finally {
       this.saving.set(false);
     }
@@ -1445,28 +1374,30 @@ export class Splits {
       await firstValueFrom(this.api.post(`api/splits/${row.id}/unarchive`, {}));
       this.toasts.success(this.t('splits.unarchiveSuccess'));
       await Promise.all([this.load(), this.loadKpi()]);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.action'));
     } finally {
       this.saving.set(false);
     }
   }
 
+  /**
+   * Table emitted a page, size or sort change. Search and filters are not read from here: the
+   * page owns them. The reload is skipped when nothing the server needs has changed, which is the
+   * echo of a filter change that already reloaded.
+   */
   protected onPageChange(event: DataTablePageChange): void {
+    const sort = event.sort && SORT_WHITELIST.has(event.sort.columnKey) ? event.sort : null;
+    const changed =
+      event.page !== this.page() ||
+      event.pageSize !== this.pageSize() ||
+      !sameSort(sort, this.sort());
     this.page.set(event.page);
     this.pageSize.set(event.pageSize);
-    this.searchQuery.set(event.search);
-    const status = event.columnFilters['status'] ?? '';
-    this.statusFilter.set(isSplitStatus(status) ? status : '');
-    this.islandFilter.set(event.columnFilters['island'] ?? '');
-    if (event.sort && SORT_WHITELIST.has(event.sort.columnKey)) {
-      this.sortKey.set(event.sort.columnKey);
-      this.sortOrder.set(event.sort.direction);
-    } else {
-      this.sortKey.set(null);
-      this.sortOrder.set(null);
+    this.sort.set(sort);
+    if (changed) {
+      void this.load();
     }
-    void this.load();
   }
 
   protected onTitleChange(event: Event): void {
@@ -1492,9 +1423,7 @@ export class Splits {
 
   protected onBagAmountChange(key: number, event: Event): void {
     const amount = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
-    this.draftBagRows.update((rows) =>
-      rows.map((bag) => (bag.key === key ? { ...bag, amount } : bag)),
-    );
+    this.draftBagRows.update((rows) => rows.map((bag) => (bag.key === key ? { ...bag, amount } : bag)));
   }
   protected onRawNamesChange(event: Event): void {
     this.rawNames.set((event.target as HTMLTextAreaElement).value);
@@ -1545,8 +1474,8 @@ export class Splits {
       const result = await firstValueFrom(this.api.post<OcrResult>('api/utils/ocr', formData));
       this.rawNames.set(result.lines.join('\n'));
       await this.matchParticipants();
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.screenshot'));
     } finally {
       this.matching.set(false);
     }
@@ -1568,8 +1497,8 @@ export class Splits {
       );
       this.weightsCustomized.set(false);
       this.participants.set(redistributeWeights(toDraftParticipants(matched)));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.match'));
     } finally {
       this.matching.set(false);
     }
@@ -1622,9 +1551,9 @@ export class Splits {
           })),
         );
       }
-    } catch (error) {
+    } catch {
       if (request === this.eventSearchRequest) {
-        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+        this.toasts.error(this.t('splits.list.error.events'));
       }
     } finally {
       if (request === this.eventSearchRequest) {
@@ -1647,7 +1576,7 @@ export class Splits {
     }
     this.searchingRoster.set(true);
     try {
-      // Search every registered site user, not just guild members — anyone with an account
+      // Search every registered site user, not just guild members: anyone with an account
       // can be a split participant (`GET /api/users` filters by username substring).
       const usersPage = await firstValueFrom(
         this.api.get<PaginatedData<UserProfile>>('api/users', {
@@ -1665,9 +1594,9 @@ export class Splits {
           })),
         );
       }
-    } catch (error) {
+    } catch {
       if (request === this.participantSearchRequest) {
-        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+        this.toasts.error(this.t('splits.list.error.users'));
       }
     } finally {
       if (request === this.participantSearchRequest) {
@@ -1726,6 +1655,10 @@ export class Splits {
     );
   }
 
+  protected clearSelection(): void {
+    this.selectedIds.set(new Set<number>());
+  }
+
   protected completeSelected(): void {
     if (this.selectedCount() === 0) {
       return;
@@ -1754,14 +1687,14 @@ export class Splits {
       this.selectedIds.set(new Set<number>());
       this.showBatchConfirmDialog.set(false);
       if (result.completed.length > 0) {
-        this.toasts.success(`${result.completed.length} ${this.t('splits.batch.completed')}`);
+        this.toasts.success(this.t('splits.list.batchDone', { count: result.completed.length }));
       }
       for (const failure of result.failed) {
-        this.toasts.error(`Split #${failure.split_id}: ${failure.reason}`);
+        this.toasts.error(this.t('splits.list.batchFailed', { id: failure.split_id }));
       }
       await Promise.all([this.load(), this.loadKpi()]);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.action'));
     } finally {
       this.batchRunning.set(false);
     }
@@ -1797,6 +1730,29 @@ export class Splits {
     return new Date(iso).toLocaleString();
   }
 
+  /** Pushes the page-owned filters into the URL, and resets the table to page 1. */
+  private applyFilters(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.searchQuery.set(this.searchInput().trim());
+    this.page.set(1);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        q: this.searchQuery() || null,
+        status: this.statusFilter() || null,
+        island: this.islandFilter() || null,
+        archived: this.showArchived() ? 'true' : null,
+        page: '1',
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    void this.load();
+  }
+
   private async loadKpi(): Promise<void> {
     try {
       const summary = await firstValueFrom(this.api.get<SplitKpiSummary>('api/splits/summary'));
@@ -1810,6 +1766,7 @@ export class Splits {
   }
 
   protected async load(): Promise<void> {
+    const request = ++this.loadRequest;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
@@ -1823,27 +1780,33 @@ export class Splits {
       if (this.islandFilter()) {
         params['island_id'] = Number(this.islandFilter());
       }
-      const search = this.searchQuery().trim();
-      if (search) {
-        params['search'] = search;
+      if (this.searchQuery()) {
+        params['search'] = this.searchQuery();
       }
-      if (this.showArchived()) {
+      if (this.showArchived() && this.canDelete()) {
         params['archived'] = 'true';
       }
-      const sort = this.sortKey();
+      const sort = this.sort();
       if (sort) {
-        params['sort'] = sort;
+        params['sort'] = sort.columnKey;
+        params['order'] = sort.direction;
       }
       const data = await firstValueFrom(
         this.api.get<PaginatedData<SplitSummary>>('api/splits', params),
       );
+      if (request !== this.loadRequest) {
+        return;
+      }
       this.splits.set(data.items);
       this.totalItems.set(data.total_items);
-    } catch (error) {
-      this.loadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      if (request === this.loadRequest) {
+        this.loadFailed.set(true);
+      }
     } finally {
-      this.loading.set(false);
+      if (request === this.loadRequest) {
+        this.loading.set(false);
+      }
     }
   }
 
@@ -1884,9 +1847,9 @@ export class Splits {
       await firstValueFrom(this.api.post<SplitDetail>('api/splits', request));
       this.resetCreateForm();
       await Promise.all([this.load(), this.loadKpi()]);
-      this.toasts.success(this.t('common.create'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.toasts.success(this.t('splits.list.created'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.action'));
     } finally {
       this.saving.set(false);
     }
@@ -1916,8 +1879,8 @@ export class Splits {
     try {
       const islands = await firstValueFrom(this.api.get<SplitIsland[]>('api/splits/islands'));
       this.islands.set(islands);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.list.error.islands'));
     }
   }
 }

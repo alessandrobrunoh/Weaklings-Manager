@@ -234,7 +234,7 @@ describe('Splits Component', () => {
     fixture.destroy();
   });
 
-  it('renders all 4 modern KPI cards with formatted values', () => {
+  it('renders the summary band with formatted values', () => {
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('Total Net Distributed');
     expect(text).toContain('24.50M');
@@ -322,28 +322,20 @@ describe('Splits Component', () => {
     }
   });
 
-  it('renders the status column filter and quick actions', () => {
-    const triggers = Array.from(
-      fixture.nativeElement.querySelectorAll(
-        'app-select button[role="combobox"]',
-      ) as NodeListOf<HTMLButtonElement>,
-    );
-    const statusTrigger = triggers.find((trigger) =>
-      trigger.getAttribute('aria-label')?.toLowerCase().includes('status'),
-    );
-    expect(statusTrigger).toBeTruthy();
-    statusTrigger!.click();
-    fixture.detectChanges();
-    const options = Array.from(
-      fixture.nativeElement.querySelectorAll(
-        'app-select [role="option"]',
-      ) as NodeListOf<HTMLElement>,
-      (option) => option.textContent ?? '',
-    ).join(' ');
-    expect(options).toContain('Pending');
-    expect(options).toContain('Awaiting event');
-    expect(options).toContain('Completed');
-    expect(fixture.nativeElement.querySelectorAll('nav button').length).toBe(0);
+  it('offers the split statuses as tabs and no longer as a column filter', () => {
+    const tabs = Array.from(
+      fixture.nativeElement.querySelectorAll('[role="tab"]') as NodeListOf<HTMLElement>,
+      (tab) => tab.textContent ?? '',
+    ).join(' | ');
+    expect(tabs).toContain('Pending');
+    expect(tabs).toContain('Awaiting event');
+    expect(tabs).toContain('Completed');
+    expect(fixture.nativeElement.querySelector('app-select button[role="combobox"]')).toBeNull();
+  });
+
+  it('keeps the table toolbar search out of the page; search lives in the filter bar', () => {
+    expect(fixture.nativeElement.querySelector('app-filter-bar input[type="text"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.data-table__search-input')).toBeNull();
   });
 
   it('renders the batch selection action strip when pending splits exist', () => {
@@ -376,37 +368,23 @@ describe('Splits Component', () => {
     expect(text).not.toContain('Complete selected');
   });
 
-  it('requests pending splits when the status filter changes', async () => {
+  it('requests pending splits when the Pending status tab is chosen', async () => {
     mockApiService.get.mockClear();
-    const statusTrigger = Array.from(
-      fixture.nativeElement.querySelectorAll(
-        'app-select button[role="combobox"]',
-      ) as NodeListOf<HTMLButtonElement>,
-    ).find((trigger) =>
-      trigger.getAttribute('aria-label')?.toLowerCase().includes('status'),
-    );
-    expect(statusTrigger).toBeTruthy();
-    statusTrigger!.click();
-    fixture.detectChanges();
-    const pendingOption = Array.from(
-      fixture.nativeElement.querySelectorAll(
-        'app-select [role="option"]',
-      ) as NodeListOf<HTMLButtonElement>,
-    ).find((option) => option.textContent?.includes('Pending')) as
-      | HTMLButtonElement
-      | undefined;
-    expect(pendingOption).toBeTruthy();
-    pendingOption!.click();
+    const pendingTab = Array.from(
+      fixture.nativeElement.querySelectorAll('[role="tab"]') as NodeListOf<HTMLButtonElement>,
+    ).find((tab) => tab.textContent?.trim() === 'Pending');
+    expect(pendingTab).toBeTruthy();
+    pendingTab!.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
     expect(mockApiService.get).toHaveBeenCalledWith(
       'api/splits',
-      expect.objectContaining({ status: 'pending' }),
+      expect.objectContaining({ status: 'pending', page: 1 }),
     );
   });
 
-  it('clears the status filter when the table pages without one', async () => {
+  it('pages the table without re-sending the page-owned filters', async () => {
     const component = fixture.componentInstance as unknown as {
       onPageChange: (event: {
         page: number;
@@ -421,7 +399,7 @@ describe('Splits Component', () => {
     component.onPageChange({
       page: 2,
       pageSize: 10,
-      search: 'castle',
+      search: '',
       sort: null,
       columnFilters: {},
     });
@@ -429,11 +407,38 @@ describe('Splits Component', () => {
 
     expect(mockApiService.get).toHaveBeenCalledWith(
       'api/splits',
-      expect.objectContaining({ search: 'castle', page: 2 }),
+      expect.objectContaining({ page: 2 }),
     );
     expect(mockApiService.get).not.toHaveBeenCalledWith(
       'api/splits',
       expect.objectContaining({ status: 'awaiting_event' }),
+    );
+  });
+
+  it('sends the sort direction to the server, not just the column', async () => {
+    const component = fixture.componentInstance as unknown as {
+      onPageChange: (event: {
+        page: number;
+        pageSize: number;
+        search: string;
+        sort: { columnKey: string; direction: 'asc' | 'desc' };
+        columnFilters: Record<string, string>;
+      }) => void;
+    };
+    mockApiService.get.mockClear();
+
+    component.onPageChange({
+      page: 1,
+      pageSize: 10,
+      search: '',
+      sort: { columnKey: 'created_at', direction: 'asc' },
+      columnFilters: {},
+    });
+    await fixture.whenStable();
+
+    expect(mockApiService.get).toHaveBeenCalledWith(
+      'api/splits',
+      expect.objectContaining({ sort: 'created_at', order: 'asc' }),
     );
   });
 
