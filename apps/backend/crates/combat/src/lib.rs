@@ -1,7 +1,7 @@
 //! Albion combat mathematics.
 //!
-//! One place for every number the guild's tooling derives from game data: what Item Power a member
-//! would have on a build, how that turns into stats, which member fits which seat of a
+//! One place for every number the guild's tooling derives from game data: what Item Power a build
+//! has at a given specialization level, how that turns into stats, which member fits which seat of a
 //! composition, and — later — what a scripted engagement does.
 //!
 //! The layering is deliberate. `dataset` and `data_types` hold bundled facts; `pattern` and `ip`
@@ -22,7 +22,6 @@ pub mod comp_routes;
 pub mod fit;
 pub mod ip;
 pub mod models;
-pub mod readiness;
 pub mod router;
 pub mod scenario;
 pub mod schemas;

@@ -1,7 +1,7 @@
 //! `SeaORM` entities for the combat module's persisted tables.
 //!
 //! The bundled dataset (`combat::dataset`) and the pure math (`combat::ip`, `combat::fit`,
-//! `combat::readiness`, `combat::sim`, `combat::scenario`) have no database at all — these two
+//! `combat::sim`, `combat::scenario`) have no database at all — these two
 //! tables are the only state the module actually owns.
 
 pub mod combat_scenario {

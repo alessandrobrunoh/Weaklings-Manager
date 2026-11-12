@@ -26,16 +26,6 @@ pub struct CombatDatasetView {
     pub destiny_nodes: usize,
 }
 
-/// Every equippable base identifier that has a family mastery node, and which node it is.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-#[schema(example = json!({ "dataset_version": {}, "groups": { "2H_POLEHAMMER": "COMBAT_HAMMERS" } }))]
-pub struct MasteryGroupsView {
-    /// Provenance stamp, so a client can tell when the mapping last changed.
-    pub dataset_version: DatasetVersion,
-    /// `base_identifier -> mastery_node_id`.
-    pub groups: std::collections::BTreeMap<String, String>,
-}
-
 /// One item in an ad-hoc loadout, as a caller describes it.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({
@@ -60,20 +50,20 @@ pub struct LoadoutItemRequest {
     pub quality: Option<i16>,
 }
 
-/// Where the Destiny Board levels behind an Item Power figure come from.
+/// Which hypothetical Destiny Board levels an Item Power figure is computed with.
+///
+/// Members' own levels are not stored, so the calculator always works with an assumed level.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SpecSource {
-    /// Whatever the member has actually trained. Requires a `user_id`.
-    #[default]
-    Current,
     /// Every node at 100 — the ceiling, for "what would this be worth fully specialised".
+    #[default]
     Max,
     /// Every node at one flat level, for comparing builds rather than people.
     Fixed,
 }
 
-/// Ad-hoc Item Power request: a loadout plus whose specialization to score it with.
+/// Ad-hoc Item Power request: a loadout plus the hypothetical specialization to score it with.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({
     "items": [{ "slot": "weapon", "identifier": "T8_2H_POLEHAMMER", "enchantment": 2, "quality": 4 }],
@@ -82,12 +72,9 @@ pub enum SpecSource {
 pub struct ItemPowerRequest {
     /// The equipped items. Slots outside the counted six are ignored.
     pub items: Vec<LoadoutItemRequest>,
-    /// Which specialization levels to apply. Defaults to `current`.
+    /// Which specialization levels to apply. Defaults to `max`.
     #[serde(default)]
     pub spec: SpecSource,
-    /// The member whose levels to read, required when `spec` is `current`.
-    #[serde(default)]
-    pub user_id: Option<i64>,
     /// The flat level to apply, required when `spec` is `fixed`.
     #[serde(default)]
     pub level: Option<i32>,
@@ -96,10 +83,7 @@ pub struct ItemPowerRequest {
 /// Query parameters for the Item Power of a stored build.
 #[derive(Debug, Clone, Default, Deserialize, IntoParams)]
 pub struct BuildItemPowerParams {
-    /// Score the build with this member's Destiny Board levels.
-    #[serde(default)]
-    pub user_id: Option<i64>,
-    /// Which levels to apply: `current`, `max` or `fixed`. Defaults to `current`.
+    /// Which levels to apply: `max` or `fixed`. Defaults to `max`.
     #[serde(default)]
     pub spec: Option<SpecSource>,
     /// The flat level for `spec=fixed`.
@@ -116,60 +100,14 @@ pub struct BuildItemPowerParams {
 pub struct ItemPowerView {
     /// The itemised figure.
     pub breakdown: CharacterIpBreakdown,
-    /// The same loadout with every Destiny Board node at 100 — what the member is working toward.
+    /// The same loadout with every Destiny Board node at 100 — the ceiling.
     pub at_max_spec: f64,
-    /// How far along that road they are, `0.0` through `1.0`.
+    /// `breakdown.average / at_max_spec`, `0.0` through `1.0`: how close the assumed levels are to
+    /// the ceiling.
     ///
     /// Comparable across builds in a way raw Item Power is not: a plate tank always out-numbers a
-    /// cloth healer without that saying anything about how ready either of them is.
+    /// cloth healer without that saying anything about how far either is from its ceiling.
     pub readiness: f64,
-    /// Provenance of the numbers.
-    pub dataset_version: DatasetVersion,
-}
-
-/// One member's Item Power on a given build.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct MemberItemPowerView {
-    /// Internal user id.
-    pub user_id: i64,
-    /// Display name, resolved the same way the rest of the app resolves it.
-    pub username: String,
-    /// Item Power with the levels this member has actually trained.
-    pub item_power: f64,
-    /// Item Power the same member would have with every node at 100.
-    pub at_max_spec: f64,
-    /// `item_power / at_max_spec`, `0.0` through `1.0`.
-    pub readiness: f64,
-    /// Nodes this build needs where the member is furthest from the ceiling, worst first.
-    pub blocking_nodes: Vec<BlockingNode>,
-    /// False when no family mastery level is recorded, making the figure a lower bound.
-    pub mastery_levels_known: bool,
-}
-
-/// A Destiny Board node holding a member back on a build.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct BlockingNode {
-    /// The node id, e.g. `COMBAT_HAMMERS_POLE`.
-    pub node: String,
-    /// The member's level in it.
-    pub level: i32,
-    /// The level it can reach.
-    pub max_level: i32,
-    /// Item Power the member would gain by taking it to the ceiling.
-    pub item_power_gap: f64,
-}
-
-/// Every member scored against one build, best first.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct BuildRosterFitView {
-    /// The build that was scored.
-    pub build_id: i64,
-    /// Its name, for a caller rendering this on its own.
-    pub build_name: String,
-    /// Item Power of the build with every node at 100 — the shared ceiling.
-    pub at_max_spec: f64,
-    /// One row per member with any recorded specialization, sorted by Item Power descending.
-    pub members: Vec<MemberItemPowerView>,
     /// Provenance of the numbers.
     pub dataset_version: DatasetVersion,
 }
@@ -279,85 +217,4 @@ pub struct RunDetail {
     #[serde(flatten)]
     pub summary: RunSummary,
     pub result: super::scenario::ScenarioResult,
-}
-
-/// One observation where a calculated Item Power could be checked against a real one.
-///
-/// Every field here is a best-effort match, not a certainty: the player may have swapped gear,
-/// died and re-geared, or fought with their secondary loadout rather than the primary build their
-/// sign-up recorded. A single row proves nothing; the point of [`CalibrationView`] is the
-/// distribution across many of them.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct CalibrationOutlier {
-    /// The member this observation is about.
-    pub user_id: i64,
-    pub username: String,
-    /// The build whose `primary_build_id` sign-up supplied the expected figure.
-    pub build_id: i64,
-    pub build_name: String,
-    /// What `combat::ip` calculates for this member on that build, at their current spec.
-    pub expected_ip: f64,
-    /// What `AlbionBB` reported for this player in the matched battle.
-    pub observed_ip: f64,
-    /// `expected_ip - observed_ip`. Positive means the calculator overestimates for this member.
-    pub error: f64,
-    /// When the matched battle snapshot was fetched.
-    pub observed_at: String,
-}
-
-/// Level-2 calibration: how well `combat::ip`'s predictions track Item Power actually observed in
-/// battle, across every match the app could make between a signed-up build and a fetched battle.
-///
-/// This is a **distribution check, not an oracle** — see [`CalibrationOutlier`]'s docs on why any
-/// one row can be wrong for reasons that have nothing to do with the IP model. What it is good at:
-/// a systematic bias (every prediction low by roughly the same amount) is the signature of a
-/// missing or mis-modelled rule, e.g. an un-collected mastery level — see `combat::ip`'s docs on
-/// that gap.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct CalibrationView {
-    pub dataset_version: DatasetVersion,
-    /// How many (member, matched battle) observations went into the figures below.
-    pub sample_size: usize,
-    /// Mean of `|expected_ip - observed_ip|` across every observation. `0.0` when `sample_size` is
-    /// `0` — read alongside `sample_size` before treating a small figure as good news.
-    pub mean_absolute_error: f64,
-    /// Median of the same. Less sensitive than the mean to a handful of bad matches.
-    pub median_absolute_error: f64,
-    /// The worst 20 observations by `|error|`, descending — where to look first for a modelling
-    /// gap or a bad match.
-    pub outliers: Vec<CalibrationOutlier>,
-}
-
-/// `CombatService::comp_readiness`'s response. `predicted` is
-/// [`super::readiness::evaluate`]'s pure output, unchanged. `observed` is the first real
-/// "previsto vs osservato" connection between the combat simulator family and actual battle
-/// evidence: when `event_id` was requested and that event has fights with a computed
-/// `fight_stats` rollup, this is what Item Power the roster that actually fought turned out to
-/// have, versus what the pre-event roster prediction said it would be.
-///
-/// This is an Item Power comparison only — `combat::sim` has no calibrated damage scaling and
-/// produces no probability, so nothing here claims to predict or validate win rate or survival.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct CompReadinessView {
-    #[serde(flatten)]
-    pub predicted: super::readiness::CompReadiness,
-    /// `None` when no `event_id` was requested, or the event has no fights with a computed
-    /// `fight_stats` rollup yet — not an error, a real "nothing to compare yet" state.
-    pub observed: Option<ReadinessObservation>,
-}
-
-/// What Item Power the roster that actually fought an event turned out to have, versus what
-/// [`super::readiness::evaluate`] predicted for it beforehand.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct ReadinessObservation {
-    /// Distinct fights this event has a `fight_stats` rollup for.
-    pub fight_count: i64,
-    /// Simple average of `fight_stats.avg_friendly_item_power` across those fights — one fight,
-    /// one vote, unweighted by player count, matching the same per-fight-averaging convention
-    /// `attention::rules::evaluate_ip_deficit` already uses for exactly this kind of cross-fight
-    /// IP averaging.
-    pub avg_item_power: f64,
-    /// `avg_item_power - predicted.avg_item_power_now`. Positive means the roster that actually
-    /// fought brought more Item Power than the pre-event prediction; negative means less.
-    pub item_power_delta: f64,
 }

@@ -33,7 +33,6 @@ urlencoding.workspace = true
 utoipa.workspace = true
 uuid.workspace = true
 backend-core.workspace = true
-backend-gamedata.workspace = true
 backend-migration.workspace = true
 backend-entities.workspace = true
 

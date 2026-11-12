@@ -295,20 +295,11 @@ async fn fit_inputs<C: sea_orm::ConnectionTrait>(
     available: &[EventRosterSeatView],
 ) -> Result<(Vec<fit::Member>, Vec<fit::Seat>), AppError> {
     let user_ids: Vec<i64> = unassigned.iter().map(|entry| entry.user_id).collect();
-    let levels_by_user =
-        backend_identity::users::specializations::load_levels_for_users(db, &user_ids).await?;
     let weapons_by_user = weapons::load_sets_for_users(db, &user_ids).await?;
     let members: Vec<fit::Member> = unassigned
         .iter()
         .map(|entry| fit::Member {
             user_id: entry.user_id,
-            specs: backend_combat::ip::SpecLevels::from_rows(
-                levels_by_user
-                    .get(&entry.user_id)
-                    .into_iter()
-                    .flatten()
-                    .map(|(key, level)| (key.as_str(), *level)),
-            ),
             primary_build_id: entry.primary_build_id,
             secondary_build_id: entry.secondary_build_id,
             weapons: weapons_by_user
@@ -2227,17 +2218,9 @@ impl EventService {
             .await
             .map_err(AppError::Database)?;
         let assigned_build_by_user = assigned_builds_by_user(assignments.iter().cloned());
-        // The roster's specialization badge reads these; leaving them empty made every bench
-        // member render as level 0 no matter what they had trained.
         let participant_user_ids: Vec<i64> =
             participations.iter().map(|entry| entry.user_id).collect();
-        let mut specializations_by_user =
-            backend_identity::users::specializations::load_levels_for_users(
-                db,
-                &participant_user_ids,
-            )
-            .await?;
-        // One query for every participant's weapons, like the specializations above.
+        // One query for every participant's weapons.
         let weapon_rows_by_user = weapons::load_rows_for_users(db, &participant_user_ids).await?;
 
         // Hydrated in a fixed number of queries (users, display names, builds) instead of
@@ -2311,9 +2294,6 @@ impl EventService {
                     secondary_build_name,
                     assigned_build_id,
                     assigned_build_name,
-                    specializations: specializations_by_user
-                        .remove(&participation.user_id)
-                        .unwrap_or_default(),
                     // Attributed by the router, which owns the control-plane connection.
                     guild: None,
                     weapons: participant_weapon_views(
@@ -2646,8 +2626,8 @@ impl EventService {
                 let weapons_by_user = weapons::load_sets_for_users(&txn, &user_ids).await?;
                 greedy_placements(&unassigned, &mut available, &weapons_by_user)
             }
-            FitStrategy::SpecOptimal => {
-                self.spec_optimal_placements(&txn, &unassigned, &available)
+            FitStrategy::BestFit => {
+                self.best_fit_placements(&txn, &unassigned, &available)
                     .await?
             }
         };
@@ -2671,7 +2651,7 @@ impl EventService {
         Ok((version, changed))
     }
 
-    /// Previews what `auto_fill_roster(strategy: spec_optimal)` would do, without writing
+    /// Previews what `auto_fill_roster(strategy: best_fit)` would do, without writing
     /// anything or advancing the roster version.
     ///
     /// Read-only by design: an officer should be able to see the proposed assignment, compare it
@@ -2732,8 +2712,8 @@ impl EventService {
     }
 
     /// Builds the [`fit::Member`]/[`fit::Seat`] shapes and solves the whole unassigned roster at
-    /// once, favouring readiness and signup preference over first-come-first-served order.
-    async fn spec_optimal_placements(
+    /// once, favouring declared weapons and signup preference over first-come-first-served order.
+    async fn best_fit_placements(
         &self,
         txn: &sea_orm::DatabaseTransaction,
         unassigned: &[event_participation::Model],
@@ -3496,12 +3476,6 @@ impl EventService {
             .unwrap_or_default();
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
-        let mut specializations_by_user =
-            backend_identity::users::specializations::load_levels_for_users(
-                db,
-                &participant_user_ids,
-            )
-            .await?;
         let weapon_rows_by_user = weapons::load_rows_for_users(db, &participant_user_ids).await?;
 
         let assignments = event_roster_assignment::Entity::find()
@@ -3597,9 +3571,6 @@ impl EventService {
                 secondary_build_name,
                 assigned_build_id,
                 assigned_build_name,
-                specializations: specializations_by_user
-                    .remove(&p.user_id)
-                    .unwrap_or_default(),
                 // Attributed by the router, which owns the control-plane connection.
                 guild: None,
                 weapons: participant_weapon_views(weapon_rows_by_user.get(&p.user_id)),
@@ -7924,75 +7895,6 @@ mod tests {
         assert_eq!(performance.signups_as_primary, 0);
     }
 
-    #[tokio::test]
-    async fn the_roster_carries_each_participant_s_specialization_levels() {
-        // Regression: `get_roster` used to build participants with an empty specialization map,
-        // so the level badge beside every bench member rendered zero however much they had
-        // trained. `get_event_detail` populated it; the two now share one loader.
-        let db = seed_db().await;
-        let user_id = insert_user(&db, "spec-user", "spec-user@example.com").await;
-        let build_category = create_build_category(&db, "spec-builds").await;
-        let build_id = create_build(&db, "spec-build", build_category).await;
-        let comp_category = create_comp_category(&db, "spec-comps").await;
-        let comp_id = create_comp(&db, "spec-comp", comp_category, None, vec![(build_id, 1)]).await;
-        let event_id = event::ActiveModel {
-            title: Set("Spec event".to_string()),
-            comp_id: Set(Some(comp_id)),
-            created_by: Set(user_id),
-            event_date_utc: Set(ts()),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert event")
-        .id;
-        add_first_party(&db, event_id, comp_id).await;
-
-        // Stored with the legacy tier-specific key, so the canonicalization is exercised too.
-        backend_identity::users::specializations::ActiveModel {
-            user_id: Set(user_id),
-            node_key: Set("weapon:T8_2H_POLEHAMMER".to_string()),
-            node_name: Set("Great Polehammer".to_string()),
-            category: Set("weapon".to_string()),
-            level: Set(87),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert specialization");
-
-        let service = EventService::new();
-        service
-            .participate_with_roster_version(
-                &db,
-                event_id,
-                user_id,
-                ParticipateEventRequest {
-                    primary_build_id: Some(build_id),
-                    secondary_build_id: None,
-                },
-            )
-            .await
-            .expect("participation should succeed");
-
-        let roster = service
-            .get_roster(&db, event_id)
-            .await
-            .expect("roster should load");
-        let participant = roster
-            .seats
-            .iter()
-            .find_map(|seat| seat.participant.as_ref())
-            .or_else(|| roster.bench.first())
-            .expect("the participant should be on a seat or the bench");
-        assert_eq!(
-            participant.specializations.get("weapon:2H_POLEHAMMER"),
-            Some(&87),
-            "roster specializations were {:?}",
-            participant.specializations
-        );
-    }
-
     /// Every open client refetches the roster after each seat change, so one roster read must
     /// cost the same number of statements whether the event has 5 or 40 participants.
     #[tokio::test]
@@ -8254,25 +8156,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_fill_roster_with_spec_optimal_seats_the_better_trained_member() {
+    async fn auto_fill_roster_with_best_fit_seats_the_member_who_plays_the_weapon() {
         let db = seed_db().await;
-        let officer = insert_user(&db, "spec-officer", "spec-officer@example.com").await;
+        let officer = insert_user(&db, "fit-officer", "fit-officer@example.com").await;
         let novice = insert_user(&db, "novice", "novice@example.com").await;
         let expert = insert_user(&db, "expert", "expert@example.com").await;
-        let category = create_build_category(&db, "spec-optimal-builds").await;
-        let build_id = create_build(&db, "spec-optimal-build", category).await;
+        let category = create_build_category(&db, "best-fit-builds").await;
+        let build_id = create_build(&db, "best-fit-build", category).await;
         insert_weapon_item(&db, build_id, "T8_2H_POLEHAMMER").await;
-        let comp_category = create_comp_category(&db, "spec-optimal-comps").await;
+        let comp_category = create_comp_category(&db, "best-fit-comps").await;
         let comp_id = create_comp(
             &db,
-            "spec-optimal-comp",
+            "best-fit-comp",
             comp_category,
             None,
             vec![(build_id, 1)],
         )
         .await;
         let event_id = event::ActiveModel {
-            title: Set("Spec-optimal event".to_string()),
+            title: Set("Best-fit event".to_string()),
             comp_id: Set(Some(comp_id)),
             created_by: Set(officer),
             event_date_utc: Set(ts()),
@@ -8284,21 +8186,11 @@ mod tests {
         .id;
         let party_id = add_first_party(&db, event_id, comp_id).await;
 
-        backend_identity::users::specializations::ActiveModel {
-            user_id: Set(expert),
-            node_key: Set("weapon:2H_POLEHAMMER".to_string()),
-            node_name: Set("Great Polehammer".to_string()),
-            category: Set("weapon".to_string()),
-            level: Set(100),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert specialization");
+        insert_member_weapon(&db, expert, HAMMER_KEY, Some("main"), false).await;
 
         let service = EventService::new();
         // The novice signs up first and would win the seat under greedy first-fit; neither has a
-        // build preference recorded, so only trained specialization tells them apart.
+        // build preference recorded, so only the declared weapon tells them apart.
         for user_id in [novice, expert] {
             service
                 .participate_with_roster_version(
@@ -8320,12 +8212,12 @@ mod tests {
                 event_id,
                 RosterVersionRequest {
                     expected_roster_version: 2,
-                    strategy: Some(backend_combat::fit::FitStrategy::SpecOptimal),
+                    strategy: Some(backend_combat::fit::FitStrategy::BestFit),
                 },
                 officer,
             )
             .await
-            .expect("spec-optimal auto-fill should succeed");
+            .expect("best-fit auto-fill should succeed");
 
         assert_eq!(changed, vec![seat_key(party_id, build_id, 1)]);
         let roster = service
@@ -8339,7 +8231,7 @@ mod tests {
                 .find_map(|seat| seat.participant.as_ref())
                 .map(|p| p.user_id),
             Some(expert),
-            "the trained member should take the seat, not whoever signed up first"
+            "the member who plays the weapon should take the seat, not whoever signed up first"
         );
     }
 
@@ -8666,7 +8558,7 @@ mod tests {
     async fn auto_fill_never_seats_a_member_on_a_weapon_locked_for_them() {
         for strategy in [
             backend_combat::fit::FitStrategy::Greedy,
-            backend_combat::fit::FitStrategy::SpecOptimal,
+            backend_combat::fit::FitStrategy::BestFit,
         ] {
             let db = seed_db().await;
             let w = weapon_event(&db, 1).await;
@@ -8674,19 +8566,7 @@ mod tests {
             let locked = insert_user(&db, "locked", "locked@example.com").await;
             let other = insert_user(&db, "other", "other@example.com").await;
             insert_member_weapon(&db, locked, HAMMER_KEY, None, true).await;
-            // The locked member is far better trained and signed up first, and still must not
-            // take the Polehammer seat.
-            backend_identity::users::specializations::ActiveModel {
-                user_id: Set(locked),
-                node_key: Set(HAMMER_KEY.to_string()),
-                node_name: Set("Polehammer".to_string()),
-                category: Set("weapon".to_string()),
-                level: Set(100),
-                ..Default::default()
-            }
-            .insert(&db)
-            .await
-            .unwrap();
+            // The locked member signed up first, and still must not take the Polehammer seat.
             service
                 .set_participant_with_roster_version(
                     &db,
@@ -8773,12 +8653,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spec_optimal_prefers_the_member_who_declared_the_seats_weapon() {
+    async fn best_fit_prefers_the_member_who_declared_the_seats_weapon() {
         let db = seed_db().await;
         let w = weapon_event(&db, 1).await;
         let service = EventService::new();
-        // Both sign up as Fill with identical (no) training. The undeclared member signs up
-        // first, so only the declaration can put the other one on the Polehammer.
+        // All sign up as Fill. The undeclared member signs up first, so only the declaration
+        // can put the other one on the Polehammer.
         let undeclared = insert_user(&db, "undeclared", "undeclared@example.com").await;
         let main = insert_user(&db, "main", "main@example.com").await;
         let basic = insert_user(&db, "basic", "basic@example.com").await;
@@ -8813,7 +8693,7 @@ mod tests {
                 w.event_id,
                 RosterVersionRequest {
                     expected_roster_version: version,
-                    strategy: Some(backend_combat::fit::FitStrategy::SpecOptimal),
+                    strategy: Some(backend_combat::fit::FitStrategy::BestFit),
                 },
                 w.officer,
             )

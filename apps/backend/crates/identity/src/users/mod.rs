@@ -8,7 +8,6 @@ pub mod member_roles;
 pub mod router;
 pub mod schemas;
 pub mod service;
-pub mod specializations;
 pub mod weapons;
 
 pub use router::router;

@@ -65,15 +65,15 @@ pub struct EquippedItem {
 
 /// A player's Destiny Board levels, keyed by node id rather than by item.
 ///
-/// The `user_specializations` table keys rows by item base (`weapon:2H_BOW`), which is a storage
-/// detail of the users module; this module speaks Destiny Board nodes, so the translation happens
-/// once, at the boundary, in [`SpecLevels::from_rows`].
+/// Levels are always hypothetical (a flat level, or the ceiling): members' own levels are not
+/// stored. Callers may key rows by item base (`weapon:2H_BOW`); this module speaks Destiny Board
+/// nodes, so the translation happens once, at the boundary, in [`SpecLevels::from_rows`].
 #[derive(Debug, Clone, Default)]
 pub struct SpecLevels {
     levels: BTreeMap<String, i32>,
 }
 
-/// How a stored specialization row is keyed.
+/// How a specialization row is keyed.
 ///
 /// `weapon:` and `armor:` rows name an *item*, which is resolved to its Destiny Board node.
 /// `mastery:` rows name a node directly — those are the family levels that are not collected yet,
@@ -81,7 +81,7 @@ pub struct SpecLevels {
 const MASTERY_PREFIX: &str = "mastery:";
 
 impl SpecLevels {
-    /// Builds a level map from `(node_key, level)` rows as `user_specializations` stores them.
+    /// Builds a level map from `(node_key, level)` rows keyed by item base or mastery node.
     ///
     /// Rows naming an item the dataset does not know, or an item with no combat specialization —
     /// capes, bags, gathering gear — are dropped rather than failing: they grant no Item Power, so
@@ -93,8 +93,7 @@ impl SpecLevels {
             let Some(node) = resolve_node_key(node_key) else {
                 continue;
             };
-            // A player can reach the same node through two item rows; the highest wins, matching
-            // how `events::service` already reconciles duplicate specialization keys.
+            // A player can reach the same node through two item rows; the highest wins.
             levels
                 .entry(node)
                 .and_modify(|current: &mut i32| *current = (*current).max(level))
@@ -111,8 +110,8 @@ impl SpecLevels {
     /// spec contributes that family bonus once per sibling, so the true ceiling is higher than any
     /// single specialization path could reach on its own. That is a real, if extreme, reading of
     /// the Destiny Board — someone who has genuinely mastered the entire game — and it is why
-    /// `readiness` should be read as "distance from maxing everything", not "distance from maxing
-    /// this one build".
+    /// an Item Power `readiness` should be read as "distance from maxing everything", not
+    /// "distance from maxing this one build".
     #[must_use]
     pub fn all_at(level: i32) -> Self {
         Self {

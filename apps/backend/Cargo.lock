@@ -502,7 +502,6 @@ dependencies = [
  "axum-extra",
  "backend-core",
  "backend-entities",
- "backend-gamedata",
  "backend-migration",
  "base64",
  "chrono",

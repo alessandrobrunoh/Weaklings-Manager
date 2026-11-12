@@ -934,20 +934,22 @@ async fn get_roster(
     )))
 }
 
-/// Previews an Item-Power-optimal roster assignment without applying it.
+/// Previews the best-fit roster assignment without applying it.
 ///
-/// Gated the same way as [`combat::readiness.view`] rather than open to every member: it scores
-/// the whole guild's specializations against every open seat at once, which is roster management
+/// Gated by `combat.readiness.view` rather than open to every member: it scores every
+/// participant's declared weapons against every open seat at once, which is roster management
 /// rather than something a member needs about themselves.
 #[utoipa::path(
     get,
     path = "/api/events/{id}/roster/suggestions",
     tag = "events",
-    summary = "Preview an optimal roster assignment",
+    summary = "Preview the best-fit roster assignment",
     description = "Solves every unassigned participant against every open seat with the Hungarian \
-                   algorithm, maximising total Item-Power readiness plus signup preference. Never \
-                   applied automatically — `POST .../roster/auto-fill` with \
-                   `strategy: \"spec_optimal\"` applies the same solve for real.",
+                   algorithm, maximising the total fit: the proficiency each member declared on \
+                   the seat's weapon in My weapons (an officer-locked weapon is never placed), \
+                   plus signup preference. Each placement carries its `score`. Never applied \
+                   automatically — `POST .../roster/auto-fill` with `strategy: \"best_fit\"` \
+                   applies the same solve for real.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
