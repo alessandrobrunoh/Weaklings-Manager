@@ -555,7 +555,7 @@ function toDateInput(date: Date): string {
               </header>
               <app-data-table [columns]="enemyColumns" [rows]="r.enemies" [trackBy]="trackEnemy" [pageSize]="10">
                 <ng-template dataTableCell="name" let-row>
-                  <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/intel', row.scouted_comp_id]">
+                  <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/intel/opponents/scouts', row.scouted_comp_id]">
                     {{ row.name }}
                   </a>
                 </ng-template>

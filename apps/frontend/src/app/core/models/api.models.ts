@@ -2839,6 +2839,268 @@ export interface PlayerReport {
   win_streak: number;
 }
 
+/* ------------------------- Intel: our own side ------------------------- */
+
+/** Period keys the Intel endpoints accept; anything else is sent as `from`/`to`. */
+export type IntelPeriodKey = '7d' | '30d' | '90d' | 'all' | 'custom';
+
+/** A fight's stored outcome, from the tenant's side. `unknown` is never a loss. */
+export type IntelOutcome = 'victory' | 'defeat' | 'draw' | 'unknown';
+
+/** The window a response was computed over. */
+export interface IntelPeriodView {
+  key: IntelPeriodKey;
+  /** For `all`, the first fight on record; null when there is none. */
+  from: string | null;
+  to: string;
+}
+
+/**
+ * Combat totals over a set of fights. Rates are `null` when their denominator is empty,
+ * so "no fights" and "0%" stay different things.
+ */
+export interface IntelTotals {
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  unknown: number;
+  decided: number;
+  /** Percentage 0..100. */
+  win_rate: number | null;
+  fights_with_stats: number;
+  kills: number;
+  deaths: number;
+  kd_ratio: number | null;
+  kill_fame: number;
+  death_fame: number;
+  avg_players: number | null;
+  avg_item_power: number | null;
+  enemy_avg_item_power: number | null;
+  /** Null unless the caller holds `intel.report.view`. */
+  estimated_silver_lost: number | null;
+}
+
+export interface IntelWeek {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number | null;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  avg_players: number | null;
+}
+
+export interface IntelOpponentRecord {
+  opponent: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number | null;
+}
+
+/** One fight from our side; `fight_id` links to `/fights/:id`. */
+export interface IntelFightRow {
+  fight_id: number;
+  started_at: string;
+  event_id: number | null;
+  event_title: string | null;
+  comp_id: number | null;
+  comp_name: string | null;
+  outcome: IntelOutcome;
+  opponent: string | null;
+  segments: number;
+  /** Null when the fight has no computed rollup. */
+  our_players: number | null;
+  enemy_players: number | null;
+  kills: number | null;
+  deaths: number | null;
+  kd_ratio: number | null;
+  kill_fame: number | null;
+  death_fame: number | null;
+  avg_item_power: number | null;
+  enemy_avg_item_power: number | null;
+  estimated_silver_lost: number | null;
+}
+
+export interface IntelDataQuality {
+  fights_without_stats: number;
+  fights_unknown_outcome: number;
+  fights_without_comp: number;
+}
+
+/** `GET /api/intel/overview`. */
+export interface IntelOverview {
+  period: IntelPeriodView;
+  current: IntelTotals;
+  /** Null for `period=all`. */
+  previous: IntelTotals | null;
+  weekly: IntelWeek[];
+  recent_fights: IntelFightRow[];
+  top_opponents: IntelOpponentRecord[];
+  data_quality: IntelDataQuality;
+}
+
+export interface IntelCompOption {
+  comp_id: number;
+  name: string;
+}
+
+/** `GET /api/intel/fights`. */
+export interface IntelFightList {
+  period: IntelPeriodView;
+  items: IntelFightRow[];
+  total_items: number;
+  total_pages: number;
+  current_page: number;
+  limit: number;
+  /** Totals over every fight matching the filters, not just this page. */
+  summary: IntelTotals;
+  opponents: string[];
+  comps: IntelCompOption[];
+}
+
+export interface IntelFightsQuery {
+  period?: string;
+  from?: string;
+  to?: string;
+  outcome?: string;
+  opponent?: string;
+  comp_id?: number;
+  min_players?: number;
+  max_players?: number;
+  sort?: 'started_at' | 'players' | 'kills' | 'deaths' | 'kill_fame' | 'kd';
+  order?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
+
+export interface IntelCompUsage {
+  comp_id: number;
+  name: string;
+  events: number;
+  totals: IntelTotals;
+  last_used_at: string;
+  best_matchup: IntelOpponentRecord | null;
+  worst_matchup: IntelOpponentRecord | null;
+  matchups: IntelOpponentRecord[];
+}
+
+/** `GET /api/intel/comps`. */
+export interface IntelComps {
+  period: IntelPeriodView;
+  comps: IntelCompUsage[];
+  total_fights: number;
+  unattributed_fights: number;
+}
+
+export interface IntelRosterMember {
+  user_id: number;
+  username: string;
+  albion_name: string | null;
+  role: string;
+  is_officer: boolean;
+  active: boolean;
+  linked: boolean;
+  fights: number;
+  /** Percentage 0..100 of fights with a computed rollup; null when there were none. */
+  attendance_rate: number | null;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number | null;
+  kills: number;
+  deaths: number;
+  kd_ratio: number | null;
+  kill_fame: number;
+  death_fame: number;
+  avg_item_power: number | null;
+  weapons: WeaponShare[];
+  main_role: string | null;
+  last_fight_at: string | null;
+  last_fight_id: number | null;
+}
+
+export interface IntelUnlinkedPlayer {
+  name: string;
+  fights: number;
+}
+
+/** `GET /api/intel/roster`. `scope` is `self` when the caller may only see their own row. */
+export interface IntelRoster {
+  period: IntelPeriodView;
+  total_fights: number;
+  scope: 'all' | 'self';
+  members: IntelRosterMember[];
+  unlinked_players: IntelUnlinkedPlayer[];
+}
+
+export interface IntelRoleShare {
+  role: string;
+  count: number;
+}
+
+export interface IntelPlayerWeek {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+}
+
+export interface IntelPlayerFight {
+  fight_id: number;
+  started_at: string;
+  event_title: string | null;
+  comp_id: number | null;
+  comp_name: string | null;
+  outcome: IntelOutcome;
+  opponent: string | null;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  death_fame: number;
+  avg_item_power: number | null;
+  weapon: string | null;
+  role: string | null;
+}
+
+export interface IntelBuildUse {
+  build_id: number;
+  name: string;
+  role: string;
+  events: number;
+}
+
+export interface IntelPlayerComp {
+  comp_id: number;
+  name: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+/** `GET /api/intel/roster/{user_id}`. */
+export interface IntelPlayer {
+  period: IntelPeriodView;
+  total_fights: number;
+  member: IntelRosterMember;
+  weekly: IntelPlayerWeek[];
+  fights: IntelPlayerFight[];
+  weapons: WeaponShare[];
+  roles: IntelRoleShare[];
+  builds: IntelBuildUse[];
+  comps: IntelPlayerComp[];
+}
+
 /** One split that could not be completed in a batch, and why. */
 export interface BatchFailure {
   split_id: number;

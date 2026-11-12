@@ -74,10 +74,10 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
       @if (scout(); as s) {
         <a
           class="mb-4 inline-flex items-center gap-1.5 text-sm no-underline text-[var(--color-text-secondary)]"
-          routerLink="/intel"
+          routerLink="/intel/opponents"
         >
           <app-icon name="chevron-right" size="0.9rem" class="rotate-180" />
-          {{ t('intel.detail.back') }}
+          {{ t('intel.opponents.back') }}
         </a>
 
         <app-page-header [title]="s.opponent_guild_name" [subtitle]="s.name">
@@ -286,7 +286,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
                 <a
                   class="flex items-center justify-between border-t py-2 no-underline"
                   style="border-color: var(--color-border); color: var(--color-text)"
-                  [routerLink]="['/intel', hit.id]"
+                  [routerLink]="['/intel/opponents/scouts', hit.id]"
                 >
                   <span class="truncate text-sm">{{ hit.name }}</span>
                   <span class="mono shrink-0 text-xs" [style.color]="simColor(hit)">
