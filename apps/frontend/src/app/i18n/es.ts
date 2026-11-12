@@ -3451,4 +3451,16 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Totales de tenants',
+  'platform.tenants.summary.total': 'Total',
+  'platform.tenants.summary.suspendedHint': 'Pausado por un SuperAdmin',
+  'platform.tenants.kind': 'Tipo',
+  'platform.tenants.kind.guild': 'Gremio',
+  'platform.tenants.kind.alliance': 'Alianza',
+  'platform.tenants.searchLabel': 'Buscar tenants',
+  'platform.tenants.searchPlaceholder': 'Nombre, ID del gremio, slug o SuperAdmin',
+  'platform.tenants.filterKind': 'Tipo',
+  'platform.tenants.filterStatus': 'Estado',
+  'platform.tenants.rowActions': 'Acciones de {name}',
 };

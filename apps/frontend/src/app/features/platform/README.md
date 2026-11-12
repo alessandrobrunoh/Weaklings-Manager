@@ -9,11 +9,12 @@ This directory contains control-plane pages for the platform hub, platform admin
 - `PlatformHub` displays tenant/admin counts and panel links.
 - `PlatformAdmins` lists and assigns/revokes admins.
 - `PlatformFeatureFlags` displays a tenant feature catalog and saves flag values.
-- `PlatformTenants` lists, creates, suspends, and resumes tenants.
+- `PlatformTenants` lists guild and alliance tenants in a data table with a summary band (total, guilds, alliances, suspended), a search and kind/status filter bar, and a row menu to suspend or resume; creates tenants from a dialog.
 
 ## Invariants
 
 - Hub counts load independently; a failed count remains unavailable.
+- Tenants page summary counts cover every loaded tenant and show an em dash while loading; search and facets filter only the rows.
 - Admin assignment trims IDs, avoids duplicate rows, and blocks self-revocation.
 - Feature display uses local override, API value, then `false`; tenant state changes are limited to `active` and `suspended`.
 

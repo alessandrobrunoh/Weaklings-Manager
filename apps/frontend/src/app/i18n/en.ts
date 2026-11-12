@@ -3448,6 +3448,18 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Tenant totals',
+  'platform.tenants.summary.total': 'Total',
+  'platform.tenants.summary.suspendedHint': 'Paused by a SuperAdmin',
+  'platform.tenants.kind': 'Kind',
+  'platform.tenants.kind.guild': 'Guild',
+  'platform.tenants.kind.alliance': 'Alliance',
+  'platform.tenants.searchLabel': 'Search tenants',
+  'platform.tenants.searchPlaceholder': 'Name, guild ID, slug or SuperAdmin',
+  'platform.tenants.filterKind': 'Kind',
+  'platform.tenants.filterStatus': 'Status',
+  'platform.tenants.rowActions': 'Actions for {name}',
 } as const;
 
 export type TranslationKey = keyof typeof en;

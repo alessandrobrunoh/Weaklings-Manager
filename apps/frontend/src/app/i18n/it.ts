@@ -3460,4 +3460,16 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Totali dei tenant',
+  'platform.tenants.summary.total': 'Totale',
+  'platform.tenants.summary.suspendedHint': 'Sospeso da un SuperAdmin',
+  'platform.tenants.kind': 'Tipo',
+  'platform.tenants.kind.guild': 'Gilda',
+  'platform.tenants.kind.alliance': 'Alleanza',
+  'platform.tenants.searchLabel': 'Cerca tenant',
+  'platform.tenants.searchPlaceholder': 'Nome, ID gilda, slug o SuperAdmin',
+  'platform.tenants.filterKind': 'Tipo',
+  'platform.tenants.filterStatus': 'Stato',
+  'platform.tenants.rowActions': 'Azioni per {name}',
 };

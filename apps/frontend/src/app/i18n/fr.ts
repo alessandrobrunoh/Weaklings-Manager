@@ -3269,4 +3269,16 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Totaux des locataires',
+  'platform.tenants.summary.total': 'Total',
+  'platform.tenants.summary.suspendedHint': 'Suspendu par un SuperAdmin',
+  'platform.tenants.kind': 'Type',
+  'platform.tenants.kind.guild': 'Guilde',
+  'platform.tenants.kind.alliance': 'Alliance',
+  'platform.tenants.searchLabel': 'Rechercher des locataires',
+  'platform.tenants.searchPlaceholder': 'Nom, ID de guilde, slug ou SuperAdmin',
+  'platform.tenants.filterKind': 'Type',
+  'platform.tenants.filterStatus': 'Statut',
+  'platform.tenants.rowActions': 'Actions pour {name}',
 };

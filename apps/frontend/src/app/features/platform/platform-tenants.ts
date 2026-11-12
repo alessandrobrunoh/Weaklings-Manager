@@ -11,18 +11,40 @@ import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+
+type KindFilter = 'all' | 'guild' | 'alliance';
+type StatusFilter = 'all' | 'active' | 'suspended' | 'provisioning';
 
 /**
- * Control-plane tenant list: register, suspend, and resume Discord guilds.
+ * Control-plane tenant list: register, suspend, and resume Discord servers (guilds and alliances).
+ *
+ * The page owns the search and facet state and filters the rows it already loaded; the summary
+ * band counts every tenant, not the filtered subset. Each name links to the tenant detail page.
  */
 @Component({
   selector: 'app-platform-tenants',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [COMPACT_FEATURE_STYLES],
-  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, RouterLink],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    FilterBar,
+    Icon,
+    Menu,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    StatusChip,
+    SummaryBand,
+  ],
   template: `
     <app-page-header [title]="t('platform.tenants.title')" [subtitle]="t('platform.tenants.subtitle')">
       <button
@@ -36,16 +58,47 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
     </app-page-header>
 
     <app-page-stack>
+      <app-summary-band [ariaLabel]="t('platform.tenants.summary.label')" [items]="summary()" />
+
+      <app-filter-bar
+        [searchLabel]="t('platform.tenants.searchLabel')"
+        [searchPlaceholder]="t('platform.tenants.searchPlaceholder')"
+        [query]="query()"
+        [activeCount]="activeFilterCount()"
+        (queryChange)="query.set($event)"
+        (clear)="clearFilters()"
+      >
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('platform.tenants.filterKind') }}</span>
+          <select class="select select--sm" [value]="kindFilter()" (change)="onKindChange($event)">
+            <option value="all">{{ t('common.all') }}</option>
+            <option value="guild">{{ t('platform.tenants.kind.guild') }}</option>
+            <option value="alliance">{{ t('platform.tenants.kind.alliance') }}</option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('platform.tenants.filterStatus') }}</span>
+          <select class="select select--sm" [value]="statusFilter()" (change)="onStatusChange($event)">
+            <option value="all">{{ t('common.all') }}</option>
+            <option value="active">{{ t('platform.tenants.status.active') }}</option>
+            <option value="suspended">{{ t('platform.tenants.status.suspended') }}</option>
+            <option value="provisioning">{{ t('platform.tenants.status.provisioning') }}</option>
+          </select>
+        </label>
+      </app-filter-bar>
+
       <app-data-table
         [columns]="columns()"
-        [rows]="tenants()"
+        [rows]="visibleRows()"
         [loading]="loading()"
         [error]="loadFailed()"
         (retry)="load()"
         [trackBy]="trackById"
-        [emptyLabel]="'platform.tenants.empty'"
+        [hideSearch]="true"
+        [emptyLabel]="emptyLabel()"
         emptyIcon="users"
         [pageSize]="25"
+        [ariaLabel]="t('platform.tenants.title')"
       >
         <ng-template dataTableCell="name" let-row>
           <a
@@ -54,37 +107,24 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
           >
             {{ row.name }}
           </a>
+          <span class="block font-mono text-xs" style="color: var(--color-text-secondary)">{{ row.id }}</span>
         </ng-template>
-        <ng-template dataTableCell="superadmin" let-row>
-          <span class="font-mono text-sm">{{ row.owner_discord_id || t('platform.tenants.none') }}</span>
-        </ng-template>
-        <ng-template dataTableCell="rank" let-row>
-          <span class="text-sm">{{ row.rank_name || t('platform.tenants.none') }}</span>
+        <ng-template dataTableCell="kind" let-row>
+          <span class="text-sm">{{ kindLabel(row.kind) }}</span>
         </ng-template>
         <ng-template dataTableCell="status" let-row>
-          <span class="chip">{{ statusLabel(row.status) }}</span>
+          <app-status-chip [value]="row.status" [label]="statusLabel(row.status)" />
+        </ng-template>
+        <ng-template dataTableCell="created" let-row>
+          <span class="num text-sm">{{ formatDate(row.created_at) }}</span>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
-          <div class="flex items-center justify-end gap-2">
-            @if (row.status === 'active') {
-              <button
-                type="button"
-                class="btn btn--outline btn--sm"
-                [disabled]="busyId() === row.id"
-                (click)="setStatus(row, 'suspended')"
-              >
-                {{ t('platform.tenants.suspend') }}
-              </button>
-            } @else if (row.status === 'suspended') {
-              <button
-                type="button"
-                class="btn btn--primary btn--sm"
-                [disabled]="busyId() === row.id"
-                (click)="setStatus(row, 'active')"
-              >
-                {{ t('platform.tenants.resume') }}
-              </button>
-            }
+          <div class="flex justify-end">
+            <app-menu
+              [items]="rowMenu(row)"
+              [label]="t('platform.tenants.rowActions', { name: row.name })"
+              (itemSelect)="onRowAction(row, $event)"
+            />
           </div>
         </ng-template>
       </app-data-table>
@@ -180,35 +220,101 @@ export class PlatformTenants {
   protected readonly newName = signal('');
   protected readonly newSlug = signal('');
 
+  protected readonly query = signal('');
+  protected readonly kindFilter = signal<KindFilter>('all');
+  protected readonly statusFilter = signal<StatusFilter>('all');
+
+  protected readonly activeFilterCount = computed(
+    () => (this.kindFilter() === 'all' ? 0 : 1) + (this.statusFilter() === 'all' ? 0 : 1),
+  );
+
+  /** Rows that pass the search text and both facets. */
+  protected readonly visibleRows = computed<readonly PlatformTenant[]>(() => {
+    const needle = this.query().trim().toLowerCase();
+    const kind = this.kindFilter();
+    const status = this.statusFilter();
+    return this.tenants().filter((row) => {
+      if (kind !== 'all' && row.kind !== kind) {
+        return false;
+      }
+      if (status !== 'all' && row.status !== status) {
+        return false;
+      }
+      if (!needle) {
+        return true;
+      }
+      return [row.name, row.id, row.slug, row.owner_discord_id, row.rank_name].some((field) =>
+        field?.toLowerCase().includes(needle),
+      );
+    });
+  });
+
+  /** Counts over every loaded tenant; null while loading so a zero never reads as a result. */
+  protected readonly summary = computed<readonly SummaryItem[]>(() => {
+    const loaded = !this.loading();
+    const rows = this.tenants();
+    const count = (predicate: (row: PlatformTenant) => boolean): number | null =>
+      loaded ? rows.filter(predicate).length : null;
+    return [
+      { label: this.t('platform.tenants.summary.total'), value: count(() => true) },
+      { label: this.t('platform.tenants.kind.guild'), value: count((row) => row.kind === 'guild') },
+      { label: this.t('platform.tenants.kind.alliance'), value: count((row) => row.kind === 'alliance') },
+      {
+        label: this.t('platform.tenants.status.suspended'),
+        value: count((row) => row.status === 'suspended'),
+        hint: this.t('platform.tenants.summary.suspendedHint'),
+        tone: 'warning',
+      },
+    ];
+  });
+
+  protected readonly emptyLabel = computed<TranslationKey>(() =>
+    this.query().trim() || this.activeFilterCount() > 0 ? 'ui.table.noMatches' : 'platform.tenants.empty',
+  );
+
   protected readonly columns = computed<readonly DataTableColumn<PlatformTenant>[]>(() => [
-    { key: 'name', label: 'platform.tenants.name', searchable: true, accessor: (row) => row.name },
-    { key: 'id', label: 'platform.tenants.id', searchable: true, accessor: (row) => row.id },
-    {
-      key: 'superadmin',
-      label: 'platform.tenants.superadmin',
-      searchable: true,
-      accessor: (row) => row.owner_discord_id ?? '',
-    },
-    {
-      key: 'rank',
-      label: 'platform.tenants.rank',
-      searchable: true,
-      accessor: (row) => row.rank_name ?? '',
-    },
-    { key: 'status', label: 'platform.tenants.status' },
+    { key: 'name', label: 'platform.tenants.name', accessor: (row) => row.name },
+    { key: 'kind', label: 'platform.tenants.kind', accessor: (row) => row.kind ?? '' },
+    { key: 'status', label: 'platform.tenants.status', accessor: (row) => row.status },
+    { key: 'created', label: 'platform.tenants.created', accessor: (row) => row.created_at ?? '' },
     { key: 'actions', label: 'common.actions', align: 'right' },
   ]);
 
   protected readonly trackById = (row: PlatformTenant) => row.id;
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   protected onText(target: ReturnType<typeof signal<string>>, event: Event): void {
     target.set((event.target as HTMLInputElement).value);
   }
 
+  protected onKindChange(event: Event): void {
+    this.kindFilter.set((event.target as HTMLSelectElement).value as KindFilter);
+  }
+
+  protected onStatusChange(event: Event): void {
+    this.statusFilter.set((event.target as HTMLSelectElement).value as StatusFilter);
+  }
+
+  protected clearFilters(): void {
+    this.query.set('');
+    this.kindFilter.set('all');
+    this.statusFilter.set('all');
+  }
+
   constructor() {
     void this.load();
+  }
+
+  protected kindLabel(kind: string | undefined): string {
+    if (kind === 'guild') {
+      return this.t('platform.tenants.kind.guild');
+    }
+    if (kind === 'alliance') {
+      return this.t('platform.tenants.kind.alliance');
+    }
+    return '—';
   }
 
   protected statusLabel(status: string): string {
@@ -222,6 +328,34 @@ export class PlatformTenants {
       return this.t('platform.tenants.status.provisioning');
     }
     return status;
+  }
+
+  protected formatDate(value: string | null): string {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) {
+      return '—';
+    }
+    return new Intl.DateTimeFormat(this.translate.locale(), { dateStyle: 'medium' }).format(date);
+  }
+
+  /** Row actions: suspend an active tenant, resume a suspended one. */
+  protected rowMenu(row: PlatformTenant): readonly MenuItem[] {
+    const busy = this.busyId() === row.id;
+    if (row.status === 'active') {
+      return [{ id: 'suspend', label: this.t('platform.tenants.suspend'), danger: true, disabled: busy }];
+    }
+    if (row.status === 'suspended') {
+      return [{ id: 'resume', label: this.t('platform.tenants.resume'), disabled: busy }];
+    }
+    return [];
+  }
+
+  protected onRowAction(row: PlatformTenant, id: string): void {
+    if (id === 'suspend') {
+      void this.setStatus(row, 'suspended');
+    } else if (id === 'resume') {
+      void this.setStatus(row, 'active');
+    }
   }
 
   protected async load(): Promise<void> {

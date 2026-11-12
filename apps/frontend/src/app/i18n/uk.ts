@@ -3265,4 +3265,16 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Підсумки орендарів',
+  'platform.tenants.summary.total': 'Усього',
+  'platform.tenants.summary.suspendedHint': 'Призупинено SuperAdmin',
+  'platform.tenants.kind': 'Тип',
+  'platform.tenants.kind.guild': 'Гільдія',
+  'platform.tenants.kind.alliance': 'Альянс',
+  'platform.tenants.searchLabel': 'Пошук орендарів',
+  'platform.tenants.searchPlaceholder': 'Назва, ID гільдії, slug або SuperAdmin',
+  'platform.tenants.filterKind': 'Тип',
+  'platform.tenants.filterStatus': 'Статус',
+  'platform.tenants.rowActions': 'Дії для {name}',
 };
