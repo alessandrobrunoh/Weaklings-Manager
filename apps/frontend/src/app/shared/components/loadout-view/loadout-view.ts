@@ -16,37 +16,12 @@ import {
   isAlbionItemQuality,
 } from '../../data/albion-item-quality';
 import { albionItemSupportsQuality } from '../../data/albion-equipment-catalog';
+import {
+  CORE_SLOTS,
+  SLOT_LABEL_KEYS,
+  SLOT_ORDER,
+} from '../../../features/comps/build-loadouts';
 import { AlbionAbilitiesService } from '../../services/albion-abilities.service';
-
-/** Reading order of a build: weapons first, then armour, then what the player carries. */
-const SLOT_ORDER: readonly BuildSlot[] = [
-  'weapon',
-  'off_hand',
-  'head',
-  'armor',
-  'shoes',
-  'cape',
-  'bag',
-  'food',
-  'potion',
-  'mount',
-];
-
-/** Slots a main loadout is expected to fill; an empty one is shown as "not set" rather than hidden. */
-const CORE_SLOTS: ReadonlySet<BuildSlot> = new Set(['weapon', 'head', 'armor', 'shoes']);
-
-const SLOT_LABEL_KEYS: Readonly<Record<BuildSlot, TranslationKey>> = {
-  weapon: 'equipment.slot.weapon',
-  off_hand: 'equipment.slot.offHand',
-  head: 'equipment.slot.head',
-  armor: 'equipment.slot.armor',
-  shoes: 'equipment.slot.shoes',
-  cape: 'equipment.slot.cape',
-  bag: 'equipment.slot.bag',
-  food: 'equipment.slot.food',
-  potion: 'equipment.slot.potion',
-  mount: 'equipment.slot.mount',
-};
 
 const QUALITY_LABEL_KEYS: Readonly<Record<number, TranslationKey>> = {
   1: 'loadout.quality.1',

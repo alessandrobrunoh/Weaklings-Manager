@@ -17,39 +17,7 @@ import { albionItemSupportsQuality } from '../../data/albion-equipment-catalog';
 import { AbilityBar, type AbilityChoiceChange } from '../ability-bar/ability-bar';
 import { Dialog } from '../dialog/dialog';
 import { TranslateService } from '../../../core/services/translate.service';
-
-/**
- * Canonical character-sheet slot order.
- *
- * Order matters for keyboard tab-flow and for the empty-state count chip:
- * it mirrors the visual reading order of an Albion paper doll so screen
- * readers announce slots in the same sequence players scan them.
- */
-const SLOT_ORDER: readonly BuildSlot[] = [
-  'bag',
-  'head',
-  'cape',
-  'weapon',
-  'armor',
-  'off_hand',
-  'potion',
-  'shoes',
-  'food',
-  'mount',
-];
-
-const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
-  bag: 'equipment.slot.bag',
-  head: 'equipment.slot.head',
-  cape: 'equipment.slot.cape',
-  weapon: 'equipment.slot.weapon',
-  armor: 'equipment.slot.armor',
-  off_hand: 'equipment.slot.offHand',
-  potion: 'equipment.slot.potion',
-  shoes: 'equipment.slot.shoes',
-  food: 'equipment.slot.food',
-  mount: 'equipment.slot.mount',
-};
+import { SLOT_LABEL_KEYS, SLOT_ORDER } from '../../../features/comps/build-loadouts';
 
 /**
  * Slot cards laid out as a 3×3 character sheet plus a centred mount.
@@ -127,7 +95,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
       color: var(--color-text);
       cursor: pointer;
       text-align: center;
-      transition: border-color 120ms ease-out, background-color 120ms ease-out, transform 120ms ease-out;
+      transition: border-color 120ms ease-out, background-color 120ms ease-out;
     }
 
     .equipment-picker__option:hover,
@@ -135,7 +103,6 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
     .equipment-picker__option--selected {
       border-color: var(--color-primary);
       background: var(--color-primary-container);
-      transform: translateY(-1px);
     }
 
     .equipment-picker__option-icon {
@@ -260,9 +227,9 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
 
                 <label class="text-left">
                   <span class="label">{{ t('equipment.tier') }}</span>
-                  <select class="select" [value]="draftTier()" (change)="onTierChange($event)">
+                  <select class="select" (change)="onTierChange($event)">
                     @for (tier of tiers(); track tier) {
-                      <option [value]="tier">{{ tier }}</option>
+                      <option [value]="tier" [selected]="tier === draftTier()">{{ tier }}</option>
                     }
                   </select>
                 </label>
@@ -270,13 +237,11 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                 @if (supportsEnchantmentForSlot(slot)) {
                   <label class="text-left">
                     <span class="label">{{ t('equipment.enchantment') }}</span>
-                    <select
-                      class="select"
-                      [value]="draftEnchantment()"
-                      (change)="onEnchantmentChange($event)"
-                    >
+                    <select class="select" (change)="onEnchantmentChange($event)">
                       @for (level of enchantments; track level) {
-                        <option [value]="level">{{ level === 0 ? t('equipment.plain') : '.' + level }}</option>
+                        <option [value]="level" [selected]="level === draftEnchantment()">
+                          {{ level === 0 ? t('equipment.plain') : '.' + level }}
+                        </option>
                       }
                     </select>
                   </label>
@@ -285,9 +250,9 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                 @if (supportsQualityForSlot(slot)) {
                   <label class="text-left">
                     <span class="label">{{ t('equipment.quality') }}</span>
-                    <select class="select" [value]="draftQuality()" (change)="onQualityChange($event)">
+                    <select class="select" (change)="onQualityChange($event)">
                       @for (grade of qualities; track grade.id) {
-                        <option [value]="grade.id">{{ grade.label }}</option>
+                        <option [value]="grade.id" [selected]="grade.id === draftQuality()">{{ grade.label }}</option>
                       }
                     </select>
                   </label>
@@ -302,7 +267,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   </div>
                   <div
                     class="equipment-picker__results"
-                    role="listbox"
+                    role="group"
                     [attr.aria-label]="t('equipment.availableItems')"
                     [attr.aria-busy]="searchLoading()"
                   >
@@ -315,10 +280,8 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                         <button
                           type="button"
                           class="equipment-picker__option"
-                          role="option"
                           [class.equipment-picker__option--selected]="isSelected(item)"
-                          [attr.aria-selected]="isSelected(item)"
-                          [attr.aria-label]="item.name + ', ' + item.tier"
+                          [attr.aria-pressed]="isSelected(item)"
                           (click)="selectItem(item)"
                         >
                           <img
@@ -331,7 +294,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                           />
                           <span class="equipment-picker__option-copy">
                             <strong>{{ item.name }}</strong>
-                            <small>{{ item.tier }} · {{ item.identifier ?? '' }}</small>
+                            <small>{{ optionTier(item) }}</small>
                           </span>
                           @if (isSelected(item)) {
                             <span class="equipment-picker__check" aria-hidden="true">✓ {{ t('equipment.selected') }}</span>
@@ -467,11 +430,16 @@ export class EquipmentGrid {
   }
 
   protected slotLabel(slot: BuildSlot): string {
-    return this.t(SLOT_LABELS[slot] as Parameters<TranslateService['t']>[0]);
+    return this.t(SLOT_LABEL_KEYS[slot]);
   }
 
   protected isSelected(item: OpenAlbionItem): boolean {
     return String(item.id) === this.draftItemId();
+  }
+
+  /** `T8`-style tier of a catalog result, for the line under its name. */
+  protected optionTier(item: OpenAlbionItem): string {
+    return albionTierLabel(item.tier, 0);
   }
 
   protected selectItem(item: OpenAlbionItem): void {
