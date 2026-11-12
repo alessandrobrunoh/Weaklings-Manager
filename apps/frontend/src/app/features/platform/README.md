@@ -8,7 +8,7 @@ This directory contains control-plane pages for the platform hub, platform admin
 
 - `PlatformHub` displays tenant/admin counts and panel links.
 - `PlatformAdmins` lists and assigns/revokes admins.
-- `PlatformFeatureFlags` displays a tenant feature catalog and saves flag values.
+- `PlatformFeatureFlags` lists the feature catalog for one tenant as a table (rank allowance, tenant override, toggle), filters it by search, state and changed rows, confirms before turning any feature off, and saves the flag values.
 - `PlatformTenants` lists, creates, suspends, and resumes tenants.
 
 ## Invariants
@@ -16,6 +16,7 @@ This directory contains control-plane pages for the platform hub, platform admin
 - Hub counts load independently; a failed count remains unavailable.
 - Admin assignment trims IDs, avoids duplicate rows, and blocks self-revocation.
 - Feature display uses local override, API value, then `false`; tenant state changes are limited to `active` and `suspended`.
+- Feature saves send every flag. Save stays disabled until a flag differs from the saved value, and a save that turns a feature off waits for confirmation. A failed save keeps the edits.
 
 ## Side Effects
 
