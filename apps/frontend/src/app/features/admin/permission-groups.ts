@@ -34,3 +34,27 @@ export function groupPermissions(
   }
   return [...groups.entries()].map(([resource, keys]) => ({ resource, keys }));
 }
+
+export interface PermissionParts {
+  /** Last segment of the key: `edit` for `comps.builds.edit`, `view_others` for `bank.view_others`. */
+  readonly verb: string;
+  /** Segments between the resource and the verb, underscores as spaces: `builds`, `build categories`. */
+  readonly object: string;
+}
+
+/**
+ * Splits a permission key into the verb and the object it acts on, so the
+ * matrix can show "Edit builds" instead of only the raw key.
+ */
+export function permissionParts(key: string): PermissionParts {
+  const action = key.split('.').slice(1);
+  if (action.length === 0) {
+    return { verb: '', object: '' };
+  }
+  const verb = action[action.length - 1];
+  const object = action
+    .slice(0, -1)
+    .join(' ')
+    .replace(/_/g, ' ');
+  return { verb, object };
+}
