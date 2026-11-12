@@ -1,4 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  Injector,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -28,19 +39,16 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
-import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Icon } from '../../shared/components/icon/icon';
-import { Loading } from '../../shared/components/loading/loading';
+import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   SearchDialog,
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
-import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import {
   evenParticipantWeight,
   participantWeightsAreValid,
@@ -50,6 +58,45 @@ import {
 import { canActOnSplit } from './split-access';
 
 type DetailMode = 'view' | 'edit';
+type StatusTone = 'warning' | 'success' | 'neutral' | 'error';
+type PrimaryAction = 'complete' | 'edit' | 'unarchive' | null;
+type CloseAction = 'not-completed' | 'lost';
+type PayoutKind = 'paid' | 'donated' | 'requested' | 'pending' | 'none';
+type ParticipantSortKey = 'username' | 'amount' | 'weight';
+
+interface ParticipantSort {
+  readonly key: ParticipantSortKey;
+  readonly direction: 'asc' | 'desc';
+}
+
+/** One participant as shown in the read-only table. */
+interface ParticipantRow {
+  readonly user_id: number;
+  readonly username: string;
+  readonly weight: number;
+  /** Weight as a percentage of the total weight of every participant. */
+  readonly poolPct: number;
+  readonly amount: number;
+  readonly payout: PayoutKind;
+}
+
+/** Money flow from loot value to the amount shared out, all in silver. */
+interface Ledger {
+  readonly estimated: number;
+  readonly bags: number;
+  readonly bagList: readonly number[];
+  readonly repair: number;
+  readonly subtotal: number;
+  readonly feePct: number;
+  readonly feeAmount: number;
+  readonly net: number;
+}
+
+interface Presentation {
+  readonly label: TranslationKey;
+  readonly icon: IconName;
+  readonly tone: StatusTone;
+}
 
 const DEFAULT_SPLIT_FEE = 20;
 
@@ -82,831 +129,69 @@ function parsePercentageInput(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function buildLedger(
+  estimated: number,
+  bags: number,
+  bagList: readonly number[],
+  repair: number,
+  feePct: number,
+  netOverride: number | null,
+): Ledger {
+  const subtotal = estimated - repair + bags;
+  const net = netOverride ?? Math.max(0, subtotal * (1 - feePct / 100));
+  // Derived from the net so the lines always add up to the amount that is shared out.
+  const feeAmount = Math.max(0, subtotal - net);
+  return { estimated, bags, bagList, repair, subtotal, feePct, feeAmount, net };
+}
+
+const STATUS_ICONS: Readonly<Record<string, IconName>> = {
+  pending: 'circle-dot',
+  awaiting_event: 'calendar',
+  completed: 'check',
+  not_completed: 'lock',
+  lost: 'close',
+};
+
+const PAYOUT_PRESENTATION: Readonly<Record<PayoutKind, Presentation>> = {
+  paid: { label: 'bank.status.withdrawn', icon: 'check', tone: 'success' },
+  donated: { label: 'bank.status.donated', icon: 'check', tone: 'success' },
+  requested: { label: 'bank.status.requested', icon: 'bank', tone: 'warning' },
+  pending: { label: 'bank.status.pending', icon: 'circle-dot', tone: 'warning' },
+  none: { label: 'splits.detail.payout.none', icon: 'circle-dot', tone: 'neutral' },
+};
+
+const TRANSACTION_PRESENTATION: Readonly<Record<TransactionStatus, Presentation>> = {
+  pending: { label: 'bank.status.pending', icon: 'circle-dot', tone: 'warning' },
+  requested: { label: 'bank.status.requested', icon: 'bank', tone: 'warning' },
+  rejected: { label: 'bank.status.rejected', icon: 'close', tone: 'error' },
+  withdrawn: { label: 'bank.status.withdrawn', icon: 'check', tone: 'success' },
+  donated: { label: 'bank.status.donated', icon: 'check', tone: 'success' },
+};
+
 /**
- * View-first split page. Officers can switch to edit only while the split
- * is still pending.
+ * Split detail page: what the split is, how the money flows from loot to net, who gets what
+ * and whether they were paid, plus the one next action for the current state. Officers switch
+ * to edit mode while the split can still change.
  */
 @Component({
   selector: 'app-split-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DataTable,
-    DataTableCell,
     Dialog,
+    EmptyState,
     ErrorState,
     Icon,
-    Loading,
+    NgTemplateOutlet,
     PageHeader,
     PageStack,
     RouterLink,
     SearchDialog,
-    StatusChip,
   ],
-  styles: `
-    .workbench-page {
-      --page-gap: 0.75rem;
-      min-width: 0;
-      overflow: hidden;
-    }
-    .workbench-page > section,
-    .workbench-page > app-data-table {
-      min-width: 0;
-    }
-    .workbench-page .card {
-      border-radius: var(--radius-md);
-    }
-  `,
-  template: `
-    @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
-    } @else if (loadFailed() || !split()) {
-      <app-error-state
-        [message]="t('common.error')"
-        [retryLabel]="t('common.retry')"
-        (retry)="reload()"
-      />
-    } @else {
-      @if (split(); as detail) {
-        <app-page-header
-          [title]="detail.note || t('splits.untitled', { id: detail.id })"
-          [badge]="detail.origin_read_only ? t('splits.readOnlyCopy') : detail.archived_at ? t('splits.archived') : undefined"
-        >
-          <a routerLink="/splits" class="btn btn--ghost btn--sm">
-            <app-icon name="chevron-left" size="0.875rem" />
-            {{ t('splits.detail.back') }}
-          </a>
-          @if (!isAllianceTenant() && shareStatus()?.shared) {
-            <span class="chip text-xs">{{ t('splits.sharedWithAlliance') }}</span>
-          }
-          @if (isReadOnly()) {
-            <span class="chip text-xs">{{ detail.origin_read_only ? t('splits.readOnlyCopy') : t('splits.readOnlyAlliance') }}</span>
-          }
-          @if (canShare()) {
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              (click)="shareWithAlliance()"
-              [disabled]="saving()"
-            >
-              {{ t('splits.shareWithAlliance') }}
-            </button>
-            @if (shareStatus()?.shared) {
-              <button
-                type="button"
-                class="btn btn--ghost btn--sm"
-                (click)="unshareWithAlliance()"
-                [disabled]="saving()"
-              >
-                {{ t('splits.unshareWithAlliance') }}
-              </button>
-            }
-          }
-          @if (canEdit()) {
-            <button type="button" class="btn btn--ghost btn--sm" (click)="toggleMode()">
-              {{ mode() === 'edit' ? t('common.close') : t('common.edit') }}
-            </button>
-          }
-          @if (detail.status === 'pending' && canAct() && !detail.archived_at) {
-            <button
-              type="button"
-              class="btn btn--primary btn--sm"
-              (click)="showCompleteConfirmDialog.set(true)"
-            >
-              {{ t('splits.payout_complete') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              (click)="closeSplit('not-completed')"
-            >
-              {{ t('splits.mark_not_completed') }}
-            </button>
-            <button type="button" class="btn btn--danger btn--sm" (click)="closeSplit('lost')">
-              {{ t('splits.mark_lost') }}
-            </button>
-          }
-          @if (canDelete()) {
-            @if (detail.archived_at) {
-              <button
-                type="button"
-                class="btn btn--outline btn--sm"
-                [disabled]="saving()"
-                (click)="unarchiveSplit()"
-              >
-                {{ t('splits.unarchive') }}
-              </button>
-            } @else {
-              <button
-                type="button"
-                class="btn btn--outline btn--sm"
-                (click)="showArchive.set(true)"
-              >
-                {{ t('splits.archive') }}
-              </button>
-            }
-          }
-        </app-page-header>
-
-        <app-page-stack class="workbench-page">
-          <section class="card p-4 sm:p-5">
-            <div class="mb-1.5 flex flex-wrap items-center gap-2">
-              <span class="chip" [class]="'chip chip--' + statusTone(detail.status)">
-                <span class="status-dot"></span>{{ statusLabel(detail.status) }}
-              </span>
-            </div>
-            @if (detail.status === 'awaiting_event') {
-              <p class="text-xs text-[var(--color-warning)]" role="status">
-                {{ t('splits.awaiting_event.message') }}
-              </p>
-            }
-            <p class="text-xs text-[var(--color-text-secondary)]">
-              {{ t('splits.created_by', { name: detail.created_by_username }) }}
-              &middot; {{ formatDate(detail.created_at) }}
-              @if (detail.event_title && detail.event_id) {
-                &middot; {{ t('splits.event_linked') }}:
-                <a
-                  class="text-primary no-underline hover:underline"
-                  [routerLink]="['/events', detail.event_id]"
-                >
-                  {{ detail.event_title }}
-                </a>
-              }
-              @if (detail.island_tab_id) {
-                &middot; {{ locationLabel(detail) }}
-              }
-            </p>
-          </section>
-
-          @if (mode() === 'edit' && canEdit()) {
-            <form id="edit-split-form" class="space-y-4" (submit)="onEditSubmit($event)">
-              <div class="grid gap-4 lg:grid-cols-2">
-                <!-- LEFT COLUMN: NOTE & FINANCIALS -->
-                <div class="space-y-4">
-                  <!-- Note & Location Card -->
-                  <section class="card p-4 space-y-3">
-                    <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                      {{ t('splits.location') }} &middot; {{ t('splits.note') }}
-                    </h3>
-
-                    <label class="block">
-                      <span class="label font-medium text-xs">{{ t('common.name') }} / {{ t('splits.note') }}</span>
-                      <input
-                        class="input text-xs"
-                        type="text"
-                        [value]="editNote()"
-                        (input)="onEditNoteChange($event)"
-                      />
-                    </label>
-
-                    @if (isCompletedSplit()) {
-                      <p class="text-xs" style="color: var(--color-text-secondary)">
-                        {{ t('splits.amendHint') }}
-                      </p>
-                    }
-                    <div>
-                      <span class="label font-medium text-xs">{{ t('splits.event_linked') }}</span>
-                      <div class="flex items-center gap-2">
-                        <div
-                          class="input flex flex-1 items-center bg-[var(--color-surface-1)] text-xs truncate"
-                        >
-                          <span class="truncate">{{ editEventTitle() || t('splits.no_event') }}</span>
-                        </div>
-                        @if (!isCompletedSplit()) {
-                          <button
-                            type="button"
-                            class="btn btn--outline btn--sm text-xs whitespace-nowrap"
-                            (click)="showEventSearch.set(true)"
-                          >
-                            {{ t('splits.link_event') }}
-                          </button>
-                          @if (editEventId()) {
-                            <button
-                              type="button"
-                              class="btn btn--danger btn--sm whitespace-nowrap"
-                              [attr.aria-label]="t('splits.unlink_event')"
-                              (click)="unlinkEditEvent()"
-                            >
-                              <app-icon name="close" size="0.875rem" />
-                            </button>
-                          }
-                        }
-                      </div>
-                    </div>
-
-                    <div class="grid gap-2 sm:grid-cols-2">
-                      <label class="block">
-                        <span class="label font-medium text-xs">{{ t('splits.island') }}</span>
-                        <select class="select text-xs" (change)="onEditIslandChange($event)">
-                          <option value="" [selected]="!editIslandId()">{{ t('splits.pick_island') }}</option>
-                          @for (island of islands(); track island.id) {
-                            <option
-                              [value]="island.id"
-                              [selected]="isSelectedId(editIslandId(), island.id)"
-                            >
-                              {{ cityLabel(island.city) }} &middot; {{ island.name }}
-                            </option>
-                          }
-                        </select>
-                      </label>
-                      <label class="block">
-                        <span class="label font-medium text-xs">{{ t('splits.tab') }}</span>
-                        <select
-                          class="select text-xs"
-                          [disabled]="!editIslandId()"
-                          (change)="onEditTabChange($event)"
-                        >
-                          <option value="" [selected]="!editTabId()">{{ t('splits.pick_tab') }}</option>
-                          @for (tab of editIslandTabs(); track tab.id) {
-                            <option [value]="tab.id" [selected]="isSelectedId(editTabId(), tab.id)">
-                              {{ tab.name }}
-                            </option>
-                          }
-                        </select>
-                      </label>
-                    </div>
-                  </section>
-
-                  <!-- Silver Breakdown & Live Computation -->
-                  <section class="card p-4 space-y-3">
-                    <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                      {{ t('splits.net_value') }}
-                    </h3>
-
-                    <div class="grid gap-2 sm:grid-cols-3">
-                      <label class="block">
-                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
-                        <input
-                          class="input font-mono text-xs"
-                          type="number"
-                          min="0"
-                          [value]="editEstimated()"
-                          (input)="onEditEstimatedChange($event)"
-                        />
-                      </label>
-                      <label class="block">
-                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.fee') }}</span>
-                        <div class="flex items-center gap-1">
-                          <input
-                            class="input font-mono text-xs"
-                            type="text"
-                            inputmode="decimal"
-                            [value]="editFeeInput()"
-                            (input)="onEditFeeChange($event)"
-                          />
-                          <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
-                        </div>
-                      </label>
-                      <label class="block">
-                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
-                        <input
-                          class="input font-mono text-xs"
-                          type="number"
-                          min="0"
-                          [value]="editRepair()"
-                          (input)="onEditRepairChange($event)"
-                        />
-                      </label>
-                    </div>
-                    <div class="space-y-2">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.bags_value') }} (+)</span>
-                        <button type="button" class="btn btn--outline btn--sm" (click)="addEditBag()">
-                          {{ t('splits.add_bag') }}
-                        </button>
-                      </div>
-                      @for (bag of editBagRows(); track bag.key) {
-                        <div class="flex items-center gap-2">
-                          <input
-                            class="input font-mono text-xs"
-                            type="number"
-                            min="0"
-                            [value]="bag.amount"
-                            [attr.aria-label]="t('splits.bags_value')"
-                            (input)="onEditBagAmountChange(bag.key, $event)"
-                          />
-                          <button
-                            type="button"
-                            class="btn btn--ghost btn--sm inline-flex cursor-pointer"
-                            [attr.aria-label]="t('splits.remove_bag')"
-                            (click)="removeEditBag(bag.key)"
-                          >
-                            <app-icon name="close" size="0.875rem" />
-                          </button>
-                        </div>
-                      } @empty {
-                        <p class="text-xs text-[var(--color-text-secondary)]">{{ t('splits.bags_empty') }}</p>
-                      }
-                      @if (editBags() > 0) {
-                        <p class="text-xs font-mono text-[var(--color-text-secondary)]">
-                          {{ t('splits.bags_total') }} +{{ formatAmount(editBags()) }}
-                        </p>
-                      }
-                    </div>
-
-                    <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between">
-                      <div>
-                        <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                          {{ t('splits.net_value') }}
-                        </span>
-                        <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
-                          ({{ formatAmount(editEstimated()) }} − {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}) − {{ formatAmount((editEstimated() - editRepair() + editBags()) * editFee() / 100) }} ({{ editFee() }}%)
-                        </p>
-                      </div>
-                      <div class="text-right">
-                        <span class="font-mono text-xl font-medium text-[var(--color-success)]">
-                          {{ formatAmount(editNetPreview()) }}
-                        </span>
-                        <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
-                          silver
-                        </span>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-
-                <!-- RIGHT COLUMN: ROSTER & WEIGHTS -->
-                <section class="card p-4 space-y-3 flex flex-col justify-between">
-                  <div class="space-y-3">
-                    <div class="flex items-center justify-between gap-2 pb-2 border-b border-[var(--color-border)]">
-                      <div class="flex items-center gap-2">
-                        <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
-                          {{ t('splits.roster_management') }} ({{ editParticipants().length }})
-                        </h3>
-                      </div>
-
-                      <div class="flex items-center gap-1.5">
-                        @if (editParticipants().length > 0) {
-                          <button
-                            type="button"
-                            class="btn btn--outline btn--sm text-xs py-0.5 px-2"
-                            (click)="distributeEditWeightsEvenly()"
-                          >
-                            {{ t('splits.distribute_evenly') }}
-                          </button>
-                        }
-                        <button
-                          type="button"
-                          class="btn btn--primary btn--sm text-xs py-0.5 px-2"
-                          (click)="showParticipantSearch.set(true)"
-                        >
-                          + {{ t('splits.add_participant') }}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                      @for (participant of editParticipants(); track participant.user_id) {
-                        <div class="flex items-center justify-between gap-2 p-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
-                          <div class="flex items-center gap-2 min-w-0">
-                            <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.6875rem] font-mono text-[var(--color-text)] flex-shrink-0">
-                              {{ participant.username.slice(0, 1).toUpperCase() }}
-                            </div>
-                            <div class="min-w-0">
-                              <p class="truncate text-xs font-medium text-[var(--color-text)]">
-                                {{ participant.username }}
-                              </p>
-                              <p class="truncate text-[0.625rem] text-[var(--color-text-secondary)]">
-                                {{ t('splits.share') }}:
-                                <span class="font-mono text-[var(--color-success)]">
-                                  {{
-                                    formatAmount(
-                                      estimatedShare(
-                                        editNetPreview(),
-                                        toNumber(participant.weight),
-                                        editTotalWeight()
-                                      )
-                                    )
-                                  }}
-                                </span>
-                              </p>
-                            </div>
-                          </div>
-
-                          <div class="flex items-center gap-2 flex-shrink-0">
-                            <div class="flex items-center gap-1">
-                              <input
-                                class="input font-mono text-xs text-right py-0.5 px-1 w-14"
-                                type="text"
-                                inputmode="decimal"
-                                placeholder="12,33"
-                                [value]="editWeightValue(participant)"
-                                (input)="onEditWeightChange(participant.user_id, $event)"
-                              />
-                              <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
-                            </div>
-                            <button
-                              type="button"
-                              class="btn btn--ghost btn--sm p-1 text-xs text-[var(--color-danger)]"
-                              (click)="removeEditParticipant(participant.user_id)"
-                              [attr.aria-label]="t('splits.remove_participant')"
-                            >
-                              &times;
-                            </button>
-                          </div>
-                        </div>
-                      } @empty {
-                        <p class="py-6 text-center text-xs text-[var(--color-text-secondary)]">
-                          {{ t('splits.roster_empty') }}
-                        </p>
-                      }
-                    </div>
-                  </div>
-
-                  <div class="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
-                    <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEdit()">
-                      {{ t('common.cancel') }}
-                    </button>
-                    <button
-                      type="submit"
-                      class="btn btn--primary btn--sm"
-                      [disabled]="saving() || !editWeightsAreValid()"
-                    >
-                      {{ saving() ? t('common.loading') : t('common.save') }}
-                    </button>
-                  </div>
-                </section>
-              </div>
-            </form>
-          } @else {
-            <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              <article class="kpi-card flex flex-col justify-between">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    {{ t('splits.estimated') }}
-                  </span>
-                  <span class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                    <app-icon name="coins" size="1rem" />
-                  </span>
-                </div>
-                <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-warning">
-                    {{ formatAmount(detail.estimated_market_value) }}
-                  </span>
-                </div>
-              </article>
-
-              <article class="kpi-card flex flex-col justify-between">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    {{ t('splits.fee') }}
-                  </span>
-                  <span class="icon-capsule bg-[var(--color-error-container)] text-[var(--color-error)] border border-[color-mix(in_oklab,var(--color-error)_25%,transparent)]">
-                    <app-icon name="shield" size="1rem" />
-                  </span>
-                </div>
-                <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-[var(--color-error)]">
-                    {{ formatAmount((toNumber(detail.estimated_market_value) - toNumber(detail.repair_value) + toNumber(detail.bags_value)) * toNumber(detail.fee ?? defaultFee) / 100) }}
-                  </span>
-                  <span class="ml-1 text-xs text-[var(--color-text-secondary)]">({{ detail.fee ?? defaultFee }}%)</span>
-                </div>
-              </article>
-
-              <article class="kpi-card flex flex-col justify-between">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    {{ t('splits.repair_cost') }}
-                  </span>
-                  <span class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                    <app-icon name="hammer" size="1rem" />
-                  </span>
-                </div>
-                <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-warning">
-                    -{{ formatAmount(detail.repair_value) }}
-                  </span>
-                </div>
-              </article>
-
-              <article class="kpi-card flex flex-col justify-between">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    {{ t('splits.bags_value') }}
-                  </span>
-                  <span class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                    <app-icon name="package" size="1rem" />
-                  </span>
-                </div>
-                <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-[var(--color-primary)]">
-                    +{{ formatAmount(detail.bags_value) }}
-                  </span>
-                  @if (detail.bags; as bags) {
-                    @if (bags.length > 1) {
-                      <p class="mt-1 text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
-                        @for (amount of bags; track $index) {
-                          {{ formatAmount(amount) }}@if ($index < bags.length - 1) {
-                            ·
-                          }
-                        }
-                      </p>
-                    }
-                  }
-                </div>
-              </article>
-
-              <article class="kpi-card flex flex-col justify-between col-span-2 sm:col-span-1 border-[var(--color-success)]">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    {{ t('splits.net_value') }}
-                  </span>
-                  <span class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                    <app-icon name="sparkles" size="1rem" />
-                  </span>
-                </div>
-                <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-success">
-                    {{ formatAmount(netOf(detail)) }}
-                  </span>
-                </div>
-              </article>
-            </section>
-
-            <section
-              class="surface overflow-hidden"
-            >
-              <header
-                class="flex items-center justify-between border-b border-[var(--color-border)] p-3.5"
-              >
-                <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
-                  {{ t('splits.participants') }} ({{ detail.participants.length }})
-                </h2>
-                <span
-                  class="font-mono text-xs"
-                  [class.text-[var(--color-warning)]]="detail.status === 'pending'"
-                  [class.text-[var(--color-success)]]="detail.status === 'completed' && splitPayoutComplete()"
-                  [class.text-[var(--color-warning)]]="detail.status === 'awaiting_event'"
-                >
-                  {{ payoutLifecycleLabel(detail) }}
-                </span>
-              </header>
-              <app-data-table
-                [columns]="participantColumns"
-                [rows]="detail.participants"
-                [trackBy]="trackParticipant"
-                [hideSearch]="true"
-                emptyIcon="users"
-                [emptyLabel]="'splits.roster_empty'"
-              >
-                <ng-template dataTableCell="username" let-row>
-                  <div class="flex items-center gap-2">
-                    <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.6875rem] font-mono text-[var(--color-text)] flex-shrink-0">
-                      {{ row.username.slice(0, 1).toUpperCase() }}
-                    </div>
-                    <span class="font-medium text-xs">{{ row.username }}</span>
-                  </div>
-                </ng-template>
-                <ng-template dataTableCell="weight" let-row>
-                  <span class="font-mono text-xs">{{ row.weight }}%</span>
-                </ng-template>
-                <ng-template dataTableCell="share" let-row>
-                  <span class="font-mono text-xs font-medium text-[var(--color-success)]">
-                    {{
-                      formatAmount(
-                        row.share_amount ??
-                          estimatedShare(
-                            netOf(detail),
-                            toNumber(row.weight),
-                            participantsTotalWeight(detail.participants)
-                          )
-                      )
-                    }}
-                  </span>
-                </ng-template>
-              </app-data-table>
-            </section>
-
-            @if (canViewSplitTransactions()) {
-              <section class="surface overflow-hidden">
-                <header class="flex items-center justify-between border-b border-[var(--color-border)] p-3.5">
-                  <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
-                    {{ t('splits.detail.transactionsTitle') }} ({{ splitTransactions().length }})
-                  </h2>
-                </header>
-                <app-data-table
-                  [columns]="transactionColumns()"
-                  [rows]="splitTransactions()"
-                  [loading]="transactionsLoading()"
-                  [trackBy]="trackTransaction"
-                  [hideSearch]="true"
-                  emptyIcon="bank"
-                  [emptyLabel]="'splits.detail.transactionsEmpty'"
-                >
-                  <ng-template dataTableCell="to_username" let-row>
-                    <span class="text-xs font-medium">{{ row.to_username }}</span>
-                  </ng-template>
-                  <ng-template dataTableCell="amount" let-row>
-                    <span class="font-mono text-xs font-medium">{{ formatAmount(row.amount) }}</span>
-                  </ng-template>
-                  <ng-template dataTableCell="status" let-row>
-                    <app-status-chip [value]="row.status" />
-                  </ng-template>
-                  <ng-template dataTableCell="created_at" let-row>
-                    <span class="text-xs" style="color: var(--color-text-secondary)">
-                      {{ formatDate(row.created_at) }}
-                    </span>
-                  </ng-template>
-                  @if (canEditTransactions()) {
-                    <ng-template dataTableCell="actions" let-row>
-                      <div class="flex justify-end">
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm text-xs py-0.5 px-2"
-                          (click)="openEditTransaction(row)"
-                        >
-                          {{ t('common.edit') }}
-                        </button>
-                      </div>
-                    </ng-template>
-                  }
-                </app-data-table>
-              </section>
-            }
-          }
-        </app-page-stack>
-      }
-    }
-
-    @if (showCompleteConfirmDialog()) {
-      <app-dialog
-        [title]="t('splits.detail.confirmCompleteTitle')"
-        [subtitle]="t('splits.detail.confirmCompleteSubtitle')"
-        size="md"
-        (closed)="showCompleteConfirmDialog.set(false)"
-      >
-        <div class="space-y-4">
-          @if (split(); as detail) {
-            <div
-              class="rounded-xl p-3.5 border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-center justify-between"
-            >
-              <div>
-                <p class="text-xs font-semibold uppercase text-[var(--color-text-secondary)]">
-                  {{ t('splits.net_value') }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)]">
-                  {{ detail.participants.length }} {{ t('splits.participants') }}
-                </p>
-              </div>
-              <p class="font-mono text-2xl font-medium text-[var(--color-success)]">
-                {{ formatAmount(netOf(detail)) }}
-              </p>
-            </div>
-
-            <div
-              class="rounded-xl border border-[var(--color-border)] overflow-hidden"
-            >
-              <div
-                class="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]"
-              >
-                {{ t('splits.roster_management') }}
-              </div>
-              <div class="max-h-60 overflow-y-auto divide-y border-[var(--color-border)]">
-                @for (participant of detail.participants; track participant.user_id) {
-                  <div
-                    class="p-2.5 flex items-center justify-between gap-3 text-sm bg-[var(--color-surface-1)]"
-                  >
-                    <span class="font-medium text-xs text-[var(--color-text)]">
-                      {{ participant.username }}
-                    </span>
-                    <div class="text-right">
-                      <span class="font-mono text-xs font-medium text-[var(--color-success)]">
-                        {{
-                          formatAmount(
-                            participant.share_amount ??
-                              estimatedShare(
-                                netOf(detail),
-                                toNumber(participant.weight),
-                                participantsTotalWeight(detail.participants)
-                              )
-                          )
-                        }}
-                      </span>
-                      <span class="text-xs ml-1 font-mono text-[var(--color-text-secondary)]">
-                        ({{ participant.weight }}%)
-                      </span>
-                    </div>
-                  </div>
-                }
-              </div>
-            </div>
-
-            <p class="text-xs text-[var(--color-text-secondary)]">
-              {{ t('splits.detail.confirmCompleteWarning') }}
-            </p>
-          }
-        </div>
-
-        <div dialogFooter class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm"
-            (click)="showCompleteConfirmDialog.set(false)"
-          >
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--primary btn--sm flex items-center gap-2"
-            [disabled]="saving()"
-            (click)="executeCompleteSplit()"
-          >
-            <app-icon name="check" size="1rem" />
-            {{ saving() ? t('common.loading') : t('splits.detail.confirmCompleteAction') }}
-          </button>
-        </div>
-      </app-dialog>
-    }
-
-    @if (showArchive()) {
-      <app-dialog [title]="t('splits.archive')" size="sm" (closed)="showArchive.set(false)">
-        <p class="text-xs">{{ t('splits.confirm_delete') }}</p>
-        <div dialogFooter class="flex justify-end gap-2">
-          <button type="button" class="btn btn--ghost btn--sm" (click)="showArchive.set(false)">
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--tonal btn--sm"
-            [disabled]="saving()"
-            (click)="confirmArchive()"
-          >
-            {{ t('splits.archive') }}
-          </button>
-        </div>
-      </app-dialog>
-    }
-
-    @if (editTransactionTarget(); as tx) {
-      <app-dialog [title]="t('splits.detail.transactionsEdit')" size="sm" (closed)="closeEditTransaction()">
-        <form id="edit-transaction-form" class="grid gap-4" (submit)="saveEditTransaction($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ tx.to_username }}</p>
-          <label class="block">
-            <span class="label text-xs">{{ t('common.amount') }}</span>
-            <input
-              class="input text-xs"
-              type="number"
-              min="0.01"
-              step="0.01"
-              required
-              [value]="editTransactionAmount() ?? ''"
-              (input)="onEditTransactionAmount($event)"
-            />
-          </label>
-          <label class="block">
-            <span class="label text-xs">{{ t('common.status') }}</span>
-            <select class="select text-xs" [value]="editTransactionStatus()" (change)="onEditTransactionStatus($event)">
-              <option value="pending">{{ t('bank.status.pending') }}</option>
-              <option value="requested">{{ t('bank.status.requested') }}</option>
-              <option value="rejected">{{ t('bank.status.rejected') }}</option>
-              <option value="withdrawn">{{ t('bank.status.withdrawn') }}</option>
-              <option value="donated">{{ t('bank.status.donated') }}</option>
-            </select>
-          </label>
-          <label class="block">
-            <span class="label text-xs">{{ t('admin.transactions.fields.type') }}</span>
-            <input class="input text-xs" type="text" [value]="editTransactionType()" (input)="onEditTransactionType($event)" />
-          </label>
-        </form>
-        <div dialogFooter class="flex justify-end gap-2">
-          <button type="button" class="btn btn--ghost btn--sm" (click)="closeEditTransaction()">
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            type="submit"
-            class="btn btn--primary btn--sm"
-            form="edit-transaction-form"
-            [disabled]="savingTransaction()"
-          >
-            {{ savingTransaction() ? t('common.loading') : t('common.save') }}
-          </button>
-        </div>
-      </app-dialog>
-    }
-
-    @if (showEventSearch()) {
-      <app-search-dialog
-        [title]="t('splits.link_event')"
-        [options]="eventSearchOptions()"
-        [loading]="eventSearchLoading()"
-        [showDateFilters]="true"
-        (filterChange)="onEventSearchFilter($event)"
-        (select)="onEditEventSelect($event)"
-        (close)="showEventSearch.set(false)"
-      />
-    }
-
-    @if (showParticipantSearch()) {
-      <app-search-dialog
-        [title]="t('splits.add_participant')"
-        [placeholder]="t('splits.search_users')"
-        [options]="participantSearchOptions()"
-        [loading]="searchingRoster()"
-        (filterChange)="onParticipantSearchFilter($event)"
-        (select)="onParticipantSelect($event)"
-        (close)="showParticipantSearch.set(false)"
-      />
-    }
-  `,
+  host: {
+    '(document:pointerdown)': 'onDocumentPointer($event)',
+  },
+  templateUrl: './split-detail.html',
+  styleUrl: './split-detail.css',
 })
 export class SplitDetailPage {
   private readonly api = inject(ApiService);
@@ -915,17 +200,26 @@ export class SplitDetailPage {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  protected readonly menuRoot = viewChild<ElementRef<HTMLElement>>('menuRoot');
 
   protected readonly split = signal<SplitDetail | null>(null);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
+  protected readonly notFound = signal(false);
   protected readonly saving = signal(false);
   protected readonly mode = signal<DetailMode>('view');
+  protected readonly menuOpen = signal(false);
   protected readonly showArchive = signal(false);
   protected readonly showCompleteConfirmDialog = signal(false);
+  protected readonly closeConfirm = signal<CloseAction | null>(null);
   protected readonly islands = signal<SplitIsland[]>([]);
-  protected readonly defaultFee = DEFAULT_SPLIT_FEE;
 
+  protected readonly participantSort = signal<ParticipantSort | null>(null);
+
+  protected readonly submitted = signal(false);
   protected readonly editNote = signal('');
   protected readonly editEstimated = signal(0);
   protected readonly editFeeInput = signal(String(DEFAULT_SPLIT_FEE));
@@ -956,98 +250,15 @@ export class SplitDetailPage {
   protected readonly editTransactionAmount = signal<number | null>(null);
   protected readonly editTransactionStatus = signal<TransactionStatus>('pending');
   protected readonly editTransactionType = signal('');
+  protected readonly editTransactionSubmitted = signal(false);
   protected readonly savingTransaction = signal(false);
 
-  protected readonly trackParticipant = (row: SplitParticipant): number => row.user_id;
-
-  protected readonly participantColumns: readonly DataTableColumn<SplitParticipant>[] = [
-    { key: 'username', label: 'splits.player', accessor: (row) => row.username },
-    { key: 'weight', label: 'splits.weight', align: 'right', accessor: (row) => row.weight },
-    { key: 'share', label: 'splits.share', align: 'right', accessor: (row) => row.share_amount },
-  ];
-
-  protected readonly trackTransaction = (row: TransactionView): number => row.id;
-
-  protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
-    const base: DataTableColumn<TransactionView>[] = [
-      { key: 'to_username', label: 'admin.transactions.fields.to', accessor: (row) => row.to_username },
-      {
-        key: 'amount',
-        label: 'common.amount',
-        align: 'right',
-        accessor: (row) => Number(row.amount) || 0,
-      },
-      { key: 'status', label: 'common.status', accessor: (row) => row.status },
-      { key: 'created_at', label: 'common.date', accessor: (row) => row.created_at },
-    ];
-    if (this.canEditTransactions()) {
-      base.push({ key: 'actions', label: 'common.actions', align: 'right' });
-    }
-    return base;
-  });
+  private eventsRequested = false;
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
-  protected statusLabel(status: SplitDetail['status']): string {
-    return this.t(`splits.status.${status}` as TranslationKey);
-  }
-
-  protected payoutLifecycleLabel(split: SplitDetail): string {
-    if (split.status === 'pending') {
-      return this.t('splits.pending_payout');
-    }
-    if (split.status === 'awaiting_event') {
-      return this.t('splits.awaiting_event.label');
-    }
-    if (
-      split.status !== 'completed' ||
-      !this.canViewSplitTransactions() ||
-      this.transactionsLoading() ||
-      this.transactionsLoadFailed() ||
-      !this.transactionsComplete()
-    ) {
-      return this.statusLabel(split.status);
-    }
-
-    const transactions = this.splitTransactions();
-    if (transactions.some((transaction) => transaction.status === 'requested')) {
-      return this.t('bank.status.requested');
-    }
-    if (transactions.some((transaction) => transaction.status === 'pending' || transaction.status === 'rejected')) {
-      return this.t('bank.status.pending');
-    }
-    if (transactions.length > 0 && transactions.every((transaction) => transaction.status === 'withdrawn')) {
-      return this.t('bank.status.withdrawn');
-    }
-    if (transactions.length > 0 && transactions.every((transaction) => transaction.status === 'donated')) {
-      return this.t('bank.status.donated');
-    }
-    return this.statusLabel(split.status);
-  }
-
-  protected splitPayoutComplete(): boolean {
-    const transactions = this.splitTransactions();
-    return this.transactionsComplete() &&
-      !this.transactionsLoading() &&
-      !this.transactionsLoadFailed() &&
-      transactions.length > 0 &&
-      transactions.every((transaction) => transaction.status === 'withdrawn' || transaction.status === 'donated');
-  }
-
-  protected statusTone(status: SplitDetail['status']): 'warning' | 'success' | 'neutral' | 'error' {
-    switch (status) {
-      case 'pending':
-      case 'awaiting_event':
-        return 'warning';
-      case 'completed':
-        return 'success';
-      case 'lost':
-        return 'error';
-      default:
-        return 'neutral';
-    }
-  }
+  // ---------------------------------------------------------------- permissions
 
   protected readonly isAllianceTenant = computed(
     () => this.auth.profile()?.tenant_kind === 'alliance',
@@ -1095,6 +306,156 @@ export class SplitDetailPage {
   protected readonly canEditTransactions = computed(
     () => this.auth.hasPermission('bank.transactions.edit') && !this.isReadOnly(),
   );
+
+  /** True while the split is open for completion by someone allowed to close it. */
+  protected readonly canClose = computed(() => {
+    const detail = this.split();
+    return detail !== null && detail.status === 'pending' && this.canAct() && !detail.archived_at;
+  });
+
+  /** The single most useful action for the current state; everything else is secondary. */
+  protected readonly primaryAction = computed<PrimaryAction>(() => {
+    const detail = this.split();
+    if (!detail) {
+      return null;
+    }
+    if (detail.archived_at) {
+      return this.canDelete() ? 'unarchive' : null;
+    }
+    if (this.canClose()) {
+      return 'complete';
+    }
+    return this.canEdit() ? 'edit' : null;
+  });
+
+  /** Whether the overflow menu has anything to offer. */
+  protected readonly hasMenu = computed(
+    () => this.canShare() || this.canClose() || (this.canDelete() && !this.split()?.archived_at),
+  );
+
+  // ---------------------------------------------------------------- derived view data
+
+  protected readonly netValue = computed(() => {
+    const detail = this.split();
+    return detail ? this.netOf(detail) : 0;
+  });
+
+  protected readonly ledger = computed<Ledger | null>(() => {
+    const detail = this.split();
+    if (!detail) {
+      return null;
+    }
+    const bagList = (detail.bags ?? []).map((amount) => Number(amount) || 0).filter((amount) => amount > 0);
+    return buildLedger(
+      this.toNumber(detail.estimated_market_value),
+      this.toNumber(detail.bags_value),
+      bagList,
+      this.toNumber(detail.repair_value),
+      this.toNumber(detail.fee ?? DEFAULT_SPLIT_FEE),
+      this.netOf(detail),
+    );
+  });
+
+  protected readonly payoutByUser = computed(() => {
+    const byUser = new Map<number, TransactionView[]>();
+    for (const transaction of this.splitTransactions()) {
+      const list = byUser.get(transaction.to_user_id) ?? [];
+      list.push(transaction);
+      byUser.set(transaction.to_user_id, list);
+    }
+    const result = new Map<number, PayoutKind>();
+    for (const [userId, list] of byUser) {
+      if (list.some((tx) => tx.status === 'requested')) {
+        result.set(userId, 'requested');
+      } else if (list.some((tx) => tx.status === 'pending' || tx.status === 'rejected')) {
+        result.set(userId, 'pending');
+      } else if (list.every((tx) => tx.status === 'donated')) {
+        result.set(userId, 'donated');
+      } else {
+        result.set(userId, 'paid');
+      }
+    }
+    return result;
+  });
+
+  /** The payout column is for people who can see bank credits, once the split has been credited. */
+  protected readonly showPayoutColumn = computed(
+    () => this.split()?.status === 'completed' && this.canViewSplitTransactions(),
+  );
+
+  /** Per-participant payout state is only trustworthy once every credit row has loaded. */
+  protected readonly payoutReady = computed(
+    () =>
+      this.transactionsComplete() && !this.transactionsLoading() && !this.transactionsLoadFailed(),
+  );
+
+  protected readonly participantRows = computed<ParticipantRow[]>(() => {
+    const detail = this.split();
+    if (!detail) {
+      return [];
+    }
+    const participants = this.normalizeParticipants(detail.participants ?? []);
+    const net = this.netOf(detail);
+    const totalWeight = this.participantsTotalWeight(participants);
+    const payouts = this.payoutByUser();
+    return participants.map((participant) => {
+      const weight = this.toNumber(participant.weight);
+      return {
+        user_id: participant.user_id,
+        username: participant.username,
+        weight,
+        poolPct: totalWeight > 0 ? (weight / totalWeight) * 100 : 0,
+        amount:
+          participant.share_amount !== null && participant.share_amount !== undefined
+            ? this.toNumber(participant.share_amount)
+            : this.estimatedShare(net, weight, totalWeight),
+        payout: payouts.get(participant.user_id) ?? 'none',
+      };
+    });
+  });
+
+  protected readonly sortedParticipantRows = computed<ParticipantRow[]>(() => {
+    const rows = [...this.participantRows()];
+    const sort = this.participantSort();
+    if (!sort) {
+      return rows;
+    }
+    const factor = sort.direction === 'asc' ? 1 : -1;
+    const locale = this.translate.locale();
+    rows.sort((a, b) => {
+      if (sort.key === 'username') {
+        return a.username.localeCompare(b.username, locale) * factor;
+      }
+      return (a[sort.key] - b[sort.key]) * factor;
+    });
+    return rows;
+  });
+
+  protected readonly participantTotals = computed(() => {
+    const rows = this.participantRows();
+    return {
+      weight: rows.reduce((sum, row) => sum + row.weight, 0),
+      amount: rows.reduce((sum, row) => sum + row.amount, 0),
+      paid: rows.filter((row) => row.payout === 'paid' || row.payout === 'donated').length,
+      count: rows.length,
+    };
+  });
+
+  protected readonly splitPayoutComplete = computed(() => {
+    const transactions = this.splitTransactions();
+    return (
+      this.transactionsComplete() &&
+      !this.transactionsLoading() &&
+      !this.transactionsLoadFailed() &&
+      transactions.length > 0 &&
+      transactions.every(
+        (transaction) => transaction.status === 'withdrawn' || transaction.status === 'donated',
+      )
+    );
+  });
+
+  // ---------------------------------------------------------------- edit state
+
   protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
   protected readonly editNetPreview = computed(() =>
     Math.max(
@@ -1102,18 +463,69 @@ export class SplitDetailPage {
       (this.editEstimated() - this.editRepair() + this.editBags()) * (1 - this.editFee() / 100),
     ),
   );
+  protected readonly editLedger = computed<Ledger>(() =>
+    buildLedger(
+      this.editEstimated(),
+      this.editBags(),
+      this.editBagRows()
+        .map((bag) => Number(bag.amount) || 0)
+        .filter((amount) => amount > 0),
+      this.editRepair(),
+      this.editFee(),
+      this.editNetPreview(),
+    ),
+  );
   protected readonly editIslandTabs = computed(() => {
     const id = Number(this.editIslandId());
     return this.islands().find((island) => island.id === id)?.tabs ?? [];
   });
 
+  /** Field errors only appear after a save attempt, then stay live while the user fixes them. */
+  protected readonly feeError = computed<string | null>(() => {
+    if (!this.submitted()) {
+      return null;
+    }
+    const fee = parsePercentageInput(this.editFeeInput());
+    return fee === null || fee < 0 || fee > 100 ? this.t('splits.fee_invalid') : null;
+  });
+  protected readonly weightErrors = computed<Record<number, string>>(() => {
+    if (!this.submitted()) {
+      return {};
+    }
+    const errors: Record<number, string> = {};
+    for (const participant of this.editParticipants()) {
+      const weight = parsePercentageInput(this.editWeightValue(participant));
+      if (weight === null || weight <= 0) {
+        errors[participant.user_id] = this.t('validation.positive');
+      }
+    }
+    return errors;
+  });
+  protected readonly rosterError = computed<string | null>(() =>
+    this.submitted() && this.editParticipants().length === 0 ? this.t('splits.roster_empty') : null,
+  );
+  protected readonly hasEditErrors = computed(
+    () =>
+      this.feeError() !== null ||
+      this.rosterError() !== null ||
+      Object.keys(this.weightErrors()).length > 0,
+  );
+  protected readonly transactionAmountError = computed<string | null>(() => {
+    if (!this.editTransactionSubmitted()) {
+      return null;
+    }
+    const amount = this.editTransactionAmount();
+    return amount === null || amount <= 0 ? this.t('validation.positive') : null;
+  });
+
   constructor() {
     void this.loadIslands();
-    void this.onEventSearchFilter({ search: '', dateFrom: '', dateTo: '' });
     this.route.paramMap.subscribe((params) => {
       const id = Number(params.get('splitId'));
       if (!Number.isFinite(id) || id <= 0) {
-        this.loadFailed.set(true);
+        this.loading.set(false);
+        this.loadFailed.set(false);
+        this.notFound.set(true);
         this.split.set(null);
         return;
       }
@@ -1121,10 +533,102 @@ export class SplitDetailPage {
     });
   }
 
-  protected reload(): void {
-    const id = Number(this.route.snapshot.paramMap.get('splitId'));
-    if (Number.isFinite(id) && id > 0) {
-      void this.load(id);
+  // ---------------------------------------------------------------- presentation helpers
+
+  protected statusLabel(status: SplitDetail['status']): string {
+    return this.t(`splits.status.${status}` as TranslationKey);
+  }
+
+  protected statusIcon(status: SplitDetail['status']): IconName {
+    return STATUS_ICONS[status] ?? 'circle-dot';
+  }
+
+  /** A completed split whose credits are not all paid out yet is still in progress, so no tick. */
+  protected lifecycleIcon(split: SplitDetail): IconName {
+    if (
+      split.status === 'completed' &&
+      this.canViewSplitTransactions() &&
+      this.payoutReady() &&
+      !this.splitPayoutComplete()
+    ) {
+      return 'bank';
+    }
+    return this.statusIcon(split.status);
+  }
+
+  protected statusTone(status: SplitDetail['status']): StatusTone {
+    switch (status) {
+      case 'pending':
+      case 'awaiting_event':
+        return 'warning';
+      case 'completed':
+        return 'success';
+      case 'lost':
+        return 'error';
+      default:
+        return 'neutral';
+    }
+  }
+
+  protected payoutPresentation(kind: PayoutKind): Presentation {
+    return PAYOUT_PRESENTATION[kind];
+  }
+
+  protected transactionPresentation(status: TransactionStatus): Presentation {
+    return TRANSACTION_PRESENTATION[status] ?? PAYOUT_PRESENTATION.none;
+  }
+
+  protected payoutLifecycleLabel(split: SplitDetail): string {
+    if (split.status === 'pending') {
+      return this.t('splits.pending_payout');
+    }
+    if (split.status === 'awaiting_event') {
+      return this.t('splits.awaiting_event.label');
+    }
+    if (
+      split.status !== 'completed' ||
+      !this.canViewSplitTransactions() ||
+      this.transactionsLoading() ||
+      this.transactionsLoadFailed() ||
+      !this.transactionsComplete()
+    ) {
+      return this.statusLabel(split.status);
+    }
+
+    const transactions = this.splitTransactions();
+    if (transactions.some((transaction) => transaction.status === 'requested')) {
+      return this.t('bank.status.requested');
+    }
+    if (transactions.some((transaction) => transaction.status === 'pending' || transaction.status === 'rejected')) {
+      return this.t('bank.status.pending');
+    }
+    if (transactions.length > 0 && transactions.every((transaction) => transaction.status === 'withdrawn')) {
+      return this.t('bank.status.withdrawn');
+    }
+    if (transactions.length > 0 && transactions.every((transaction) => transaction.status === 'donated')) {
+      return this.t('bank.status.donated');
+    }
+    return this.statusLabel(split.status);
+  }
+
+  /** Plain-language "what happens next" for the current state. */
+  protected nextStep(detail: SplitDetail): string | null {
+    if (detail.archived_at) {
+      return this.t('splits.detail.next.archived');
+    }
+    switch (detail.status) {
+      case 'pending':
+        return this.t(this.canClose() ? 'splits.detail.next.pending' : 'splits.detail.next.pendingView');
+      case 'awaiting_event':
+        return this.t('splits.awaiting_event.message');
+      case 'completed':
+        return this.t('splits.detail.next.completed');
+      case 'not_completed':
+        return this.t('splits.detail.next.not_completed');
+      case 'lost':
+        return this.t('splits.detail.next.lost');
+      default:
+        return null;
     }
   }
 
@@ -1163,12 +667,6 @@ export class SplitDetailPage {
     );
   }
 
-  protected editWeightsAreValid(): boolean {
-    return participantWeightsAreValid(
-      this.editParticipants().map((participant) => Number(participant.weight)),
-    );
-  }
-
   /** Real sum of participant weights, used instead of assuming they already total 100. */
   protected participantsTotalWeight(participants: readonly SplitParticipant[]): number {
     return participants.reduce((sum, participant) => sum + this.toNumber(participant.weight), 0);
@@ -1189,19 +687,134 @@ export class SplitDetailPage {
     return Math.round(netValue * (weight / totalWeight) * 100) / 100;
   }
 
+  protected formatAmount(value: number | string | null | undefined): string {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+    const amount = Number(value);
+    return Number.isFinite(amount)
+      ? new Intl.NumberFormat(this.translate.locale(), { maximumFractionDigits: 0 }).format(amount)
+      : '—';
+  }
+
+  /** Amount with an explicit sign, so additions and deductions never rely on colour alone. */
+  protected formatSigned(value: number, sign: '+' | '−'): string {
+    return value === 0 ? this.formatAmount(0) : `${sign}${this.formatAmount(Math.abs(value))}`;
+  }
+
+  protected formatPercent(value: number | string | null | undefined): string {
+    const amount = Number(value);
+    if (value === null || value === undefined || !Number.isFinite(amount)) {
+      return '—';
+    }
+    return `${new Intl.NumberFormat(this.translate.locale(), { maximumFractionDigits: 2 }).format(amount)}%`;
+  }
+
+  protected formatDate(iso: string | null | undefined): string {
+    if (!iso) {
+      return '—';
+    }
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime())
+      ? '—'
+      : date.toLocaleString(this.translate.locale(), { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  // ---------------------------------------------------------------- sorting
+
+  protected toggleParticipantSort(key: ParticipantSortKey): void {
+    const current = this.participantSort();
+    if (!current || current.key !== key) {
+      this.participantSort.set({ key, direction: 'asc' });
+    } else if (current.direction === 'asc') {
+      this.participantSort.set({ key, direction: 'desc' });
+    } else {
+      this.participantSort.set(null);
+    }
+  }
+
+  protected ariaSort(key: ParticipantSortKey): 'ascending' | 'descending' | 'none' {
+    const current = this.participantSort();
+    if (!current || current.key !== key) {
+      return 'none';
+    }
+    return current.direction === 'asc' ? 'ascending' : 'descending';
+  }
+
+  protected sortIcon(key: ParticipantSortKey): IconName {
+    return this.participantSort()?.key === key && this.participantSort()?.direction === 'asc'
+      ? 'chevron-up'
+      : 'chevron-down';
+  }
+
+  // ---------------------------------------------------------------- overflow menu
+
+  protected toggleMenu(): void {
+    const open = !this.menuOpen();
+    this.menuOpen.set(open);
+    if (open) {
+      this.focusSoon('.sd-menu__item');
+    }
+  }
+
+  protected onDocumentPointer(event: Event): void {
+    if (!this.menuOpen()) {
+      return;
+    }
+    const root = this.menuRoot()?.nativeElement;
+    if (root && !root.contains(event.target as Node)) {
+      this.menuOpen.set(false);
+    }
+  }
+
+  protected onMenuKeydown(event: KeyboardEvent): void {
+    if (!this.menuOpen()) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      this.closeMenu();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const items = Array.from(
+        this.menuRoot()?.nativeElement.querySelectorAll<HTMLElement>('.sd-menu__item') ?? [],
+      );
+      if (items.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      const index = items.indexOf(document.activeElement as HTMLElement);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      items[(index + step + items.length) % items.length]?.focus();
+    }
+  }
+
+  /** Closes the menu and parks focus on its trigger so a dialog opened next restores focus there. */
+  protected closeMenu(): void {
+    this.menuOpen.set(false);
+    this.menuRoot()?.nativeElement.querySelector<HTMLElement>('.sd-menu-trigger')?.focus();
+  }
+
+  // ---------------------------------------------------------------- edit mode
+
   protected toggleMode(): void {
     if (this.mode() === 'edit') {
       this.cancelEdit();
       return;
     }
     this.hydrateEdit();
+    this.ensureEventOptions();
     this.mode.set('edit');
+    this.focusSoon('#sd-edit-note');
   }
 
   protected cancelEdit(): void {
     this.mode.set('view');
+    this.submitted.set(false);
     this.showEventSearch.set(false);
     this.showParticipantSearch.set(false);
+    this.focusSoon('[data-sd-focus-return]');
   }
 
   protected onEditNoteChange(event: Event): void {
@@ -1305,8 +918,8 @@ export class SplitDetailPage {
           chip: event.status,
         })),
       );
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.search'));
     } finally {
       this.eventSearchLoading.set(false);
     }
@@ -1340,8 +953,8 @@ export class SplitDetailPage {
           chip: user.role,
         })),
       );
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.search'));
     } finally {
       this.searchingRoster.set(false);
     }
@@ -1385,8 +998,8 @@ export class SplitDetailPage {
       this.editWeightInputs.set(this.weightInputsFor(participants));
       this.toasts.success(this.t('splits.added_to_split', { name: opt.title }));
       this.showParticipantSearch.set(false);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.action'));
     }
   }
 
@@ -1425,35 +1038,33 @@ export class SplitDetailPage {
           return next;
         });
       }
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.action'));
     }
   }
 
-  protected async onEditSubmit(event: SubmitEvent): Promise<void> {
+  protected async onEditSubmit(event: Event): Promise<void> {
     event.preventDefault();
     const current = this.split();
     if (!current) {
       return;
     }
+    this.submitted.set(true);
 
     const fee = parsePercentageInput(this.editFeeInput());
-    if (fee === null || fee < 0 || fee > 100) {
-      this.toasts.error(this.t('splits.fee_invalid'));
-      return;
-    }
+    let valid = fee !== null && fee >= 0 && fee <= 100 && this.editParticipants().length > 0;
 
     const weights: Array<{ participant: SplitParticipant; weight: number }> = [];
     for (const participant of this.editParticipants()) {
       const weight = parsePercentageInput(this.editWeightValue(participant));
       if (weight === null || weight <= 0) {
-        this.toasts.error(this.t('validation.positive'));
-        return;
+        valid = false;
+        continue;
       }
       weights.push({ participant, weight });
     }
-    if (!participantWeightsAreValid(weights.map(({ weight }) => weight))) {
-      this.toasts.error(this.t('splits.weight_sum_invalid'));
+    if (!valid || fee === null || !participantWeightsAreValid(weights.map(({ weight }) => weight))) {
+      this.focusSoon('[aria-invalid="true"], #sd-edit-errors');
       return;
     }
 
@@ -1494,19 +1105,27 @@ export class SplitDetailPage {
       }
       this.split.set(detail);
       this.mode.set('view');
+      this.submitted.set(false);
       this.toasts.success(this.t('common.save'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.focusSoon('[data-sd-focus-return]');
+      if (this.canViewSplitTransactions()) {
+        void this.loadTransactions(current.id);
+      }
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.save'));
     } finally {
       this.saving.set(false);
     }
   }
 
-  protected async closeSplit(action: 'complete' | 'not-completed' | 'lost'): Promise<void> {
+  // ---------------------------------------------------------------- lifecycle actions
+
+  protected async closeSplit(action: 'complete' | CloseAction): Promise<void> {
     const current = this.split();
-    if (!current) {
+    if (!current || this.saving()) {
       return;
     }
+    this.saving.set(true);
     try {
       const detail = await firstValueFrom(
         this.api.post<SplitDetail>(`api/splits/${current.id}/${action}`, {}),
@@ -1520,14 +1139,27 @@ export class SplitDetailPage {
             ? 'splits.status.not_completed'
             : 'splits.status.lost';
       this.toasts.success(this.t(toastKey));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (this.canViewSplitTransactions()) {
+        void this.loadTransactions(current.id);
+      }
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.action'));
+    } finally {
+      this.saving.set(false);
     }
   }
 
   protected async executeCompleteSplit(): Promise<void> {
     this.showCompleteConfirmDialog.set(false);
     await this.closeSplit('complete');
+  }
+
+  protected async confirmClose(): Promise<void> {
+    const action = this.closeConfirm();
+    this.closeConfirm.set(null);
+    if (action) {
+      await this.closeSplit(action);
+    }
   }
 
   protected async confirmArchive(): Promise<void> {
@@ -1540,8 +1172,8 @@ export class SplitDetailPage {
       await firstValueFrom(this.api.post(`api/splits/${current.id}/archive`, {}));
       this.toasts.success(this.t('splits.archiveSuccess'));
       void this.router.navigate(['/splits']);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.action'));
     } finally {
       this.saving.set(false);
       this.showArchive.set(false);
@@ -1558,43 +1190,12 @@ export class SplitDetailPage {
       await firstValueFrom(this.api.post(`api/splits/${current.id}/unarchive`, {}));
       this.toasts.success(this.t('splits.unarchiveSuccess'));
       this.reload();
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.action'));
     } finally {
       this.saving.set(false);
     }
   }
-
-  protected formatAmount(value: number | string | null | undefined): string {
-    if (value === null || value === undefined) {
-      return '—';
-    }
-    return Number(value).toLocaleString();
-  }
-
-  protected formatDate(iso: string): string {
-    return new Date(iso).toLocaleString();
-  }
-
-  private hydrateEdit(): void {
-    const detail = this.split();
-    if (!detail) {
-      return;
-    }
-    this.editNote.set(detail.note || '');
-    this.editEstimated.set(Number(detail.estimated_market_value) || 0);
-    this.editFeeInput.set(String(detail.fee ?? DEFAULT_SPLIT_FEE));
-    this.editRepair.set(Number(detail.repair_value) || 0);
-    this.editBagRows.set(bagsFromDetail(detail));
-    this.editEventId.set(detail.event_id ?? null);
-    this.editEventTitle.set(detail.event_title || '');
-    this.editIslandId.set(detail.island_id ? String(detail.island_id) : '');
-    this.editTabId.set(detail.island_tab_id ? String(detail.island_tab_id) : '');
-    const participants = this.normalizeParticipants(detail.participants);
-    this.editParticipants.set(participants);
-    this.editWeightInputs.set(this.weightInputsFor(participants));
-  }
-
 
   protected async shareWithAlliance(): Promise<void> {
     const current = this.split();
@@ -1639,7 +1240,7 @@ export class SplitDetailPage {
     if (error instanceof ApiError && error.status === 409) {
       return this.t('splits.shareNoAlliance');
     }
-    return error instanceof Error ? error.message : this.t('common.error');
+    return this.t('splits.detail.error.action');
   }
 
   private async loadShareStatus(splitId: number): Promise<void> {
@@ -1663,24 +1264,43 @@ export class SplitDetailPage {
     }
   }
 
+  // ---------------------------------------------------------------- loading
+
+  protected reload(): void {
+    const id = Number(this.route.snapshot.paramMap.get('splitId'));
+    if (Number.isFinite(id) && id > 0) {
+      void this.load(id);
+    }
+  }
+
   private async load(id: number): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
+    this.notFound.set(false);
+    if (this.split()?.id !== id) {
+      this.split.set(null);
+      this.shareStatus.set(null);
+      this.splitTransactions.set([]);
+      this.transactionsComplete.set(false);
+      this.participantSort.set(null);
+      this.menuOpen.set(false);
+    }
     try {
       const detail = await firstValueFrom(this.api.get<SplitDetail>(`api/splits/${id}`));
       this.split.set(detail);
-      if (detail.status !== 'pending') {
-        this.mode.set('view');
-      }
+      this.mode.set('view');
       await this.loadShareStatus(id);
     } catch (error) {
-      this.loadFailed.set(true);
       this.split.set(null);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (error instanceof ApiError && error.status === 404) {
+        this.notFound.set(true);
+      } else {
+        this.loadFailed.set(true);
+      }
     } finally {
       this.loading.set(false);
     }
-    if (this.canViewSplitTransactions()) {
+    if (this.split() && this.canViewSplitTransactions()) {
       void this.loadTransactions(id);
     }
   }
@@ -1699,16 +1319,25 @@ export class SplitDetailPage {
       );
       this.splitTransactions.set(data.items);
       this.transactionsComplete.set(data.total_items === data.items.length);
-    } catch (error) {
+    } catch {
       this.splitTransactions.set([]);
       this.transactionsLoadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.transactionsLoading.set(false);
     }
   }
 
+  protected retryTransactions(): void {
+    const id = this.split()?.id;
+    if (id !== undefined) {
+      void this.loadTransactions(id);
+    }
+  }
+
+  // ---------------------------------------------------------------- transaction editing
+
   protected openEditTransaction(row: TransactionView): void {
+    this.editTransactionSubmitted.set(false);
     this.editTransactionTarget.set(row);
     this.editTransactionAmount.set(Number(row.amount));
     this.editTransactionStatus.set(row.status);
@@ -1720,8 +1349,9 @@ export class SplitDetailPage {
   }
 
   protected onEditTransactionAmount(event: Event): void {
-    const value = Number((event.target as HTMLInputElement).value);
-    this.editTransactionAmount.set(Number.isFinite(value) ? value : null);
+    const raw = (event.target as HTMLInputElement).value;
+    const value = Number(raw);
+    this.editTransactionAmount.set(raw.trim() !== '' && Number.isFinite(value) ? value : null);
   }
   protected onEditTransactionStatus(event: Event): void {
     this.editTransactionStatus.set((event.target as HTMLSelectElement).value as TransactionStatus);
@@ -1730,7 +1360,7 @@ export class SplitDetailPage {
     this.editTransactionType.set((event.target as HTMLInputElement).value);
   }
 
-  protected async saveEditTransaction(event: SubmitEvent): Promise<void> {
+  protected async saveEditTransaction(event: Event): Promise<void> {
     event.preventDefault();
     const target = this.editTransactionTarget();
     const amount = this.editTransactionAmount();
@@ -1738,8 +1368,9 @@ export class SplitDetailPage {
     if (!target || !current) {
       return;
     }
+    this.editTransactionSubmitted.set(true);
     if (!amount || amount <= 0) {
-      this.toasts.error(this.t('validation.positive'));
+      this.focusSoon('#sd-tx-amount');
       return;
     }
     this.savingTransaction.set(true);
@@ -1755,8 +1386,8 @@ export class SplitDetailPage {
       this.closeEditTransaction();
       await this.loadTransactions(current.id);
       this.toasts.success(this.t('common.save'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.save'));
     } finally {
       this.savingTransaction.set(false);
     }
@@ -1769,6 +1400,46 @@ export class SplitDetailPage {
    */
   protected isSelectedId(selected: string, id: number | null | undefined): boolean {
     return id != null && selected === String(id);
+  }
+
+  // ---------------------------------------------------------------- internals
+
+  private hydrateEdit(): void {
+    const detail = this.split();
+    if (!detail) {
+      return;
+    }
+    this.submitted.set(false);
+    this.editNote.set(detail.note || '');
+    this.editEstimated.set(Number(detail.estimated_market_value) || 0);
+    this.editFeeInput.set(String(detail.fee ?? DEFAULT_SPLIT_FEE));
+    this.editRepair.set(Number(detail.repair_value) || 0);
+    this.editBagRows.set(bagsFromDetail(detail));
+    this.editEventId.set(detail.event_id ?? null);
+    this.editEventTitle.set(detail.event_title || '');
+    this.editIslandId.set(detail.island_id ? String(detail.island_id) : '');
+    this.editTabId.set(detail.island_tab_id ? String(detail.island_tab_id) : '');
+    const participants = this.normalizeParticipants(detail.participants);
+    this.editParticipants.set(participants);
+    this.editWeightInputs.set(this.weightInputsFor(participants));
+  }
+
+  /** Focus the first element matching `selector` once the next render has produced it. */
+  private focusSoon(selector: string): void {
+    afterNextRender(
+      () => {
+        this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private ensureEventOptions(): void {
+    if (this.eventsRequested) {
+      return;
+    }
+    this.eventsRequested = true;
+    void this.onEventSearchFilter({ search: '', dateFrom: '', dateTo: '' });
   }
 
   private normalizeParticipants(participants: SplitParticipant[]): SplitParticipant[] {
@@ -1801,8 +1472,8 @@ export class SplitDetailPage {
     try {
       const islands = await firstValueFrom(this.api.get<SplitIsland[]>('api/splits/islands'));
       this.islands.set(islands);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('splits.detail.error.search'));
     }
   }
 }

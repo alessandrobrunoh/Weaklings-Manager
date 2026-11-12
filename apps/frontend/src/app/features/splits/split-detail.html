@@ -1,0 +1,1026 @@
+@if (loading() && !split()) {
+  <div class="sd-skeleton" role="status" aria-busy="true">
+    <span class="sr-only">{{ t('common.loading') }}</span>
+    <div class="sd-skeleton__block sd-skeleton__block--title" aria-hidden="true"></div>
+    <div class="sd-skeleton__block sd-skeleton__block--meta" aria-hidden="true"></div>
+    <div class="sd-grid" aria-hidden="true">
+      <div class="sd-skeleton__block sd-skeleton__block--card"></div>
+      <div class="sd-skeleton__block sd-skeleton__block--card"></div>
+    </div>
+    <div class="sd-skeleton__block sd-skeleton__block--table" aria-hidden="true"></div>
+  </div>
+} @else if (notFound()) {
+  <app-empty-state
+    icon="alert"
+    [message]="t('splits.detail.notFound')"
+    [hint]="t('splits.detail.notFoundHint')"
+  >
+    <a routerLink="/splits" class="btn btn--outline btn--sm">
+      <app-icon name="chevron-left" size="0.875rem" />
+      {{ t('splits.detail.back') }}
+    </a>
+  </app-empty-state>
+} @else if (loadFailed() || !split()) {
+  <app-error-state
+    [message]="t('splits.detail.error.load')"
+    [retryLabel]="t('common.retry')"
+    (retry)="reload()"
+  />
+} @else {
+  @if (split(); as detail) {
+    <nav class="sd-back" [attr.aria-label]="t('splits.detail.back')">
+      <a routerLink="/splits" class="sd-back__link">
+        <app-icon name="chevron-left" size="0.875rem" />
+        {{ t('splits.detail.back') }}
+      </a>
+    </nav>
+
+    <app-page-header [title]="detail.note || t('splits.untitled', { id: detail.id })">
+      @if (mode() === 'view') {
+        <div headerActions class="sd-actions">
+          @switch (primaryAction()) {
+            @case ('complete') {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                [disabled]="saving()"
+                (click)="showCompleteConfirmDialog.set(true)"
+              >
+                <app-icon name="check" size="0.875rem" />
+                {{ t('splits.payout_complete') }}
+              </button>
+            }
+            @case ('unarchive') {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                [disabled]="saving()"
+                (click)="unarchiveSplit()"
+              >
+                {{ t('splits.unarchive') }}
+              </button>
+            }
+            @case ('edit') {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                data-sd-focus-return
+                (click)="toggleMode()"
+              >
+                <app-icon name="edit" size="0.875rem" />
+                {{ t('common.edit') }}
+              </button>
+            }
+          }
+          @if (canEdit() && primaryAction() !== 'edit') {
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              data-sd-focus-return
+              (click)="toggleMode()"
+            >
+              <app-icon name="edit" size="0.875rem" />
+              {{ t('common.edit') }}
+            </button>
+          }
+          @if (hasMenu()) {
+            <div #menuRoot class="sd-menu" (keydown)="onMenuKeydown($event)">
+              <button
+                type="button"
+                class="btn btn--outline btn--sm btn--icon sd-menu-trigger"
+                [attr.aria-label]="t('splits.detail.moreActions')"
+                aria-haspopup="true"
+                aria-controls="sd-menu-panel"
+                [attr.aria-expanded]="menuOpen()"
+                (click)="toggleMenu()"
+              >
+                <app-icon name="more-vertical" size="1rem" />
+              </button>
+              @if (menuOpen()) {
+                <div id="sd-menu-panel" class="sd-menu__panel">
+                  @if (canShare()) {
+                    <button
+                      type="button"
+                      class="sd-menu__item"
+                      [disabled]="saving()"
+                      (click)="closeMenu(); shareWithAlliance()"
+                    >
+                      <app-icon name="link" size="0.875rem" />
+                      {{ t('splits.shareWithAlliance') }}
+                    </button>
+                    @if (shareStatus()?.shared) {
+                      <button
+                        type="button"
+                        class="sd-menu__item"
+                        [disabled]="saving()"
+                        (click)="closeMenu(); unshareWithAlliance()"
+                      >
+                        <app-icon name="close" size="0.875rem" />
+                        {{ t('splits.unshareWithAlliance') }}
+                      </button>
+                    }
+                  }
+                  @if (canClose()) {
+                    @if (canShare()) {
+                      <hr class="sd-menu__sep" />
+                    }
+                    <button
+                      type="button"
+                      class="sd-menu__item"
+                      (click)="closeMenu(); closeConfirm.set('not-completed')"
+                    >
+                      <app-icon name="lock" size="0.875rem" />
+                      {{ t('splits.mark_not_completed') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="sd-menu__item sd-menu__item--danger"
+                      (click)="closeMenu(); closeConfirm.set('lost')"
+                    >
+                      <app-icon name="close" size="0.875rem" />
+                      {{ t('splits.mark_lost') }}
+                    </button>
+                  }
+                  @if (canDelete() && !detail.archived_at) {
+                    @if (canShare() || canClose()) {
+                      <hr class="sd-menu__sep" />
+                    }
+                    <button
+                      type="button"
+                      class="sd-menu__item sd-menu__item--danger"
+                      (click)="closeMenu(); showArchive.set(true)"
+                    >
+                      <app-icon name="package" size="0.875rem" />
+                      {{ t('splits.archive') }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </app-page-header>
+
+    <app-page-stack class="sd-page">
+      @if (mode() === 'edit' && canEdit()) {
+        <form id="edit-split-form" class="sd-form" novalidate (submit)="onEditSubmit($event)">
+          <h2 class="sd-form__title">{{ t('splits.detail.editing') }}</h2>
+          @if (isCompletedSplit()) {
+            <p class="sd-notice">
+              <app-icon name="info" size="0.875rem" />
+              <span>{{ t('splits.amendHint') }}</span>
+            </p>
+          }
+
+          <div class="sd-form__layout">
+            <div class="sd-form__col">
+              <section class="sd-card sd-card--pad" aria-labelledby="sd-edit-details-h">
+                <h3 id="sd-edit-details-h" class="sd-card__title">{{ t('splits.detail.sectionDetails') }}</h3>
+
+                <div class="sd-field">
+                  <label class="sd-label" for="sd-edit-note">{{ t('splits.note') }}</label>
+                  <input
+                    id="sd-edit-note"
+                    class="input"
+                    type="text"
+                    [value]="editNote()"
+                    (input)="onEditNoteChange($event)"
+                  />
+                </div>
+
+                <div class="sd-field">
+                  <span class="sd-label" id="sd-event-label">{{ t('splits.event_linked') }}</span>
+                  <div class="sd-eventrow">
+                    <span class="sd-readonly">{{ editEventTitle() || t('splits.no_event') }}</span>
+                    @if (!isCompletedSplit()) {
+                      <button
+                        type="button"
+                        class="btn btn--outline btn--sm"
+                        (click)="showEventSearch.set(true)"
+                      >
+                        <app-icon name="link" size="0.875rem" />
+                        {{ t('splits.link_event') }}
+                      </button>
+                      @if (editEventId()) {
+                        <button
+                          type="button"
+                          class="btn btn--ghost btn--sm btn--icon"
+                          [attr.aria-label]="t('splits.unlink_event')"
+                          (click)="unlinkEditEvent()"
+                        >
+                          <app-icon name="close" size="0.875rem" />
+                        </button>
+                      }
+                    }
+                  </div>
+                </div>
+
+                <div class="sd-fields-2">
+                  <div class="sd-field">
+                    <label class="sd-label" for="sd-edit-island">{{ t('splits.island') }}</label>
+                    <select id="sd-edit-island" class="select" (change)="onEditIslandChange($event)">
+                      <option value="" [selected]="!editIslandId()">{{ t('splits.pick_island') }}</option>
+                      @for (island of islands(); track island.id) {
+                        <option
+                          [value]="island.id"
+                          [selected]="isSelectedId(editIslandId(), island.id)"
+                        >
+                          {{ cityLabel(island.city) }} &middot; {{ island.name }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                  <div class="sd-field">
+                    <label class="sd-label" for="sd-edit-tab">{{ t('splits.tab') }}</label>
+                    <select
+                      id="sd-edit-tab"
+                      class="select"
+                      [disabled]="!editIslandId()"
+                      (change)="onEditTabChange($event)"
+                    >
+                      <option value="" [selected]="!editTabId()">{{ t('splits.pick_tab') }}</option>
+                      @for (tab of editIslandTabs(); track tab.id) {
+                        <option [value]="tab.id" [selected]="isSelectedId(editTabId(), tab.id)">
+                          {{ tab.name }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                </div>
+              </section>
+
+              <section class="sd-card sd-card--pad" aria-labelledby="sd-edit-amounts-h">
+                <h3 id="sd-edit-amounts-h" class="sd-card__title">{{ t('splits.detail.sectionAmounts') }}</h3>
+
+                <div class="sd-fields-3">
+                  <div class="sd-field">
+                    <label class="sd-label" for="sd-edit-estimated">{{ t('splits.estimated') }}</label>
+                    <input
+                      id="sd-edit-estimated"
+                      class="input sd-mono"
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      [value]="editEstimated()"
+                      (input)="onEditEstimatedChange($event)"
+                    />
+                  </div>
+                  <div class="sd-field">
+                    <label class="sd-label" for="sd-edit-fee">{{ t('splits.detail.feePercent') }}</label>
+                    <input
+                      id="sd-edit-fee"
+                      class="input sd-mono"
+                      type="text"
+                      inputmode="decimal"
+                      [attr.aria-invalid]="feeError() ? 'true' : null"
+                      [attr.aria-describedby]="feeError() ? 'sd-edit-fee-error' : null"
+                      [value]="editFeeInput()"
+                      (input)="onEditFeeChange($event)"
+                    />
+                    @if (feeError(); as message) {
+                      <p id="sd-edit-fee-error" class="sd-error">{{ message }}</p>
+                    }
+                  </div>
+                  <div class="sd-field">
+                    <label class="sd-label" for="sd-edit-repair">
+                      {{ t('splits.repair_cost') }}
+                      <span class="sd-label__hint">{{ t('splits.detail.deducted') }}</span>
+                    </label>
+                    <input
+                      id="sd-edit-repair"
+                      class="input sd-mono"
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      [value]="editRepair()"
+                      (input)="onEditRepairChange($event)"
+                    />
+                  </div>
+                </div>
+
+                <div class="sd-field">
+                  <div class="sd-field__head">
+                    <span class="sd-label" id="sd-bags-label">
+                      {{ t('splits.bags_value') }}
+                      <span class="sd-label__hint">{{ t('splits.detail.added') }}</span>
+                    </span>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="addEditBag()">
+                      <app-icon name="plus" size="0.875rem" />
+                      {{ t('splits.add_bag') }}
+                    </button>
+                  </div>
+                  <ul class="sd-bags" aria-labelledby="sd-bags-label">
+                    @for (bag of editBagRows(); track bag.key; let i = $index) {
+                      <li class="sd-bags__row">
+                        <input
+                          class="input sd-mono"
+                          type="number"
+                          inputmode="numeric"
+                          min="0"
+                          [value]="bag.amount"
+                          [attr.aria-label]="t('splits.detail.bagN', { n: i + 1 })"
+                          (input)="onEditBagAmountChange(bag.key, $event)"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn--ghost btn--sm btn--icon"
+                          [attr.aria-label]="t('splits.remove_bag') + ' ' + (i + 1)"
+                          (click)="removeEditBag(bag.key)"
+                        >
+                          <app-icon name="close" size="0.875rem" />
+                        </button>
+                      </li>
+                    } @empty {
+                      <li class="sd-muted">{{ t('splits.bags_empty') }}</li>
+                    }
+                  </ul>
+                </div>
+
+                <div class="sd-preview">
+                  <h4 class="sd-preview__title">{{ t('splits.net_preview') }}</h4>
+                  <ng-container
+                    [ngTemplateOutlet]="ledgerTpl"
+                    [ngTemplateOutletContext]="{ $implicit: editLedger() }"
+                  />
+                </div>
+              </section>
+            </div>
+
+            <section class="sd-card sd-card--pad" aria-labelledby="sd-edit-roster-h">
+              <div class="sd-field__head">
+                <h3 id="sd-edit-roster-h" class="sd-card__title">
+                  {{ t('splits.roster_management') }} ({{ editParticipants().length }})
+                </h3>
+                <div class="sd-actions">
+                  @if (editParticipants().length > 0) {
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      (click)="distributeEditWeightsEvenly()"
+                    >
+                      {{ t('splits.distribute_evenly') }}
+                    </button>
+                  }
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    (click)="showParticipantSearch.set(true)"
+                  >
+                    <app-icon name="plus" size="0.875rem" />
+                    {{ t('splits.add_participant') }}
+                  </button>
+                </div>
+              </div>
+              <p class="sd-muted">
+                {{ t('splits.roster_hint') }}
+                @if (!isCompletedSplit()) {
+                  {{ t('splits.detail.rosterImmediate') }}
+                }
+              </p>
+
+              @if (rosterError(); as message) {
+                <p class="sd-error">{{ message }}</p>
+              }
+
+              <ul class="sd-roster">
+                @for (participant of editParticipants(); track participant.user_id) {
+                  <li class="sd-roster__row">
+                    <div class="sd-roster__who">
+                      <span class="sd-roster__name">{{ participant.username }}</span>
+                      <span class="sd-roster__share">
+                        {{ t('splits.share') }}:
+                        <span class="sd-mono">
+                          {{
+                            formatAmount(
+                              estimatedShare(
+                                editNetPreview(),
+                                toNumber(participant.weight),
+                                editTotalWeight()
+                              )
+                            )
+                          }}
+                        </span>
+                        {{ t('splits.detail.silver') }}
+                      </span>
+                    </div>
+                    <div class="sd-roster__controls">
+                      <div class="sd-weight">
+                        <input
+                          class="input input--sm sd-mono sd-weight__input"
+                          type="text"
+                          inputmode="decimal"
+                          [attr.data-participant-weight]="participant.user_id"
+                          [attr.aria-label]="t('splits.detail.weightLabel', { name: participant.username })"
+                          [attr.aria-invalid]="weightErrors()[participant.user_id] ? 'true' : null"
+                          [attr.aria-describedby]="
+                            weightErrors()[participant.user_id]
+                              ? 'sd-weight-error-' + participant.user_id
+                              : null
+                          "
+                          [value]="editWeightValue(participant)"
+                          (input)="onEditWeightChange(participant.user_id, $event)"
+                        />
+                        <span class="sd-weight__unit" aria-hidden="true">%</span>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm btn--icon"
+                        [attr.aria-label]="t('splits.detail.removeParticipantNamed', { name: participant.username })"
+                        (click)="removeEditParticipant(participant.user_id)"
+                      >
+                        <app-icon name="close" size="0.875rem" />
+                      </button>
+                    </div>
+                    @if (weightErrors()[participant.user_id]; as message) {
+                      <p [id]="'sd-weight-error-' + participant.user_id" class="sd-error sd-roster__error">
+                        {{ message }}
+                      </p>
+                    }
+                  </li>
+                } @empty {
+                  <li class="sd-roster__empty">
+                    <app-empty-state
+                      icon="users"
+                      [message]="t('splits.roster_empty')"
+                      [hint]="t('splits.detail.rosterEmptyHint')"
+                    />
+                  </li>
+                }
+              </ul>
+            </section>
+          </div>
+
+          <div class="sd-editbar">
+            <div class="sd-editbar__summary">
+              <span>{{ t('splits.detail.netToShare') }}</span>
+              <strong class="sd-mono">{{ formatAmount(editNetPreview()) }}</strong>
+              <span class="sd-muted">{{ t('splits.detail.silver') }}</span>
+            </div>
+            @if (submitted() && hasEditErrors()) {
+              <p id="sd-edit-errors" class="sd-error sd-editbar__error" role="alert" tabindex="-1">
+                {{ t('splits.detail.fixErrors') }}
+              </p>
+            }
+            <div class="sd-actions">
+              <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEdit()">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="submit" class="btn btn--primary btn--sm" [disabled]="saving()">
+                {{ saving() ? t('common.loading') : t('common.save') }}
+              </button>
+            </div>
+          </div>
+        </form>
+      } @else {
+        <section class="sd-card sd-card--pad" aria-labelledby="sd-overview-h">
+          <h2 id="sd-overview-h" class="sr-only">{{ t('splits.detail.overview') }}</h2>
+          <div class="sd-chips">
+            <span [class]="'sd-chip sd-chip--' + statusTone(detail.status)">
+              <app-icon [name]="statusIcon(detail.status)" size="0.8125rem" />
+              {{ statusLabel(detail.status) }}
+            </span>
+            @if (detail.archived_at) {
+              <span class="sd-chip sd-chip--neutral">
+                <app-icon name="lock" size="0.8125rem" />
+                {{ t('splits.archived') }}
+              </span>
+            }
+            @if (!isAllianceTenant() && shareStatus()?.shared) {
+              <span class="sd-chip sd-chip--info">
+                <app-icon name="link" size="0.8125rem" />
+                {{ t('splits.sharedWithAlliance') }}
+              </span>
+            }
+            @if (isReadOnly()) {
+              <span class="sd-chip sd-chip--neutral">
+                <app-icon name="lock" size="0.8125rem" />
+                {{ detail.origin_read_only ? t('splits.readOnlyCopy') : t('splits.readOnlyAlliance') }}
+              </span>
+            }
+          </div>
+
+          <dl class="sd-facts">
+            <div class="sd-fact">
+              <dt>{{ t('splits.detail.activity') }}</dt>
+              <dd>
+                @if (detail.event_title && detail.event_id) {
+                  <a class="sd-link" [routerLink]="['/events', detail.event_id]">{{ detail.event_title }}</a>
+                } @else {
+                  <span class="sd-muted">{{ t('splits.no_event') }}</span>
+                }
+              </dd>
+            </div>
+            <div class="sd-fact">
+              <dt>{{ t('splits.location') }}</dt>
+              <dd>
+                @if (detail.island_tab_id) {
+                  {{ locationLabel(detail) }}
+                } @else {
+                  <span class="sd-muted">{{ t('splits.no_location') }}</span>
+                }
+              </dd>
+            </div>
+            <div class="sd-fact">
+              <dt>{{ t('splits.detail.author') }}</dt>
+              <dd>{{ detail.created_by_username }}</dd>
+            </div>
+            <div class="sd-fact">
+              <dt>{{ t('splits.created') }}</dt>
+              <dd>
+                <time [attr.datetime]="detail.created_at">{{ formatDate(detail.created_at) }}</time>
+              </dd>
+            </div>
+            @if (detail.finalized_at) {
+              <div class="sd-fact">
+                <dt>{{ t('splits.detail.closedAt') }}</dt>
+                <dd>
+                  <time [attr.datetime]="detail.finalized_at">{{ formatDate(detail.finalized_at) }}</time>
+                </dd>
+              </div>
+            }
+          </dl>
+        </section>
+
+        <div class="sd-grid">
+          <section class="sd-card" aria-labelledby="sd-money-h">
+            <header class="sd-card__head">
+              <h2 id="sd-money-h" class="sd-card__title">{{ t('splits.detail.moneyFlow') }}</h2>
+              <span class="sd-unit">{{ t('splits.detail.silver') }}</span>
+            </header>
+            <div class="sd-card__body">
+              <ng-container
+                [ngTemplateOutlet]="ledgerTpl"
+                [ngTemplateOutletContext]="{ $implicit: ledger() }"
+              />
+            </div>
+          </section>
+
+          <section class="sd-card" aria-labelledby="sd-payout-h">
+            <header class="sd-card__head">
+              <h2 id="sd-payout-h" class="sd-card__title">{{ t('splits.detail.payout') }}</h2>
+            </header>
+            <div class="sd-card__body sd-payout">
+              <p class="sd-payout__state">
+                <app-icon [name]="lifecycleIcon(detail)" size="1rem" />
+                {{ payoutLifecycleLabel(detail) }}
+              </p>
+              @if (showPayoutColumn() && payoutReady() && participantTotals().count > 0) {
+                <p class="sd-payout__count">
+                  {{ t('splits.detail.paidCount', { paid: participantTotals().paid, total: participantTotals().count }) }}
+                </p>
+                <div class="sd-bar" aria-hidden="true">
+                  <span [style.width.%]="(participantTotals().paid / participantTotals().count) * 100"></span>
+                </div>
+              }
+              @if (nextStep(detail); as step) {
+                <p class="sd-next">
+                  <app-icon name="info" size="0.875rem" />
+                  <span>{{ step }}</span>
+                </p>
+              }
+            </div>
+          </section>
+        </div>
+
+        <section class="sd-card" aria-labelledby="sd-participants-h">
+          <header class="sd-card__head">
+            <h2 id="sd-participants-h" class="sd-card__title">
+              {{ t('splits.participants') }} ({{ participantRows().length }})
+            </h2>
+            <span class="sd-unit">{{ t('splits.detail.silver') }}</span>
+          </header>
+
+          @if (participantRows().length === 0) {
+            <app-empty-state
+              icon="users"
+              [message]="t('splits.roster_empty')"
+              [hint]="t('splits.detail.rosterEmptyHint')"
+            >
+              @if (canEdit()) {
+                <button type="button" class="btn btn--outline btn--sm" data-sd-focus-return (click)="toggleMode()">
+                  <app-icon name="plus" size="0.875rem" />
+                  {{ t('splits.add_participant') }}
+                </button>
+              }
+            </app-empty-state>
+          } @else {
+            <div
+              class="sd-scroll"
+              role="region"
+              tabindex="0"
+              [attr.aria-label]="t('splits.detail.participantsTableLabel')"
+            >
+              <table class="sd-table">
+                <caption class="sr-only">
+                  {{ t('splits.detail.participantsTableLabel') }}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col" class="sd-th sd-cell--sticky" [attr.aria-sort]="ariaSort('username')">
+                      <button type="button" class="sd-sort" (click)="toggleParticipantSort('username')">
+                        {{ t('splits.player') }}
+                        <app-icon
+                          [name]="sortIcon('username')"
+                          size="0.75rem"
+                          [class.sd-sort__idle]="ariaSort('username') === 'none'"
+                        />
+                      </button>
+                    </th>
+                    <th scope="col" class="sd-th sd-th--num" [attr.aria-sort]="ariaSort('amount')">
+                      <button type="button" class="sd-sort" (click)="toggleParticipantSort('amount')">
+                        {{ t('common.amount') }}
+                        <app-icon
+                          [name]="sortIcon('amount')"
+                          size="0.75rem"
+                          [class.sd-sort__idle]="ariaSort('amount') === 'none'"
+                        />
+                      </button>
+                    </th>
+                    @if (showPayoutColumn()) {
+                      <th scope="col" class="sd-th">{{ t('splits.detail.col.payout') }}</th>
+                    }
+                    <th scope="col" class="sd-th sd-th--num" [attr.aria-sort]="ariaSort('weight')">
+                      <button type="button" class="sd-sort" (click)="toggleParticipantSort('weight')">
+                        {{ t('splits.weight') }}
+                        <app-icon
+                          [name]="sortIcon('weight')"
+                          size="0.75rem"
+                          [class.sd-sort__idle]="ariaSort('weight') === 'none'"
+                        />
+                      </button>
+                    </th>
+                    <th scope="col" class="sd-th sd-th--num">{{ t('splits.detail.col.poolShare') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of sortedParticipantRows(); track row.user_id) {
+                    <tr>
+                      <th scope="row" class="sd-cell sd-cell--sticky sd-cell--name">{{ row.username }}</th>
+                      <td class="sd-cell sd-num sd-num--strong">{{ formatAmount(row.amount) }}</td>
+                      @if (showPayoutColumn()) {
+                        <td class="sd-cell">
+                          @if (payoutReady()) {
+                            @let presentation = payoutPresentation(row.payout);
+                            <span [class]="'sd-chip sd-chip--' + presentation.tone">
+                              <app-icon [name]="presentation.icon" size="0.8125rem" />
+                              {{ t(presentation.label) }}
+                            </span>
+                          } @else if (transactionsLoading()) {
+                            <span class="sd-skeleton__inline" aria-hidden="true"></span>
+                            <span class="sr-only">{{ t('common.loading') }}</span>
+                          } @else {
+                            <span class="sd-muted" aria-hidden="true">—</span>
+                          }
+                        </td>
+                      }
+                      <td class="sd-cell sd-num">{{ formatPercent(row.weight) }}</td>
+                      <td class="sd-cell sd-num">{{ formatPercent(row.poolPct) }}</td>
+                    </tr>
+                  }
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row" class="sd-cell sd-cell--sticky sd-cell--name">{{ t('common.total') }}</th>
+                    <td class="sd-cell sd-num sd-num--strong">{{ formatAmount(participantTotals().amount) }}</td>
+                    @if (showPayoutColumn()) {
+                      <td class="sd-cell">
+                        @if (payoutReady()) {
+                          {{ t('splits.detail.paidCount', { paid: participantTotals().paid, total: participantTotals().count }) }}
+                        }
+                      </td>
+                    }
+                    <td class="sd-cell sd-num">{{ formatPercent(participantTotals().weight) }}</td>
+                    <td class="sd-cell sd-num">
+                      {{ participantTotals().weight > 0 ? formatPercent(100) : '—' }}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          }
+        </section>
+
+        @if (canViewSplitTransactions()) {
+          <section class="sd-card" aria-labelledby="sd-tx-h">
+            <header class="sd-card__head">
+              <h2 id="sd-tx-h" class="sd-card__title">
+                {{ t('splits.detail.transactionsTitle') }} ({{ splitTransactions().length }})
+              </h2>
+              <span class="sd-unit">{{ t('splits.detail.silver') }}</span>
+            </header>
+
+            @if (transactionsLoading() && splitTransactions().length === 0) {
+              <div class="sd-skeleton" role="status" aria-busy="true">
+                <span class="sr-only">{{ t('common.loading') }}</span>
+                <div class="sd-skeleton__block sd-skeleton__block--table" aria-hidden="true"></div>
+              </div>
+            } @else if (transactionsLoadFailed()) {
+              <app-error-state
+                [message]="t('splits.detail.error.transactions')"
+                [retryLabel]="t('common.retry')"
+                (retry)="retryTransactions()"
+              />
+            } @else if (splitTransactions().length === 0) {
+              <app-empty-state
+                icon="bank"
+                [message]="t('splits.detail.transactionsEmpty')"
+                [hint]="t('splits.detail.transactionsEmptyHint')"
+              >
+                @if (canClose()) {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    (click)="showCompleteConfirmDialog.set(true)"
+                  >
+                    <app-icon name="check" size="0.875rem" />
+                    {{ t('splits.payout_complete') }}
+                  </button>
+                }
+              </app-empty-state>
+            } @else {
+              <div
+                class="sd-scroll"
+                role="region"
+                tabindex="0"
+                [attr.aria-label]="t('splits.detail.transactionsTitle')"
+              >
+                <table class="sd-table">
+                  <caption class="sr-only">
+                    {{ t('splits.detail.transactionsTitle') }}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="sd-th sd-cell--sticky">{{ t('admin.transactions.fields.to') }}</th>
+                      <th scope="col" class="sd-th sd-th--num">{{ t('common.amount') }}</th>
+                      <th scope="col" class="sd-th">{{ t('common.status') }}</th>
+                      <th scope="col" class="sd-th">{{ t('common.date') }}</th>
+                      @if (canEditTransactions()) {
+                        <th scope="col" class="sd-th sd-th--num">
+                          <span class="sr-only">{{ t('common.actions') }}</span>
+                        </th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (tx of splitTransactions(); track tx.id) {
+                      <tr>
+                        <th scope="row" class="sd-cell sd-cell--sticky sd-cell--name">{{ tx.to_username }}</th>
+                        <td class="sd-cell sd-num sd-num--strong">{{ formatAmount(tx.amount) }}</td>
+                        <td class="sd-cell">
+                          @let presentation = transactionPresentation(tx.status);
+                          <span [class]="'sd-chip sd-chip--' + presentation.tone">
+                            <app-icon [name]="presentation.icon" size="0.8125rem" />
+                            {{ t(presentation.label) }}
+                          </span>
+                        </td>
+                        <td class="sd-cell sd-nowrap">{{ formatDate(tx.created_at) }}</td>
+                        @if (canEditTransactions()) {
+                          <td class="sd-cell sd-num">
+                            <button
+                              type="button"
+                              class="btn btn--outline btn--sm"
+                              [attr.aria-label]="t('splits.detail.editTransactionFor', { name: tx.to_username })"
+                              (click)="openEditTransaction(tx)"
+                            >
+                              {{ t('common.edit') }}
+                            </button>
+                          </td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </section>
+        }
+      }
+    </app-page-stack>
+  }
+}
+
+<ng-template #ledgerTpl let-l>
+  <dl class="sd-ledger">
+    <div class="sd-ledger__row">
+      <dt>{{ t('splits.estimated') }}</dt>
+      <dd>{{ formatAmount(l.estimated) }}</dd>
+    </div>
+    <div class="sd-ledger__row">
+      <dt>
+        {{ t('splits.bags_value') }}
+        @if (l.bagList.length > 1) {
+          <span class="sd-ledger__sub">
+            @for (amount of l.bagList; track $index) {
+              {{ formatAmount(amount) }}@if (!$last) {
+                &middot;
+              }
+            }
+          </span>
+        }
+      </dt>
+      <dd [class.sd-pos]="l.bags > 0">{{ formatSigned(l.bags, '+') }}</dd>
+    </div>
+    <div class="sd-ledger__row">
+      <dt>{{ t('splits.repair_cost') }}</dt>
+      <dd [class.sd-neg]="l.repair > 0">{{ formatSigned(l.repair, '−') }}</dd>
+    </div>
+    <div class="sd-ledger__row sd-ledger__row--sum">
+      <dt>{{ t('splits.detail.subtotal') }}</dt>
+      <dd>{{ formatAmount(l.subtotal) }}</dd>
+    </div>
+    <div class="sd-ledger__row">
+      <dt>{{ t('splits.fee') }} ({{ formatPercent(l.feePct) }})</dt>
+      <dd [class.sd-neg]="l.feeAmount > 0">{{ formatSigned(l.feeAmount, '−') }}</dd>
+    </div>
+    <div class="sd-ledger__row sd-ledger__row--net">
+      <dt>{{ t('splits.detail.netToShare') }}</dt>
+      <dd>{{ formatAmount(l.net) }}</dd>
+    </div>
+  </dl>
+</ng-template>
+
+@if (showCompleteConfirmDialog()) {
+  <app-dialog
+    [title]="t('splits.detail.confirmCompleteTitle')"
+    [subtitle]="t('splits.detail.confirmCompleteSubtitle')"
+    size="md"
+    (closed)="showCompleteConfirmDialog.set(false)"
+  >
+    <div class="sd-dialog">
+      <div class="sd-dialog__summary">
+        <div>
+          <p class="sd-dialog__label">{{ t('splits.detail.netToShare') }}</p>
+          <p class="sd-muted">{{ participantRows().length }} {{ t('splits.participants') }}</p>
+        </div>
+        <p class="sd-dialog__figure">
+          {{ formatAmount(netValue()) }}
+          <span class="sd-muted">{{ t('splits.detail.silver') }}</span>
+        </p>
+      </div>
+
+      <ul class="sd-dialog__list" [attr.aria-label]="t('splits.roster_management')">
+        @for (row of participantRows(); track row.user_id) {
+          <li class="sd-dialog__item">
+            <span class="sd-dialog__name">{{ row.username }}</span>
+            <span class="sd-mono">
+              {{ formatAmount(row.amount) }}
+              <span class="sd-muted">({{ formatPercent(row.weight) }})</span>
+            </span>
+          </li>
+        }
+      </ul>
+
+      <p class="sd-notice">
+        <app-icon name="info" size="0.875rem" />
+        <span>{{ t('splits.detail.confirmCompleteWarning') }}</span>
+      </p>
+    </div>
+
+    <div dialogFooter class="sd-actions sd-actions--end">
+      <button type="button" class="btn btn--ghost btn--sm" (click)="showCompleteConfirmDialog.set(false)">
+        {{ t('common.cancel') }}
+      </button>
+      <button
+        type="button"
+        class="btn btn--primary btn--sm"
+        [disabled]="saving()"
+        (click)="executeCompleteSplit()"
+      >
+        <app-icon name="check" size="0.875rem" />
+        {{ saving() ? t('common.loading') : t('splits.detail.confirmCompleteAction') }}
+      </button>
+    </div>
+  </app-dialog>
+}
+
+@if (closeConfirm(); as action) {
+  <app-dialog
+    [title]="t(action === 'lost' ? 'splits.detail.confirmLostTitle' : 'splits.detail.confirmNotCompletedTitle')"
+    size="sm"
+    (closed)="closeConfirm.set(null)"
+  >
+    <p class="sd-dialog__text">
+      {{ t(action === 'lost' ? 'splits.detail.confirmLostBody' : 'splits.detail.confirmNotCompletedBody') }}
+    </p>
+    <div dialogFooter class="sd-actions sd-actions--end">
+      <button type="button" class="btn btn--ghost btn--sm" (click)="closeConfirm.set(null)">
+        {{ t('common.cancel') }}
+      </button>
+      <button
+        type="button"
+        class="btn btn--sm"
+        [class.btn--danger]="action === 'lost'"
+        [class.btn--outline]="action !== 'lost'"
+        [disabled]="saving()"
+        (click)="confirmClose()"
+      >
+        {{ action === 'lost' ? t('splits.mark_lost') : t('splits.mark_not_completed') }}
+      </button>
+    </div>
+  </app-dialog>
+}
+
+@if (showArchive()) {
+  <app-dialog [title]="t('splits.archive')" size="sm" (closed)="showArchive.set(false)">
+    <p class="sd-dialog__text">{{ t('splits.confirm_delete') }}</p>
+    <div dialogFooter class="sd-actions sd-actions--end">
+      <button type="button" class="btn btn--ghost btn--sm" (click)="showArchive.set(false)">
+        {{ t('common.cancel') }}
+      </button>
+      <button type="button" class="btn btn--tonal btn--sm" [disabled]="saving()" (click)="confirmArchive()">
+        {{ t('splits.archive') }}
+      </button>
+    </div>
+  </app-dialog>
+}
+
+@if (editTransactionTarget(); as tx) {
+  <app-dialog [title]="t('splits.detail.transactionsEdit')" size="sm" (closed)="closeEditTransaction()">
+    <form id="edit-transaction-form" class="sd-dialog" novalidate (submit)="saveEditTransaction($event)">
+      <p class="sd-dialog__text">{{ tx.to_username }}</p>
+      <div class="sd-field">
+        <label class="sd-label" for="sd-tx-amount">
+          {{ t('common.amount') }} <span class="sd-label__hint">{{ t('splits.detail.silver') }}</span>
+        </label>
+        <input
+          id="sd-tx-amount"
+          class="input sd-mono"
+          type="number"
+          inputmode="decimal"
+          min="0.01"
+          step="0.01"
+          [attr.aria-invalid]="transactionAmountError() ? 'true' : null"
+          [attr.aria-describedby]="transactionAmountError() ? 'sd-tx-amount-error' : null"
+          [value]="editTransactionAmount() ?? ''"
+          (input)="onEditTransactionAmount($event)"
+        />
+        @if (transactionAmountError(); as message) {
+          <p id="sd-tx-amount-error" class="sd-error">{{ message }}</p>
+        }
+      </div>
+      <div class="sd-field">
+        <label class="sd-label" for="sd-tx-status">{{ t('common.status') }}</label>
+        <select
+          id="sd-tx-status"
+          class="select"
+          [value]="editTransactionStatus()"
+          (change)="onEditTransactionStatus($event)"
+        >
+          <option value="pending">{{ t('bank.status.pending') }}</option>
+          <option value="requested">{{ t('bank.status.requested') }}</option>
+          <option value="rejected">{{ t('bank.status.rejected') }}</option>
+          <option value="withdrawn">{{ t('bank.status.withdrawn') }}</option>
+          <option value="donated">{{ t('bank.status.donated') }}</option>
+        </select>
+      </div>
+      <div class="sd-field">
+        <label class="sd-label" for="sd-tx-type">{{ t('admin.transactions.fields.type') }}</label>
+        <input
+          id="sd-tx-type"
+          class="input"
+          type="text"
+          [value]="editTransactionType()"
+          (input)="onEditTransactionType($event)"
+        />
+      </div>
+    </form>
+    <div dialogFooter class="sd-actions sd-actions--end">
+      <button type="button" class="btn btn--ghost btn--sm" (click)="closeEditTransaction()">
+        {{ t('common.cancel') }}
+      </button>
+      <button
+        type="submit"
+        class="btn btn--primary btn--sm"
+        form="edit-transaction-form"
+        [disabled]="savingTransaction()"
+      >
+        {{ savingTransaction() ? t('common.loading') : t('common.save') }}
+      </button>
+    </div>
+  </app-dialog>
+}
+
+@if (showEventSearch()) {
+  <app-search-dialog
+    [title]="t('splits.link_event')"
+    [options]="eventSearchOptions()"
+    [loading]="eventSearchLoading()"
+    [showDateFilters]="true"
+    (filterChange)="onEventSearchFilter($event)"
+    (select)="onEditEventSelect($event)"
+    (close)="showEventSearch.set(false)"
+  />
+}
+
+@if (showParticipantSearch()) {
+  <app-search-dialog
+    [title]="t('splits.add_participant')"
+    [placeholder]="t('splits.search_users')"
+    [options]="participantSearchOptions()"
+    [loading]="searchingRoster()"
+    (filterChange)="onParticipantSearchFilter($event)"
+    (select)="onParticipantSelect($event)"
+    (close)="showParticipantSearch.set(false)"
+  />
+}
