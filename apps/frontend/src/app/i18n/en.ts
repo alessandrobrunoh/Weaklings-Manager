@@ -2752,7 +2752,6 @@ export const en = {
 
   'platform.title': 'Platform',
   'platform.hub.subtitle': 'Register tenants, toggle features, and assign control-plane operators.',
-  'platform.hub.panels': 'Workspaces',
   'platform.hub.tenantsHint': 'Register, suspend, and resume Discord servers.',
   'platform.hub.adminsHint': 'Grant or revoke SuperAdmin on the control plane.',
   'platform.hub.ranksHint': 'Create tenant ranks and the modules each one unlocks.',
@@ -3448,6 +3447,15 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/platform-hub
+  'platform.hub.summary': 'Platform summary',
+  'platform.hub.groupTenants': 'Tenants',
+  'platform.hub.groupTenantsHint': 'Every Discord server registered on this platform.',
+  'platform.hub.groupAccess': 'Access',
+  'platform.hub.groupAccessHint': 'Who can operate the control plane.',
+  'platform.hub.groupConfig': 'Configuration',
+  'platform.hub.groupConfigHint': 'What each tenant can use, and how its features are set.',
+  'platform.hub.flagsHint': 'Turn catalog features on or off. Flags are set per tenant, so open a tenant first.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -2589,7 +2589,6 @@ export const fr: TranslationDict = {
   'guild.leaderboard.fullStandings': 'Classements complets de la saison',
   'platform.title': 'Plateforme',
   'platform.hub.subtitle': 'Enregistrer des tenants, activer des fonctionnalités et assigner des opérateurs.',
-  'platform.hub.panels': 'Espaces de travail',
   'platform.hub.tenantsHint': 'Enregistrer, suspendre et réactiver des serveurs Discord.',
   'platform.hub.adminsHint': 'Accorder ou révoquer SuperAdmin sur le plan de contrôle.',
   'platform.hub.ranksHint': 'Créez les rangs tenant et les modules que chacun débloque.',
@@ -3269,4 +3268,13 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/platform-hub
+  'platform.hub.summary': 'Synthèse de la plateforme',
+  'platform.hub.groupTenants': 'Tenants',
+  'platform.hub.groupTenantsHint': 'Chaque serveur Discord enregistré sur cette plateforme.',
+  'platform.hub.groupAccess': 'Accès',
+  'platform.hub.groupAccessHint': 'Qui peut administrer le plan de contrôle.',
+  'platform.hub.groupConfig': 'Configuration',
+  'platform.hub.groupConfigHint': 'Ce que chaque tenant peut utiliser, et comment ses fonctionnalités sont réglées.',
+  'platform.hub.flagsHint': 'Active ou désactive les fonctionnalités du catalogue. Les drapeaux se règlent par tenant : ouvrez d’abord un tenant.',
 };
