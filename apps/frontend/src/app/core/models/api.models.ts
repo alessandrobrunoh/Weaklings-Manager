@@ -30,6 +30,8 @@ export interface ProblemDetails {
   detail?: string;
   instance?: string;
   invalid_params?: unknown;
+  /** Stable machine-readable code, e.g. `account_blocked` or `copy_read_only`. */
+  code?: string;
 }
 
 /** One row blocking a delete/update, e.g. an event still using a comp being deleted. */
@@ -294,6 +296,14 @@ export interface UserProfile {
   /** Present only for the caller's own row and for `users.create`/`roles.manage` holders. */
   email?: string;
   role: Role;
+  /** True while an officer has blocked this member from the manager. Always false for viewers without `roles.manage`. */
+  blocked: boolean;
+  /** RFC 3339. Only for `roles.manage` viewers, only while blocked. */
+  blocked_at?: string;
+  /** Display name of the officer who blocked the member. */
+  blocked_by?: string;
+  /** The officer's optional note; never shown to the blocked member. */
+  blocked_reason?: string;
 }
 
 /** How well a member plays a weapon. UI labels are Main / Good / Basic. */
@@ -1412,27 +1422,6 @@ export interface AlbionLinkStatus {
   albion_player_id?: string;
   albion_player_name?: string;
   linked_at?: string;
-  /** A self-service claim is waiting for an officer. It is not a link: `linked` stays false. */
-  pending: boolean;
-  pending_albion_player_id?: string;
-  pending_albion_player_name?: string;
-  requested_at?: string;
-}
-
-/** One self-service link claim in the officer queue (`GET /api/albion/link/requests`). */
-export interface AlbionLinkRequestView {
-  id: number;
-  discord_id: string;
-  user_id: number | null;
-  username: string | null;
-  albion_player_id: string;
-  albion_player_name: string;
-  albion_guild_name: string | null;
-  requested_at: string;
-  /** Other open claims on the same character. */
-  competing_requests: number;
-  /** Approving would fail with 409 until the existing link is removed. */
-  character_already_linked: boolean;
 }
 
 export interface AlbionLinkRequest {

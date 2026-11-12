@@ -16,6 +16,7 @@ import { provideRouter, withComponentInputBinding, withViewTransitions } from '@
 
 import { routes } from './app.routes';
 import { serverSessionInterceptor } from './core/interceptors/server-session.interceptor';
+import { accessBlockedInterceptor } from './core/interceptors/access-blocked.interceptor';
 import { sessionExpiryInterceptor } from './core/interceptors/session-expiry.interceptor';
 import { AuthService } from './core/services/auth.service';
 import { bootSessionProbe } from './core/services/session-boot';
@@ -45,7 +46,11 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideHttpClient(
       withFetch(),
-      withInterceptors([serverSessionInterceptor, sessionExpiryInterceptor]),
+      withInterceptors([
+        serverSessionInterceptor,
+        sessionExpiryInterceptor,
+        accessBlockedInterceptor,
+      ]),
       withInterceptorsFromDi(),
     ),
     provideRouter(routes, withComponentInputBinding(), withViewTransitions()),

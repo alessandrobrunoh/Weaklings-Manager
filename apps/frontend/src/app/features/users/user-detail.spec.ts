@@ -240,4 +240,31 @@ describe('UserDetail', () => {
     await new Promise((resolve) => setTimeout(resolve, 320));
     expect(cmp.filteredRoster().map((p) => p.id)).toEqual(['g1']);
   });
+
+  it('shows a blocked member with text, who blocked them and offers to unblock', async () => {
+    const cmp = fixture.componentInstance as unknown as {
+      member: { set: (m: unknown) => void };
+    };
+    cmp.member.set({
+      id: 42,
+      username: 'Officer',
+      email: null,
+      role: 'Member',
+      blocked: true,
+      blocked_at: '2026-11-10T10:00:00Z',
+      blocked_by: 'Boss',
+      blocked_reason: 'spam',
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Blocked');
+    expect(element.textContent).toContain('spam');
+    const unblock = [...element.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Unblock'),
+    );
+    expect(unblock).toBeDefined();
+  });
 });

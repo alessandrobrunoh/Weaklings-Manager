@@ -377,6 +377,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/login').then((m) => m.Login),
   },
   {
+    path: 'blocked',
+    loadComponent: () => import('./features/auth/blocked').then((m) => m.Blocked),
+  },
+  {
     path: 'choose-server',
     loadComponent: () =>
       import('./features/auth/choose-server').then((m) => m.ChooseServer),

@@ -8,6 +8,7 @@ This directory contains the public login page, post-OAuth server selection, no-t
 
 - `Login` provides Discord login plus theme/language controls and a `no_tenant` alert.
 - `ChooseServer` displays pending tenants; `NeedsTenant` displays registerable guilds and optional bot-invite/logout actions.
+- `Blocked` (public route `/blocked`) tells a member an officer blocked their access, with "Check again" and "Sign out". The officer's reason is never shown. It is reached from the OAuth callback redirect, from `authGuard` / `tenantGuard` (when `AuthService.accessBlocked()` is set) and from `accessBlockedInterceptor` (a `403` with problem code `account_blocked` on a live session).
 - `RegisterTenant` presents a three-step wizard for tenant identity, guild/alliance selection, and review.
 
 ## Invariants
