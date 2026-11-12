@@ -3451,4 +3451,9 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/auth
+  'auth.login_title': 'Iniciar sesión',
+  'register.step': 'Paso {current} de {total}',
+  'register.discordServer': 'ID del servidor de Discord',
+  'register.submitFailed': 'No se pudo registrar el servidor. Revisa los datos e inténtalo de nuevo.',
 };

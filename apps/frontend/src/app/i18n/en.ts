@@ -3448,6 +3448,11 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/auth
+  'auth.login_title': 'Sign in',
+  'register.step': 'Step {current} of {total}',
+  'register.discordServer': 'Discord server ID',
+  'register.submitFailed': 'The server could not be registered. Check the details and try again.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

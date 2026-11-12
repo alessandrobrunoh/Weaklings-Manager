@@ -3265,4 +3265,9 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/auth
+  'auth.login_title': 'Вхід',
+  'register.step': 'Крок {current} з {total}',
+  'register.discordServer': 'ID сервера Discord',
+  'register.submitFailed': 'Не вдалося зареєструвати сервер. Перевірте дані та спробуйте ще раз.',
 };

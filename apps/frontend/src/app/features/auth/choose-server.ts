@@ -1,4 +1,4 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
+import { AUTH_LAYOUT_STYLES } from './auth-layout.styles';
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
@@ -6,7 +6,9 @@ import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TenantChoice } from '../../core/models/api.models';
 import type { TranslationKey } from '../../i18n/en';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
 
 /**
@@ -16,54 +18,54 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
 @Component({
   selector: 'app-choose-server',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
-  imports: [Icon, WeaklingsLogo],
+  styles: [AUTH_LAYOUT_STYLES],
+  imports: [EmptyState, Icon, Loading, WeaklingsLogo],
   template: `
-    <div class="auth-shell">
-      <section class="auth-card" aria-labelledby="choose-server-title">
-        <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo [compact]="true" />
-          <h1 id="choose-server-title" class="auth-card__title mt-5">
-            {{ t('auth.choose_server_title') }}
-          </h1>
-          <p class="auth-card__subtitle">{{ t('auth.choose_server_subtitle') }}</p>
-        </div>
+    <div class="auth-page">
+      <main class="auth-main">
+        <section class="auth-card" aria-labelledby="choose-server-title">
+          <header class="auth-head">
+            <app-weaklings-logo [compact]="true" />
+            <p class="auth-brand">{{ t('app.title') }}</p>
+            <h1 id="choose-server-title" class="auth-title">{{ t('auth.choose_server_title') }}</h1>
+            <p class="auth-hint">{{ t('auth.choose_server_subtitle') }}</p>
+          </header>
 
-        @if (loading()) {
-          <p class="text-center text-sm text-[var(--color-text-secondary)]">
-            {{ t('common.loading') }}
-          </p>
-        } @else if (tenants().length === 0) {
-          <p class="text-center text-sm text-[var(--color-error)]">
-            {{ t('auth.choose_server_empty') }}
-          </p>
-          <button type="button" class="btn btn--primary mt-4 w-full" (click)="auth.login()">
-            <app-icon name="discord" />
-            {{ t('auth.login_discord') }}
-          </button>
-        } @else {
-          <ul class="flex flex-col gap-2">
-            @for (tenant of tenants(); track tenant.id) {
-              <li>
-                <button
-                  type="button"
-                  class="btn btn--tonal w-full justify-start"
-                  [disabled]="submitting() === tenant.id"
-                  (click)="choose(tenant)"
-                >
-                  {{ tenant.name }}
-                </button>
-              </li>
-            }
-          </ul>
-        }
+          @if (loading()) {
+            <app-loading variant="lines" [rows]="3" [label]="t('common.loading')" />
+          } @else if (tenants().length === 0) {
+            <app-empty-state icon="shield" [message]="t('auth.choose_server_empty')" [compact]="true" />
+            <div class="auth-foot">
+              <button type="button" class="btn btn--primary w-full" (click)="auth.login()">
+                <app-icon name="discord" />
+                {{ t('auth.login_discord') }}
+              </button>
+            </div>
+          } @else {
+            <ul class="auth-list" [attr.aria-label]="t('auth.choose_server_title')">
+              @for (tenant of tenants(); track tenant.id) {
+                <li>
+                  <button
+                    type="button"
+                    class="auth-row"
+                    [disabled]="submitting() !== null"
+                    (click)="choose(tenant)"
+                  >
+                    <span class="auth-row__name">{{ tenant.name }}</span>
+                    <span class="auth-row__chevron" aria-hidden="true">
+                      <app-icon name="chevron-right" size="1rem" />
+                    </span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
 
-        @if (failed()) {
-          <p class="mt-4 text-center text-sm text-[var(--color-error)]" role="alert">
-            {{ t('auth.choose_server_error') }}
-          </p>
-        }
-      </section>
+          @if (failed()) {
+            <p class="auth-alert mt-4" role="alert">{{ t('auth.choose_server_error') }}</p>
+          }
+        </section>
+      </main>
     </div>
   `,
 })
