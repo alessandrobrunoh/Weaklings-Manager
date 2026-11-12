@@ -3269,4 +3269,16 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/settings
+  'settings.profile.title': 'Profil',
+  'settings.profile.hint': 'Lecture seule. Ces informations viennent de votre compte de connexion.',
+  'settings.profile.userId': 'ID utilisateur',
+  'settings.albion.sectionTitle': 'Personnage Albion',
+  'settings.albion.sectionHint': 'Votre personnage en jeu. Le lier associe votre activité Albion à ce compte.',
+  'settings.albion.searchLabel': 'Nom du joueur Albion',
+  'settings.albion.typeToSearch': 'Saisissez au moins 2 lettres pour rechercher.',
+  'settings.albion.linked': 'Lié',
+  'settings.appearance.hint': 'Enregistré sur cet appareil. Les changements s’appliquent immédiatement.',
+  'settings.language.hint': 'Enregistré sur cet appareil.',
+  'settings.ledger.summary': 'Résumé des comptes',
 };

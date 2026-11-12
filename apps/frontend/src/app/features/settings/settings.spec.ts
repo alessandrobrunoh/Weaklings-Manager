@@ -121,6 +121,21 @@ describe('Profile My weapons tab', () => {
     fixture.destroy();
   });
 
+  it('groups the settings tab into labelled sections', async () => {
+    const settingsTab = [...fixture.nativeElement.querySelectorAll('[role="tab"]')].find(
+      (tab) => (tab as HTMLElement).textContent?.trim() === 'Settings',
+    ) as HTMLButtonElement;
+    settingsTab.click();
+    await settle(fixture, () => fixture.nativeElement.querySelector('#settings-albion-title') !== null);
+
+    const headings = [...fixture.nativeElement.querySelectorAll('h2')].map((heading) =>
+      (heading as HTMLElement).textContent?.trim(),
+    );
+    expect(headings).toEqual(
+      expect.arrayContaining(['Profile', 'Albion character', 'Appearance', 'Language']),
+    );
+  });
+
   it('shows a My weapons tab on the profile', () => {
     const labels = [...fixture.nativeElement.querySelectorAll('[role="tab"]')].map((tab) =>
       (tab as HTMLElement).textContent?.trim(),

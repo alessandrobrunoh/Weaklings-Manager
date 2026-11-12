@@ -3448,6 +3448,18 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/settings
+  'settings.profile.title': 'Profile',
+  'settings.profile.hint': 'Read only. These come from your sign-in account.',
+  'settings.profile.userId': 'User ID',
+  'settings.albion.sectionTitle': 'Albion character',
+  'settings.albion.sectionHint': 'Your in-game character. Linking it connects your Albion activity to this account.',
+  'settings.albion.searchLabel': 'Albion player name',
+  'settings.albion.typeToSearch': 'Type at least 2 letters to search.',
+  'settings.albion.linked': 'Linked',
+  'settings.appearance.hint': 'Saved on this device. Changes apply right away.',
+  'settings.language.hint': 'Saved on this device.',
+  'settings.ledger.summary': 'Ledger summary',
 } as const;
 
 export type TranslationKey = keyof typeof en;
