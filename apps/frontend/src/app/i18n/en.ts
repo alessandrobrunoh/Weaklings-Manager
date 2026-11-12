@@ -3675,6 +3675,23 @@ export const en = {
   'admin.transactions.summary.paidHint': '{count} paid out',
   'admin.transactions.summary.donated': 'Donated',
   'admin.transactions.summary.donatedHint': '{count} donated to the Guild Bank',
+  // design/admin-withdrawals
+  'admin.withdrawals.payOut': 'Pay out',
+  'admin.withdrawals.search': 'Search players...',
+  'admin.withdrawals.itemLabel': 'withdrawals',
+  'admin.withdrawals.empty': 'No withdrawal requests',
+  'admin.withdrawals.emptyHint': 'Nothing matches this status or search.',
+  'admin.withdrawals.tabsLabel': 'Withdrawal status',
+  'admin.withdrawals.summary.toPay': 'To pay out',
+  'admin.withdrawals.summary.toPayHint': 'Silver to trade to members',
+  'admin.withdrawals.summary.players': 'Players waiting',
+  'admin.withdrawals.summary.playersHint': "Each player's requests are paid together",
+  'admin.withdrawals.rowActions': 'Actions for {player}',
+  'admin.withdrawals.confirmPayTitle': 'Pay out {player}?',
+  'admin.withdrawals.confirmRejectTitle': "Reject {player}'s requests?",
+  'admin.withdrawals.transactionNo': 'Transaction #{id}',
+  'admin.withdrawals.paidToast': 'Payout recorded.',
+  'admin.withdrawals.rejectedToast': 'Request rejected.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
