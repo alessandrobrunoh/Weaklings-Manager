@@ -3265,4 +3265,16 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/bank
+  'bank.tabs.label': 'Розділи банку',
+  'bank.tabs.movements': 'Рухи',
+  'bank.balance.available': 'Доступно',
+  'bank.search.label': 'Пошук рухів',
+  'bank.search.placeholder': 'Пошук транзакцій',
+  'bank.transactions.itemLabel': 'рухів',
+  'bank.balances.empty': 'Ще немає балансів за гільдіями.',
+  'bank.col.movement': 'Рух',
+  'bank.label.guildBank': 'Банк гільдії',
+  'bank.label.member': 'Учасник',
+  'bank.unit.silver': 'срібло',
 };

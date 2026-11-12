@@ -3451,4 +3451,16 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/bank
+  'bank.tabs.label': 'Secciones del banco',
+  'bank.tabs.movements': 'Movimientos',
+  'bank.balance.available': 'Disponible',
+  'bank.search.label': 'Buscar movimientos',
+  'bank.search.placeholder': 'Buscar transacciones',
+  'bank.transactions.itemLabel': 'movimientos',
+  'bank.balances.empty': 'Aún no hay saldos por gremio.',
+  'bank.col.movement': 'Movimiento',
+  'bank.label.guildBank': 'Banco del gremio',
+  'bank.label.member': 'Miembro',
+  'bank.unit.silver': 'plata',
 };

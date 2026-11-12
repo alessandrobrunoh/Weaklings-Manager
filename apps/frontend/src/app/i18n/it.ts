@@ -3460,4 +3460,16 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/bank
+  'bank.tabs.label': 'Sezioni della banca',
+  'bank.tabs.movements': 'Movimenti',
+  'bank.balance.available': 'Disponibile',
+  'bank.search.label': 'Cerca movimenti',
+  'bank.search.placeholder': 'Cerca transazioni',
+  'bank.transactions.itemLabel': 'movimenti',
+  'bank.balances.empty': 'Nessun saldo per gilda ancora.',
+  'bank.col.movement': 'Movimento',
+  'bank.label.guildBank': 'Banca di gilda',
+  'bank.label.member': 'Membro',
+  'bank.unit.silver': 'argento',
 };

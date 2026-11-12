@@ -3448,6 +3448,18 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/bank
+  'bank.tabs.label': 'Bank sections',
+  'bank.tabs.movements': 'Movements',
+  'bank.balance.available': 'Available',
+  'bank.search.label': 'Search movements',
+  'bank.search.placeholder': 'Search transactions',
+  'bank.transactions.itemLabel': 'movements',
+  'bank.balances.empty': 'No guild balances yet.',
+  'bank.col.movement': 'Movement',
+  'bank.label.guildBank': 'Guild Bank',
+  'bank.label.member': 'Member',
+  'bank.unit.silver': 'silver',
 } as const;
 
 export type TranslationKey = keyof typeof en;
