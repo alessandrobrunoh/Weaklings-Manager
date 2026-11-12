@@ -472,8 +472,8 @@ interface CreateFieldError {
             @if (event.archived_at) {
               <span class="chip chip--neutral text-[10px]">{{ t('events.archived') }}</span>
             }
-            @if (event.is_synchronized_copy ?? (event.source_event_id != null)) {
-              <span class="chip chip--neutral text-[10px]">{{ t('events.copyReadOnly') }}</span>
+            @if (event.is_link) {
+              <span class="chip chip--neutral text-[10px]">{{ event.source_tenant_name ? t('events.linkFrom', { name: event.source_tenant_name }) : t('events.linkShared') }}</span>
             }
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
@@ -1214,7 +1214,8 @@ export class Events {
 
   /** True when the current user can archive or restore the given event. */
   protected canDelete(event: EventView): boolean {
-    if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
+    // A link's creator id belongs to the owning tenant; the owner checks authority on the request.
+    if (event.is_link) return this.auth.hasPermission('events.manage');
     return (
       this.auth.hasPermission('events.manage') ||
       event.created_by === this.auth.profile()?.user_id
@@ -1223,7 +1224,7 @@ export class Events {
 
   /** True when the current user can edit the given event. */
   protected canEdit(event: EventView): boolean {
-    if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
+    if (event.is_link) return this.auth.hasPermission('events.manage');
     return (
       this.auth.hasPermission('events.manage') ||
       event.created_by === this.auth.profile()?.user_id

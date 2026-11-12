@@ -26,8 +26,10 @@ import { TooltipDirective } from '../../../shared/directives/tooltip.directive';
     <app-page-header
       [title]="detail.title"
       [badge]="
-        (detail.is_synchronized_copy ?? detail.source_event_id != null)
-          ? t('events.copyReadOnly')
+        detail.is_link
+          ? detail.source_tenant_name
+            ? t('events.linkFrom', { name: detail.source_tenant_name })
+            : t('events.linkShared')
           : detail.archived_at
             ? t('events.archived')
             : undefined

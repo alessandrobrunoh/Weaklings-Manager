@@ -30,7 +30,7 @@ export interface ProblemDetails {
   detail?: string;
   instance?: string;
   invalid_params?: unknown;
-  /** Stable machine-readable code, e.g. `account_blocked` or `copy_read_only`. */
+  /** Stable machine-readable code, e.g. `account_blocked` or `validation_error`. */
   code?: string;
 }
 
@@ -670,11 +670,17 @@ export interface EventSummary {
 
 export interface EventView {
   id: number;
-  /** Present for synchronized read-only copies; absent for events owned by this tenant. */
+  /** Tenant that owns the event when this view is a link to another tenant's event. */
   source_tenant_id?: string | null;
   source_event_id?: number | null;
-  /** True only while this tenant's copy is actively linked to its source. */
-  is_synchronized_copy?: boolean;
+  /** Display name of the owning tenant, set on links. */
+  source_tenant_name?: string | null;
+  /**
+   * True when this view is a link to an event another tenant owns (a guild event shared with the
+   * alliance, or an alliance event in a member guild). It is the same event: every request on the
+   * link is served by the owner, so signups and management work from either side.
+   */
+  is_link?: boolean;
   title: string;
   description: string | null;
   call_to_arms: boolean;

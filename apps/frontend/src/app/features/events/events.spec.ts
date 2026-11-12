@@ -33,6 +33,7 @@ describe('Events', () => {
       created_by_username: 'Galvdon',
       source_tenant_id: 'source-guild',
       source_event_id: 88,
+      is_link: true,
     },
     {
       id: 2,
@@ -454,7 +455,7 @@ describe('Events', () => {
     expect(page.canDelete(mockEvents[0] as EventView)).toBe(false);
     const detachedCopy = {
       ...mockEvents[0],
-      is_synchronized_copy: false,
+      is_link: false,
     } as EventView;
     expect(page.canEdit(detachedCopy)).toBe(true);
     expect(page.canDelete(detachedCopy)).toBe(true);
