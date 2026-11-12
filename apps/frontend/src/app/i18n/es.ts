@@ -3805,4 +3805,12 @@ export const es: TranslationDict = {
   'platform.hub.groupConfig': 'Configuración',
   'platform.hub.groupConfigHint': 'Qué puede usar cada tenant y cómo se configuran sus funciones.',
   'platform.hub.flagsHint': 'Activa o desactiva las funciones del catálogo. Los flags se definen por tenant: abre primero un tenant.',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Nuevo rango',
+  'platform.ranks.createHint': 'Primero pon un nombre al rango. Después eliges sus módulos.',
+  'platform.ranks.editHint': 'Los tenants con este rango obtienen los módulos marcados aquí.',
+  'platform.ranks.unlocks': 'Desbloquea',
+  'platform.ranks.menuLabel': 'Acciones para {name}',
+  'platform.ranks.deleteTitle': '¿Eliminar este rango?',
+  'platform.ranks.deleteBody': '{name} se eliminará. Solo se pueden eliminar rangos sin tenants.',
 };

@@ -107,9 +107,13 @@ describe('platform required-field markers', () => {
     expect(form.checkValidity()).toBe(false);
   });
 
-  it('marks only the required rank name', async () => {
+  it('marks only the required rank name in the create dialog', async () => {
     const fixture = await configure(PlatformRanks);
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    const compiled = fixture.nativeElement as HTMLElement;
+    compiled.querySelector('app-page-header button')?.dispatchEvent(new Event('click'));
+    fixture.detectChanges();
+
+    const form = compiled.querySelector('#create-rank-form') as HTMLFormElement;
     expect(form.textContent).toContain('validation.requiredLegend');
     expect(form.querySelectorAll('input[required]')).toHaveLength(1);
     expect(form.querySelector('label [aria-hidden="true"]')?.textContent).toBe('*');

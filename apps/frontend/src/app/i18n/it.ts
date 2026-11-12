@@ -3814,4 +3814,12 @@ export const it: TranslationDict = {
   'platform.hub.groupConfig': 'Configurazione',
   'platform.hub.groupConfigHint': 'Cosa può usare ogni tenant e come sono impostate le sue feature.',
   'platform.hub.flagsHint': 'Attiva o disattiva le feature del catalogo. I flag si impostano per tenant: apri prima un tenant.',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Nuovo Rank',
+  'platform.ranks.createHint': 'Dai prima un nome al rank. I moduli si scelgono subito dopo.',
+  'platform.ranks.editHint': 'I tenant con questo rank ottengono i moduli selezionati qui.',
+  'platform.ranks.unlocks': 'Sblocca',
+  'platform.ranks.menuLabel': 'Azioni per {name}',
+  'platform.ranks.deleteTitle': 'Eliminare questo rank?',
+  'platform.ranks.deleteBody': '{name} verrà rimosso. Si possono eliminare solo rank senza tenant.',
 };

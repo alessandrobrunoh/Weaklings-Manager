@@ -3619,4 +3619,12 @@ export const uk: TranslationDict = {
   'platform.hub.groupConfig': 'Налаштування',
   'platform.hub.groupConfigHint': 'Що може використовувати кожен тенант і як налаштовані його функції.',
   'platform.hub.flagsHint': 'Вмикає або вимикає функції каталогу. Флаги задаються для кожного тенанта, тож спершу відкрийте тенант.',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Новий ранг',
+  'platform.ranks.createHint': 'Спочатку назвіть ранг. Модулі вибираються далі.',
+  'platform.ranks.editHint': 'Орендарі з цим рангом отримують модулі, позначені тут.',
+  'platform.ranks.unlocks': 'Відкриває',
+  'platform.ranks.menuLabel': 'Дії для {name}',
+  'platform.ranks.deleteTitle': 'Видалити цей ранг?',
+  'platform.ranks.deleteBody': '{name} буде видалено. Видаляти можна лише ранги без орендарів.',
 };

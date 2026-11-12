@@ -3623,4 +3623,12 @@ export const fr: TranslationDict = {
   'platform.hub.groupConfig': 'Configuration',
   'platform.hub.groupConfigHint': 'Ce que chaque tenant peut utiliser, et comment ses fonctionnalités sont réglées.',
   'platform.hub.flagsHint': 'Active ou désactive les fonctionnalités du catalogue. Les drapeaux se règlent par tenant : ouvrez d’abord un tenant.',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Nouveau rang',
+  'platform.ranks.createHint': "Donnez d'abord un nom au rang. Vous choisirez ses modules ensuite.",
+  'platform.ranks.editHint': 'Les locataires de ce rang reçoivent les modules cochés ici.',
+  'platform.ranks.unlocks': 'Débloque',
+  'platform.ranks.menuLabel': 'Actions pour {name}',
+  'platform.ranks.deleteTitle': 'Supprimer ce rang ?',
+  'platform.ranks.deleteBody': '{name} sera supprimé. Seuls les rangs sans locataire peuvent être supprimés.',
 };

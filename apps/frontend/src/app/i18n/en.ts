@@ -3802,6 +3802,14 @@ export const en = {
   'platform.hub.groupConfig': 'Configuration',
   'platform.hub.groupConfigHint': 'What each tenant can use, and how its features are set.',
   'platform.hub.flagsHint': 'Turn catalog features on or off. Flags are set per tenant, so open a tenant first.',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'New rank',
+  'platform.ranks.createHint': 'Name the rank first. You choose its modules next.',
+  'platform.ranks.editHint': 'Tenants on this rank get the modules ticked here.',
+  'platform.ranks.unlocks': 'Unlocks',
+  'platform.ranks.menuLabel': 'Actions for {name}',
+  'platform.ranks.deleteTitle': 'Delete this rank?',
+  'platform.ranks.deleteBody': '{name} will be removed. Only ranks with no tenants can be deleted.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -13,6 +13,7 @@ This directory contains control-plane pages for the platform hub, platform admin
 - `PlatformFeatureFlags` displays a tenant feature catalog and saves flag values.
 - `PlatformAdmins` lists and assigns/revokes admins.
 - `PlatformFeatureFlags` lists the feature catalog for one tenant as a table (rank allowance, tenant override, toggle), filters it by search, state and changed rows, confirms before turning any feature off, and saves the flag values.
+- `PlatformRanks` lists ranks with the modules each unlocks; creating a rank and editing its modules happen in dialogs, and deleting asks for confirmation.
 - `PlatformTenants` lists, creates, suspends, and resumes tenants.
 
 ## Invariants
