@@ -2178,7 +2178,6 @@ export const it: TranslationDict = {
   'albionSettings.subtitle':
     "Il collegamento del personaggio e le ricerche dal vivo sull'API di Albion.",
   'albionSettings.link.title': 'Personaggio collegato',
-  'albionSettings.link.linkedAs': 'Collegato a',
   'albionSettings.link.since': 'Dal',
   'albionSettings.link.unlink': 'Scollega',
   'albionSettings.link.unlinkConfirm':
@@ -2194,7 +2193,6 @@ export const it: TranslationDict = {
   'albionSettings.lookup.noResults': 'Nessun risultato per questa ricerca.',
   'albionSettings.lookup.players': 'Giocatori',
   'albionSettings.lookup.guilds': 'Gilde',
-  'albionSettings.lookup.members': 'membri',
   'albionSettings.lookup.noGuild': 'Nessuna gilda',
   'albionSettings.lookup.killFame': 'Fama da uccisioni',
   'albionSettings.lookup.deathFame': 'Fama da morti',
@@ -3460,4 +3458,20 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+
+  // design/albion-settings
+  'albionSettings.link.helper': 'Il collegamento è immediato, senza approvazione di un ufficiale. Battaglie, classifiche e ricerche di regear usano il personaggio collegato qui.',
+  'albionSettings.link.character': 'Personaggio',
+  'albionSettings.link.linkedStatus': 'Collegato',
+  'albionSettings.link.rowActions': 'Azioni personaggio',
+  'albionSettings.lookup.searchLabel': 'Cerca giocatori e gilde',
+  'albionSettings.lookup.minChars': 'Scrivi almeno 2 caratteri per cercare.',
+  'albionSettings.lookup.partial': 'La ricerca di Albion non è disponibile ora: mostriamo solo i membri della gilda.',
+  'albionSettings.lookup.selectHint': 'Seleziona un giocatore per vedere la sua fama.',
+  'albionSettings.lookup.memberCount': 'Membri',
+  'albionSettings.lookup.dossierLabel': 'Fama del giocatore',
+  'albionSettings.lookup.noPlayers': 'Nessun giocatore trovato.',
+  'albionSettings.lookup.noGuilds': 'Nessuna gilda trovata.',
+  'albionSettings.save.saving': 'Scollegamento del personaggio…',
+  'albionSettings.save.failed': 'Impossibile scollegare il personaggio. Riprova.',
 };

@@ -2175,7 +2175,6 @@ export const es: TranslationDict = {
   'albionSettings.subtitle':
     'El vínculo de tu personaje y búsquedas en vivo contra la API de Albion.',
   'albionSettings.link.title': 'Personaje vinculado',
-  'albionSettings.link.linkedAs': 'Vinculado a',
   'albionSettings.link.since': 'Desde',
   'albionSettings.link.unlink': 'Desvincular',
   'albionSettings.link.unlinkConfirm':
@@ -2191,7 +2190,6 @@ export const es: TranslationDict = {
   'albionSettings.lookup.noResults': 'Nada coincide con esa búsqueda.',
   'albionSettings.lookup.players': 'Jugadores',
   'albionSettings.lookup.guilds': 'Gremios',
-  'albionSettings.lookup.members': 'miembros',
   'albionSettings.lookup.noGuild': 'Sin gremio',
   'albionSettings.lookup.killFame': 'Fama de bajas',
   'albionSettings.lookup.deathFame': 'Fama de muertes',
@@ -3451,4 +3449,20 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+
+  // design/albion-settings
+  'albionSettings.link.helper': 'El vínculo se aplica al instante, sin aprobación de un oficial. Las batallas, clasificaciones y búsquedas de regear usan el personaje vinculado aquí.',
+  'albionSettings.link.character': 'Personaje',
+  'albionSettings.link.linkedStatus': 'Vinculado',
+  'albionSettings.link.rowActions': 'Acciones del personaje',
+  'albionSettings.lookup.searchLabel': 'Buscar jugadores y gremios',
+  'albionSettings.lookup.minChars': 'Escribe al menos 2 caracteres para buscar.',
+  'albionSettings.lookup.partial': 'La búsqueda de Albion no está disponible ahora, así que solo se muestran los miembros del gremio.',
+  'albionSettings.lookup.selectHint': 'Selecciona un jugador para ver su fama.',
+  'albionSettings.lookup.memberCount': 'Miembros',
+  'albionSettings.lookup.dossierLabel': 'Fama del jugador',
+  'albionSettings.lookup.noPlayers': 'Ningún jugador coincide.',
+  'albionSettings.lookup.noGuilds': 'Ningún gremio coincide.',
+  'albionSettings.save.saving': 'Desvinculando personaje…',
+  'albionSettings.save.failed': 'No se pudo desvincular el personaje. Inténtalo de nuevo.',
 };
