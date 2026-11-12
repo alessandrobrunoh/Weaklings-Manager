@@ -3265,4 +3265,11 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/admin-finance
+  'bank.finance.share': 'Частка',
+  'bank.finance.viewSplits': 'Переглянути спліти',
+  'bank.finance.allMembersTotal': 'Усі учасники',
+  'bank.finance.treasuryNetHint': 'Податки гільдії та пожертви, без виплачених регірів',
+  'bank.finance.grossLootBagsDetail': '{count} завершених сплітів · {bags} у срібних мішках',
+  'bank.finance.breakdownLabel': 'Перегляд за статтями',
 };

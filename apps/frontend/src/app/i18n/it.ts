@@ -3460,4 +3460,11 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/admin-finance
+  'bank.finance.share': 'Quota',
+  'bank.finance.viewSplits': 'Vedi split',
+  'bank.finance.allMembersTotal': 'Tutti i membri',
+  'bank.finance.treasuryNetHint': 'Tasse di gilda e donazioni, meno i rimborsi pagati',
+  'bank.finance.grossLootBagsDetail': '{count} split completati · {bags} in sacchi d’argento',
+  'bank.finance.breakdownLabel': 'Vista per voce',
 };

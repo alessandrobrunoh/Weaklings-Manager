@@ -3448,6 +3448,13 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-finance
+  'bank.finance.share': 'Share',
+  'bank.finance.viewSplits': 'View splits',
+  'bank.finance.allMembersTotal': 'All members',
+  'bank.finance.treasuryNetHint': 'Guild taxes and donations, less regears paid',
+  'bank.finance.grossLootBagsDetail': '{count} completed splits · {bags} in silver bags',
+  'bank.finance.breakdownLabel': 'Breakdown view',
 } as const;
 
 export type TranslationKey = keyof typeof en;

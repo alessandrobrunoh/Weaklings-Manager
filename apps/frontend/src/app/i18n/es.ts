@@ -3451,4 +3451,11 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/admin-finance
+  'bank.finance.share': 'Parte',
+  'bank.finance.viewSplits': 'Ver splits',
+  'bank.finance.allMembersTotal': 'Todos los miembros',
+  'bank.finance.treasuryNetHint': 'Impuestos del gremio y donaciones, menos los regear pagados',
+  'bank.finance.grossLootBagsDetail': '{count} splits completados · {bags} en bolsas de plata',
+  'bank.finance.breakdownLabel': 'Vista por concepto',
 };

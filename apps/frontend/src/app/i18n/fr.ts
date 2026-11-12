@@ -3269,4 +3269,11 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/admin-finance
+  'bank.finance.share': 'Part',
+  'bank.finance.viewSplits': 'Voir les splits',
+  'bank.finance.allMembersTotal': 'Tous les membres',
+  'bank.finance.treasuryNetHint': 'Taxes de guilde et dons, moins les regears versés',
+  'bank.finance.grossLootBagsDetail': '{count} splits terminés · {bags} en sacs d’argent',
+  'bank.finance.breakdownLabel': 'Vue par poste',
 };
