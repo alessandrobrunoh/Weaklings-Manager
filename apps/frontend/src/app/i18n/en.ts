@@ -1114,7 +1114,6 @@ export const en = {
   // Tests
   'tests.title': 'Combat Tests',
   'tests.subtitle': 'Simulate an engagement and see whether the burst kills.',
-  'tests.all': 'All',
   'tests.archived': 'Archived',
   'tests.new': 'New test',
   'tests.createTitle': 'Create test',
@@ -3913,6 +3912,14 @@ export const en = {
   'regears.newRequest.review.noneLeft': 'You have no requests left. Submitting may be refused.',
   'regears.newRequest.error.noBuild': 'This event has no build to request. Choose another event.',
   'regears.newRequest.error.submit': 'The request could not be submitted. Try again.',
+  // design/tests-list
+  'tests.searchLabel': 'Search tests',
+  'tests.statusFilter': 'Test status',
+  'tests.statusActive': 'Active',
+  'tests.status': 'Status',
+  'tests.tableLabel': 'Combat tests',
+  'tests.emptyActive': 'No tests yet. Create one to simulate an engagement.',
+  'tests.emptyArchived': 'No archived tests.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

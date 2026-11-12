@@ -1070,7 +1070,6 @@ export const fr: TranslationDict = {
   'comps.price.unavailable': 'Prix du marché indisponible.',
   'tests.title': 'Tests de combat',
   'tests.subtitle': 'Simulez un engagement et vérifiez si le burst tue.',
-  'tests.all': 'Tous',
   'tests.archived': 'Archivés',
   'tests.new': 'Nouveau test',
   'tests.createTitle': 'Créer un test',
@@ -3734,4 +3733,12 @@ export const fr: TranslationDict = {
   'regears.newRequest.review.noneLeft': 'Il ne vous reste plus de demandes. L’envoi peut être refusé.',
   'regears.newRequest.error.noBuild': 'Cet événement n’a pas de build à demander. Choisissez un autre événement.',
   'regears.newRequest.error.submit': 'La demande n’a pas pu être envoyée. Réessayez.',
+  // design/tests-list
+  'tests.searchLabel': 'Rechercher des tests',
+  'tests.statusFilter': 'Statut du test',
+  'tests.statusActive': 'Actif',
+  'tests.status': 'Statut',
+  'tests.tableLabel': 'Tests de combat',
+  'tests.emptyActive': 'Aucun test pour l’instant. Créez-en un pour simuler un affrontement.',
+  'tests.emptyArchived': 'Aucun test archivé.',
 };

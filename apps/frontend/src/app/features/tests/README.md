@@ -14,7 +14,8 @@ This is an application feature for saved combat scenarios, not a unit-test harne
 ## Invariants
 
 - Scenario creation trims names and rejects blank values.
-- The archived list filters for scenarios with `archived_at`.
+- The archived list filters for scenarios with `archived_at`. The Active / Archived switch sits in the filter bar and reloads from the server; the search box filters the loaded list client-side by name and creator.
+- Each row shows its state as a status chip (`active` / `archived`); the single primary action is "New test".
 - HP replay floors unit HP at zero, ignores unknown target IDs, and expects casts ordered by landing time; healing is not capped at starting HP.
 
 ## Side Effects

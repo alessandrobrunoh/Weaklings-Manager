@@ -1106,7 +1106,6 @@ export const es: TranslationDict = {
   // Pruebas
   'tests.title': 'Pruebas de combate',
   'tests.subtitle': 'Simula un enfrentamiento y comprueba si el burst mata.',
-  'tests.all': 'Todas',
   'tests.archived': 'Archivadas',
   'tests.new': 'Nueva prueba',
   'tests.createTitle': 'Crear prueba',
@@ -3916,4 +3915,12 @@ export const es: TranslationDict = {
   'regears.newRequest.review.noneLeft': 'No te quedan solicitudes. Es posible que el envío se rechace.',
   'regears.newRequest.error.noBuild': 'Este evento no tiene build que solicitar. Elige otro evento.',
   'regears.newRequest.error.submit': 'No se pudo enviar la solicitud. Inténtalo de nuevo.',
+  // design/tests-list
+  'tests.searchLabel': 'Buscar pruebas',
+  'tests.statusFilter': 'Estado de la prueba',
+  'tests.statusActive': 'Activa',
+  'tests.status': 'Estado',
+  'tests.tableLabel': 'Pruebas de combate',
+  'tests.emptyActive': 'Aún no hay pruebas. Crea una para simular un enfrentamiento.',
+  'tests.emptyArchived': 'No hay pruebas archivadas.',
 };

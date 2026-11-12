@@ -1108,7 +1108,6 @@ export const it: TranslationDict = {
   // Test
   'tests.title': 'Test di combattimento',
   'tests.subtitle': 'Simula un ingaggio e verifica se il burst uccide.',
-  'tests.all': 'Tutti',
   'tests.archived': 'Archiviati',
   'tests.new': 'Nuovo test',
   'tests.createTitle': 'Crea test',
@@ -3925,4 +3924,12 @@ export const it: TranslationDict = {
   'regears.newRequest.review.noneLeft': 'Non hai più richieste disponibili. L’invio potrebbe essere rifiutato.',
   'regears.newRequest.error.noBuild': 'Questo evento non ha una build da richiedere. Scegli un altro evento.',
   'regears.newRequest.error.submit': 'Non è stato possibile inviare la richiesta. Riprova.',
+  // design/tests-list
+  'tests.searchLabel': 'Cerca test',
+  'tests.statusFilter': 'Stato del test',
+  'tests.statusActive': 'Attivo',
+  'tests.status': 'Stato',
+  'tests.tableLabel': 'Test di combattimento',
+  'tests.emptyActive': 'Nessun test ancora. Creane uno per simulare uno scontro.',
+  'tests.emptyArchived': 'Nessun test archiviato.',
 };
