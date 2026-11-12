@@ -9,12 +9,14 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
+- `AdminDiscord` edits the guild's Discord channels, split forum, notifications and roles in one form with one save. It writes `api/admin/settings` and `api/admin/autorole`; its connection status comes from loading the Discord channel and role catalog.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 
 ## Invariants
 
 - Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
+- `AdminDiscord` hides its form when the guild settings or default join role cannot be read, so a save never writes blank defaults over them. A failed catalog load shows a "not connected" status with retry and keeps the form.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
 
 ## Side Effects

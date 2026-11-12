@@ -3448,6 +3448,26 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-discord
+  'admin.discord.sectionConnection': 'Connection',
+  'admin.discord.connectionHint': 'The bot reads channels and roles from your Discord server. The pickers below fill in only while it can connect.',
+  'admin.discord.connected': 'Connected',
+  'admin.discord.notConnected': 'Not connected',
+  'admin.discord.checking': 'Checking connection',
+  'admin.discord.connectionFailed': 'The bot cannot read this Discord server. Check that it has been invited, then retry. Saved settings are unchanged.',
+  'admin.discord.sectionEvents': 'Event announcements',
+  'admin.discord.sectionEventsHint': 'Where the bot posts organized events and battles, and how events are published.',
+  'admin.discord.sectionVoice': 'Event voice',
+  'admin.discord.sectionVoiceHint': 'Where the bot creates the voice channel for a live event.',
+  'admin.discord.sectionSplits': 'Loot splits',
+  'admin.discord.sectionSplitsHint': 'The bot opens one forum thread per split and changes its tag when the split status changes.',
+  'admin.discord.sectionNotifications': 'Notifications',
+  'admin.discord.sectionNotificationsHint': 'Channels that receive a copy of audit log entries and bank activity.',
+  'admin.discord.sectionRoles': 'Roles',
+  'admin.discord.sectionRolesHint': 'Roles the bot assigns automatically. Leave a role empty to turn its assignment off.',
+  'admin.discord.saveHint': 'Saves every section on this page at once.',
+  'admin.discord.saveFailed': 'Discord settings could not be saved. Try again.',
+  'admin.discord.loadFailed': 'Discord settings could not be loaded.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
