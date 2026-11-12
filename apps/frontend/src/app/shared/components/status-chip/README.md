@@ -13,7 +13,8 @@
 
 - Tone priority is override, mapped status, then `neutral`.
 - An explicit label is used even if it is empty; otherwise underscores become spaces and word initials are capitalized.
-- An icon takes precedence over the dot.
+- 12px text, never colour alone: success, warning, error and info tones show a default glyph (check, alert, alert, info); neutral shows a dot unless `showDot` is false. An explicit `icon` always wins.
+- Neutral is the default; semantic colours are for real states only.
 
 ## Side Effects
 

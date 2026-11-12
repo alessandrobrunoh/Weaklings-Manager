@@ -38,7 +38,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type ProfileTab = 'overview' | 'weapons' | 'ledgers' | 'battles' | 'preferences';
 
@@ -80,7 +80,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
     StatCard,
     StatusChip,
     TooltipDirective,
-    ViewToggle,
+    Tabs,
   ],
   template: `
     <app-page-header [title]="t('nav.profile')" [subtitle]="t('profile.subtitle')">
@@ -96,7 +96,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         {{ t('common.refreshNow') }}
       </button>
 
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabs()"
         [active]="activeTab()"
@@ -681,7 +681,7 @@ export class Settings {
   protected readonly playerSearch = signal('');
   protected readonly playerSearchResults = signal<AlbionPlayer[]>([]);
 
-  protected readonly tabs = computed<readonly ViewToggleOption[]>(() => [
+  protected readonly tabs = computed<readonly TabOption[]>(() => [
     { id: 'overview', label: this.t('profile.tab.overview'), icon: 'trophy' },
     { id: 'weapons', label: this.t('weapons.tab'), icon: 'swords' },
     { id: 'ledgers', label: this.t('profile.tab.ledgers'), icon: 'bank' },

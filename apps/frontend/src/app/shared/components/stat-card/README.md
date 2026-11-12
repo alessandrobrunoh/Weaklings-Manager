@@ -2,7 +2,7 @@
 
 ## Overview
 
-`app-stat-card` renders a KPI tile with a label and value, plus optional delta, subtext, and icon.
+`app-stat-card` renders a KPI tile with a label and value, plus optional delta, subtext, and icon. It is kept for pages not yet migrated; new work uses [`app-summary-band`](../summary-band/README.md), a compact strip, instead of a grid of tiles.
 
 ## Interface
 
@@ -12,7 +12,7 @@
 
 ## Invariants
 
-Nullish values display as an em dash. Delta and subtext render only when truthy; icon renders when supplied. Delta direction selects success, error, or neutral styling.
+Nullish values display as an em dash. Delta and subtext render only when truthy; icon renders when supplied. Delta direction selects success, error, or neutral styling and shows an arrow glyph so colour is never the only cue. Only the icon and value take the tone colour.
 
 ## Side Effects
 

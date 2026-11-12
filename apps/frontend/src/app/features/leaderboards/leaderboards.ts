@@ -25,7 +25,7 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 
@@ -110,7 +110,7 @@ const PODIUM_SIZE = 3;
     Loading,
     PageHeader,
     PageStack,
-    ViewToggle,
+    Tabs,
   ],
   template: `
     <app-page-header
@@ -333,7 +333,7 @@ const PODIUM_SIZE = 3;
 
         <!-- View toggle tabs -->
         <div class="rankings-tabs">
-          <app-view-toggle
+          <app-tabs
             [options]="tabOptions()"
             [active]="activeTab()"
             (activeChange)="selectTab($event)"
@@ -1061,7 +1061,7 @@ const PODIUM_SIZE = 3;
 
       .podium__unit {
         margin: 0;
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         color: var(--color-text-secondary);
@@ -1239,7 +1239,7 @@ export class SeasonOverview {
     this.tabs.filter((tab) => tab.key !== 'siphoned' || this.auth.hasPermission('siphoned.view')),
   );
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
+  protected readonly tabOptions = computed<TabOption[]>(() =>
     this.visibleTabs().map((tab) => ({ id: tab.key, label: this.t(tab.labelKey), icon: tab.icon })),
   );
 

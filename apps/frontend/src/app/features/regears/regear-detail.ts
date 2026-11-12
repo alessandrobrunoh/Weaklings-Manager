@@ -44,7 +44,6 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
   imports: [RouterLink, Dialog, Checkbox, EmptyState, ErrorState, Loading, PageHeader, PageStack, Icon, TooltipDirective],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }

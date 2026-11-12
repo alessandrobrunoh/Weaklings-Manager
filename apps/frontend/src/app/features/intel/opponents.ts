@@ -22,9 +22,9 @@ import {
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+  Tabs,
+  type TabOption,
+} from '../../shared/components/tabs/tabs';
 import { MatchupMatrix } from './matchup-matrix';
 import { ScoutLibrary } from './scout-library';
 
@@ -44,7 +44,7 @@ const PAGE_LIMIT = 25;
 @Component({
   selector: 'app-opponents',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DataTable, DataTableCell, MatchupMatrix, PageStack, RouterLink, ScoutLibrary, ViewToggle],
+  imports: [DatePipe, DataTable, DataTableCell, MatchupMatrix, PageStack, RouterLink, ScoutLibrary, Tabs],
   styles: [`
     :host { display: block; color: var(--color-text); }
     :host ::ng-deep .rounded-xl, :host ::ng-deep .rounded-2xl,
@@ -56,7 +56,7 @@ const PAGE_LIMIT = 25;
   `],
   template: `
     <app-page-stack>
-      <app-view-toggle [options]="tabs()" [active]="tab()" (activeChange)="onTabChange($event)" />
+      <app-tabs [options]="tabs()" [active]="tab()" (activeChange)="onTabChange($event)" />
       @switch (tab()) {
         @case ('scouts') {
           <app-scout-library />
@@ -112,7 +112,7 @@ const PAGE_LIMIT = 25;
             </ng-template>
             <ng-template dataTableCell="watchlist" let-row>
               @if (row.is_watchlisted) {
-                <span class="chip chip--warning text-[11px]">{{ t('intel.opponents.watchlisted') }}</span>
+                <span class="chip chip--warning text-xs">{{ t('intel.opponents.watchlisted') }}</span>
               }
             </ng-template>
           </app-data-table>
@@ -238,7 +238,7 @@ const PAGE_LIMIT = 25;
             </ng-template>
             <ng-template dataTableCell="role" let-row>
               @if (row.role) {
-                <span class="chip chip--neutral text-[11px] capitalize">{{ roleLabel(row.role) }}</span>
+                <span class="chip chip--neutral text-xs capitalize">{{ roleLabel(row.role) }}</span>
               } @else {
                 <span class="text-xs italic" style="color: var(--color-text-tertiary)">
                   {{ t('intel.opponents.role.unobserved') }}
@@ -317,7 +317,7 @@ export class Opponents {
     defaultPageSize: PAGE_LIMIT,
   });
 
-  protected readonly tabs = computed<ViewToggleOption[]>(() => [
+  protected readonly tabs = computed<TabOption[]>(() => [
     ...(this.canViewDossiers()
       ? [
           { id: 'guilds', label: this.t('intel.opponents.tab.guilds') },

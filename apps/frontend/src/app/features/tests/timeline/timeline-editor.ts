@@ -97,7 +97,7 @@ const MAGNET_PX = 6;
   template: `
     <div class="grid gap-2">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-[11px] text-[var(--color-text-tertiary)]">{{ t('tests.timeline.snapHint') }}</p>
+        <p class="text-xs text-[var(--color-text-tertiary)]">{{ t('tests.timeline.snapHint') }}</p>
         <div class="flex items-center gap-2">
           @if (result()) {
             <label class="flex items-center gap-1.5 text-xs">
@@ -118,7 +118,7 @@ const MAGNET_PX = 6;
           >
             −
           </button>
-          <span class="mono text-[11px] text-[var(--color-text-tertiary)]">
+          <span class="mono text-xs text-[var(--color-text-tertiary)]">
             {{ t('tests.timeline.zoomLevel', { value: pxPerSecond() }) }}
           </span>
           <button
@@ -204,7 +204,7 @@ const MAGNET_PX = 6;
                   </button>
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-xs font-semibold">{{ lane.group.label }}</span>
-                    <span class="block truncate text-[10px] text-[var(--color-text-tertiary)]">
+                    <span class="block truncate text-xs text-[var(--color-text-tertiary)]">
                       {{ lane.group.side === 'enemy' ? t('tests.enemy') : t('tests.ally') }}
                       · {{ lane.unitIds.length }}
                       @if (duplicateGroupIds().has(lane.group.id)) {
@@ -324,7 +324,7 @@ const MAGNET_PX = 6;
                     <span class="block truncate text-xs font-semibold">
                       {{ t('tests.timeline.orphanLane') }}
                     </span>
-                    <span class="block truncate text-[10px] text-[var(--color-text-tertiary)]">
+                    <span class="block truncate text-xs text-[var(--color-text-tertiary)]">
                       {{ t('tests.timeline.orphanHint') }}
                     </span>
                   </span>
@@ -459,7 +459,7 @@ const MAGNET_PX = 6;
       position: absolute;
       top: 0.125rem;
       left: 0.25rem;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
       color: var(--color-text-tertiary);
       white-space: nowrap;
@@ -518,7 +518,7 @@ const MAGNET_PX = 6;
       position: absolute;
       top: -2px;
       right: 1px;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 700;
       color: var(--color-warning);
     }
@@ -548,7 +548,7 @@ const MAGNET_PX = 6;
       left: 0.25rem;
       z-index: 1;
       font-family: var(--font-mono, monospace);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       color: var(--color-text-tertiary);
     }
     .subrow__hp {
@@ -576,7 +576,7 @@ const MAGNET_PX = 6;
       position: absolute;
       right: 0.5rem;
       top: 0.25rem;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       color: var(--color-warning);
     }
     @media (prefers-reduced-motion: reduce) {

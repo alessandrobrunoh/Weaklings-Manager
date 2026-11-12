@@ -26,9 +26,9 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+  Tabs,
+  type TabOption,
+} from '../../shared/components/tabs/tabs';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 /** Tab toggle inside the Regears page. Settings live on `/admin/regears`. */
@@ -67,11 +67,10 @@ const STATS_FETCH_LIMIT = 1000;
     PageHeader,
     PageStack,
     TooltipDirective,
-    ViewToggle,
+    Tabs,
   ],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }
@@ -110,7 +109,7 @@ const STATS_FETCH_LIMIT = 1000;
       gap: 0.375rem;
       padding: 0.25rem 0.625rem;
       border-radius: var(--radius-pills);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.02em;
     }
@@ -167,7 +166,7 @@ const STATS_FETCH_LIMIT = 1000;
           {{ t('regears.settingsLink') }}
         </a>
       }
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="tab()"
@@ -181,7 +180,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.budget.weekly') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -200,7 +199,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.budget.bonus') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -219,7 +218,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.status.pending') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -241,7 +240,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.status.approved') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -260,7 +259,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.pending') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -280,7 +279,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.approved') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -299,7 +298,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.rejected') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -318,7 +317,7 @@ const STATS_FETCH_LIMIT = 1000;
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.totalReimbursed') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
@@ -498,8 +497,8 @@ export class Regears {
   );
   protected readonly currentUserId = computed(() => this.auth.profile()?.user_id ?? null);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
-    const options: ViewToggleOption[] = [{ id: 'mine', label: this.t('regears.tab.mine') }];
+  protected readonly tabOptions = computed<TabOption[]>(() => {
+    const options: TabOption[] = [{ id: 'mine', label: this.t('regears.tab.mine') }];
     if (this.canAdjudicate()) {
       options.push(
         { id: 'queue', label: this.t('regears.tab.queue') },

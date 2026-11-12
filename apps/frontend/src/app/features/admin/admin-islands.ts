@@ -86,7 +86,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.islands.title') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -105,7 +105,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.islands.tabs') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
@@ -124,7 +124,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.islands.location') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">

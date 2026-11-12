@@ -428,7 +428,7 @@ interface NextMassCard {
               <div class="flex items-center gap-4 sm:gap-6 mt-1">
                 <div class="date-box shrink-0 flex flex-col items-center justify-center rounded-sm p-3 sm:px-4 sm:py-3">
                   <app-icon name="calendar" size="1.25rem" class="text-[var(--color-primary)] mb-1" />
-                  <span class="text-[10px] font-bold text-[var(--color-primary)] tracking-wider uppercase">
+                  <span class="text-xs font-bold text-[var(--color-primary)] tracking-wider uppercase">
                     {{ mass.dayLabel }}
                   </span>
                   <span class="text-2xl sm:text-3xl font-bold text-(--color-text) tracking-tight leading-none mt-1">

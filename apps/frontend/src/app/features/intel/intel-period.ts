@@ -5,9 +5,9 @@ import type { IntelPeriodKey } from '../../core/models/api.models';
 import type { IntelPeriodQuery } from '../../core/services/intel.service';
 import { TranslateService } from '../../core/services/translate.service';
 import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+  Tabs,
+  type TabOption,
+} from '../../shared/components/tabs/tabs';
 
 const PRESETS: readonly IntelPeriodKey[] = ['7d', '30d', '90d', 'all', 'custom'];
 const DEFAULT_KEY: IntelPeriodKey = '30d';
@@ -112,7 +112,7 @@ export class IntelPeriodState {
 @Component({
   selector: 'app-intel-period',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ViewToggle],
+  imports: [Tabs],
   styles: `
     :host {
       display: block;
@@ -121,7 +121,7 @@ export class IntelPeriodState {
   template: `
     <div class="flex flex-wrap items-end gap-x-4 gap-y-2" role="group" [attr.aria-label]="t('intel.period.label')">
       <div class="min-w-0 max-w-full">
-        <app-view-toggle [options]="options()" [active]="editingCustom() ? 'custom' : state.key()" (activeChange)="onSelect($event)" />
+        <app-tabs variant="segmented" [options]="options()" [active]="editingCustom() ? 'custom' : state.key()" (activeChange)="onSelect($event)" />
       </div>
       @if (editingCustom()) {
         <div class="flex flex-wrap items-end gap-2">
@@ -156,7 +156,7 @@ export class IntelPeriod {
     () => this.pickingCustom() || this.state.key() === 'custom',
   );
 
-  protected readonly options = computed<ViewToggleOption[]>(() => [
+  protected readonly options = computed<TabOption[]>(() => [
     { id: '7d', label: this.t('intel.period.7d') },
     { id: '30d', label: this.t('intel.period.30d') },
     { id: '90d', label: this.t('intel.period.90d') },

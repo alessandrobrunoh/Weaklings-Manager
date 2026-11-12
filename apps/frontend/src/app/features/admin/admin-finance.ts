@@ -22,7 +22,7 @@ import { chartChrome, chartPalette } from '../../shared/components/chart/chart-t
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 /** Preset windows, plus the escape hatch to arbitrary dates. */
@@ -126,7 +126,7 @@ function toDateInput(date: Date): string {
     PageStack,
     RouterLink,
     TooltipDirective,
-    ViewToggle,
+    Tabs,
   ],
   styles: [COMPACT_FEATURE_STYLES, `
     .fin-toolbar {
@@ -155,7 +155,7 @@ function toDateInput(date: Date): string {
     .fin-meta {
       margin: 0;
       color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
     }
     .fin-filters__window strong,
     .fin-meta strong {
@@ -164,42 +164,6 @@ function toDateInput(date: Date): string {
     }
     .fin-date {
       inline-size: 9.5rem;
-    }
-
-    .fin-nav {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.375rem;
-      padding-block-start: 0.625rem;
-      border-block-start: 1px solid var(--color-border);
-    }
-    .fin-nav__btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.3125rem 0.625rem;
-      border: 1px solid transparent;
-      border-radius: var(--radius-badges);
-      background: transparent;
-      color: var(--color-text-secondary);
-      font-size: 0.75rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition:
-        background-color 0.15s ease,
-        color 0.15s ease,
-        border-color 0.15s ease;
-    }
-    .fin-nav__btn:hover {
-      background: var(--color-surface-hover);
-      color: var(--color-text);
-    }
-    .fin-nav__btn--active {
-      border-color: var(--color-border-strong);
-      background: var(--color-surface-2);
-      color: var(--color-text);
-      font-weight: 600;
     }
 
     .fin-section {
@@ -249,7 +213,7 @@ function toDateInput(date: Date): string {
       border-radius: var(--radius-pills);
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -343,7 +307,7 @@ function toDateInput(date: Date): string {
       margin: 0;
       overflow: hidden;
       color: var(--color-text-secondary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.03em;
       text-overflow: ellipsis;
@@ -363,7 +327,7 @@ function toDateInput(date: Date): string {
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 600;
     }
     .fin-kpi__value {
@@ -394,7 +358,7 @@ function toDateInput(date: Date): string {
     .fin-kpi__detail {
       margin: 0;
       color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       line-height: 1.35;
     }
     .fin-kpi__delta {
@@ -406,7 +370,7 @@ function toDateInput(date: Date): string {
       border-radius: var(--radius-sm);
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 700;
     }
     .fin-kpi__delta--good {
@@ -427,7 +391,7 @@ function toDateInput(date: Date): string {
       align-items: center;
       gap: 0.1875rem;
       color: var(--color-primary);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 600;
     }
 
@@ -484,12 +448,12 @@ function toDateInput(date: Date): string {
       background: var(--color-surface);
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 700;
     }
     .fin-step__label {
       color: var(--color-text-secondary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
     }
     .fin-step__val {
@@ -503,7 +467,7 @@ function toDateInput(date: Date): string {
     .fin-step__sub {
       margin: 0;
       color: var(--color-text-tertiary);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
     }
 
     .fin-bar-stack {
@@ -527,7 +491,7 @@ function toDateInput(date: Date): string {
       flex-wrap: wrap;
       align-items: center;
       gap: 0.75rem 1.25rem;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       color: var(--color-text-secondary);
     }
     .fin-bar-legend__item {
@@ -577,7 +541,7 @@ function toDateInput(date: Date): string {
     .fin-card__sub {
       margin: 0.125rem 0 0;
       color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       line-height: 1.4;
     }
     .fin-card__badge {
@@ -588,7 +552,7 @@ function toDateInput(date: Date): string {
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
     }
 
@@ -631,7 +595,7 @@ function toDateInput(date: Date): string {
       inset-block-start: 0;
       background: var(--color-surface-2);
       color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -652,7 +616,7 @@ function toDateInput(date: Date): string {
     }
     .fin-member-cell__sub {
       color: var(--color-text-tertiary);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 400;
     }
     .fin-table tbody tr:last-child td,
@@ -689,7 +653,7 @@ function toDateInput(date: Date): string {
       border-radius: var(--radius-badges);
       background: var(--color-surface);
       color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       line-height: 1.5;
     }
     .fin-empty {
@@ -739,7 +703,8 @@ function toDateInput(date: Date): string {
         <div class="fin-filters">
           <div class="fin-filters__group">
             <span class="eyebrow">{{ t('bank.finance.periodLabel') }}</span>
-            <app-view-toggle
+            <app-tabs
+              variant="segmented"
               [options]="periodOptions()"
               [active]="period()"
               (activeChange)="onPeriodChange($event)"
@@ -769,7 +734,8 @@ function toDateInput(date: Date): string {
           </div>
           <div class="fin-filters__group">
             <span class="eyebrow">{{ t('bank.finance.granularityLabel') }}</span>
-            <app-view-toggle
+            <app-tabs
+              variant="segmented"
               [options]="granularityOptions()"
               [active]="granularity()"
               (activeChange)="onGranularityChange($event)"
@@ -785,19 +751,12 @@ function toDateInput(date: Date): string {
           </p>
         </div>
 
-        <nav class="fin-nav" [attr.aria-label]="t('common.overview')">
-          @for (tab of sectionTabs(); track tab.id) {
-            <button
-              type="button"
-              class="fin-nav__btn"
-              [class.fin-nav__btn--active]="activeSection() === tab.id"
-              (click)="activeSection.set(tab.id)"
-            >
-              <app-icon [name]="tab.icon" size="0.8125rem" />
-              {{ tab.label }}
-            </button>
-          }
-        </nav>
+        <app-tabs
+          [options]="sectionTabs()"
+          [active]="activeSection()"
+          [ariaLabel]="t('common.overview')"
+          (activeChange)="onSectionChange($event)"
+        />
       </div>
 
       @if (summary(); as bank) {
@@ -1530,14 +1489,21 @@ export class AdminFinance {
     { id: 'members', label: this.t('bank.finance.navMembers'), icon: 'users' },
   ]);
 
-  protected readonly periodOptions = computed<ViewToggleOption[]>(() => [
+  protected onSectionChange(id: string): void {
+    const tab = this.sectionTabs().find((candidate) => candidate.id === id);
+    if (tab) {
+      this.activeSection.set(tab.id);
+    }
+  }
+
+  protected readonly periodOptions = computed<TabOption[]>(() => [
     { id: '7', label: this.t('bank.finance.period7') },
     { id: '30', label: this.t('bank.finance.period30') },
     { id: '90', label: this.t('bank.finance.period90') },
     { id: 'custom', label: this.t('bank.finance.periodCustom'), icon: 'calendar' },
   ]);
 
-  protected readonly granularityOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly granularityOptions = computed<TabOption[]>(() => [
     { id: 'day', label: this.t('bank.finance.granularityDay') },
     { id: 'week', label: this.t('bank.finance.granularityWeek') },
   ]);
@@ -2165,7 +2131,7 @@ export class AdminFinance {
             </div>`;
           })
           .join('');
-        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
+        return `<div style="font-size: 12px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
       },
     };
   }
@@ -2178,7 +2144,7 @@ export class AdminFinance {
         const param = toParamList(input)[0];
         const raw = toNumber(param?.value as number);
         const share = total > 0 ? Math.round((raw / total) * 1000) / 10 : 0;
-        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${escapeHtml(
+        return `<div style="font-size: 12px;opacity:0.7;margin-bottom:2px">${escapeHtml(
           param?.name ?? '',
         )}</div><strong style="font-variant-numeric:tabular-nums">${escapeHtml(
           this.formatAmount(raw),

@@ -131,7 +131,7 @@ import {
                     <p class="text-xs font-bold text-[var(--color-text)] truncate">
                       {{ player.player_name }}
                     </p>
-                    <p class="text-[11px] text-[var(--color-text-secondary)]">
+                    <p class="text-xs text-[var(--color-text-secondary)]">
                       {{
                         t(
                           player.deaths === 1
@@ -157,7 +157,7 @@ import {
                   <span class="font-mono text-xs font-bold text-[var(--color-danger)]">
                     -{{ formatAmount(player.estimated_loss) }}
                   </span>
-                  <span class="block text-[10px] font-mono text-[var(--color-text-secondary)]">
+                  <span class="block text-xs font-mono text-[var(--color-text-secondary)]">
                     {{ t('events.detail.silver') }}
                   </span>
                 </div>
@@ -215,7 +215,7 @@ import {
 
                 <div class="space-y-1">
                   <div
-                    class="flex items-center justify-between text-[11px] font-mono text-[var(--color-text-secondary)]"
+                    class="flex items-center justify-between text-xs font-mono text-[var(--color-text-secondary)]"
                   >
                     <span>{{ t('nav.guild') }}: {{ formatCompact(opponent.guild_kill_fame) }}</span>
                     <span

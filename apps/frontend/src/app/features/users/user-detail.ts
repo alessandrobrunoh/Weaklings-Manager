@@ -91,7 +91,6 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
   ],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }

@@ -16,6 +16,8 @@
 - The open-state effect acts only in a browser after the dialog element exists, and calls `showModal()` or `close()` only when needed.
 - Where `closedby` is unavailable, backdrop fallback closes only for clicks outside the dialog rectangle.
 
+- Look: header (icon, 16px title, 13px subtitle, close button), scrolling body, and a footer separated by a hairline; footer buttons right-aligned and wrapping on a phone. Put the primary action last (`btn btn--primary`), the cancel before it (`btn btn--outline`); destructive confirmations use `btn btn--danger`. Motion stops under `prefers-reduced-motion`.
+
 ## Side Effects
 
 Opening and closing calls native dialog methods. The close button and native close event emit `closed`; the component uses translation for the close button's accessible label.

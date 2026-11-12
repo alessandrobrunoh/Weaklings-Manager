@@ -39,9 +39,9 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+  Tabs,
+  type TabOption,
+} from '../../shared/components/tabs/tabs';
 
 const ALBION_RENDER_ITEM_BASE_URL = 'https://render.albiononline.com/v1/item';
 
@@ -144,7 +144,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
     PageHeader,
     PageStack,
     RouterLink,
-    ViewToggle,
+    Tabs,
   ],
   template: `
     @if (loading()) {
@@ -183,7 +183,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             {{ scouting() ? t('common.loading') : 'Scout Battle' }}
           </button>
         }
-        <app-view-toggle
+        <app-tabs
           pageTabs
           [options]="tabOptions()"
           [active]="tab()"
@@ -1107,7 +1107,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
     @layer components {
       .battle-detail__label {
         color: var(--color-text-disabled);
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         letter-spacing: 0.05em;
         text-transform: uppercase;
         font-weight: 600;
@@ -1237,7 +1237,7 @@ export class BattleDetailPage {
   protected readonly playerSearchQuery = signal<string>('');
   protected readonly expandedKill = signal<number | null>(null);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'overview', label: this.t('battles.overview') },
     { id: 'guild_alliance', label: this.t('battles.my_guild_alliance') },
     { id: 'guilds', label: this.t('battles.alliances_guilds') },

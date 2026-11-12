@@ -19,13 +19,13 @@
 ## Invariants
 
 - There is at most one primary action; everything else belongs in the menu. The menu button is not rendered when `menuItems` is empty.
-- The menu is an accessible menu button: the trigger has `aria-haspopup="menu"`, `aria-expanded` and `aria-controls` (while open); the panel is `role="menu"` with `role="menuitem"` buttons that are not in the Tab order. ArrowDown/ArrowUp move (wrapping, skipping disabled entries), Home/End jump, ArrowDown/ArrowUp on the trigger open it focusing the first/last entry, Escape closes and returns focus to the trigger, choosing an entry closes and returns focus to the trigger, Tab or a click outside closes.
+- The menu is the shared [`app-menu`](../menu/README.md) (outline trigger): an accessible menu button with arrow-key navigation, Escape and focus return. `EntityMenuItem` is an alias of its `MenuItem`.
 - Destructive entries (`danger`) use the error colour and are meant to be placed last with `separatorBefore`; the label, not the colour, says what they do.
 - Layout wraps instead of overflowing: on a phone the title takes the first row and the primary action and the menu button sit to its right or wrap below it.
 
 ## Side Effects
 
-Listens for document clicks while open to close the menu; it focuses elements after the menu renders. No network or storage access.
+No side effects of its own; the menu listens for outside clicks while open. No network or storage access.
 
 ## Verification
 

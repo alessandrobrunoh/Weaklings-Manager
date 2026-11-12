@@ -145,7 +145,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.permissions.permission') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -164,7 +164,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.permissions.roles') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
@@ -183,7 +183,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   Modules
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
@@ -260,7 +260,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                   class="absolute left-0 top-full mt-1.5 z-50 w-64 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-2xl"
                 >
                   <div class="flex items-center justify-between pb-2 mb-2 border-b border-[var(--color-border)] px-1">
-                    <span class="text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    <span class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
                       {{ t('admin.permissions.roles') }}
                     </span>
                     <button
@@ -281,7 +281,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                           (change)="toggleRoleVisibility(role.role_id)"
                         />
                         <span class="truncate font-medium text-[var(--color-text)]">{{ role.role_name }}</span>
-                        <span class="ml-auto text-[10px] text-[var(--color-text-disabled)] font-mono">P{{ role.priority }}</span>
+                        <span class="ml-auto text-xs text-[var(--color-text-disabled)] font-mono">P{{ role.priority }}</span>
                       </label>
                     }
                   </div>
@@ -353,7 +353,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                   <span class="font-medium text-xs text-[var(--color-text)]">
                     {{ t('admin.permissions.permission') }}
                   </span>
-                  <span class="text-[11px] text-[var(--color-text-secondary)] font-normal block mt-0.5">
+                  <span class="text-xs text-[var(--color-text-secondary)] font-normal block mt-0.5">
                     {{ totalPermissionsCount() }} {{ t('admin.permissions.permission').toLowerCase() }}
                   </span>
                 </th>
@@ -362,7 +362,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                     <div class="font-semibold text-xs text-[var(--color-text)]">
                       {{ role.role_name }}
                     </div>
-                    <div class="mono text-[10px] text-[var(--color-text-secondary)] mt-0.5 flex items-center justify-center gap-1">
+                    <div class="mono text-xs text-[var(--color-text-secondary)] mt-0.5 flex items-center justify-center gap-1">
                       <span>{{ t('admin.permissions.priority') }} {{ role.priority }}</span>
                       @if (role.is_default) {
                         <span class="text-[var(--color-primary)] font-bold">· Default</span>
@@ -375,7 +375,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                       }
                     </div>
                     @if (role.discord_role_id) {
-                      <div class="mono text-[9px] text-[var(--color-text-disabled)] mt-0.5 truncate max-w-[120px] mx-auto">
+                      <div class="mono text-xs text-[var(--color-text-disabled)] mt-0.5 truncate max-w-[120px] mx-auto">
                         {{ role.discord_role_id }}
                       </div>
                     }
@@ -400,14 +400,14 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                           class="text-[var(--color-text-secondary)]"
                         />
                         <span class="font-mono text-sm tracking-normal capitalize">{{ group.resource }}</span>
-                        <span class="inline-flex items-center px-2 py-0.2 rounded-full text-[10px] font-medium bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-secondary)]">
+                        <span class="inline-flex items-center px-2 py-0.2 rounded-full text-xs font-medium bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-secondary)]">
                           {{ group.keys.length }}
                         </span>
                       </button>
 
                       <button
                         type="button"
-                        class="btn btn--ghost btn--sm text-[11px] py-0.5 px-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] cursor-pointer"
+                        class="btn btn--ghost btn--sm text-xs py-0.5 px-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] cursor-pointer"
                         (click)="toggleGroupCollapse(group.resource)"
                       >
                         {{ isGroupCollapsed(group.resource) ? t('admin.permissions.expand') : t('admin.permissions.collapse') }}
@@ -457,7 +457,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                       <td class="matrix-cell text-center px-2 py-1.5">
                         <button
                           type="button"
-                          class="btn btn--outline btn--sm text-[10px] py-0.5 px-2 w-full"
+                          class="btn btn--outline btn--sm text-xs py-0.5 px-2 w-full"
                           [class.btn--primary]="!allGranted"
                           (click)="toggleGroup(role, group.keys, !allGranted)"
                         >

@@ -68,7 +68,6 @@ export interface WithdrawalSelectableGroup {
   ],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }
@@ -151,7 +150,7 @@ export interface WithdrawalSelectableGroup {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.balance.pending') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -171,7 +170,7 @@ export interface WithdrawalSelectableGroup {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.balance.requested') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -191,7 +190,7 @@ export interface WithdrawalSelectableGroup {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.status.withdrawn') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -211,7 +210,7 @@ export interface WithdrawalSelectableGroup {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.transactions.title') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -230,7 +229,7 @@ export interface WithdrawalSelectableGroup {
 
       @if (isAlliance() && (balance()?.guilds?.length ?? 0) > 0) {
         <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" [attr.aria-label]="t('bank.alliance.breakdown')">
-          <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase mb-3">
+          <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase mb-3">
             {{ t('bank.alliance.breakdown') }}
           </p>
           <ul class="grid gap-2 sm:grid-cols-2">
@@ -283,7 +282,7 @@ export interface WithdrawalSelectableGroup {
                 }
               </span>
               @if (toNumber(row.amount) < 0) {
-                <span class="rounded bg-[var(--color-error-container)] px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wider text-error">
+                <span class="rounded bg-[var(--color-error-container)] px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-error">
                   {{ t('bank.type.clawback') }}
                 </span>
               }
@@ -334,7 +333,7 @@ export interface WithdrawalSelectableGroup {
             >
               {{ formatAmount(row.amount) }}
             </span>
-            <span class="text-[10px] font-mono text-[var(--color-text-tertiary)] uppercase ml-1">silver</span>
+            <span class="text-xs font-mono text-[var(--color-text-tertiary)] uppercase ml-1">silver</span>
           </div>
         </ng-template>
 
@@ -395,7 +394,7 @@ export interface WithdrawalSelectableGroup {
               <span class="font-mono text-2xl font-bold text-success">
                 {{ formatAmount(withdrawalAvailableBalance()) }}
               </span>
-              <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)] uppercase">
+              <span class="block text-xs font-mono text-[var(--color-text-secondary)] uppercase">
                 silver
               </span>
             </div>
@@ -472,7 +471,7 @@ export interface WithdrawalSelectableGroup {
                           <span>{{ t('bank.withdraw.credit', { id: group.primaryId }) }}</span>
                         }
                         @if (group.transactionIds.length > 1) {
-                          <span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[0.625rem] font-medium text-[var(--color-text-secondary)]">
+                          <span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-secondary)]">
                             {{ t('bank.withdraw.consolidatedHint', { count: group.transactionIds.length }) }}
                           </span>
                         }
@@ -491,7 +490,7 @@ export interface WithdrawalSelectableGroup {
                       <span class="block font-mono text-sm font-bold text-success">
                         +{{ formatAmount(group.amount) }}
                       </span>
-                      <span class="block text-[0.625rem] font-mono uppercase text-[var(--color-text-tertiary)]">
+                      <span class="block text-xs font-mono uppercase text-[var(--color-text-tertiary)]">
                         silver
                       </span>
                     </span>

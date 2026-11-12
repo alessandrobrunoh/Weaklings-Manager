@@ -98,7 +98,6 @@ function newSplitBag(amount = 0): SplitBagDraft {
   ],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }
@@ -469,7 +468,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
         <ng-template dataTableCell="island" let-row>
           @if (row.island_name) {
             <div class="flex items-center gap-1.5 text-xs text-[var(--color-text)]">
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+              <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
                 {{ cityLabel(row.island_city) }}
               </span>
               <span class="truncate">{{ row.island_name }} &middot; {{ row.island_tab_name }}</span>
@@ -659,7 +658,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
 
                 <div class="grid gap-2 sm:grid-cols-3">
                   <label class="block">
-                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
+                    <span class="label font-medium text-xs">{{ t('splits.estimated') }}</span>
                     <input
                       class="input font-mono text-xs"
                       type="number"
@@ -669,7 +668,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     />
                   </label>
                   <label class="block">
-                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.fee') }}</span>
+                    <span class="label font-medium text-xs">{{ t('splits.fee') }}</span>
                     <div class="flex items-center gap-1">
                       <input
                         class="input font-mono text-xs"
@@ -689,7 +688,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     }
                   </label>
                   <label class="block">
-                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
+                    <span class="label font-medium text-xs">{{ t('splits.repair_cost') }} (-)</span>
                     <input
                       class="input font-mono text-xs"
                       type="number"
@@ -701,7 +700,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                 </div>
                 <div class="space-y-2">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.bags_value') }} (+)</span>
+                    <span class="label font-medium text-xs">{{ t('splits.bags_value') }} (+)</span>
                     <button
                       type="button"
                       class="btn btn--outline btn--sm"
@@ -742,15 +741,15 @@ function newSplitBag(amount = 0): SplitBagDraft {
                 <!-- Live Net Silver Banner -->
                 <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between">
                   <div>
-                    <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                    <span class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                       {{ t('splits.net_value') }} ({{ t('splits.net_preview') }})
                     </span>
-                    <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
+                    <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
                       {{ t('splits.estimated') }} − {{ t('splits.repair_cost') }} + {{ t('splits.bags_value') }}
                       − {{ t('splits.fee') }} ({{ formatAmount(draftFeeAmount()) }})
                     </p>
                     @if (participants().length > 0 && draftFeeValid()) {
-                      <p class="text-[0.6875rem] font-mono text-[var(--color-text-secondary)] mt-1">
+                      <p class="text-xs font-mono text-[var(--color-text-secondary)] mt-1">
                         ~{{ formatAmount(perParticipantShare()) }} / player
                       </p>
                     }
@@ -759,7 +758,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     <span class="font-mono text-xl font-medium text-[var(--color-success)]">
                       {{ draftFeeValid() ? formatAmount(draftNetPreview()) : '—' }}
                     </span>
-                    <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
+                    <span class="block text-xs font-mono text-[var(--color-text-secondary)]">
                       silver
                     </span>
                   </div>
@@ -798,13 +797,13 @@ function newSplitBag(amount = 0): SplitBagDraft {
                   <p class="text-xs font-medium text-[var(--color-text)]">
                     {{ t('splits.match_ocr') }}
                   </p>
-                  <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
+                  <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
                     PNG, JPG screenshot from party / chest log
                   </p>
                 </div>
 
                 <label class="block">
-                  <span class="label font-medium text-[0.6875rem]">{{ t('splits.ocr_names') }}</span>
+                  <span class="label font-medium text-xs">{{ t('splits.ocr_names') }}</span>
                   <textarea
                     class="textarea font-mono text-xs"
                     rows="2"
@@ -862,14 +861,14 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     @for (participant of participants(); track participant.user_id) {
                       <div class="flex items-center justify-between gap-2 p-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
                         <div class="flex items-center gap-2 min-w-0">
-                          <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.6875rem] font-mono text-[var(--color-text)] flex-shrink-0">
+                          <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-xs font-mono text-[var(--color-text)] flex-shrink-0">
                             {{ participant.raw_name.slice(0, 1).toUpperCase() }}
                           </div>
                           <div class="min-w-0">
                             <p class="truncate text-xs font-medium text-[var(--color-text)]">
                               {{ participant.raw_name }}
                             </p>
-                            <p class="truncate text-[0.625rem] text-[var(--color-text-secondary)]">
+                            <p class="truncate text-xs text-[var(--color-text-secondary)]">
                               {{ participant.username }} &middot;
                               @if (draftFeeValid()) {
                               <span class="font-mono text-[var(--color-success)]">
@@ -1036,7 +1035,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
                   </div>
                   <div class="text-right shrink-0">
                     <span class="mono font-bold text-success">{{ formatAmount(netOf(split)) }}</span>
-                    <span class="block text-[11px] font-mono text-secondary">#{{ split.id }}</span>
+                    <span class="block text-xs font-mono text-secondary">#{{ split.id }}</span>
                   </div>
                 </div>
               }

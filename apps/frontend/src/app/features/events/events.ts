@@ -461,7 +461,7 @@ interface CreateFieldError {
               <span class="text-warning font-bold text-sm select-none" [title]="t('events.call_to_arms')">★</span>
             }
             @if (event.event_kind === 'flash') {
-              <span class="chip chip--info text-[10px]">{{ t('events.flashMass') }}</span>
+              <span class="chip chip--info text-xs">{{ t('events.flashMass') }}</span>
             }
             <a
               [routerLink]="['/events', event.id]"
@@ -470,10 +470,10 @@ interface CreateFieldError {
               {{ event.title }}
             </a>
             @if (event.archived_at) {
-              <span class="chip chip--neutral text-[10px]">{{ t('events.archived') }}</span>
+              <span class="chip chip--neutral text-xs">{{ t('events.archived') }}</span>
             }
             @if (event.is_link) {
-              <span class="chip chip--neutral text-[10px]">{{ event.source_tenant_name ? t('events.linkFrom', { name: event.source_tenant_name }) : t('events.linkShared') }}</span>
+              <span class="chip chip--neutral text-xs">{{ event.source_tenant_name ? t('events.linkFrom', { name: event.source_tenant_name }) : t('events.linkShared') }}</span>
             }
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">

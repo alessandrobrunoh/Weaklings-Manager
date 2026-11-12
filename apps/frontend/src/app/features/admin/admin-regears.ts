@@ -86,7 +86,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.weeklyTopup') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -105,7 +105,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.weeklyCap') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -124,7 +124,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.bonusCap') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -143,7 +143,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.pricingLocation') }}
                 </p>
                 <p class="font-mono text-xl font-bold tracking-tight text-warning mt-1 truncate max-w-[170px]">
@@ -162,7 +162,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.slots') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">

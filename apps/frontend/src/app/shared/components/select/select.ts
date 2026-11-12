@@ -9,6 +9,7 @@ import {
   signal,
 } from '@angular/core';
 
+import { TranslateService } from '../../../core/services/translate.service';
 import { Icon } from '../icon/icon';
 
 export interface SelectOption {
@@ -46,8 +47,13 @@ let nextId = 0;
     }
     .app-select__trigger:disabled { cursor: not-allowed; opacity: 0.6; }
     .app-select__value { flex: 1; min-width: 0; }
-    .app-select__placeholder { color: var(--color-text-disabled); }
-    .app-select__chevron { flex-shrink: 0; color: var(--color-text-secondary); }
+    .app-select__placeholder { color: var(--color-text-muted); }
+    .app-select__chevron { flex-shrink: 0; color: var(--color-text-secondary); transition: transform var(--motion-fast); }
+    .app-select__trigger[aria-expanded='true'] .app-select__chevron { transform: rotate(180deg); }
+    .app-select__empty { padding: 0.5rem 0.625rem; color: var(--color-text-secondary); font-size: var(--ui-text-sm); }
+    .app-select__option { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .app-select__option-check { flex-shrink: 0; color: var(--color-primary); }
+    @media (prefers-reduced-motion: reduce) { .app-select__chevron { transition: none; } }
     .app-select__panel {
       position: absolute;
       z-index: 40;
@@ -69,16 +75,17 @@ let nextId = 0;
       text-align: start;
       border: 0;
       border-radius: var(--radius-badges);
-      padding: 0.5rem 0.625rem;
+      padding: 0.4375rem 0.625rem;
       background: transparent;
       color: var(--color-text);
       cursor: pointer;
       font: inherit;
+      font-size: var(--ui-text-sm);
     }
     .app-select__option:hover,
     .app-select__option[data-active='true'] { background: var(--color-surface-hover); }
     .app-select__option[aria-selected='true'] { font-weight: 600; }
-    .app-select__option:disabled { opacity: 0.5; cursor: not-allowed; }
+    .app-select__option:disabled { opacity: 0.55; cursor: not-allowed; }
     .app-select__ghost {
       position: absolute;
       width: 1px;
@@ -140,9 +147,14 @@ let nextId = 0;
               (mouseenter)="activeIndex.set(i)"
               (click)="choose(option)"
             >
-              {{ option.label }}
+              <span class="truncate">{{ option.label }}</span>
+              @if (option.value === value()) {
+                <app-icon class="app-select__option-check" name="check" size="0.875rem" />
+              }
             </button>
           </li>
+        } @empty {
+          <li class="app-select__empty" role="presentation">{{ noOptionsLabel() }}</li>
         }
       </ul>
     }
@@ -150,6 +162,7 @@ let nextId = 0;
 })
 export class Select {
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly translate = inject(TranslateService);
 
   readonly options = input<readonly SelectOption[]>([]);
   readonly value = input('');
@@ -163,6 +176,7 @@ export class Select {
 
   readonly valueChange = output<string>();
 
+  protected readonly noOptionsLabel = computed(() => this.translate.t('ui.select.noOptions'));
   protected readonly open = signal(false);
   protected readonly activeIndex = signal(0);
   protected readonly triggerId = `app-select-${++nextId}`;

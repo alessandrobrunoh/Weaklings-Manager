@@ -56,7 +56,7 @@ import {
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { hpOverTimeSeries } from './hp-timeline';
 import { CastTable } from './timeline/cast-table';
 import {
@@ -130,7 +130,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
     SearchDialog,
     StatCard,
     VersionSwitcher,
-    ViewToggle,
+    Tabs,
     CastTable,
     TimelineEditor,
     TimelineInspector,
@@ -191,7 +191,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
             {{ running() ? t('tests.running') : t('tests.run') }}
           </button>
         </div>
-        <app-view-toggle
+        <app-tabs
           pageTabs
           [options]="tabOptions()"
           [active]="activeTab()"
@@ -352,7 +352,8 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
               <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <h2 class="text-base font-bold text-[var(--color-text)]">{{ t('tests.casts') }}</h2>
                 <div class="flex flex-wrap items-center gap-2">
-                  <app-view-toggle
+                  <app-tabs
+                    variant="segmented"
                     [options]="timelineViewOptions()"
                     [active]="timelineView()"
                     (activeChange)="switchTimelineView($event)"
@@ -525,7 +526,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                         <tr>
                           <td class="font-mono text-xs">{{ unit.id }}</td>
                           <td>
-                            <span class="chip text-[10px]" [class.chip--info]="unit.side === 'ally'" [class.chip--error]="unit.side === 'enemy'">
+                            <span class="chip text-xs" [class.chip--info]="unit.side === 'ally'" [class.chip--error]="unit.side === 'enemy'">
                               {{ unit.side === 'ally' ? t('tests.ally') : t('tests.enemy') }}
                             </span>
                           </td>
@@ -535,9 +536,9 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                           <td class="text-right font-mono text-xs">{{ formatAmount(unit.remaining_hp) }}</td>
                           <td class="text-center">
                             @if (unit.died_at !== null) {
-                              <span class="chip chip--error text-[10px]">{{ t('tests.died') }} · {{ formatSeconds(unit.died_at) }}</span>
+                              <span class="chip chip--error text-xs">{{ t('tests.died') }} · {{ formatSeconds(unit.died_at) }}</span>
                             } @else {
-                              <span class="chip chip--success text-[10px]">{{ t('tests.alive') }}</span>
+                              <span class="chip chip--success text-xs">{{ t('tests.alive') }}</span>
                             }
                           </td>
                         </tr>
@@ -826,7 +827,7 @@ export class TestDetailPage {
     })),
   );
 
-  protected readonly timelineViewOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly timelineViewOptions = computed<TabOption[]>(() => [
     { id: 'timeline', label: this.t('tests.timeline.viewTimeline') },
     { id: 'table', label: this.t('tests.timeline.viewTable') },
   ]);
@@ -937,7 +938,7 @@ export class TestDetailPage {
     );
   });
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'setup', label: this.t('tests.setup') },
     { id: 'timeline', label: this.t('tests.timeline') },
     { id: 'results', label: this.t('tests.results') },

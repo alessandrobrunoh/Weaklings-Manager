@@ -114,7 +114,7 @@ interface NewRoleDraft {
                       />
                       <span>
                         <span class="text-xs">{{ t('admin.roles.default') }}</span>
-                        <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                        <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
                           {{ t('admin.roles.defaultHint') }}
                         </span>
                       </span>
@@ -129,7 +129,7 @@ interface NewRoleDraft {
                       />
                       <span>
                         <span class="text-xs">{{ t('admin.roles.staff') }}</span>
-                        <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                        <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
                           {{ t('admin.roles.staffHint') }}
                         </span>
                       </span>
@@ -144,7 +144,7 @@ interface NewRoleDraft {
                       />
                       <span>
                         <span class="text-xs">{{ t('admin.roles.staffEligible') }}</span>
-                        <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                        <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
                           {{ t('admin.roles.staffEligibleHint') }}
                         </span>
                       </span>

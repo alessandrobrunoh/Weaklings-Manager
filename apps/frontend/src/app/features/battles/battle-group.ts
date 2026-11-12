@@ -193,7 +193,7 @@ interface AggregatedGuildStats {
     @layer components {
       .battle-group__label {
         color: var(--color-text-disabled);
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         letter-spacing: 0.05em;
         text-transform: uppercase;
         font-weight: 600;

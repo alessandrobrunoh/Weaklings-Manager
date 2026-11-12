@@ -26,13 +26,13 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
     <app-page-stack>
       <section class="grid gap-4 sm:grid-cols-2" aria-label="Platform summary">
         <article class="card p-4">
-          <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+          <p class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
             {{ t('nav.platform.tenants') }}
           </p>
           <p class="mt-1 font-mono text-2xl font-bold">{{ formatCount(tenantCount()) }}</p>
         </article>
         <article class="card p-4">
-          <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+          <p class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
             {{ t('nav.platform.admins') }}
           </p>
           <p class="mt-1 font-mono text-2xl font-bold">{{ formatCount(adminCount()) }}</p>

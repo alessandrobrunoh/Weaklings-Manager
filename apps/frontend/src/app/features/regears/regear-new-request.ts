@@ -79,7 +79,6 @@ const SLOT_ORDER: readonly BuildSlot[] = [
   imports: [Dialog, EmptyState, EquipmentGrid, Icon, Loading, PageHeader, PageStack],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }

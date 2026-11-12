@@ -167,7 +167,7 @@ let nextRosterId = 0;
       gap: 0.25rem;
     }
     .wr__field-label {
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
       color: var(--color-text-secondary);
     }
@@ -260,7 +260,7 @@ let nextRosterId = 0;
       border-radius: var(--radius-pills);
       background: var(--color-surface-2);
       font-family: var(--font-mono);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       text-align: center;
       letter-spacing: 0;
       color: var(--color-text-secondary);
@@ -335,7 +335,7 @@ let nextRosterId = 0;
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       color: var(--color-text-secondary);
     }
 

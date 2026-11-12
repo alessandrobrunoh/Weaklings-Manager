@@ -6,9 +6,9 @@ import type { TranslationKey } from '../../../i18n/en';
 import { Icon } from '../../../shared/components/icon/icon';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
 import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../../shared/components/view-toggle/view-toggle';
+  Tabs,
+  type TabOption,
+} from '../../../shared/components/tabs/tabs';
 import { TooltipDirective } from '../../../shared/directives/tooltip.directive';
 
 /**
@@ -19,7 +19,7 @@ import { TooltipDirective } from '../../../shared/directives/tooltip.directive';
 @Component({
   selector: 'app-event-detail-header',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, TooltipDirective, ViewToggle],
+  imports: [Icon, PageHeader, TooltipDirective, Tabs],
   template: `
     @let detail = event();
     <!-- ================= PAGE HEADER: title, officer actions, tabs ================= -->
@@ -126,7 +126,7 @@ import { TooltipDirective } from '../../../shared/directives/tooltip.directive';
           </button>
         }
       }
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="tab()"
@@ -143,7 +143,7 @@ export class EventHeader {
   readonly canDelete = input.required<boolean>();
   readonly saving = input.required<boolean>();
   readonly tab = input.required<string>();
-  readonly tabOptions = input.required<ViewToggleOption[]>();
+  readonly tabOptions = input.required<TabOption[]>();
 
   readonly back = output<void>();
   readonly start = output<number>();

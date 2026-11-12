@@ -82,7 +82,7 @@ export type { NavItem, NavSection } from '../nav';
       /* The one spot on every page that shows the guild's whole brand ramp. */
       background: var(--gradient-brand);
       color: var(--color-on-primary);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 800;
     }
     .category {
@@ -95,7 +95,7 @@ export type { NavItem, NavSection } from '../nav';
       background: transparent;
       color: var(--color-text-tertiary);
       font-family: var(--font-sans);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 500;
       text-transform: uppercase;
       letter-spacing: 0.06em;

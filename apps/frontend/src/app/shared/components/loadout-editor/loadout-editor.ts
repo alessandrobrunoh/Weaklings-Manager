@@ -51,7 +51,7 @@ import { AlbionAbilitiesService } from '../../services/albion-abilities.service'
 import { AlbionCatalogService } from '../../services/albion-catalog.service';
 import type { AbilityChoiceChange } from '../ability-bar/ability-bar';
 import { Icon } from '../icon/icon';
-import { ViewToggle, type ViewToggleOption } from '../view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../tabs/tabs';
 import { SlotInspector } from './slot-inspector';
 
 /** One slot that differs between the saved loadout and the draft. */
@@ -155,7 +155,7 @@ function sameItem(left: BuildItemSlot | null, right: BuildItemSlot | null): bool
 @Component({
   selector: 'app-loadout-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, SlotInspector, ViewToggle],
+  imports: [Icon, SlotInspector, Tabs],
   styles: `
     :host {
       display: block;
@@ -334,7 +334,7 @@ function sameItem(left: BuildItemSlot | null, right: BuildItemSlot | null): bool
     <div role="group" [attr.aria-label]="t('loadoutEditor.title')">
       <div class="le__tools">
         @if (allowSwap()) {
-          <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="setTab($event)" />
+          <app-tabs [options]="tabOptions()" [active]="tab()" (activeChange)="setTab($event)" />
         }
         @if (tab() === 'swap') {
           <button
@@ -558,7 +558,7 @@ export class LoadoutEditor {
     );
   });
 
-  protected readonly tabOptions = computed<readonly ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<readonly TabOption[]>(() => [
     { id: 'main', label: this.t('loadout.main') },
     { id: 'swap', label: this.t('loadout.swap') },
   ]);

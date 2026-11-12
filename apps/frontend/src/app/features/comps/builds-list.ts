@@ -45,7 +45,7 @@ import {
 import { ListArchiveDialog } from './list-archive-dialog';
 import { ListFilterBar, type FilterCategory } from './list-filter-bar';
 import { LIST_TABLE_STYLES } from './list-table-styles';
-import { RowMenu } from './row-menu';
+import { Menu } from '../../shared/components/menu/menu';
 
 const SKELETON_ROWS = [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -77,7 +77,7 @@ type BuildRow =
     ListArchiveDialog,
     ListFilterBar,
     RoleTag,
-    RowMenu,
+    Menu,
     WeaponIcon,
   ],
   styles: [LIST_TABLE_STYLES],
@@ -101,10 +101,8 @@ type BuildRow =
       (showArchivedChange)="setShowArchived($event)"
       (clear)="clearFilters()"
     >
-      <label style="display: grid; gap: 0.25rem">
-        <span style="font-size: 0.75rem; color: var(--color-text-secondary)">{{
-          t('buildsList.family.label')
-        }}</span>
+      <label class="filter-field">
+        <span class="filter-field__label">{{ t('buildsList.family.label') }}</span>
         <select class="select select--sm" [value]="filters().family ?? ''" (change)="onFamily($event)">
           <option value="">{{ t('buildsList.family.all') }}</option>
           @for (family of families(); track family) {
@@ -112,10 +110,8 @@ type BuildRow =
           }
         </select>
       </label>
-      <label style="display: grid; gap: 0.25rem">
-        <span style="font-size: 0.75rem; color: var(--color-text-secondary)">{{
-          t('buildsList.group.label')
-        }}</span>
+      <label class="filter-field">
+        <span class="filter-field__label">{{ t('buildsList.group.label') }}</span>
         <select class="select select--sm" [value]="groupBy()" (change)="onGroupBy($event)">
           <option value="none">{{ t('buildsList.group.none') }}</option>
           <option value="weapon">{{ t('buildsList.group.weapon') }}</option>
@@ -171,7 +167,7 @@ type BuildRow =
             [hint]="t('compsList.empty.noMatchHint')"
           >
             <button type="button" class="btn btn--outline btn--sm" (click)="clearFilters()">
-              {{ t('compsList.filters.clear') }}
+              {{ t('ui.filters.clear') }}
             </button>
           </app-empty-state>
         }
@@ -304,10 +300,10 @@ type BuildRow =
                       <td class="lt-c-updated lt-muted" role="cell">{{ date(b.updated_at) }}</td>
                       <td class="lt-muted" role="cell">{{ b.created_by_username }}</td>
                       <td class="lt-actions" role="cell">
-                        <app-row-menu
+                        <app-menu
                           [items]="menuItems(b)"
                           [label]="t('compsList.menu.label', { name: b.name })"
-                          (select)="onMenu($event, b)"
+                          (itemSelect)="onMenu($event, b)"
                         />
                       </td>
                     </tr>

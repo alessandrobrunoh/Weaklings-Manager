@@ -46,7 +46,7 @@ let nextSelectId = 0;
       align-items: center;
       gap: 0.5rem;
       width: 100%;
-      min-height: 2.5rem;
+      min-height: var(--control-h);
       text-align: start;
     }
     .ss__value {
@@ -58,18 +58,18 @@ let nextSelectId = 0;
       align-items: center;
     }
     .ss__placeholder {
-      color: var(--color-text-secondary);
+      color: var(--color-text-muted);
     }
     .ss__chip {
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
       max-width: 100%;
-      border-radius: var(--radius-pills);
+      border-radius: var(--radius-badges);
       padding: 0.125rem 0.5rem;
       background: var(--color-surface-2);
       border: 1px solid var(--color-border);
-      font-size: 0.75rem;
+      font-size: var(--ui-text-xs);
       color: var(--color-text);
     }
     .ss__chip-remove {
@@ -109,9 +109,8 @@ let nextSelectId = 0;
     }
     .ss__group {
       padding: 0.375rem 0.5rem 0.125rem;
-      font-size: 0.6875rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      font-size: var(--ui-text-xs);
+      font-weight: 600;
       color: var(--color-text-secondary);
     }
     .ss__option {
@@ -119,10 +118,16 @@ let nextSelectId = 0;
       text-align: start;
       border: 0;
       border-radius: var(--radius-badges);
-      padding: 0.5rem 0.625rem;
+      padding: 0.4375rem 0.625rem;
       background: transparent;
       color: var(--color-text);
+      font-size: var(--ui-text-sm);
       cursor: pointer;
+    }
+    .ss__option:focus-visible,
+    .ss__chip-remove:focus-visible {
+      outline: var(--focus-ring);
+      outline-offset: -2px;
     }
     .ss__option:hover,
     .ss__option[data-active='true'] {
@@ -133,7 +138,7 @@ let nextSelectId = 0;
     }
     .ss__empty {
       padding: 0.75rem 0.5rem;
-      font-size: 0.8125rem;
+      font-size: var(--ui-text-sm);
       color: var(--color-text-secondary);
     }
   `,

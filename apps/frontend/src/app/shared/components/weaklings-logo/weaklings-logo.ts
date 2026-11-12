@@ -125,7 +125,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       margin-top: 0.25rem;
       color: var(--color-weaklings-red);
       font-family: var(--font-mono);
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 500;
       letter-spacing: 0.22em;
     }

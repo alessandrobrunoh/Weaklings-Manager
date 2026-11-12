@@ -118,7 +118,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Pending Payout
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
@@ -138,7 +138,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Total Members Credit
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -159,7 +159,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Players Waiting
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -179,7 +179,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.transactions.title') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
@@ -251,7 +251,7 @@ const GROUPING_FETCH_LIMIT = 500;
               <span class="font-medium text-xs text-(--color-text) truncate">{{ row.to_username }}</span>
               @if (row.count > 1) {
                 <span
-                  class="rounded-full bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)] px-1.5 py-0.2 text-[0.625rem] font-mono font-bold"
+                  class="rounded-full bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)] px-1.5 py-0.2 text-xs font-mono font-bold"
                   [appTooltip]="row.count + ' ' + t('bank.withdraw.requestCount', { count: row.count })"
                   tooltipPosition="top"
                 >

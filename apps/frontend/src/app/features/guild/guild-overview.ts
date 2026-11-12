@@ -35,7 +35,7 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type GuildTab = 'overview' | 'roster' | 'economy' | 'meta' | 'leaderboards';
 type PeriodId = '7' | '30' | '90' | 'custom';
@@ -81,10 +81,9 @@ function toDateInput(date: Date): string {
 @Component({
   selector: 'app-guild-overview-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Chart, DataTable, DataTableCell, ErrorState, Icon, Loading, NgTemplateOutlet, PageHeader, PageStack, RouterLink, ViewToggle],
+  imports: [Chart, DataTable, DataTableCell, ErrorState, Icon, Loading, NgTemplateOutlet, PageHeader, PageStack, RouterLink, Tabs],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }
@@ -129,27 +128,27 @@ function toDateInput(date: Date): string {
     .guild-card { min-inline-size: 0; padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
     .guild-mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
     .guild-mini-card { padding: 0.875rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-    .guild-mini-card__title { margin: 0 0 0.375rem; color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+    .guild-mini-card__title { margin: 0 0 0.375rem; color: var(--color-text-tertiary); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
     .guild-mini-card__opponent { font-weight: 600; color: var(--color-text); }
     .guild-mini-card__row { display: flex; justify-content: space-between; margin-top: 0.375rem; font-size: 0.75rem; color: var(--color-text-secondary); }
     .guild-timeline { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
     .guild-timeline__row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid var(--color-border); border-radius: var(--radius-badges); background: var(--color-surface); }
     .guild-timeline__icon { display: flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--color-surface-2); color: var(--color-text-secondary); flex-shrink: 0; }
     .guild-timeline__title { font-size: 0.8125rem; font-weight: 500; color: var(--color-text); }
-    .guild-timeline__detail { font-size: 0.6875rem; color: var(--color-text-tertiary); }
-    .guild-timeline__at { font-size: 0.6875rem; color: var(--color-text-tertiary); white-space: nowrap; }
+    .guild-timeline__detail { font-size: 0.75rem; color: var(--color-text-tertiary); }
+    .guild-timeline__at { font-size: 0.75rem; color: var(--color-text-tertiary); white-space: nowrap; }
     .guild-note { margin: 0; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-badges); color: var(--color-text-tertiary); font-size: 0.75rem; line-height: 1.5; }
     .guild-chip-list { display: flex; flex-wrap: wrap; gap: 0.375rem; }
     .guild-role-table { width: 100%; border-collapse: collapse; }
     .guild-role-table th, .guild-role-table td { padding: 0.5rem 0.625rem; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.75rem; }
-    .guild-role-table th { color: var(--color-text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.625rem; }
+    .guild-role-table th { color: var(--color-text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.75rem; }
     .guild-role-table td.mono { text-align: right; }
     .guild-leaderboard-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
     .guild-leaderboard-card { padding: 0.875rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
     .guild-leaderboard-card__title { margin: 0 0 0.5rem; color: var(--color-text); font-size: 0.75rem; font-weight: 700; }
     .guild-leaderboard-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.75rem; }
     .guild-leaderboard-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); }
-    .guild-leaderboard-row__rank { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; margin-inline-end: 0.375rem; }
+    .guild-leaderboard-row__rank { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.75rem; margin-inline-end: 0.375rem; }
     @media (max-width: 72rem) {
       .guild-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .guild-chart-grid, .guild-mini-grid, .guild-leaderboard-grid { grid-template-columns: 1fr; }
@@ -164,14 +163,14 @@ function toDateInput(date: Date): string {
           <app-icon name="refresh" size="0.875rem" />
           {{ t('common.refreshNow') }}
         </button>
-        <app-view-toggle pageTabs [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
+        <app-tabs pageTabs [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
       </app-page-header>
 
       <app-page-stack class="workbench-page">
         <div class="guild-filters">
           <div class="guild-filters__group">
             <span class="eyebrow">{{ t('guild.period.label') }}</span>
-            <app-view-toggle [options]="periodOptions()" [active]="period()" (activeChange)="onPeriodChange($event)" />
+            <app-tabs variant="segmented" [options]="periodOptions()" [active]="period()" (activeChange)="onPeriodChange($event)" />
             @if (period() === 'custom') {
               <label class="sr-only" for="guild-from">{{ t('guild.period.from') }}</label>
               <input
@@ -204,7 +203,7 @@ function toDateInput(date: Date): string {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ stat.label }}
                 </p>
                 <p
@@ -626,7 +625,7 @@ export class GuildOverviewPage {
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) => this.translate.t(key, params);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'overview', label: this.t('guild.tabs.overview') },
     { id: 'roster', label: this.t('guild.tabs.roster') },
     { id: 'economy', label: this.t('guild.tabs.economy') },
@@ -634,7 +633,7 @@ export class GuildOverviewPage {
     { id: 'leaderboards', label: this.t('guild.tabs.leaderboards') },
   ]);
 
-  protected readonly periodOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly periodOptions = computed<TabOption[]>(() => [
     { id: '7', label: this.t('guild.period.d7') },
     { id: '30', label: this.t('guild.period.d30') },
     { id: '90', label: this.t('guild.period.d90') },

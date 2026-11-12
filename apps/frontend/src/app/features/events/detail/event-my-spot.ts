@@ -231,7 +231,7 @@ export type MySpotState = 'not-joined' | 'waiting' | 'seated';
       border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border));
     }
     .my-spot__eyebrow {
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 800;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -306,7 +306,7 @@ export type MySpotState = 'not-joined' | 'waiting' | 'seated';
       border-radius: var(--radius-badges);
       background: var(--role-accent);
       color: #fff;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 800;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -388,7 +388,7 @@ export type MySpotState = 'not-joined' | 'waiting' | 'seated';
     }
     .my-spot__subhead {
       margin-bottom: 0.5rem;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;

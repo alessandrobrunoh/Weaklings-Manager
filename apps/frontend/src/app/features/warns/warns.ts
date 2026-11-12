@@ -29,7 +29,7 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type WarnsTab = 'register' | 'escalations';
 
@@ -72,11 +72,10 @@ function isWarnsTab(value: string): value is WarnsTab {
     PageStack,
     RouterLink,
     TooltipDirective,
-    ViewToggle,
+    Tabs,
   ],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }
@@ -115,7 +114,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       gap: 0.375rem;
       padding: 0.25rem 0.625rem;
       border-radius: var(--radius-pills);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.02em;
     }
@@ -167,7 +166,7 @@ function isWarnsTab(value: string): value is WarnsTab {
           {{ t('warns.issue') }}
         </button>
       }
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="tab()"
@@ -185,7 +184,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.active') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
@@ -206,7 +205,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.strikes') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
@@ -226,7 +225,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.notes') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
@@ -459,7 +458,7 @@ export class Warns {
   private readonly translate = inject(TranslateService);
 
   protected readonly tab = signal<WarnsTab>('register');
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'register', label: this.t('warns.register') },
     { id: 'escalations', label: this.t('warns.escalations') },
   ]);

@@ -103,13 +103,13 @@ import type { AuditLog } from '../audit/audit';
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalMembers') }}
               </p>
               <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCount(totalMembers()) }}
               </p>
-              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
                 Guild roster
               </p>
             </div>
@@ -123,13 +123,13 @@ import type { AuditLog } from '../audit/audit';
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.ledgerVolume') }}
               </p>
               <p class="font-mono text-xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
                 {{ formatCompact(bankSummary()?.ledger_volume) }}
               </p>
-              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
                 {{ bankSummary()?.transaction_count ?? 0 }} entries
               </p>
             </div>
@@ -143,13 +143,13 @@ import type { AuditLog } from '../audit/audit';
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.openLiability') }}
               </p>
               <p class="font-mono text-xl font-bold tracking-tight text-warning mt-1">
                 {{ formatCompact(bankSummary()?.outstanding_total) }}
               </p>
-              <p class="text-[0.6875rem] text-warning mt-0.5 truncate flex items-center gap-1">
+              <p class="text-xs text-warning mt-0.5 truncate flex items-center gap-1">
                 <span class="h-1 w-1 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 {{ bankSummary()?.outstanding_count ?? 0 }} requests
               </p>
@@ -164,13 +164,13 @@ import type { AuditLog } from '../audit/audit';
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.paidOut') }}
               </p>
               <p class="font-mono text-xl font-bold tracking-tight text-success mt-1">
                 {{ formatCompact(bankSummary()?.paid_out_total) }}
               </p>
-              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
                 {{ bankSummary()?.paid_out_count ?? 0 }} paid
               </p>
             </div>
@@ -184,13 +184,13 @@ import type { AuditLog } from '../audit/audit';
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalRoles') }}
               </p>
               <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCount(matrix()?.roles?.length) }}
               </p>
-              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
                 Auth roles
               </p>
             </div>
@@ -204,13 +204,13 @@ import type { AuditLog } from '../audit/audit';
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalEvents') }}
               </p>
               <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCount(totalEvents()) }}
               </p>
-              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
                 Scheduled activities
               </p>
             </div>
@@ -235,7 +235,7 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--warning">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-warning">
+                  <span class="text-xs font-semibold uppercase tracking-wider block text-warning">
                     {{ t('admin.stat.pendingRegears') }}
                   </span>
                   <div class="text-2xl font-mono font-bold mt-0.5 text-(--color-text)">
@@ -263,7 +263,7 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--primary">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-[var(--color-primary)]">
+                  <span class="text-xs font-semibold uppercase tracking-wider block text-[var(--color-primary)]">
                     {{ t('admin.stat.pendingSplits') }}
                   </span>
                   <div class="text-2xl font-mono font-bold mt-0.5 text-(--color-text)">
@@ -290,7 +290,7 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--success">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-success">
+                  <span class="text-xs font-semibold uppercase tracking-wider block text-success">
                     {{ t('admin.stat.pendingWithdrawals') }}
                   </span>
                   <div class="text-2xl font-mono font-bold mt-0.5 text-success">
@@ -386,7 +386,7 @@ import type { AuditLog } from '../audit/audit';
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
                       <span
-                        class="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                        class="text-xs font-mono font-semibold px-1.5 py-0.5 rounded"
                         [style.backgroundColor]="actionBadgeBg(log.action)"
                         [style.color]="actionBadgeFg(log.action)"
                       >
@@ -406,7 +406,7 @@ import type { AuditLog } from '../audit/audit';
                       }
                     </div>
                   </div>
-                  <div class="text-[11px] tabular-nums text-end shrink-0" style="color: var(--color-text-tertiary)">
+                  <div class="text-xs tabular-nums text-end shrink-0" style="color: var(--color-text-tertiary)">
                     {{ formatRelative(log.created_at) }}
                   </div>
                 </div>
@@ -428,7 +428,7 @@ import type { AuditLog } from '../audit/audit';
                 >
                   <div class="min-w-0">
                     <div class="font-medium text-xs truncate">{{ t(link.labelKey) }}</div>
-                    <div class="text-[11px] truncate mt-0.5" style="color: var(--color-text-secondary)">{{ t(link.hintKey) }}</div>
+                    <div class="text-xs truncate mt-0.5" style="color: var(--color-text-secondary)">{{ t(link.hintKey) }}</div>
                   </div>
                   <app-icon name="chevron-right" size="0.875rem" style="color: var(--color-text-secondary)" />
                 </a>

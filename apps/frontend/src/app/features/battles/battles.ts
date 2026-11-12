@@ -32,7 +32,7 @@ import { DataTableCell } from '../../shared/components/data-table/data-table-cel
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
@@ -69,7 +69,7 @@ function isBattleTab(value: string): value is BattleTab {
     DataTable,
     DataTableCell,
     TooltipDirective,
-    ViewToggle,
+    Tabs,
     Icon,
     RouterLink,
   ],
@@ -119,7 +119,7 @@ function isBattleTab(value: string): value is BattleTab {
       gap: 0.375rem;
       padding: 0.2rem 0.55rem;
       border-radius: var(--radius-pills);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -181,7 +181,7 @@ function isBattleTab(value: string): value is BattleTab {
         <app-icon name="chart" size="0.875rem" />
         Fight Trends
       </a>
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="tab()"
@@ -196,7 +196,7 @@ function isBattleTab(value: string): value is BattleTab {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.visible_battles') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
@@ -216,7 +216,7 @@ function isBattleTab(value: string): value is BattleTab {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.total_fame') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
@@ -236,7 +236,7 @@ function isBattleTab(value: string): value is BattleTab {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.kills') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
@@ -257,7 +257,7 @@ function isBattleTab(value: string): value is BattleTab {
             <article class="kpi-card">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                     {{ t('battles.deaths') }}
                   </p>
                   <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
@@ -276,7 +276,7 @@ function isBattleTab(value: string): value is BattleTab {
             <article class="kpi-card">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                     {{ scopeStats().deaths > 0 ? t('battles.kill_death') : t('events.detail.win_rate') }}
                   </p>
                   <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
@@ -310,7 +310,7 @@ function isBattleTab(value: string): value is BattleTab {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t(tab() === 'guild' ? 'battles.scope.largestFight' : 'battles.players') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
@@ -492,7 +492,7 @@ export class Battles {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly tab = signal<BattleTab>('guild');
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'guild', label: this.t('battles.guild') },
     { id: 'me', label: this.t('battles.my') },
   ]);

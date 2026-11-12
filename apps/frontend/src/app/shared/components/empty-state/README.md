@@ -6,8 +6,8 @@
 
 ## Interface
 
-- Required `message` input; optional `hint`; `icon` defaults to `sparkles`.
-- Caller content can be projected after the message and hint.
+- Required `message` input; optional `hint`; `icon` defaults to `sparkles`; `compact` (tighter padding and smaller icon, for use inside a card or table).
+- Caller content can be projected after the message and hint: put the single next-step action there. A failed load is not empty; use `app-error-state`.
 
 ## Invariants
 

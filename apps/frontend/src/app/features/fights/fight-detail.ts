@@ -41,7 +41,7 @@ import { albionBattlesUrl, formatConfidence } from '../battles/battle-metrics';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 export type FightTab = 'overview' | 'guilds' | 'players' | 'roster' | 'segments';
 
@@ -106,7 +106,7 @@ type PendingFightMutation =
     PageHeader,
     PageStack,
     RouterLink,
-    ViewToggle,
+    Tabs,
   ],
   template: `
     @if (loading()) {
@@ -147,7 +147,7 @@ type PendingFightMutation =
           </button>
         }
 
-        <app-view-toggle
+        <app-tabs
           pageTabs
           [options]="tabOptions()"
           [active]="tab()"
@@ -295,19 +295,19 @@ type PendingFightMutation =
                 </div>
                 <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
+                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
                     <p class="font-bold text-sm mono text-white">
                       {{ ourForcesKills() }} / {{ ourForcesDeaths() }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
+                    <p class="text-xs uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
                     <p class="font-bold text-sm mono" [class.text-success]="ourForcesKdRatio() >= 1" [class.text-error]="ourForcesKdRatio() < 1">
                       {{ formatDecimal(ourForcesKdRatio()) }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
+                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
                     <p class="font-bold text-sm mono text-warning">
                       {{ formatCompact(ourForcesKillFame()) }}
                     </p>
@@ -332,19 +332,19 @@ type PendingFightMutation =
                 </div>
                 <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
+                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
                     <p class="font-bold text-sm mono text-white">
                       {{ enemyForcesKills() }} / {{ enemyForcesDeaths() }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
+                    <p class="text-xs uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
                     <p class="font-bold text-sm mono" [class.text-success]="enemyForcesKdRatio() >= 1" [class.text-error]="enemyForcesKdRatio() < 1">
                       {{ formatDecimal(enemyForcesKdRatio()) }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
+                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
                     <p class="font-bold text-sm mono text-warning">
                       {{ formatCompact(enemyForcesKillFame()) }}
                     </p>
@@ -362,14 +362,14 @@ type PendingFightMutation =
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <!-- Top Executioner -->
               <article class="card p-4 border border-[var(--color-warning)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_killer') }}</p>
+                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_killer') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpExecutioner(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
                       <p class="text-xs text-warning font-bold mono">{{ t('fights.mvpKillsKd', { kills: player.kills, kd: formatDecimal(player.kdRatio) }) }}</p>
-                      <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
+                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
                     <p class="text-xs text-secondary">{{ t('fights.noKillsRecorded') }}</p>
@@ -379,14 +379,14 @@ type PendingFightMutation =
 
               <!-- Fame Hunter -->
               <article class="card p-4 border border-[var(--color-warning)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_fame') }}</p>
+                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_fame') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpFameHunter(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
                       <p class="text-xs text-warning font-bold mono">{{ t('fights.mvpFame', { fame: formatCompact(player.kill_fame) }) }}</p>
-                      <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
+                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
                     <p class="text-xs text-secondary">{{ t('fights.noFameRecorded') }}</p>
@@ -396,14 +396,14 @@ type PendingFightMutation =
 
               <!-- Iron Vanguard (Highest IP) -->
               <article class="card p-4 border border-[var(--color-info)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_ip') }}</p>
+                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_ip') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpIronVanguard(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
                       <p class="text-xs text-primary font-bold mono">{{ formatDecimal(player.item_power ?? 0) }} IP</p>
-                      <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
+                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
                     <p class="text-xs text-secondary">—</p>
@@ -413,14 +413,14 @@ type PendingFightMutation =
 
               <!-- Heaviest Casualty -->
               <article class="card p-4 border border-[var(--color-error)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.heaviest_loss') }}</p>
+                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.heaviest_loss') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpHeaviestLoss(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
                       <p class="text-xs text-error font-bold mono">{{ t('fights.mvpLost', { amount: formatCompact(player.estimatedLoss) }) }}</p>
-                      <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
+                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
                     <p class="text-xs text-secondary">{{ t('fights.noEstimatedLosses') }}</p>
@@ -509,7 +509,7 @@ type PendingFightMutation =
                       <p class="text-xs font-bold text-white group-hover:text-[var(--color-primary)] truncate">
                         {{ t('fights.battleNumber', { id: battleId }) }}
                       </p>
-                      <span class="text-[10px] text-secondary">{{ t('fights.viewReport') }}</span>
+                      <span class="text-xs text-secondary">{{ t('fights.viewReport') }}</span>
                     </div>
                   </div>
                   <app-icon name="chevron-right" size="0.75rem" class="text-secondary group-hover:text-white transition-colors" />
@@ -533,15 +533,15 @@ type PendingFightMutation =
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
                   <div class="surface p-2 rounded-lg">
-                    <span class="text-[10px] text-disabled block">{{ t('battles.kill_death') }}</span>
+                    <span class="text-xs text-disabled block">{{ t('battles.kill_death') }}</span>
                     <strong class="mono text-white">{{ formatDecimal(alliance.kdRatio) }}</strong>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <span class="text-[10px] text-disabled block">{{ t('battles.fame') }}</span>
+                    <span class="text-xs text-disabled block">{{ t('battles.fame') }}</span>
                     <strong class="mono text-warning">{{ formatCompact(alliance.killFame) }}</strong>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <span class="text-[10px] text-disabled block">{{ t('common.loss') }}</span>
+                    <span class="text-xs text-disabled block">{{ t('common.loss') }}</span>
                     <strong class="mono text-error">{{ formatCompact(alliance.estimatedLoss) }}</strong>
                   </div>
                 </div>
@@ -578,12 +578,12 @@ type PendingFightMutation =
                 <div class="flex items-center gap-2">
                   <span class="font-bold text-white text-xs">{{ row.name }}</span>
                   @if (row.alliance_name) {
-                    <span class="chip chip--neutral text-[10px] py-0 px-1 font-mono">
+                    <span class="chip chip--neutral text-xs py-0 px-1 font-mono">
                       [{{ row.alliance_name }}]
                     </span>
                   }
                   @if (row.isOurGuild) {
-                    <span class="chip chip--success text-[9px] py-0 px-1 font-bold">{{ t('fights.ourGuild') }}</span>
+                    <span class="chip chip--success text-xs py-0 px-1 font-bold">{{ t('fights.ourGuild') }}</span>
                   }
                 </div>
               </ng-template>
@@ -673,7 +673,7 @@ type PendingFightMutation =
                     <span class="font-bold text-white text-xs block truncate hover:text-[var(--color-primary)]" [class.text-[var(--color-primary)]]="row.isOurGuild">
                       {{ row.name }}
                     </span>
-                    <span class="text-[10px] text-secondary truncate block">
+                    <span class="text-xs text-secondary truncate block">
                       {{ row.guild_name }} @if (row.alliance_name) { [{{ row.alliance_name }}] }
                     </span>
                   </div>
@@ -729,25 +729,25 @@ type PendingFightMutation =
 
                 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.observedMembers') }}</p>
+                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.observedMembers') }}</p>
                     <p class="text-base font-bold mono text-success mt-1">
                       {{ coverage.observed_planned_participants }} / {{ coverage.matchable_planned_participants }}
                     </p>
                   </div>
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.unmatchedMembers') }}</p>
+                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.unmatchedMembers') }}</p>
                     <p class="text-base font-bold mono text-secondary mt-1">
                       {{ coverage.unmatched_planned_participants }}
                     </p>
                   </div>
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.unplannedObserved') }}</p>
+                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.unplannedObserved') }}</p>
                     <p class="text-base font-bold mono text-warning mt-1">
                       {{ coverage.unplanned_observed_players }}
                     </p>
                   </div>
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.snapshotCoverage') }}</p>
+                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.snapshotCoverage') }}</p>
                     <p class="text-base font-bold mono text-white mt-1">
                       {{ coverage.persisted_segments }} / {{ t('fights.segmentsCount', { count: coverage.total_segments }) }}
                     </p>
@@ -777,7 +777,7 @@ type PendingFightMutation =
                           <td class="text-xs text-secondary py-2">{{ p.primary_build_name || (p.primary_build_id !== null ? t('fights.buildNumber', { id: p.primary_build_id }) : t('common.none')) }}</td>
                           <td class="text-xs text-secondary py-2">{{ p.secondary_build_name || t('common.none') }}</td>
                           <td class="py-2">
-                            <span class="chip text-[10px] font-bold" [class.chip--success]="p.observed" [class.chip--warning]="!p.observed">
+                            <span class="chip text-xs font-bold" [class.chip--success]="p.observed" [class.chip--warning]="!p.observed">
                               {{ p.observed ? t('fights.observedInBattle') : (p.albion_player_id ? t('fights.absentFromSnapshot') : t('fights.noLinkedCharacter')) }}
                             </span>
                           </td>
@@ -850,7 +850,7 @@ type PendingFightMutation =
                             {{ t('fights.battleNumber', { id: battleId }) }}
                           </a>
                           <a
-                            class="text-[10px] text-secondary hover:underline no-underline"
+                            class="text-xs text-secondary hover:underline no-underline"
                             [href]="albionBattlesUrl(battleId)"
                             target="_blank"
                             rel="noopener noreferrer"
@@ -858,7 +858,7 @@ type PendingFightMutation =
                             {{ t('battles.view_on_albion_battles') }} ↗
                           </a>
                         </div>
-                        <p class="text-[11px] text-secondary">
+                        <p class="text-xs text-secondary">
                           {{ t('fights.segmentOfFight', { id: detail.id }) }}
                         </p>
                       </div>
@@ -973,7 +973,7 @@ type PendingFightMutation =
                 (input)="mergeOtherIds.set(inputValue($event)); clearDialogError()"
                 required
               />
-              <p class="text-[11px] text-secondary mt-1">{{ t('fights.mergeCurrentIncluded', { id: detail.id }) }}</p>
+              <p class="text-xs text-secondary mt-1">{{ t('fights.mergeCurrentIncluded', { id: detail.id }) }}</p>
             </div>
 
             @if (dialogError(); as error) {
@@ -1114,25 +1114,25 @@ type PendingFightMutation =
 
             <div class="grid grid-cols-2 gap-2 text-xs">
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</span>
+                <span class="text-xs text-disabled block">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</span>
                 <strong class="mono text-white text-sm">{{ p.kills }} / {{ p.deaths }}</strong>
               </div>
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">{{ t('fights.kdRatio') }}</span>
+                <span class="text-xs text-disabled block">{{ t('fights.kdRatio') }}</span>
                 <strong class="mono text-sm" [class.text-success]="p.kdRatio >= 1" [class.text-error]="p.kdRatio < 1">
                   {{ formatDecimal(p.kdRatio) }}
                 </strong>
               </div>
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">{{ t('battles.kill_fame') }}</span>
+                <span class="text-xs text-disabled block">{{ t('battles.kill_fame') }}</span>
                 <strong class="mono text-warning text-sm">{{ formatCompact(p.kill_fame) }}</strong>
               </div>
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">{{ t('battles.item_power') }}</span>
+                <span class="text-xs text-disabled block">{{ t('battles.item_power') }}</span>
                 <strong class="mono text-white text-sm">{{ formatDecimal(p.item_power ?? 0) }}</strong>
               </div>
               <div class="surface p-2.5 rounded-lg col-span-2">
-                <span class="text-[10px] text-disabled block">{{ t('battles.estimated_value') }}</span>
+                <span class="text-xs text-disabled block">{{ t('battles.estimated_value') }}</span>
                 <strong class="mono text-error text-sm">{{ formatCompact(p.estimatedLoss) }}</strong>
               </div>
             </div>
@@ -1165,7 +1165,7 @@ type PendingFightMutation =
       .battle-detail__label {
         color: var(--color-text-secondary);
         font-family: var(--font-universalsans);
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
         font-weight: 600;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -1186,7 +1186,7 @@ type PendingFightMutation =
       .eyebrow {
         color: var(--color-text-secondary);
         font-family: var(--font-universalsans);
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.08em;
       }
@@ -1565,9 +1565,9 @@ export class FightDetailPage {
   });
 
   // Tab options
-  protected readonly tabOptions = computed<readonly ViewToggleOption[]>(() => {
+  protected readonly tabOptions = computed<readonly TabOption[]>(() => {
     const fight = this.fight();
-    const options: ViewToggleOption[] = [
+    const options: TabOption[] = [
       { id: 'overview', label: this.t('guild.tabs.overview') },
       { id: 'guilds', label: `${this.t('battles.guilds')} (${fight?.guilds?.length ?? 0})` },
       { id: 'players', label: `${this.t('battles.players')} (${fight?.players?.length ?? 0})` },

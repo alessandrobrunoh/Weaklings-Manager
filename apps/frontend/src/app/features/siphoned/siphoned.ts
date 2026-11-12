@@ -29,7 +29,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type SiphonedTab = 'balances' | 'entries' | 'batches';
 type SiphonedIngestRow = SiphonedIngestRequest['rows'][number];
@@ -80,7 +80,7 @@ const STATS_FETCH_LIMIT = 1000;
     Icon,
     PageHeader,
     PageStack,
-    ViewToggle,
+    Tabs,
   ],
   styles: `
     :host {
@@ -143,7 +143,7 @@ const STATS_FETCH_LIMIT = 1000;
           {{ t('siphoned.ingest') }}
         </button>
       }
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="tab()"
@@ -160,7 +160,7 @@ const STATS_FETCH_LIMIT = 1000;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.deposited') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
@@ -180,7 +180,7 @@ const STATS_FETCH_LIMIT = 1000;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.withdrawn') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
@@ -200,7 +200,7 @@ const STATS_FETCH_LIMIT = 1000;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.net') }}
               </p>
               <p
@@ -224,7 +224,7 @@ const STATS_FETCH_LIMIT = 1000;
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.entries') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
@@ -495,7 +495,7 @@ export class Siphoned {
   private readonly translate = inject(TranslateService);
 
   protected readonly tab = signal<SiphonedTab>('balances');
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'balances', label: this.t('siphoned.balances') },
     { id: 'entries', label: this.t('siphoned.entries') },
     { id: 'batches', label: this.t('siphoned.batches') },

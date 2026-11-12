@@ -47,32 +47,32 @@ interface PlannedSelection {
     .fight-trends { display: grid; gap: 1rem; }
     .fight-trends__period { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
     .fight-trends__period-label { margin: 0; color: var(--color-text-secondary); font-size: 0.75rem; }
-    .fight-trends__generated { margin: 0; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
+    .fight-trends__generated { margin: 0; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.75rem; }
     .fight-trends__panel { min-inline-size: 0; border: 1px solid var(--color-border); border-radius: var(--radius-smallcards); background: var(--color-surface); }
     .fight-trends__panel-header { padding: 0.875rem 1rem; border-block-end: 1px solid var(--color-border); }
     .fight-trends__panel-title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
-    .fight-trends__panel-note { margin: 0.2rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; line-height: 1.4; }
+    .fight-trends__panel-note { margin: 0.2rem 0 0; color: var(--color-text-tertiary); font-size: 0.75rem; line-height: 1.4; }
     /* .fight-trends__metrics now rides on the shared .table class; these are
        just its differences from the default (top-positioned caption, and
        right-aligned value columns with a left-aligned row-label column). */
-    .fight-trends__metrics caption { caption-side: top; padding: 0.75rem 1rem 0; color: var(--color-text-secondary); font-size: 0.6875rem; text-align: start; }
+    .fight-trends__metrics caption { caption-side: top; padding: 0.75rem 1rem 0; color: var(--color-text-secondary); font-size: 0.75rem; text-align: start; }
     .fight-trends__metrics th, .fight-trends__metrics td { text-align: end; }
     .fight-trends__metrics th[scope='row'] { text-align: start; }
     .fight-trends__value { color: var(--color-text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-    .fight-trends__sample { display: block; margin-block-start: 0.125rem; color: var(--color-text-tertiary); font-family: var(--font-sans); font-size: 0.625rem; font-weight: 400; white-space: normal; }
+    .fight-trends__sample { display: block; margin-block-start: 0.125rem; color: var(--color-text-tertiary); font-family: var(--font-sans); font-size: 0.75rem; font-weight: 400; white-space: normal; }
     .fight-trends__delta { color: var(--color-text-secondary); font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
     .fight-trends__chart { padding: 1rem; }
     .fight-trends__chart-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; margin-block-end: 1rem; }
     .fight-trends__chart-title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
-    .fight-trends__chart-note { margin: 0.2rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; }
-    .fight-trends__scale { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
+    .fight-trends__chart-note { margin: 0.2rem 0 0; color: var(--color-text-tertiary); font-size: 0.75rem; }
+    .fight-trends__scale { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.75rem; }
     .fight-trends__bars-scroll { overflow-x: auto; }
     .fight-trends__bars { display: grid; grid-template-columns: repeat(30, minmax(0.4rem, 1fr)); align-items: end; gap: 0.2rem; block-size: 9rem; padding-block: 0.5rem; border-block-end: 1px solid var(--color-border-strong); }
     .fight-trends__bar { display: block; min-block-size: 2px; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-primary); opacity: 0.78; }
-    .fight-trends__axis { display: flex; justify-content: space-between; margin-block-start: 0.45rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.625rem; }
+    .fight-trends__axis { display: flex; justify-content: space-between; margin-block-start: 0.45rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.75rem; }
     .fight-trends__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
     .fight-trends__data-summary { cursor: pointer; color: var(--color-text-secondary); }
-    .fight-trends__daily-table { margin-block-start: 0.625rem; font-size: 0.6875rem; }
+    .fight-trends__daily-table { margin-block-start: 0.625rem; font-size: 0.75rem; }
     .fight-trends__daily-table th, .fight-trends__daily-table td { text-align: end; }
     .fight-trends__daily-table th:first-child, .fight-trends__daily-table td:first-child { text-align: start; }
     .fight-trends__details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.875rem; }

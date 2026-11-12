@@ -47,7 +47,7 @@ interface LibrarySection {
           {{ t('tests.timeline.libraryEmpty') }}
         </p>
       } @else {
-        <p class="mb-3 text-[11px] text-[var(--color-text-tertiary)]">
+        <p class="mb-3 text-xs text-[var(--color-text-tertiary)]">
           {{ t('tests.timeline.libraryHint') }}
         </p>
         <div class="grid gap-3">
@@ -125,12 +125,12 @@ interface LibrarySection {
       background-color: var(--color-primary-container);
       padding: 0 0.25rem;
       text-align: center;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 700;
     }
     .library-cooldown {
       font-variant-numeric: tabular-nums;
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       color: var(--color-text-tertiary);
     }
   `,

@@ -18,7 +18,7 @@ import type { TranslationKey } from '../../i18n/en';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { BuildCreateDialog } from './build-create-dialog';
 import { BuildsList } from './builds-list';
 import { CompCategories } from './comp-categories';
@@ -50,7 +50,7 @@ type TabId = 'list' | 'categories';
     Icon,
     PageHeader,
     PageStack,
-    ViewToggle,
+    Tabs,
   ],
   styles: `
     :host {
@@ -79,7 +79,7 @@ type TabId = 'list' | 'categories';
           {{ createButtonLabel() }}
         </button>
       }
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="tab()"
@@ -150,7 +150,7 @@ export class Comps implements OnInit {
   protected readonly buildCategories = signal<readonly BuildCategoryView[]>([]);
   protected readonly compCategories = signal<readonly CompCategoryView[]>([]);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
+  protected readonly tabOptions = computed<TabOption[]>(() =>
     this.page() === 'comps'
       ? [
           { id: 'list', label: this.t('comps.comps') },

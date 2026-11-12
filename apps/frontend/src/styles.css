@@ -1,6 +1,6 @@
 /* =================================================================
    Weaklings Guild Manager — Global stylesheet
-   Style reference: DESIGN.md — Discord ("game world behind a chat bubble")
+   Design rules: DESIGN.md § Component rules (calm, dense, operational).
 
    The whole product is token driven: features only ever reference the
    semantic `--color-*` / `--radius-*` variables declared here, so the
@@ -107,8 +107,8 @@
   --radius-xl: 16px;
   --radius-2xl: 24px;
   --radius-full: 9999px;
-  --radius-cards: 16px;
-  --radius-panels: 24px;
+  --radius-cards: 12px;
+  --radius-panels: 16px;
   --radius-dialogs: 20px;
   --radius-pills: 9999px;
   --radius-inputs: 8px;
@@ -218,10 +218,36 @@ html.dark {
 
   /* Layout constants */
   --page-max-width: 1440px;
-  --page-gap: 1.5rem;
-  --section-gap: 5rem;
-  --card-padding: 1.5rem;
+  --page-gap: 1rem;
+  --section-gap: 1.5rem;
+  --card-padding: 1rem;
   --element-gap: 0.75rem;
+
+  /* UI type scale — the ONLY text sizes product UI may use. Nothing below 12px.
+       xs   12px  captions, chips, column headers, hints, form labels
+       sm   13px  dense body: table cells, controls, secondary buttons
+       md   14px  default body text
+       lg   16px  section titles, dialog titles
+       xl   20px  stat values, mobile page titles
+       2xl  26px  page titles */
+  --ui-text-xs: 0.75rem;
+  --ui-text-sm: 0.8125rem;
+  --ui-text-md: 0.875rem;
+  --ui-text-lg: 1rem;
+  --ui-text-xl: 1.25rem;
+  --ui-text-2xl: 1.625rem;
+
+  /* Control sizes (touch targets grow to 2.5rem under (pointer: coarse)). */
+  --control-h: 2.25rem;
+  --control-h-sm: 2rem;
+
+  /* Focus ring — one definition, used by every interactive component. */
+  --focus-ring: 2px solid var(--color-primary);
+  --focus-ring-offset: 2px;
+
+  /* Table density — one density site-wide. */
+  --table-cell-y: 0.5rem;
+  --table-cell-x: 0.75rem;
   --rail-width: 72px;
   --sidebar-width: 248px;
   --chrome-height: 3rem;
@@ -399,8 +425,8 @@ html.light {
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
     border-radius: var(--radius-inputs);
   }
 
@@ -496,14 +522,60 @@ html.light {
     letter-spacing: -0.01em;
   }
 
-  /* Channel-category label: Discord's uppercase micro-heading. */
+  /* Small section label above a block: 12px, sentence case, secondary colour.
+     (Uppercase micro-headings were retired: they read as noise at 12px.) */
   .eyebrow {
     font-family: var(--font-sans);
-    font-size: 0.6875rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-tertiary);
+    font-size: var(--ui-text-xs);
+    font-weight: 600;
+    line-height: 1rem;
+    color: var(--color-text-secondary);
+  }
+
+  /* Page title (h1) of every page header and entity header. */
+  .page-title {
+    margin: 0;
+    color: var(--color-text-heading);
+    font-family: var(--font-display);
+    font-size: var(--ui-text-xl);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  @media (min-width: 40rem) {
+    .page-title {
+      font-size: var(--ui-text-2xl);
+    }
+  }
+
+  /* Section title inside a page (h2). One size, so sections read as a set. */
+  .section-title {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: var(--ui-text-lg);
+    font-weight: 600;
+    line-height: 1.375rem;
+    color: var(--color-text-heading);
+  }
+
+  .section-title--sm {
+    font-size: var(--ui-text-md);
+  }
+
+  /* Muted helper text under titles and fields. */
+  .hint {
+    margin: 0;
+    font-size: var(--ui-text-xs);
+    line-height: 1rem;
+    color: var(--color-text-secondary);
+  }
+
+  /* Right-aligned tabular figures for amounts and counts. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    white-space: nowrap;
   }
 
   .wordmark {
@@ -539,8 +611,14 @@ html.light {
       box-shadow 150ms ease;
   }
 
-  .card:hover {
+  /* Static cards do not react to hover; only cards that are links or buttons do. */
+  .card--interactive {
+    cursor: pointer;
+  }
+
+  .card--interactive:hover {
     border-color: var(--color-border-strong);
+    background-color: var(--color-surface-hover);
   }
 
   .card--flat {
@@ -556,31 +634,20 @@ html.light {
     box-shadow: var(--shadow-xl);
   }
 
-  /* Feature panel: a self-contained stage with its own background, the way
-     DESIGN.md differentiates sections without changing the page ground. */
+  /* Panel: a roomier surface for onboarding and empty-page content. Plain, no gradient. */
   .panel {
     border-radius: var(--radius-panels);
-    padding: clamp(1.5rem, 3vw, 2.5rem);
-    background: linear-gradient(
-      135deg,
-      color-mix(in oklab, var(--color-primary) 22%, var(--color-surface)),
-      var(--color-surface) 70%
-    );
+    padding: clamp(1rem, 3vw, 1.5rem);
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
   }
 
+  /* Legacy KPI tile. New pages use <app-summary-band> instead (DESIGN.md Component rules). */
   .kpi-card {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-cards);
     background: var(--color-surface);
-    padding: 1.125rem 1.25rem;
-    transition:
-      border-color var(--motion-fast),
-      background-color var(--motion-fast);
-  }
-
-  .kpi-card:hover {
-    border-color: var(--color-border-strong);
+    padding: 0.75rem 1rem;
   }
 
   .icon-capsule {
@@ -612,15 +679,14 @@ html.light {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    min-height: 2.25rem;
-    padding: 0.4375rem 1rem;
+    min-height: var(--control-h);
+    padding: 0.4375rem 0.875rem;
     border-radius: var(--radius-buttons);
     border: 1px solid transparent;
     font-family: var(--font-sans);
     font-size: 0.875rem;
     font-weight: 500;
     line-height: 1.25rem;
-    letter-spacing: 0.014em;
     cursor: pointer;
     user-select: none;
     transition:
@@ -631,8 +697,13 @@ html.light {
   }
 
   .btn:disabled {
-    opacity: 0.45;
+    opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  .btn:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
   }
 
   .btn--primary {
@@ -714,15 +785,15 @@ html.light {
   }
 
   .btn--sm {
-    min-height: 2rem;
+    min-height: var(--control-h-sm);
     padding: 0.25rem 0.75rem;
-    font-size: 0.8125rem;
+    font-size: var(--ui-text-sm);
     gap: 0.375rem;
   }
 
   .btn--icon {
-    min-height: 2rem;
-    min-width: 2rem;
+    min-height: var(--control-h-sm);
+    min-width: var(--control-h-sm);
     padding: 0.375rem;
     border-radius: var(--radius-inputs);
   }
@@ -733,7 +804,7 @@ html.light {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-buttons);
     padding: 0.375rem 0.875rem;
-    font-size: 0.8125rem;
+    font-size: var(--ui-text-sm);
   }
 
   .btn--nav:hover:not(:disabled) {
@@ -757,7 +828,7 @@ html.light {
   .select,
   .textarea {
     width: 100%;
-    min-height: 2.25rem;
+    min-height: var(--control-h);
     padding: 0.5rem 0.75rem;
     background-color: var(--color-surface-1);
     border: 1px solid var(--color-border);
@@ -777,7 +848,20 @@ html.light {
 
   .input::placeholder,
   .textarea::placeholder {
-    color: var(--color-text-disabled);
+    color: var(--color-text-muted);
+  }
+
+  .input:disabled,
+  .select:disabled,
+  .textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .input[aria-invalid='true'],
+  .select[aria-invalid='true'],
+  .textarea[aria-invalid='true'] {
+    border-color: var(--color-error);
   }
 
   .input:focus,
@@ -791,28 +875,51 @@ html.light {
   .input:focus-visible,
   .select:focus-visible,
   .textarea:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
     border-color: var(--color-primary);
     box-shadow: 0 0 0 1px var(--color-bg);
   }
 
   .input--sm,
   .select--sm {
-    min-height: 2rem;
+    min-height: var(--control-h-sm);
     padding: 0.3125rem 0.5rem;
-    font-size: 0.8125rem;
+    font-size: var(--ui-text-sm);
   }
 
+  /* Form label: 12px, 600, sentence case. */
   .label {
     display: block;
-    margin-bottom: 0.375rem;
-    color: var(--color-text-tertiary);
+    margin-bottom: 0.25rem;
+    color: var(--color-text-secondary);
     font-family: var(--font-sans);
-    font-size: 0.6875rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: var(--ui-text-xs);
+    font-weight: 600;
+    line-height: 1rem;
+  }
+
+  /* Filter facet: a labelled control inside <app-filter-bar>. */
+  .filter-field {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .filter-field__label {
+    font-size: var(--ui-text-xs);
+    font-weight: 600;
+    line-height: 1rem;
+    color: var(--color-text-secondary);
+  }
+
+  .filter-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: var(--control-h-sm);
+    font-size: var(--ui-text-sm);
+    cursor: pointer;
   }
 
   .checkbox,
@@ -828,18 +935,20 @@ html.light {
    Chips, badges and status dots
    ----------------------------------------------------------------- */
 @layer components {
+  /* Chip: 12px, 500, rounded rectangle. Neutral by default; semantic colour
+     (success/warning/error/info) only for a state, and always with text. */
   .chip {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    min-height: 1.375rem;
+    min-height: 1.5rem;
     padding: 0.125rem 0.5rem;
     border: 1px solid transparent;
-    border-radius: var(--radius-pills);
+    border-radius: var(--radius-badges);
     font-family: var(--font-sans);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-size: var(--ui-text-xs);
+    font-weight: 500;
+    line-height: 1rem;
     white-space: nowrap;
   }
 
@@ -893,36 +1002,39 @@ html.light {
 }
 
 /* -----------------------------------------------------------------
-   Tables
+   Tables - one density. Header 12px/600 secondary, body 13px, rows are
+   hairline-separated and 36-40px tall. <app-data-table> uses the same values.
    ----------------------------------------------------------------- */
 @layer components {
   .table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--ui-text-sm);
+    font-variant-numeric: tabular-nums;
   }
 
   .table thead th {
     text-align: left;
-    padding: 0.5625rem 0.75rem;
+    padding: var(--table-cell-y) var(--table-cell-x);
     background: var(--color-surface-2);
-    color: var(--color-text-tertiary);
+    color: var(--color-text-secondary);
     font-family: var(--font-sans);
-    font-weight: 700;
+    font-size: var(--ui-text-xs);
+    font-weight: 600;
+    line-height: 1rem;
     border-bottom: 1px solid var(--color-border);
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    white-space: nowrap;
   }
 
   .table tbody td {
-    padding: 0.625rem 0.75rem;
+    padding: var(--table-cell-y) var(--table-cell-x);
     border-bottom: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
+    color: var(--color-text);
+    vertical-align: middle;
   }
 
   .table tbody th {
-    padding: 0.625rem 0.75rem;
+    padding: var(--table-cell-y) var(--table-cell-x);
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
     font-weight: 600;
@@ -938,12 +1050,36 @@ html.light {
     border-bottom: none;
   }
 
+  /* Totals row. */
+  .table tfoot td,
+  .table tfoot th {
+    padding: var(--table-cell-y) var(--table-cell-x);
+    border-top: 1px solid var(--color-border-strong);
+    background: var(--color-surface-2);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  /* Numeric columns: right-aligned (also the header above them). */
+  .table .num,
+  .table th.num,
+  .table td.num {
+    text-align: right;
+  }
+
   .table caption {
     caption-side: bottom;
     padding-top: 0.625rem;
-    color: var(--color-text-tertiary);
-    font-size: 0.6875rem;
+    color: var(--color-text-secondary);
+    font-size: var(--ui-text-xs);
     text-align: left;
+  }
+
+  /* Scroll container for wide tables: scrolls inside itself, never the page. */
+  .table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
 }
 
@@ -1116,7 +1252,7 @@ html.light {
 
   .app-dialog__subtitle {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--ui-text-sm);
     color: var(--color-text-secondary);
     line-height: 1.4;
   }
@@ -1147,10 +1283,12 @@ html.light {
 
   .app-dialog__footer:has(*) {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.625rem;
+    gap: 0.5rem 0.625rem;
     padding: 0.75rem 1.25rem 1rem;
+    border-top: 1px solid var(--color-border);
     background-color: var(--color-surface);
     flex-shrink: 0;
   }
@@ -1163,8 +1301,8 @@ html.light {
     background-color: var(--color-void);
     color: var(--color-text);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--ui-text-xs);
+    font-weight: 500;
     line-height: 1.3;
     padding: 6px 10px;
     border-radius: var(--radius-inputs);
@@ -1521,26 +1659,6 @@ app-shell .table tbody tr:hover {
   background: var(--color-surface-hover);
 }
 
-app-shell .data-table-card {
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-cards);
-}
-
-app-shell .data-table__toolbar,
-app-shell .data-table__footer {
-  background: transparent;
-}
-
-app-shell .data-table__table thead th {
-  background: transparent;
-}
-
-app-shell .data-table__row--clickable:hover,
-app-shell .data-table__row--clickable:focus-visible {
-  background: var(--color-surface-hover);
-}
-
 /* -----------------------------------------------------------------
    Responsive & motion preferences
    ----------------------------------------------------------------- */
@@ -1568,6 +1686,7 @@ app-shell .data-table__row--clickable:focus-visible {
   .nav-link,
   .app-tooltip,
   .app-dialog,
+  .app-dialog::backdrop,
   .spinner {
     transition-duration: 0.01ms;
     animation-duration: 0.01ms;

@@ -66,7 +66,6 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
   ],
   styles: `
     .workbench-page {
-      --page-gap: 0.75rem;
       min-width: 0;
       overflow: hidden;
     }
@@ -105,7 +104,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       gap: 0.375rem;
       padding: 0.2rem 0.625rem;
       border-radius: var(--radius-pills);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.02em;
     }
@@ -161,7 +160,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.total') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
@@ -181,7 +180,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.admins') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
@@ -201,7 +200,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.officers') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
@@ -221,7 +220,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.members') }}
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">

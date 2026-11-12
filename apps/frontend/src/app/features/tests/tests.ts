@@ -20,7 +20,7 @@ import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type ViewFilter = 'active' | 'archived';
 
@@ -32,7 +32,7 @@ type ViewFilter = 'active' | 'archived';
 @Component({
   selector: 'app-tests',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, ViewToggle, DataTable, DataTableCell, Dialog, Icon],
+  imports: [PageHeader, PageStack, Tabs, DataTable, DataTableCell, Dialog, Icon],
   styles: [`
     :host { display: block; color: var(--color-text); }
     :host ::ng-deep .rounded-xl, :host ::ng-deep .rounded-2xl,
@@ -44,7 +44,7 @@ type ViewFilter = 'active' | 'archived';
   `],
   template: `
     <app-page-header [title]="t('tests.title')" [subtitle]="t('tests.subtitle')">
-      <app-view-toggle
+      <app-tabs
         pageTabs
         [options]="tabOptions()"
         [active]="filter()"
@@ -73,13 +73,13 @@ type ViewFilter = 'active' | 'archived';
           <div class="flex items-center gap-2">
             <span class="font-medium text-sm text-[var(--color-text)]">{{ row.name }}</span>
             @if (row.archived_at) {
-              <span class="chip chip--neutral text-[10px]">{{ t('tests.archived') }}</span>
+              <span class="chip chip--neutral text-xs">{{ t('tests.archived') }}</span>
             }
           </div>
         </ng-template>
 
         <ng-template dataTableCell="version" let-row>
-          <span class="chip text-[10px] font-mono">v{{ row.version }}</span>
+          <span class="chip text-xs font-mono">v{{ row.version }}</span>
         </ng-template>
 
         <ng-template dataTableCell="run_count" let-row>
@@ -153,7 +153,7 @@ export class Tests {
   protected readonly draftName = signal('');
   protected readonly saving = signal(false);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'active', label: this.t('tests.all') },
     { id: 'archived', label: this.t('tests.archived') },
   ]);

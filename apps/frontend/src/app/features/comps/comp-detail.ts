@@ -40,7 +40,7 @@ import {
 } from '../../shared/components/role-tag/role-tag';
 import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { WeaponIcon } from '../../shared/components/weapon-icon/weapon-icon';
 import {
   ownershipListParams,
@@ -107,7 +107,7 @@ const QUANTITY_SAVE_DELAY_MS = 450;
     RoleTag,
     VersionDiffList,
     VersionSwitcher,
-    ViewToggle,
+    Tabs,
     WeaponIcon,
   ],
   styles: `
@@ -765,7 +765,7 @@ const QUANTITY_SAVE_DELAY_MS = 450;
       </app-entity-header>
 
       <div class="cd-stack">
-        <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
+        <app-tabs [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
 
         <!-- ================= ROSTER ================= -->
         @if (tab() === 'roster') {
@@ -1443,7 +1443,7 @@ export class CompDetailPage {
     return items;
   });
 
-  protected readonly tabOptions = computed<readonly ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<readonly TabOption[]>(() => [
     { id: 'roster', label: this.t('compDetail.tab.roster') },
     { id: 'parties', label: this.t('compDetail.tab.parties') },
     { id: 'analytics', label: this.t('compDetail.tab.analytics') },

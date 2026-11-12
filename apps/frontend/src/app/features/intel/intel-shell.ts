@@ -6,10 +6,7 @@ import { filter, map } from 'rxjs';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { PageHeader } from '../../shared/components/page-header/page-header';
-import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { IntelPeriodState } from './intel-period';
 
 /** Tab ids, in display order. The id doubles as the child route path. */
@@ -47,7 +44,7 @@ const TAB_LABEL: Record<IntelTab, TranslationKey> = {
 @Component({
   selector: 'app-intel-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, RouterOutlet, ViewToggle],
+  imports: [PageHeader, RouterOutlet, Tabs],
   providers: [IntelPeriodState],
   styles: `
     :host {
@@ -57,7 +54,7 @@ const TAB_LABEL: Record<IntelTab, TranslationKey> = {
   `,
   template: `
     <app-page-header [title]="t('intel.hub.title')" [subtitle]="t('intel.hub.subtitle')">
-      <app-view-toggle pageTabs [options]="tabs()" [active]="active()" (activeChange)="open($event)" />
+      <app-tabs pageTabs [options]="tabs()" [active]="active()" [ariaLabel]="t('intel.hub.title')" />
     </app-page-header>
     <router-outlet />
   `,
@@ -81,18 +78,15 @@ export class IntelShell {
     return TABS.find((tab) => TAB_PATH[tab] === segment) ?? 'overview';
   });
 
-  protected readonly tabs = computed<ViewToggleOption[]>(() =>
-    TABS.map((tab) => ({ id: tab, label: this.t(TAB_LABEL[tab]) })),
+  /** Routed tabs: every one is a link, so middle-click and "open in new tab" work. */
+  protected readonly tabs = computed<TabOption[]>(() =>
+    TABS.map((tab) => ({
+      id: tab,
+      label: this.t(TAB_LABEL[tab]),
+      link: TAB_PATH[tab] === '' ? ['/intel'] : ['/intel', TAB_PATH[tab]],
+      queryParams: this.period.queryParams(),
+    })),
   );
 
   protected t = (key: TranslationKey) => this.translate.t(key);
-
-  protected open(id: string): void {
-    const tab = TABS.find((candidate) => candidate === id);
-    if (!tab) {
-      return;
-    }
-    const commands = TAB_PATH[tab] === '' ? ['/intel'] : ['/intel', TAB_PATH[tab]];
-    void this.router.navigate(commands, { queryParams: this.period.queryParams() });
-  }
 }

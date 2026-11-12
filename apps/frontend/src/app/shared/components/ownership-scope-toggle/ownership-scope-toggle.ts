@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output } f
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { isOwnershipScope, type OwnershipScope } from '../../data/ownership-scope';
-import { ViewToggle, type ViewToggleOption } from '../view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../tabs/tabs';
 
 /**
  * Mine / Everyone switch used on every comps and builds listing and picker.
@@ -14,13 +14,13 @@ import { ViewToggle, type ViewToggleOption } from '../view-toggle/view-toggle';
 @Component({
   selector: 'app-ownership-scope-toggle',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ViewToggle],
+  imports: [Tabs],
   host: {
     class: 'block min-w-0',
   },
   template: `
     <div role="group" [attr.aria-label]="t('comps.scope.label')">
-      <app-view-toggle [options]="options()" [active]="scope()" (activeChange)="onChange($event)" />
+      <app-tabs variant="segmented" [options]="options()" [active]="scope()" (activeChange)="onChange($event)" />
     </div>
   `,
 })
@@ -30,7 +30,7 @@ export class OwnershipScopeToggle {
 
   private readonly translate = inject(TranslateService);
 
-  protected readonly options = computed<ViewToggleOption[]>(() => [
+  protected readonly options = computed<TabOption[]>(() => [
     { id: 'mine', label: this.t('comps.scope.mine') },
     { id: 'all', label: this.t('comps.scope.all') },
   ]);

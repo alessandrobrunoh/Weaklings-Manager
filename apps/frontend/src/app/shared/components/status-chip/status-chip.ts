@@ -12,6 +12,9 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
  * site. Anything unmapped falls back to the neutral tone, which is the honest
  * outcome for a status this table has never seen.
  *
+ * Always text plus a glyph, never colour alone: semantic tones get a default icon (check, alert,
+ * info); neutral gets a dot. Colour is reserved for a real state; anything unknown reads neutral.
+ *
  * @example
  * <app-status-chip value="approved" />
  */
@@ -20,23 +23,26 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon],
   styles: `
+    :host {
+      display: inline-flex;
+    }
     .chip {
       display: inline-flex;
       align-items: center;
       gap: 0.375rem;
-      min-height: 1.375rem;
+      min-height: 1.5rem;
       padding: 0.125rem 0.5rem;
-      border-radius: var(--radius-sm);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
       border: 1px solid transparent;
+      border-radius: var(--radius-badges);
+      font-size: var(--ui-text-xs);
+      font-weight: 500;
+      line-height: 1rem;
       white-space: nowrap;
     }
     .status-dot {
       display: inline-block;
-      width: 0.3125rem;
-      height: 0.3125rem;
+      width: 0.375rem;
+      height: 0.375rem;
       border-radius: var(--radius-pills);
       background-color: currentColor;
       flex-shrink: 0;
@@ -57,7 +63,7 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
       border-color: color-mix(in oklab, var(--color-error) 24%, transparent);
     }
     .chip--info {
-      background: var(--color-primary-container);
+      background: var(--color-info-container);
       color: var(--color-info);
       border-color: color-mix(in oklab, var(--color-info) 24%, transparent);
     }
@@ -69,10 +75,10 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
   `,
   template: `
     <span class="chip" [class]="'chip--' + tone()">
-      @if (icon(); as iconName) {
+      @if (glyph(); as iconName) {
         <app-icon [name]="iconName" size="0.75rem" />
       } @else if (showDot()) {
-        <span class="status-dot"></span>
+        <span class="status-dot" aria-hidden="true"></span>
       }
       {{ display() }}
     </span>
@@ -126,6 +132,23 @@ export class StatusChip {
   protected readonly tone = computed<ChipTone>(
     () => this.toneOverride() ?? StatusChip.TONES[this.value()] ?? 'neutral',
   );
+
+  /** The glyph shown before the text: the explicit icon, else one per semantic tone. */
+  protected readonly glyph = computed<IconName | null>(() => {
+    const explicit = this.icon();
+    if (explicit) return explicit;
+    switch (this.tone()) {
+      case 'success':
+        return 'check';
+      case 'warning':
+      case 'error':
+        return 'alert';
+      case 'info':
+        return 'info';
+      default:
+        return null;
+    }
+  });
 
   protected readonly display = computed(() => {
     const label = this.label();
