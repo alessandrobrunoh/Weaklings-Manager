@@ -503,7 +503,7 @@ fn ensure_blockable(
     if !actor.bypasses_priority() {
         let actor_max = super::member_roles::max_priority_for_names(&actor.roles, db_roles);
         let target_max =
-            super::member_roles::max_priority_for_names(&[target.role.clone()], db_roles);
+            super::member_roles::max_priority_for_names(std::slice::from_ref(&target.role), db_roles);
         if target_max > actor_max {
             return Err(AppError::Forbidden(
                 "you cannot block a member whose role is above your own".to_owned(),

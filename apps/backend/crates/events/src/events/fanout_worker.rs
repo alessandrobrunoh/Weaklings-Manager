@@ -661,7 +661,8 @@ mod tests {
             0
         );
 
-        for (index, expected_delivery) in ["calendar", "forum"].into_iter().enumerate() {
+        // A link is always announced publicly: guild-a's "calendar" becomes "message".
+        for (index, expected_delivery) in ["message", "forum"].into_iter().enumerate() {
             let guild_db = &world.tenant_dbs[index + 1];
             let copies = event::Entity::find()
                 .filter(event::Column::SourceTenantId.eq("alliance"))

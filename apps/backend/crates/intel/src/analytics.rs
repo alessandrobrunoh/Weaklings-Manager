@@ -951,7 +951,7 @@ fn week_axis(
     let mut weeks = Vec::new();
     while cursor <= end && weeks.len() < MAX_WEEKS {
         weeks.push(cursor);
-        cursor = cursor + Duration::days(7);
+        cursor += Duration::days(7);
     }
     weeks
 }

@@ -873,6 +873,20 @@ async fn concurrent_starts_apply_once_on_postgres() {
     backend_migration::Migrator::up(&db, None)
         .await
         .expect("tenant migrations");
+    // The engine reads the control plane's link table to tell an owned event from a link; this
+    // schema is both tenant and control plane, so give it that table.
+    db.execute_unprepared(
+        "CREATE TABLE event_sync_links (
+            source_tenant_id TEXT NOT NULL,
+            source_event_id BIGINT NOT NULL,
+            mirror_tenant_id TEXT NOT NULL,
+            mirror_event_id BIGINT NOT NULL,
+            sync_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .await
+    .expect("event_sync_links");
 
     let creator = insert_user(&db, "racer").await;
     let id = insert_event(&db, creator, "scheduled", false).await;

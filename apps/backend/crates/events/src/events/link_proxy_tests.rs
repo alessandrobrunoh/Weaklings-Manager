@@ -418,6 +418,12 @@ async fn an_empty_link_whose_membership_ended_is_archived() {
 #[tokio::test]
 async fn a_synchronized_copy_of_the_old_model_becomes_a_link_and_keeps_its_signups() {
     let world = world("alliance", "guild").await;
+    // The guild held the copy instead of a link: drop the world's link row, since a tenant has at
+    // most one event per origin.
+    event::Entity::delete_by_id(world.link.id)
+        .exec(&world.link_db)
+        .await
+        .expect("drop the world's link");
     // The old model: the guild holds a full copy with its own signups and no origin columns.
     let copy_creator = insert_member(&world.link_db, "copier", "Member").await;
     let copy = insert_event(&world.link_db, copy_creator).await;

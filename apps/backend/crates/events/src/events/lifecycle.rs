@@ -1172,7 +1172,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restoring_archived_event_requeues_deleted_vod_posts_per_tenant() {
+    async fn restoring_archived_event_requeues_the_origin_vod_post_only() {
         let Some(world) = TestWorld::new().await else {
             return;
         };
@@ -1246,9 +1246,9 @@ mod tests {
         .expect("restore copies");
 
         for guild_index in [1, 2] {
+            // The VOD post lives on the origin only: restoring never re-creates one on a link.
             let copy = world.guild_copy(guild_index, source.id).await;
-            assert_eq!(copy.vod_forum_post_status, "pending");
-            assert_eq!(copy.vod_forum_thread_id, None);
+            assert_eq!(copy.vod_forum_post_status, "deleted");
             assert!(copy.archived_at.is_none());
         }
         world.close().await;

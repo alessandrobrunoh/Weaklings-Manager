@@ -780,10 +780,11 @@ async fn finalize_session(
         PlatformService::is_tenant_owner(control, &tenant.id, &profile.id).await?;
     // A blocked member gets no session scoped to this server. Platform admins and the owner can
     // never be blocked out of it.
-    if !profile.is_superadmin && !profile.is_tenant_owner {
-        if let Some(row) = crate::users::identity::find_by_discord_id(&ctx.db, &profile.id).await? {
-            crate::users::block::ensure_not_blocked(&row)?;
-        }
+    if !profile.is_superadmin
+        && !profile.is_tenant_owner
+        && let Some(row) = crate::users::identity::find_by_discord_id(&ctx.db, &profile.id).await?
+    {
+        crate::users::block::ensure_not_blocked(&row)?;
     }
     if profile.is_superadmin {
         profile.roles = vec!["SuperAdmin".to_string()];
