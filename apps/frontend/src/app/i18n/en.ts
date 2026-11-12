@@ -3626,6 +3626,22 @@ export const en = {
   'admin.progression.seasonsHint': 'Levels reset when a season ends. XP counts toward the active season.',
   'admin.progression.seasonEditTitle': 'Edit season',
   'admin.progression.inactive': 'Inactive',
+  // design/admin-regears
+  'admin.regears.summaryLabel': 'Regear policy summary'
+  'admin.regears.perWeek': 'per week'
+  'admin.regears.capHint': 'per week, never rolls over'
+  'admin.regears.bonusHint': 'max held per member'
+  'admin.regears.pricingHint': 'market price source'
+  'admin.regears.slotsHint': 'equipment slots reimbursed'
+  'admin.regears.sectionPools': 'Request pools'
+  'admin.regears.sectionPricing': 'Pricing'
+  'admin.regears.sectionSlots': 'Reimbursable slots'
+  'admin.regears.topupHelp': 'Silver added to the weekly pool every week.'
+  'admin.regears.capHelp': 'The weekly pool never rolls over past this amount.'
+  'admin.regears.bonusHelp': 'Most giveaway-earned requests a member can hold at once.'
+  'admin.regears.pricingLocationHelp': 'City whose market prices value each item in a regear.'
+  'admin.regears.pricingFallbackHelp': 'Used when the pricing city has no price for an item.'
+  'admin.regears.slotsHelp': 'Only checked slots are reimbursed on an approved regear.'
 } as const;
 
 export type TranslationKey = keyof typeof en;

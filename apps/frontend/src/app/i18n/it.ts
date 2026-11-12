@@ -3638,4 +3638,20 @@ export const it: TranslationDict = {
   'admin.progression.seasonsHint': 'I livelli si azzerano alla fine di una stagione. L\'XP conta per la stagione attiva.',
   'admin.progression.seasonEditTitle': 'Modifica stagione',
   'admin.progression.inactive': 'Inattiva',
+  // design/admin-regears
+  'admin.regears.summaryLabel': 'Riepilogo politica regear'
+  'admin.regears.perWeek': 'a settimana'
+  'admin.regears.capHint': 'a settimana, senza riporto'
+  'admin.regears.bonusHint': 'massimo per membro'
+  'admin.regears.pricingHint': 'fonte dei prezzi di mercato'
+  'admin.regears.slotsHint': 'slot equipaggiamento rimborsati'
+  'admin.regears.sectionPools': 'Fondi delle richieste'
+  'admin.regears.sectionPricing': 'Prezzi'
+  'admin.regears.sectionSlots': 'Slot rimborsabili'
+  'admin.regears.topupHelp': 'Argento aggiunto al fondo settimanale ogni settimana.'
+  'admin.regears.capHelp': 'Il fondo settimanale non si riporta oltre questo importo.'
+  'admin.regears.bonusHelp': 'Numero massimo di richieste ottenute da giveaway che un membro può avere attive.'
+  'admin.regears.pricingLocationHelp': 'Città i cui prezzi di mercato valutano ogni oggetto del regear.'
+  'admin.regears.pricingFallbackHelp': 'Usata quando la città dei prezzi non ha un prezzo per un oggetto.'
+  'admin.regears.slotsHelp': 'Su un regear approvato vengono rimborsati solo gli slot selezionati.'
 };

@@ -7,6 +7,8 @@ This directory contains administrative pages and helpers for tenant configuratio
 ## Interface
 
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`. It lists every catalog feature grouped by area; features outside `allowed_keys` and the platform-managed `sidebar` key are shown locked with the reason and are not sent on save.
+- `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
+- `AdminRegears` reads and saves `RegearSettingsView` through `api/regear/settings` (caps, pricing location and fallback, reimbursed slots). Officer request adjudication lives in `features/regears`, not here.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
 - `AdminAlliance` reads `AllianceContext` (`api/alliances/me`) and saves Discord role settings. Its sections are the alliance status, the member guilds (`app-data-table`, pending invites counted in a summary band) and what is shared (Discord roles). Accept, link, leave, redo-link and re-invite are the header action or menu entries; link, leave, redo-link and re-invite open a dialog before they call the API.
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.

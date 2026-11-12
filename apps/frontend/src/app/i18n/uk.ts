@@ -3443,4 +3443,20 @@ export const uk: TranslationDict = {
   'admin.progression.seasonsHint': 'Рівні скидаються після завершення сезону. XP зараховується до активного сезону.',
   'admin.progression.seasonEditTitle': 'Редагувати сезон',
   'admin.progression.inactive': 'Неактивний',
+  // design/admin-regears
+  'admin.regears.summaryLabel': 'Підсумок політики regear'
+  'admin.regears.perWeek': 'на тиждень'
+  'admin.regears.capHint': 'на тиждень, без переносу'
+  'admin.regears.bonusHint': 'максимум на учасника'
+  'admin.regears.pricingHint': 'джерело ринкових цін'
+  'admin.regears.slotsHint': 'слоти спорядження, що відшкодовуються'
+  'admin.regears.sectionPools': 'Пули запитів'
+  'admin.regears.sectionPricing': 'Ціноутворення'
+  'admin.regears.sectionSlots': 'Слоти для відшкодування'
+  'admin.regears.topupHelp': 'Срібло, що додається до тижневого пулу щотижня.'
+  'admin.regears.capHelp': 'Тижневий пул ніколи не переноситься понад цю суму.'
+  'admin.regears.bonusHelp': 'Максимальна кількість запитів, отриманих через giveaway, яку учасник може мати одночасно.'
+  'admin.regears.pricingLocationHelp': 'Місто, ринкові ціни якого визначають вартість кожного предмета в regear.'
+  'admin.regears.pricingFallbackHelp': 'Використовується, коли в місті ціноутворення немає ціни для предмета.'
+  'admin.regears.slotsHelp': 'За схваленим regear відшкодовуються лише позначені слоти.'
 };
