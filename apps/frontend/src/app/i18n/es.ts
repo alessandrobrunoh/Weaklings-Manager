@@ -2853,12 +2853,7 @@ export const es: TranslationDict = {
 
   'addServer.title': 'Añadir un servidor',
   'addServer.railTooltip': 'Añadir un servidor',
-  'addServer.eyebrow': 'Primeros pasos',
-  'addServer.heroTitle': 'Dirige tu gremio desde Discord',
-  'addServer.heroBody':
-    'Weaklings Manager se conecta a cualquier servidor de Discord: invita al bot, registra el servidor y tu gremio tendrá eventos, comps, batallas, banco y repartos — todo limitado a ese servidor.',
   'addServer.inviteCta': 'Invitar al bot',
-  'addServer.stepsCta': 'Ver los pasos',
   'addServer.inviteUnavailable': 'El enlace de invitación no está disponible ahora. Inténtalo en un momento.',
   'addServer.stepsTitle': 'Pasos de configuración',
   'addServer.requirements.title': 'Antes de empezar',
@@ -3451,4 +3446,12 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/onboarding
+  'addServer.intro': 'Conecta un servidor de Discord a Weaklings Manager. Cada servidor mantiene sus propios datos de gremio y no se comparten entre ellos.',
+  'addServer.progress': 'Paso {current} de {total}',
+  'addServer.progressLabel': 'Progreso de la configuración',
+  'addServer.stepAria': 'Ir al paso {n}: {title}',
+  'addServer.back': 'Atrás',
+  'addServer.finish': 'Abrir el panel',
+  'addServer.guildsError': 'No se pudieron cargar tus servidores de Discord.',
 };
