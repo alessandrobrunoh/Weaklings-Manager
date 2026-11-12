@@ -3451,4 +3451,12 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Nuevo rango',
+  'platform.ranks.createHint': 'Primero pon un nombre al rango. Después eliges sus módulos.',
+  'platform.ranks.editHint': 'Los tenants con este rango obtienen los módulos marcados aquí.',
+  'platform.ranks.unlocks': 'Desbloquea',
+  'platform.ranks.menuLabel': 'Acciones para {name}',
+  'platform.ranks.deleteTitle': '¿Eliminar este rango?',
+  'platform.ranks.deleteBody': '{name} se eliminará. Solo se pueden eliminar rangos sin tenants.',
 };

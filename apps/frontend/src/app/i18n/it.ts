@@ -3460,4 +3460,12 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Nuovo Rank',
+  'platform.ranks.createHint': 'Dai prima un nome al rank. I moduli si scelgono subito dopo.',
+  'platform.ranks.editHint': 'I tenant con questo rank ottengono i moduli selezionati qui.',
+  'platform.ranks.unlocks': 'Sblocca',
+  'platform.ranks.menuLabel': 'Azioni per {name}',
+  'platform.ranks.deleteTitle': 'Eliminare questo rank?',
+  'platform.ranks.deleteBody': '{name} verrà rimosso. Si possono eliminare solo rank senza tenant.',
 };

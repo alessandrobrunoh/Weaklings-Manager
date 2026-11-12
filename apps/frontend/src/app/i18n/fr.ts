@@ -3269,4 +3269,12 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Nouveau rang',
+  'platform.ranks.createHint': "Donnez d'abord un nom au rang. Vous choisirez ses modules ensuite.",
+  'platform.ranks.editHint': 'Les locataires de ce rang reçoivent les modules cochés ici.',
+  'platform.ranks.unlocks': 'Débloque',
+  'platform.ranks.menuLabel': 'Actions pour {name}',
+  'platform.ranks.deleteTitle': 'Supprimer ce rang ?',
+  'platform.ranks.deleteBody': '{name} sera supprimé. Seuls les rangs sans locataire peuvent être supprimés.',
 };

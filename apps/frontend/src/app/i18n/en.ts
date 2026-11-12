@@ -3448,6 +3448,14 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'New rank',
+  'platform.ranks.createHint': 'Name the rank first. You choose its modules next.',
+  'platform.ranks.editHint': 'Tenants on this rank get the modules ticked here.',
+  'platform.ranks.unlocks': 'Unlocks',
+  'platform.ranks.menuLabel': 'Actions for {name}',
+  'platform.ranks.deleteTitle': 'Delete this rank?',
+  'platform.ranks.deleteBody': '{name} will be removed. Only ranks with no tenants can be deleted.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

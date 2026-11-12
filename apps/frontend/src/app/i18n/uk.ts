@@ -3265,4 +3265,12 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/platform-ranks
+  'platform.ranks.createTitle': 'Новий ранг',
+  'platform.ranks.createHint': 'Спочатку назвіть ранг. Модулі вибираються далі.',
+  'platform.ranks.editHint': 'Орендарі з цим рангом отримують модулі, позначені тут.',
+  'platform.ranks.unlocks': 'Відкриває',
+  'platform.ranks.menuLabel': 'Дії для {name}',
+  'platform.ranks.deleteTitle': 'Видалити цей ранг?',
+  'platform.ranks.deleteBody': '{name} буде видалено. Видаляти можна лише ранги без орендарів.',
 };
