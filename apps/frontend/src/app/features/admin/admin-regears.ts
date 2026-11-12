@@ -1,5 +1,5 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type { RegearSettingsView, UpdateRegearSettingsRequest } from '../../core/models/api.models';
@@ -7,11 +7,13 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Checkbox } from '../../shared/components/checkbox/checkbox';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { Select, type SelectOption } from '../../shared/components/select/select';
+import { Stat, SummaryBand } from '../../shared/components/summary-band/summary-band';
 
 const PRICING_LOCATIONS = [
   'Caerleon',
@@ -46,28 +48,34 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
 @Component({
   selector: 'app-admin-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ErrorState, Icon, Loading, PageHeader, PageStack],
+  imports: [Checkbox, ErrorState, Loading, PageHeader, PageStack, Select, Stat, SummaryBand],
   styles: [COMPACT_FEATURE_STYLES, `
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    .regear-section {
+      display: grid;
+      gap: 0.75rem;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      min-width: 0;
     }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
+    .regear-section + .regear-section {
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--color-border);
     }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
+    .regear-section__title {
+      font-size: var(--ui-text-lg);
+      font-weight: 600;
+      padding: 0;
+    }
+    .regear-field {
+      display: grid;
+      gap: 0.25rem;
+      min-width: 0;
+    }
+    .regear-slots {
+      display: grid;
+      gap: 0.5rem;
+      grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
     }
   `],
   template: `
@@ -79,188 +87,131 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
 
     <app-page-stack>
       @if (loading()) {
-        <app-loading [label]="t('common.loading')" />
+        <app-loading variant="detail" [label]="t('common.loading')" />
       } @else if (settings(); as s) {
-        <!-- KPI Cards summary of active policy -->
-        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Regear policy summary">
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.weeklyTopup') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ s.weekly_request_topup_amount }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Added to the weekly pool each week
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                <app-icon name="shield" size="1.25rem" />
-              </div>
-            </div>
-          </article>
+        <app-summary-band [ariaLabel]="t('admin.regears.summaryLabel')">
+          <app-stat
+            [label]="t('admin.regears.weeklyTopup')"
+            [value]="s.weekly_request_topup_amount"
+            [hint]="t('admin.regears.perWeek')"
+          />
+          <app-stat
+            [label]="t('admin.regears.weeklyCap')"
+            [value]="s.weekly_request_cap"
+            [hint]="t('admin.regears.capHint')"
+          />
+          <app-stat
+            [label]="t('admin.regears.bonusCap')"
+            [value]="s.bonus_request_cap"
+            [hint]="t('admin.regears.bonusHint')"
+          />
+          <app-stat
+            [label]="t('admin.regears.pricingLocation')"
+            [value]="s.pricing_location"
+            [hint]="t('admin.regears.pricingHint')"
+          />
+          <app-stat
+            [label]="t('admin.regears.slots')"
+            [value]="enabledSlotsLabel(s.enabled_slots_mask)"
+            [hint]="t('admin.regears.slotsHint')"
+          />
+        </app-summary-band>
 
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.weeklyCap') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ s.weekly_request_cap }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Weekly pool never rolls over past this
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-                <app-icon name="calendar" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.bonusCap') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ s.bonus_request_cap }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Max giveaway-earned requests a member can hold
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-                <app-icon name="trophy" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.pricingLocation') }}
-                </p>
-                <p class="font-mono text-xl font-bold tracking-tight text-warning mt-1 truncate max-w-[170px]">
-                  {{ s.pricing_location }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Market price source
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                <app-icon name="bank" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.slots') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
-                  {{ enabledSlotsCount(s.enabled_slots_mask) }} / {{ slotBits.length }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Reimbursed equipment slots
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                <app-icon name="check" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <section class="card p-5">
-          <form class="grid gap-4" (submit)="onSubmit($event)">
-            <div class="grid gap-3 md:grid-cols-2">
-              <label>
-                <span class="label">{{ t('admin.regears.weeklyTopup') }}</span>
+        <form class="card p-5 grid gap-6" (submit)="onSubmit($event)">
+          <fieldset class="regear-section">
+            <legend class="regear-section__title">{{ t('admin.regears.sectionPools') }}</legend>
+            <div class="grid gap-4 md:grid-cols-3">
+              <div class="regear-field">
+                <label class="label" for="regear-topup">{{ t('admin.regears.weeklyTopup') }}</label>
                 <input
+                  id="regear-topup"
                   class="input"
                   type="number"
                   min="0"
+                  aria-describedby="regear-topup-hint"
                   [value]="s.weekly_request_topup_amount"
-                  (input)="updateField('weekly_request_topup_amount', $event)"
+                  (input)="updateNumber('weekly_request_topup_amount', $event)"
                 />
-              </label>
-              <label>
-                <span class="label">{{ t('admin.regears.weeklyCap') }}</span>
-                <input
-                  class="input"
-                  type="number"
-                  min="0"
-                  [value]="s.weekly_request_cap"
-                  (input)="updateField('weekly_request_cap', $event)"
-                />
-              </label>
-              <label>
-                <span class="label">{{ t('admin.regears.bonusCap') }}</span>
-                <input
-                  class="input"
-                  type="number"
-                  min="0"
-                  [value]="s.bonus_request_cap"
-                  (input)="updateField('bonus_request_cap', $event)"
-                />
-              </label>
-              <label>
-                <span class="label">{{ t('admin.regears.pricingLocation') }}</span>
-                <select
-                  class="select"
-                  [value]="s.pricing_location"
-                  (change)="updateField('pricing_location', $event)"
-                >
-                  @for (loc of pricingLocations; track loc) {
-                    <option [value]="loc">{{ loc }}</option>
-                  }
-                </select>
-              </label>
-              <label>
-                <span class="label">{{ t('admin.regears.pricingFallback') }}</span>
-                <select
-                  class="select"
-                  [value]="s.pricing_fallback_strategy"
-                  (change)="updateField('pricing_fallback_strategy', $event)"
-                >
-                  <option value="cheapest_any">{{ t('admin.regears.cheapestAny') }}</option>
-                  <option value="strict">{{ t('admin.regears.strict') }}</option>
-                </select>
-              </label>
-            </div>
-
-            <fieldset class="rounded-lg border p-3" style="border-color: var(--color-border)">
-              <legend class="px-1 text-sm font-semibold">{{ t('admin.regears.slots') }}</legend>
-              <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
-                @for (slot of slotBits; track slot.key) {
-                  <label class="flex items-center gap-2 text-sm">
-                    <input
-                      class="checkbox"
-                      type="checkbox"
-                      [checked]="isSlotEnabled(s.enabled_slots_mask, slot.bit)"
-                      (change)="toggleSlot(slot.bit, $event)"
-                    />
-                    {{ t(slot.labelKey) }}
-                  </label>
-                }
+                <span class="hint" id="regear-topup-hint">{{ t('admin.regears.topupHelp') }}</span>
               </div>
-            </fieldset>
-
-            <div class="flex justify-end">
-              <button type="submit" class="btn btn--primary" [disabled]="saving()">
-                {{ t('common.save') }}
-              </button>
+              <div class="regear-field">
+                <label class="label" for="regear-cap">{{ t('admin.regears.weeklyCap') }}</label>
+                <input
+                  id="regear-cap"
+                  class="input"
+                  type="number"
+                  min="0"
+                  aria-describedby="regear-cap-hint"
+                  [value]="s.weekly_request_cap"
+                  (input)="updateNumber('weekly_request_cap', $event)"
+                />
+                <span class="hint" id="regear-cap-hint">{{ t('admin.regears.capHelp') }}</span>
+              </div>
+              <div class="regear-field">
+                <label class="label" for="regear-bonus">{{ t('admin.regears.bonusCap') }}</label>
+                <input
+                  id="regear-bonus"
+                  class="input"
+                  type="number"
+                  min="0"
+                  aria-describedby="regear-bonus-hint"
+                  [value]="s.bonus_request_cap"
+                  (input)="updateNumber('bonus_request_cap', $event)"
+                />
+                <span class="hint" id="regear-bonus-hint">{{ t('admin.regears.bonusHelp') }}</span>
+              </div>
             </div>
-          </form>
-        </section>
+          </fieldset>
+
+          <fieldset class="regear-section">
+            <legend class="regear-section__title">{{ t('admin.regears.sectionPricing') }}</legend>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="regear-field">
+                <span class="label" id="regear-location-label">{{ t('admin.regears.pricingLocation') }}</span>
+                <app-select
+                  ariaLabelledBy="regear-location-label"
+                  ariaDescribedBy="regear-location-hint"
+                  [options]="locationOptions"
+                  [value]="s.pricing_location"
+                  (valueChange)="setField('pricing_location', $event)"
+                />
+                <span class="hint" id="regear-location-hint">{{ t('admin.regears.pricingLocationHelp') }}</span>
+              </div>
+              <div class="regear-field">
+                <span class="label" id="regear-fallback-label">{{ t('admin.regears.pricingFallback') }}</span>
+                <app-select
+                  ariaLabelledBy="regear-fallback-label"
+                  ariaDescribedBy="regear-fallback-hint"
+                  [options]="fallbackOptions()"
+                  [value]="s.pricing_fallback_strategy"
+                  (valueChange)="setField('pricing_fallback_strategy', $event)"
+                />
+                <span class="hint" id="regear-fallback-hint">{{ t('admin.regears.pricingFallbackHelp') }}</span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="regear-section">
+            <legend class="regear-section__title">{{ t('admin.regears.sectionSlots') }}</legend>
+            <p class="hint">{{ t('admin.regears.slotsHelp') }}</p>
+            <div class="regear-slots">
+              @for (slot of slotBits; track slot.key) {
+                <app-checkbox
+                  [inputId]="'regear-slot-' + slot.key"
+                  [label]="t(slot.labelKey)"
+                  [checked]="isSlotEnabled(s.enabled_slots_mask, slot.bit)"
+                  (checkedChange)="toggleSlot(slot.bit, $event)"
+                />
+              }
+            </div>
+          </fieldset>
+
+          <div class="flex justify-end">
+            <button type="submit" class="btn btn--primary" [disabled]="saving()">
+              {{ t('common.save') }}
+            </button>
+          </div>
+        </form>
       } @else {
         <app-error-state
           [message]="t('common.error')"
@@ -276,7 +227,14 @@ export class AdminRegears {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
-  protected readonly pricingLocations = PRICING_LOCATIONS;
+  protected readonly locationOptions: readonly SelectOption[] = PRICING_LOCATIONS.map((loc) => ({
+    value: loc,
+    label: loc,
+  }));
+  protected readonly fallbackOptions = computed<readonly SelectOption[]>(() => [
+    { value: 'cheapest_any', label: this.t('admin.regears.cheapestAny') },
+    { value: 'strict', label: this.t('admin.regears.strict') },
+  ]);
   protected readonly slotBits = SLOT_BITS;
 
   protected readonly loading = signal(true);
@@ -294,18 +252,18 @@ export class AdminRegears {
     return (mask & bit) !== 0;
   }
 
-  protected enabledSlotsCount(mask: number): number {
+  /** "3 / 10" style figure for the summary band. */
+  protected enabledSlotsLabel(mask: number): string {
     let count = 0;
     for (const slot of this.slotBits) {
       if ((mask & slot.bit) !== 0) {
         count++;
       }
     }
-    return count;
+    return `${count} / ${this.slotBits.length}`;
   }
 
-  protected toggleSlot(bit: number, event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
+  protected toggleSlot(bit: number, checked: boolean): void {
     const current = this.settings();
     if (!current) {
       return;
@@ -315,15 +273,21 @@ export class AdminRegears {
     this.draft.update((draft) => ({ ...draft, enabled_slots_mask: newMask }));
   }
 
-  protected updateField(field: keyof UpdateRegearSettingsRequest, event: Event): void {
-    const target = event.target as HTMLInputElement | HTMLSelectElement;
+  protected updateNumber(
+    field: 'weekly_request_topup_amount' | 'weekly_request_cap' | 'bonus_request_cap',
+    event: Event,
+  ): void {
+    this.setField(field, Number((event.target as HTMLInputElement).value));
+  }
+
+  protected setField(
+    field: keyof UpdateRegearSettingsRequest,
+    next: number | string,
+  ): void {
     const current = this.settings();
     if (!current) {
       return;
     }
-    const raw = target.value;
-    const next =
-      field === 'pricing_location' || field === 'pricing_fallback_strategy' ? raw : Number(raw);
     this.settings.set({ ...current, [field]: next });
     this.draft.update((draft) => ({ ...draft, [field]: next }));
   }

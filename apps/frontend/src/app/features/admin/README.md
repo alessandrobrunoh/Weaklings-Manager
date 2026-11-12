@@ -7,6 +7,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 ## Interface
 
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
+- `AdminRegears` reads and saves `RegearSettingsView` through `api/regear/settings` (caps, pricing location and fallback, reimbursed slots). Officer request adjudication lives in `features/regears`, not here.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.

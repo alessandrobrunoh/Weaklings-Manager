@@ -3269,4 +3269,20 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/admin-regears
+  'admin.regears.summaryLabel': 'Résumé de la politique regear'
+  'admin.regears.perWeek': 'par semaine'
+  'admin.regears.capHint': 'par semaine, sans report'
+  'admin.regears.bonusHint': 'maximum par membre'
+  'admin.regears.pricingHint': 'source des prix du marché'
+  'admin.regears.slotsHint': 'emplacements d’équipement remboursés'
+  'admin.regears.sectionPools': 'Réserves de demandes'
+  'admin.regears.sectionPricing': 'Tarification'
+  'admin.regears.sectionSlots': 'Emplacements remboursables'
+  'admin.regears.topupHelp': 'Argent ajouté à la réserve hebdomadaire chaque semaine.'
+  'admin.regears.capHelp': 'La réserve hebdomadaire ne se reporte jamais au-delà de ce montant.'
+  'admin.regears.bonusHelp': 'Nombre maximal de demandes obtenues par giveaway qu’un membre peut détenir.'
+  'admin.regears.pricingLocationHelp': 'Ville dont les prix du marché valorisent chaque objet d’un regear.'
+  'admin.regears.pricingFallbackHelp': 'Utilisée lorsque la ville de tarification n’a pas de prix pour un objet.'
+  'admin.regears.slotsHelp': 'Sur un regear approuvé, seuls les emplacements cochés sont remboursés.'
 };
