@@ -1403,7 +1403,7 @@ export const en = {
   'users.status.blocked': 'Blocked',
   'users.block.action': 'Block user',
   'users.block.title': 'Block {name}?',
-  'users.block.consequence': '{name} will no longer be able to log in or use the manager, on the web or through the bot. Their history is kept and nothing changes on Discord: they are not kicked or banned. You can unblock them at any time.',
+  'users.block.consequence': '{name} loses access to the manager until you unblock them:',
   'users.block.reason': 'Reason (optional)',
   'users.block.reasonHint': 'Only officers who manage roles can read this. The member never sees it.',
   'users.block.confirm': 'Block user',
@@ -3448,6 +3448,17 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/user-detail
+  'users.detail.sections': 'Member sections',
+  'users.detail.tab.overview': 'Overview',
+  'users.detail.tab.combat': 'Combat',
+  'users.detail.tab.weapons': 'Weapons',
+  'users.detail.tab.progression': 'Progression',
+  'users.block.effect.web': 'Web app: they cannot log in or open any page.',
+  'users.block.effect.bot': 'Bot: bot commands and features stop working for them.',
+  'users.block.effect.discord': 'Discord: nothing changes. They are not kicked or banned, and their history is kept.',
+  'users.block.reversible': 'You can unblock them at any time.',
+  'users.link.searchLabel': 'Search the guild roster',
 } as const;
 
 export type TranslationKey = keyof typeof en;
