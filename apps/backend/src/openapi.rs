@@ -1385,7 +1385,9 @@ mod tests {
         let lib = squash(src.join("lib.rs"));
         let prefixes: BTreeSet<&str> = ROUTE_SOURCES.iter().map(|(_, prefix)| *prefix).collect();
 
-        let nests: Vec<&str> = registry
+        // `.nest_service("` too: the events router is mounted as a service (see modules/mod.rs).
+        let mounts = registry.replace(".nest_service(\"", ".nest(\"");
+        let nests: Vec<&str> = mounts
             .split(".nest(\"")
             .skip(1)
             .filter_map(|chunk| chunk.split('"').next())

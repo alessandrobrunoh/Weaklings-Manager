@@ -135,6 +135,7 @@ backend-rewards.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+tower.workspace = true
 backend-core = { workspace = true, features = ["test-support"] }
 backend-migration = { workspace = true, features = ["test-support"] }
 backend-identity = { workspace = true, features = ["test-support"] }

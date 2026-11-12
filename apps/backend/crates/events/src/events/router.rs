@@ -364,6 +364,9 @@ async fn hydrate_event_copy_identities(
 ///
 /// Every request first passes [`super::link_proxy::proxy_event_links`], which re-addresses a
 /// request on an event link to the event's origin tenant before the routes below match it.
+///
+/// Mount it with `nest_service`: as a router made of a fallback only, `nest` would drop it and
+/// every path would answer 404.
 pub fn router() -> Router {
     use tower::Layer as _;
     let linked = axum::middleware::from_fn(super::link_proxy::proxy_event_links).layer(routes());
