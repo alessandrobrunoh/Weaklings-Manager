@@ -3772,4 +3772,12 @@ export const uk: TranslationDict = {
   'battles.search': 'Пошук битв',
   'battles.participants': 'Учасники',
   'battles.summaryLabel': 'Підсумки битв',
+  // design/fight-detail
+  'fights.side': 'Сторона',
+  'fights.honor': 'Відзнака',
+  'fights.honorResult': 'Результат',
+  'fights.segmentActionsAria': 'Дії для сегмента {id}',
+  'fights.sectionsAria': 'Розділи бою',
+  'fights.alliances': 'Альянси',
+  'fights.allianceColumn': 'Альянс',
 };

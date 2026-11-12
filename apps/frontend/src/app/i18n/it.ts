@@ -3966,4 +3966,12 @@ export const it: TranslationDict = {
   'battles.search': 'Cerca battaglie',
   'battles.participants': 'Partecipanti',
   'battles.summaryLabel': 'Totali delle battaglie',
+  // design/fight-detail
+  'fights.side': 'Lato',
+  'fights.honor': 'Onore',
+  'fights.honorResult': 'Risultato',
+  'fights.segmentActionsAria': 'Azioni per il segmento {id}',
+  'fights.sectionsAria': 'Sezioni dello scontro',
+  'fights.alliances': 'Alleanze',
+  'fights.allianceColumn': 'Alleanza',
 };

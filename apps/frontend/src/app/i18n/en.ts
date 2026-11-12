@@ -3954,6 +3954,14 @@ export const en = {
   'battles.search': 'Search battles',
   'battles.participants': 'Participants',
   'battles.summaryLabel': 'Battle totals',
+  // design/fight-detail
+  'fights.side': 'Side',
+  'fights.honor': 'Honor',
+  'fights.honorResult': 'Result',
+  'fights.segmentActionsAria': 'Actions for segment {id}',
+  'fights.sectionsAria': 'Fight sections',
+  'fights.alliances': 'Alliances',
+  'fights.allianceColumn': 'Alliance',
 } as const;
 
 export type TranslationKey = keyof typeof en;
