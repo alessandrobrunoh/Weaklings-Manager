@@ -1522,7 +1522,7 @@ export const en = {
   'admin.general.invalid': 'A colour must be a hex value like #dc2626.',
   'admin.general.saved': 'Colours saved. Other members see them on their next page load.',
   'admin.general.previewLabel': 'Preview',
-  'admin.general.previewHint': 'The whole app is already showing your changes — save to keep them, cancel to drop them.',
+  'admin.general.previewHint': 'The whole app is already showing your changes — save to keep them, or discard them to drop them.',
   'admin.general.whereTitle': 'Where these show up',
   'admin.general.wherePrimary': 'Primary paints buttons, the active nav row, focus outlines and the server badge.',
   'admin.general.whereSecondary': 'Secondary and tertiary blend into the brand gradient on headers and panels.',
@@ -3517,6 +3517,17 @@ export const en = {
   'bank.finance.treasuryNetHint': 'Guild taxes and donations, less regears paid',
   'bank.finance.grossLootBagsDetail': '{count} completed splits · {bags} in silver bags',
   'bank.finance.breakdownLabel': 'Breakdown view',
+  // design/admin-general
+  'admin.general.affectsMembers': 'Affects every member',
+  'admin.general.membersHint': 'These colours are shared by every member of this server. They change for everyone on their next page load, not while you are editing.',
+  'admin.general.discard': 'Discard changes',
+  'admin.general.stateClean': 'No unsaved changes',
+  'admin.general.stateDirty': 'Unsaved changes',
+  'admin.general.stateSaving': 'Saving…',
+  'admin.general.stateSaved': 'Saved',
+  'admin.general.stateError': 'Not saved',
+  'admin.general.saveError': 'Could not save. Your changes are still here; try again.',
+  'admin.general.loadError': 'Could not load the brand colours.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

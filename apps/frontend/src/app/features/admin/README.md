@@ -22,6 +22,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminDiscord` hides its form when the guild settings or default join role cannot be read, so a save never writes blank defaults over them. A failed catalog load shows a "not connected" status with retry and keeps the form.
 - Finance income comes only from splits the user created (`split_*` economics); battle data is never used to infer earnings.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
+- `AdminGeneral` saves the brand colours as one `PUT api/admin/branding`; an empty string clears a slot. The save state is `clean | dirty | saving | saved | error`, `saved` lasts until the next edit, and a failed save keeps the draft. Leaving with unsaved edits drops the preview; saved colours stay painted.
 
 ## Side Effects
 

@@ -16,9 +16,12 @@ import { BrandingService, normalizeHex } from '../../core/services/branding.serv
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 /** The three editable slots, in the order they read on the page. */
 const SLOTS = [
@@ -38,33 +41,64 @@ const DEFAULTS: Record<keyof BrandColors, string> = {
   tertiary: '#eb459e',
 };
 
+/** What the save bar shows. `saved` lasts until the next edit. */
+type SaveState = 'clean' | 'dirty' | 'saving' | 'saved' | 'error';
+
+const SAVE_STATE_TONE: Record<SaveState, 'neutral' | 'warning' | 'info' | 'success' | 'error'> = {
+  clean: 'neutral',
+  dirty: 'warning',
+  saving: 'info',
+  saved: 'success',
+  error: 'error',
+};
+
+const SAVE_STATE_LABEL: Record<SaveState, TranslationKey> = {
+  clean: 'admin.general.stateClean',
+  dirty: 'admin.general.stateDirty',
+  saving: 'admin.general.stateSaving',
+  saved: 'admin.general.stateSaved',
+  error: 'admin.general.stateError',
+};
+
+/** An entered colour that is not a hex value. Empty means "product default", which is valid. */
+function isInvalidColour(value: string | null | undefined): boolean {
+  return !!value && !normalizeHex(value);
+}
+
 /**
  * General server settings: the guild's own brand colours.
  *
- * Editing previews live across the whole app — the rail, the sidebar, the
- * buttons — because that is the only honest way to judge a colour, and the
- * preview is dropped again if the admin leaves without saving.
+ * Two sections: the settings themselves (which every member sees, so the section says so) and what
+ * members see as a result. The save bar states the save state in words. Editing previews live
+ * across the whole app, because that is the only honest way to judge a colour; leaving with unsaved
+ * edits drops the preview, while saved colours stay painted for the rest of the session.
  */
 @Component({
   selector: 'app-admin-general',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, PageStack],
+  imports: [ErrorState, Icon, Loading, PageHeader, PageStack, StatusChip],
   styles: [COMPACT_FEATURE_STYLES, `
     .slot {
       display: flex;
-      align-items: flex-start;
-      gap: 1rem;
+      flex-direction: column;
+      gap: 0.375rem;
       padding: 1rem 0;
       border-bottom: 1px solid var(--color-border);
     }
-    .slot:last-of-type {
-      border-bottom: none;
+    .slot:first-child {
+      padding-top: 0;
+    }
+    .slot__row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
     }
     /* A colour input styled as a swatch: the native control is the picker, so
        it stays the thing that opens, and only its chrome is replaced. */
     .slot__swatch {
-      inline-size: 3rem;
-      block-size: 3rem;
+      inline-size: 2.25rem;
+      block-size: 2.25rem;
       flex-shrink: 0;
       padding: 0;
       border: 1px solid var(--color-border-strong);
@@ -84,6 +118,24 @@ const DEFAULTS: Record<keyof BrandColors, string> = {
       inline-size: 8rem;
       font-family: var(--font-mono);
       text-transform: lowercase;
+    }
+    .slot__error {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--color-error);
+    }
+    .save-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem 1rem;
+      margin-top: 0.5rem;
+    }
+    .save-bar__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
     .preview {
       border-radius: var(--radius-panels);
@@ -108,86 +160,101 @@ const DEFAULTS: Record<keyof BrandColors, string> = {
     />
 
     <app-page-stack>
-      @if (loadFailed()) {
-        <p class="text-sm text-[var(--color-error)]">{{ t('common.error') }}</p>
-        <button type="button" class="btn btn--outline btn--sm" (click)="load()">
-          {{ t('common.retry') }}
-        </button>
+      @if (loading()) {
+        <app-loading variant="detail" />
+      } @else if (loadFailed()) {
+        <app-error-state
+          [message]="t('admin.general.loadError')"
+          [retryLabel]="t('common.retry')"
+          (retry)="load()"
+        />
       } @else {
         <section class="card p-5" aria-labelledby="brand-colors-heading">
-          <h2 id="brand-colors-heading" class="text-base font-bold text-[var(--color-text)]">
-            {{ t('admin.general.colorsTitle') }}
-          </h2>
-          <p class="mt-1 text-sm text-[var(--color-text-secondary)]">
-            {{ t('admin.general.colorsHint') }}
-          </p>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="brand-colors-heading" class="section-title">
+              {{ t('admin.general.colorsTitle') }}
+            </h2>
+            <span class="chip chip--neutral">
+              <app-icon name="users" size="0.875rem" />
+              {{ t('admin.general.affectsMembers') }}
+            </span>
+          </div>
+          <p class="hint mt-1">{{ t('admin.general.colorsHint') }}</p>
 
-          <form class="mt-4" (submit)="onSave($event)">
+          <form class="mt-4" novalidate (submit)="onSave($event)">
             @for (slot of slots; track slot.key) {
               <div class="slot">
-                <input
-                  type="color"
-                  class="slot__swatch"
-                  [id]="'brand-' + slot.key"
-                  [value]="swatchValue(slot.key)"
-                  [attr.aria-label]="t(slot.labelKey)"
-                  (input)="onColor(slot.key, $event)"
-                />
-                <div class="min-w-0 flex-1">
-                  <label class="block text-sm font-semibold text-[var(--color-text)]" [attr.for]="'brand-' + slot.key">
-                    {{ t(slot.labelKey) }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-[var(--color-text-secondary)]">{{ t(slot.hintKey) }}</p>
-                  <div class="mt-2 flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      class="input input--sm slot__hex"
-                      spellcheck="false"
-                      autocomplete="off"
-                      [value]="draft()[slot.key] ?? ''"
-                      [attr.placeholder]="defaults[slot.key]"
-                      [attr.aria-label]="t(slot.labelKey)"
-                      (input)="onHex(slot.key, $event)"
-                    />
-                    @if (draft()[slot.key]) {
-                      <button
-                        type="button"
-                        class="btn btn--ghost btn--sm"
-                        (click)="onReset(slot.key)"
-                      >
-                        {{ t('admin.general.useDefault') }}
-                      </button>
-                    } @else {
-                      <span class="chip chip--neutral">{{ t('admin.general.defaultChip') }}</span>
-                    }
-                  </div>
+                <label class="label" [attr.for]="'brand-' + slot.key + '-hex'">
+                  {{ t(slot.labelKey) }}
+                </label>
+                <div class="slot__row">
+                  <input
+                    type="color"
+                    class="slot__swatch"
+                    [attr.aria-label]="t(slot.labelKey)"
+                    [value]="swatchValue(slot.key)"
+                    [attr.aria-describedby]="'brand-' + slot.key + '-hint'"
+                    (input)="onColor(slot.key, $event)"
+                  />
+                  <input
+                    type="text"
+                    class="input input--sm slot__hex"
+                    spellcheck="false"
+                    autocomplete="off"
+                    [id]="'brand-' + slot.key + '-hex'"
+                    [value]="draft()[slot.key] ?? ''"
+                    [attr.placeholder]="defaults[slot.key]"
+                    [attr.aria-invalid]="isInvalid(slot.key)"
+                    [attr.aria-describedby]="describedBy(slot.key)"
+                    (input)="onHex(slot.key, $event)"
+                  />
+                  @if (draft()[slot.key]) {
+                    <button type="button" class="btn btn--ghost btn--sm" (click)="onReset(slot.key)">
+                      {{ t('admin.general.useDefault') }}
+                    </button>
+                  } @else {
+                    <span class="chip chip--neutral">{{ t('admin.general.defaultChip') }}</span>
+                  }
                 </div>
+                <p class="hint" [id]="'brand-' + slot.key + '-hint'">{{ t(slot.hintKey) }}</p>
+                @if (isInvalid(slot.key)) {
+                  <p class="slot__error" role="alert" [id]="'brand-' + slot.key + '-error'">
+                    {{ t('admin.general.invalid') }}
+                  </p>
+                }
               </div>
             }
 
-            @if (invalid()) {
-              <p class="mt-3 text-sm text-[var(--color-error)]" role="alert">
-                {{ t('admin.general.invalid') }}
-              </p>
-            }
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <button
-                type="submit"
-                class="btn btn--primary btn--sm"
-                [disabled]="saving() || loading() || invalid() || !dirty()"
-              >
-                {{ saving() ? t('common.loading') : t('common.save') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn--ghost btn--sm"
-                [disabled]="!dirty() || saving()"
-                (click)="onRevert()"
-              >
-                {{ t('common.cancel') }}
-              </button>
+            <div class="save-bar">
+              <div role="status" aria-live="polite">
+                <app-status-chip
+                  [value]="saveState()"
+                  [toneOverride]="saveTone()"
+                  [label]="stateLabel()"
+                />
+              </div>
+              <div class="save-bar__actions">
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  [disabled]="!dirty() || saving()"
+                  (click)="onRevert()"
+                >
+                  {{ t('admin.general.discard') }}
+                </button>
+                <button
+                  type="submit"
+                  class="btn btn--primary btn--sm"
+                  [disabled]="saving() || invalid() || !dirty()"
+                >
+                  {{ t('common.save') }}
+                </button>
+              </div>
             </div>
+
+            @if (saveError()) {
+              <p class="slot__error mt-3" role="alert">{{ t('admin.general.saveError') }}</p>
+            }
           </form>
         </section>
 
@@ -204,9 +271,10 @@ const DEFAULTS: Record<keyof BrandColors, string> = {
         </section>
 
         <section class="card p-5" aria-labelledby="brand-where-heading">
-          <h2 id="brand-where-heading" class="text-base font-bold text-[var(--color-text)]">
+          <h2 id="brand-where-heading" class="section-title">
             {{ t('admin.general.whereTitle') }}
           </h2>
+          <p class="hint mt-1">{{ t('admin.general.membersHint') }}</p>
           <ul class="mt-3 grid gap-2" role="list">
             @for (key of whereKeys; track key) {
               <li class="flex items-start gap-2 text-sm text-[var(--color-text-secondary)]">
@@ -242,6 +310,9 @@ export class AdminGeneral implements OnDestroy {
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
+  protected readonly saveError = signal(false);
+  /** Set by a successful save, cleared by the next edit, revert or reload. */
+  private readonly justSaved = signal(false);
 
   protected readonly dirty = computed(
     () => SLOTS.some((slot) => (this.draft()[slot.key] ?? '') !== (this.saved()[slot.key] ?? '')),
@@ -249,11 +320,22 @@ export class AdminGeneral implements OnDestroy {
 
   /** True while any slot holds something that is not a hex colour. */
   protected readonly invalid = computed(() =>
-    SLOTS.some((slot) => {
-      const value = this.draft()[slot.key];
-      return !!value && !normalizeHex(value);
-    }),
+    SLOTS.some((slot) => isInvalidColour(this.draft()[slot.key])),
   );
+
+  protected readonly saveState = computed<SaveState>(() => {
+    if (this.saving()) {
+      return 'saving';
+    }
+    if (this.saveError()) {
+      return 'error';
+    }
+    if (this.dirty()) {
+      return 'dirty';
+    }
+    return this.justSaved() ? 'saved' : 'clean';
+  });
+  protected readonly saveTone = computed(() => SAVE_STATE_TONE[this.saveState()]);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -262,8 +344,25 @@ export class AdminGeneral implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // Leaving without saving must not keep the app in a colour nobody picked.
-    this.branding.clearPreview();
+    // Leaving with unsaved edits must not keep the app in a colour nobody saved.
+    // Saved colours stay painted: the session profile still carries the old ones until
+    // `/auth/me` refreshes it, and dropping the preview would repaint the old colours.
+    if (this.dirty()) {
+      this.branding.clearPreview();
+    }
+  }
+
+  protected stateLabel(): string {
+    return this.t(SAVE_STATE_LABEL[this.saveState()]);
+  }
+
+  protected isInvalid(key: keyof BrandColors): boolean {
+    return isInvalidColour(this.draft()[key]);
+  }
+
+  protected describedBy(key: keyof BrandColors): string {
+    const hint = `brand-${key}-hint`;
+    return this.isInvalid(key) ? `${hint} brand-${key}-error` : hint;
   }
 
   /** Native colour inputs need a concrete value, so an empty slot shows the default. */
@@ -285,12 +384,16 @@ export class AdminGeneral implements OnDestroy {
 
   protected onRevert(): void {
     this.draft.set({ ...this.saved() });
+    this.saveError.set(false);
+    this.justSaved.set(false);
     this.branding.clearPreview();
   }
 
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
+    this.saveError.set(false);
+    this.justSaved.set(false);
     try {
       const colors = await firstValueFrom(this.api.get<BrandColors>('api/admin/branding'));
       this.saved.set(colors ?? {});
@@ -304,10 +407,12 @@ export class AdminGeneral implements OnDestroy {
 
   protected async onSave(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    if (this.invalid()) {
+    if (this.invalid() || !this.dirty() || this.saving()) {
       return;
     }
     this.saving.set(true);
+    this.saveError.set(false);
+    this.justSaved.set(false);
     try {
       // `""` is the API's "clear it", which is not the same as omitting the
       // field — omitting would leave the old colour in place.
@@ -317,12 +422,16 @@ export class AdminGeneral implements OnDestroy {
       const colors = await firstValueFrom(this.api.put<BrandColors>('api/admin/branding', body));
       this.saved.set(colors ?? {});
       this.draft.set({ ...(colors ?? {}) });
-      // The session profile still carries the old colours; keep the preview so
-      // the app stays painted until the next `/auth/me` refreshes them.
+      // Keep the preview so the app stays painted with the saved colours until
+      // the next `/auth/me` refreshes the session profile.
       this.branding.preview(colors ?? {});
+      this.justSaved.set(true);
       this.toasts.success(this.t('admin.general.saved'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      // The API's own message is not shown: it is not translated. The draft is kept so the
+      // admin can retry without re-entering the colours.
+      this.saveError.set(true);
+      this.toasts.error(this.t('admin.general.saveError'));
     } finally {
       this.saving.set(false);
     }
@@ -330,6 +439,8 @@ export class AdminGeneral implements OnDestroy {
 
   private setSlot(key: keyof BrandColors, raw: string): void {
     const value = raw.trim();
+    this.saveError.set(false);
+    this.justSaved.set(false);
     this.draft.update((current) => ({ ...current, [key]: value || null }));
     this.branding.preview(this.draft());
   }
