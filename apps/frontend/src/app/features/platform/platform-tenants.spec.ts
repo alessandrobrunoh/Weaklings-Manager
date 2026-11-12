@@ -17,6 +17,7 @@ const mockTenants: PlatformTenant[] = [
     slug: 'weaklings',
     schema_name: 'tenant_111',
     status: 'active',
+    kind: 'guild',
     owner_discord_id: '9',
     created_at: '2026-01-01',
     suspended_at: null,
@@ -27,6 +28,7 @@ const mockTenants: PlatformTenant[] = [
     slug: 'paused',
     schema_name: 'tenant_222',
     status: 'suspended',
+    kind: 'alliance',
     owner_discord_id: null,
     created_at: '2026-02-01',
     suspended_at: '2026-03-01',
@@ -46,6 +48,10 @@ function stubDialogApi(): void {
     Object.defineProperty(this, 'open', { configurable: true, get: () => false });
     this.dispatchEvent(new Event('close'));
   };
+}
+
+function buttonWithText(root: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return Array.from(root.querySelectorAll('button')).find((button) => button.textContent?.includes(text));
 }
 
 describe('PlatformTenants', () => {
@@ -68,6 +74,7 @@ describe('PlatformTenants', () => {
           slug: '333',
           schema_name: 'tenant_333',
           status: 'active',
+          kind: 'guild',
           owner_discord_id: '9',
           created_at: '2026-04-01',
           suspended_at: null,
@@ -84,7 +91,7 @@ describe('PlatformTenants', () => {
         provideRouter([]),
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: toasts },
-        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: TranslateService, useValue: { t: (key: string) => key, locale: () => 'en' } },
       ],
     }).compileComponents();
 
@@ -99,31 +106,58 @@ describe('PlatformTenants', () => {
     fixture.destroy();
   });
 
-  it('lists tenants and can suspend an active one', async () => {
+  it('lists tenants with kind, status and summary counts', () => {
     expect(api.get).toHaveBeenCalledWith('api/platform/tenants');
     const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('app-summary-band')).toBeTruthy();
     expect(compiled.textContent).toContain('Weaklings');
     expect(compiled.textContent).toContain('Paused');
-    expect(compiled.textContent).toContain('9');
-    expect(compiled.textContent).toContain('platform.tenants.none');
+    expect(compiled.textContent).toContain('platform.tenants.kind.alliance');
+    expect(compiled.querySelector('app-status-chip')).toBeTruthy();
 
-    const suspend = compiled.querySelector('button') as HTMLButtonElement;
-    const buttons = Array.from(compiled.querySelectorAll('button'));
-    const suspendBtn = buttons.find((button) => button.textContent?.includes('platform.tenants.suspend'));
-    expect(suspendBtn).toBeTruthy();
-    suspendBtn?.click();
+    const nameLink = compiled.querySelector('a[href="/platform/tenants/111"]');
+    expect(nameLink?.textContent).toContain('Weaklings');
+  });
+
+  it('filters rows by search text and by the kind facet', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const search = compiled.querySelector('[role="search"] input') as HTMLInputElement;
+    search.value = 'paused';
+    search.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(compiled.textContent).toContain('Paused');
+    expect(compiled.textContent).not.toContain('Weaklings');
+
+    search.value = '';
+    search.dispatchEvent(new Event('input'));
+    const kind = compiled.querySelector('select') as HTMLSelectElement;
+    kind.value = 'guild';
+    kind.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(compiled.textContent).toContain('Weaklings');
+    expect(compiled.textContent).not.toContain('Paused');
+  });
+
+  it('suspends an active tenant from its row menu', async () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const trigger = compiled.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement;
+    trigger.click();
+    fixture.detectChanges();
+
+    const suspend = Array.from(compiled.querySelectorAll('button[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('platform.tenants.suspend'),
+    ) as HTMLButtonElement | undefined;
+    expect(suspend).toBeTruthy();
+    suspend?.click();
     await fixture.whenStable();
+
     expect(api.patch).toHaveBeenCalledWith('api/platform/tenants/111', { status: 'suspended' });
     expect(toasts.success).toHaveBeenCalledWith('platform.tenants.updatedToast');
-    expect(suspend).toBeTruthy();
   });
 
   it('creates a tenant from the dialog form', async () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    const open = Array.from(compiled.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('platform.tenants.create'),
-    );
-    open?.click();
+    buttonWithText(compiled, 'platform.tenants.create')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 

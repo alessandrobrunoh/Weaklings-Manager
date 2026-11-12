@@ -3825,6 +3825,18 @@ export const en = {
   'platform.tenant.section.albion': 'Albion Online',
   'platform.tenant.section.albionHint': 'The guild this tenant reads from the Albion gameinfo API, its region and its allied guilds.',
   'platform.tenant.suspendConfirm': 'Suspend {name}? You can resume it at any time from this page.',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Tenant totals',
+  'platform.tenants.summary.total': 'Total',
+  'platform.tenants.summary.suspendedHint': 'Paused by a SuperAdmin',
+  'platform.tenants.kind': 'Kind',
+  'platform.tenants.kind.guild': 'Guild',
+  'platform.tenants.kind.alliance': 'Alliance',
+  'platform.tenants.searchLabel': 'Search tenants',
+  'platform.tenants.searchPlaceholder': 'Name, guild ID, slug or SuperAdmin',
+  'platform.tenants.filterKind': 'Kind',
+  'platform.tenants.filterStatus': 'Status',
+  'platform.tenants.rowActions': 'Actions for {name}',
 } as const;
 
 export type TranslationKey = keyof typeof en;

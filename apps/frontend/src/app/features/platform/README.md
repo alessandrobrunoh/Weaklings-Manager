@@ -21,6 +21,12 @@ This directory contains control-plane pages for the platform hub, platform admin
 
 - Hub counts load independently; a failed count remains unavailable. The band shows a skeleton until both requests settle.
 - Hub entries only link to routes that exist under `/platform`; the guard is unchanged.
+- `PlatformTenants` lists guild and alliance tenants in a data table with a summary band (total, guilds, alliances, suspended), a search and kind/status filter bar, and a row menu to suspend or resume; creates tenants from a dialog.
+
+## Invariants
+
+- Hub counts load independently; a failed count remains unavailable.
+- Tenants page summary counts cover every loaded tenant and show an em dash while loading; search and facets filter only the rows.
 - Admin assignment trims IDs, avoids duplicate rows, and blocks self-revocation.
 - Feature display uses local override, API value, then `false`; tenant state changes are limited to `active` and `suspended`.
 - Feature saves send every flag. Save stays disabled until a flag differs from the saved value, and a save that turns a feature off waits for confirmation. A failed save keeps the edits.

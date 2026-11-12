@@ -3828,4 +3828,16 @@ export const es: TranslationDict = {
   'platform.tenant.section.albion': 'Albion Online',
   'platform.tenant.section.albionHint': 'El gremio desde el que este tenant lee la API gameinfo de Albion, su región y sus gremios aliados.',
   'platform.tenant.suspendConfirm': '¿Suspender {name}? Puedes reactivarlo en cualquier momento desde esta página.',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Totales de tenants',
+  'platform.tenants.summary.total': 'Total',
+  'platform.tenants.summary.suspendedHint': 'Pausado por un SuperAdmin',
+  'platform.tenants.kind': 'Tipo',
+  'platform.tenants.kind.guild': 'Gremio',
+  'platform.tenants.kind.alliance': 'Alianza',
+  'platform.tenants.searchLabel': 'Buscar tenants',
+  'platform.tenants.searchPlaceholder': 'Nombre, ID del gremio, slug o SuperAdmin',
+  'platform.tenants.filterKind': 'Tipo',
+  'platform.tenants.filterStatus': 'Estado',
+  'platform.tenants.rowActions': 'Acciones de {name}',
 };

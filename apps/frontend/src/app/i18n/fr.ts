@@ -3646,4 +3646,16 @@ export const fr: TranslationDict = {
   'platform.tenant.section.albion': 'Albion Online',
   'platform.tenant.section.albionHint': 'La guilde dont ce tenant lit l’API gameinfo d’Albion, sa région et ses guildes alliées.',
   'platform.tenant.suspendConfirm': 'Suspendre {name} ? Vous pourrez le réactiver à tout moment depuis cette page.',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Totaux des locataires',
+  'platform.tenants.summary.total': 'Total',
+  'platform.tenants.summary.suspendedHint': 'Suspendu par un SuperAdmin',
+  'platform.tenants.kind': 'Type',
+  'platform.tenants.kind.guild': 'Guilde',
+  'platform.tenants.kind.alliance': 'Alliance',
+  'platform.tenants.searchLabel': 'Rechercher des locataires',
+  'platform.tenants.searchPlaceholder': 'Nom, ID de guilde, slug ou SuperAdmin',
+  'platform.tenants.filterKind': 'Type',
+  'platform.tenants.filterStatus': 'Statut',
+  'platform.tenants.rowActions': 'Actions pour {name}',
 };

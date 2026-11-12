@@ -3837,4 +3837,16 @@ export const it: TranslationDict = {
   'platform.tenant.section.albion': 'Albion Online',
   'platform.tenant.section.albionHint': 'La gilda da cui questo tenant legge l’API gameinfo di Albion, la sua regione e le gilde alleate.',
   'platform.tenant.suspendConfirm': 'Sospendere {name}? Puoi riattivarlo in qualsiasi momento da questa pagina.',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Totali dei tenant',
+  'platform.tenants.summary.total': 'Totale',
+  'platform.tenants.summary.suspendedHint': 'Sospeso da un SuperAdmin',
+  'platform.tenants.kind': 'Tipo',
+  'platform.tenants.kind.guild': 'Gilda',
+  'platform.tenants.kind.alliance': 'Alleanza',
+  'platform.tenants.searchLabel': 'Cerca tenant',
+  'platform.tenants.searchPlaceholder': 'Nome, ID gilda, slug o SuperAdmin',
+  'platform.tenants.filterKind': 'Tipo',
+  'platform.tenants.filterStatus': 'Stato',
+  'platform.tenants.rowActions': 'Azioni per {name}',
 };

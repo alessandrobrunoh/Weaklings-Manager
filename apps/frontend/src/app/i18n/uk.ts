@@ -3642,4 +3642,16 @@ export const uk: TranslationDict = {
   'platform.tenant.section.albion': 'Albion Online',
   'platform.tenant.section.albionHint': 'Гільдія, з якої цей тенант бере дані gameinfo API Albion, його регіон і союзні гільдії.',
   'platform.tenant.suspendConfirm': 'Призупинити {name}? Ви можете відновити його будь-коли на цій сторінці.',
+  // design/platform-tenants
+  'platform.tenants.summary.label': 'Підсумки орендарів',
+  'platform.tenants.summary.total': 'Усього',
+  'platform.tenants.summary.suspendedHint': 'Призупинено SuperAdmin',
+  'platform.tenants.kind': 'Тип',
+  'platform.tenants.kind.guild': 'Гільдія',
+  'platform.tenants.kind.alliance': 'Альянс',
+  'platform.tenants.searchLabel': 'Пошук орендарів',
+  'platform.tenants.searchPlaceholder': 'Назва, ID гільдії, slug або SuperAdmin',
+  'platform.tenants.filterKind': 'Тип',
+  'platform.tenants.filterStatus': 'Статус',
+  'platform.tenants.rowActions': 'Дії для {name}',
 };
