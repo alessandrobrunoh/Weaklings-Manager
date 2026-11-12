@@ -7,7 +7,8 @@ This directory contains administrative pages and helpers for tenant configuratio
 ## Interface
 
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
-- `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
+- `AdminGiveaways` lists giveaways in a `app-data-table` (server-paged, status chip, end time) with an `app-filter-bar` search and one primary action, "New giveaway", which opens the create dialog. The Discord channel and role settings open from the page menu. The table's own search box is hidden; the page owns the search text and sends it as the `search` query.
+- `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID. The entity header carries the status, the key numbers and "Draw now" while the giveaway is open; cancel sits in its menu. Both confirm in a dialog first. Prizes and entrants are tables. A 404 shows the not-found state, any other failed load shows the error state with retry.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 

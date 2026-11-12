@@ -1,6 +1,5 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -19,16 +18,19 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
-import { Loading } from '../../shared/components/loading/loading';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
+import { type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { channelSelectOptions, roleSelectOptions } from '../../shared/discord/discord-options';
 import {
   ALBION_ITEM_QUALITIES,
@@ -41,238 +43,266 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
   key: string;
 }
 
+/** Quiet period after the last keystroke before the search hits the server. */
+const SEARCH_DEBOUNCE_MS = 250;
+
 /**
- * Admin giveaway console: Discord channel, create a draw, and browse logs.
+ * Admin giveaway list: one table of draws with their status and end time, a filter bar, and one
+ * primary action that opens the create dialog. Discord channel and role settings sit behind the
+ * page menu, so the list stays the first thing an officer sees.
  */
 @Component({
   selector: 'app-admin-giveaways',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
   imports: [
     DataTable,
-    Loading,
+    Dialog,
+    FilterBar,
     PageHeader,
     PageStack,
+    RouterLink,
     SearchableSelect,
+    StatusChip,
   ],
   template: `
-    <app-page-header [title]="t('giveaways.title')" [subtitle]="t('giveaways.subtitle')" />
+    <app-page-header
+      [title]="t('giveaways.title')"
+      [subtitle]="t('giveaways.subtitle')"
+      [menuItems]="pageMenu()"
+      (menuSelect)="onPageMenu($event)"
+    >
+      @if (canCreate()) {
+        <button type="button" class="btn btn--primary" (click)="createOpen.set(true)">
+          {{ t('giveaways.create') }}
+        </button>
+      }
+    </app-page-header>
 
     <app-page-stack>
-      @if (pageLoading()) {
-        <app-loading />
-      } @else {
-        @if (canManageSettings()) {
-          <section class="card p-5">
-            <form class="grid gap-4 sm:grid-cols-2" (submit)="saveSettings($event)">
-              <h2 class="eyebrow sm:col-span-2">{{ t('giveaways.settings') }}</h2>
-              <label>
-                <span class="label">{{ t('giveaways.channel') }}</span>
-                <app-searchable-select
-                  class="mt-1 block"
-                  [options]="channelOptions()"
-                  [value]="channelId()"
-                  [emptyLabel]="t('admin.discord.placeholder')"
-                  [searchPlaceholder]="t('common.search')"
-                  [noMatchesLabel]="t('picker.noMatches')"
-                  [emptyOptionsLabel]="t('picker.empty')"
-                  [loading]="catalogLoading()"
-                  [ariaLabel]="t('giveaways.channel')"
-                  (valueChange)="channelId.set($event)"
-                />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('giveaways.channelHint') }}
-                </span>
-              </label>
-              <label>
-                <span class="label">{{ t('giveaways.role') }}</span>
-                <app-searchable-select
-                  class="mt-1 block"
-                  [options]="roleOptions()"
-                  [value]="roleId()"
-                  [emptyLabel]="t('admin.discord.placeholder')"
-                  [searchPlaceholder]="t('common.search')"
-                  [noMatchesLabel]="t('picker.noMatches')"
-                  [emptyOptionsLabel]="t('picker.empty')"
-                  [loading]="catalogLoading()"
-                  [ariaLabel]="t('giveaways.role')"
-                  (valueChange)="roleId.set($event)"
-                />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('giveaways.roleHint') }}
-                </span>
-              </label>
-              <div class="sm:col-span-2">
-                <button type="submit" class="btn btn--primary" [disabled]="savingSettings()">
-                  {{ t('common.save') }}
-                </button>
-              </div>
-            </form>
-          </section>
-        }
+      <app-filter-bar
+        [searchLabel]="t('giveaways.searchLabel')"
+        [searchPlaceholder]="t('giveaways.searchPlaceholder')"
+        [query]="search()"
+        [activeCount]="search().trim() ? 1 : 0"
+        (queryChange)="onSearch($event)"
+        (clear)="onSearch('')"
+      />
 
-        @if (canCreate()) {
-          <section class="card p-5">
-            <form class="grid gap-4" (submit)="createGiveaway($event)">
-              <h2 class="eyebrow">{{ t('giveaways.create') }}</h2>
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('validation.requiredLegend') }}
-              </p>
-              <label>
-                <span class="label">
-                  {{ t('giveaways.field.title') }}
-                  <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                </span>
-                <input class="input mt-1" required [value]="title()" (input)="title.set(inputValue($event))" />
-              </label>
-              <label>
-                <span class="label">{{ t('giveaways.field.description') }}</span>
-                <textarea
-                  class="input mt-1 min-h-24"
-                  [value]="description()"
-                  (input)="description.set(inputValue($event))"
-                ></textarea>
-              </label>
-              <div class="grid gap-4 sm:grid-cols-2">
-                <label>
-                  <span class="label">
-                    {{ t('giveaways.field.endsAt') }}
-                    <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    class="input mt-1"
-                    type="datetime-local"
-                    required
-                    [value]="endsAt()"
-                    (input)="endsAt.set(inputValue($event))"
-                  />
-                </label>
-              </div>
-              <fieldset
-                class="grid gap-4 sm:grid-cols-2"
-                aria-describedby="giveaway-prize-requirement"
-              >
-                <legend class="label sm:col-span-2">
-                  {{ t('giveaways.prizes') }}
-                  <span style="color: var(--color-error)" aria-hidden="true">*</span>
-                </legend>
-                <p id="giveaway-prize-requirement" class="sm:col-span-2 text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('giveaways.needPrize') }}
-                </p>
-                <label>
-                  <span class="label">{{ t('giveaways.field.silver') }}</span>
-                  <input
-                    class="input mt-1"
-                    inputmode="numeric"
-                    [value]="silver()"
-                    (input)="silver.set(inputValue($event))"
-                  />
-                  <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('giveaways.field.silverHint') }}
-                  </span>
-                </label>
-              <label>
-                <span class="label">{{ t('giveaways.field.regearBonus') }}</span>
-                <input
-                  class="input mt-1"
-                  type="number"
-                  min="0"
-                  inputmode="numeric"
-                  [value]="regearRequestBonus()"
-                  (input)="regearRequestBonus.set(inputValue($event))"
-                />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('giveaways.field.regearBonusHint') }}
-                </span>
-              </label>
-
-              <div class="grid gap-3 sm:col-span-2">
-                <div class="grid gap-2 sm:grid-cols-4">
-                  <label class="sm:col-span-2">
-                    <span class="label">{{ t('giveaways.searchItem') }}</span>
-                    <input
-                      class="input mt-1"
-                      type="search"
-                      [value]="itemQuery()"
-                      (input)="onItemQuery($event)"
-                    />
-                  </label>
-                  <label>
-                    <span class="label">{{ t('giveaways.quality') }}</span>
-                    <select class="select mt-1" [value]="itemQuality()" (change)="onItemQuality($event)">
-                      @for (grade of qualities; track grade.id) {
-                        <option [value]="grade.id">{{ grade.label }}</option>
-                      }
-                    </select>
-                  </label>
-                  <label>
-                    <span class="label">{{ t('giveaways.quantity') }}</span>
-                    <input
-                      class="input mt-1"
-                      type="number"
-                      min="1"
-                      [value]="itemQty()"
-                      (input)="itemQty.set(Math.max(1, numberValue($event)))"
-                    />
-                  </label>
-                </div>
-                @if (itemResults().length > 0) {
-                  <div class="grid gap-1 max-h-48 overflow-auto rounded border border-[var(--color-border)] p-1">
-                    @for (item of itemResults(); track item.id) {
-                      <button type="button" class="btn btn--ghost btn--sm justify-start" (click)="addPrize(item)">
-                        {{ item.name }} · {{ item.tier }}
-                      </button>
-                    }
-                  </div>
-                }
-                @if (prizes().length === 0) {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('giveaways.noPrizes') }}</p>
-                } @else {
-                  <ul class="grid gap-2">
-                    @for (prize of prizes(); track prize.key) {
-                      <li class="flex items-center justify-between gap-3 rounded border border-[var(--color-border)] px-3 py-2">
-                        <span class="text-sm">
-                          {{ prize.openalbion_item_name }}
-                          · {{ prize.openalbion_item_tier }}
-                          · {{ qualityName(prize.openalbion_item_quality) }}
-                          · ×{{ prize.quantity }}
-                        </span>
-                        <button type="button" class="btn btn--ghost btn--sm" (click)="removePrize(prize.key)">
-                          ×
-                        </button>
-                      </li>
-                    }
-                  </ul>
-                }
-              </div>
-              </fieldset>
-              <div>
-                <button type="submit" class="btn btn--primary" [disabled]="creating()">
-                  {{ t('giveaways.create') }}
-                </button>
-              </div>
-            </form>
-          </section>
-        }
-
-        <section class="card p-5">
-          <h2 class="eyebrow mb-3">{{ t('giveaways.logs') }}</h2>
-          <app-data-table
-            [columns]="columns"
-            [rows]="rows()"
-            [loading]="logsLoading()"
-            [trackBy]="trackById"
-            [serverMode]="true"
-            [totalItems]="totalItems()"
-            [pageSize]="tableQuery().pageSize"
-            emptyLabel="giveaways.empty"
-            [rowClickable]="true"
-            (rowClick)="openLog($event)"
-            (pageChange)="onTableChange($event)"
-          />
-        </section>
-      }
+      <app-data-table
+        [columns]="columns"
+        [rows]="rows()"
+        [loading]="logsLoading()"
+        [error]="logsFailed()"
+        (retry)="loadLogs()"
+        [trackBy]="trackById"
+        [serverMode]="true"
+        [hideSearch]="true"
+        [totalItems]="totalItems()"
+        [pageSize]="tableQuery().pageSize"
+        [mobileLayout]="'stack'"
+        [ariaLabel]="t('giveaways.logs')"
+        emptyLabel="giveaways.empty"
+        (pageChange)="onTableChange($event)"
+      >
+        <ng-template dataTableCell="title" let-row>
+          <a class="font-medium" [routerLink]="['/admin/giveaways', row.id]">{{ row.title }}</a>
+        </ng-template>
+        <ng-template dataTableCell="status" let-row>
+          <app-status-chip [value]="row.status" [label]="statusLabel(row.status)" />
+        </ng-template>
+        <ng-template dataTableCell="ends_at" let-row>
+          {{ formatWhen(row.ends_at) }}
+        </ng-template>
+      </app-data-table>
     </app-page-stack>
+
+    @if (canManageSettings()) {
+      <app-dialog
+        [open]="settingsOpen()"
+        [title]="t('giveaways.settings')"
+        size="md"
+        (closed)="settingsOpen.set(false)"
+      >
+        <form id="giveaway-settings-form" class="grid gap-4" (submit)="saveSettings($event)">
+          <label class="grid gap-1">
+            <span class="label">{{ t('giveaways.channel') }}</span>
+            <app-searchable-select
+              [options]="channelOptions()"
+              [value]="channelId()"
+              [emptyLabel]="t('admin.discord.placeholder')"
+              [searchPlaceholder]="t('common.search')"
+              [noMatchesLabel]="t('picker.noMatches')"
+              [emptyOptionsLabel]="t('picker.empty')"
+              [loading]="catalogLoading()"
+              [ariaLabel]="t('giveaways.channel')"
+              (valueChange)="channelId.set($event)"
+            />
+            <span class="hint">{{ t('giveaways.channelHint') }}</span>
+          </label>
+          <label class="grid gap-1">
+            <span class="label">{{ t('giveaways.role') }}</span>
+            <app-searchable-select
+              [options]="roleOptions()"
+              [value]="roleId()"
+              [emptyLabel]="t('admin.discord.placeholder')"
+              [searchPlaceholder]="t('common.search')"
+              [noMatchesLabel]="t('picker.noMatches')"
+              [emptyOptionsLabel]="t('picker.empty')"
+              [loading]="catalogLoading()"
+              [ariaLabel]="t('giveaways.role')"
+              (valueChange)="roleId.set($event)"
+            />
+            <span class="hint">{{ t('giveaways.roleHint') }}</span>
+          </label>
+        </form>
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--outline" (click)="settingsOpen.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="submit" form="giveaway-settings-form" class="btn btn--primary" [disabled]="savingSettings()">
+            {{ t('common.save') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    @if (canCreate()) {
+      <app-dialog
+        [open]="createOpen()"
+        [title]="t('giveaways.create')"
+        size="lg"
+        (closed)="createOpen.set(false)"
+      >
+        <form id="giveaway-create-form" class="grid gap-4" (submit)="createGiveaway($event)">
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
+          <label class="grid gap-1">
+            <span class="label">
+              {{ t('giveaways.field.title') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input class="input" required [value]="title()" (input)="title.set(inputValue($event))" />
+          </label>
+          <label class="grid gap-1">
+            <span class="label">{{ t('giveaways.field.description') }}</span>
+            <textarea class="input min-h-24" [value]="description()" (input)="description.set(inputValue($event))"></textarea>
+          </label>
+          <label class="grid gap-1">
+            <span class="label">
+              {{ t('giveaways.field.endsAt') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </span>
+            <input
+              class="input"
+              type="datetime-local"
+              required
+              [value]="endsAt()"
+              (input)="endsAt.set(inputValue($event))"
+            />
+          </label>
+
+          <fieldset class="grid gap-4 sm:grid-cols-2" aria-describedby="giveaway-prize-requirement">
+            <legend class="label sm:col-span-2">
+              {{ t('giveaways.prizes') }}
+              <span style="color: var(--color-error)" aria-hidden="true">*</span>
+            </legend>
+            <p id="giveaway-prize-requirement" class="hint sm:col-span-2">
+              {{ t('giveaways.needPrize') }}
+            </p>
+            <label class="grid gap-1">
+              <span class="label">{{ t('giveaways.field.silver') }}</span>
+              <input class="input" inputmode="numeric" [value]="silver()" (input)="silver.set(inputValue($event))" />
+              <span class="hint">{{ t('giveaways.field.silverHint') }}</span>
+            </label>
+            <label class="grid gap-1">
+              <span class="label">{{ t('giveaways.field.regearBonus') }}</span>
+              <input
+                class="input"
+                type="number"
+                min="0"
+                inputmode="numeric"
+                [value]="regearRequestBonus()"
+                (input)="regearRequestBonus.set(inputValue($event))"
+              />
+              <span class="hint">{{ t('giveaways.field.regearBonusHint') }}</span>
+            </label>
+
+            <div class="grid gap-3 sm:col-span-2">
+              <div class="grid gap-2 sm:grid-cols-4">
+                <label class="grid gap-1 sm:col-span-2">
+                  <span class="label">{{ t('giveaways.searchItem') }}</span>
+                  <input
+                    class="input"
+                    type="search"
+                    [value]="itemQuery()"
+                    (input)="onItemQuery($event)"
+                    (keydown.enter)="$event.preventDefault()"
+                  />
+                </label>
+                <label class="grid gap-1">
+                  <span class="label">{{ t('giveaways.quality') }}</span>
+                  <select class="select" [value]="itemQuality()" (change)="onItemQuality($event)">
+                    @for (grade of qualities; track grade.id) {
+                      <option [value]="grade.id">{{ grade.label }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="grid gap-1">
+                  <span class="label">{{ t('giveaways.quantity') }}</span>
+                  <input
+                    class="input"
+                    type="number"
+                    min="1"
+                    [value]="itemQty()"
+                    (input)="itemQty.set(Math.max(1, numberValue($event)))"
+                  />
+                </label>
+              </div>
+              @if (itemResults().length > 0) {
+                <div class="grid max-h-48 gap-1 overflow-auto rounded border border-[var(--color-border)] p-1">
+                  @for (item of itemResults(); track item.id) {
+                    <button type="button" class="btn btn--ghost btn--sm justify-start" (click)="addPrize(item)">
+                      {{ item.name }} · {{ item.tier }}
+                    </button>
+                  }
+                </div>
+              }
+              @if (prizes().length === 0) {
+                <p class="hint">{{ t('giveaways.noPrizes') }}</p>
+              } @else {
+                <ul class="grid gap-2">
+                  @for (prize of prizes(); track prize.key) {
+                    <li class="flex items-center justify-between gap-3 rounded border border-[var(--color-border)] px-3 py-2">
+                      <span class="text-sm">
+                        {{ prize.openalbion_item_name }}
+                        · {{ prize.openalbion_item_tier }}
+                        · {{ qualityName(prize.openalbion_item_quality) }}
+                        · ×{{ prize.quantity }}
+                      </span>
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm"
+                        [attr.aria-label]="t('giveaways.removePrize')"
+                        (click)="removePrize(prize.key)"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+          </fieldset>
+        </form>
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--outline" (click)="createOpen.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="submit" form="giveaway-create-form" class="btn btn--primary" [disabled]="creating()">
+            {{ t('giveaways.create') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class AdminGiveaways {
@@ -282,13 +312,15 @@ export class AdminGiveaways {
   private readonly i18n = inject(TranslateService);
   private readonly catalog = inject(AlbionCatalogService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly Math = Math;
   protected readonly qualities = ALBION_ITEM_QUALITIES;
-  protected readonly pageLoading = signal(true);
+  protected readonly logsLoading = signal(true);
+  protected readonly logsFailed = signal(false);
   protected readonly catalogLoading = signal(false);
-  protected readonly logsLoading = signal(false);
+  protected readonly settingsOpen = signal(false);
+  protected readonly createOpen = signal(false);
   protected readonly savingSettings = signal(false);
   protected readonly creating = signal(false);
   protected readonly channelId = signal('');
@@ -300,6 +332,8 @@ export class AdminGiveaways {
   protected readonly tableQuery = signal<DataTablePageChange>(
     parseDataTableQuery(this.route.snapshot.queryParamMap, { defaultPageSize: 25 }),
   );
+  /** Page-owned search text; the table's own search box is hidden in favour of the filter bar. */
+  protected readonly search = signal(this.tableQuery().search);
   protected readonly title = signal('');
   protected readonly description = signal('');
   protected readonly endsAt = signal(defaultEndsAtLocal());
@@ -312,11 +346,15 @@ export class AdminGiveaways {
   protected readonly itemResults = signal<OpenAlbionItem[]>([]);
   private catalogItems: readonly OpenAlbionItem[] = [];
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private itemTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly canManageSettings = computed(() =>
     this.auth.hasPermission('admin.settings.manage'),
   );
   protected readonly canCreate = computed(() => this.auth.hasPermission('giveaways.create'));
+  protected readonly pageMenu = computed<MenuItem[]>(() =>
+    this.canManageSettings() ? [{ id: 'settings', label: this.t('giveaways.settings') }] : [],
+  );
   protected readonly channelOptions = computed(() =>
     channelSelectOptions(this.channels(), ['text'], this.channelId()),
   );
@@ -345,6 +383,7 @@ export class AdminGiveaways {
     {
       key: 'entry_count',
       label: 'giveaways.participants',
+      align: 'right',
       accessor: (row) => row.entry_count,
     },
     {
@@ -356,17 +395,35 @@ export class AdminGiveaways {
 
   protected readonly trackById = (row: GiveawayView): number => row.id;
 
-  protected openLog(row: GiveawayView): void {
-    void this.router.navigate(['/admin/giveaways', row.id]);
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+      if (this.itemTimer) clearTimeout(this.itemTimer);
+    });
+    void this.loadLogs();
+    void this.loadCatalog();
   }
 
   protected onTableChange(change: DataTablePageChange): void {
-    this.tableQuery.set(change);
+    this.tableQuery.set({ ...change, search: this.search().trim() });
     void this.loadLogs();
   }
 
-  constructor() {
-    void this.load();
+  protected onSearch(value: string): void {
+    this.search.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.tableQuery.update((query) => ({ ...query, page: 1, search: value.trim() }));
+      void this.loadLogs();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected onPageMenu(id: string): void {
+    if (id === 'settings') {
+      this.settingsOpen.set(true);
+      void this.loadSettings();
+    }
   }
 
   protected t(key: TranslationKey): string {
@@ -390,15 +447,19 @@ export class AdminGiveaways {
   }
 
   protected statusLabel(status: GiveawayStatus): string {
-    const key = `giveaways.status.${status}` as TranslationKey;
-    return this.t(key);
+    return this.t(`giveaways.status.${status}` as TranslationKey);
+  }
+
+  protected formatWhen(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString(this.i18n.locale());
   }
 
   protected onItemQuery(event: Event): void {
     const query = this.inputValue(event);
     this.itemQuery.set(query);
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => this.filterItems(query), 200);
+    if (this.itemTimer) clearTimeout(this.itemTimer);
+    this.itemTimer = setTimeout(() => this.filterItems(query), SEARCH_DEBOUNCE_MS);
   }
 
   protected addPrize(item: OpenAlbionItem): void {
@@ -433,6 +494,7 @@ export class AdminGiveaways {
       };
       await firstValueFrom(this.api.put<GuildSettingsView>('api/admin/settings', body));
       this.toasts.success(this.t('giveaways.settingsSaved'));
+      this.settingsOpen.set(false);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -467,6 +529,7 @@ export class AdminGiveaways {
       this.regearRequestBonus.set('');
       this.prizes.set([]);
       this.endsAt.set(defaultEndsAtLocal());
+      this.createOpen.set(false);
       this.toasts.success(this.t('giveaways.created'));
       await this.loadLogs();
     } catch (error) {
@@ -476,16 +539,26 @@ export class AdminGiveaways {
     }
   }
 
-  private async load(): Promise<void> {
-    this.pageLoading.set(true);
+  protected async loadLogs(): Promise<void> {
+    this.logsLoading.set(true);
+    this.logsFailed.set(false);
     try {
-      const jobs: Array<Promise<void>> = [this.loadLogs(), this.loadCatalog()];
-      if (this.canManageSettings()) {
-        jobs.push(this.loadSettings());
-      }
-      await Promise.all(jobs);
+      const query = this.tableQuery();
+      const page = await firstValueFrom(
+        this.api.get<PaginatedData<GiveawayView>>('api/giveaways', {
+          page: query.page,
+          limit: query.pageSize,
+          search: query.search.trim() || undefined,
+          sort: query.sort?.columnKey ?? 'created_at',
+          order: query.sort?.direction ?? 'desc',
+        }),
+      );
+      this.rows.set(page.items);
+      this.totalItems.set(page.total_items);
+    } catch {
+      this.logsFailed.set(true);
     } finally {
-      this.pageLoading.set(false);
+      this.logsLoading.set(false);
     }
   }
 
@@ -508,30 +581,12 @@ export class AdminGiveaways {
     }
   }
 
-  private async loadLogs(): Promise<void> {
-    this.logsLoading.set(true);
+  private async loadCatalog(): Promise<void> {
     try {
-      const query = this.tableQuery();
-      const page = await firstValueFrom(
-        this.api.get<PaginatedData<GiveawayView>>('api/giveaways', {
-          page: query.page,
-          limit: query.pageSize,
-          search: query.search.trim() || undefined,
-          sort: query.sort?.columnKey ?? 'created_at',
-          order: query.sort?.direction ?? 'desc',
-        }),
-      );
-      this.rows.set(page.items);
-      this.totalItems.set(page.total_items);
+      this.catalogItems = await this.catalog.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.logsLoading.set(false);
     }
-  }
-
-  private async loadCatalog(): Promise<void> {
-    this.catalogItems = await this.catalog.load();
   }
 
   private filterItems(query: string): void {
@@ -552,10 +607,4 @@ function defaultEndsAtLocal(): string {
   const date = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function formatWhen(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
 }
