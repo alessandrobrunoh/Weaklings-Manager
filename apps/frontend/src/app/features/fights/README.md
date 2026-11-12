@@ -7,7 +7,7 @@ This directory contains canonical fight detail analytics and rolling performance
 ## Interface
 
 - `FightTab`, `CombatRole`, and row/summary interfaces describe fight detail state; `PendingFightMutation` distinguishes merge, split, and move requests.
-- `FightTrendsPage` displays rolling 30-day performance against the previous period, including fight volume, coverage, and planned builds/compositions.
+- `FightTrendsPage` shows rolling 30-day performance against the previous period as a headline summary band and a daily volume chart. A segmented control switches the coverage and planned builds/compositions breakdown between the last 30 days and the previous 30 days.
 
 ## Invariants
 
@@ -17,7 +17,7 @@ This directory contains canonical fight detail analytics and rolling performance
 
 ## Side Effects
 
-`FightTrendsPage` loads `api/fights/trends` at construction and through refresh/retry, updating loading, error, and data state. Detail-page mutation effects were beyond the 300-line scan range.
+`FightTrendsPage` loads `api/fights/trends` at construction and through refresh/retry, updating loading, error, and data state. Errors show a translated message; the raw API text is never displayed. Dates are formatted in UTC. Detail-page mutation effects were beyond the 300-line scan range.
 
 ## Verification
 
