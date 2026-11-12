@@ -8,6 +8,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
+- `AdminTransactions` reads the whole global ledger (`api/bank/transactions?global=true`, pages of 1000) once and filters, sorts and totals it on the client. Its filters (member, status, type, from/to date) mirror to the URL as `search`, `status`, `type`, `from`, `to`; the matrix `status` param used by finance links is read too.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 

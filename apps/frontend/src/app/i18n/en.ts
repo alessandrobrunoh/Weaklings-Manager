@@ -3448,6 +3448,24 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-transactions
+  'admin.transactions.filters.member': 'Member',
+  'admin.transactions.filters.memberPlaceholder': 'Search by member name',
+  'admin.transactions.filters.allStatuses': 'All statuses',
+  'admin.transactions.filters.allTypes': 'All types',
+  'admin.transactions.filters.dateFrom': 'From date',
+  'admin.transactions.filters.dateTo': 'To date',
+  'admin.transactions.noMatches': 'No transactions match these filters.',
+  'admin.transactions.tableLabel': 'Guild ledger',
+  'admin.transactions.totalRow': 'Total for these rows',
+  'admin.transactions.rowMenu': 'Actions for {name}',
+  'admin.transactions.summary.label': 'Totals for the selected period',
+  'admin.transactions.summary.outstanding': 'Outstanding',
+  'admin.transactions.summary.outstandingHint': '{count} pending or awaiting payout',
+  'admin.transactions.summary.paid': 'Paid out',
+  'admin.transactions.summary.paidHint': '{count} paid out',
+  'admin.transactions.summary.donated': 'Donated',
+  'admin.transactions.summary.donatedHint': '{count} donated to the Guild Bank',
 } as const;
 
 export type TranslationKey = keyof typeof en;

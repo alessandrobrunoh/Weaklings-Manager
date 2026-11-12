@@ -1,6 +1,5 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -16,15 +15,14 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import {
-  DataTable,
-  type DataTableColumn,
-  type DataTablePageChange,
-  parseDataTableQuery,
-} from '../../shared/components/data-table/data-table';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { DataTableFooterCell } from '../../shared/components/data-table/data-table-footer-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
@@ -33,6 +31,7 @@ import {
 } from '../../shared/components/search-dialog/search-dialog';
 import { Select, type SelectOption } from '../../shared/components/select/select';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { Stat, SummaryBand } from '../../shared/components/summary-band/summary-band';
 
 const STATUSES: readonly TransactionStatus[] = [
   'pending',
@@ -42,35 +41,66 @@ const STATUSES: readonly TransactionStatus[] = [
   'donated',
 ];
 const DEFAULT_TYPE = 'manual_adjustment';
-
-
+/** The backend caps one page at 1000 rows; the ledger is read in as few pages as possible. */
+const LEDGER_PAGE_SIZE = 1000;
 
 /** Which recipient/payer field the roster search dialog is currently filling. */
 type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
+
+interface LedgerSummary {
+  readonly outstanding: number;
+  readonly outstandingCount: number;
+  readonly paid: number;
+  readonly paidCount: number;
+  readonly donated: number;
+  readonly donatedCount: number;
+}
+
+/** Rounds to cents so sums of decimal amounts do not drift. */
+function roundCents(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** The local calendar day (`YYYY-MM-DD`) of an ISO timestamp, or `''` when it cannot be read. */
+function localDay(iso: string | null | undefined): string {
+  const date = iso ? new Date(iso) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
 
 /**
  * Full guild ledger, with manual create/edit/delete for administrators.
  *
  * `GET /api/bank/transactions?global=true` already backs the withdrawal queue and every
- * member's personal ledger; this page reuses the same endpoint for the raw table and adds
- * the three `bank.transactions.*` mutation endpoints on top, for one-off corrections that
- * don't go through the split-completion or withdrawal flows.
+ * member's personal ledger. The endpoint filters by status, recipient name and split only, so
+ * this page reads the whole ledger once and applies the member, type, status and date filters,
+ * the sort and the totals on the client. That keeps the filters and the period totals exact
+ * across pages. The filter state is mirrored to the URL, so a finance KPI can deep-link here.
  */
 @Component({
   selector: 'app-admin-transactions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
   imports: [
     DataTable,
     DataTableCell,
+    DataTableFooterCell,
     Dialog,
+    FilterBar,
     Icon,
+    Loading,
+    Menu,
     PageHeader,
     Select,
     PageStack,
     RouterLink,
     SearchDialog,
     StatusChip,
+    Stat,
+    SummaryBand,
   ],
   template: `
     <app-page-header [title]="t('admin.transactions.title')" [subtitle]="t('admin.transactions.hint')">
@@ -82,24 +112,87 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
     </app-page-header>
 
     <app-page-stack>
+      @if (loading()) {
+        <app-loading variant="summary" [label]="t('common.loading')" />
+      } @else if (!loadFailed()) {
+        <app-summary-band [ariaLabel]="t('admin.transactions.summary.label')">
+          <app-stat
+            [label]="t('admin.transactions.summary.outstanding')"
+            [value]="formatAmount(summary().outstanding)"
+            tone="warning"
+            [hint]="t('admin.transactions.summary.outstandingHint', { count: summary().outstandingCount })"
+          />
+          <app-stat
+            [label]="t('admin.transactions.summary.paid')"
+            [value]="formatAmount(summary().paid)"
+            [hint]="t('admin.transactions.summary.paidHint', { count: summary().paidCount })"
+          />
+          <app-stat
+            [label]="t('admin.transactions.summary.donated')"
+            [value]="formatAmount(summary().donated)"
+            [hint]="t('admin.transactions.summary.donatedHint', { count: summary().donatedCount })"
+          />
+        </app-summary-band>
+      }
+
+      <app-filter-bar
+        [searchLabel]="t('admin.transactions.filters.member')"
+        [searchPlaceholder]="t('admin.transactions.filters.memberPlaceholder')"
+        [query]="memberQuery()"
+        [activeCount]="activeFilterCount()"
+        (queryChange)="onMemberChange($event)"
+        (clear)="clearFilters()"
+      >
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('common.status') }}</span>
+          <select class="select select--sm" (change)="onStatusFilter($event)">
+            <option value="" [selected]="!statusFilter()">{{ t('admin.transactions.filters.allStatuses') }}</option>
+            @for (status of statuses; track status) {
+              <option [value]="status" [selected]="statusFilter() === status">{{ statusLabel(status) }}</option>
+            }
+          </select>
+        </label>
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('admin.transactions.fields.type') }}</span>
+          <select class="select select--sm" (change)="onTypeFilter($event)">
+            <option value="" [selected]="!typeFilter()">{{ t('admin.transactions.filters.allTypes') }}</option>
+            @for (type of typeOptions(); track type) {
+              <option [value]="type" [selected]="typeFilter() === type">{{ type }}</option>
+            }
+          </select>
+        </label>
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('admin.transactions.filters.dateFrom') }}</span>
+          <input class="input input--sm" type="date" [value]="dateFrom()" (change)="onDateFilter('from', $event)" />
+        </label>
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('admin.transactions.filters.dateTo') }}</span>
+          <input class="input input--sm" type="date" [value]="dateTo()" (change)="onDateFilter('to', $event)" />
+        </label>
+      </app-filter-bar>
+
       <app-data-table
         [columns]="columns()"
-        [rows]="items()"
+        [rows]="filtered()"
         [loading]="loading()"
         [error]="loadFailed()"
         (retry)="load()"
         [trackBy]="trackById"
-        [serverMode]="true"
-        [initialSearch]="initialSearch"
-        [initialColumnFilters]="initialColumnFilters"
-        [totalItems]="total()"
+        [hideSearch]="true"
+        [syncUrl]="false"
+        [bordered]="true"
+        [stickyFirstColumn]="true"
         [pageSize]="25"
+        [ariaLabel]="t('admin.transactions.tableLabel')"
+        [footerLabel]="t('admin.transactions.totalRow')"
         emptyIcon="bank"
-        [emptyLabel]="'admin.transactions.empty'"
-        (pageChange)="onTableChange($event)"
+        [emptyLabel]="emptyKey()"
       >
         <ng-template dataTableCell="to_username" let-row>
-          <span class="font-medium">{{ row.to_guild_bank ? row.to_label : row.to_username }}</span>
+          <span class="font-medium">{{ rowName(row) }}</span>
+        </ng-template>
+        <ng-template dataTableCell="amount" let-row>
+          <span class="num font-semibold" [style.color]="amountColor(row.amount)">{{ formatSignedAmount(row.amount) }}</span>
         </ng-template>
         <ng-template dataTableCell="status" let-row>
           <app-status-chip
@@ -107,11 +200,6 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
             [label]="statusLabel(row.status)"
             [icon]="statusIcon(row.status)"
           />
-        </ng-template>
-        <ng-template dataTableCell="amount" let-row>
-          <span class="font-semibold mono" style="font-variant-numeric: tabular-nums">
-            {{ formatAmount(row.amount) }}
-          </span>
         </ng-template>
         <ng-template dataTableCell="split_id" let-row>
           @if (row.split_id) {
@@ -133,23 +221,16 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
           </div>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
-          <div class="flex items-center justify-end gap-2">
-            @if (canEdit()) {
-              <button type="button" class="btn btn--outline btn--sm" (click)="openEdit(row)">
-                {{ t('common.edit') }}
-              </button>
-            }
-            @if (canDelete()) {
-              <button
-                type="button"
-                class="btn btn--danger btn--sm"
-                [disabled]="deletingId() === row.id"
-                (click)="askDelete(row)"
-              >
-                {{ t('common.delete') }}
-              </button>
-            }
+          <div class="flex items-center justify-end">
+            <app-menu
+              [items]="rowMenu(row)"
+              [label]="t('admin.transactions.rowMenu', { name: rowName(row) })"
+              (itemSelect)="onRowAction(row, $event)"
+            />
           </div>
+        </ng-template>
+        <ng-template dataTableFooterCell="amount">
+          <span class="num font-semibold" [style.color]="amountColor(netTotal())">{{ formatSignedAmount(netTotal()) }}</span>
         </ng-template>
       </app-data-table>
     </app-page-stack>
@@ -393,7 +474,7 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
     @if (deleteTarget(); as target) {
       <app-dialog [title]="t('common.delete')" size="sm" (closed)="deleteTarget.set(null)">
         <p>{{ t('common.confirm') }}</p>
-        <p class="mt-2 font-medium">{{ target.to_username }} &middot; {{ formatAmount(target.amount) }}</p>
+        <p class="mt-2 font-medium">{{ rowName(target) }} &middot; {{ formatSignedAmount(target.amount) }}</p>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="deleteTarget.set(null)">
             {{ t('common.cancel') }}
@@ -422,10 +503,11 @@ export class AdminTransactions {
   private readonly auth = inject(AuthService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly statuses = STATUSES;
-  protected readonly items = signal<TransactionView[]>([]);
-  protected readonly total = signal(0);
+  protected readonly ledger = signal<TransactionView[]>([]);
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly catalogSaving = signal(false);
@@ -464,34 +546,20 @@ export class AdminTransactions {
   private rosterSearchRequest = 0;
   private rosterTarget: RosterTarget = 'create-to';
 
+  /** One query parameter of the entry URL, or of the matrix params the finance links use. */
+  private readonly entry = (key: string): string =>
+    this.route.snapshot.queryParamMap.get(key) ?? this.route.snapshot.paramMap.get(key) ?? '';
+
   /**
-   * Deep-link prefilter.
-   *
-   * The finance page links every KPI here with `?status=` (and the per-member
-   * rows with `?search=`), so a figure there can be walked back to the rows
-   * behind it. Read once from the entry snapshot: this is an entry condition,
-   * not a live binding, and the table owns the filters from that point on.
+   * Ledger filters. The page owns them and mirrors them to the URL (`search` is the member
+   * name, kept under its old key so existing links still work). Read once from the entry
+   * snapshot: the page is the source of truth from then on.
    */
-  private readonly entryParams = inject(ActivatedRoute).snapshot.queryParamMap;
-
-  protected readonly initialSearch = this.entryParams.get('search') ?? '';
-
-  protected readonly initialColumnFilters = ((): Readonly<Record<string, string>> => {
-    const status = this.entryParams.get('status');
-    if (!status || !STATUSES.includes(status as TransactionStatus)) {
-      return {};
-    }
-    return { status };
-  })();
-
-  private readonly tableQuery = signal<DataTablePageChange>({
-    ...parseDataTableQuery(this.entryParams, {
-      defaultPageSize: 25,
-      filterKeys: ['status'],
-    }),
-    search: this.initialSearch,
-    columnFilters: this.initialColumnFilters,
-  });
+  protected readonly memberQuery = signal(this.entry('search').trim());
+  protected readonly statusFilter = signal<TransactionStatus | ''>(this.entryStatus());
+  protected readonly typeFilter = signal(this.entry('type'));
+  protected readonly dateFrom = signal(this.entry('from'));
+  protected readonly dateTo = signal(this.entry('to'));
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
@@ -502,12 +570,105 @@ export class AdminTransactions {
   protected readonly canEdit = computed(() => this.auth.hasPermission('bank.transactions.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('bank.transactions.delete'));
 
+  /** Ledger rows that match every filter, in the order the server returned them (newest first). */
+  protected readonly filtered = computed<TransactionView[]>(() => {
+    const member = this.memberQuery().trim().toLowerCase();
+    const status = this.statusFilter();
+    const type = this.typeFilter();
+    const from = this.dateFrom();
+    const to = this.dateTo();
+    return this.ledger().filter((row) => {
+      if (status && row.status !== status) {
+        return false;
+      }
+      if (type && row.type !== type) {
+        return false;
+      }
+      if (member) {
+        const names = [row.to_username, row.to_label].map((name) => (name ?? '').toLowerCase());
+        if (!names.some((name) => name.includes(member))) {
+          return false;
+        }
+      }
+      if (from || to) {
+        const day = localDay(row.created_at);
+        if ((from && day < from) || (to && day > to)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  });
+
+  /** Period totals of the filtered rows, split by what they mean for the Guild Bank. */
+  protected readonly summary = computed<LedgerSummary>(() => {
+    let outstanding = 0;
+    let outstandingCount = 0;
+    let paid = 0;
+    let paidCount = 0;
+    let donated = 0;
+    let donatedCount = 0;
+    for (const row of this.filtered()) {
+      const amount = Number(row.amount) || 0;
+      if (row.status === 'pending' || row.status === 'requested') {
+        outstanding += amount;
+        outstandingCount += 1;
+      } else if (row.status === 'withdrawn') {
+        paid += amount;
+        paidCount += 1;
+      } else if (row.status === 'donated') {
+        donated += amount;
+        donatedCount += 1;
+      }
+    }
+    return {
+      outstanding: roundCents(outstanding),
+      outstandingCount,
+      paid: roundCents(paid),
+      paidCount,
+      donated: roundCents(donated),
+      donatedCount,
+    };
+  });
+
+  /** Signed sum of every filtered row, shown in the totals row. */
+  protected readonly netTotal = computed(() =>
+    roundCents(this.filtered().reduce((sum, row) => sum + (Number(row.amount) || 0), 0)),
+  );
+
+  /** Types present in the ledger, plus the one the filter already names. */
+  protected readonly typeOptions = computed<string[]>(() => {
+    const types = new Set(this.ledger().map((row) => row.type).filter(Boolean));
+    const current = this.typeFilter();
+    if (current) {
+      types.add(current);
+    }
+    return [...types].sort((a, b) => a.localeCompare(b));
+  });
+
+  protected readonly activeFilterCount = computed(
+    () =>
+      [
+        this.memberQuery().trim(),
+        this.statusFilter(),
+        this.typeFilter(),
+        this.dateFrom(),
+        this.dateTo(),
+      ].filter(Boolean).length,
+  );
+
+  protected readonly emptyKey = computed<TranslationKey>(() =>
+    this.activeFilterCount() > 0 && this.ledger().length > 0
+      ? 'admin.transactions.noMatches'
+      : 'admin.transactions.empty',
+  );
+
   protected readonly columns = computed<DataTableColumn<TransactionView>[]>(() => [
     {
       key: 'to_username',
       label: 'admin.transactions.fields.to',
-      searchable: true,
-      accessor: (row) => row.to_username,
+      sortable: true,
+      accessor: (row) => this.rowName(row),
     },
     {
       key: 'amount',
@@ -521,10 +682,6 @@ export class AdminTransactions {
       label: 'common.status',
       sortable: true,
       accessor: (row) => row.status,
-      filterOptions: this.statuses.map((status) => ({
-        label: this.statusLabel(status),
-        value: status,
-      })),
     },
     { key: 'split_id', label: 'admin.transactions.fields.splitId', accessor: (row) => row.split_id },
     { key: 'created_at', label: 'common.date', sortable: true, accessor: (row) => row.created_at },
@@ -535,45 +692,100 @@ export class AdminTransactions {
     void this.load();
   }
 
-  protected onTableChange(event: DataTablePageChange): void {
-    this.tableQuery.set(event);
-    void this.load();
-  }
-
+  /** Reads the whole ledger in pages of up to 1000 rows. Filters then run on the client. */
   protected async load(): Promise<void> {
-    this.loading.set(this.items().length === 0);
+    this.loading.set(this.ledger().length === 0);
     this.loadFailed.set(false);
     try {
-      const query = this.tableQuery();
-      const params: Record<string, string | number | boolean> = {
-        page: query.page,
-        limit: query.pageSize,
-        global: true,
-
-      };
-      if (query.search.trim()) {
-        params['search'] = query.search.trim();
+      const rows: TransactionView[] = [];
+      let total = Number.POSITIVE_INFINITY;
+      for (let page = 1; rows.length < total; page += 1) {
+        const data = await firstValueFrom(
+          this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
+            global: true,
+            page,
+            limit: LEDGER_PAGE_SIZE,
+          }),
+        );
+        rows.push(...data.items);
+        total = data.total_items;
+        if (data.items.length === 0) {
+          break;
+        }
       }
-      if (query.sort) {
-        params['sort'] = query.sort.columnKey;
-        params['order'] = query.sort.direction;
-      }
-      const status = query.columnFilters['status'] as TransactionStatus;
-      if (status) {
-        params['status'] = status;
-      }
-      const data = await firstValueFrom(
-        this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', params),
-      );
-      this.items.set(data.items);
-      this.total.set(data.total_items);
-    } catch (error) {
+      this.ledger.set(rows);
+    } catch {
       this.loadFailed.set(true);
-      this.items.set([]);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.ledger.set([]);
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.loading.set(false);
     }
+  }
+
+  protected onMemberChange(value: string): void {
+    this.memberQuery.set(value);
+    this.syncUrl();
+  }
+
+  protected onStatusFilter(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.statusFilter.set(STATUSES.includes(value as TransactionStatus) ? (value as TransactionStatus) : '');
+    this.syncUrl();
+  }
+
+  protected onTypeFilter(event: Event): void {
+    this.typeFilter.set((event.target as HTMLSelectElement).value);
+    this.syncUrl();
+  }
+
+  protected onDateFilter(bound: 'from' | 'to', event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    if (bound === 'from') {
+      this.dateFrom.set(value);
+    } else {
+      this.dateTo.set(value);
+    }
+    this.syncUrl();
+  }
+
+  protected clearFilters(): void {
+    this.memberQuery.set('');
+    this.statusFilter.set('');
+    this.typeFilter.set('');
+    this.dateFrom.set('');
+    this.dateTo.set('');
+    this.syncUrl();
+  }
+
+  protected onRowAction(row: TransactionView, id: string): void {
+    if (id === 'edit') {
+      this.openEdit(row);
+    } else if (id === 'delete') {
+      this.askDelete(row);
+    }
+  }
+
+  protected rowMenu(row: TransactionView): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (this.canEdit()) {
+      items.push({ id: 'edit', label: this.t('common.edit') });
+    }
+    if (this.canDelete()) {
+      items.push({
+        id: 'delete',
+        label: this.t('common.delete'),
+        danger: true,
+        disabled: this.deletingId() === row.id,
+        separatorBefore: items.length > 0,
+      });
+    }
+    return items;
+  }
+
+  /** The recipient as the ledger shows it: the guild bank label, or the member's name. */
+  protected rowName(row: TransactionView): string {
+    return row.to_guild_bank ? row.to_label : row.to_username;
   }
 
   protected openCreate(): void {
@@ -652,8 +864,8 @@ export class AdminTransactions {
       this.closeCreate();
       await this.load();
       this.toasts.success(this.t('admin.transactions.created'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.catalogSaving.set(false);
     }
@@ -734,8 +946,8 @@ export class AdminTransactions {
       this.closeEdit();
       await this.load();
       this.toasts.success(this.t('admin.transactions.updated'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.editSaving.set(false);
     }
@@ -759,8 +971,8 @@ export class AdminTransactions {
       await firstValueFrom(this.api.delete(path));
       await this.load();
       this.toasts.success(this.t('admin.transactions.deleted'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.deletingId.set(null);
     }
@@ -800,9 +1012,9 @@ export class AdminTransactions {
           usersPage.items.map((member) => ({ id: String(member.id), title: member.username })),
         );
       }
-    } catch (error) {
+    } catch {
       if (request === this.rosterSearchRequest) {
-        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+        this.toasts.error(this.t('common.error'));
       }
     } finally {
       if (request === this.rosterSearchRequest) {
@@ -836,12 +1048,36 @@ export class AdminTransactions {
     this.showRosterSearch.set(false);
   }
 
+  /** Unsigned amount with up to two decimals, the form the create and edit dialogs accept. */
   protected formatAmount(value: number | string | null | undefined): string {
     const numeric = Number(value ?? 0);
-    const lang = this.translate.locale();
-    return new Intl.NumberFormat(lang, { maximumFractionDigits: 0 }).format(
+    return new Intl.NumberFormat(this.translate.locale(), { maximumFractionDigits: 2 }).format(
       Number.isFinite(numeric) ? numeric : 0,
     );
+  }
+
+  /**
+   * Amount with an explicit sign. Positive is paid out by the Guild Bank to the member,
+   * negative is paid back to the Guild Bank (see `admin.transactions.fields.amountHint`).
+   */
+  protected formatSignedAmount(value: number | string | null | undefined): string {
+    const numeric = Number(value ?? 0);
+    return new Intl.NumberFormat(this.translate.locale(), {
+      maximumFractionDigits: 2,
+      signDisplay: 'exceptZero',
+    }).format(Number.isFinite(numeric) ? numeric : 0);
+  }
+
+  /** Colour follows the direction of the money; the sign carries the same meaning in text. */
+  protected amountColor(value: number | string | null | undefined): string {
+    const numeric = Number(value ?? 0);
+    if (numeric < 0) {
+      return 'var(--color-success)';
+    }
+    if (numeric > 0) {
+      return 'var(--color-info)';
+    }
+    return 'var(--color-text-secondary)';
   }
 
   protected formatDateDay(iso: string | null | undefined): string {
@@ -864,23 +1100,6 @@ export class AdminTransactions {
       minute: '2-digit',
       hour12: true,
     });
-  }
-
-  protected statusChipClass(status: TransactionStatus): string {
-    switch (status) {
-      case 'pending':
-        return 'chip--info';
-      case 'requested':
-        return 'chip--warning';
-      case 'rejected':
-        return 'chip--error';
-      case 'withdrawn':
-        return 'chip--success';
-      case 'donated':
-        return 'chip--success';
-      default:
-        return '';
-    }
   }
 
   protected statusIcon(status: TransactionStatus): IconName {
@@ -909,5 +1128,26 @@ export class AdminTransactions {
       donated: 'bank.status.donated',
     };
     return this.t(keyMap[status]);
+  }
+
+  private entryStatus(): TransactionStatus | '' {
+    const status = this.entry('status');
+    return STATUSES.includes(status as TransactionStatus) ? (status as TransactionStatus) : '';
+  }
+
+  /** Mirrors the filter state to the query string, replacing history so Back is not flooded. */
+  private syncUrl(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        search: this.memberQuery().trim() || null,
+        status: this.statusFilter() || null,
+        type: this.typeFilter() || null,
+        from: this.dateFrom() || null,
+        to: this.dateTo() || null,
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 }
