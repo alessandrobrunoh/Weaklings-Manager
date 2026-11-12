@@ -1,5 +1,5 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -7,20 +7,25 @@ import type {
   DiscordRoleView,
   PermissionMatrix,
   RolePermissionsView,
+  UpdateRoleRequest,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
-import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Loading } from '../../shared/components/loading/loading';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { roleSelectOptions } from '../../shared/discord/discord-options';
 
+/** Editable fields of one role, shared by the create and edit dialog. */
 interface RoleDraft {
   name: string;
   priority: number;
@@ -30,22 +35,65 @@ interface RoleDraft {
   grants_staff: boolean;
 }
 
-interface NewRoleDraft {
-  name: string;
-  priority: number;
-  discord_role_id: string;
+/** How many modules the powers summary names before it collapses the rest into a count. */
+const SUMMARY_MODULE_LIMIT = 3;
+
+function emptyDraft(): RoleDraft {
+  return {
+    name: '',
+    priority: 0,
+    discord_role_id: '',
+    is_default: false,
+    is_staff: false,
+    grants_staff: false,
+  };
+}
+
+function draftFromRole(role: RolePermissionsView): RoleDraft {
+  return {
+    name: role.role_name,
+    priority: role.priority,
+    discord_role_id: role.discord_role_id ?? '',
+    is_default: role.is_default,
+    is_staff: role.is_staff,
+    grants_staff: role.grants_staff,
+  };
+}
+
+function moduleLabel(resource: string): string {
+  const spaced = resource.replace(/[_-]/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /**
- * CRUD for gestionale roles and their Discord snowflake links.
+ * Gestionale roles: a table of every role with its member link, its powers in one line and its
+ * flags. Create and edit share one dialog; delete sits in the row menu behind a confirmation.
+ * Detailed grants live on the Permissions page, which the header tabs and the hint link to.
  */
 @Component({
   selector: 'app-admin-roles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
-  imports: [Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack, SearchableSelect],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Menu,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    SearchableSelect,
+    StatusChip,
+    SummaryBand,
+    Tabs,
+  ],
   template: `
     <app-page-header [title]="t('admin.roles.title')" [subtitle]="t('admin.roles.hint')">
+      <app-tabs
+        pageTabs
+        [options]="sectionTabs()"
+        active="roles"
+        [ariaLabel]="t('admin.roles.title')"
+      />
       @if (matrix()) {
         <button type="button" class="btn btn--primary" (click)="openCreate()">
           {{ t('admin.roles.create') }}
@@ -54,143 +102,96 @@ interface NewRoleDraft {
     </app-page-header>
 
     <app-page-stack>
-      @if (loading()) {
-        <app-loading />
-      } @else if (matrix(); as data) {
-        <section class="card p-5">
-          @if (data.roles.length === 0) {
-            <app-empty-state [message]="t('common.empty')" />
-          } @else {
-            <ul class="flex flex-col gap-2" role="list">
-              @for (role of data.roles; track role.role_id) {
-                <li
-                  class="flex flex-col gap-2 rounded-2xl px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end"
-                  style="background: var(--color-surface-2); border: 1px solid var(--color-border)"
-                >
-                  <label class="min-w-0 flex-1">
-                    <span class="block text-xs" style="color: var(--color-text-secondary)">
-                      {{ t('common.name') }}
-                    </span>
-                    <input
-                      class="input mt-1 w-full"
-                      [value]="roleDrafts()[role.role_id]?.name ?? role.role_name"
-                      (input)="updateRoleDraft(role, 'name', $event)"
-                    />
-                  </label>
-                  <label class="w-28">
-                    <span class="block text-xs" style="color: var(--color-text-secondary)">
-                      {{ t('admin.permissions.priority') }}
-                    </span>
-                    <input
-                      class="input mt-1 w-full"
-                      type="number"
-                      [value]="roleDrafts()[role.role_id]?.priority ?? role.priority"
-                      (input)="updateRoleDraft(role, 'priority', $event)"
-                    />
-                  </label>
-                  <label class="min-w-0 flex-[2]">
-                    <span class="block text-xs" style="color: var(--color-text-secondary)">
-                      {{ t('admin.roles.discordId') }}
-                    </span>
-                    <app-searchable-select
-                      class="mt-1 block"
-                      [options]="roleLinkOptions(role)"
-                      [value]="roleDiscordRoleId(role)"
-                      [emptyLabel]="t('admin.roles.unlinked')"
-                      [searchPlaceholder]="t('common.search')"
-                      [noMatchesLabel]="t('picker.noMatches')"
-                      [emptyOptionsLabel]="t('picker.empty')"
-                      [ariaLabel]="t('admin.roles.discordId')"
-                      (valueChange)="setRoleDiscordId(role, $event)"
-                    />
-                  </label>
-                  <div class="flex flex-col gap-2 pb-1 sm:min-w-48">
-                    <label class="flex items-start gap-2">
-                      <input
-                        class="checkbox mt-0.5"
-                        type="checkbox"
-                        [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
-                        (change)="updateRoleDraftFlag(role, 'is_default', $event)"
-                      />
-                      <span>
-                        <span class="text-xs">{{ t('admin.roles.default') }}</span>
-                        <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
-                          {{ t('admin.roles.defaultHint') }}
-                        </span>
-                      </span>
-                    </label>
-                    <label class="flex items-start gap-2">
-                      <input
-                        class="checkbox mt-0.5"
-                        type="checkbox"
-                        [checked]="roleDrafts()[role.role_id]?.is_staff ?? role.is_staff"
-                        [disabled]="!roleDiscordRoleId(role)"
-                        (change)="updateRoleDraftFlag(role, 'is_staff', $event)"
-                      />
-                      <span>
-                        <span class="text-xs">{{ t('admin.roles.staff') }}</span>
-                        <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
-                          {{ t('admin.roles.staffHint') }}
-                        </span>
-                      </span>
-                    </label>
-                    <label class="flex items-start gap-2">
-                      <input
-                        class="checkbox mt-0.5"
-                        type="checkbox"
-                        [checked]="roleDrafts()[role.role_id]?.grants_staff ?? role.grants_staff"
-                        [disabled]="!roleDiscordRoleId(role)"
-                        (change)="updateRoleDraftFlag(role, 'grants_staff', $event)"
-                      />
-                      <span>
-                        <span class="text-xs">{{ t('admin.roles.staffEligible') }}</span>
-                        <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
-                          {{ t('admin.roles.staffEligibleHint') }}
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                  <div class="flex shrink-0 gap-2 pb-1">
-                    <button
-                      type="button"
-                      class="btn btn--outline btn--sm"
-                      [disabled]="roleSavingId() === role.role_id"
-                      (click)="saveRole(role)"
-                    >
-                      {{ t('common.save') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn--outline btn--sm"
-                      [disabled]="role.is_default || roleSavingId() === role.role_id"
-                      (click)="askDelete(role)"
-                    >
-                      {{ t('common.delete') }}
-                    </button>
-                  </div>
-                </li>
-              }
-            </ul>
-          }
-        </section>
-      } @else {
-        <app-error-state
-          [message]="t('admin.loadError')"
-          [retryLabel]="t('common.retry')"
-          (retry)="load()"
-        />
+      @if (matrix()) {
+        <app-summary-band [ariaLabel]="t('admin.roles.title')" [items]="summary()" />
       }
+
+      <section class="card">
+        <p class="hint mb-3 flex flex-wrap items-center gap-3">
+          <span>{{ t('admin.roles.grantsHint') }}</span>
+          <a class="btn btn--outline btn--sm" routerLink="/admin/permissions">
+            {{ t('admin.roles.openPermissions') }}
+          </a>
+        </p>
+        <app-data-table
+          [columns]="columns"
+          [rows]="roles()"
+          [loading]="loading()"
+          [error]="!loading() && !matrix()"
+          (retry)="load()"
+          [trackBy]="trackRole"
+          [hideSearch]="true"
+          [hidePageSize]="true"
+          [syncUrl]="false"
+          [pageSize]="25"
+          [mobileLayout]="'stack'"
+          [ariaLabel]="t('admin.roles.title')"
+        >
+            <ng-template dataTableCell="name" let-row>
+              <span class="font-medium">{{ row.role_name }}</span>
+              @if (row.is_default) {
+                <span class="hint block">{{ t('admin.roles.defaultLocked') }}</span>
+              }
+            </ng-template>
+            <ng-template dataTableCell="powers" let-row>
+              <span class="hint">{{ powersSummary(row) }}</span>
+            </ng-template>
+            <ng-template dataTableCell="discord" let-row>
+              @if (row.discord_role_id) {
+                {{ discordRoleName(row.discord_role_id) }}
+              } @else {
+                <span class="hint">{{ t('admin.roles.unlinked') }}</span>
+              }
+            </ng-template>
+            <ng-template dataTableCell="flags" let-row>
+              <span class="flex flex-wrap gap-1">
+                @if (row.is_default) {
+                  <app-status-chip
+                    value="default"
+                    [label]="t('admin.roles.default')"
+                    [toneOverride]="'neutral'"
+                    [showDot]="false"
+                  />
+                }
+                @if (row.is_staff) {
+                  <app-status-chip
+                    value="staff"
+                    [label]="t('admin.roles.staff')"
+                    [toneOverride]="'neutral'"
+                    [showDot]="false"
+                  />
+                }
+                @if (row.grants_staff) {
+                  <app-status-chip
+                    value="staff_eligible"
+                    [label]="t('admin.roles.staffEligible')"
+                    [toneOverride]="'neutral'"
+                    [showDot]="false"
+                  />
+                }
+              </span>
+            </ng-template>
+            <ng-template dataTableCell="actions" let-row>
+              <app-menu
+                [items]="rowMenuFor(row)"
+                [label]="t('admin.roles.rowActions', { name: row.role_name })"
+                (itemSelect)="onRowAction(row, $event)"
+              />
+            </ng-template>
+        </app-data-table>
+      </section>
     </app-page-stack>
 
-    @if (createOpen()) {
-      <app-dialog [title]="t('admin.roles.create')" (closed)="closeCreate()">
-        <form id="create-role-form" class="grid gap-4" (submit)="createRole($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">
-            {{ t('validation.requiredLegend') }}
-          </p>
+    @if (editorOpen()) {
+      <app-dialog
+        [title]="editing() ? t('admin.roles.edit') : t('admin.roles.create')"
+        (closed)="closeEditor()"
+      >
+        <form id="role-editor-form" class="grid gap-4" (submit)="saveRole($event)">
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label>
             <span class="label">
-              {{ t('admin.roles.newName') }}
+              {{ t('common.name') }}
               <span style="color: var(--color-error)" aria-hidden="true">*</span>
             </span>
             <input
@@ -198,44 +199,87 @@ interface NewRoleDraft {
               type="text"
               required
               autofocus
-              [value]="newRole().name"
-              (input)="updateNewRole('name', $event)"
+              [value]="draft().name"
+              (input)="updateDraftText('name', $event)"
             />
           </label>
           <label>
-            <span class="label">{{ t('admin.permissions.priority') }}</span>
+            <span class="label">{{ t('admin.roles.priority') }}</span>
             <input
               class="input"
               type="number"
-              [value]="newRole().priority"
-              (input)="updateNewRole('priority', $event)"
+              [value]="draft().priority"
+              (input)="updateDraftText('priority', $event)"
             />
           </label>
-          <label>
+          <div>
             <span class="label">{{ t('admin.roles.discordId') }}</span>
             <app-searchable-select
-              [options]="roleLinkOptions(null)"
-              [value]="newRole().discord_role_id"
+              class="mt-1 block"
+              [options]="discordLinkOptions()"
+              [value]="draft().discord_role_id"
               [emptyLabel]="t('admin.roles.unlinked')"
               [searchPlaceholder]="t('common.search')"
               [noMatchesLabel]="t('picker.noMatches')"
               [emptyOptionsLabel]="t('picker.empty')"
               [ariaLabel]="t('admin.roles.discordId')"
-              (valueChange)="setNewRoleDiscordId($event)"
+              (valueChange)="setDraftDiscordId($event)"
             />
-          </label>
+            <span class="hint mt-1 block">{{ t('admin.roles.discordIdHint') }}</span>
+          </div>
+          <fieldset class="grid gap-3">
+            <legend class="label mb-1">{{ t('admin.roles.flags') }}</legend>
+            <label class="flex items-start gap-2">
+              <input
+                class="checkbox mt-0.5"
+                type="checkbox"
+                [checked]="draft().is_default"
+                (change)="updateDraftFlag('is_default', $event)"
+              />
+              <span>
+                <span class="block text-xs">{{ t('admin.roles.default') }}</span>
+                <span class="hint block">{{ t('admin.roles.defaultHint') }}</span>
+              </span>
+            </label>
+            <label class="flex items-start gap-2">
+              <input
+                class="checkbox mt-0.5"
+                type="checkbox"
+                [checked]="draft().is_staff"
+                [disabled]="!draft().discord_role_id"
+                (change)="updateDraftFlag('is_staff', $event)"
+              />
+              <span>
+                <span class="block text-xs">{{ t('admin.roles.staff') }}</span>
+                <span class="hint block">{{ t('admin.roles.staffHint') }}</span>
+              </span>
+            </label>
+            <label class="flex items-start gap-2">
+              <input
+                class="checkbox mt-0.5"
+                type="checkbox"
+                [checked]="draft().grants_staff"
+                [disabled]="!draft().discord_role_id"
+                (change)="updateDraftFlag('grants_staff', $event)"
+              />
+              <span>
+                <span class="block text-xs">{{ t('admin.roles.staffEligible') }}</span>
+                <span class="hint block">{{ t('admin.roles.staffEligibleHint') }}</span>
+              </span>
+            </label>
+          </fieldset>
         </form>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="closeCreate()">
+          <button type="button" class="btn btn--outline" (click)="closeEditor()">
             {{ t('common.cancel') }}
           </button>
           <button
             type="submit"
             class="btn btn--primary"
-            form="create-role-form"
-            [disabled]="roleCreating()"
+            form="role-editor-form"
+            [disabled]="busy()"
           >
-            {{ t('admin.roles.create') }}
+            {{ editing() ? t('common.save') : t('admin.roles.create') }}
           </button>
         </div>
       </app-dialog>
@@ -246,10 +290,10 @@ interface NewRoleDraft {
         <p>{{ t('admin.roles.deleteConfirm') }}</p>
         <p class="mt-2 font-medium">{{ role.role_name }}</p>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="deleteTarget.set(null)">
+          <button type="button" class="btn btn--outline" (click)="deleteTarget.set(null)">
             {{ t('common.cancel') }}
           </button>
-          <button type="button" class="btn btn--danger" (click)="confirmDelete()">
+          <button type="button" class="btn btn--danger" [disabled]="busy()" (click)="confirmDelete()">
             {{ t('common.delete') }}
           </button>
         </div>
@@ -265,94 +309,135 @@ export class AdminRoles {
   protected readonly loading = signal(true);
   protected readonly matrix = signal<PermissionMatrix | null>(null);
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
-  protected readonly roleDrafts = signal<Record<string, RoleDraft>>({});
-  protected readonly roleSavingId = signal<string | null>(null);
-  protected readonly roleCreating = signal(false);
-  protected readonly createOpen = signal(false);
+  protected readonly busy = signal(false);
+
+  /** Role being edited, or `null` while the dialog creates a new one. */
+  protected readonly editing = signal<RolePermissionsView | null>(null);
+  protected readonly editorOpen = signal(false);
+  protected readonly draft = signal<RoleDraft>(emptyDraft());
   protected readonly deleteTarget = signal<RolePermissionsView | null>(null);
-  protected readonly newRole = signal<NewRoleDraft>({
-    name: '',
-    priority: 0,
-    discord_role_id: '',
+
+  protected readonly roles = computed(() => this.matrix()?.roles ?? []);
+
+  protected readonly summary = computed<SummaryItem[]>(() => {
+    const roles = this.roles();
+    return [
+      { label: this.t('nav.admin.roles'), value: roles.length },
+      { label: this.t('admin.roles.summaryLinked'), value: roles.filter((r) => r.discord_role_id).length },
+      { label: this.t('admin.roles.staffEligible'), value: roles.filter((r) => r.grants_staff).length },
+    ];
   });
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected readonly sectionTabs = computed<TabOption[]>(() => [
+    { id: 'roles', label: this.t('nav.admin.roles'), link: ['/admin', 'roles'] },
+    { id: 'permissions', label: this.t('nav.admin.permissions'), link: ['/admin', 'permissions'] },
+  ]);
 
-  private draftFromRole(role: RolePermissionsView): RoleDraft {
-    return {
-      name: role.role_name,
-      priority: role.priority,
-      discord_role_id: role.discord_role_id ?? '',
-      is_default: role.is_default,
-      is_staff: role.is_staff,
-      grants_staff: role.grants_staff,
-    };
-  }
+  /** Stable menu arrays, so the row menus do not get new inputs on every change check. */
+  private readonly editOnlyItems = computed<MenuItem[]>(() => [
+    { id: 'edit', label: this.t('common.edit') },
+    { id: 'delete', label: this.t('common.delete'), danger: true, separatorBefore: true },
+  ]);
+  private readonly lockedItems = computed<MenuItem[]>(() =>
+    this.editOnlyItems().map((item) =>
+      item.id === 'delete' ? { ...item, disabled: true } : item,
+    ),
+  );
 
-  private draftFor(
-    role: RolePermissionsView,
-    drafts: Record<string, RoleDraft> = this.roleDrafts(),
-  ): RoleDraft {
-    return drafts[role.role_id] ?? this.draftFromRole(role);
-  }
+  protected readonly columns: readonly DataTableColumn<RolePermissionsView>[] = [
+    {
+      key: 'name',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (role) => role.role_name,
+      comparator: (a, b) => a.role_name.localeCompare(b.role_name),
+    },
+    {
+      key: 'priority',
+      label: 'admin.roles.priority',
+      sortable: true,
+      align: 'right',
+      accessor: (role) => role.priority,
+      comparator: (a, b) => a.priority - b.priority,
+    },
+    { key: 'powers', label: 'admin.roles.powers' },
+    { key: 'discord', label: 'admin.roles.discordId' },
+    { key: 'flags', label: 'admin.roles.flags' },
+    { key: 'actions', label: '', align: 'right' },
+  ];
+
+  protected readonly trackRole = (role: RolePermissionsView): unknown => role.role_id;
+
+  /** Discord roles already linked to another gestionale role are hidden from the picker. */
+  protected readonly discordLinkOptions = computed(() => {
+    const draftId = this.draft().discord_role_id;
+    const editingId = this.editing()?.role_id ?? null;
+    const linked = new Set(
+      this.roles()
+        .filter((role) => role.role_id !== editingId)
+        .map((role) => role.discord_role_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const options = this.discordRoles().filter(
+      (discordRole) => discordRole.id === draftId || !linked.has(discordRole.id),
+    );
+
+    // Keep a saved link visible even when Discord no longer returns that role
+    // (for example, after a guild/token mismatch or a deleted role).
+    if (draftId && !options.some((discordRole) => discordRole.id === draftId)) {
+      options.unshift({
+        id: draftId,
+        name: this.t('admin.roles.linkedUnknown', { id: draftId }),
+        position: 0,
+        managed: false,
+      });
+    }
+
+    return roleSelectOptions(options, draftId);
+  });
+
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.load();
     void this.loadDiscordRoles();
   }
 
-  protected roleDiscordRoleId(role: RolePermissionsView): string {
-    return this.roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? '';
-  }
-
-  protected roleLinkOptions(role: RolePermissionsView | null) {
-    const currentId = role ? this.roleDiscordRoleId(role) : this.newRole().discord_role_id;
-    return roleSelectOptions(this.discordRoleOptions(role), currentId);
-  }
-
-  protected setRoleDiscordId(role: RolePermissionsView, discordRoleId: string): void {
-    this.roleDrafts.update((drafts) => {
-      const current = this.draftFor(role, drafts);
-      const linked = Boolean(discordRoleId);
-      return {
-        ...drafts,
-        [role.role_id]: {
-          ...current,
-          discord_role_id: discordRoleId,
-          is_staff: linked ? current.is_staff : false,
-          grants_staff: linked ? current.grants_staff : false,
-        },
-      };
+  /** One line for the powers column: how many permissions, and which modules they cover. */
+  protected powersSummary(role: RolePermissionsView): string {
+    if (role.permissions.length === 0) {
+      return this.t('admin.roles.powersNone');
+    }
+    const modules = [...new Set(role.permissions.map((key) => key.split('.')[0]))];
+    const shown = modules.slice(0, SUMMARY_MODULE_LIMIT).map(moduleLabel).join(', ');
+    const more = modules.length - SUMMARY_MODULE_LIMIT;
+    const modulesText =
+      more > 0 ? `${shown}, ${this.t('admin.roles.powersMore', { count: more })}` : shown;
+    return this.t('admin.roles.powersSummary', {
+      count: role.permissions.length,
+      modules: modulesText,
     });
   }
 
-  protected setNewRoleDiscordId(discordRoleId: string): void {
-    this.newRole.update((draft) => ({ ...draft, discord_role_id: discordRoleId }));
+  protected discordRoleName(id: string): string {
+    return (
+      this.discordRoles().find((discordRole) => discordRole.id === id)?.name ??
+      this.t('admin.roles.linkedUnknown', { id })
+    );
   }
 
-  protected discordRoleOptions(role: RolePermissionsView | null): DiscordRoleView[] {
-    const currentId = role ? this.roleDiscordRoleId(role) : this.newRole().discord_role_id;
-    const linked = new Set(
-      (this.matrix()?.roles ?? [])
-        .map((item) => item.discord_role_id)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const options = this.discordRoles().filter((discordRole) =>
-      discordRole.id === currentId || !linked.has(discordRole.id),
-    );
+  protected rowMenuFor(role: RolePermissionsView): readonly MenuItem[] {
+    return role.is_default ? this.lockedItems() : this.editOnlyItems();
+  }
 
-    // Keep a saved link visible even when Discord no longer returns that role
-    // (for example, after a guild/token mismatch or a deleted role).
-    if (currentId && !options.some((discordRole) => discordRole.id === currentId)) {
-      options.unshift({
-        id: currentId,
-        name: `Linked role (${currentId})`,
-        position: 0,
-        managed: false,
-      });
+  protected onRowAction(role: RolePermissionsView, id: string): void {
+    if (id === 'edit') {
+      this.openEdit(role);
+    } else if (id === 'delete') {
+      this.deleteTarget.set(role);
     }
-
-    return options;
   }
 
   protected async load(): Promise<void> {
@@ -360,9 +445,8 @@ export class AdminRoles {
     try {
       const matrix = await firstValueFrom(this.api.get<PermissionMatrix>('api/admin/permissions'));
       this.matrix.set(matrix);
-      this.syncRoleDrafts(matrix);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('admin.loadError'));
     } finally {
       this.loading.set(false);
     }
@@ -389,90 +473,86 @@ export class AdminRoles {
     }
   }
 
-  private syncRoleDrafts(matrix: PermissionMatrix): void {
-    const drafts: Record<string, RoleDraft> = {};
-    for (const role of matrix.roles) {
-      drafts[role.role_id] = this.draftFromRole(role);
-    }
-    this.roleDrafts.set(drafts);
+  protected openCreate(): void {
+    this.editing.set(null);
+    this.draft.set(emptyDraft());
+    this.editorOpen.set(true);
   }
 
-  protected updateRoleDraft(
-    role: RolePermissionsView,
-    field: 'name' | 'priority' | 'discord_role_id',
-    event: Event,
-  ): void {
+  protected openEdit(role: RolePermissionsView): void {
+    this.editing.set(role);
+    this.draft.set(draftFromRole(role));
+    this.editorOpen.set(true);
+  }
+
+  protected closeEditor(): void {
+    this.editorOpen.set(false);
+  }
+
+  protected updateDraftText(field: 'name' | 'priority', event: Event): void {
     const raw = (event.target as HTMLInputElement).value;
-    this.roleDrafts.update((drafts) => {
-      const current = this.draftFor(role, drafts);
-      return {
-        ...drafts,
-        [role.role_id]: {
-          ...current,
-          [field]: field === 'priority' ? Number(raw) : raw,
-        },
-      };
-    });
-  }
-
-  protected updateRoleDraftFlag(
-    role: RolePermissionsView,
-    field: 'is_default' | 'is_staff' | 'grants_staff',
-    event: Event,
-  ): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    this.roleDrafts.update((drafts) => {
-      const current = this.draftFor(role, drafts);
-      return { ...drafts, [role.role_id]: { ...current, [field]: checked } };
-    });
-  }
-
-  protected updateNewRole(field: 'name' | 'priority' | 'discord_role_id', event: Event): void {
-    const raw = (event.target as HTMLInputElement).value;
-    this.newRole.update((draft) => ({
+    this.draft.update((draft) => ({
       ...draft,
       [field]: field === 'priority' ? Number(raw) : raw,
     }));
   }
 
-  protected openCreate(): void {
-    this.newRole.set({ name: '', priority: 0, discord_role_id: '' });
-    this.createOpen.set(true);
+  protected updateDraftFlag(field: 'is_default' | 'is_staff' | 'grants_staff', event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.draft.update((draft) => ({ ...draft, [field]: checked }));
   }
 
-  protected closeCreate(): void {
-    this.createOpen.set(false);
+  /** Staff flags only mean something for a linked Discord role, so unlinking clears them. */
+  protected setDraftDiscordId(discordRoleId: string): void {
+    this.draft.update((draft) => ({
+      ...draft,
+      discord_role_id: discordRoleId,
+      is_staff: discordRoleId ? draft.is_staff : false,
+      grants_staff: discordRoleId ? draft.grants_staff : false,
+    }));
   }
 
-  protected async saveRole(role: RolePermissionsView): Promise<void> {
-    const draft = this.roleDrafts()[role.role_id];
-    if (!draft) {
-      return;
-    }
-    this.roleSavingId.set(role.role_id);
+  protected async saveRole(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    const draft = this.draft();
+    const role = this.editing();
+    const linked = Boolean(draft.discord_role_id.trim());
+    const flags = {
+      is_default: draft.is_default,
+      is_staff: linked && draft.is_staff,
+      grants_staff: linked && draft.grants_staff,
+    };
+
+    this.busy.set(true);
     try {
-      const updated = await firstValueFrom(
-        this.api.patch<PermissionMatrix>(`api/admin/roles/${encodeURIComponent(role.role_id)}`, {
-          name: draft.name,
+      let matrix: PermissionMatrix;
+      if (role) {
+        const body: UpdateRoleRequest = {
+          name: draft.name.trim(),
           priority: draft.priority,
           discord_role_id: draft.discord_role_id,
-          is_default: draft.is_default,
-          is_staff: draft.is_staff,
-          grants_staff: draft.grants_staff,
-        }),
-      );
-      this.matrix.set(updated);
-      this.syncRoleDrafts(updated);
-      this.toasts.success(this.t('admin.roles.saved'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+          ...flags,
+        };
+        matrix = await firstValueFrom(
+          this.api.patch<PermissionMatrix>(`api/admin/roles/${encodeURIComponent(role.role_id)}`, body),
+        );
+      } else {
+        const body: CreateRoleRequest = {
+          name: draft.name.trim(),
+          priority: draft.priority,
+          discord_role_id: draft.discord_role_id.trim() || null,
+          ...flags,
+        };
+        matrix = await firstValueFrom(this.api.post<PermissionMatrix>('api/admin/roles', body));
+      }
+      this.matrix.set(matrix);
+      this.editorOpen.set(false);
+      this.toasts.success(this.t(role ? 'admin.roles.saved' : 'admin.roles.created'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
-      this.roleSavingId.set(null);
+      this.busy.set(false);
     }
-  }
-
-  protected askDelete(role: RolePermissionsView): void {
-    this.deleteTarget.set(role);
   }
 
   protected async confirmDelete(): Promise<void> {
@@ -481,45 +561,19 @@ export class AdminRoles {
     if (!role) {
       return;
     }
-    this.roleSavingId.set(role.role_id);
+    this.busy.set(true);
     try {
       const updated = await firstValueFrom(
         this.api.delete<PermissionMatrix>(`api/admin/roles/${encodeURIComponent(role.role_id)}`),
       );
       if (updated) {
         this.matrix.set(updated);
-        this.syncRoleDrafts(updated);
       }
       this.toasts.success(this.t('admin.roles.deleted'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
-      this.roleSavingId.set(null);
-    }
-  }
-
-  protected async createRole(submit: SubmitEvent): Promise<void> {
-    submit.preventDefault();
-    const draft = this.newRole();
-    const body: CreateRoleRequest = {
-      name: draft.name.trim(),
-      priority: draft.priority,
-      discord_role_id: draft.discord_role_id.trim() || null,
-    };
-    this.roleCreating.set(true);
-    try {
-      const updated = await firstValueFrom(
-        this.api.post<PermissionMatrix>('api/admin/roles', body),
-      );
-      this.matrix.set(updated);
-      this.syncRoleDrafts(updated);
-      this.newRole.set({ name: '', priority: 0, discord_role_id: '' });
-      this.closeCreate();
-      this.toasts.success(this.t('admin.roles.created'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.roleCreating.set(false);
+      this.busy.set(false);
     }
   }
 }
