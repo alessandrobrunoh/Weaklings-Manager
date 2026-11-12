@@ -3265,4 +3265,17 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/guild-overview
+  'guild.sections': 'Розділи гільдії',
+  'guild.overview.recordHint': '{fights} боїв · {rate} перемог',
+  'guild.notable.title': 'Важливі бої',
+  'guild.notable.kind': 'Бій',
+  'guild.timeline.item': 'Активність',
+  'guild.timeline.kind.battle': 'Битва',
+  'guild.timeline.kind.event': 'Подія',
+  'guild.timeline.kind.scout': 'Розвідка',
+  'guild.roster.shortBy': 'Бракує {count}',
+  'guild.roster.covered': 'Покрито',
+  'guild.leaderboard.rank': 'Місце',
+  'guild.leaderboard.value': 'Значення',
 };

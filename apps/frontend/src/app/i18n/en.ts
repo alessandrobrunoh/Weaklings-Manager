@@ -3448,6 +3448,19 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/guild-overview
+  'guild.sections': 'Guild sections',
+  'guild.overview.recordHint': '{fights} fights · {rate} win rate',
+  'guild.notable.title': 'Notable fights',
+  'guild.notable.kind': 'Fight',
+  'guild.timeline.item': 'Activity',
+  'guild.timeline.kind.battle': 'Battle',
+  'guild.timeline.kind.event': 'Event',
+  'guild.timeline.kind.scout': 'Scout',
+  'guild.roster.shortBy': 'Short by {count}',
+  'guild.roster.covered': 'Covered',
+  'guild.leaderboard.rank': 'Rank',
+  'guild.leaderboard.value': 'Value',
 } as const;
 
 export type TranslationKey = keyof typeof en;

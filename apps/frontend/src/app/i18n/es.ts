@@ -3451,4 +3451,17 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/guild-overview
+  'guild.sections': 'Secciones del gremio',
+  'guild.overview.recordHint': '{fights} combates · {rate} de victorias',
+  'guild.notable.title': 'Combates destacados',
+  'guild.notable.kind': 'Combate',
+  'guild.timeline.item': 'Actividad',
+  'guild.timeline.kind.battle': 'Batalla',
+  'guild.timeline.kind.event': 'Evento',
+  'guild.timeline.kind.scout': 'Reconocimiento',
+  'guild.roster.shortBy': 'Faltan {count}',
+  'guild.roster.covered': 'Cubierto',
+  'guild.leaderboard.rank': 'Puesto',
+  'guild.leaderboard.value': 'Valor',
 };
