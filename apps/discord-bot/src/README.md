@@ -16,7 +16,7 @@ This directory contains the bot runtime entrypoint, environment configuration, a
 ## Invariants
 
 - Configuration is parsed eagerly. `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, and `BOT_API_SECRET` must be non-empty; URL settings are validated.
-- `POLL_INTERVAL_MS` defaults to `60_000`, `POLLER_STATE_DIR` defaults to `/app/data`, and `GUILD_NAME` defaults to `Weaklings`.
+- `POLL_INTERVAL_MS` defaults to `60_000`, `POLLER_STATE_DIR` defaults to `/app/data`, and `GUILD_NAME` defaults to `Weaklings`. `GUILD_NAME` is only the fallback embed brand: interactions, bang commands and poll ticks brand embeds with the tenant's registered name.
 - Invalid configuration is logged and terminates the process with exit status 1.
 
 ## Side Effects

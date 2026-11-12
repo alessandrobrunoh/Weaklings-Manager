@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events } from "discord.js";
+import { Client, GatewayIntentBits, Events, type Interaction } from "discord.js";
 import { config } from "./config.js";
 import { ApiClient } from "./api/client.js";
 import type {
@@ -24,8 +24,9 @@ import {
   handleBangCommand,
   takePendingBangModal,
 } from "./services/bang-command.js";
-import { fetchTenantStatus, isRegisteredTenant } from "./services/tenant-gate.js";
+import { fetchTenantStatus, isRegisteredTenant, tenantBrandName } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
+import { withBrandName } from "./embeds/branding.js";
 import { safeErrorReply } from "./services/interaction-reply.js";
 import { actorApiFor } from "./services/actor.js";
 
@@ -71,7 +72,7 @@ async function main(): Promise<void> {
   });
 
   // ── Interaction handler ──────────────────────────────────────────────────
-  client.on(Events.InteractionCreate, async (interaction) => {
+  const dispatchInteraction = async (interaction: Interaction): Promise<void> => {
     if (interaction.isMessageContextMenuCommand()) {
       const command = messageCommands.get(interaction.commandName);
       if (!command) {
@@ -182,6 +183,14 @@ async function main(): Promise<void> {
       await handleModal(interaction, actorApi);
       return;
     }
+  };
+  client.on(Events.InteractionCreate, async (interaction) => {
+    // Embeds carry the tenant's own name. Autocomplete answers no embed and must stay fast.
+    const brand =
+      interaction.guildId && !interaction.isAutocomplete()
+        ? await tenantBrandName(api, interaction.guildId)
+        : undefined;
+    await withBrandName(brand, () => dispatchInteraction(interaction));
   });
 
   // One poller per registered tenant guild. Created before the ready handler so
@@ -234,7 +243,11 @@ async function main(): Promise<void> {
   // Same handlers and gates as slash commands; see services/bang-command.ts.
   client.on(Events.MessageCreate, (message) => {
     if (!message.content.startsWith("!")) return;
-    void handleBangCommand(message, api, commands).catch((err: unknown) => {
+    const guildId = message.guildId;
+    void (async () => {
+      const brand = guildId ? await tenantBrandName(api, guildId) : undefined;
+      await withBrandName(brand, () => handleBangCommand(message, api, commands));
+    })().catch((err: unknown) => {
       console.error("[Bot] Bang command failed:", err);
     });
   });

@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { config } from '../config.js';
+import { brandName } from './branding.js';
 
 export const BOT_COLORS = {
   BRAND: 0xc5a059,    // Albion Gold / Bronze (#C5A059)
@@ -10,10 +10,8 @@ export const BOT_COLORS = {
   DARK: 0x2b2d31,     // Discord Dark Slate
 } as const;
 
-export const GUILD_NAME = config.GUILD_NAME;
-
 export function getGuildHeader(subCategory?: string): string {
-  const gName = GUILD_NAME.toUpperCase();
+  const gName = brandName().toUpperCase();
   if (subCategory) {
     return `⚔️ ${gName} — ${subCategory.toUpperCase()}`;
   }
@@ -33,7 +31,7 @@ export function createBaseEmbed(options: BaseEmbedOptions): EmbedBuilder {
     .setAuthor({ name: getGuildHeader(options.category) })
     .setTitle(options.title)
     .setColor(options.color ?? BOT_COLORS.BRAND)
-    .setFooter({ text: options.footerText ?? `${GUILD_NAME} • Albion Guild Manager` })
+    .setFooter({ text: options.footerText ?? `${brandName()} • Albion Guild Manager` })
     .setTimestamp();
 
   if (options.description) {
@@ -66,7 +64,7 @@ export function createResponseEmbed(
     .setTitle(fullTitle)
     .setDescription(description)
     .setColor(cfg.color)
-    .setFooter({ text: `${GUILD_NAME} • Albion Guild Manager` })
+    .setFooter({ text: `${brandName()} • Albion Guild Manager` })
     .setTimestamp();
 }
 

@@ -59,6 +59,22 @@ export async function fetchTenantStatus(
   return status;
 }
 
+/**
+ * The tenant's registered name, used to brand embeds. Never throws: when the backend cannot be
+ * reached the caller keeps the configured fallback name.
+ */
+export async function tenantBrandName(
+  api: ApiClient,
+  guildId: string,
+): Promise<string | undefined> {
+  try {
+    const status = await fetchTenantStatus(api, guildId);
+    return status.registered ? (status.name ?? undefined) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Drops the cached answer for one guild, so the next check hits the backend. */
 export function forgetTenantStatus(guildId: string): void {
   statusCache.delete(guildId);

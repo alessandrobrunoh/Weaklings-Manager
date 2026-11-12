@@ -41,6 +41,8 @@ import {
   buildGiveawayWinnerMessage,
 } from "../embeds/giveaway.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
+import { withBrandName } from "../embeds/branding.js";
+import { tenantBrandName } from "./tenant-gate.js";
 import {
   buildApplicationPanelMessage,
   buildApplicationStatusAnnouncement,
@@ -622,7 +624,13 @@ export class Poller {
       try {
         do {
           this.rerunRequested = false;
-          await this.pollOnce();
+          // Announcements carry the tenant's own name in their embeds. A paused or unseeded
+          // guild announces nothing, so it does not ask for the name either.
+          const brand =
+            this.stateUnreadable || !this.state.initialized
+              ? undefined
+              : await tenantBrandName(this.api, this.guildId);
+          await withBrandName(brand, () => this.pollOnce());
         } while (this.rerunRequested);
       } finally {
         this.inflightPoll = null;
