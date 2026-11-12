@@ -7,7 +7,7 @@ This directory groups the build/composition workspace components with helpers fo
 ## Interface
 
 - `Builds` and `Compositions` delegate to `Comps` (`comps.ts`) with different `page` values. `Comps` is a thin shell: header, a List / Categories tab toggle, and the create dialogs.
-- `CompsList` and `BuildsList` are dense sortable tables (rows are one stretched link to the detail page, with an overflow `RowMenu`). They share `ListFilterBar`, `list-table-styles.ts` and `ListArchiveDialog`; filtering, grouping, role mix and sorting live in `comps-list-model.ts`. The comps list loads win rate and role mix per row (two requests each, six at a time); the builds list folds older versions under the latest.
+- `CompsList` and `BuildsList` are dense sortable tables (rows are one stretched link to the detail page, with the shared overflow `app-menu`). They share `ListFilterBar` (built on the shared `app-filter-bar`), `list-table-styles.ts` and `ListArchiveDialog`; filtering, grouping, role mix and sorting live in `comps-list-model.ts`. The comps list loads win rate and role mix per row (two requests each, six at a time); the builds list folds older versions under the latest.
 - `CompCategories` (`comp-categories.ts`) manages categories of either kind; a delete refused with 409 is explained inline.
 - `CompCreateDialog` and `BuildCreateDialog` are the New composition / New build flows. Their pure rules (totals, duplicate and version warnings, validation, role carry-over when copying a build) are in `comp-create-model.ts` and `build-create-model.ts`.
 - `CompDetailPage` (`comp-detail.ts`) is the `/comps/:id` page: an `app-entity-header` summary (key numbers, one Edit/Done action, an overflow menu) over three views, Roster, Parties and Analytics. `CompAddBuildDialog` (`comp-add-build-dialog.ts`) is its single "Add build" surface (inputs `assignedIds`, `saving`; outputs `add`, `closed`).
@@ -29,4 +29,4 @@ Inspected helper functions build local arrays/maps/sets and perform no I/O. The 
 
 ## Verification
 
-Run `npm test --prefix apps/frontend` from the repository root. The composition detail page and add-build dialog have component specs (`comp-detail.spec.ts`, `comp-add-build-dialog.spec.ts`); the list, create and menu logic is covered by `comps-list-model.spec.ts`, `comp-create-model.spec.ts`, `build-create-model.spec.ts` and `row-menu.spec.ts`.
+Run `npm test --prefix apps/frontend` from the repository root. The composition detail page and add-build dialog have component specs (`comp-detail.spec.ts`, `comp-add-build-dialog.spec.ts`); the list, create and menu logic is covered by `comps-list-model.spec.ts`, `comp-create-model.spec.ts`, `build-create-model.spec.ts` (the shared menu has its own `menu.spec.ts`).

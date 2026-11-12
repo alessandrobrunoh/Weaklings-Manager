@@ -1,4 +1,4 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
@@ -26,13 +26,59 @@ function stubDialogApi(): void {
   };
 }
 
-async function createComponent(): Promise<{
+/** The ledger state and derived values the specs read, typed without exposing them publicly. */
+interface LedgerView {
+  memberQuery: WritableSignal<string>;
+  statusFilter: WritableSignal<string>;
+  typeFilter: WritableSignal<string>;
+  dateFrom: WritableSignal<string>;
+  dateTo: WritableSignal<string>;
+  filtered: () => TransactionView[];
+  summary: () => {
+    outstanding: number;
+    outstandingCount: number;
+    paid: number;
+    paidCount: number;
+    donated: number;
+    donatedCount: number;
+  };
+  netTotal: () => number;
+  rowMenu: (row: TransactionView) => { id: string; danger?: boolean; separatorBefore?: boolean }[];
+}
+
+function transaction(overrides: Partial<TransactionView>): TransactionView {
+  return {
+    id: 1,
+    from_user_id: null,
+    from_label: 'Guild Bank',
+    to_user_id: 7,
+    to_username: 'Gálvdon',
+    to_label: 'Gálvdon',
+    to_guild_bank: false,
+    amount: 100,
+    status: 'pending',
+    type: 'manual_adjustment',
+    split_id: null,
+    created_at: '2026-11-03T12:00:00Z',
+    requested_at: null,
+    withdrawn_at: null,
+    guild_tenant_id: null,
+    guild_name: null,
+    ...overrides,
+  };
+}
+
+async function createComponent(ledger: TransactionView[] = []): Promise<{
   fixture: ComponentFixture<AdminTransactions>;
   api: { get: ReturnType<typeof vi.fn> };
 }> {
   stubDialogApi();
   const api = {
-    get: vi.fn().mockReturnValue(of({ items: [], total_items: 0 })),
+    get: vi.fn().mockImplementation((path: string) =>
+      path === 'api/bank/transactions'
+        ? of({ items: ledger, total_items: ledger.length })
+        : of({ items: [], total_items: 0 }),
+    ),
     post: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
@@ -79,6 +125,63 @@ describe('AdminTransactions recipient search', () => {
     expect(cmp.rosterSearchOptions()).toEqual([{ id: '7', title: 'Gálvdon' }]);
     cmp.onRosterSelect(cmp.rosterSearchOptions()[0]);
     expect(cmp.newToUserId()).toBe(7);
+  });
+});
+
+describe('AdminTransactions ledger', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('reads the whole ledger once and filters, totals and orders it on the client', async () => {
+    const { fixture, api } = await createComponent([
+      transaction({ id: 1, to_username: 'Gálvdon', amount: 100, status: 'pending', created_at: '2026-11-03T12:00:00Z' }),
+      transaction({
+        id: 2,
+        to_username: 'Mira',
+        amount: 50,
+        status: 'withdrawn',
+        type: 'split_donation',
+        created_at: '2026-11-10T12:00:00Z',
+      }),
+      transaction({ id: 3, to_username: 'Mira', amount: -20, status: 'donated', created_at: '2026-11-10T12:00:00Z' }),
+    ]);
+    expect(api.get).toHaveBeenCalledWith('api/bank/transactions', { global: true, page: 1, limit: 1000 });
+
+    const cmp = fixture.componentInstance as unknown as LedgerView;
+    expect(cmp.filtered().map((row) => row.id)).toEqual([1, 2, 3]);
+    expect(cmp.summary()).toEqual({
+      outstanding: 100,
+      outstandingCount: 1,
+      paid: 50,
+      paidCount: 1,
+      donated: -20,
+      donatedCount: 1,
+    });
+    expect(cmp.netTotal()).toBe(130);
+
+    cmp.memberQuery.set('mira');
+    expect(cmp.filtered().map((row) => row.id)).toEqual([2, 3]);
+    expect(cmp.netTotal()).toBe(30);
+
+    cmp.memberQuery.set('');
+    cmp.typeFilter.set('split_donation');
+    expect(cmp.filtered().map((row) => row.id)).toEqual([2]);
+
+    cmp.typeFilter.set('');
+    cmp.dateFrom.set('2026-11-10');
+    cmp.dateTo.set('2026-11-10');
+    expect(cmp.filtered().map((row) => row.id)).toEqual([2, 3]);
+
+    cmp.statusFilter.set('donated');
+    expect(cmp.filtered().map((row) => row.id)).toEqual([3]);
+    expect(cmp.summary().donated).toBe(-20);
+  });
+
+  it('offers edit and delete as row actions, with delete last and marked as danger', async () => {
+    const { fixture } = await createComponent([transaction({ id: 9 })]);
+    const cmp = fixture.componentInstance as unknown as LedgerView;
+    const menu = cmp.rowMenu(transaction({ id: 9 }));
+    expect(menu.map((item) => item.id)).toEqual(['edit', 'delete']);
+    expect(menu[1]).toMatchObject({ danger: true, separatorBefore: true });
   });
 });
 

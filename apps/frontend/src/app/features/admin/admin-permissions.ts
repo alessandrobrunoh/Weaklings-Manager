@@ -16,30 +16,92 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
+import type { MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { groupPermissions, type PermissionGroup } from './permission-groups';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+import { groupPermissions, permissionParts, type PermissionGroup } from './permission-groups';
+
+/** Save feedback shown above the matrix. */
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+/** Verb words of the permission keys, translated for the row titles. */
+const VERB_KEYS: Readonly<Record<string, TranslationKey>> = {
+  view: 'admin.permissions.verb.view',
+  view_others: 'admin.permissions.verb.viewOthers',
+  create: 'admin.permissions.verb.create',
+  edit: 'admin.permissions.verb.edit',
+  delete: 'admin.permissions.verb.delete',
+  manage: 'admin.permissions.verb.manage',
+  use: 'admin.permissions.verb.use',
+  request: 'admin.permissions.verb.request',
+  adjudicate: 'admin.permissions.verb.adjudicate',
+  ingest: 'admin.permissions.verb.ingest',
+  issue: 'admin.permissions.verb.issue',
+  adjust: 'admin.permissions.verb.adjust',
+  submit: 'admin.permissions.verb.submit',
+  broadcast: 'admin.permissions.verb.broadcast',
+  share: 'admin.permissions.verb.share',
+  leave: 'admin.permissions.verb.leave',
+  accept: 'admin.permissions.verb.accept',
+  reload: 'admin.permissions.verb.reload',
+};
 
 /**
- * Role × permission matrix with search, module filtering, role visibility toggles,
- * and collapsible accordion groups.
+ * Role x permission matrix. Each box grants one permission to one role and
+ * saves on its own. Rows are grouped by area and say in words who holds them.
  */
 @Component({
   selector: 'app-admin-permissions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Icon, Loading, PageHeader, PageStack, TooltipDirective],
+  imports: [EmptyState, ErrorState, FilterBar, Icon, Loading, PageHeader, PageStack, SummaryBand],
   styles: [COMPACT_FEATURE_STYLES, `
     :host {
       display: block;
     }
 
-    .matrix-container {
+    .save-state {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 1.5rem;
+      font-size: var(--ui-text-sm);
+      color: var(--color-text-secondary);
+    }
+
+    .save-state--saved {
+      color: var(--color-success);
+    }
+
+    .save-state--error {
+      color: var(--color-error);
+    }
+
+    .save-state__spin {
+      animation: permissions-spin 900ms linear infinite;
+    }
+
+    @keyframes permissions-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .save-state__spin {
+        animation: none;
+      }
+    }
+
+    .matrix-scroll {
       position: relative;
-      max-height: calc(100vh - 16rem);
+      max-height: min(70vh, 40rem);
       overflow: auto;
+      overscroll-behavior: contain;
       border: 1px solid var(--color-border);
       border-radius: var(--radius-cards);
       background-color: var(--color-surface);
@@ -49,429 +111,331 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
       width: 100%;
       border-collapse: separate;
       border-spacing: 0;
+      font-size: var(--ui-text-sm);
+    }
+
+    .matrix-table th,
+    .matrix-table td {
+      text-align: center;
+      vertical-align: middle;
     }
 
     .matrix-table thead th {
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 2;
       background-color: var(--color-surface-2);
       border-bottom: 1px solid var(--color-border);
-      padding: 0.75rem 1rem;
+      padding: 0.625rem 0.75rem;
+      min-width: 7.5rem;
+      vertical-align: top;
+    }
+
+    .matrix-table .sticky-col {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      text-align: left;
+      min-width: 13rem;
+      max-width: 18rem;
+      background-color: var(--color-surface);
+      border-right: 1px solid var(--color-border);
+      border-bottom: 1px solid var(--color-border);
+      padding: 0.625rem 0.75rem;
+    }
+
+    .matrix-table thead th.sticky-col {
+      z-index: 3;
+      background-color: var(--color-surface-2);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .role-name {
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .role-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 0.25rem 0.375rem;
+      margin-top: 0.25rem;
+      font-size: var(--ui-text-xs);
+      font-weight: 400;
+      color: var(--color-text-secondary);
+    }
+
+    .role-discord {
+      margin-top: 0.25rem;
+      font-size: var(--ui-text-xs);
+      color: var(--color-text-disabled);
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
+      max-width: 9rem;
+      margin-inline: auto;
     }
 
-    .matrix-table thead th.sticky-corner {
-      position: sticky;
-      left: 0;
-      top: 0;
-      z-index: 30;
-      background-color: var(--color-surface-2);
-      border-right: 1px solid var(--color-border);
+    .perm-title {
+      font-weight: 600;
+      color: var(--color-text);
     }
 
-    .matrix-table tbody td.sticky-col {
-      position: sticky;
-      left: 0;
-      z-index: 10;
-      background-color: var(--color-surface);
-      border-right: 1px solid var(--color-border);
-      border-bottom: 1px solid var(--color-border);
+    .perm-key {
+      margin-top: 0.125rem;
+      font-size: var(--ui-text-xs);
+      color: var(--color-text-secondary);
+      overflow-wrap: anywhere;
     }
 
-    .matrix-table tbody tr.row--granted td.sticky-col {
-      background-color: var(--color-surface);
+    .grant-text {
+      margin-top: 0.25rem;
+      font-size: var(--ui-text-xs);
+      color: var(--color-text-secondary);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .matrix-table tbody td.matrix-cell {
       border-bottom: 1px solid var(--color-border);
       border-right: 1px solid var(--color-border);
       padding: 0;
-      transition: background-color 150ms ease;
     }
 
     .matrix-table tbody td.matrix-cell--granted {
       background-color: var(--color-surface-hover);
     }
 
-    .matrix-table tbody tr.group-row td {
-      position: sticky;
-      top: 4.25rem;
-      z-index: 15;
-      background-color: var(--color-surface-2);
-      border-bottom: 1px solid var(--color-border);
-      border-top: 1px solid var(--color-border);
+    .cell-hit {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 2.75rem;
+      cursor: pointer;
     }
 
+    .matrix-table tbody tr.group-row th {
+      position: static;
+      background-color: var(--color-surface-2);
+      border-top: 1px solid var(--color-border);
+      border-bottom: 1px solid var(--color-border);
+      padding: 0;
+      text-align: left;
+    }
+
+    .group-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      font-weight: 600;
+      color: var(--color-text);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .group-toggle:hover {
+      color: var(--color-primary);
+    }
+
+    .matrix-table tbody tr.group-footer-row th,
     .matrix-table tbody tr.group-footer-row td {
       background-color: var(--color-surface-1);
       border-bottom: 2px solid var(--color-border);
+      font-weight: 400;
     }
 
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
+    .group-footer-row td {
+      padding: 0.375rem;
     }
   `],
   template: `
     <app-page-header
       [title]="t('admin.permissions.title')"
       [subtitle]="t('admin.permissions.hint')"
+      [menuItems]="menuItems()"
+      [menuLabel]="t('ui.menu.moreActions')"
+      (menuSelect)="onMenu($event)"
     />
 
     @if (loading()) {
-      <app-loading />
+      <app-loading variant="table" />
     } @else if (matrix(); as data) {
       <app-page-stack>
-        <!-- KPI Cards -->
-        <section class="grid gap-4 sm:gap-5 sm:grid-cols-3" aria-label="Permissions summary">
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.permissions.permission') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ totalPermissionsCount() }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Available permission nodes
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                <app-icon name="shield" size="1.25rem" />
-              </div>
-            </div>
-          </article>
+        <app-summary-band [ariaLabel]="t('admin.permissions.title')" [items]="summaryItems()" />
 
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.permissions.roles') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
-                  {{ data.roles.length }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Active authorization roles
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                <app-icon name="users" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  Modules
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
-                  {{ allModules().length }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Feature resource groups
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                <app-icon name="list" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <!-- Filter & Search Toolbar -->
-        <section class="card p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <!-- Left filters -->
-          <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
-            <!-- Search input -->
-            <div class="relative flex-1 min-w-[180px] max-w-[280px] flex items-center">
-              <app-icon
-                name="search"
-                size="0.875rem"
-                class="absolute left-3 text-[var(--color-text-secondary)] pointer-events-none"
-              />
-              <input
-                type="search"
-                class="w-full pl-8.5 pr-7 py-1.5 text-xs bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-[var(--radius-inputs)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-text-secondary)] transition-colors"
-                [placeholder]="t('admin.permissions.searchPlaceholder')"
-                [value]="searchQuery()"
-                (input)="onSearchInput($event)"
-              />
-              @if (searchQuery().length > 0) {
-                <button
-                  type="button"
-                  class="absolute right-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] cursor-pointer"
-                  (click)="clearSearch()"
-                  aria-label="Clear search"
-                >
-                  <app-icon name="close" size="0.75rem" />
-                </button>
-              }
-            </div>
-
-            <!-- Module dropdown -->
-            <select
-              class="select select--sm text-xs min-w-[130px]"
-              [value]="selectedModule()"
-              (change)="onModuleChange($event)"
-            >
+        <app-filter-bar
+          [searchLabel]="t('admin.permissions.searchPlaceholder')"
+          [searchPlaceholder]="t('admin.permissions.searchPlaceholder')"
+          [query]="searchQuery()"
+          [activeCount]="activeFilterCount()"
+          (queryChange)="searchQuery.set($event)"
+          (clear)="clearFilters()"
+        >
+          <label filterPrimary class="filter-field">
+            <span class="filter-field__label">{{ t('admin.permissions.area') }}</span>
+            <select class="select select--sm" [value]="selectedModule()" (change)="onModuleChange($event)">
               <option value="all">{{ t('admin.permissions.allModules') }}</option>
               @for (mod of allModules(); track mod) {
                 <option [value]="mod">{{ mod }}</option>
               }
             </select>
+          </label>
 
-            <!-- Role visibility filter -->
-            <div class="relative">
-              <button
-                type="button"
-                class="btn btn--outline btn--sm text-xs flex items-center gap-1.5"
-                (click)="toggleRoleFilterOpen()"
-              >
-                <app-icon name="users" size="0.875rem" />
-                <span>{{ t('admin.permissions.roles') }} ({{ visibleRoles().length }}/{{ data.roles.length }})</span>
-                <app-icon [name]="roleFilterOpen() ? 'chevron-up' : 'chevron-down'" size="0.75rem" />
-              </button>
-
-              @if (roleFilterOpen()) {
-                <div
-                  class="absolute left-0 top-full mt-1.5 z-50 w-64 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-2xl"
-                >
-                  <div class="flex items-center justify-between pb-2 mb-2 border-b border-[var(--color-border)] px-1">
-                    <span class="text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                      {{ t('admin.permissions.roles') }}
-                    </span>
-                    <button
-                      type="button"
-                      class="text-xs text-[var(--color-primary)] hover:underline font-medium cursor-pointer"
-                      (click)="selectAllRoles()"
-                    >
-                      {{ t('admin.permissions.selectAllRoles') }}
-                    </button>
-                  </div>
-                  <div class="max-h-52 overflow-y-auto flex flex-col gap-1 scrollbar-thin">
-                    @for (role of data.roles; track role.role_id) {
-                      <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer text-xs">
-                        <input
-                          type="checkbox"
-                          class="checkbox"
-                          [checked]="isRoleVisible(role.role_id)"
-                          (change)="toggleRoleVisibility(role.role_id)"
-                        />
-                        <span class="truncate font-medium text-[var(--color-text)]">{{ role.role_name }}</span>
-                        <span class="ml-auto text-[10px] text-[var(--color-text-disabled)] font-mono">P{{ role.priority }}</span>
-                      </label>
-                    }
-                  </div>
-                </div>
+          <fieldset class="filter-field">
+            <legend class="filter-field__label">{{ t('admin.permissions.showRoles') }}</legend>
+            <div class="flex flex-wrap gap-x-4 gap-y-1">
+              @for (role of data.roles; track role.role_id) {
+                <label class="filter-check">
+                  <input
+                    type="checkbox"
+                    [checked]="isRoleVisible(role.role_id)"
+                    [disabled]="isOnlyVisibleRole(role.role_id)"
+                    (change)="toggleRoleVisibility(role.role_id)"
+                  />
+                  {{ role.role_name }}
+                </label>
               }
             </div>
-          </div>
+          </fieldset>
+        </app-filter-bar>
 
-          <!-- Right quick actions -->
-          <div class="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm text-xs flex items-center gap-1.5"
-              (click)="expandAll()"
-              [appTooltip]="t('admin.permissions.expandAll')"
-              tooltipPosition="top"
-            >
-              <app-icon name="chevron-down" size="0.875rem" />
-              <span class="hidden sm:inline">{{ t('admin.permissions.expandAll') }}</span>
-            </button>
-
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm text-xs flex items-center gap-1.5"
-              (click)="collapseAll()"
-              [appTooltip]="t('admin.permissions.collapseAll')"
-              tooltipPosition="top"
-            >
-              <app-icon name="chevron-right" size="0.875rem" />
-              <span class="hidden sm:inline">{{ t('admin.permissions.collapseAll') }}</span>
-            </button>
-
-            <button
-              type="button"
-              class="btn btn--outline btn--sm text-xs flex items-center gap-1.5"
-              [disabled]="reloading()"
-              (click)="reload()"
-            >
-              <app-icon name="refresh" size="0.875rem" [class.animate-spin]="reloading()" />
-              <span>{{ t('admin.permissions.reloadDefinitions') }}</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Matrix Table / Empty State -->
-      @if (filteredGroups().length === 0) {
-        <div class="card p-8 flex flex-col items-center justify-center">
-          <app-empty-state
-            [message]="t('admin.permissions.emptyMatch')"
-            icon="shield"
-          />
-          @if (searchQuery().length > 0 || selectedModule() !== 'all') {
-            <button
-              type="button"
-              class="btn btn--outline btn--sm mt-4"
-              (click)="clearFilters()"
-            >
-              {{ t('common.clearFilters') }}
-            </button>
+        <div class="save-state" role="status" aria-live="polite">
+          @switch (saveState()) {
+            @case ('saving') {
+              <app-icon name="refresh" size="0.875rem" class="save-state__spin" />
+              <span>{{ t('admin.permissions.saving') }}</span>
+            }
+            @case ('saved') {
+              <app-icon name="check" size="0.875rem" />
+              <span>{{ t('admin.permissions.saved') }}</span>
+            }
+            @case ('error') {
+              <app-icon name="alert" size="0.875rem" />
+              <span>{{ t('admin.permissions.saveError') }}</span>
+            }
+            @default {
+              <span>{{ t('admin.permissions.saveIdle') }}</span>
+            }
           }
+          <span class="sm:hidden">{{ t('admin.permissions.scrollHint') }}</span>
         </div>
-      } @else {
-        <div class="matrix-container scrollbar-thin">
-          <table class="matrix-table">
-            <thead>
-              <tr>
-                <th class="sticky-corner min-w-64 text-left">
-                  <span class="font-medium text-xs text-[var(--color-text)]">
-                    {{ t('admin.permissions.permission') }}
-                  </span>
-                  <span class="text-[11px] text-[var(--color-text-secondary)] font-normal block mt-0.5">
-                    {{ totalPermissionsCount() }} {{ t('admin.permissions.permission').toLowerCase() }}
-                  </span>
-                </th>
-                @for (role of visibleRoles(); track role.role_id) {
-                  <th class="text-center min-w-32">
-                    <div class="font-semibold text-xs text-[var(--color-text)]">
-                      {{ role.role_name }}
-                    </div>
-                    <div class="mono text-[10px] text-[var(--color-text-secondary)] mt-0.5 flex items-center justify-center gap-1">
-                      <span>{{ t('admin.permissions.priority') }} {{ role.priority }}</span>
-                      @if (role.is_default) {
-                        <span class="text-[var(--color-primary)] font-bold">· Default</span>
-                      }
-                      @if (role.is_staff) {
-                        <span class="text-[var(--color-primary)] font-bold">· Staff</span>
-                      }
-                      @if (role.grants_staff && !role.is_staff) {
-                        <span class="text-[var(--color-text-secondary)]">· staff</span>
-                      }
-                    </div>
-                    @if (role.discord_role_id) {
-                      <div class="mono text-[9px] text-[var(--color-text-disabled)] mt-0.5 truncate max-w-[120px] mx-auto">
-                        {{ role.discord_role_id }}
-                      </div>
-                    }
+
+        @if (filteredGroups().length === 0) {
+          <app-empty-state [message]="t('admin.permissions.emptyMatch')" icon="shield">
+            @if (activeFilterCount() > 0) {
+              <button type="button" class="btn btn--outline btn--sm" (click)="clearFilters()">
+                {{ t('common.clearFilters') }}
+              </button>
+            }
+          </app-empty-state>
+        } @else {
+          <div class="matrix-scroll" role="region" tabindex="0" [attr.aria-label]="t('admin.permissions.matrixLabel')">
+            <table class="matrix-table">
+              <caption class="sr-only">{{ t('admin.permissions.matrixLabel') }}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="sticky-col">
+                    <span class="font-semibold text-[var(--color-text)]">{{ t('admin.permissions.permission') }}</span>
                   </th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (group of filteredGroups(); track group.resource) {
-                <!-- Accordion Group Header -->
-                <tr class="group-row">
-                  <td [attr.colspan]="visibleRoles().length + 1" class="p-0">
-                    <div class="flex items-center justify-between px-4 py-2.5 bg-[var(--color-surface-2)]">
+                  @for (role of visibleRoles(); track role.role_id) {
+                    <th scope="col">
+                      <div class="role-name">{{ role.role_name }}</div>
+                      <div class="role-meta">
+                        <span>{{ t('admin.permissions.priority') }} {{ role.priority }}</span>
+                        @if (role.is_default) {
+                          <span class="chip chip--neutral">{{ t('admin.permissions.isDefault') }}</span>
+                        }
+                        @if (role.is_staff) {
+                          <span class="chip chip--neutral">{{ t('admin.permissions.isStaff') }}</span>
+                        }
+                        @if (role.grants_staff && !role.is_staff) {
+                          <span class="chip chip--neutral">{{ t('admin.permissions.grantsStaff') }}</span>
+                        }
+                      </div>
+                      <div class="role-meta">{{ t('admin.permissions.grantedCount', { count: role.permissions.length }) }}</div>
+                      @if (role.discord_role_id) {
+                        <div class="mono role-discord">{{ role.discord_role_id }}</div>
+                      }
+                    </th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (group of filteredGroups(); track group.resource) {
+                  <tr class="group-row">
+                    <th scope="colgroup" [attr.colspan]="visibleRoles().length + 1">
                       <button
                         type="button"
-                        class="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors cursor-pointer text-left"
+                        class="group-toggle"
+                        [attr.aria-expanded]="!isGroupCollapsed(group.resource)"
                         (click)="toggleGroupCollapse(group.resource)"
                       >
                         <app-icon
                           [name]="isGroupCollapsed(group.resource) ? 'chevron-right' : 'chevron-down'"
                           size="0.875rem"
-                          class="text-[var(--color-text-secondary)]"
                         />
-                        <span class="font-mono text-sm tracking-normal capitalize">{{ group.resource }}</span>
-                        <span class="inline-flex items-center px-2 py-0.2 rounded-full text-[10px] font-medium bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-secondary)]">
-                          {{ group.keys.length }}
-                        </span>
+                        <span class="mono">{{ group.resource }}</span>
+                        <span class="chip chip--neutral">{{ group.keys.length }}</span>
                       </button>
+                    </th>
+                  </tr>
 
-                      <button
-                        type="button"
-                        class="btn btn--ghost btn--sm text-[11px] py-0.5 px-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] cursor-pointer"
-                        (click)="toggleGroupCollapse(group.resource)"
-                      >
-                        {{ isGroupCollapsed(group.resource) ? t('admin.permissions.expand') : t('admin.permissions.collapse') }}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  @if (!isGroupCollapsed(group.resource)) {
+                    @for (permission of group.keys; track permission) {
+                      @let granters = grantedRoleNames(permission);
+                      <tr>
+                        <th scope="row" class="sticky-col">
+                          <div class="perm-title">{{ permissionTitle(permission, group.resource) }}</div>
+                          <div class="mono perm-key">{{ permission }}</div>
+                          <div class="grant-text">
+                            {{ granters.length > 0 ? t('admin.permissions.grantedTo', { roles: granters.join(', ') }) : t('admin.permissions.grantedToNone') }}
+                          </div>
+                        </th>
+                        @for (role of visibleRoles(); track role.role_id) {
+                          <td class="matrix-cell" [class.matrix-cell--granted]="hasPermission(role, permission)">
+                            <label class="cell-hit">
+                              <input
+                                class="checkbox"
+                                type="checkbox"
+                                [attr.aria-label]="t('admin.permissions.cellLabel', { permission: permission, role: role.role_name })"
+                                [checked]="hasPermission(role, permission)"
+                                (change)="toggle(role, permission, $event)"
+                              />
+                            </label>
+                          </td>
+                        }
+                      </tr>
+                    }
 
-                <!-- Group Permission Rows (when expanded) -->
-                @if (!isGroupCollapsed(group.resource)) {
-                  @for (permission of group.keys; track permission) {
-                    <tr>
-                      <td class="sticky-col mono text-xs font-medium px-4 py-2.5">
-                        {{ permission }}
-                      </td>
+                    <tr class="group-footer-row">
+                      <th scope="row" class="sticky-col">{{ t('admin.permissions.toggleGroup') }}</th>
                       @for (role of visibleRoles(); track role.role_id) {
-                        @let granted = hasPermission(role, permission);
-                        @let saving = isSaving(role, permission);
-                        <td
-                          class="matrix-cell text-center"
-                          [class.matrix-cell--granted]="granted"
-                        >
-                          <label
-                            class="flex items-center justify-center p-2.5 cursor-pointer w-full h-full"
-                            [attr.aria-label]="permission + ' for ' + role.role_name"
+                        @let allGranted = groupFullyGranted(role, group.keys);
+                        <td class="matrix-cell">
+                          <button
+                            type="button"
+                            class="btn btn--outline btn--sm w-full text-xs"
+                            [attr.aria-label]="t('admin.permissions.groupCellLabel', { action: allGranted ? t('admin.permissions.clearGroup') : t('admin.permissions.grantGroup'), area: group.resource, role: role.role_name })"
+                            (click)="toggleGroup(role, group.keys, !allGranted)"
                           >
-                            <input
-                              class="checkbox"
-                              type="checkbox"
-                              [checked]="granted"
-                              [disabled]="saving"
-                              (change)="toggle(role, permission, $event)"
-                            />
-                          </label>
+                            {{ allGranted ? t('admin.permissions.clearGroup') : t('admin.permissions.grantGroup') }}
+                          </button>
                         </td>
                       }
                     </tr>
                   }
-
-                  <!-- Group Action Footer Row -->
-                  <tr class="group-footer-row">
-                    <td class="sticky-col text-xs px-4 py-2 font-medium text-[var(--color-text-secondary)]">
-                      {{ t('admin.permissions.toggleGroup') }}
-                    </td>
-                    @for (role of visibleRoles(); track role.role_id) {
-                      @let allGranted = groupFullyGranted(role, group.keys);
-                      <td class="matrix-cell text-center px-2 py-1.5">
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm text-[10px] py-0.5 px-2 w-full"
-                          [class.btn--primary]="!allGranted"
-                          (click)="toggleGroup(role, group.keys, !allGranted)"
-                        >
-                          {{ allGranted ? t('admin.permissions.clearGroup') : t('admin.permissions.grantGroup') }}
-                        </button>
-                      </td>
-                    }
-                  </tr>
                 }
-              }
-            </tbody>
-          </table>
-        </div>
-      }
+              </tbody>
+            </table>
+          </div>
+        }
       </app-page-stack>
     } @else {
       <app-error-state
@@ -488,15 +452,23 @@ export class AdminPermissions {
   private readonly translate = inject(TranslateService);
 
   protected readonly loading = signal(true);
-  protected readonly reloading = signal(false);
-  private readonly savingKeys = signal<ReadonlySet<string>>(new Set());
   protected readonly matrix = signal<PermissionMatrix | null>(null);
+
+  /** Saves in flight; the matrix stays editable while they run. */
+  private readonly pendingSaves = signal(0);
+  /** Outcome of the most recent save, shown until the next one starts. */
+  private readonly saveOutcome = signal<'saved' | 'error' | null>(null);
+  /** Saves are queued per role so each one starts from the matrix the last one left. */
+  private readonly saveQueues = new Map<string, Promise<void>>();
 
   protected readonly searchQuery = signal('');
   protected readonly selectedModule = signal<string>('all');
   protected readonly selectedRoleIds = signal<ReadonlySet<string>>(new Set());
   protected readonly collapsedGroups = signal<ReadonlySet<string>>(new Set());
-  protected readonly roleFilterOpen = signal(false);
+
+  protected readonly saveState = computed<SaveState>(() =>
+    this.pendingSaves() > 0 ? 'saving' : (this.saveOutcome() ?? 'idle'),
+  );
 
   protected readonly permissionGroups = computed(() => {
     const matrix = this.matrix();
@@ -509,6 +481,19 @@ export class AdminPermissions {
   protected readonly allModules = computed<string[]>(() => {
     const groups = this.permissionGroups();
     return [...new Set(groups.map((g) => g.resource))].sort();
+  });
+
+  /** Role names per permission key, across all roles (not only the visible columns). */
+  private readonly grantedByKey = computed(() => {
+    const map = new Map<string, string[]>();
+    for (const role of this.matrix()?.roles ?? []) {
+      for (const permission of role.permissions) {
+        const names = map.get(permission) ?? [];
+        names.push(role.role_name);
+        map.set(permission, names);
+      }
+    }
+    return map;
   });
 
   protected readonly visibleRoles = computed<RolePermissionsView[]>(() => {
@@ -542,11 +527,50 @@ export class AdminPermissions {
       .filter((group) => group.keys.length > 0);
   });
 
-  protected readonly totalPermissionsCount = computed<number>(() => {
-    return this.filteredGroups().reduce((acc, group) => acc + group.keys.length, 0);
+  protected readonly activeFilterCount = computed<number>(() => {
+    const roles = this.matrix()?.roles.length ?? 0;
+    return (
+      (this.searchQuery().trim() ? 1 : 0) +
+      (this.selectedModule() !== 'all' ? 1 : 0) +
+      (this.visibleRoles().length < roles ? 1 : 0)
+    );
   });
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    const matrix = this.matrix();
+    if (!matrix) {
+      return [];
+    }
+    const keys = this.permissionGroups().flatMap((group) => group.keys);
+    const ungranted = keys.filter((key) => !this.grantedByKey().has(key)).length;
+    const areas = this.permissionGroups().length;
+    return [
+      {
+        label: this.t('admin.permissions.roles'),
+        value: matrix.roles.length,
+        hint: this.t('admin.permissions.summaryRolesHint'),
+      },
+      {
+        label: this.t('admin.permissions.summaryPermissions'),
+        value: keys.length,
+        hint: this.t('admin.permissions.summaryPermissionsHint', { areas }),
+      },
+      {
+        label: this.t('admin.permissions.summaryUngranted'),
+        value: ungranted,
+        hint: this.t('admin.permissions.summaryUngrantedHint'),
+      },
+    ];
+  });
+
+  protected readonly menuItems = computed<MenuItem[]>(() => [
+    { id: 'expand', label: this.t('admin.permissions.expandAll'), icon: 'chevron-down' },
+    { id: 'collapse', label: this.t('admin.permissions.collapseAll'), icon: 'chevron-right' },
+    { id: 'reload', label: this.t('admin.permissions.reloadDefinitions'), icon: 'refresh', separatorBefore: true },
+  ]);
+
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     effect(() => {
@@ -563,20 +587,35 @@ export class AdminPermissions {
     void this.load();
   }
 
-  protected onSearchInput(event: Event): void {
-    this.searchQuery.set((event.target as HTMLInputElement).value);
+  /** Row title in plain words: "Edit builds", "Manage applications". */
+  protected permissionTitle(permission: string, resource: string): string {
+    const { verb, object } = permissionParts(permission);
+    if (!verb) {
+      return permission;
+    }
+    const verbKey = VERB_KEYS[verb];
+    return this.t('admin.permissions.actionTitle', {
+      verb: verbKey ? this.t(verbKey) : verb,
+      object: object || resource,
+    });
   }
 
-  protected clearSearch(): void {
-    this.searchQuery.set('');
+  protected grantedRoleNames(permission: string): string[] {
+    return this.grantedByKey().get(permission) ?? [];
+  }
+
+  protected onMenu(id: string): void {
+    if (id === 'expand') {
+      this.expandAll();
+    } else if (id === 'collapse') {
+      this.collapseAll();
+    } else if (id === 'reload') {
+      void this.reload();
+    }
   }
 
   protected onModuleChange(event: Event): void {
     this.selectedModule.set((event.target as HTMLSelectElement).value);
-  }
-
-  protected toggleRoleFilterOpen(): void {
-    this.roleFilterOpen.update((open) => !open);
   }
 
   protected toggleRoleVisibility(roleId: string): void {
@@ -602,6 +641,11 @@ export class AdminPermissions {
 
   protected isRoleVisible(roleId: string): boolean {
     return this.selectedRoleIds().has(roleId);
+  }
+
+  /** The last visible role cannot be hidden, so its box is locked on. */
+  protected isOnlyVisibleRole(roleId: string): boolean {
+    return this.visibleRoles().length === 1 && this.isRoleVisible(roleId);
   }
 
   protected isGroupCollapsed(resource: string): boolean {
@@ -632,6 +676,7 @@ export class AdminPermissions {
   protected clearFilters(): void {
     this.searchQuery.set('');
     this.selectedModule.set('all');
+    this.selectAllRoles();
   }
 
   protected hasPermission(role: RolePermissionsView, permission: string): boolean {
@@ -642,88 +687,85 @@ export class AdminPermissions {
     return keys.every((key) => role.permissions.includes(key));
   }
 
-  private cellKey(role: RolePermissionsView, permission: string): string {
-    return `${role.role_id}:${permission}`;
-  }
-
-  protected isSaving(role: RolePermissionsView, permission: string): boolean {
-    return this.savingKeys().has(this.cellKey(role, permission));
-  }
-
-  protected async toggleGroup(
-    role: RolePermissionsView,
-    keys: readonly string[],
-    grant: boolean,
-  ): Promise<void> {
-    const next = grant
-      ? [...new Set([...role.permissions, ...keys])]
-      : role.permissions.filter((permission) => !keys.includes(permission));
-    try {
-      const updated = await firstValueFrom(
-        this.api.put<PermissionMatrix>(
-          `api/admin/roles/${encodeURIComponent(role.role_id)}/permissions`,
-          { permissions: next },
-        ),
-      );
-      this.matrix.set(updated);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-      await this.load();
-    }
-  }
-
-  protected async toggle(
-    role: RolePermissionsView,
-    permission: string,
-    event: Event,
-  ): Promise<void> {
+  protected toggle(role: RolePermissionsView, permission: string, event: Event): Promise<void> {
     const checked = (event.target as HTMLInputElement).checked;
-    const next = checked
-      ? [...role.permissions, permission]
-      : role.permissions.filter((p) => p !== permission);
+    return this.enqueueSave(role.role_id, (current) =>
+      checked
+        ? [...new Set([...current, permission])]
+        : current.filter((p) => p !== permission),
+    );
+  }
 
-    const key = this.cellKey(role, permission);
-    this.savingKeys.update((keys) => new Set(keys).add(key));
+  protected toggleGroup(role: RolePermissionsView, keys: readonly string[], grant: boolean): Promise<void> {
+    return this.enqueueSave(role.role_id, (current) =>
+      grant
+        ? [...new Set([...current, ...keys])]
+        : current.filter((permission) => !keys.includes(permission)),
+    );
+  }
+
+  /**
+   * Saves one role's permissions. The change is applied to the permissions
+   * the role holds when its turn in the queue comes, so two quick clicks on
+   * the same role cannot overwrite each other.
+   */
+  private enqueueSave(roleId: string, mutate: (current: readonly string[]) => string[]): Promise<void> {
+    this.pendingSaves.update((n) => n + 1);
+    this.saveOutcome.set(null);
+    const previous = this.saveQueues.get(roleId) ?? Promise.resolve();
+    const run = previous
+      .then(() => this.persist(roleId, mutate))
+      .finally(() => {
+        this.pendingSaves.update((n) => n - 1);
+        if (this.saveQueues.get(roleId) === run) {
+          this.saveQueues.delete(roleId);
+        }
+      });
+    this.saveQueues.set(roleId, run);
+    return run;
+  }
+
+  private async persist(roleId: string, mutate: (current: readonly string[]) => string[]): Promise<void> {
+    const role = this.matrix()?.roles.find((r) => r.role_id === roleId);
+    if (!role) {
+      return;
+    }
     try {
       const updated = await firstValueFrom(
         this.api.put<PermissionMatrix>(
-          `api/admin/roles/${encodeURIComponent(role.role_id)}/permissions`,
-          { permissions: next },
+          `api/admin/roles/${encodeURIComponent(roleId)}/permissions`,
+          { permissions: mutate(role.permissions) },
         ),
       );
       this.matrix.set(updated);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.saveOutcome.set('saved');
+    } catch {
+      this.saveOutcome.set('error');
+      this.toasts.error(this.t('admin.permissions.saveError'));
       await this.load();
-    } finally {
-      this.savingKeys.update((keys) => {
-        const nextKeys = new Set(keys);
-        nextKeys.delete(key);
-        return nextKeys;
-      });
     }
   }
 
   protected async reload(): Promise<void> {
-    this.reloading.set(true);
     try {
       await firstValueFrom(this.api.post<string>('api/admin/permissions/reload'));
       this.toasts.success(this.t('admin.reloaded'));
       await this.load();
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.reloading.set(false);
+    } catch {
+      this.toasts.error(this.t('common.error'));
     }
   }
 
+  /** The first load shows a skeleton; later reloads refresh the matrix in place. */
   protected async load(): Promise<void> {
-    this.loading.set(true);
+    if (!this.matrix()) {
+      this.loading.set(true);
+    }
     try {
       const matrix = await firstValueFrom(this.api.get<PermissionMatrix>('api/admin/permissions'));
       this.matrix.set(matrix);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('admin.loadError'));
     } finally {
       this.loading.set(false);
     }

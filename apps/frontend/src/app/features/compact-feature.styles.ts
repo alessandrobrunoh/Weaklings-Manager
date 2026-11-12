@@ -1,20 +1,14 @@
 /**
- * Local workbench treatment for the control-plane and entry-point features.
+ * Shared page treatment for feature pages.
  *
- * This intentionally lives with the feature pages rather than in the global
- * stylesheet: the member-facing areas are being migrated independently and
- * should not inherit control-plane density by accident.
+ * Despite the historical name, this is the standard page shell every feature
+ * page opts into: a block host that can shrink, one card style, hairline table
+ * rows and a phone-width card treatment. Type sizes, label style and table
+ * density come from the global stylesheet (`styles.css`) so there is exactly
+ * one definition of each; this file only adds the host-level geometry.
  */
 export const COMPACT_FEATURE_STYLES = `
   :host {
-    --radius-cards: 16px;
-    --radius-panels: 24px;
-    --radius-smallcards: 12px;
-    --radius-inputs: 8px;
-    --radius-buttons: 8px;
-    --radius-badges: 6px;
-    --card-padding: 0.875rem;
-    --page-gap: 0.875rem;
     display: block;
     min-width: 0;
   }
@@ -43,20 +37,8 @@ export const COMPACT_FEATURE_STYLES = `
     border-radius: var(--radius-buttons);
   }
 
-  :host :where(.label, legend) {
-    letter-spacing: 0.045em;
-    text-transform: uppercase;
-    font-size: 0.6875rem;
-  }
-
   :host :where(table) {
     border-collapse: collapse;
-  }
-
-  :host :where(th) {
-    font-size: 0.6875rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
   }
 
   :host :where(td, th) {

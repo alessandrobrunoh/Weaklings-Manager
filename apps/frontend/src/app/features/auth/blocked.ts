@@ -1,4 +1,4 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
+import { AUTH_LAYOUT_STYLES } from './auth-layout.styles';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
@@ -19,47 +19,43 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
 @Component({
   selector: 'app-blocked',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
+  styles: [AUTH_LAYOUT_STYLES],
   imports: [Icon, WeaklingsLogo],
   template: `
-    <div class="auth-shell">
-      <section class="auth-card" aria-labelledby="blocked-title">
-        <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo [compact]="true" />
-          <span
-            class="mt-5 inline-flex h-12 w-12 items-center justify-center rounded-full"
-            style="background: var(--color-error-container); color: var(--color-error)"
-          >
-            <app-icon name="user-x" size="1.5rem" />
-          </span>
-          <h1 id="blocked-title" class="auth-card__title mt-4">{{ t('blocked.title') }}</h1>
-          <p class="auth-card__subtitle">{{ t('blocked.body') }}</p>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-            {{ t('blocked.help') }}
-          </p>
-        </div>
+    <div class="auth-page">
+      <main class="auth-main">
+        <section class="auth-card" aria-labelledby="blocked-title">
+          <header class="auth-head">
+            <app-weaklings-logo [compact]="true" />
+            <p class="auth-brand">{{ t('app.title') }}</p>
+            <span class="auth-badge mt-2" aria-hidden="true">
+              <app-icon name="user-x" size="1.5rem" />
+            </span>
+            <h1 id="blocked-title" class="auth-title">{{ t('blocked.title') }}</h1>
+            <p class="auth-hint">{{ t('blocked.body') }}</p>
+            <p class="auth-hint">{{ t('blocked.help') }}</p>
+          </header>
 
-        @if (stillBlocked()) {
-          <p class="mb-3 text-center text-sm" style="color: var(--color-error)" role="status">
-            {{ t('blocked.stillBlocked') }}
-          </p>
-        }
-        @if (logoutError()) {
-          <p class="mb-3 text-center text-sm" style="color: var(--color-error)" role="alert">
-            {{ logoutError() }}
-          </p>
-        }
+          @if (stillBlocked()) {
+            <p class="auth-alert auth-alert--neutral mb-4 text-center" role="status">
+              {{ t('blocked.stillBlocked') }}
+            </p>
+          }
+          @if (logoutError()) {
+            <p class="auth-alert mb-4 text-center" role="alert">{{ logoutError() }}</p>
+          }
 
-        <div class="flex flex-col gap-2">
-          <button type="button" class="btn btn--tonal w-full" [disabled]="checking()" (click)="check()">
-            <app-icon name="refresh" size="1rem" />
-            {{ t('blocked.check') }}
-          </button>
-          <button type="button" class="btn btn--ghost w-full" (click)="logout()">
-            {{ t('blocked.logout') }}
-          </button>
-        </div>
-      </section>
+          <div class="auth-stack">
+            <button type="button" class="btn btn--primary w-full" [disabled]="checking()" (click)="check()">
+              <app-icon name="refresh" size="1rem" />
+              {{ t('blocked.check') }}
+            </button>
+            <button type="button" class="btn btn--ghost w-full" (click)="logout()">
+              {{ t('blocked.logout') }}
+            </button>
+          </div>
+        </section>
+      </main>
     </div>
   `,
 })

@@ -1,4 +1,4 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
+import { AUTH_LAYOUT_STYLES } from './auth-layout.styles';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -26,13 +26,13 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
 @Component({
   selector: 'app-login',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [COMPACT_FEATURE_STYLES],
+  styles: [AUTH_LAYOUT_STYLES],
   imports: [Icon, Select, TooltipDirective, WeaklingsLogo],
   template: `
-    <div class="auth-shell">
-      <div class="absolute top-4 right-4 flex items-center gap-2">
+    <div class="auth-page">
+      <div class="auth-bar">
         <app-select
-          class="w-auto text-xs"
+          class="w-auto"
           [value]="translate.language()"
           [options]="languageOptions()"
           [ariaLabel]="t('language.label')"
@@ -52,36 +52,35 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
         </button>
       </div>
 
-      <section class="auth-card" aria-labelledby="login-title">
-        <div class="mb-7 flex flex-col items-center text-center">
-          <app-weaklings-logo [compact]="true" />
-          <h1 id="login-title" class="auth-card__title mt-5">{{ t('app.title') }}</h1>
-          <p class="auth-card__subtitle">{{ t('auth.login_subtitle') }}</p>
-        </div>
+      <main class="auth-main">
+        <section class="auth-card" aria-labelledby="login-title">
+          <header class="auth-head">
+            <app-weaklings-logo [compact]="true" />
+            <p class="auth-brand">{{ t('app.title') }}</p>
+            <h1 id="login-title" class="auth-title">{{ t('auth.login_title') }}</h1>
+            <p class="auth-hint">{{ t('auth.login_subtitle') }}</p>
+          </header>
 
-        @if (noTenant()) {
-          <p class="mb-4 text-center text-sm text-[var(--color-error)]" role="alert">
-            {{ t('auth.no_tenant') }}
-          </p>
-        }
-        @if (sessionUnreachable()) {
-          <p class="mb-4 text-center text-sm text-[var(--color-error)]" role="alert">
-            {{ t('auth.session_unreachable') }}
-          </p>
-          <button type="button" class="btn btn--ghost mb-4 w-full" (click)="retrySession()">
-            {{ t('common.retry') }}
-          </button>
-        }
+          <div class="auth-stack">
+            @if (noTenant()) {
+              <p class="auth-alert" role="alert">{{ t('auth.no_tenant') }}</p>
+            }
+            @if (sessionUnreachable()) {
+              <div class="auth-stack">
+                <p class="auth-alert" role="alert">{{ t('auth.session_unreachable') }}</p>
+                <button type="button" class="btn btn--outline w-full" (click)="retrySession()">
+                  {{ t('common.retry') }}
+                </button>
+              </div>
+            }
 
-        <button type="button" class="btn btn--primary w-full" (click)="login()">
-          <app-icon name="discord" />
-          {{ t('auth.login_discord') }}
-        </button>
-
-        <p class="mt-6 text-center text-xs text-[var(--color-text-tertiary)]">
-          {{ t('app.tagline') }}
-        </p>
-      </section>
+            <button type="button" class="btn btn--primary w-full" (click)="login()">
+              <app-icon name="discord" />
+              {{ t('auth.login_discord') }}
+            </button>
+          </div>
+        </section>
+      </main>
     </div>
   `,
 })

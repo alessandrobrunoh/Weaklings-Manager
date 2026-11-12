@@ -18,7 +18,7 @@ import { TooltipDirective } from '../../../shared/directives/tooltip.directive';
   template: `
     @if (guild(); as g) {
       <span
-        class="event-guild-badge chip chip--tonal text-[9px] font-bold px-1.5 py-0.2 truncate max-w-[6rem]"
+        class="event-guild-badge chip chip--tonal text-xs font-bold px-1.5 py-0.2 truncate max-w-[6rem]"
         [appTooltip]="t('events.detail.participant_guild', { name: g.name })"
         tooltipPosition="top"
       >

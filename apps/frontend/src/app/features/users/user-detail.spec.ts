@@ -146,6 +146,14 @@ describe('UserDetail', () => {
   });
 
   it("loads another member's weapons from /users/:id, not /me", async () => {
+    // Weapons is its own tab; the roster only mounts once that tab is open.
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const weaponsTab = [...(fixture.nativeElement as HTMLElement).querySelectorAll('[role="tab"]')].find(
+      (tab) => tab.textContent?.includes('Weapons'),
+    ) as HTMLButtonElement | undefined;
+    expect(weaponsTab).toBeDefined();
+    weaponsTab?.click();
     for (let attempt = 0; attempt < 20; attempt += 1) {
       fixture.detectChanges();
       await fixture.whenStable();
@@ -198,13 +206,12 @@ describe('UserDetail', () => {
     });
     const cmp = fixture.componentInstance as unknown as {
       openLinkDialog: () => Promise<void>;
-      onRosterSearchInput: (event: Event) => void;
+      onRosterSearch: (text: string) => void;
       filteredRoster: () => { id: string; name: string }[];
       confirmLink: (player: { id: string; name: string }) => Promise<void>;
     };
     await cmp.openLinkDialog();
-    const input = { target: { value: 'galv' } } as unknown as Event;
-    cmp.onRosterSearchInput(input);
+    cmp.onRosterSearch('galv');
     // Roster hit shows immediately, diacritic-insensitively.
     expect(cmp.filteredRoster().map((p) => p.id)).toEqual(['g1']);
     await new Promise((resolve) => setTimeout(resolve, 320));
@@ -232,11 +239,11 @@ describe('UserDetail', () => {
     });
     const cmp = fixture.componentInstance as unknown as {
       openLinkDialog: () => Promise<void>;
-      onRosterSearchInput: (event: Event) => void;
+      onRosterSearch: (text: string) => void;
       filteredRoster: () => { id: string }[];
     };
     await cmp.openLinkDialog();
-    cmp.onRosterSearchInput({ target: { value: 'kay' } } as unknown as Event);
+    cmp.onRosterSearch('kay');
     await new Promise((resolve) => setTimeout(resolve, 320));
     expect(cmp.filteredRoster().map((p) => p.id)).toEqual(['g1']);
   });
@@ -262,9 +269,39 @@ describe('UserDetail', () => {
     const element = fixture.nativeElement as HTMLElement;
     expect(element.textContent).toContain('Blocked');
     expect(element.textContent).toContain('spam');
-    const unblock = [...element.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('Unblock'),
-    );
-    expect(unblock).toBeDefined();
+    // Unblock lives in the overflow menu, not as a second header button.
+    const menu = fixture.componentInstance as unknown as {
+      menuItems: () => { id: string; danger?: boolean }[];
+      onMenu: (id: string) => void;
+      blockMode: () => string | null;
+    };
+    expect(menu.menuItems().map((item) => item.id)).toContain('unblock');
+    expect(menu.menuItems().some((item) => item.id === 'block')).toBe(false);
+    menu.onMenu('unblock');
+    expect(menu.blockMode()).toBe('unblock');
+  });
+
+  it('blocks from the menu as a danger action and spells out the lost web and bot access', async () => {
+    const cmp = fixture.componentInstance as unknown as {
+      member: { set: (m: unknown) => void };
+      menuItems: () => { id: string; danger?: boolean; separatorBefore?: boolean }[];
+      onMenu: (id: string) => void;
+    };
+    cmp.member.set({ id: 42, username: 'Officer', email: null, role: 'Member', blocked: false });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const block = cmp.menuItems().find((item) => item.id === 'block');
+    expect(block?.danger).toBe(true);
+    expect(block?.separatorBefore).toBe(true);
+
+    cmp.onMenu('block');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Web app: they cannot log in or open any page.');
+    expect(text).toContain('Bot: bot commands and features stop working for them.');
   });
 });

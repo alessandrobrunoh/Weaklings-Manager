@@ -1,6 +1,6 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -150,7 +150,7 @@ describe('AdminDiscord', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Member');
     expect(text).toContain('#events');
-    expect(text).toContain('admin.allianceRole.title');
+    expect(text).toContain('admin.allianceRole.role');
     expect(text).toContain('admin.allianceRole.hintGuild');
     expect(text).not.toContain('admin.discord.applicationPanelChannel');
     expect(text).not.toContain('admin.discord.applicationsOpen');
@@ -180,5 +180,47 @@ describe('AdminDiscord', () => {
       discord_auto_role_id: 'role-member',
     });
     expect(toasts.success).toHaveBeenCalledWith('admin.discord.saved');
+  });
+
+  it('shows the bot as connected when the catalog loads', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('admin.discord.sectionConnection');
+    expect(text).toContain('admin.discord.connected');
+    expect(text).not.toContain('admin.discord.notConnected');
+  });
+
+  it('shows a retry status and keeps the form when the Discord catalog cannot load', async () => {
+    const defaultGet = api.get.getMockImplementation() as (path: string) => unknown;
+    api.get.mockImplementation((path: string) =>
+      path.startsWith('api/admin/discord/') || path === 'api/admin/autorole/roles'
+        ? throwError(() => new Error('offline'))
+        : defaultGet(path),
+    );
+    fixture.destroy();
+    fixture = TestBed.createComponent(AdminDiscord);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('admin.discord.notConnected');
+    expect(text).toContain('admin.discord.connectionFailed');
+    expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
+    expect(toasts.error).not.toHaveBeenCalled();
+  });
+
+  it('hides the form instead of saving blank defaults when settings fail to load', async () => {
+    const defaultGet = api.get.getMockImplementation() as (path: string) => unknown;
+    api.get.mockImplementation((path: string) =>
+      path === 'api/admin/settings' ? throwError(() => new Error('boom')) : defaultGet(path),
+    );
+    fixture.destroy();
+    fixture = TestBed.createComponent(AdminDiscord);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('admin.discord.loadFailed');
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(api.put).not.toHaveBeenCalled();
   });
 });

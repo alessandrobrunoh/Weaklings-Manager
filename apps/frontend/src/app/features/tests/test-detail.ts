@@ -45,18 +45,22 @@ import { AlbionCatalogService } from '../../shared/services/albion-catalog.servi
 import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import {
+  EntityHeader,
+  type EntityMenuItem,
+} from '../../shared/components/entity-header/entity-header';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   SearchDialog,
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { Stat, SummaryBand } from '../../shared/components/summary-band/summary-band';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { hpOverTimeSeries } from './hp-timeline';
 import { CastTable } from './timeline/cast-table';
 import {
@@ -77,9 +81,12 @@ type EditorTab = 'setup' | 'timeline' | 'results';
 /** Which face of the Timeline tab is showing: the visual editor, or the same casts as a table. */
 type TimelineView = 'timeline' | 'table';
 
-/** Line colours shared with the Units table's ally/enemy chips (`chip--info` / `chip--error`). */
+/**
+ * Ally and enemy HP lines. Side is identity, not state, so neither is a status colour: the enemy
+ * line is neutral and dashed, which keeps the two apart without relying on hue alone.
+ */
 const ALLY_LINE_COLOR = '#38bdf8';
-const ENEMY_LINE_COLOR = '#f87171';
+const ENEMY_LINE_COLOR = '#94a3b8';
 
 let groupSeq = 0;
 
@@ -125,12 +132,14 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
     ErrorState,
     Icon,
     Loading,
-    PageHeader,
+    EntityHeader,
     PageStack,
     SearchDialog,
-    StatCard,
+    Stat,
+    StatusChip,
+    SummaryBand,
     VersionSwitcher,
-    ViewToggle,
+    Tabs,
     CastTable,
     TimelineEditor,
     TimelineInspector,
@@ -146,69 +155,73 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
         (retry)="load(testId())"
       />
     } @else if (scenario(); as current) {
-      <app-page-header
+      <a class="btn btn--ghost btn--sm -ml-2 mb-2" routerLink="/tests">← {{ t('tests.title') }}</a>
+      <app-entity-header
         [title]="current.name"
-        [subtitle]="t('tests.groupsCount', { count: draft().groups.length }) + ' · ' + t('tests.castsCount', { count: draft().casts.length })"
-        [badge]="current.archived_at ? t('tests.archived') : undefined"
+        [menuItems]="menuItems()"
+        [menuLabel]="t('entityHeader.moreActions')"
+        (menuSelect)="onMenu($event)"
       >
-        <div pageActions class="flex flex-wrap items-center gap-2">
-          <a class="btn btn--ghost" routerLink="/tests">← {{ t('tests.title') }}</a>
-          <app-version-switcher
-            [versions]="current.versions"
-            [currentId]="current.id"
-            [canManage]="canManage()"
-            [busy]="saving() || creatingVersion()"
-            [label]="t('tests.version')"
-            [createLabel]="t('tests.newVersion')"
-            (select)="openVersion($event)"
-            (create)="createVersion()"
-          />
-          @if (canManage()) {
-            <button type="button" class="btn btn--outline btn--sm" (click)="openRename()">
-              {{ t('tests.rename') }}
-            </button>
-            <button type="button" class="btn btn--outline btn--sm" (click)="toggleArchive()">
-              {{ current.archived_at ? t('tests.unarchive') : t('tests.archive') }}
-            </button>
-            @if (dirty()) {
-              <button
-                type="button"
-                class="btn btn--primary btn--sm"
-                [disabled]="saving()"
-                (click)="saveDefinition()"
-              >
-                {{ t('tests.saveChanges') }}
-              </button>
-            }
+        @if (current.archived_at) {
+          <span entityBadges class="chip chip--neutral">{{ t('tests.archived') }}</span>
+        }
+
+        <div entityMeta class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          @if (current.versions.length > 1) {
+            <app-version-switcher
+              [versions]="current.versions"
+              [currentId]="current.id"
+              [canManage]="canManage()"
+              [busy]="saving() || creatingVersion()"
+              [label]="t('tests.version')"
+              [createLabel]="t('tests.newVersion')"
+              [compact]="true"
+              (select)="openVersion($event)"
+              (create)="createVersion()"
+            />
+          } @else {
+            <span class="mono">v{{ current.version }}</span>
           }
-          <button
-            type="button"
-            class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
-            [disabled]="running()"
-            (click)="runNow()"
-          >
-            <app-icon name="activity" size="0.875rem" />
-            {{ running() ? t('tests.running') : t('tests.run') }}
-          </button>
+          <span>{{ t('tests.groupsCount', { count: draft().groups.length }) }}</span>
+          <span>{{ t('tests.castsCount', { count: draft().casts.length }) }}</span>
         </div>
-        <app-view-toggle
-          pageTabs
+
+        <button
+          entityPrimary
+          type="button"
+          class="btn btn--primary inline-flex items-center gap-1.5"
+          [disabled]="running()"
+          (click)="runNow()"
+        >
+          <app-icon name="activity" size="0.875rem" />
+          {{ running() ? t('tests.running') : t('tests.run') }}
+        </button>
+      </app-entity-header>
+
+      <app-page-stack>
+        <app-tabs
+          [ariaLabel]="t('tests.title')"
           [options]="tabOptions()"
           [active]="activeTab()"
           (activeChange)="switchTab($event)"
         />
-      </app-page-header>
 
-      <app-page-stack>
         @if (dirty()) {
-          <div class="chip chip--warning text-xs w-fit">{{ t('tests.unsavedChanges') }}</div>
+          <div class="card flex flex-wrap items-center justify-between gap-2 p-3">
+            <app-status-chip value="unsaved" toneOverride="warning" [label]="t('tests.unsavedChanges')" />
+            @if (canManage()) {
+              <button type="button" class="btn btn--outline btn--sm" [disabled]="saving()" (click)="saveDefinition()">
+                {{ t('tests.saveChanges') }}
+              </button>
+            }
+          </div>
         }
 
         @switch (activeTab()) {
           @case ('setup') {
-            <section class="card p-5">
-              <div class="flex items-center justify-between mb-4">
-                <h2 class="text-base font-bold text-[var(--color-text)]">{{ t('tests.groups') }}</h2>
+            <section class="card p-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h2 class="section-title">{{ t('tests.groups') }}</h2>
                 @if (canManage()) {
                   <div class="flex items-center gap-2">
                     <button type="button" class="btn btn--outline btn--sm" (click)="openBuildImport()">
@@ -282,6 +295,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                             <input
                               class="input input--sm font-mono"
                               type="text"
+                              [attr.aria-label]="t('tests.groupId')"
                               [value]="group.id"
                               [disabled]="!canManage()"
                               (change)="onGroupIdChange(i, $event)"
@@ -290,6 +304,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                           <td>
                             <select
                               class="select select--sm"
+                              [attr.aria-label]="t('tests.side')"
                               [value]="group.side"
                               [disabled]="!canManage()"
                               (change)="onGroupSideChange(i, $event)"
@@ -302,6 +317,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                             <input
                               class="input input--sm"
                               type="text"
+                              [attr.aria-label]="t('tests.label')"
                               [value]="group.label"
                               [disabled]="!canManage()"
                               (change)="onGroupLabelChange(i, $event)"
@@ -312,6 +328,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                               class="input input--sm text-right"
                               type="number"
                               min="1"
+                              [attr.aria-label]="t('tests.count')"
                               [value]="group.count ?? 1"
                               [disabled]="!canManage()"
                               (change)="onGroupCountChange(i, $event)"
@@ -322,6 +339,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                               class="input input--sm text-right"
                               type="number"
                               min="0"
+                              [attr.aria-label]="t('tests.hitPoints')"
                               [value]="group.hit_points ?? 1200"
                               [disabled]="!canManage()"
                               (change)="onGroupHitPointsChange(i, $event)"
@@ -332,6 +350,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                               <button
                                 type="button"
                                 class="btn btn--ghost btn--sm"
+                                [attr.aria-label]="t('common.delete')"
                                 (click)="removeGroup(i)"
                               >
                                 <app-icon name="close" size="0.75rem" />
@@ -348,11 +367,13 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
           }
 
           @case ('timeline') {
-            <section class="card p-5">
-              <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-                <h2 class="text-base font-bold text-[var(--color-text)]">{{ t('tests.casts') }}</h2>
+            <section class="card p-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h2 class="section-title">{{ t('tests.casts') }}</h2>
                 <div class="flex flex-wrap items-center gap-2">
-                  <app-view-toggle
+                  <app-tabs
+                    variant="segmented"
+                    [ariaLabel]="t('tests.timeline')"
                     [options]="timelineViewOptions()"
                     [active]="timelineView()"
                     (activeChange)="switchTimelineView($event)"
@@ -441,61 +462,42 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
           }
 
           @case ('results') {
-            @if (!latestRun()) {
-              <app-empty-state [message]="t('tests.noRunsYet')" icon="activity" />
-            } @else {
-              <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <app-stat-card
+            @if (latestRun(); as run) {
+              <app-summary-band [ariaLabel]="t('tests.resultsSummary')">
+                <app-stat
                   [label]="t('tests.deaths')"
-                  [value]="latestRun()!.result.deaths"
-                  icon="alert"
-                  tone="danger"
+                  [value]="run.result.deaths"
+                  [hint]="t('tests.deathsHint')"
+                  [tone]="run.result.deaths > 0 ? 'danger' : 'default'"
                 />
-                <app-stat-card
-                  [label]="t('tests.totalDamage')"
-                  [value]="formatAmount(latestRun()!.result.total_damage_dealt)"
-                  icon="swords"
-                  tone="warning"
-                />
-                <app-stat-card
-                  [label]="t('tests.totalHealing')"
-                  [value]="formatAmount(latestRun()!.result.total_healing_done)"
-                  icon="sparkles"
-                  tone="success"
-                />
-                <app-stat-card
+                <app-stat [label]="t('tests.totalDamage')" [value]="formatAmount(run.result.total_damage_dealt)" />
+                <app-stat [label]="t('tests.totalHealing')" [value]="formatAmount(run.result.total_healing_done)" />
+                <app-stat
                   [label]="t('tests.avgTimeToKill')"
-                  [value]="latestRun()!.result.average_time_to_kill !== null ? formatSeconds(latestRun()!.result.average_time_to_kill!) : '—'"
-                  icon="activity"
-                  tone="primary"
+                  [value]="run.result.average_time_to_kill !== null ? formatSeconds(run.result.average_time_to_kill!) : '—'"
                 />
-                <app-stat-card
-                  [label]="t('tests.overkillRatio')"
-                  [value]="formatPercent(latestRun()!.result.overkill_ratio)"
-                  icon="chart"
-                  tone="neutral"
-                />
-              </div>
+                <app-stat [label]="t('tests.overkillRatio')" [value]="formatPercent(run.result.overkill_ratio)" />
+              </app-summary-band>
 
-              @if (latestRun()!.result.unknown_spells.length > 0 || latestRun()!.result.casts_with_no_targets.length > 0) {
-                <section class="card p-4 border border-[var(--color-warning)] bg-[var(--color-warning-container)]">
-                  @if (latestRun()!.result.unknown_spells.length > 0) {
+              @if (run.result.unknown_spells.length > 0 || run.result.casts_with_no_targets.length > 0) {
+                <div class="card flex flex-col gap-1 p-3" role="status">
+                  @if (run.result.unknown_spells.length > 0) {
                     <p class="text-xs text-[var(--color-warning)]">
                       <strong>{{ t('tests.unknownSpells') }}:</strong>
-                      {{ latestRun()!.result.unknown_spells.join(', ') }}
+                      {{ run.result.unknown_spells.join(', ') }}
                     </p>
                   }
-                  @if (latestRun()!.result.casts_with_no_targets.length > 0) {
-                    <p class="text-xs text-[var(--color-warning)] mt-1">
+                  @if (run.result.casts_with_no_targets.length > 0) {
+                    <p class="text-xs text-[var(--color-warning)]">
                       <strong>{{ t('tests.castsWithNoTargets') }}:</strong>
-                      {{ latestRun()!.result.casts_with_no_targets.join(', ') }}
+                      {{ run.result.casts_with_no_targets.join(', ') }}
                     </p>
                   }
-                </section>
+                </div>
               }
 
-              <section class="card p-5">
-                <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.hpOverTime') }}</h2>
+              <section class="card p-4">
+                <h2 class="section-title mb-3">{{ t('tests.hpOverTime') }}</h2>
                 <app-chart
                   [option]="hpOverTimeOption()"
                   height="16rem"
@@ -505,8 +507,8 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                 />
               </section>
 
-              <section class="card p-5">
-                <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.unitOutcomes') }}</h2>
+              <section class="card p-4">
+                <h2 class="section-title mb-3">{{ t('tests.unitOutcomes') }}</h2>
                 <div class="overflow-x-auto">
                   <table class="table">
                     <thead>
@@ -517,27 +519,31 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                         <th class="text-right">{{ t('tests.damageTaken') }}</th>
                         <th class="text-right">{{ t('tests.healingReceived') }}</th>
                         <th class="text-right">{{ t('tests.remainingHp') }}</th>
-                        <th class="text-center">{{ t('common.status') }}</th>
+                        <th class="text-center">{{ common('common.status') }}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      @for (unit of latestRun()!.result.units; track unit.id) {
+                      @for (unit of run.result.units; track unit.id) {
                         <tr>
                           <td class="font-mono text-xs">{{ unit.id }}</td>
                           <td>
-                            <span class="chip text-[10px]" [class.chip--info]="unit.side === 'ally'" [class.chip--error]="unit.side === 'enemy'">
+                            <span class="chip chip--neutral text-xs">
                               {{ unit.side === 'ally' ? t('tests.ally') : t('tests.enemy') }}
                             </span>
                           </td>
-                          <td class="text-right font-mono text-xs">{{ formatAmount(unit.starting_hp) }}</td>
-                          <td class="text-right font-mono text-xs text-[var(--color-error)]">{{ formatAmount(unit.damage_taken) }}</td>
-                          <td class="text-right font-mono text-xs text-[var(--color-success)]">{{ formatAmount(unit.healing_received) }}</td>
-                          <td class="text-right font-mono text-xs">{{ formatAmount(unit.remaining_hp) }}</td>
+                          <td class="num text-right text-xs">{{ formatAmount(unit.starting_hp) }}</td>
+                          <td class="num text-right text-xs">{{ formatAmount(unit.damage_taken) }}</td>
+                          <td class="num text-right text-xs">{{ formatAmount(unit.healing_received) }}</td>
+                          <td class="num text-right text-xs">{{ formatAmount(unit.remaining_hp) }}</td>
                           <td class="text-center">
                             @if (unit.died_at !== null) {
-                              <span class="chip chip--error text-[10px]">{{ t('tests.died') }} · {{ formatSeconds(unit.died_at) }}</span>
+                              <app-status-chip
+                                value="died"
+                                toneOverride="error"
+                                [label]="t('tests.died') + ' · ' + formatSeconds(unit.died_at!)"
+                              />
                             } @else {
-                              <span class="chip chip--success text-[10px]">{{ t('tests.alive') }}</span>
+                              <app-status-chip value="alive" toneOverride="neutral" [label]="t('tests.alive')" />
                             }
                           </td>
                         </tr>
@@ -547,8 +553,8 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                 </div>
               </section>
 
-              <section class="card p-5">
-                <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.castLog') }}</h2>
+              <section class="card p-4">
+                <h2 class="section-title mb-3">{{ t('tests.castLog') }}</h2>
                 <div class="overflow-x-auto">
                   <table class="table">
                     <thead>
@@ -564,18 +570,16 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                       </tr>
                     </thead>
                     <tbody>
-                      @for (log of latestRun()!.result.casts; track $index) {
+                      @for (log of run.result.casts; track $index) {
                         <tr>
-                          <td class="text-right font-mono text-xs">{{ formatSeconds(log.land_at) }}</td>
+                          <td class="num text-right text-xs">{{ formatSeconds(log.land_at) }}</td>
                           <td class="font-mono text-xs">{{ log.caster_group_id }}</td>
                           <td class="font-mono text-xs">{{ log.spell_id }}</td>
                           <td class="font-mono text-xs">{{ log.target_ids.join(', ') }}</td>
-                          <td class="text-right font-mono text-xs">{{ log.concurrent_attackers }}</td>
-                          <td class="text-right font-mono text-xs">{{ formatMultiplier(log.escalation_multiplier) }}</td>
-                          <td class="text-right font-mono text-xs">{{ formatPercent(log.focus_fire_reduction) }}</td>
-                          <td class="text-right font-mono text-xs" [class.text-[var(--color-error)]]="log.per_target_health_change < 0" [class.text-[var(--color-success)]]="log.per_target_health_change > 0">
-                            {{ formatAmount(log.per_target_health_change) }}
-                          </td>
+                          <td class="num text-right text-xs">{{ log.concurrent_attackers }}</td>
+                          <td class="num text-right text-xs">{{ formatMultiplier(log.escalation_multiplier) }}</td>
+                          <td class="num text-right text-xs">{{ formatPercent(log.focus_fire_reduction) }}</td>
+                          <td class="num text-right text-xs">{{ formatAmount(log.per_target_health_change) }}</td>
                         </tr>
                       }
                     </tbody>
@@ -583,8 +587,8 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                 </div>
               </section>
 
-              <section class="card p-5">
-                <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.pastRuns') }}</h2>
+              <section class="card p-4">
+                <h2 class="section-title mb-3">{{ t('tests.pastRuns') }}</h2>
                 @if (runs().length === 0) {
                   <p class="text-xs text-[var(--color-text-secondary)]">{{ t('tests.noPastRuns') }}</p>
                 } @else {
@@ -594,16 +598,16 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                         <tr>
                           <th class="text-left">{{ t('tests.ranBy') }}</th>
                           <th class="text-left">{{ t('tests.ranAt') }}</th>
-                          <th class="text-center">{{ t('common.actions') }}</th>
+                          <th class="text-center">{{ common('common.actions') }}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        @for (run of runs(); track run.id) {
+                        @for (past of runs(); track past.id) {
                           <tr>
-                            <td class="text-xs">{{ run.ran_by_username }}</td>
-                            <td class="text-xs">{{ formatDate(run.ran_at) }}</td>
+                            <td class="text-xs">{{ past.ran_by_username }}</td>
+                            <td class="text-xs">{{ formatDate(past.ran_at) }}</td>
                             <td class="text-center">
-                              <button type="button" class="btn btn--ghost btn--sm" (click)="viewRun(run.id)">
+                              <button type="button" class="btn btn--ghost btn--sm" (click)="viewRun(past.id)">
                                 {{ t('tests.viewRun') }}
                               </button>
                             </td>
@@ -614,6 +618,14 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                   </div>
                 }
               </section>
+            } @else {
+              <app-empty-state [message]="t('tests.noRunsYet')" icon="activity">
+                @if (!running()) {
+                  <button type="button" class="btn btn--primary btn--sm" (click)="runNow()">
+                    {{ t('tests.run') }}
+                  </button>
+                }
+              </app-empty-state>
             }
           }
         }
@@ -826,7 +838,7 @@ export class TestDetailPage {
     })),
   );
 
-  protected readonly timelineViewOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly timelineViewOptions = computed<TabOption[]>(() => [
     { id: 'timeline', label: this.t('tests.timeline.viewTimeline') },
     { id: 'table', label: this.t('tests.timeline.viewTable') },
   ]);
@@ -937,11 +949,44 @@ export class TestDetailPage {
     );
   });
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'setup', label: this.t('tests.setup') },
-    { id: 'timeline', label: this.t('tests.timeline') },
+  protected readonly tabOptions = computed<TabOption[]>(() => [
+    { id: 'setup', label: this.t('tests.setup'), count: this.draft().groups.length },
+    { id: 'timeline', label: this.t('tests.timeline'), count: this.draft().casts.length },
     { id: 'results', label: this.t('tests.results') },
   ]);
+
+  /**
+   * Secondary actions for the header's overflow menu. Run stays as the header's one primary action
+   * and saving stays in the unsaved bar, so neither is hidden behind the menu.
+   */
+  protected readonly menuItems = computed<EntityMenuItem[]>(() => {
+    const current = this.scenario();
+    if (!current || !this.canManage()) return [];
+    return [
+      { id: 'rename', label: this.t('tests.rename'), disabled: this.saving() },
+      { id: 'newVersion', label: this.t('tests.newVersion'), disabled: this.creatingVersion() },
+      {
+        id: 'archive',
+        label: current.archived_at ? this.t('tests.unarchive') : this.t('tests.archive'),
+        disabled: this.saving(),
+        separatorBefore: true,
+      },
+    ];
+  });
+
+  protected onMenu(id: string): void {
+    switch (id) {
+      case 'rename':
+        this.openRename();
+        break;
+      case 'newVersion':
+        void this.createVersion();
+        break;
+      case 'archive':
+        void this.toggleArchive();
+        break;
+    }
+  }
 
   /** Total HP remaining per side over the burst window, reconstructed from the latest run. */
   private readonly hpOverTimePoints = computed(() => {
@@ -953,7 +998,8 @@ export class TestDetailPage {
     const points = this.hpOverTimePoints();
     return {
       aria: { enabled: true },
-      grid: { left: 56, right: 16, top: 24, bottom: 40 },
+      grid: { left: 56, right: 16, top: 40, bottom: 40 },
+      legend: { top: 0, right: 0 },
       tooltip: { trigger: 'axis' },
       xAxis: {
         type: 'value',
@@ -979,7 +1025,7 @@ export class TestDetailPage {
           data: points.map((point) => [point.time, point.enemyHp]),
           symbol: 'none',
           step: 'end',
-          lineStyle: { width: 2, color: ENEMY_LINE_COLOR },
+          lineStyle: { width: 2, color: ENEMY_LINE_COLOR, type: 'dashed' },
           itemStyle: { color: ENEMY_LINE_COLOR },
         },
       ],

@@ -143,7 +143,7 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
                       </td>
                       <td>
                         @if (battle.role) {
-                          <span class="chip chip--neutral text-[11px] capitalize">{{ roleLabel(battle.role) }}</span>
+                          <span class="chip chip--neutral text-xs capitalize">{{ roleLabel(battle.role) }}</span>
                         } @else {
                           <span class="text-xs italic" style="color: var(--color-text-tertiary)">
                             {{ t('intel.opponents.role.unobserved') }}

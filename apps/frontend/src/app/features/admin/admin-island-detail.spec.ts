@@ -135,6 +135,10 @@ describe('AdminIslandDetail', () => {
     expect(compiled.textContent).toContain('Guild Island Prime');
     expect(compiled.textContent).toContain('Loot Chest 1');
     expect(compiled.textContent).toContain('Silver Stash');
+    expect(compiled.querySelector('app-entity-header h1')?.textContent).toContain('Guild Island Prime');
+    expect(compiled.querySelector('app-summary-band')).not.toBeNull();
+    expect(compiled.querySelector('#island-manage-title')?.textContent).toContain('admin.islands.detail.manage');
+    expect(compiled.textContent).toContain('admin.islands.detail.manageOwn');
   });
 
   it('marks required island and tab names without marking sort order', () => {
@@ -264,6 +268,7 @@ describe('AdminIslandDetail', () => {
     expect(compiled.textContent).toContain('Guild Island Prime');
     expect(compiled.textContent).toContain('Alpha');
     expect(compiled.textContent).toContain('admin.islands.readonlyHint');
+    expect(compiled.textContent).toContain('admin.islands.detail.manageSource');
     expect(compiled.textContent).toContain('Loot Chest 1');
     expect(compiled.textContent).not.toContain('admin.islands.save');
     expect(compiled.textContent).not.toContain('admin.islands.addTab');

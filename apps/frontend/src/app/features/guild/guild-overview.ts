@@ -1,4 +1,3 @@
-import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -29,13 +28,15 @@ import { Chart } from '../../shared/components/chart/chart';
 import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type GuildTab = 'overview' | 'roster' | 'economy' | 'meta' | 'leaderboards';
 type PeriodId = '7' | '30' | '90' | 'custom';
@@ -43,13 +44,12 @@ type PeriodId = '7' | '30' | '90' | 'custom';
 const MS_PER_DAY = 86_400_000;
 const PRESET_DAYS: Readonly<Record<Exclude<PeriodId, 'custom'>, number>> = { '7': 7, '30': 30, '90': 90 };
 
-interface OverviewStat {
+type Fight = NonNullable<GuildReport['overview']['best_fight']>;
+
+interface NotableFight {
   readonly key: string;
   readonly label: string;
-  readonly value: string;
-  readonly sub?: string;
-  readonly icon?: IconName;
-  readonly tone: 'default' | 'success' | 'warning' | 'danger';
+  readonly fight: Fight;
 }
 
 interface RoleComparisonRow {
@@ -77,101 +77,130 @@ function toDateInput(date: Date): string {
  * enemies and comps. This page is the one place that surfaces all of it —
  * combat, roster, economy, meta and leaderboards — for a single reporting
  * window, so an officer never has to stitch the picture together by hand.
+ *
+ * Each tab shows one summary band of the figures an officer acts on, then the
+ * detail as charts and tables. A figure appears once: the band holds the totals,
+ * and tables and charts do not repeat them.
  */
 @Component({
   selector: 'app-guild-overview-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Chart, DataTable, DataTableCell, ErrorState, Icon, Loading, NgTemplateOutlet, PageHeader, PageStack, RouterLink, ViewToggle],
+  imports: [
+    Chart,
+    DataTable,
+    DataTableCell,
+    EmptyState,
+    ErrorState,
+    Icon,
+    Loading,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    StatusChip,
+    SummaryBand,
+    Tabs,
+  ],
   styles: `
-    .workbench-page {
-      --page-gap: 0.75rem;
-      min-width: 0;
-      overflow: hidden;
-    }
-    .workbench-page > section,
-    .workbench-page > app-data-table {
-      min-width: 0;
-    }
-    .workbench-page .kpi-card {
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-md);
-    }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
+    .guild-filters {
+      display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
+      justify-content: space-between;
+      gap: 0.75rem;
     }
-    .guild-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-    .guild-filters__group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-    .guild-filters__window { color: var(--color-text-tertiary); font-size: 0.75rem; }
-    .guild-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
-    .guild-section { display: grid; gap: 0.75rem; }
-    .guild-section__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
-    .guild-section__title { margin: 0; color: var(--color-text); font-size: 0.9375rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
-    .guild-section__sub { margin: 0; color: var(--color-text-tertiary); font-size: 0.75rem; }
-    .guild-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-    .guild-card { min-inline-size: 0; padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-    .guild-mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-    .guild-mini-card { padding: 0.875rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-    .guild-mini-card__title { margin: 0 0 0.375rem; color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-    .guild-mini-card__opponent { font-weight: 600; color: var(--color-text); }
-    .guild-mini-card__row { display: flex; justify-content: space-between; margin-top: 0.375rem; font-size: 0.75rem; color: var(--color-text-secondary); }
-    .guild-timeline { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
-    .guild-timeline__row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid var(--color-border); border-radius: var(--radius-badges); background: var(--color-surface); }
-    .guild-timeline__icon { display: flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--color-surface-2); color: var(--color-text-secondary); flex-shrink: 0; }
-    .guild-timeline__title { font-size: 0.8125rem; font-weight: 500; color: var(--color-text); }
-    .guild-timeline__detail { font-size: 0.6875rem; color: var(--color-text-tertiary); }
-    .guild-timeline__at { font-size: 0.6875rem; color: var(--color-text-tertiary); white-space: nowrap; }
-    .guild-note { margin: 0; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-badges); color: var(--color-text-tertiary); font-size: 0.75rem; line-height: 1.5; }
-    .guild-chip-list { display: flex; flex-wrap: wrap; gap: 0.375rem; }
-    .guild-role-table { width: 100%; border-collapse: collapse; }
-    .guild-role-table th, .guild-role-table td { padding: 0.5rem 0.625rem; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.75rem; }
-    .guild-role-table th { color: var(--color-text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.625rem; }
-    .guild-role-table td.mono { text-align: right; }
-    .guild-leaderboard-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
-    .guild-leaderboard-card { padding: 0.875rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
-    .guild-leaderboard-card__title { margin: 0 0 0.5rem; color: var(--color-text); font-size: 0.75rem; font-weight: 700; }
-    .guild-leaderboard-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.75rem; }
-    .guild-leaderboard-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); }
-    .guild-leaderboard-row__rank { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; margin-inline-end: 0.375rem; }
+    .guild-filters__group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .guild-section {
+      display: grid;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+    .guild-section__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .guild-section__head .hint {
+      margin-top: 0.125rem;
+    }
+    .guild-chart-grid,
+    .guild-split-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .guild-card {
+      display: grid;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+    .guild-chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+    }
+    .guild-table__num {
+      text-align: right;
+    }
+    .guild-leaderboard-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .guild-leaderboard-grid .guild-card {
+      align-content: start;
+    }
+    .guild-leaderboard-grid .section-title {
+      margin: 0;
+    }
     @media (max-width: 72rem) {
-      .guild-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .guild-chart-grid, .guild-mini-grid, .guild-leaderboard-grid { grid-template-columns: 1fr; }
+      .guild-leaderboard-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 52rem) {
+      .guild-chart-grid,
+      .guild-split-grid,
+      .guild-leaderboard-grid {
+        grid-template-columns: 1fr;
+      }
     }
   `,
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <app-loading variant="detail" [label]="t('common.loading')" />
     } @else if (report(); as r) {
       <app-page-header [title]="t('guild.title')" [subtitle]="t('guild.subtitle')">
         <button type="button" class="btn btn--outline btn--sm" [disabled]="busy()" (click)="refresh()">
           <app-icon name="refresh" size="0.875rem" />
           {{ t('common.refreshNow') }}
         </button>
-        <app-view-toggle pageTabs [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
+        <app-tabs
+          pageTabs
+          [ariaLabel]="t('guild.sections')"
+          [options]="tabOptions()"
+          [active]="tab()"
+          (activeChange)="onTabChange($event)"
+        />
       </app-page-header>
 
-      <app-page-stack class="workbench-page">
+      <app-page-stack>
         <div class="guild-filters">
           <div class="guild-filters__group">
-            <span class="eyebrow">{{ t('guild.period.label') }}</span>
-            <app-view-toggle [options]="periodOptions()" [active]="period()" (activeChange)="onPeriodChange($event)" />
+            <span class="label">{{ t('guild.period.label') }}</span>
+            <app-tabs
+              variant="segmented"
+              [ariaLabel]="t('guild.period.label')"
+              [options]="periodOptions()"
+              [active]="period()"
+              (activeChange)="onPeriodChange($event)"
+            />
             @if (period() === 'custom') {
               <label class="sr-only" for="guild-from">{{ t('guild.period.from') }}</label>
               <input
@@ -182,7 +211,7 @@ function toDateInput(date: Date): string {
                 [max]="customTo()"
                 (change)="onCustomFrom($event)"
               />
-              <span aria-hidden="true" style="color: var(--color-text-tertiary)">→</span>
+              <span aria-hidden="true" class="hint">→</span>
               <label class="sr-only" for="guild-to">{{ t('guild.period.to') }}</label>
               <input
                 id="guild-to"
@@ -195,90 +224,48 @@ function toDateInput(date: Date): string {
               />
             }
           </div>
-          <p class="guild-filters__window" aria-live="polite">
-            <strong>{{ formatDate(r.from) }} → {{ formatDate(r.to) }}</strong>
-          </p>
+          <p class="hint" aria-live="polite">{{ formatDate(r.from) }} → {{ formatDate(r.to) }}</p>
         </div>
-
-        <ng-template #statCardTemplate let-stat>
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ stat.label }}
-                </p>
-                <p
-                  class="font-mono text-2xl font-bold tracking-tight mt-1"
-                  [class.text-[var(--color-text)]]="stat.tone === 'default'"
-                  [class.text-success]="stat.tone === 'success'"
-                  [class.text-warning]="stat.tone === 'warning'"
-                  [class.text-error]="stat.tone === 'danger'"
-                >
-                  {{ stat.value }}
-                </p>
-                @if (stat.sub) {
-                  <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                    {{ stat.sub }}
-                  </p>
-                }
-              </div>
-              @if (stat.icon) {
-                <div
-                  class="icon-capsule"
-                  [class.bg-[var(--color-primary-container)]]="stat.tone === 'default'"
-                  [class.text-[var(--color-info)]]="stat.tone === 'default'"
-                  [class.border-[var(--color-border)]]="stat.tone === 'default'"
-                  [class.bg-[var(--color-success-container)]]="stat.tone === 'success'"
-                  [class.text-success]="stat.tone === 'success'"
-                  [class.border-[var(--color-border)]]="stat.tone === 'success'"
-                  [class.bg-[var(--color-warning-container)]]="stat.tone === 'warning'"
-                  [class.text-warning]="stat.tone === 'warning'"
-                  [class.border-[var(--color-border)]]="stat.tone === 'warning'"
-                  [class.bg-[var(--color-error-container)]]="stat.tone === 'danger'"
-                  [class.text-error]="stat.tone === 'danger'"
-                  [class.border-[var(--color-border)]]="stat.tone === 'danger'"
-                  style="border-width: 1px; border-style: solid"
-                >
-                  <app-icon [name]="stat.icon" size="1.25rem" />
-                </div>
-              }
-            </div>
-          </article>
-        </ng-template>
 
         @switch (tab()) {
           @case ('overview') {
-            <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.overview')">
-              @for (stat of overviewStats(); track stat.key) {
-                <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
-              }
-            </section>
+            <app-summary-band [ariaLabel]="t('guild.tabs.overview')" [items]="overviewStats()" />
 
             @if (notableFights().length > 0) {
-              <div class="guild-mini-grid">
-                @for (entry of notableFights(); track entry.label) {
-                  <article class="guild-mini-card">
-                    <p class="guild-mini-card__title">{{ entry.label }}</p>
-                    <a class="guild-mini-card__opponent no-underline" [routerLink]="['/battles', entry.fight.battle_id]">
-                      {{ entry.fight.opponent || t('intel.unknownOpponent') }}
+              <section class="guild-section" aria-labelledby="guild-notable">
+                <h2 class="section-title" id="guild-notable">{{ t('guild.notable.title') }}</h2>
+                <app-data-table
+                  [columns]="notableColumns"
+                  [rows]="notableFights()"
+                  [trackBy]="trackNotable"
+                  [hideSearch]="true"
+                  [hidePageSize]="true"
+                  [syncUrl]="false"
+                  [ariaLabel]="t('guild.notable.title')"
+                >
+                  <ng-template dataTableCell="opponent" let-row>
+                    <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/battles', row.fight.battle_id]">
+                      {{ row.fight.opponent || t('intel.unknownOpponent') }}
                     </a>
-                    <div class="guild-mini-card__row">
-                      <span>{{ formatDateTime(entry.fight.started_at) }}</span>
-                      <span class="mono">{{ entry.fight.kills }} / {{ entry.fight.deaths }} · {{ formatCompact(entry.fight.kill_fame) }}</span>
-                    </div>
-                  </article>
-                }
-              </div>
+                  </ng-template>
+                  <ng-template dataTableCell="when" let-row>
+                    {{ formatDateTime(row.fight.started_at) }}
+                  </ng-template>
+                  <ng-template dataTableCell="kill_fame" let-row>
+                    <span class="num">{{ formatCompact(row.fight.kill_fame) }}</span>
+                  </ng-template>
+                </app-data-table>
+              </section>
             }
 
             <div class="guild-chart-grid">
-              <article class="guild-card">
-                <header class="guild-section__head">
+              <section class="card guild-card" aria-labelledby="guild-trends">
+                <div class="guild-section__head">
                   <div>
-                    <h3 class="guild-section__title">{{ t('guild.charts.weeklyTrends') }}</h3>
-                    <p class="guild-section__sub">{{ t('guild.charts.weeklyTrendsSub') }}</p>
+                    <h2 class="section-title section-title--sm" id="guild-trends">{{ t('guild.charts.weeklyTrends') }}</h2>
+                    <p class="hint">{{ t('guild.charts.weeklyTrendsSub') }}</p>
                   </div>
-                </header>
+                </div>
                 @if (r.trends.length > 0) {
                   <app-chart
                     [option]="trendsChart().option"
@@ -289,17 +276,17 @@ function toDateInput(date: Date): string {
                     [tableRows]="trendsChart().tableRows"
                   />
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
 
-              <article class="guild-card">
-                <header class="guild-section__head">
+              <section class="card guild-card" aria-labelledby="guild-hours">
+                <div class="guild-section__head">
                   <div>
-                    <h3 class="guild-section__title">{{ t('guild.charts.hourly') }}</h3>
-                    <p class="guild-section__sub">{{ t('intel.timingHint') }}</p>
+                    <h2 class="section-title section-title--sm" id="guild-hours">{{ t('guild.charts.hourly') }}</h2>
+                    <p class="hint">{{ t('intel.timingHint') }}</p>
                   </div>
-                </header>
+                </div>
                 @if (r.hours.length > 0) {
                   <app-chart
                     [option]="hoursChart().option"
@@ -310,42 +297,43 @@ function toDateInput(date: Date): string {
                     [tableRows]="hoursChart().tableRows"
                   />
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
             </div>
 
-            <section class="guild-section">
-              <header class="guild-section__head">
-                <h3 class="guild-section__title">
-                  <app-icon name="activity" size="0.9375rem" />
-                  {{ t('guild.timeline.title') }}
-                </h3>
-              </header>
-              @if (recentTimeline().length > 0) {
-                <ul class="guild-timeline">
-                  @for (entry of recentTimeline(); track entry.at + entry.title) {
-                    <li class="guild-timeline__row">
-                      <span class="guild-timeline__icon">
-                        <app-icon [name]="timelineIcon(entry.kind)" size="0.875rem" />
-                      </span>
-                      <span>
-                        <span class="guild-timeline__title">{{ entry.title }}</span>
-                        @if (entry.detail) {
-                          <br />
-                          <span class="guild-timeline__detail">{{ entry.detail }}</span>
-                        }
-                      </span>
-                      <span class="guild-timeline__at">{{ formatDateTime(entry.at) }}</span>
-                    </li>
+            <section class="guild-section" aria-labelledby="guild-timeline">
+              <h2 class="section-title" id="guild-timeline">{{ t('guild.timeline.title') }}</h2>
+              <app-data-table
+                [columns]="timelineColumns"
+                [rows]="recentTimeline()"
+                [trackBy]="trackTimeline"
+                [hideSearch]="true"
+                [hidePageSize]="true"
+                [syncUrl]="false"
+                [mobileLayout]="'stack'"
+                [ariaLabel]="t('guild.timeline.title')"
+              >
+                <ng-template dataTableCell="at" let-row>
+                  {{ formatDateTime(row.at) }}
+                </ng-template>
+                <ng-template dataTableCell="kind" let-row>
+                  <span class="inline-flex items-center gap-2">
+                    <app-icon [name]="timelineIcon(row.kind)" size="0.875rem" />
+                    {{ timelineKindLabel(row.kind) }}
+                  </span>
+                </ng-template>
+                <ng-template dataTableCell="title" let-row>
+                  <span class="font-medium">{{ row.title }}</span>
+                  @if (row.detail) {
+                    <br />
+                    <span class="hint">{{ row.detail }}</span>
                   }
-                </ul>
-              } @else {
-                <p class="guild-note">{{ t('common.empty') }}</p>
-              }
+                </ng-template>
+              </app-data-table>
             </section>
 
-            <p class="guild-note">
+            <p class="hint">
               {{ t('guild.dataQuality.line', {
                 attributed: r.data_quality.attributed_battles,
                 total: r.data_quality.total_battles,
@@ -355,69 +343,73 @@ function toDateInput(date: Date): string {
           }
 
           @case ('roster') {
-            <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.roster')">
-              @for (stat of operationsStats(); track stat.key) {
-                <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
-              }
-            </section>
+            <app-summary-band [ariaLabel]="t('guild.tabs.roster')" [items]="operationsStats()" />
 
-            <div class="guild-chart-grid">
-              <article class="guild-card">
-                <header class="guild-section__head">
-                  <h3 class="guild-section__title">{{ t('intel.roleCoverage') }}</h3>
-                </header>
+            <div class="guild-split-grid">
+              <section class="card guild-card" aria-labelledby="guild-role">
+                <h2 class="section-title section-title--sm" id="guild-role">{{ t('intel.roleCoverage') }}</h2>
                 @if (roleComparisonRows().length > 0) {
-                  <table class="guild-role-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">{{ t('common.role') }}</th>
-                        <th scope="col">{{ t('guild.roster.roleNeeded') }}</th>
-                        <th scope="col">{{ t('guild.roster.roleFilled') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (row of roleComparisonRows(); track row.role) {
+                  <div class="table-scroll">
+                    <table class="table guild-table">
+                      <thead>
                         <tr>
-                          <td>{{ row.role }}</td>
-                          <td class="mono">{{ row.needed }}</td>
-                          <td class="mono" [class.text-warning]="row.filled < row.needed" [class.text-success]="row.filled >= row.needed">
-                            {{ row.filled }}
-                          </td>
+                          <th scope="col">{{ t('common.role') }}</th>
+                          <th scope="col" class="guild-table__num">{{ t('guild.roster.roleNeeded') }}</th>
+                          <th scope="col" class="guild-table__num">{{ t('guild.roster.roleFilled') }}</th>
+                          <th scope="col">{{ t('common.status') }}</th>
                         </tr>
-                      }
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        @for (row of roleComparisonRows(); track row.role) {
+                          <tr>
+                            <td>{{ row.role }}</td>
+                            <td class="guild-table__num num">{{ row.needed }}</td>
+                            <td class="guild-table__num num">{{ row.filled }}</td>
+                            <td>
+                              @if (row.filled < row.needed) {
+                                <app-status-chip
+                                  value="short"
+                                  [toneOverride]="'warning'"
+                                  [label]="t('guild.roster.shortBy', { count: row.needed - row.filled })"
+                                />
+                              } @else {
+                                <app-status-chip value="covered" [toneOverride]="'success'" [label]="t('guild.roster.covered')" />
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
 
-              <article class="guild-card">
-                <header class="guild-section__head">
-                  <h3 class="guild-section__title">{{ t('guild.roster.inactive') }}</h3>
-                </header>
+              <section class="card guild-card" aria-labelledby="guild-inactive">
+                <h2 class="section-title section-title--sm" id="guild-inactive">{{ t('guild.roster.inactive') }}</h2>
                 @if (r.operations.inactive_members.length > 0) {
                   <div class="guild-chip-list">
                     @for (name of r.operations.inactive_members; track name) {
-                      <span class="chip chip--warning">{{ name }}</span>
+                      <span class="chip chip--neutral">{{ name }}</span>
                     }
                   </div>
                 } @else {
-                  <p class="guild-note">{{ t('intel.allActive') }}</p>
+                  <app-empty-state compact [message]="t('intel.allActive')" />
                 }
-              </article>
+              </section>
             </div>
 
-            <section class="guild-section">
-              <header class="guild-section__head">
-                <h3 class="guild-section__title">{{ t('battles.guild_roster') }}</h3>
-                <span class="text-xs text-secondary">{{ r.members.length }}</span>
-              </header>
+            <section class="guild-section" aria-labelledby="guild-members">
+              <h2 class="section-title" id="guild-members">{{ t('battles.guild_roster') }}</h2>
               <app-data-table
                 [columns]="memberColumns"
                 [rows]="r.members"
                 [trackBy]="trackMember"
                 [pageSize]="15"
+                [stickyFirstColumn]="true"
+                [syncUrl]="false"
+                [ariaLabel]="t('battles.guild_roster')"
               >
                 <ng-template dataTableCell="username" let-row>
                   <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/users', row.user_id]">
@@ -425,33 +417,27 @@ function toDateInput(date: Date): string {
                   </a>
                 </ng-template>
                 <ng-template dataTableCell="kill_fame" let-row>
-                  <span class="mono text-warning">{{ formatCompact(row.kill_fame) }}</span>
+                  <span class="num">{{ formatCompact(row.kill_fame) }}</span>
                 </ng-template>
                 <ng-template dataTableCell="silver_lost" let-row>
-                  <span class="mono">{{ formatCompact(row.silver_lost) }}</span>
+                  <span class="num">{{ formatCompact(row.silver_lost) }}</span>
                 </ng-template>
                 <ng-template dataTableCell="fill_rate" let-row>
-                  <span class="mono">{{ formatPercent(row.fill_rate) }}</span>
+                  <span class="num">{{ formatPercent(row.fill_rate) }}</span>
                 </ng-template>
                 <ng-template dataTableCell="siphoned" let-row>
-                  <span class="mono">{{ formatCompact(row.siphoned) }}</span>
+                  <span class="num">{{ formatCompact(row.siphoned) }}</span>
                 </ng-template>
               </app-data-table>
             </section>
           }
 
           @case ('economy') {
-            <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.economy')">
-              @for (stat of economyStats(); track stat.key) {
-                <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
-              }
-            </section>
+            <app-summary-band [ariaLabel]="t('guild.tabs.economy')" [items]="economyStats()" />
 
             <div class="guild-chart-grid">
-              <article class="guild-card">
-                <header class="guild-section__head">
-                  <h3 class="guild-section__title">{{ t('bank.finance.weeklyFlow') }}</h3>
-                </header>
+              <section class="card guild-card" aria-labelledby="guild-flow">
+                <h2 class="section-title section-title--sm" id="guild-flow">{{ t('bank.finance.weeklyFlow') }}</h2>
                 @if (r.trends.length > 0) {
                   <app-chart
                     [option]="economyFlowChart().option"
@@ -462,14 +448,12 @@ function toDateInput(date: Date): string {
                     [tableRows]="economyFlowChart().tableRows"
                   />
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
 
-              <article class="guild-card">
-                <header class="guild-section__head">
-                  <h3 class="guild-section__title">{{ t('bank.finance.lossVsRegear') }}</h3>
-                </header>
+              <section class="card guild-card" aria-labelledby="guild-loss-regear">
+                <h2 class="section-title section-title--sm" id="guild-loss-regear">{{ t('bank.finance.lossVsRegear') }}</h2>
                 @if (r.trends.length > 0) {
                   <app-chart
                     [option]="lossRegearChart().option"
@@ -480,23 +464,23 @@ function toDateInput(date: Date): string {
                     [tableRows]="lossRegearChart().tableRows"
                   />
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
             </div>
 
-            <a class="btn btn--outline btn--sm no-underline" routerLink="/admin/finance">
-              {{ t('guild.economy.fullDetail') }}
-              <app-icon name="chevron-right" size="0.75rem" />
-            </a>
+            <div>
+              <a class="btn btn--outline btn--sm no-underline" routerLink="/admin/finance">
+                {{ t('guild.economy.fullDetail') }}
+                <app-icon name="chevron-right" size="0.75rem" />
+              </a>
+            </div>
           }
 
           @case ('meta') {
             <div class="guild-chart-grid">
-              <article class="guild-card">
-                <header class="guild-section__head">
-                  <h3 class="guild-section__title">{{ t('intel.ourMeta') }}</h3>
-                </header>
+              <section class="card guild-card" aria-labelledby="guild-our-meta">
+                <h2 class="section-title section-title--sm" id="guild-our-meta">{{ t('intel.ourMeta') }}</h2>
                 @if (r.our_meta.length > 0) {
                   <app-chart
                     [option]="ourMetaChart().option"
@@ -507,14 +491,12 @@ function toDateInput(date: Date): string {
                     [tableRows]="ourMetaChart().tableRows"
                   />
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
 
-              <article class="guild-card">
-                <header class="guild-section__head">
-                  <h3 class="guild-section__title">{{ t('intel.enemyMeta') }}</h3>
-                </header>
+              <section class="card guild-card" aria-labelledby="guild-enemy-meta">
+                <h2 class="section-title section-title--sm" id="guild-enemy-meta">{{ t('intel.enemyMeta') }}</h2>
                 @if (r.enemy_meta.length > 0) {
                   <app-chart
                     [option]="enemyMetaChart().option"
@@ -525,42 +507,52 @@ function toDateInput(date: Date): string {
                     [tableRows]="enemyMetaChart().tableRows"
                   />
                 } @else {
-                  <p class="guild-note">{{ t('guild.charts.noData') }}</p>
+                  <app-empty-state compact [message]="t('guild.charts.noData')" />
                 }
-              </article>
+              </section>
             </div>
 
-            <section class="guild-section">
-              <header class="guild-section__head">
-                <h3 class="guild-section__title">{{ t('intel.compPerformance') }}</h3>
-              </header>
-              <app-data-table [columns]="compColumns" [rows]="r.comps" [trackBy]="trackComp" [pageSize]="10">
+            <section class="guild-section" aria-labelledby="guild-comps">
+              <h2 class="section-title" id="guild-comps">{{ t('intel.compPerformance') }}</h2>
+              <app-data-table
+                urlKey="comps"
+                [columns]="compColumns"
+                [rows]="r.comps"
+                [trackBy]="trackComp"
+                [pageSize]="10"
+                [ariaLabel]="t('intel.compPerformance')"
+              >
                 <ng-template dataTableCell="name" let-row>
                   <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/comps', row.comp_id]">
                     {{ row.name }}
                   </a>
                 </ng-template>
                 <ng-template dataTableCell="win_rate" let-row>
-                  <span class="mono">{{ formatPercent(row.win_rate) }}</span>
+                  <span class="num">{{ formatPercent(row.win_rate) }}</span>
                 </ng-template>
                 <ng-template dataTableCell="fill_rate" let-row>
-                  <span class="mono">{{ formatPercent(row.fill_rate) }}</span>
+                  <span class="num">{{ formatPercent(row.fill_rate) }}</span>
                 </ng-template>
               </app-data-table>
             </section>
 
-            <section class="guild-section">
-              <header class="guild-section__head">
-                <h3 class="guild-section__title">{{ t('intel.nav.enemies') }}</h3>
-              </header>
-              <app-data-table [columns]="enemyColumns" [rows]="r.enemies" [trackBy]="trackEnemy" [pageSize]="10">
+            <section class="guild-section" aria-labelledby="guild-enemies">
+              <h2 class="section-title" id="guild-enemies">{{ t('intel.nav.enemies') }}</h2>
+              <app-data-table
+                urlKey="enemies"
+                [columns]="enemyColumns"
+                [rows]="r.enemies"
+                [trackBy]="trackEnemy"
+                [pageSize]="10"
+                [ariaLabel]="t('intel.nav.enemies')"
+              >
                 <ng-template dataTableCell="name" let-row>
                   <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/intel/opponents/scouts', row.scouted_comp_id]">
                     {{ row.name }}
                   </a>
                 </ng-template>
                 <ng-template dataTableCell="record" let-row>
-                  <span class="mono">{{ row.wins }} - {{ row.losses }}</span>
+                  <span class="num">{{ row.wins }} - {{ row.losses }}</span>
                 </ng-template>
                 <ng-template dataTableCell="last_seen" let-row>
                   {{ formatDate(row.last_seen) }}
@@ -572,28 +564,46 @@ function toDateInput(date: Date): string {
           @case ('leaderboards') {
             <div class="guild-leaderboard-grid">
               @for (category of leaderboardCategories(); track category.key) {
-                <article class="guild-leaderboard-card">
-                  <h3 class="guild-leaderboard-card__title">{{ category.label }}</h3>
+                <section class="card guild-card" [attr.aria-labelledby]="'guild-board-' + category.key">
+                  <h2 class="section-title section-title--sm" [id]="'guild-board-' + category.key">{{ category.label }}</h2>
                   @if (category.entries.length > 0) {
-                    @for (entry of category.entries; track entry.user_id; let i = $index) {
-                      <div class="guild-leaderboard-row">
-                        <span class="guild-leaderboard-row__name">
-                          <span class="guild-leaderboard-row__rank">#{{ i + 1 }}</span>{{ entry.username }}
-                        </span>
-                        <span class="mono">{{ formatCompact(entry.value) }}</span>
-                      </div>
-                    }
+                    <div class="table-scroll">
+                      <table class="table guild-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">{{ t('guild.leaderboard.rank') }}</th>
+                            <th scope="col">{{ t('common.player') }}</th>
+                            <th scope="col" class="guild-table__num">{{ t('guild.leaderboard.value') }}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (entry of category.entries; track entry.user_id; let i = $index) {
+                            <tr>
+                              <td class="num">#{{ i + 1 }}</td>
+                              <td>
+                                <a class="no-underline font-medium" style="color: var(--color-text)" [routerLink]="['/users', entry.user_id]">
+                                  {{ entry.username }}
+                                </a>
+                              </td>
+                              <td class="guild-table__num num">{{ formatCompact(entry.value) }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
                   } @else {
-                    <p class="guild-note">{{ t('leaderboards.empty') }}</p>
+                    <app-empty-state compact [message]="t('leaderboards.empty')" />
                   }
-                </article>
+                </section>
               }
             </div>
 
-            <a class="btn btn--outline btn--sm no-underline" routerLink="/season">
-              {{ t('guild.leaderboard.fullStandings') }}
-              <app-icon name="chevron-right" size="0.75rem" />
-            </a>
+            <div>
+              <a class="btn btn--outline btn--sm no-underline" routerLink="/season">
+                {{ t('guild.leaderboard.fullStandings') }}
+                <app-icon name="chevron-right" size="0.75rem" />
+              </a>
+            </div>
           }
         }
       </app-page-stack>
@@ -626,7 +636,7 @@ export class GuildOverviewPage {
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) => this.translate.t(key, params);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly tabOptions = computed<TabOption[]>(() => [
     { id: 'overview', label: this.t('guild.tabs.overview') },
     { id: 'roster', label: this.t('guild.tabs.roster') },
     { id: 'economy', label: this.t('guild.tabs.economy') },
@@ -634,7 +644,7 @@ export class GuildOverviewPage {
     { id: 'leaderboards', label: this.t('guild.tabs.leaderboards') },
   ]);
 
-  protected readonly periodOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly periodOptions = computed<TabOption[]>(() => [
     { id: '7', label: this.t('guild.period.d7') },
     { id: '30', label: this.t('guild.period.d30') },
     { id: '90', label: this.t('guild.period.d90') },
@@ -731,76 +741,60 @@ export class GuildOverviewPage {
 
   /* ------------------------------ Overview ------------------------------ */
 
-  protected readonly overviewStats = computed<OverviewStat[]>(() => {
+  protected readonly overviewStats = computed<SummaryItem[]>(() => {
     const overview = this.report()?.overview;
     if (!overview) {
       return [];
     }
     return [
-      { key: 'fights', label: this.t('intel.fights'), value: this.formatNumber(overview.fights), tone: 'default', icon: 'swords' },
       {
-        key: 'record',
         label: this.t('intel.record'),
         value: `${overview.wins} - ${overview.losses}`,
-        sub: this.formatPercent(overview.win_rate) + ' ' + this.t('events.detail.win_rate'),
+        hint: this.t('guild.overview.recordHint', {
+          fights: this.formatNumber(overview.fights),
+          rate: this.formatPercent(overview.win_rate),
+        }),
         tone: overview.win_rate >= 50 ? 'success' : 'warning',
-        icon: 'shield',
       },
       {
-        key: 'kd',
         label: this.t('intel.kd'),
         value: overview.kill_death_ratio.toFixed(2),
-        sub: `${this.formatNumber(overview.kills)} / ${this.formatNumber(overview.deaths)}`,
+        hint: `${this.formatNumber(overview.kills)} / ${this.formatNumber(overview.deaths)}`,
         tone: overview.kill_death_ratio >= 1 ? 'success' : 'danger',
       },
+      { label: this.t('battles.kill_fame'), value: this.formatCompact(overview.kill_fame) },
+      { label: this.t('battles.silver_lost'), value: this.formatCompact(overview.silver_lost) },
       {
-        key: 'kill_fame',
-        label: this.t('battles.kill_fame'),
-        value: this.formatCompact(overview.kill_fame),
-        tone: 'default',
-        icon: 'trophy',
-      },
-      {
-        key: 'silver_lost',
-        label: this.t('battles.silver_lost'),
-        value: this.formatCompact(overview.silver_lost),
-        tone: 'danger',
-        icon: 'bank',
-      },
-      {
-        key: 'ip_delta',
         label: this.t('intel.ipDelta'),
         value: this.formatSigned(overview.item_power_delta),
-        sub: this.t('intel.ipDeltaSub'),
+        hint: this.t('intel.ipDeltaSub'),
         tone: overview.item_power_delta >= 0 ? 'success' : 'danger',
       },
-      {
-        key: 'streak',
-        label: this.t('intel.streak'),
-        value: this.formatNumber(overview.win_streak),
-        tone: overview.win_streak > 0 ? 'success' : 'default',
-        icon: 'sparkles',
-      },
-      {
-        key: 'attributed',
-        label: this.t('intel.stat.coverage'),
-        value: this.formatNumber(overview.attributed_fights),
-        sub: this.t('intel.stat.coverageSub'),
-        tone: 'default',
-      },
+      { label: this.t('intel.streak'), value: this.formatNumber(overview.win_streak) },
     ];
   });
 
-  protected readonly notableFights = computed(() => {
+  protected readonly notableFights = computed<NotableFight[]>(() => {
     const overview = this.report()?.overview;
     if (!overview) {
       return [];
     }
     return [
-      { label: this.t('intel.bestFight'), fight: overview.best_fight },
-      { label: this.t('intel.worstFight'), fight: overview.worst_fight },
-    ].filter((entry): entry is { label: string; fight: NonNullable<typeof overview.best_fight> } => entry.fight !== null);
+      { key: 'best', label: this.t('intel.bestFight'), fight: overview.best_fight },
+      { key: 'worst', label: this.t('intel.worstFight'), fight: overview.worst_fight },
+    ].filter((entry): entry is NotableFight => entry.fight !== null);
   });
+
+  protected readonly notableColumns: readonly DataTableColumn<NotableFight>[] = [
+    { key: 'kind', label: 'guild.notable.kind', accessor: (e) => e.label },
+    { key: 'opponent', label: 'battles.opponent', accessor: (e) => e.fight.opponent },
+    { key: 'when', label: 'common.date', accessor: (e) => e.fight.started_at },
+    { key: 'kills', label: 'battles.kills', accessor: (e) => e.fight.kills, align: 'right' },
+    { key: 'deaths', label: 'battles.deaths', accessor: (e) => e.fight.deaths, align: 'right' },
+    { key: 'kill_fame', label: 'battles.kill_fame', accessor: (e) => e.fight.kill_fame, align: 'right' },
+  ];
+
+  protected trackNotable = (row: NotableFight): string => row.key;
 
   protected readonly trendsChart = computed<ChartBuild>(() =>
     buildCombatTrendsChart(this.report()?.trends ?? [], this.palette(), this.chrome(), this.t),
@@ -814,6 +808,14 @@ export class GuildOverviewPage {
     [...(this.report()?.timeline ?? [])].slice(-10).reverse(),
   );
 
+  protected readonly timelineColumns: readonly DataTableColumn<TimelineEntry>[] = [
+    { key: 'at', label: 'common.date', accessor: (e) => e.at },
+    { key: 'kind', label: 'common.type', accessor: (e) => e.kind },
+    { key: 'title', label: 'guild.timeline.item', accessor: (e) => e.title },
+  ];
+
+  protected trackTimeline = (row: TimelineEntry): string => row.at + row.title;
+
   protected timelineIcon(kind: TimelineEntry['kind']): IconName {
     switch (kind) {
       case 'battle':
@@ -825,35 +827,38 @@ export class GuildOverviewPage {
     }
   }
 
+  protected timelineKindLabel(kind: TimelineEntry['kind']): string {
+    switch (kind) {
+      case 'battle':
+        return this.t('guild.timeline.kind.battle');
+      case 'event':
+        return this.t('guild.timeline.kind.event');
+      case 'scout':
+        return this.t('guild.timeline.kind.scout');
+    }
+  }
+
   /* ------------------------------ Roster ------------------------------ */
 
-  protected readonly operationsStats = computed<OverviewStat[]>(() => {
+  protected readonly operationsStats = computed<SummaryItem[]>(() => {
     const ops = this.report()?.operations;
     if (!ops) {
       return [];
     }
     return [
-      { key: 'roster', label: this.t('intel.roster'), value: this.formatNumber(ops.roster), tone: 'default', icon: 'users' },
-      { key: 'officers', label: this.t('intel.officers'), value: this.formatNumber(ops.officers), tone: 'default' },
+      { label: this.t('intel.roster'), value: this.formatNumber(ops.roster) },
+      { label: this.t('intel.officers'), value: this.formatNumber(ops.officers) },
+      { label: this.t('leaderboards.tab.attendance'), value: this.formatNumber(ops.attendance) },
       {
-        key: 'attendance',
-        label: this.t('leaderboards.tab.attendance'),
-        value: this.formatNumber(ops.attendance),
-        tone: 'default',
-      },
-      {
-        key: 'fill_rate',
         label: this.t('intel.fillRate'),
         value: this.formatPercent(ops.fill_rate),
-        sub: `${ops.slots} ${this.t('intel.seats')}`,
+        hint: `${this.formatNumber(ops.slots)} ${this.t('intel.seats')}`,
         tone: ops.fill_rate >= 80 ? 'success' : 'warning',
       },
       {
-        key: 'cta_rate',
         label: this.t('guild.roster.ctaRate'),
         value: this.formatPercent(ops.cta_rate),
-        sub: `${ops.call_to_arms} ${this.t('events.call_to_arms')}`,
-        tone: 'default',
+        hint: `${this.formatNumber(ops.call_to_arms)} ${this.t('events.call_to_arms')}`,
       },
     ];
   });
@@ -938,59 +943,37 @@ export class GuildOverviewPage {
 
   /* ------------------------------ Economy ------------------------------ */
 
-  protected readonly economyStats = computed<OverviewStat[]>(() => {
+  protected readonly economyStats = computed<SummaryItem[]>(() => {
     const economy = this.report()?.economy;
     if (!economy) {
       return [];
     }
     return [
-      { key: 'loot_in', label: this.t('intel.lootIn'), value: this.formatCompact(economy.loot_in), tone: 'success' },
+      { label: this.t('intel.lootIn'), value: this.formatCompact(economy.loot_in) },
       {
-        key: 'outflow',
         label: this.t('intel.outflow'),
         value: this.formatCompact(economy.outflow_total),
-        sub: this.t('bank.finance.splitOutflow') + ` ${this.formatCompact(economy.outflow_splits)} · ` +
-          this.t('bank.finance.regearPaid') + ` ${this.formatCompact(economy.outflow_regear)}`,
-        tone: 'default',
+        hint: `${this.t('bank.finance.splitOutflow')} ${this.formatCompact(economy.outflow_splits)}`,
       },
       {
-        key: 'net',
         label: this.t('intel.net'),
         value: this.formatSigned(economy.net),
         tone: economy.net >= 0 ? 'success' : 'danger',
       },
       {
-        key: 'bank_pending',
         label: this.t('bank.finance.openLiability'),
         value: this.formatCompact(economy.bank_pending),
         tone: 'warning',
       },
       {
-        key: 'regear',
         label: this.t('intel.regears'),
         value: this.formatCompact(economy.regear_paid),
-        sub: `${this.t('guild.economy.regearOpen')} ${this.formatCompact(economy.regear_open)}`,
-        tone: 'default',
+        hint: `${this.t('guild.economy.regearOpen')} ${this.formatCompact(economy.regear_open)}`,
       },
       {
-        key: 'splits',
         label: this.t('intel.splits'),
         value: this.formatCompact(economy.split_completed),
-        sub: `${this.t('guild.economy.splitPending')} ${this.formatCompact(economy.split_pending)}`,
-        tone: 'default',
-      },
-      {
-        key: 'siphoned',
-        label: this.t('bank.finance.siphonedNet'),
-        value: this.formatCompact(economy.siphoned_net),
-        tone: 'default',
-      },
-      {
-        key: 'fame_efficiency',
-        label: this.t('intel.famePerMillion'),
-        value: this.formatCompact(economy.fame_per_million_lost),
-        sub: this.t('intel.famePerMillionSub'),
-        tone: 'default',
+        hint: `${this.t('guild.economy.splitPending')} ${this.formatCompact(economy.split_pending)}`,
       },
     ];
   });

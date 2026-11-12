@@ -10,10 +10,12 @@ import { type AbstractControl, type ControlValueAccessor, NG_VALIDATORS, NG_VALU
   ],
   styles: `
     :host { display: block; }
-    label { display: inline-flex; align-items: flex-start; gap: 0.5rem; min-height: 44px; cursor: pointer; }
-    input { margin-top: 0.2rem; accent-color: var(--color-primary); }
+    label { display: inline-flex; align-items: flex-start; gap: 0.5rem; min-height: var(--control-h); padding-block: 0.4375rem; font-size: var(--ui-text-md); line-height: 1.25rem; cursor: pointer; }
+    input { flex: none; margin-top: 0.125rem; accent-color: var(--color-primary); }
+    input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+    input:disabled { cursor: not-allowed; }
     input:disabled + span { opacity: 0.6; }
-    .hint { display: block; margin-top: 0.125rem; font-size: 0.75rem; color: var(--color-text-secondary); }
+    .hint { display: block; margin-top: 0.125rem; font-size: var(--ui-text-xs); line-height: 1rem; color: var(--color-text-secondary); }
     .required { color: var(--color-error); }
   `,
   template: `

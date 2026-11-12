@@ -170,7 +170,7 @@ import type { NavSection } from '../sidebar/sidebar';
 
             <div class="hidden min-w-0 flex-col leading-tight xl:flex">
               <span class="max-w-[110px] truncate text-xs font-semibold text-[var(--color-text)]">{{ profile.username }}</span>
-              <span class="max-w-[110px] truncate text-[10px] text-[var(--color-text-tertiary)]">{{ profile.highest_role }}</span>
+              <span class="max-w-[110px] truncate text-xs text-[var(--color-text-tertiary)]">{{ profile.highest_role }}</span>
             </div>
 
             <button

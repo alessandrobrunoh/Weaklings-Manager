@@ -185,4 +185,29 @@ describe('DataTable', () => {
       }),
     );
   });
+
+  it('words the pagination footer through i18n and names the scroll region', () => {
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Showing 1 to 2 of 2');
+    expect(text).toContain('10 per page');
+    const region = fixture.nativeElement.querySelector('[role="region"]') as HTMLElement;
+    expect(region.getAttribute('aria-label')).toBe('Table');
+    // A single page needs no page buttons.
+    expect(fixture.nativeElement.querySelector('.data-table__pages')).toBeNull();
+  });
+
+  it('labels cells for the stacked phone layout and right-aligns numeric columns', async () => {
+    fixture.componentRef.setInput('mobileLayout', 'stack');
+    fixture.componentRef.setInput('columns', [
+      columns()[0],
+      { ...columns()[1], align: 'right' as const },
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.data-table--stack')).not.toBeNull();
+    expect(root.querySelector('tbody td')?.getAttribute('data-label')).toBe('Name');
+    expect(root.querySelector('th.data-table__cell--right')).not.toBeNull();
+  });
 });

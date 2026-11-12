@@ -96,16 +96,24 @@ describe('platform required-field markers', () => {
 
   it('marks the required platform admin Discord ID', async () => {
     const fixture = await configure(PlatformAdmins);
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    const compiled = fixture.nativeElement as HTMLElement;
+    compiled.querySelector('app-page-header button')?.dispatchEvent(new Event('click'));
+    fixture.detectChanges();
+
+    const form = compiled.querySelector('#assign-admin-form') as HTMLFormElement;
     expect(form.textContent).toContain('validation.requiredLegend');
     expect((form.querySelector('input[required]') as HTMLInputElement).required).toBe(true);
     expect(form.querySelector('label [aria-hidden="true"]')?.textContent).toBe('*');
     expect(form.checkValidity()).toBe(false);
   });
 
-  it('marks only the required rank name', async () => {
+  it('marks only the required rank name in the create dialog', async () => {
     const fixture = await configure(PlatformRanks);
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    const compiled = fixture.nativeElement as HTMLElement;
+    compiled.querySelector('app-page-header button')?.dispatchEvent(new Event('click'));
+    fixture.detectChanges();
+
+    const form = compiled.querySelector('#create-rank-form') as HTMLFormElement;
     expect(form.textContent).toContain('validation.requiredLegend');
     expect(form.querySelectorAll('input[required]')).toHaveLength(1);
     expect(form.querySelector('label [aria-hidden="true"]')?.textContent).toBe('*');
@@ -114,10 +122,23 @@ describe('platform required-field markers', () => {
 
   it('marks the required tenant name and owner while leaving rank optional', async () => {
     const fixture = await configure(PlatformTenantDetail);
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
-    expect(form.textContent).toContain('validation.requiredLegend');
-    expect(form.querySelectorAll('input[required]')).toHaveLength(2);
-    expect(form.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(2);
-    expect(form.querySelector('select[required]')).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    // Overview tab: the display name is the only required field.
+    const nameForm = compiled.querySelector('form') as HTMLFormElement;
+    expect(nameForm.textContent).toContain('validation.requiredLegend');
+    expect(nameForm.querySelectorAll('input[required]')).toHaveLength(1);
+    expect(nameForm.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(1);
+
+    // Access tab: the SuperAdmin is required, the rank stays optional.
+    compiled.querySelector<HTMLButtonElement>('button[role="tab"][data-tab-id="access"]')!.click();
+    fixture.detectChanges();
+    const accessForm = compiled.querySelector('form') as HTMLFormElement;
+    expect(accessForm.textContent).toContain('validation.requiredLegend');
+    expect(accessForm.querySelectorAll('input[required]')).toHaveLength(1);
+    expect(accessForm.querySelector('select[required]')).toBeNull();
   });
 });

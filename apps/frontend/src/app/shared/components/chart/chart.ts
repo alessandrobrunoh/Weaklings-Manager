@@ -88,7 +88,7 @@ type EChartsInstance = {
       border-radius: var(--radius-badges);
       color: var(--color-text-tertiary);
       cursor: pointer;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 500;
       list-style: none;
     }
@@ -97,7 +97,7 @@ type EChartsInstance = {
     }
     .chart__table-toggle > summary::before {
       content: '▸';
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       transition: transform 0.15s ease;
     }
     .chart__table-toggle[open] > summary::before {
@@ -120,7 +120,7 @@ type EChartsInstance = {
     .chart__table {
       inline-size: 100%;
       border-collapse: collapse;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
     }
     .chart__table th,
     .chart__table td {

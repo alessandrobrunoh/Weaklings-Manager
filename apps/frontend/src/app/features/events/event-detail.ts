@@ -92,7 +92,7 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { Select, type SelectOption } from '../../shared/components/select/select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
 import { EventBattlesTab } from './detail/event-battles-tab';
 import { EventGuildBadge } from './detail/event-guild-badge';
@@ -253,7 +253,7 @@ const BENCH_FIT_CHIP: Readonly<
     EventMySpot,
     EventPartyStructure,
     EventRoleBoard,
-    ViewToggle,
+    Tabs,
     EventSplitsTab,
   ],
   template: `
@@ -483,7 +483,8 @@ const BENCH_FIT_CHIP: Readonly<
             @if (rosterSnapshotState() === 'ready' && rosterSnapshot(); as roster) {
               @if (canManageParticipants()) {
                 <div class="party-mode-switch">
-                  <app-view-toggle
+                  <app-tabs
+                    variant="segmented"
                     [options]="partiesModeOptions()"
                     [active]="partiesMode()"
                     (activeChange)="setPartiesMode($event)"
@@ -1528,12 +1529,12 @@ const BENCH_FIT_CHIP: Readonly<
           }
 
           @if ((rosterSuggestions()?.unplaced_members?.length ?? 0) > 0) {
-            <p class="text-[10px] text-warning">
+            <p class="text-xs text-warning">
               ⚠ {{ t('events.detail.unplaced', { count: rosterSuggestions()?.unplaced_members?.length ?? 0 }) }}
             </p>
           }
           @if ((rosterSuggestions()?.unfilled_seats?.length ?? 0) > 0) {
-            <p class="text-[10px] text-warning">
+            <p class="text-xs text-warning">
               ⚠ {{ t('events.detail.unfilled', { count: rosterSuggestions()?.unfilled_seats?.length ?? 0 }) }}
             </p>
           }
@@ -1809,7 +1810,7 @@ const BENCH_FIT_CHIP: Readonly<
                     >
                       <div class="flex items-center justify-between gap-2">
                         <span class="text-xs font-bold text-white">{{ row.itemName }}</span>
-                        <span class="chip chip--neutral font-mono text-[10px] uppercase">{{
+                        <span class="chip chip--neutral font-mono text-xs uppercase">{{
                           row.slot
                         }}</span>
                       </div>
@@ -1885,7 +1886,7 @@ const BENCH_FIT_CHIP: Readonly<
           <div class="min-w-0 flex-1">
             <p class="text-xs font-bold text-white truncate">{{ tip.name }}</p>
             @if (tip.tier) {
-              <span class="text-[10px] font-mono text-[var(--color-primary)] font-semibold">{{
+              <span class="text-xs font-mono text-[var(--color-primary)] font-semibold">{{
                 tip.tier
               }}</span>
             }
@@ -1895,7 +1896,7 @@ const BENCH_FIT_CHIP: Readonly<
         @if (tip.spells.length > 0) {
           <div class="space-y-1.5">
             <p
-              class="text-[9px] uppercase font-bold tracking-wider text-[var(--color-text-tertiary)]"
+              class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-tertiary)]"
             >
               {{ t('events.detail.abilities_selected') }}
             </p>
@@ -1904,7 +1905,7 @@ const BENCH_FIT_CHIP: Readonly<
                 class="flex items-center gap-2 rounded-md bg-white/5 px-2 py-1 border border-white/5"
               >
                 <span
-                  class="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-white/10 text-white min-w-5 text-center"
+                  class="font-mono text-xs font-bold px-1.5 py-0.2 rounded bg-white/10 text-white min-w-5 text-center"
                 >
                   {{ spell.key }}
                 </span>
@@ -1975,7 +1976,7 @@ const BENCH_FIT_CHIP: Readonly<
       .event-detail__label {
         color: var(--color-text-secondary);
         font-family: var(--font-universalsans);
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
         font-weight: 600;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -2061,7 +2062,7 @@ const BENCH_FIT_CHIP: Readonly<
       }
       .build-choice-card__copy small {
         color: var(--color-text-secondary);
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
       }
       .build-choice-card:disabled {
         cursor: not-allowed;
@@ -2177,7 +2178,7 @@ const BENCH_FIT_CHIP: Readonly<
         gap: 0.75rem 1.75rem;
       }
       .event-strip__fact dt {
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -2247,7 +2248,7 @@ const BENCH_FIT_CHIP: Readonly<
         border-left: 4px solid var(--color-warning);
       }
       .my-status__label {
-        font-size: 0.6875rem;
+        font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -2695,7 +2696,7 @@ const BENCH_FIT_CHIP: Readonly<
       }
       .seat__role {
         flex: none;
-        font-size: 0.625rem;
+        font-size: 0.75rem;
         font-weight: 800;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -2724,7 +2725,7 @@ const BENCH_FIT_CHIP: Readonly<
         border-radius: var(--radius-badges);
         background: var(--color-primary);
         color: var(--color-on-primary);
-        font-size: 0.625rem;
+        font-size: 0.75rem;
         font-weight: 800;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -2843,7 +2844,7 @@ export class EventDetailPage {
   protected readonly rosterView = signal<'parties' | 'roles' | 'table'>('parties');
   /** Parties tab mode: seat players, or edit the parties themselves (managers only). */
   protected readonly partiesMode = signal<'assign' | 'structure'>('assign');
-  protected readonly partiesModeOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly partiesModeOptions = computed<TabOption[]>(() => [
     { id: 'assign', label: this.t('events.parties.modeAssign') },
     { id: 'structure', label: this.t('events.parties.modeStructure') },
   ]);
@@ -2866,7 +2867,7 @@ export class EventDetailPage {
   /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
+  protected readonly tabOptions = computed<TabOption[]>(() => {
     const detail = this.event();
     const battlesCount = detail?.battles.length ?? 0;
     const splitsCount = detail?.splits.length ?? 0;

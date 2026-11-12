@@ -9,36 +9,52 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { Battles } from './battles';
 
-describe('Battles task-first scope labels', () => {
-  it('distinguishes canonical guild fights from personal raw battles', async () => {
-    await TestBed.configureTestingModule({
-      imports: [Battles],
-      providers: [
-        provideZonelessChangeDetection(),
-        provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { queryParamMap: convertToParamMap({}) } },
-        },
-        { provide: ApiService, useValue: { get: () => of({ items: [], total_items: 0 }) } },
-        { provide: ToastService, useValue: { error: () => undefined } },
-        TranslateService,
-      ],
-    }).compileComponents();
-    TestBed.inject(TranslateService).use('en');
+function render(queryParams: Record<string, string>) {
+  TestBed.resetTestingModule();
+  const queryParamMap = convertToParamMap(queryParams);
+  TestBed.configureTestingModule({
+    imports: [Battles],
+    providers: [
+      provideZonelessChangeDetection(),
+      provideRouter([]),
+      {
+        provide: ActivatedRoute,
+        useValue: { snapshot: { queryParamMap }, queryParamMap: of(queryParamMap) },
+      },
+      { provide: ApiService, useValue: { get: () => of({ items: [], total_items: 0 }) } },
+      { provide: ToastService, useValue: { error: () => undefined } },
+      TranslateService,
+    ],
+  });
+  TestBed.inject(TranslateService).use('en');
+  const fixture = TestBed.createComponent(Battles);
+  fixture.detectChanges();
+  return fixture;
+}
 
-    const fixture = TestBed.createComponent(Battles);
-    fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    fixture.detectChanges();
+async function settle(fixture: { detectChanges: () => void }): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  fixture.detectChanges();
+}
 
-    expect(fixture.nativeElement.textContent).toContain('Grouped guild fights');
-    expect(fixture.nativeElement.textContent).toContain('canonical guild fight');
-    expect(fixture.nativeElement.querySelector('a[routerLink="/fights/trends"]')).not.toBeNull();
+describe('Battles list', () => {
+  it('shows the guild scope by default with the summary band, filter bar and trends link', async () => {
+    const fixture = render({});
+    await settle(fixture);
 
-    const component = fixture.componentInstance as unknown as { switchTab(tab: string): void };
-    component.switchTab('me');
-    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Grouped guild fights');
+    expect(text).toContain('canonical guild fight');
+    expect(fixture.nativeElement.querySelector('app-summary-band')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-filter-bar')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('a[href="/fights/trends"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.kpi-card')).toBeNull();
+    fixture.destroy();
+  });
+
+  it('shows the personal scope when the tab is set in the URL', async () => {
+    const fixture = render({ tab: 'me' });
+    await settle(fixture);
 
     const translations = TestBed.inject(TranslateService);
     const expectedPersonalScope = [

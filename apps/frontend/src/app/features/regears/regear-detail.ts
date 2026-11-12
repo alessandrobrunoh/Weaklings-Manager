@@ -5,269 +5,392 @@ import { firstValueFrom } from 'rxjs';
 import type {
   AcceptRegearRequest,
   RegearBreakdownRow,
+  RegearBuildSlot,
   RegearDeathView,
   RegearStatus,
   RejectRegearRequest,
 } from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { Dialog } from '../../shared/components/dialog/dialog';
 import { Checkbox } from '../../shared/components/checkbox/checkbox';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
+import {
+  EntityHeader,
+  type EntityMenuItem,
+} from '../../shared/components/entity-header/entity-header';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-
-import { Icon } from '../../shared/components/icon/icon';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { Stat, SummaryBand } from '../../shared/components/summary-band/summary-band';
 
 /** Editing copy of a breakdown row used in the officer accept dialog. */
 interface EditableBreakdownRow extends RegearBreakdownRow {
+  /** Position in the auto-estimate breakdown; keys the row's controls. */
+  index: number;
   /** Editable unit_price as a string for the input binding. */
   unit_price_input: string;
 }
 
+/** One entry of the death's history: when it happened and, for decisions, the officer note. */
+interface HistoryEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly at: string | null;
+  readonly note: string | null;
+}
+
+/** Translation key for each equipment slot (the shared slot names used by regear settings). */
+const SLOT_LABEL_KEYS: Readonly<Record<RegearBuildSlot, TranslationKey>> = {
+  weapon: 'admin.regears.slot.weapon',
+  off_hand: 'admin.regears.slot.off_hand',
+  head: 'admin.regears.slot.head',
+  armor: 'admin.regears.slot.armor',
+  shoes: 'admin.regears.slot.shoes',
+  cape: 'admin.regears.slot.cape',
+  bag: 'admin.regears.slot.bag',
+  potion: 'admin.regears.slot.potion',
+  food: 'admin.regears.slot.food',
+  mount: 'admin.regears.slot.mount',
+};
+
 /**
- * View-first regear death page.
+ * Regear request page for one death.
  *
- * Shows player, event, battle, amounts, notes and the item breakdown. Members
- * request from here; officers accept/reject pending rows through `app-dialog`.
- * There is no generic "edit the death" form — adjudication is the only write.
+ * Header: the player, the event and date, the status, one primary action (Request for the member
+ * who died, Accept for an officer with a pending request) and an overflow menu (Reject for an
+ * officer). Below it: the key figures, the requested items as a table with unit price, line value
+ * and included state, the death and battle context, and the history of the request.
+ *
+ * Officers accept or reject through `app-dialog`; there is no generic edit of the death.
  */
 @Component({
   selector: 'app-regear-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Dialog, Checkbox, EmptyState, ErrorState, Loading, PageHeader, PageStack, Icon, TooltipDirective],
+  imports: [
+    RouterLink,
+    Checkbox,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    EntityHeader,
+    ErrorState,
+    Loading,
+    PageStack,
+    Stat,
+    StatusChip,
+    SummaryBand,
+  ],
   styles: `
-    .workbench-page {
-      --page-gap: 0.75rem;
+    :host {
+      display: block;
       min-width: 0;
-      overflow: hidden;
+      color: var(--color-text);
     }
-    .workbench-page > section {
-      min-width: 0;
+    .regear-back {
+      margin-block-end: 0.75rem;
     }
-    .workbench-page .card {
-      border-radius: var(--radius-md);
-      padding: clamp(0.875rem, 3vw, 1.25rem);
+    .regear-facts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      gap: 0.875rem 1.25rem;
+      margin: 0;
     }
-    .detail-actions {
-      display: flex;
-      flex-wrap: wrap;
+    .regear-facts dt {
+      font-size: var(--ui-text-xs);
+      font-weight: 600;
+      color: var(--color-text-secondary);
+    }
+    .regear-facts dd {
+      margin: 0.125rem 0 0;
+      font-size: var(--ui-text-md);
+      overflow-wrap: anywhere;
+    }
+    .regear-link {
+      font-weight: 500;
+      color: var(--color-primary);
+    }
+    .regear-item {
+      display: inline-flex;
+      align-items: center;
       gap: 0.5rem;
+      min-width: 0;
+    }
+    .regear-item img {
+      flex: none;
+      width: 2rem;
+      height: 2rem;
+      object-fit: contain;
+      padding: 0.125rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+    }
+    .regear-item__id {
+      font-family: var(--font-mono);
+      font-size: var(--ui-text-sm);
+      overflow-wrap: anywhere;
+    }
+    .regear-muted {
+      color: var(--color-text-secondary);
+    }
+    .regear-history {
+      display: grid;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .regear-history li {
+      display: grid;
+      grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+      gap: 0.25rem 1rem;
+      padding-block: 0.625rem;
+      border-top: 1px solid var(--color-border);
+      font-size: var(--ui-text-sm);
+    }
+    .regear-history li:first-child {
+      border-top: 0;
+    }
+    .regear-history__label {
+      font-weight: 600;
+    }
+    .regear-history__time {
+      font-family: var(--font-mono);
+      color: var(--color-text-secondary);
+      overflow-wrap: anywhere;
+    }
+    .regear-history__note {
+      grid-column: 2;
+      margin: 0;
+      color: var(--color-text-secondary);
+      overflow-wrap: anywhere;
+    }
+    .regear-accept-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      margin-block: 0.75rem;
+      font-size: var(--ui-text-sm);
+    }
+    .regear-accept-total strong {
+      font-size: var(--ui-text-lg);
+    }
+    .regear-error {
+      margin: 0 0 0.75rem;
+      font-size: var(--ui-text-sm);
+      color: var(--color-error);
+    }
+    .regear-price {
+      width: 8rem;
+      text-align: right;
+      font-family: var(--font-mono);
     }
   `,
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <app-loading variant="detail" [label]="t('common.loading')" />
     } @else if (loadFailed()) {
-      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
-    } @else if (!death()) {
-      <app-empty-state icon="shield" [message]="t('regears.detail.notFound')" />
+      @if (notFound()) {
+        <app-error-state variant="not-found">
+          <a class="btn btn--outline btn--sm" routerLink="/regears">{{ t('regears.detail.back') }}</a>
+        </app-error-state>
+      } @else {
+        <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
+      }
     } @else if (death(); as current) {
-      <app-page-header [title]="current.player_name" [subtitle]="current.event_title">
-        <div pageActions class="detail-actions">
-          <a class="btn btn--ghost" routerLink="/regears">← {{ t('regears.detail.back') }}</a>
-          @if (canRequest()) {
-            <button
-              type="button"
-              class="btn btn--primary"
-              (click)="requestRegear()"
-              [disabled]="acting()"
-            >
-              {{ t('regears.request') }}
-            </button>
-          }
-          @if (canAdjudicatePending()) {
-            <button type="button" class="btn btn--outline" (click)="openAcceptDialog()" [disabled]="acting()">
-              {{ t('regears.reviewRequest') }}
-            </button>
-            <button type="button" class="btn btn--danger" (click)="openRejectDialog()" [disabled]="acting()">
-              {{ t('regears.reject') }}
-            </button>
-          }
+      <a class="btn btn--ghost btn--sm regear-back" routerLink="/regears">← {{ t('regears.detail.back') }}</a>
+
+      <app-entity-header
+        [title]="current.player_name"
+        [menuItems]="menuItems()"
+        [menuLabel]="t('ui.menu.moreActions')"
+        (menuSelect)="onMenu($event)"
+      >
+        <app-status-chip entityBadges [value]="current.status" [label]="statusLabel(current.status)" />
+
+        <div entityMeta>
+          <span>{{ current.event_title }}</span>
+          <span>{{ formatDate(current.killed_at) }}</span>
         </div>
-      </app-page-header>
 
-      <app-page-stack class="workbench-page">
-        <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
-          <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('common.player') }}</dt>
-              <dd class="font-bold text-base text-[var(--color-text)] mt-0.5">{{ current.player_name }}</dd>
-            </div>
-            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('regears.event') }}</dt>
-              <dd class="font-bold text-sm text-[var(--color-text)] mt-0.5 truncate">{{ current.event_title }}</dd>
-            </div>
-            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('regears.battle') }}</dt>
-              <dd class="mt-0.5">
-                @if (current.albionbb_battle_id) {
-                  <a [routerLink]="['/battles', current.albionbb_battle_id]" class="font-bold text-sm text-[var(--color-primary)] hover:underline">
-                    Battle #{{ current.albionbb_battle_id }}
-                  </a>
+        @if (canRequest()) {
+          <button entityPrimary type="button" class="btn btn--primary" (click)="requestRegear()" [disabled]="acting()">
+            {{ t('regears.request') }}
+          </button>
+        } @else if (canAdjudicatePending()) {
+          <button entityPrimary type="button" class="btn btn--primary" (click)="openAcceptDialog()" [disabled]="acting()">
+            {{ t('regears.accept') }}
+          </button>
+        }
+
+        <div entitySummary>
+          <app-summary-band [ariaLabel]="t('regears.detail.summary')">
+            <app-stat [label]="t('regears.estimate')" [value]="formatAmount(current.auto_estimate_total)" [hint]="t('regears.silver')" />
+            <app-stat
+              [label]="t('regears.final')"
+              [value]="formatAmount(current.final_amount)"
+              [hint]="current.final_amount === null ? t('regears.detail.notDecided') : t('regears.silver')"
+              [tone]="current.final_amount === null ? 'default' : 'success'"
+            />
+            <app-stat
+              [label]="t('regears.detail.includedItems')"
+              [value]="includedCount()"
+              [hint]="t('regears.detail.includedOf', { count: breakdown().length })"
+            />
+          </app-summary-band>
+        </div>
+      </app-entity-header>
+
+      <app-page-stack>
+        <section class="card" aria-labelledby="regear-breakdown-title">
+          <h2 id="regear-breakdown-title" class="section-title">{{ t('regears.detail.breakdown') }}</h2>
+          <app-data-table
+            [columns]="breakdownColumns"
+            [rows]="breakdown()"
+            [trackBy]="trackBreakdownRow"
+            [hideSearch]="true"
+            [hidePageSize]="true"
+            [syncUrl]="false"
+            [pageSize]="50"
+            [ariaLabel]="t('regears.detail.breakdown')"
+            emptyLabel="regears.detail.noItems"
+          >
+            <ng-template dataTableCell="slot" let-row>
+              {{ slotLabel(row.slot) }}
+            </ng-template>
+            <ng-template dataTableCell="item" let-row>
+              <span class="regear-item">
+                <img [src]="itemIconUrl(row.item_id)" alt="" loading="lazy" />
+                <span class="regear-item__id">{{ row.item_id }}</span>
+              </span>
+            </ng-template>
+            <ng-template dataTableCell="unit" let-row>
+              <span class="num">{{ formatAmount(row.unit_price) ?? '—' }}</span>
+            </ng-template>
+            <ng-template dataTableCell="qty" let-row>
+              <span class="num">{{ row.quantity }}</span>
+            </ng-template>
+            <ng-template dataTableCell="value" let-row>
+              <span class="num">
+                @if (row.included) {
+                  {{ formatAmount(lineValue(row)) }}
                 } @else {
-                  <span class="chip text-xs">{{ t('regears.source.selfReported') }}</span>
+                  —
                 }
-              </dd>
-            </div>
-            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('common.status') }}</dt>
-              <dd class="mt-0.5">
-                <span class="chip" [class]="statusChipClass(current.status)">{{
-                  statusLabel(current.status)
-                }}</span>
-              </dd>
-            </div>
-          </dl>
-
-          <div class="grid gap-3 sm:grid-cols-3 mt-4 pt-4 border-t border-[var(--color-border)] text-sm">
-            <div>
-              <span class="text-xs text-[var(--color-text-secondary)] block">{{ t('regears.killedAt') }}</span>
-              <span class="font-medium">{{ formatDate(current.killed_at) }}</span>
-            </div>
-            <div>
-              <span class="text-xs text-[var(--color-text-secondary)] block">{{ t('regears.estimate') }}</span>
-              <span class="font-bold text-base">{{ formatSilver(current.auto_estimate_total) }}</span>
-            </div>
-            @if (current.final_amount !== null) {
-              <div>
-                <span class="text-xs text-[var(--color-text-secondary)] block">{{ t('regears.final') }}</span>
-                <span class="font-bold text-base text-[var(--color-success)]">
-                  {{ formatSilver(current.final_amount) }}
-                </span>
-              </div>
-            }
-          </div>
-
-          @if (current.officer_note) {
-            <div class="mt-4 p-3 bg-[var(--color-surface-2)] rounded-lg text-xs border border-[var(--color-border)]">
-              <span class="font-bold text-[var(--color-text)]">{{ t('regears.officerNote') }}:</span>
-              <span class="text-[var(--color-text-secondary)] ml-1">{{ current.officer_note }}</span>
-            </div>
-          }
+              </span>
+            </ng-template>
+            <ng-template dataTableCell="included" let-row>
+              @if (row.included) {
+                <app-status-chip value="included" [label]="t('regears.included')" toneOverride="success" />
+              } @else {
+                <app-status-chip value="excluded" [label]="t('regears.excluded')" toneOverride="neutral" />
+              }
+            </ng-template>
+          </app-data-table>
         </section>
 
-        <!-- ITEM BREAKDOWN TABLE WITH ALBION SPRITES -->
-        <section class="card p-5">
-          <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('regears.detail.breakdown') }}</h2>
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th class="text-left">{{ t('regears.slot') }}</th>
-                  <th class="text-left">{{ t('regears.item') }}</th>
-                  <th class="text-right">{{ t('regears.unitPrice') }}</th>
-                  <th class="text-right">{{ t('regears.qty') }}</th>
-                  <th class="text-center">{{ t('regears.included') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of breakdown(); track row.item_id + row.slot) {
-                  <tr>
-                    <td>
-                      <span class="chip text-xs font-bold uppercase">{{ row.slot }}</span>
-                    </td>
-                    <td>
-                      <div class="flex items-center gap-2.5">
-                        <img
-                          [src]="itemIconUrl(row.item_id)"
-                          [alt]="row.item_id"
-                          class="h-8 w-8 object-contain bg-[var(--color-surface-2)] rounded p-0.5 border border-[var(--color-border)]"
-                          loading="lazy"
-                        />
-                        <span class="font-mono text-xs font-semibold text-[var(--color-text)]">{{ row.item_id }}</span>
-                      </div>
-                    </td>
-                    <td class="text-right font-mono font-medium">{{ formatSilver(row.unit_price) }}</td>
-                    <td class="text-right font-mono font-bold">{{ row.quantity }}</td>
-                    <td class="text-center">
-                      @if (row.included) {
-                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-success-subtle)] text-[var(--color-success)]">✓ Included</span>
-                      } @else {
-                        <span class="text-xs text-[var(--color-text-tertiary)] font-bold">— Excluded</span>
-                      }
-                    </td>
-                  </tr>
+        <section class="card" aria-labelledby="regear-context-title">
+          <h2 id="regear-context-title" class="section-title">{{ t('regears.detail.context') }}</h2>
+          <dl class="regear-facts">
+            <div>
+              <dt>{{ t('regears.battle') }}</dt>
+              <dd>
+                @if (current.albionbb_battle_id) {
+                  <a [routerLink]="['/battles', current.albionbb_battle_id]" class="regear-link">
+                    {{ t('regears.detail.battleNumber', { id: current.albionbb_battle_id }) }}
+                  </a>
+                } @else {
+                  <span class="regear-muted">{{ t('regears.source.selfReported') }}</span>
                 }
-              </tbody>
-            </table>
-          </div>
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('regears.build') }}</dt>
+              <dd>{{ current.primary_build_name || '—' }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="card" aria-labelledby="regear-history-title">
+          <h2 id="regear-history-title" class="section-title">{{ t('regears.detail.history') }}</h2>
+          <ol class="regear-history">
+            @for (entry of history(); track entry.id) {
+              <li>
+                <span class="regear-history__label">{{ entry.label }}</span>
+                @if (entry.at; as at) {
+                  <time class="regear-history__time" [attr.datetime]="at">{{ formatDate(at) }}</time>
+                }
+                @if (entry.note) {
+                  <p class="regear-history__note">
+                    <span class="font-semibold">{{ t('regears.officerNote') }}:</span> {{ entry.note }}
+                  </p>
+                }
+              </li>
+            }
+          </ol>
         </section>
       </app-page-stack>
     }
 
     @if (acceptOpen()) {
-      <app-dialog
-        [title]="t('regears.acceptTitle')"
-        size="lg"
-        (closed)="closeAcceptDialog()"
-      >
-        <p class="mb-3 text-sm text-[var(--color-text-secondary)]">
-          {{ t('regears.acceptHint') }}
-        </p>
-        <div class="mb-3 max-h-80 overflow-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                <th class="text-left">{{ t('regears.slot') }}</th>
-                <th class="text-left">{{ t('regears.item') }}</th>
-                <th class="text-right">{{ t('regears.unitPrice') }}</th>
-                <th class="text-center">{{ t('regears.included') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of acceptRows(); track row.item_id + row.slot; let i = $index) {
-                <tr>
-                  <td class="font-bold uppercase text-xs">{{ row.slot }}</td>
-                  <td>
-                    <div class="flex items-center gap-2">
-                      <img
-                        [src]="itemIconUrl(row.item_id)"
-                        [alt]="row.item_id"
-                        class="h-7 w-7 object-contain bg-[var(--color-surface-2)] rounded p-0.5 border border-[var(--color-border)]"
-                        loading="lazy"
-                      />
-                      <span class="font-mono text-xs">{{ row.item_id }}</span>
-                    </div>
-                  </td>
-                  <td class="text-right">
-                    <input
-                      class="input input--sm w-32 text-right font-mono"
-                      type="number"
-                      min="0"
-                      [value]="row.unit_price_input"
-                      (input)="updateEditablePrice(i, $event)"
-                    />
-                  </td>
-                  <td class="text-center">
-                    <app-checkbox
-                      [inputId]="'regear-row-' + i"
-                      [label]="t('regears.included') + ' · ' + row.item_id"
-                      [checked]="row.included"
-                      (checkedChange)="setEditableIncluded(i, $event)"
-                    />
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        <div class="mb-3 flex items-center justify-between">
-          <span style="color: var(--color-text-secondary)">{{ t('common.total') }}</span>
-          <strong class="text-lg">{{ formatSilver(acceptTotal()) }}</strong>
+      <app-dialog [title]="t('regears.acceptTitle')" size="lg" (closed)="closeAcceptDialog()">
+        <p class="hint">{{ t('regears.acceptHint') }}</p>
+        <app-data-table
+          [columns]="acceptColumns"
+          [rows]="acceptRows()"
+          [trackBy]="trackEditableRow"
+          [hideSearch]="true"
+          [hidePageSize]="true"
+          [syncUrl]="false"
+          [pageSize]="50"
+          [maxHeight]="'20rem'"
+          [ariaLabel]="t('regears.detail.breakdown')"
+          emptyLabel="regears.detail.noItems"
+        >
+          <ng-template dataTableCell="slot" let-row>
+            {{ slotLabel(row.slot) }}
+          </ng-template>
+          <ng-template dataTableCell="item" let-row>
+            <span class="regear-item">
+              <img [src]="itemIconUrl(row.item_id)" alt="" loading="lazy" />
+              <span class="regear-item__id">{{ row.item_id }}</span>
+            </span>
+          </ng-template>
+          <ng-template dataTableCell="unit" let-row>
+            <input
+              class="input input--sm regear-price"
+              type="number"
+              min="0"
+              inputmode="numeric"
+              [attr.aria-label]="t('regears.unitPrice') + ' · ' + row.item_id"
+              [value]="row.unit_price_input"
+              (input)="updateEditablePrice(row.index, $event)"
+            />
+          </ng-template>
+          <ng-template dataTableCell="included" let-row>
+            <app-checkbox
+              [inputId]="'regear-row-' + row.index"
+              [label]="t('regears.included')"
+              [checked]="row.included"
+              (checkedChange)="setEditableIncluded(row.index, $event)"
+            />
+          </ng-template>
+        </app-data-table>
+
+        <div class="regear-accept-total">
+          <span class="regear-muted">{{ t('common.total') }}</span>
+          <strong class="num">{{ formatSilver(acceptTotal()) }}</strong>
         </div>
         @if (acceptHasNegativePrice()) {
-          <p class="mb-3 text-xs" style="color: var(--color-error)">
-            {{ t('regears.negativePrice') }}
-          </p>
+          <p class="regear-error">{{ t('regears.negativePrice') }}</p>
         }
-        <label class="mb-1 block">
+        <label class="block">
           <span class="label">{{ t('regears.note') }} ({{ t('common.optional') }})</span>
           <input class="input" type="text" [value]="acceptNote()" (input)="onAcceptNote($event)" />
         </label>
@@ -289,13 +412,11 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
 
     @if (rejectOpen()) {
       <app-dialog [title]="t('regears.rejectTitle')" (closed)="closeRejectDialog()">
-        <p class="mb-2 text-sm" style="color: var(--color-error)">
-          {{ t('regears.rejectWarning') }}
-        </p>
+        <p class="regear-error">{{ t('regears.rejectWarning') }}</p>
         <form id="regear-reject-form" class="grid gap-2" (submit)="confirmReject($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
+          <p class="hint">{{ t('validation.requiredLegend') }}</p>
           <label class="block">
-            <span class="label">{{ t('regears.rejectReason') }} <span class="text-[var(--color-error)]" aria-hidden="true">*</span></span>
+            <span class="label">{{ t('regears.rejectReason') }} <span class="regear-error" aria-hidden="true">*</span></span>
             <textarea
               class="textarea"
               name="reject_reason"
@@ -332,6 +453,7 @@ export class RegearDetailPage {
 
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
+  protected readonly notFound = signal(false);
   protected readonly acting = signal(false);
   protected readonly death = signal<RegearDeathView | null>(null);
   protected readonly acceptOpen = signal(false);
@@ -351,16 +473,14 @@ export class RegearDetailPage {
     return death.final_breakdown ?? death.auto_estimate_breakdown;
   });
 
+  protected readonly includedCount = computed(() => this.breakdown().filter((row) => row.included).length);
+
   protected readonly acceptTotal = computed(() => this.computeEditableTotal(this.acceptRows()));
 
   /** Zero is a legitimate unit price (e.g. a worthless slot); only negatives are rejected. */
   protected readonly acceptHasNegativePrice = computed(() =>
     this.acceptRows().some((row) => Number(row.unit_price) < 0),
   );
-
-  protected itemIconUrl(itemId: string): string {
-    return `https://render.albiononline.com/v1/item/${itemId}.png`;
-  }
 
   protected readonly canRequest = computed(() => {
     const death = this.death();
@@ -376,20 +496,86 @@ export class RegearDetailPage {
     () => this.canAdjudicate() && this.death()?.status === 'pending',
   );
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  /** Officer actions that do not fit the primary button. */
+  protected readonly menuItems = computed<EntityMenuItem[]>(() =>
+    this.canAdjudicatePending() ? [{ id: 'reject', label: this.t('regears.reject'), danger: true }] : [],
+  );
+
+  protected readonly history = computed<HistoryEntry[]>(() => {
+    const death = this.death();
+    if (!death) {
+      return [];
+    }
+    const entries: HistoryEntry[] = [
+      { id: 'killed', label: this.t('regears.killedAt'), at: death.killed_at, note: null },
+    ];
+    if (death.requested_at) {
+      entries.push({
+        id: 'requested',
+        label: this.t('regears.detail.historyRequested'),
+        at: death.requested_at,
+        note: null,
+      });
+    }
+    if (death.decided_at) {
+      entries.push({
+        id: 'decided',
+        label: this.statusLabel(death.status),
+        at: death.decided_at,
+        note: death.officer_note,
+      });
+    }
+    if (death.bank_transaction_id !== null) {
+      entries.push({ id: 'credited', label: this.t('regears.detail.historyCredited'), at: null, note: null });
+    }
+    return entries;
+  });
+
+  protected readonly breakdownColumns: DataTableColumn<RegearBreakdownRow>[] = [
+    { key: 'slot', label: 'regears.slot' },
+    { key: 'item', label: 'regears.item' },
+    { key: 'unit', label: 'regears.unitPrice', align: 'right' },
+    { key: 'qty', label: 'regears.qty', align: 'right' },
+    { key: 'value', label: 'regears.detail.lineValue', align: 'right' },
+    { key: 'included', label: 'regears.included', align: 'center' },
+  ];
+
+  protected readonly acceptColumns: DataTableColumn<EditableBreakdownRow>[] = [
+    { key: 'slot', label: 'regears.slot' },
+    { key: 'item', label: 'regears.item' },
+    { key: 'unit', label: 'regears.unitPrice', align: 'right' },
+    { key: 'included', label: 'regears.included', align: 'center' },
+  ];
+
+  protected readonly trackBreakdownRow = (row: RegearBreakdownRow): string => `${row.slot}:${row.item_id}`;
+
+  protected readonly trackEditableRow = (row: EditableBreakdownRow): number => row.index;
+
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) => this.translate.t(key, params);
 
   constructor() {
     void this.load();
   }
 
+  protected itemIconUrl(itemId: string): string {
+    return `https://render.albiononline.com/v1/item/${itemId}.png`;
+  }
+
+  protected slotLabel(slot: RegearBuildSlot): string {
+    return this.t(SLOT_LABEL_KEYS[slot]);
+  }
+
   protected async load(): Promise<void> {
+    this.loadFailed.set(false);
+    this.notFound.set(false);
     const deathId = Number(this.route.snapshot.paramMap.get('deathId'));
     if (!Number.isFinite(deathId) || deathId <= 0) {
       this.death.set(null);
+      this.notFound.set(true);
+      this.loadFailed.set(true);
       return;
     }
     this.loading.set(true);
-    this.loadFailed.set(false);
     try {
       const death = await firstValueFrom(
         this.api.get<RegearDeathView>(`api/regear/deaths/${deathId}`),
@@ -398,9 +584,19 @@ export class RegearDetailPage {
     } catch (error) {
       this.death.set(null);
       this.loadFailed.set(true);
-      this.toasts.error(this.errorMessage(error));
+      if (error instanceof ApiError && error.status === 404) {
+        this.notFound.set(true);
+      } else {
+        this.toasts.error(this.t('common.error'));
+      }
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  protected onMenu(id: string): void {
+    if (id === 'reject') {
+      this.openRejectDialog();
     }
   }
 
@@ -416,8 +612,8 @@ export class RegearDetailPage {
       );
       this.death.set(updated);
       this.toasts.success(this.t('regears.requested'));
-    } catch (error) {
-      this.toasts.error(this.errorMessage(error));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.acting.set(false);
     }
@@ -429,8 +625,9 @@ export class RegearDetailPage {
       return;
     }
     this.acceptRows.set(
-      death.auto_estimate_breakdown.map((row) => ({
+      death.auto_estimate_breakdown.map((row, index) => ({
         ...row,
+        index,
         unit_price_input: String(row.unit_price),
       })),
     );
@@ -445,15 +642,15 @@ export class RegearDetailPage {
   protected updateEditablePrice(index: number, event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.acceptRows.update((rows) =>
-      rows.map((row, i) =>
-        i === index ? { ...row, unit_price_input: value, unit_price: Number(value) || 0 } : row,
+      rows.map((row) =>
+        row.index === index ? { ...row, unit_price_input: value, unit_price: Number(value) || 0 } : row,
       ),
     );
   }
 
   protected setEditableIncluded(index: number, included: boolean): void {
     this.acceptRows.update((rows) =>
-      rows.map((row, i) => (i === index ? { ...row, included } : row)),
+      rows.map((row) => (row.index === index ? { ...row, included } : row)),
     );
   }
 
@@ -475,7 +672,7 @@ export class RegearDetailPage {
       const rows = this.acceptRows();
       const payload: AcceptRegearRequest = {
         final_amount: this.computeEditableTotal(rows),
-        breakdown: rows.map(({ unit_price_input: _ignored, ...row }) => row),
+        breakdown: rows.map(({ unit_price_input: _ignored, index: _index, ...row }) => row),
         note: this.acceptNote().trim() || undefined,
       };
       const updated = await firstValueFrom(
@@ -484,8 +681,8 @@ export class RegearDetailPage {
       this.death.set(updated);
       this.closeAcceptDialog();
       this.toasts.success(this.t('regears.accepted'));
-    } catch (error) {
-      this.toasts.error(this.errorMessage(error));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.acting.set(false);
     }
@@ -520,11 +717,15 @@ export class RegearDetailPage {
       this.death.set(updated);
       this.closeRejectDialog();
       this.toasts.success(this.t('regears.rejected'));
-    } catch (error) {
-      this.toasts.error(this.errorMessage(error));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.acting.set(false);
     }
+  }
+
+  protected lineValue(row: RegearBreakdownRow): number {
+    return (Number(row.unit_price) || 0) * row.quantity;
   }
 
   protected formatDate(value: string | null): string {
@@ -538,15 +739,21 @@ export class RegearDetailPage {
     }
   }
 
-  protected formatSilver(value: number | string | null): string {
+  /** Number only, for table cells and stat values. Null renders as an em dash in `app-stat`. */
+  protected formatAmount(value: number | string | null | undefined): string | null {
     if (value === null || value === undefined || value === '') {
-      return '—';
+      return null;
     }
     const numeric = typeof value === 'string' ? Number(value) : value;
     if (Number.isNaN(numeric)) {
       return String(value);
     }
-    return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${this.t('regears.silver')}`;
+    return numeric.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
+  protected formatSilver(value: number | string | null): string {
+    const amount = this.formatAmount(value);
+    return amount === null ? '—' : `${amount} ${this.t('regears.silver')}`;
   }
 
   protected statusLabel(status: RegearStatus): string {
@@ -562,29 +769,9 @@ export class RegearDetailPage {
     }
   }
 
-  protected statusChipClass(status: RegearDeathView['status']): string {
-    switch (status) {
-      case 'approved':
-        return 'chip--success';
-      case 'rejected':
-        return 'chip--error';
-      case 'pending':
-        return 'chip--warning';
-      default:
-        return '';
-    }
-  }
-
   private computeEditableTotal(rows: readonly EditableBreakdownRow[]): number {
     return rows
       .filter((row) => row.included)
       .reduce((acc, row) => acc + (Number(row.unit_price) || 0) * row.quantity, 0);
-  }
-
-  private errorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return this.t('common.error');
   }
 }

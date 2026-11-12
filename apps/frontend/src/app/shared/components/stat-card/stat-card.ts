@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { Icon, type IconName } from '../icon/icon';
 
 /**
- * Modular KPI tile: quiet eyebrow label, optional icon, and mono figure.
- * Reusable across Dashboard, Battles, Events, Bank, Compositions, etc.
+ * KPI tile: quiet 12px label, optional icon and mono figure. Kept for pages not yet migrated;
+ * new work uses `app-summary-band` + `app-stat` (a compact strip instead of a grid of cards).
  */
 @Component({
   selector: 'app-stat-card',
@@ -15,66 +15,58 @@ import { Icon, type IconName } from '../icon/icon';
       height: 100%;
     }
     .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: var(--spacing-12, 0.75rem) var(--spacing-16, 1rem);
-      height: 100%;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-strong);
+      height: 100%;
+      padding: 0.625rem 0.875rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-smallcards);
+      background: var(--color-surface);
     }
     .icon-capsule {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 1.875rem;
-      height: 1.875rem;
-      border-radius: var(--radius-md);
+      width: 1.75rem;
+      height: 1.75rem;
       flex-shrink: 0;
-      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
     }
-    .icon-capsule--success { background: var(--color-success-container); color: var(--color-success); border-color: color-mix(in oklab, var(--color-success) 24%, transparent); }
-    .icon-capsule--warning { background: var(--color-warning-container); color: var(--color-warning); border-color: color-mix(in oklab, var(--color-warning) 24%, transparent); }
-    .icon-capsule--danger { background: var(--color-error-container); color: var(--color-error); border-color: color-mix(in oklab, var(--color-error) 24%, transparent); }
-    .icon-capsule--primary { background: var(--color-primary-container); color: var(--color-primary-hover); border-color: color-mix(in oklab, var(--color-primary) 24%, transparent); }
-    .icon-capsule--neutral { background: var(--color-surface-2); color: var(--color-text-secondary); border-color: var(--color-border); }
+    .icon-capsule--success { color: var(--color-success); }
+    .icon-capsule--warning { color: var(--color-warning); }
+    .icon-capsule--danger { color: var(--color-error); }
+    .icon-capsule--primary { color: var(--color-primary); }
   `,
   template: `
     <article class="kpi-card">
       <div class="flex items-start justify-between gap-2.5">
         <div class="min-w-0 flex-1">
-          <p class="text-[var(--text-caption)] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase truncate">
-            {{ label() }}
-          </p>
-          <div class="flex items-baseline gap-2 mt-1">
-            <p class="font-mono text-2xl font-medium tracking-tight" [style.color]="valueColor()">
+          <p class="truncate text-xs font-semibold text-[var(--color-text-secondary)]">{{ label() }}</p>
+          <div class="mt-0.5 flex items-baseline gap-2">
+            <p class="font-mono text-xl font-semibold tracking-tight" [style.color]="valueColor()">
               {{ value() !== null && value() !== undefined ? value() : '—' }}
             </p>
             @if (delta()) {
               <span
-                class="chip text-[10px] font-mono font-medium"
+                class="chip font-mono"
                 [class.chip--success]="deltaDirection() === 'up'"
                 [class.chip--error]="deltaDirection() === 'down'"
                 [class.chip--neutral]="deltaDirection() === 'neutral'"
               >
-                {{ delta() }}
+                {{ deltaDirection() === 'up' ? '▲ ' : deltaDirection() === 'down' ? '▼ ' : '' }}{{ delta() }}
               </span>
             }
           </div>
           @if (sub()) {
-            <p class="mt-1 text-xs text-[var(--color-text-tertiary)] truncate">{{ sub() }}</p>
+            <p class="mt-0.5 truncate text-xs text-[var(--color-text-secondary)]">{{ sub() }}</p>
           }
         </div>
         @if (icon()) {
           <div class="icon-capsule" [class]="iconCapsuleClass()">
-            <app-icon [name]="icon()!" size="1.125rem" />
+            <app-icon [name]="icon()!" size="1rem" />
           </div>
         }
       </div>
@@ -103,7 +95,7 @@ export class StatCard {
       case 'neutral':
         return 'icon-capsule--neutral';
       default:
-        return 'icon-capsule--primary';
+        return '';
     }
   }
 
@@ -116,7 +108,7 @@ export class StatCard {
       case 'danger':
         return 'var(--color-error)';
       case 'primary':
-        return 'var(--color-primary-hover)';
+        return 'var(--color-primary)';
       case 'neutral':
         return 'var(--color-text)';
       default:

@@ -46,8 +46,6 @@ import { Topbar } from '../topbar/topbar';
   styles: `
     .workspace {
       background-color: var(--color-bg);
-      background-image: radial-gradient(var(--color-border) 0.6px, transparent 0.6px);
-      background-size: 8px 8px;
     }
     .workspace-sidebar {
       border-right: 1px solid var(--color-border);

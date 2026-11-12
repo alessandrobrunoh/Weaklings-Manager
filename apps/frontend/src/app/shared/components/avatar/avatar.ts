@@ -4,7 +4,7 @@ export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 export type AvatarShape = 'circle' | 'rounded';
 
 const SIZE_MAP: Record<AvatarSize, string> = {
-  xs: 'h-5 w-5 text-[10px]',
+  xs: 'h-5 w-5 text-xs',
   sm: 'h-7 w-7 text-xs',
   md: 'h-10 w-10 text-sm',
   lg: 'h-16 w-16 text-xl',

@@ -1,21 +1,21 @@
-# Loading indicator
+# Loading
 
 ## Overview
 
-`app-loading` is an inline spinner component for loading states.
+`app-loading` is the loading placeholder: an inline spinner, or a skeleton that reserves the layout of what is about to appear (table rows, a summary band, a detail page, text lines).
 
 ## Interface
 
-- `size` is an input in pixels and defaults to `20`.
-- `label` defaults to an empty string.
+- `variant`: `'spinner'` (default), `'table'`, `'summary'`, `'detail'` or `'lines'`.
+- `label` (translated "Loading…", empty by default), `size` (spinner diameter in px, default `20`), `rows` (table and lines skeletons, default `5`), `cells` (summary skeleton, default `4`).
 
 ## Invariants
 
-The wrapper uses `role="status"` with `aria-label` from `label`; the spinner is hidden from assistive technology. Spinner dimensions follow `size`, and its border width is at least 2px. Visible label text renders only when truthy.
+Every variant is a `role="status"` region; the spinner is named by `aria-label` with the label shown beside it, skeletons carry `aria-busy="true"`, the label as screen-reader-only text, and hide the placeholder shapes from assistive technology. Use a skeleton for any region of the page, a spinner only for small inline waits. Shimmer and spin stop under `prefers-reduced-motion`.
 
 ## Side Effects
 
-The component renders an animated spinner; its CSS rotates continuously. No external state or I/O is used.
+CSS animation only. No external state or I/O.
 
 ## Verification
 

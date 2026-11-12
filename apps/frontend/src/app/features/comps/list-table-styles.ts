@@ -94,7 +94,7 @@ export const LIST_TABLE_STYLES = `
     outline-offset: 1px;
   }
   .lt-sort__arrow {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     line-height: 1;
   }
   .lt-name {

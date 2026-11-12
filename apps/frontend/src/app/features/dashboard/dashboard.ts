@@ -1,4 +1,3 @@
-import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -6,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import type {
   AlbionLinkStatus,
   BalanceSummary,
+  EventStatus,
   EventView,
   ProgressionMeView,
   UserMetrics,
@@ -14,10 +14,15 @@ import type { TranslationKey } from '../../i18n/en';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { Avatar } from '../../shared/components/avatar/avatar';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { Loading } from '../../shared/components/loading/loading';
+import type { MenuItem } from '../../shared/components/menu/menu';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 
 interface AttentionItem {
   readonly id: string;
@@ -28,473 +33,205 @@ interface AttentionItem {
   readonly link: string;
 }
 
-interface NextMassCard {
+/** One row of the events tables; `when` and `comp` are already translated and formatted. */
+interface EventRow {
   readonly id: number;
   readonly title: string;
-  readonly dayLabel: string;
-  readonly time: string;
-  readonly compName: string;
+  readonly when: string;
+  readonly comp: string;
   readonly capText: string | null;
-  readonly live: boolean;
+  readonly status: EventStatus;
 }
 
+const UPCOMING_LIMIT = 5;
+const RECENT_LIMIT = 5;
+const TIME_OPTIONS: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false };
+
 /**
- * Personal command-center dashboard.
+ * Personal home for members and officers.
  *
- * The landing page answers "what is true for me right now": identity, bank
- * ledger, season progress, things I still need to do, and the next mass.
- * Guild-wide finance and officer queues live on `/guild` and `/admin`.
+ * Order is what needs the reader first: things waiting on them, then the events they can act on,
+ * then the figures for their season and bank, then what recently finished. Every number comes from
+ * the member's own endpoints; guild-wide finance and officer queues live on `/guild` and `/admin`.
  */
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, EmptyState, Icon, NgTemplateOutlet, RouterLink, TooltipDirective],
-  styles: `
-    :host {
-      display: block;
-      width: 100%;
-    }
-
-    .identity-card,
-    .kpi-card,
-    .action-panel {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm);
-      transition: border-color 150ms ease, background-color 150ms ease;
-    }
-    .identity-card:hover,
-    .kpi-card:hover,
-    .action-panel:hover {
-      border-color: var(--color-border-strong);
-    }
-
-    .kpi-card {
-      padding: 0.75rem 0.875rem;
-      display: flex;
-      flex-direction: column;
-      text-decoration: none;
-    }
-    .kpi-card:hover {
-      background-color: var(--color-surface-hover);
-    }
-
-    .icon-capsule {
-      width: 1.75rem;
-      height: 1.75rem;
-      border-radius: var(--radius-sm);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .icon-capsule--red { background: var(--color-error-container); color: var(--color-error); }
-    .icon-capsule--green { background: var(--color-success-container); color: var(--color-success); }
-    .icon-capsule--amber { background: var(--color-warning-container); color: var(--color-warning); }
-    .icon-capsule--purple { background: var(--color-primary-container); color: var(--color-primary); }
-    .icon-capsule--sky { background: var(--color-info-container); color: var(--color-info); }
-
-    .xp-track {
-      height: 0.375rem;
-      border-radius: var(--radius-hairline);
-      overflow: hidden;
-      background: var(--color-surface-2);
-    }
-    .xp-track__fill {
-      height: 100%;
-      border-radius: var(--radius-hairline);
-      background: var(--color-primary);
-    }
-
-    .caught-up-banner {
-      background-color: color-mix(in srgb, var(--color-surface-2) 75%, transparent);
-      border: 1px solid var(--color-border);
-    }
-
-    .date-box {
-      background-color: var(--color-surface-2);
-      border: 1px solid var(--color-border-strong);
-      min-width: 5.75rem;
-    }
-
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.375rem 0.75rem;
-      border-radius: var(--radius-sm);
-      font-size: 0.75rem;
-      font-weight: 500;
-      line-height: 1;
-    }
-    .status-pill--ready {
-      background-color: var(--color-success-container);
-      border: 1px solid var(--color-success);
-      color: var(--color-success);
-    }
-    .status-pill--live {
-      background-color: var(--color-error-container);
-      border: 1px solid var(--color-error);
-      color: var(--color-error);
-    }
-
-    .btn-open-event {
-      background-color: var(--color-weaklings-red);
-      color: var(--color-on-primary, #ffffff);
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.375rem 0.75rem;
-      border-radius: var(--radius-sm);
-      transition: background-color 150ms ease;
-      line-height: 1.25;
-    }
-    .btn-open-event:hover {
-      background-color: var(--color-primary-hover);
-    }
-  `,
+  imports: [
+    EmptyState,
+    ErrorState,
+    Icon,
+    Loading,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    StatusChip,
+    SummaryBand,
+  ],
   template: `
-    <div class="dashboard-page flex flex-col gap-4 max-w-7xl mx-auto pb-6">
-      <header class="dashboard-toolbar flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-        <div>
-          <h1 class="text-xl sm:text-2xl font-normal tracking-tight text-(--color-text-heading) m-0">
-            {{ greeting() }}, {{ username() }}
-          </h1>
-          <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">
-            {{ t('dashboard.subtitle') }}
-          </p>
-        </div>
+    <app-page-header
+      [title]="greeting() + ', ' + username()"
+      [subtitle]="albionLabel()"
+      [badge]="roleLabel()"
+      [menuItems]="menuItems()"
+      (menuSelect)="onMenuSelect($event)"
+    >
+      <a routerLink="/profile" class="btn btn--outline btn--sm no-underline">
+        {{ t('dashboard.open_profile') }}
+      </a>
+    </app-page-header>
 
-        <div class="flex items-center gap-3 self-end sm:self-center">
-          <a
-            routerLink="/profile"
-            class="btn btn--ghost btn--sm no-underline"
-          >
-            {{ t('dashboard.open_profile') }}
+    <app-page-stack>
+      <section class="card p-4" aria-labelledby="dash-attention">
+        <h2 class="section-title" id="dash-attention">{{ t('dashboard.attention.title') }}</h2>
+        @if (loading()) {
+          <app-loading variant="lines" [rows]="3" [label]="t('common.loading')" />
+        } @else if (attentionIncomplete()) {
+          <app-error-state
+            [message]="t('common.error')"
+            [retryLabel]="t('common.retry')"
+            (retry)="refreshNow()"
+          />
+        } @else if (attentionItems().length > 0) {
+          <ul class="mt-2 divide-y divide-[var(--color-border)]">
+            @for (item of attentionItems(); track item.id) {
+              <li class="flex items-center justify-between gap-3 py-2.5">
+                <div class="flex min-w-0 items-center gap-2.5">
+                  <app-icon
+                    [name]="item.icon"
+                    size="1rem"
+                    class="shrink-0"
+                    [class.text-(--color-warning)]="item.iconTone === 'warning'"
+                    [class.text-(--color-info)]="item.iconTone === 'info'"
+                  />
+                  <span class="min-w-0 text-sm">{{ item.text }}</span>
+                </div>
+                <a [routerLink]="item.link" class="btn btn--ghost btn--sm shrink-0 no-underline">
+                  {{ item.actionText }}
+                </a>
+              </li>
+            }
+          </ul>
+        } @else {
+          <app-empty-state
+            [compact]="true"
+            icon="check"
+            [message]="t('dashboard.attention.caught_up')"
+            [hint]="t('dashboard.attention.caught_up_hint')"
+          />
+        }
+      </section>
+
+      <section class="card p-4" aria-labelledby="dash-events">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <h2 class="section-title" id="dash-events">{{ t('dashboard.events.upcoming') }}</h2>
+          <a routerLink="/events" class="text-xs no-underline hover:underline" style="color: var(--color-primary)">
+            {{ t('dashboard.view_all') }}
           </a>
-          <button
-            type="button"
-            class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-(--color-text)"
-            [disabled]="loading()"
-            (click)="refreshNow()"
-            [appTooltip]="t('dashboard.refresh')"
-            tooltipPosition="bottom"
-            [attr.aria-label]="t('dashboard.refresh')"
-          >
-            <app-icon name="refresh" size="1rem" [class.animate-spin]="loading()" />
-          </button>
         </div>
-      </header>
-
-      <!-- Keep the action panels first in both the rendered DOM and visual order. -->
-      <ng-container [ngTemplateOutlet]="actionPanels"></ng-container>
-
-      <section class="identity-card p-3 sm:p-4" [attr.aria-label]="t('dashboard.identity')">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div class="flex items-center gap-4 min-w-0">
-            <app-avatar
-              [userId]="profile()?.id"
-              [avatar]="profile()?.avatar"
-              [username]="username()"
-              size="lg"
-              shape="rounded"
-            />
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <p class="text-lg font-bold tracking-tight text-(--color-text) m-0 truncate">
-                  {{ username() }}
-                </p>
-                @if (roleLabel()) {
-                  <span class="chip">{{ roleLabel() }}</span>
+        @if (loading()) {
+          <app-loading variant="table" [rows]="3" [label]="t('common.loading')" />
+        } @else if (eventsIncomplete()) {
+          <app-error-state
+            [message]="t('common.error')"
+            [retryLabel]="t('common.retry')"
+            (retry)="refreshNow()"
+          />
+        } @else if (upcomingRows().length === 0) {
+          <app-empty-state
+            [compact]="true"
+            icon="calendar"
+            [message]="t('dashboard.events.empty')"
+            [hint]="t('dashboard.next_mass.empty_hint')"
+          />
+        } @else {
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('dashboard.col.when') }}</th>
+                  <th scope="col">{{ t('dashboard.col.event') }}</th>
+                  <th scope="col">{{ t('dashboard.col.comp') }}</th>
+                  <th scope="col">{{ t('dashboard.col.status') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of upcomingRows(); track row.id) {
+                  <tr>
+                    <td class="num whitespace-nowrap">{{ row.when }}</td>
+                    <td>
+                      <a [routerLink]="['/events', row.id]" class="no-underline hover:underline">{{ row.title }}</a>
+                    </td>
+                    <td>
+                      {{ row.comp }}
+                      @if (row.capText) {
+                        <span class="hint block">{{ row.capText }}</span>
+                      }
+                    </td>
+                    <td>
+                      <app-status-chip [value]="row.status" [label]="statusLabel(row.status)" />
+                    </td>
+                  </tr>
                 }
-              </div>
-              <div class="flex flex-wrap items-center gap-2 mt-1.5 text-sm text-[var(--color-text-secondary)]">
-                <span
-                  class="h-2 w-2 rounded-full shrink-0"
-                  [class.bg-[var(--color-success)]]="albionLinked()"
-                  [class.bg-[var(--color-warning)]]="albionLink() && !albionLinked()"
-                ></span>
-                <span class="truncate">
-                  {{ albionLabel() }}
-                </span>
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
-
-          @if (progression(); as xp) {
-            <a routerLink="/season" class="min-w-[14rem] flex-1 max-w-md no-underline">
-              <div class="flex items-baseline justify-between gap-3">
-                <span class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ xp.season?.name || t('profile.xp.noSeason') }}
-                </span>
-                <span class="text-xs font-mono text-[var(--color-text-tertiary)]">
-                  {{ seasonRankLabel() }}
-                </span>
-              </div>
-              <div class="flex items-baseline justify-between gap-3 mt-1">
-                <span class="text-sm font-semibold text-(--color-text)">
-                  {{ t('dashboard.stat.season_level', { level: xp.level }) }}
-                </span>
-                <span class="text-xs font-mono text-[var(--color-text-secondary)]">
-                  {{ t('dashboard.stat.xp_progress', { current: formatAmount(xp.xp), next: formatAmount(xp.xp + xp.xp_to_next) }) }}
-                </span>
-              </div>
-              <div class="xp-track mt-2" role="progressbar" [attr.aria-valuenow]="xpPercent()" aria-valuemin="0" aria-valuemax="100">
-                <div class="xp-track__fill" [style.width.%]="xpPercent()"></div>
-              </div>
-            </a>
-          } @else if (progressionLoading()) {
-            <p class="m-0" role="status">{{ t('common.loading') }}</p>
-          } @else if (progressionFailed()) {
-            <p class="m-0" role="status">{{ t('common.error') }}</p>
-          }
-        </div>
+        }
       </section>
 
-      <section [attr.aria-label]="t('dashboard.kpis')" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-px bg-[var(--color-border)]">
-        <a routerLink="/bank" class="kpi-card group" [attr.aria-label]="t('dashboard.stat.balance')">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="icon-capsule icon-capsule--green">
-                <app-icon name="bank" size="1.125rem" />
-              </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
-                {{ t('dashboard.stat.balance') }}
-              </span>
-            </div>
-            <app-icon
-              name="chevron-right"
-              size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
-            />
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5 font-mono">
-            {{ pendingValue() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ bankBalance() ? t('bank.creditsAvailable', { count: bankBalance()!.pending_count }) : '—' }}
-          </div>
-        </a>
+      @if (loading()) {
+        <app-loading variant="summary" [cells]="4" [label]="t('common.loading')" />
+      } @else {
+        <app-summary-band [ariaLabel]="t('dashboard.kpis')" [items]="summaryItems()" />
+      }
 
-        <a routerLink="/bank" class="kpi-card group" [attr.aria-label]="t('dashboard.stat.requested')">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="icon-capsule icon-capsule--amber">
-                <app-icon name="alert" size="1.125rem" />
-              </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
-                {{ t('dashboard.stat.requested') }}
-              </span>
-            </div>
-            <app-icon
-              name="chevron-right"
-              size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
-            />
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5 font-mono">
-            {{ requestedValue() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ bankBalance() ? t('bank.withdrawalsInReview', { count: bankBalance()!.requested_count }) : '—' }}
-          </div>
-        </a>
-
-        <a routerLink="/splits" class="kpi-card group" [attr.aria-label]="t('dashboard.stat.earnings')">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="icon-capsule icon-capsule--purple">
-                <app-icon name="coins" size="1.125rem" />
-              </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
-                {{ t('dashboard.stat.earnings') }}
-              </span>
-            </div>
-            <app-icon
-              name="chevron-right"
-              size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
-            />
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5 font-mono">
-            {{ earningsValue() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ metrics() ? t('dashboard.stat.earnings_sub', { count: metrics()!.splits_joined }) : '—' }}
-          </div>
-        </a>
-
-        <a routerLink="/events" class="kpi-card group" [attr.aria-label]="t('dashboard.stat.attendance')">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="icon-capsule icon-capsule--sky">
-                <app-icon name="users" size="1.125rem" />
-              </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
-                {{ t('dashboard.stat.attendance') }}
-              </span>
-            </div>
-            <app-icon
-              name="chevron-right"
-              size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
-            />
-          </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5 font-mono">
-            {{ attendanceValue() }}
-          </div>
-          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
-            {{ metrics() ? t('dashboard.stat.attendance_sub', { attended: metrics()!.events_attended, total: metrics()!.events_total }) : '—' }}
-          </div>
-        </a>
-      </section>
-
-      <ng-template #actionPanels>
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-px bg-[var(--color-border)] items-stretch">
-        <div class="action-panel p-3 sm:p-4 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center gap-2 mb-4">
-              <h2 class="text-base font-bold text-(--color-text) m-0">{{ t('dashboard.attention.title') }}</h2>
-              @if (attentionItems().length > 0) {
-                <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[#dc2626] text-(--color-text)">
-                  {{ attentionItems().length }}
-                </span>
-              }
-            </div>
-
-            @if (attentionItems().length > 0) {
-              <ul class="flex flex-col m-0 p-0 list-none divide-y divide-[var(--color-border)]">
-                @for (item of attentionItems(); track item.id) {
-                  <li class="py-3.5 first:pt-1 last:pb-1 flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-3 min-w-0">
-                      <div
-                        class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                        [class]="item.iconTone === 'warning' ? 'bg-[var(--color-warning-container)] text-[var(--color-warning)]' : 'bg-[var(--color-info-container)] text-[var(--color-info)]'"
-                      >
-                        <app-icon [name]="item.icon" size="1.125rem" />
-                      </div>
-                      <span class="text-xs sm:text-sm font-medium text-(--color-text) truncate">
-                        {{ item.text }}
-                      </span>
-                    </div>
-                    <a
-                      [routerLink]="item.link"
-                      class="action-link text-xs font-semibold text-[var(--color-primary)] hover:text-[var(--color-hover-blurple)] transition-colors shrink-0 inline-flex items-center gap-1 no-underline"
-                    >
-                      <span>{{ item.actionText }}</span>
-                      <app-icon name="arrow-right" size="0.75rem" />
-                    </a>
-                  </li>
-                }
-              </ul>
-            }
-            @if (loading()) {
-              <p role="status">{{ t('common.loading') }}</p>
-            } @else if (attentionIncomplete()) {
-              <p role="status">{{ t('common.error') }}</p>
-            } @else if (attentionItems().length === 0) {
-              <div class="caught-up-banner p-3 flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-[var(--color-success-container)] text-[var(--color-success)] flex items-center justify-center shrink-0">
-                  <app-icon name="check" size="1rem" />
-                </div>
-                <div class="min-w-0">
-                  <p class="text-sm font-semibold text-(--color-text) m-0">{{ t('dashboard.attention.caught_up') }}</p>
-                  <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 mb-0">{{ t('dashboard.attention.caught_up_hint') }}</p>
-                </div>
-              </div>
-            }
-          </div>
+      <section class="card p-4" aria-labelledby="dash-recent">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <h2 class="section-title" id="dash-recent">{{ t('dashboard.recent_activity') }}</h2>
+          <a routerLink="/events" class="text-xs no-underline hover:underline" style="color: var(--color-primary)">
+            {{ t('dashboard.view_all') }}
+          </a>
         </div>
-
-        <div class="action-panel p-3 sm:p-4 flex flex-col justify-between">
-          @if (loading()) {
-            <p role="status">{{ t('common.loading') }}</p>
-          } @else if (eventsIncomplete()) {
-            <p role="status">{{ t('common.error') }}</p>
-          }
-          @if (nextMassCard(); as mass) {
-            <div>
-              <div class="flex items-center gap-2 mb-5">
-                <span
-                  class="h-2 w-2 rounded-full"
-                  [class.bg-[var(--color-error)]]="mass.live"
-                  [class.animate-pulse]="mass.live"
-                  [class.bg-[var(--color-text-disabled)]]="!mass.live"
-                ></span>
-                <h2 class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider m-0">
-                  {{ t('dashboard.next_mass') }}
-                </h2>
-              </div>
-
-              <div class="flex items-center gap-4 sm:gap-6 mt-1">
-                <div class="date-box shrink-0 flex flex-col items-center justify-center rounded-sm p-3 sm:px-4 sm:py-3">
-                  <app-icon name="calendar" size="1.25rem" class="text-[var(--color-primary)] mb-1" />
-                  <span class="text-[10px] font-bold text-[var(--color-primary)] tracking-wider uppercase">
-                    {{ mass.dayLabel }}
-                  </span>
-                  <span class="text-2xl sm:text-3xl font-bold text-(--color-text) tracking-tight leading-none mt-1">
-                    {{ mass.time }}
-                  </span>
-                </div>
-
-                <div class="flex flex-col justify-center min-w-0">
-                  <h3 class="text-lg sm:text-2xl font-bold text-(--color-text) truncate m-0">
-                    {{ mass.title }}
-                  </h3>
-                  <div class="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] mt-2">
-                    <app-icon name="swords" size="1rem" class="text-[var(--color-text-tertiary)] shrink-0" />
-                    <span class="truncate">{{ mass.compName }}</span>
-                  </div>
-                  @if (mass.capText) {
-                    <div class="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] mt-1">
-                      <app-icon name="users" size="1rem" class="text-[var(--color-text-tertiary)] shrink-0" />
-                      <span class="truncate">{{ mass.capText }}</span>
-                    </div>
-                  }
-                </div>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap items-center justify-between gap-3 mt-6 pt-4 border-t border-[var(--color-border)]">
-              <div class="status-pill" [class.status-pill--live]="mass.live" [class.status-pill--ready]="!mass.live">
-                @if (mass.live) {
-                  <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
-                  <span>{{ t('events.status.live') }}</span>
-                } @else {
-                  <app-icon name="check" size="0.875rem" />
-                  <span>{{ t('events.status.scheduled') }}</span>
+        @if (loading()) {
+          <app-loading variant="table" [rows]="3" [label]="t('common.loading')" />
+        } @else if (recentIncomplete()) {
+          <app-error-state
+            [message]="t('common.error')"
+            [retryLabel]="t('common.retry')"
+            (retry)="refreshNow()"
+          />
+        } @else if (recentRows().length === 0) {
+          <app-empty-state [compact]="true" icon="calendar" [message]="t('dashboard.recent.empty')" />
+        } @else {
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('dashboard.col.when') }}</th>
+                  <th scope="col">{{ t('dashboard.col.event') }}</th>
+                  <th scope="col">{{ t('dashboard.col.comp') }}</th>
+                  <th scope="col">{{ t('dashboard.col.status') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of recentRows(); track row.id) {
+                  <tr>
+                    <td class="num whitespace-nowrap">{{ row.when }}</td>
+                    <td>
+                      <a [routerLink]="['/events', row.id]" class="no-underline hover:underline">{{ row.title }}</a>
+                    </td>
+                    <td>{{ row.comp }}</td>
+                    <td>
+                      <app-status-chip [value]="row.status" [label]="statusLabel(row.status)" />
+                    </td>
+                  </tr>
                 }
-              </div>
-
-              <a
-                [routerLink]="['/events', mass.id]"
-                class="btn-open-event no-underline inline-flex items-center gap-1.5"
-              >
-                <span>{{ t('dashboard.next_mass.open') }}</span>
-                <app-icon name="arrow-right" size="0.875rem" />
-              </a>
-            </div>
-          } @else if (!loading() && !eventsIncomplete()) {
-            <div class="flex flex-col h-full">
-              <h2 class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider m-0 mb-4">
-                {{ t('dashboard.next_mass') }}
-              </h2>
-              <div class="flex-1 flex flex-col items-center justify-center">
-                <app-empty-state
-                  icon="calendar"
-                  [message]="t('dashboard.next_mass.empty')"
-                  [hint]="t('dashboard.next_mass.empty_hint')"
-                >
-                  <a routerLink="/events" class="btn btn--ghost btn--sm no-underline">
-                    {{ t('dashboard.view_all') }}
-                  </a>
-                </app-empty-state>
-              </div>
-            </div>
-          }
-        </div>
+              </tbody>
+            </table>
+          </div>
+        }
       </section>
-      </ng-template>
-    </div>
+    </app-page-stack>
   `,
 })
 export class Dashboard {
@@ -505,20 +242,25 @@ export class Dashboard {
   protected readonly bankBalance = signal<BalanceSummary | null>(null);
   protected readonly metrics = signal<UserMetrics | null>(null);
   protected readonly progression = signal<ProgressionMeView | null>(null);
-  protected readonly progressionLoading = signal(true);
-  protected readonly progressionFailed = signal(false);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
+  /** Live and scheduled events, the source of the upcoming list and the attention items. */
   protected readonly recentEvents = signal<ReadonlyArray<EventView>>([]);
+  /** Stopped and auto-stopped events, newest first. */
+  protected readonly recentFinished = signal<ReadonlyArray<EventView>>([]);
   protected readonly loading = signal(true);
   protected readonly attentionIncomplete = signal(false);
   protected readonly eventsIncomplete = signal(false);
+  protected readonly recentIncomplete = signal(false);
 
-  protected readonly profile = this.auth.profile;
   protected readonly username = computed(() => this.auth.profile()?.username ?? '');
   protected readonly roleLabel = computed(() => this.auth.profile()?.highest_role ?? '');
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
+
+  protected readonly menuItems = computed<MenuItem[]>(() => [
+    { id: 'refresh', label: this.t('dashboard.refresh'), icon: 'refresh', disabled: this.loading() },
+  ]);
 
   protected readonly greeting = computed(() => {
     const hour = new Date().getHours();
@@ -527,13 +269,11 @@ export class Dashboard {
     return this.t('dashboard.greeting.evening');
   });
 
-  protected readonly albionLinked = computed(() => this.albionLink()?.linked === true);
-
   protected readonly albionLabel = computed(() => {
     const link = this.albionLink();
     if (!link) return this.loading() ? this.t('common.loading') : this.t('common.error');
-    if (link?.linked && link.albion_player_name) {
-      return this.t('dashboard.albion.linked', { name: link.albion_player_name });
+    if (link.linked && link.albion_player_name) {
+      return this.t('dashboard.albion.character', { name: link.albion_player_name });
     }
     return this.t('dashboard.albion.unlinked');
   });
@@ -542,26 +282,14 @@ export class Dashboard {
     this.formatCompactSilver(this.bankBalance()?.pending_total),
   );
 
-  protected readonly requestedValue = computed(() =>
-    this.formatCompactSilver(this.bankBalance()?.requested_total),
-  );
-
   protected readonly earningsValue = computed(() =>
     this.formatCompactSilver(this.metrics()?.split_earnings),
   );
 
   protected readonly attendanceValue = computed(() => {
     const rate = this.metrics()?.attendance_rate;
-    if (rate === null || rate === undefined) return '—';
+    if (rate === null || rate === undefined) return null;
     return `${Math.round(rate)}%`;
-  });
-
-  protected readonly xpPercent = computed(() => {
-    const xp = this.progression();
-    if (!xp) return 0;
-    const total = xp.xp + xp.xp_to_next;
-    if (total <= 0) return xp.xp > 0 ? 100 : 0;
-    return Math.min(100, Math.max(0, Math.round((xp.xp / total) * 100)));
   });
 
   protected readonly seasonRankLabel = computed(() => {
@@ -570,30 +298,55 @@ export class Dashboard {
     return this.t('dashboard.stat.season_rank', { rank });
   });
 
-  protected readonly nextMassCard = computed<NextMassCard | null>(() => {
-    const selected = selectNextMass(this.recentEvents());
-    if (!selected) return null;
-
-    const massAt = eventMassAt(selected);
-    const isToday = massAt !== null && massAt.toDateString() === new Date().toDateString();
-    const timeStr = massAt
-      ? massAt.toLocaleTimeString(this.translate.locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
-      : '—';
-
-    return {
-      id: selected.id,
-      title: selected.title,
-      dayLabel: isToday
-        ? this.t('dashboard.next_mass.today')
-        : (massAt?.toLocaleDateString(this.translate.locale(), { weekday: 'short' }).toUpperCase() || this.t('dashboard.next_mass.today')),
-      time: timeStr,
-      compName: selected.event_kind === 'flash' ? 'Flash Mass' : (selected.comp_name ?? '—'),
-      capText: selected.player_cap
-        ? this.t('dashboard.next_mass.cap', { count: selected.player_cap })
-        : null,
-      live: selected.status === 'live',
-    };
+  /** Figures for the summary band. Each one names its state in the hint when it is missing. */
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    const xp = this.progression();
+    const balance = this.bankBalance();
+    const metrics = this.metrics();
+    const failed = this.t('common.error');
+    return [
+      {
+        label: xp ? (xp.season?.name || this.t('profile.xp.noSeason')) : this.t('dashboard.summary.season'),
+        value: xp ? this.t('dashboard.stat.season_level', { level: xp.level }) : null,
+        hint: xp
+          ? `${this.seasonRankLabel()} · ${this.t('dashboard.stat.xp_progress', {
+              current: this.formatAmount(xp.xp),
+              next: this.formatAmount(xp.xp + xp.xp_to_next),
+            })}`
+          : failed,
+      },
+      {
+        label: this.t('dashboard.summary.available'),
+        value: balance ? this.pendingValue() : null,
+        hint: balance ? undefined : failed,
+      },
+      {
+        label: this.t('dashboard.stat.earnings'),
+        value: metrics ? this.earningsValue() : null,
+        hint: metrics ? this.t('dashboard.stat.earnings_sub', { count: metrics.splits_joined }) : failed,
+      },
+      {
+        label: this.t('dashboard.stat.attendance'),
+        value: metrics ? this.attendanceValue() : null,
+        hint: metrics
+          ? this.t('dashboard.stat.attendance_sub', {
+              attended: metrics.events_attended,
+              total: metrics.events_total,
+            })
+          : failed,
+      },
+    ];
   });
+
+  protected readonly upcomingRows = computed<EventRow[]>(() =>
+    selectUpcomingEvents(this.recentEvents())
+      .slice(0, UPCOMING_LIMIT)
+      .map((event) => this.toRow(event, this.dayTimeLabel(event))),
+  );
+
+  protected readonly recentRows = computed<EventRow[]>(() =>
+    this.recentFinished().map((event) => this.toRow(event, this.dateTimeLabel(event))),
+  );
 
   protected readonly attentionItems = computed<ReadonlyArray<AttentionItem>>(() => {
     const items: AttentionItem[] = [];
@@ -602,19 +355,6 @@ export class Dashboard {
     const link = this.albionLink();
     const nextEvent = selectNextMass(this.recentEvents());
 
-    if (balance && balance.pending_total > 0) {
-      items.push({
-        id: 'withdraw',
-        icon: 'bank',
-        iconTone: 'info',
-        text: this.t('dashboard.attention.withdraw', {
-          amount: this.formatCompactSilver(balance.pending_total),
-        }),
-        actionText: this.t('dashboard.attention.withdraw_action'),
-        link: '/bank',
-      });
-    }
-
     if (balance && balance.requested_count > 0) {
       items.push({
         id: 'requested',
@@ -622,6 +362,17 @@ export class Dashboard {
         iconTone: 'warning',
         text: this.t('dashboard.attention.requested', { count: balance.requested_count }),
         actionText: this.t('dashboard.attention.requested_action'),
+        link: '/bank',
+      });
+    }
+
+    if (balance && balance.pending_total > 0) {
+      items.push({
+        id: 'withdraw',
+        icon: 'bank',
+        iconTone: 'info',
+        text: this.t('dashboard.attention.withdraw_available'),
+        actionText: this.t('dashboard.attention.withdraw_action'),
         link: '/bank',
       });
     }
@@ -692,10 +443,9 @@ export class Dashboard {
     this.bankBalance.set(null);
     this.metrics.set(null);
     this.progression.set(null);
-    this.progressionLoading.set(true);
-    this.progressionFailed.set(false);
     this.albionLink.set(null);
     this.recentEvents.set([]);
+    this.recentFinished.set([]);
     try {
       await this.loadSnapshot();
     } finally {
@@ -703,8 +453,27 @@ export class Dashboard {
     }
   }
 
+  protected onMenuSelect(id: string): void {
+    if (id === 'refresh') void this.refreshNow();
+  }
+
+  protected statusLabel(status: EventStatus): string {
+    switch (status) {
+      case 'live':
+        return this.t('events.status.live');
+      case 'scheduled':
+        return this.t('events.status.scheduled');
+      case 'stopped':
+        return this.t('events.status.stopped');
+      case 'auto_stopped':
+        return this.t('events.status.auto_stopped');
+      case 'cancelled':
+        return this.t('events.status.cancelled');
+    }
+  }
+
   private async loadSnapshot(): Promise<void> {
-    const [balance, metrics, progression, albion, scheduledEvents, liveEvents] =
+    const [balance, metrics, progression, albion, scheduledEvents, liveEvents, stoppedEvents, autoStoppedEvents] =
       await Promise.allSettled([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')),
@@ -728,14 +497,31 @@ export class Dashboard {
             order: 'asc',
           }),
         ),
+        firstValueFrom(
+          this.api.get<{ items: EventView[] }>('api/events', {
+            page: 1,
+            limit: RECENT_LIMIT,
+            status: 'stopped',
+            sort: 'mass_time_utc',
+            order: 'desc',
+          }),
+        ),
+        firstValueFrom(
+          this.api.get<{ items: EventView[] }>('api/events', {
+            page: 1,
+            limit: RECENT_LIMIT,
+            status: 'auto_stopped',
+            sort: 'mass_time_utc',
+            order: 'desc',
+          }),
+        ),
       ]);
 
     if (balance.status === 'fulfilled') this.bankBalance.set(balance.value);
     if (metrics.status === 'fulfilled') this.metrics.set(metrics.value);
-    this.progressionLoading.set(false);
-    this.progressionFailed.set(progression.status === 'rejected');
     if (progression.status === 'fulfilled') this.progression.set(progression.value);
     if (albion.status === 'fulfilled') this.albionLink.set(albion.value);
+
     this.eventsIncomplete.set(scheduledEvents.status === 'rejected' || liveEvents.status === 'rejected');
     this.attentionIncomplete.set(
       balance.status === 'rejected' || metrics.status === 'rejected' ||
@@ -746,6 +532,12 @@ export class Dashboard {
     if (liveEvents.status === 'fulfilled') upcoming.push(...liveEvents.value.items);
     if (scheduledEvents.status === 'fulfilled') upcoming.push(...scheduledEvents.value.items);
     this.recentEvents.set(upcoming);
+
+    this.recentIncomplete.set(stoppedEvents.status === 'rejected' || autoStoppedEvents.status === 'rejected');
+    const finished: EventView[] = [];
+    if (stoppedEvents.status === 'fulfilled') finished.push(...stoppedEvents.value.items);
+    if (autoStoppedEvents.status === 'fulfilled') finished.push(...autoStoppedEvents.value.items);
+    this.recentFinished.set(finished.sort((a, b) => byMassTime(b, a)).slice(0, RECENT_LIMIT));
   }
 
   formatCompactSilver(
@@ -757,6 +549,38 @@ export class Dashboard {
 
   protected formatAmount(value: number | string): string {
     return new Intl.NumberFormat(this.translate.locale()).format(Number(value ?? 0));
+  }
+
+  private toRow(event: EventView, when: string): EventRow {
+    return {
+      id: event.id,
+      title: event.title,
+      when,
+      comp: event.event_kind === 'flash' ? this.t('events.flashMass') : (event.comp_name ?? '—'),
+      capText: event.player_cap ? this.t('dashboard.next_mass.cap', { count: event.player_cap }) : null,
+      status: event.status,
+    };
+  }
+
+  /** "Today 19:30" or "Fri 19:30" for an upcoming mass. */
+  private dayTimeLabel(event: EventView): string {
+    const massAt = eventMassAt(event);
+    if (!massAt) return '—';
+    const locale = this.translate.locale();
+    const isToday = massAt.toDateString() === new Date().toDateString();
+    const day = isToday
+      ? this.t('dashboard.next_mass.today')
+      : massAt.toLocaleDateString(locale, { weekday: 'short' });
+    return `${day} ${massAt.toLocaleTimeString(locale, TIME_OPTIONS)}`;
+  }
+
+  /** "Nov 9 19:30" for a finished mass. */
+  private dateTimeLabel(event: EventView): string {
+    const massAt = eventMassAt(event);
+    if (!massAt) return '—';
+    const locale = this.translate.locale();
+    const day = massAt.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+    return `${day} ${massAt.toLocaleTimeString(locale, TIME_OPTIONS)}`;
   }
 
   private formatEtaLabel(eta: MassEta): string {
@@ -823,30 +647,29 @@ export function formatMassEta(target: Date, now: Date = new Date()): MassEta {
 }
 
 /**
- * Next mass is the live event if one is running, otherwise the soonest scheduled
- * event whose start has not passed yet — on that day, the first (mass) time.
+ * Events the member can still act on, in order: live ones first, then scheduled ones whose start
+ * has not passed yet. Each group is sorted by mass time.
  */
-export function selectNextMass(
+export function selectUpcomingEvents(
   events: readonly EventView[],
   now: Date = new Date(),
-): EventView | null {
+): EventView[] {
   const nowMs = now.getTime();
-  const actionable = events.filter(
-    (event) => event.status === 'live' || event.status === 'scheduled',
-  );
-
-  const live = actionable.filter((event) => event.status === 'live').sort(byMassTime);
-  if (live[0]) {
-    return live[0];
-  }
-
-  const upcoming = actionable
+  const live = events.filter((event) => event.status === 'live').sort(byMassTime);
+  const scheduled = events
     .filter((event) => event.status === 'scheduled')
     .filter((event) => {
       const startAt = eventStartAt(event);
       return startAt !== null && startAt.getTime() >= nowMs;
     })
     .sort(byMassTime);
+  return [...live, ...scheduled];
+}
 
-  return upcoming[0] ?? null;
+/** The event the attention list points at: the first upcoming one, live or scheduled. */
+export function selectNextMass(
+  events: readonly EventView[],
+  now: Date = new Date(),
+): EventView | null {
+  return selectUpcomingEvents(events, now)[0] ?? null;
 }

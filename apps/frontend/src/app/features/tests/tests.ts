@@ -17,10 +17,12 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
 type ViewFilter = 'active' | 'archived';
 
@@ -32,7 +34,7 @@ type ViewFilter = 'active' | 'archived';
 @Component({
   selector: 'app-tests',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, ViewToggle, DataTable, DataTableCell, Dialog, Icon],
+  imports: [PageHeader, PageStack, FilterBar, Tabs, DataTable, DataTableCell, Dialog, Icon, StatusChip],
   styles: [`
     :host { display: block; color: var(--color-text); }
     :host ::ng-deep .rounded-xl, :host ::ng-deep .rounded-2xl,
@@ -44,12 +46,6 @@ type ViewFilter = 'active' | 'archived';
   `],
   template: `
     <app-page-header [title]="t('tests.title')" [subtitle]="t('tests.subtitle')">
-      <app-view-toggle
-        pageTabs
-        [options]="tabOptions()"
-        [active]="filter()"
-        (activeChange)="switchFilter($event)"
-      />
       <button type="button" class="btn btn--primary btn--sm" (click)="openCreate()">
         <app-icon name="plus" size="0.875rem" />
         {{ t('tests.new') }}
@@ -57,43 +53,63 @@ type ViewFilter = 'active' | 'archived';
     </app-page-header>
 
     <app-page-stack>
+      <app-filter-bar
+        [searchLabel]="t('tests.searchLabel')"
+        [searchPlaceholder]="t('tests.searchPlaceholder')"
+        [query]="query()"
+        [activeCount]="query() ? 1 : 0"
+        (queryChange)="query.set($event)"
+        (clear)="query.set('')"
+      >
+        <app-tabs
+          filterPrimary
+          variant="segmented"
+          [ariaLabel]="t('tests.statusFilter')"
+          [options]="tabOptions()"
+          [active]="filter()"
+          (activeChange)="switchFilter($event)"
+        />
+      </app-filter-bar>
+
       <app-data-table
         [columns]="columns()"
-        [rows]="scenarios()"
+        [rows]="visibleScenarios()"
         [loading]="loading()"
         [error]="loadFailed()"
+        [hideSearch]="true"
         [trackBy]="trackScenario"
         [rowClickable]="true"
+        [ariaLabel]="t('tests.tableLabel')"
         emptyIcon="activity"
-        [searchPlaceholder]="t('tests.searchPlaceholder')"
+        [emptyTitle]="emptyTitle()"
         (rowClick)="openRow($event)"
         (retry)="load()"
       >
         <ng-template dataTableCell="name" let-row>
-          <div class="flex items-center gap-2">
-            <span class="font-medium text-sm text-[var(--color-text)]">{{ row.name }}</span>
-            @if (row.archived_at) {
-              <span class="chip chip--neutral text-[10px]">{{ t('tests.archived') }}</span>
-            }
-          </div>
+          <span class="font-medium">{{ row.name }}</span>
+        </ng-template>
+
+        <ng-template dataTableCell="status" let-row>
+          <app-status-chip
+            [value]="row.archived_at ? 'archived' : 'active'"
+            [label]="row.archived_at ? t('tests.archived') : t('tests.statusActive')"
+          />
         </ng-template>
 
         <ng-template dataTableCell="version" let-row>
-          <span class="chip text-[10px] font-mono">v{{ row.version }}</span>
+          <span class="num text-sm">v{{ row.version }}</span>
         </ng-template>
 
         <ng-template dataTableCell="run_count" let-row>
-          <span class="font-mono text-xs text-[var(--color-text-secondary)]">
-            {{ row.run_count }}
-          </span>
+          <span class="num text-sm">{{ row.run_count }}</span>
         </ng-template>
 
         <ng-template dataTableCell="created_by_username" let-row>
-          <span class="text-xs text-[var(--color-text-secondary)]">{{ row.created_by_username }}</span>
+          <span class="text-sm" style="color: var(--color-text-secondary)">{{ row.created_by_username }}</span>
         </ng-template>
 
         <ng-template dataTableCell="updated_at" let-row>
-          <span class="text-xs text-[var(--color-text-secondary)]">{{ formatDate(row.updated_at) }}</span>
+          <span class="text-sm" style="color: var(--color-text-secondary)">{{ formatDate(row.updated_at) }}</span>
         </ng-template>
 
         <ng-template dataTableCell="actions" let-row>
@@ -146,6 +162,7 @@ export class Tests {
   private readonly translate = inject(TranslateService);
 
   protected readonly filter = signal<ViewFilter>('active');
+  protected readonly query = signal('');
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly scenarios = signal<ScenarioSummary[]>([]);
@@ -153,19 +170,42 @@ export class Tests {
   protected readonly draftName = signal('');
   protected readonly saving = signal(false);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'active', label: this.t('tests.all') },
+  protected readonly tabOptions = computed<TabOption[]>(() => [
+    { id: 'active', label: this.t('tests.statusActive') },
     { id: 'archived', label: this.t('tests.archived') },
   ]);
+
+  /** Search is client-side over the loaded page of scenarios: name and creator. */
+  protected readonly visibleScenarios = computed<ScenarioSummary[]>(() => {
+    const needle = this.query().trim().toLowerCase();
+    const all = this.scenarios();
+    if (!needle) return all;
+    return all.filter(
+      (scenario) =>
+        scenario.name.toLowerCase().includes(needle) ||
+        scenario.created_by_username.toLowerCase().includes(needle),
+    );
+  });
+
+  protected readonly emptyTitle = computed(() => {
+    if (this.query().trim()) return this.t('ui.table.noMatches');
+    return this.t(this.filter() === 'archived' ? 'tests.emptyArchived' : 'tests.emptyActive');
+  });
 
   protected readonly columns = computed<readonly DataTableColumn<ScenarioSummary>[]>(() => [
     {
       key: 'name',
       label: 'common.name',
       sortable: true,
-      searchable: true,
       accessor: (row) => row.name,
       comparator: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      key: 'status',
+      label: 'tests.status',
+      sortable: true,
+      accessor: (row) => (row.archived_at ? 'archived' : 'active'),
+      comparator: (a, b) => Number(!!a.archived_at) - Number(!!b.archived_at),
     },
     {
       key: 'version',
@@ -173,7 +213,7 @@ export class Tests {
       sortable: true,
       accessor: (row) => row.version,
       comparator: (a, b) => a.version - b.version,
-      align: 'center',
+      align: 'right',
     },
     {
       key: 'run_count',
@@ -187,7 +227,6 @@ export class Tests {
       key: 'created_by_username',
       label: 'tests.createdBy',
       sortable: true,
-      searchable: true,
       accessor: (row) => row.created_by_username,
       comparator: (a, b) => a.created_by_username.localeCompare(b.created_by_username),
     },

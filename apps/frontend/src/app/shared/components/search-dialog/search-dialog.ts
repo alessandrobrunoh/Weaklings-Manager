@@ -104,7 +104,7 @@ export interface SearchDialogOption {
                     }
                   </div>
                   @if (opt.chip) {
-                    <span class="chip chip--neutral font-mono text-[10px]">{{ opt.chip }}</span>
+                    <span class="chip chip--neutral font-mono text-xs">{{ opt.chip }}</span>
                   }
                   <app-icon name="chevron-right" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
                 </button>

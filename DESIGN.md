@@ -1,4 +1,52 @@
-# Discord — Style Reference
+# Weaklings Manager design system
+
+Calm, precise, dense operational UI for guild officers (see PRODUCT.md). Colour is functional state and direction, never ambient; every state also carries text or an icon. WCAG 2.2 AA, 12px minimum text, phone at 390px with no horizontal page scroll. The tokens live in `apps/frontend/src/styles.css`; `styles.spec.ts` enforces radii and contrast. The Discord marketing reference at the end of this file supplies the palette and font stack only; its all-caps display type, gradients and large radii do not apply to the product UI.
+
+## Foundations
+
+**Type scale** (`--ui-text-*`, nothing smaller than 12px):
+
+| Token | Size | Use |
+|---|---|---|
+| `xs` | 12px | captions, chips, column headers, hints, form labels, tooltips |
+| `sm` | 13px | dense body: table cells, controls, secondary buttons, menus |
+| `md` | 14px | default body text, dialog body |
+| `lg` | 16px | section titles (`.section-title`), dialog titles |
+| `xl` | 20px | stat values, page title on phones (`.page-title`) |
+| `2xl` | 26px | page title from 640px (`.page-title`) |
+
+Labels (`.label`, `.eyebrow`, column headers) are 12px / 600 / sentence case. No uppercase micro-headings, no letter-spacing tricks. Numbers use tabular numerals (`.num`, `font-variant-numeric: tabular-nums`) and amounts are right-aligned.
+
+**Spacing**: 4px base. Gap between page sections is `--page-gap` (1rem), set once by `app-page-stack`; do not override it per page. Card padding `--card-padding` (1rem). Inside a component use 0.25 / 0.5 / 0.75 / 1rem.
+
+**Surfaces**: page `--color-bg`; one card style `.card` (surface, 1px `--color-border`, `--radius-cards` 12px, no shadow, no hover change; `.card--interactive` only when the whole card is a link or button). Nested blocks use `--color-surface-2`. Shadows only for floating layers (menus, dialogs). Radii: controls 8px (`--radius-inputs`/`--radius-buttons`), cards 12px, chips 6px (`--radius-badges`), pills only for avatars/dots. Never a literal radius.
+
+**Controls**: 36px high (`--control-h`), 32px for `*--sm` (`--control-h-sm`), 40px on coarse pointers. One focus ring everywhere: `outline: var(--focus-ring); outline-offset: var(--focus-ring-offset)`. Disabled is 55% opacity plus `cursor: not-allowed`; never rely on colour for invalid, add text and `aria-invalid`.
+
+**Tables**: one density (`--table-cell-y/x`): header 12px/600 secondary on `--color-surface-2`, cells 13px, hairline rows, hover `--color-surface-hover`.
+
+**Motion**: 150ms colour/background transitions only; everything stops under `prefers-reduced-motion`.
+
+## Component rules
+
+Use the shared components. A page that hand-rolls one of these is a bug to fix, not a pattern to copy.
+
+1. **Page header vs entity header.** `app-page-header` heads lists, hubs and forms. `app-entity-header` heads the detail page of one record (a composition, a split, a member). Both: exactly one `h1` (`.page-title`), at most ONE primary action (`btn--primary`) plus at most one secondary (`btn--outline`); every other action goes into the overflow menu (`menuItems` / `menuSelect`). Sub-pages get `backLink` (one level) or `breadcrumbs` (two or more). Never put more than three buttons in a header.
+2. **Tabs.** Switch sections of one page with `app-tabs` only (underline). Sub-pages with their own URL use the routed form (`link` on every option; `aria-current="page"`). Small inline switches (Mine/Everyone, 7/30/90 days, view mode) use `variant="segmented"`. Never build a button row with `aria-pressed`/active classes for navigation, and never nest tab bars.
+3. **Filter bar.** Any list with search or facets uses `app-filter-bar`: labelled search, at most two always-visible controls in `[filterPrimary]`, facets as `.filter-field` / `.filter-check`, count + clear. Pages own the state; sync it to the URL where the list is shareable.
+4. **KPIs.** Prefer one `app-summary-band` of 3 to 6 `app-stat` over a grid of KPI cards. A figure earns a slot only if an officer acts on it. Tone (`success|warning|danger`) only for state, and the hint says the state in words. `app-stat-card` is legacy; do not add new ones.
+5. **Tables over card grids.** Data that is compared, sorted or scanned (members, splits, requests, ledgers) is a table: `app-data-table` for searchable/sortable/paged data, `.table` inside `.table-scroll` for small static ones. Card grids are for items with a picture or a distinct identity (builds, weapons). Amounts right-aligned with `.num`; a totals row via `dataTableFooterCell`; wide tables scroll inside themselves (`stickyFirstColumn`), or use `mobileLayout="stack"` for four to six short columns. Rows that open a record are one link; row actions go in `app-menu`.
+6. **Status.** `app-status-chip` for every state label (12px, glyph + text, neutral unless it is a real state). Do not colour plain text or build custom chips; `.chip chip--neutral` only for tags and counts.
+7. **Empty, error, loading.** Empty list: `app-empty-state` (say what is empty and offer the one next step; `compact` inside cards/tables). Failed load: `app-error-state` with `retry`, never an empty state. Missing record/404: `app-error-state variant="not-found"` with a back link. Loading: `app-loading variant="table|summary|detail|lines"` skeletons for any region, the spinner only for inline waits. The three states never overlap: loading, then error, then empty, then data.
+8. **Overflow menus.** Secondary and destructive actions live in `app-menu` (`appearance="outline"` in headers, `ghost` in rows). Destructive entries last, `danger` + `separatorBefore`, and they confirm in a dialog.
+9. **Dialogs.** `app-dialog` with the primary action last. Destructive confirmations name the object. Forms in dialogs keep Enter-to-submit and focus the first field.
+10. **Forms.** `.label` above the control, `.hint` below, error text under the field with `aria-describedby`; selects are `app-select` (or `app-searchable-select` above ~10 options); switches and checkboxes are `app-checkbox`.
+11. **Toasts and copy.** Toasts and every user-visible string come from i18n keys in all five locales (`en it es fr uk`), never inline English. Shared component strings live under `ui.*`.
+12. **Colour.** Primary colour is for the one primary action, focus, selection and links. Success/warning/error/info only for state or direction, always with text or an icon. No decorative gradients, glows or per-section accent colours.
+
+## Legacy visual reference (palette and fonts only)
+
+### Discord style reference
 > Game world behind a chat bubble — every section is a self-contained environment with its own lighting and cast of characters.
 
 **Theme:** dark

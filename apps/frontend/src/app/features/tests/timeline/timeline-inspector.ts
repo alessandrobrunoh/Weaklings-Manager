@@ -36,7 +36,7 @@ interface TargetSection {
   template: `
     <div class="card p-3">
       <div class="mb-2 flex items-center justify-between gap-2">
-        <h3 class="text-xs font-bold uppercase tracking-wide text-[var(--color-text-secondary)]">
+        <h3 class="text-sm font-semibold text-[var(--color-text)]">
           {{ t('tests.timeline.inspector') }}
         </h3>
         <button
@@ -59,7 +59,7 @@ interface TargetSection {
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-xs">{{ casterGroup()?.label }}</span>
                   @if (casterBuildName(); as buildName) {
-                    <span class="block truncate text-[10px] text-[var(--color-text-tertiary)]">
+                    <span class="block truncate text-xs text-[var(--color-text-tertiary)]">
                       {{ t('tests.timeline.fromBuild', { name: buildName }) }}
                     </span>
                   }
@@ -105,7 +105,7 @@ interface TargetSection {
                 }
               </select>
             } @else {
-              <p class="text-[11px] text-[var(--color-text-tertiary)]">
+              <p class="text-xs text-[var(--color-text-tertiary)]">
                 {{ t('tests.timeline.pickWeaponForSpells') }}
               </p>
               <input
@@ -118,7 +118,7 @@ interface TargetSection {
               />
             }
             @if (spellIsForeign()) {
-              <span class="text-[11px] text-[var(--color-warning)]">
+              <span class="text-xs text-[var(--color-warning)]">
                 {{ t('tests.timeline.spellNotOnWeapon') }}
               </span>
             }
@@ -147,7 +147,7 @@ interface TargetSection {
               (change)="onCastAt($event)"
             />
             @if (landAt() !== null) {
-              <span class="text-[11px] text-[var(--color-text-tertiary)]">
+              <span class="text-xs text-[var(--color-text-tertiary)]">
                 {{ t('tests.timeline.landAt', { at: secondsLabel(landAt()!) }) }}
               </span>
             }
@@ -165,7 +165,7 @@ interface TargetSection {
                 {{ log.per_target_health_change.toFixed(1) }}
               </span>
               @if (log.per_target_health_change === 0 && log.unsupported.length > 0) {
-                <p class="text-[11px] text-[var(--color-warning)]">
+                <p class="text-xs text-[var(--color-warning)]">
                   {{ t('tests.timeline.notModelled', { keys: unsupportedKeys(log.unsupported) }) }}
                 </p>
               }
@@ -194,7 +194,7 @@ interface TargetSection {
           <div class="grid gap-1">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="label">{{ t('tests.targets') }}</span>
-              <span class="text-[11px] text-[var(--color-text-tertiary)]">
+              <span class="text-xs text-[var(--color-text-tertiary)]">
                 {{ t('tests.timeline.targetsCount', { count: current.target_ids.length }) }}
               </span>
             </div>
@@ -243,7 +243,7 @@ interface TargetSection {
                     }
                   </span>
                   <span class="truncate">{{ section.group.label }}</span>
-                  <span class="text-[10px] text-[var(--color-text-tertiary)]">
+                  <span class="text-xs text-[var(--color-text-tertiary)]">
                     {{ section.selectedCount }}/{{ section.unitIds.length }}
                   </span>
                 </button>

@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupPermissions } from './permission-groups';
+import { groupPermissions, permissionParts } from './permission-groups';
+
+describe('permissionParts', () => {
+  it('takes the last segment as the verb and the middle as the object', () => {
+    expect(permissionParts('comps.builds.edit')).toEqual({ verb: 'edit', object: 'builds' });
+    expect(permissionParts('comps.build_categories.manage')).toEqual({
+      verb: 'manage',
+      object: 'build categories',
+    });
+  });
+
+  it('leaves the object empty for two-segment keys', () => {
+    expect(permissionParts('applications.manage')).toEqual({ verb: 'manage', object: '' });
+    expect(permissionParts('bank.view_others')).toEqual({ verb: 'view_others', object: '' });
+  });
+
+  it('returns an empty verb for a key without a dot', () => {
+    expect(permissionParts('reload')).toEqual({ verb: '', object: '' });
+  });
+});
 
 describe('groupPermissions', () => {
   it('returns no groups when both catalog and available are empty', () => {

@@ -2,7 +2,7 @@
 
 ## Overview
 
-`app-ownership-scope-toggle` switches between the Mine and Everyone ownership scopes using `app-view-toggle`.
+`app-ownership-scope-toggle` switches between the Mine and Everyone ownership scopes using `app-tabs`.
 
 ## Interface
 

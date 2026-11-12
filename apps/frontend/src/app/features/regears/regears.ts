@@ -1,19 +1,29 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  AcceptRegearRequest,
   PaginatedData,
   RegearBudgetSummary,
   RegearDeathView,
   RegearStatus,
+  RejectRegearRequest,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import {
   DataTable,
   type DataTableColumn,
@@ -21,154 +31,110 @@ import {
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
-/** Tab toggle inside the Regears page. Settings live on `/admin/regears`. */
+/** Section tab inside the Regears page. Settings live on `/admin/regears`. */
 type RegearTab = 'mine' | 'queue' | 'history';
+
+/** Status filter applied on top of the section tab; `all` means no status narrowing. */
+type StatusFilter = 'all' | RegearStatus;
 
 function isRegearTab(value: string): value is RegearTab {
   return value === 'mine' || value === 'queue' || value === 'history';
 }
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 250;
 
 /**
  * Backend exposes no guild-wide regear stats/summary endpoint (only the
- * paginated `/deaths` list and the per-user `/me/summary` budget). The stat
- * cards need a full, unfiltered-by-status picture, so a separate fetch pulls
- * a large enough page of the same tab-scoped dataset — independent of the
- * table's own small page size — to aggregate from.
+ * paginated `/deaths` list and the per-user `/me/summary` budget). The summary
+ * band needs a full, unfiltered-by-status picture, so a separate fetch pulls
+ * a large enough page of the same section-scoped dataset — independent of the
+ * table's own small page size — to aggregate from and to count the status tabs.
  */
 const STATS_FETCH_LIMIT = 1000;
 
 /**
- * Regears list: Mine / Queue / History tables of Call-To-Arms deaths.
+ * Regears list: Mine / Queue / History sections of Call-To-Arms deaths.
  *
- * Item breakdown and officer adjudication live on `/regears/:deathId`. Guild
- * settings are an admin page — this view only links there when the caller can
- * manage them.
+ * Rows open the detail page, where the full item breakdown lives. Officers can
+ * approve or reject straight from the row; approval credits the estimate, so it
+ * asks for confirmation first. Guild settings are an admin page this view only
+ * links to when the caller can manage them.
  */
 @Component({
   selector: 'app-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
+    Dialog,
     DataTable,
     DataTableCell,
+    FilterBar,
     Icon,
+    Loading,
+    Menu,
     PageHeader,
     PageStack,
-    TooltipDirective,
-    ViewToggle,
+    StatusChip,
+    SummaryBand,
+    Tabs,
   ],
   styles: `
-    .workbench-page {
-      --page-gap: 0.75rem;
-      min-width: 0;
-      overflow: hidden;
-    }
-    .workbench-page > section,
-    .workbench-page > app-data-table {
+    .workbench-page > * {
       min-width: 0;
     }
-    .workbench-page .kpi-card {
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-md);
+    .regear-member {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
+      min-width: 0;
     }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
-    }
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.25rem 0.625rem;
-      border-radius: var(--radius-pills);
-      font-size: 0.6875rem;
+    .regear-member__name {
       font-weight: 600;
-      letter-spacing: 0.02em;
+      color: var(--color-text);
+      text-decoration: none;
     }
-    .status-pill--approved {
-      background: var(--color-success-container);
-      color: var(--color-success);
-      border: 1px solid var(--color-success);
+    .regear-member__name:hover {
+      text-decoration: underline;
     }
-    .status-pill--pending {
-      background: var(--color-warning-container);
-      color: var(--color-warning);
-      border: 1px solid var(--color-warning);
+    .regear-member__build,
+    .regear-value__paid {
+      font-size: var(--ui-text-xs);
+      color: var(--color-text-secondary);
     }
-    .status-pill--rejected {
-      background: var(--color-error-container);
-      color: var(--color-error);
-      border: 1px solid var(--color-error);
+    .regear-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.375rem;
     }
   `,
   template: `
     <app-page-header
       [title]="t('regears.title')"
       [subtitle]="t('regears.subtitle')"
+      [menuItems]="headerMenu()"
+      (menuSelect)="onHeaderMenu($event)"
     >
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-
       @if (canOpenNewRequest()) {
-        <a
-          class="btn btn--primary btn--sm"
-          routerLink="/regears/new"
-        >
+        <a class="btn btn--primary btn--sm" routerLink="/regears/new">
           <app-icon name="plus" size="0.875rem" />
           {{ t('regears.newRequest') }}
         </a>
       }
-      @if (canManageSettings()) {
-        <a
-          class="btn btn--outline btn--sm"
-          routerLink="/admin/regears"
-          [appTooltip]="t('regears.settingsLink')"
-          tooltipPosition="bottom"
-        >
-          <app-icon name="settings" size="0.875rem" />
-          {{ t('regears.settingsLink') }}
-        </a>
-      }
-      <app-view-toggle
+      <app-tabs
         pageTabs
+        [ariaLabel]="t('regears.views')"
         [options]="tabOptions()"
         [active]="tab()"
         (activeChange)="switchTab($event)"
@@ -176,165 +142,31 @@ const STATS_FETCH_LIMIT = 1000;
     </app-page-header>
 
     <app-page-stack class="workbench-page">
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear summary">
-        @if (tab() === 'mine') {
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.budget.weekly') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ (summary()?.weekly_balance ?? 0) }} / {{ (summary()?.weekly_cap ?? 0) }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('regears.budget.weeklyHint') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                <app-icon name="shield" size="1.25rem" />
-              </div>
-            </div>
-          </article>
+      @if (loading() && deaths().length === 0) {
+        <app-loading variant="summary" [label]="t('common.loading')" />
+      } @else if (!loadFailed()) {
+        <app-summary-band [items]="summaryItems()" [ariaLabel]="t('regears.summary.label')" />
+      }
 
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.budget.bonus') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ (summary()?.bonus_balance ?? 0) }} / {{ (summary()?.bonus_cap ?? 0) }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('regears.budget.bonusHint') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-                <app-icon name="trophy" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.status.pending') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ pendingMineCount() }}
-                </p>
-                <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
-                  @if (pendingMineCount() > 0) {
-                    <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                  }
-                  Awaiting review
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                <app-icon name="alert" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.status.approved') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ approvedMineCount() }}
-                </p>
-                <p class="text-xs text-success mt-1 truncate">
-                  {{ t('regears.stat.approved') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                <app-icon name="check" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-        } @else {
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.stat.pending') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ tab() === 'queue' ? totalItems() : pendingMineCount() }}
-                </p>
-                <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
-                  <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                  Queue to verify
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                <app-icon name="alert" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.stat.approved') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ approvedMineCount() }}
-                </p>
-                <p class="text-xs text-success mt-1 truncate">
-                  {{ t('regears.stat.approved') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                <app-icon name="check" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.stat.rejected') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ rejectedMineCount() }}
-                </p>
-                <p class="text-xs text-error mt-1 truncate">
-                  Ineligible deaths
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
-                <app-icon name="close" size="1.25rem" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-card">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.stat.totalReimbursed') }}
-                </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
-                  {{ formatSilver(approvedTotal()) }}
-                </p>
-                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  {{ t('regears.stat.approvedAmount') }}
-                </p>
-              </div>
-              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-                <app-icon name="bank" size="1.25rem" />
-              </div>
-            </div>
-          </article>
+      <app-filter-bar
+        [searchLabel]="t('regears.searchLabel')"
+        [searchPlaceholder]="t('regears.searchPlaceholder')"
+        [query]="search()"
+        [activeCount]="activeFilterCount()"
+        (queryChange)="onSearch($event)"
+        (clear)="clearFilters()"
+      >
+        @if (statusOptions().length > 0) {
+          <app-tabs
+            filterPrimary
+            variant="segmented"
+            [ariaLabel]="t('regears.statusFilter')"
+            [options]="statusOptions()"
+            [active]="statusFilter()"
+            (activeChange)="setStatus($event)"
+          />
         }
-      </section>
+      </app-filter-bar>
 
       <app-data-table
         [columns]="columns()"
@@ -346,6 +178,10 @@ const STATS_FETCH_LIMIT = 1000;
         [pageSize]="pageSize"
         [serverMode]="true"
         [totalItems]="totalItems()"
+        [hideSearch]="true"
+        [bordered]="true"
+        [stickyFirstColumn]="true"
+        [ariaLabel]="t('regears.tableLabel')"
         emptyIcon="shield"
         emptyLabel="regears.empty"
         [rowClickable]="true"
@@ -353,88 +189,132 @@ const STATS_FETCH_LIMIT = 1000;
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="player_name" let-row>
-          <div class="flex flex-col gap-0.5">
-            <span class="font-bold text-sm text-(--color-text) hover:underline cursor-pointer inline-flex items-center gap-1.5">
-              {{ row.player_name }}
+          <div class="regear-member">
+            <a class="regear-member__name" [routerLink]="['/regears', row.id]">{{ row.player_name }}</a>
+            <span class="inline-flex flex-wrap items-center gap-1.5">
+              @if (row.primary_build_name) {
+                <span class="regear-member__build">{{ row.primary_build_name }}</span>
+              }
               @if (row.source === 'self_reported') {
-                <span class="status-pill" style="background: var(--color-surface-2); color: var(--color-text-secondary); border: 1px solid var(--color-border);">
-                  {{ t('regears.source.selfReported') }}
-                </span>
+                <span class="chip chip--neutral">{{ t('regears.source.selfReported') }}</span>
               }
             </span>
-            @if (row.primary_build_name) {
-              <span class="text-xs text-[var(--color-text-secondary)] font-medium inline-flex items-center gap-1">
-                <app-icon name="shield" size="0.75rem" class="text-[var(--color-text-tertiary)]" />
-                {{ row.primary_build_name }}
+          </div>
+        </ng-template>
+
+        <ng-template dataTableCell="event" let-row>
+          <span class="text-sm">{{ row.event_title }}</span>
+        </ng-template>
+
+        <ng-template dataTableCell="status" let-row>
+          <app-status-chip [value]="row.status" [label]="statusLabel(row.status)" />
+        </ng-template>
+
+        <ng-template dataTableCell="estimate" let-row>
+          <div class="regear-value">
+            <span class="num text-sm font-semibold">{{ formatSilver(row.auto_estimate_total) }}</span>
+            @if (row.status === 'approved' && row.final_amount !== null) {
+              <span class="regear-value__paid num">
+                {{ t('regears.final') }}: {{ formatSilver(row.final_amount) }}
               </span>
             }
           </div>
         </ng-template>
 
-        <ng-template dataTableCell="event" let-row>
-          <span class="font-medium text-xs text-[var(--color-text)]">{{ row.event_title }}</span>
-        </ng-template>
-
-        <ng-template dataTableCell="status" let-row>
-          @switch (row.status) {
-            @case ('approved') {
-              <span class="status-pill status-pill--approved">
-                <app-icon name="check" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('pending') {
-              <span class="status-pill status-pill--pending">
-                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('rejected') {
-              <span class="status-pill status-pill--rejected">
-                <app-icon name="close" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @default {
-              <span class="status-pill status-pill--pending">
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-          }
-        </ng-template>
-
-        <ng-template dataTableCell="estimate" let-row>
-          <span class="font-mono text-sm font-semibold text-success">{{ formatSilver(row.auto_estimate_total) }}</span>
+        <ng-template dataTableCell="killed" let-row>
+          <span class="num text-sm">{{ formatDate(row.killed_at) }}</span>
         </ng-template>
 
         <ng-template dataTableCell="actions" let-row>
-          @if (canRequest(row)) {
-            <button
-              type="button"
-              class="btn btn--primary btn--sm"
-              (click)="requestRegear(row.id, $event)"
-              [disabled]="acting()"
-            >
-              {{ t('regears.request') }}
-            </button>
-          } @else {
-            <a
-              class="btn btn--ghost btn--sm text-xs inline-flex items-center gap-1"
-              [routerLink]="['/regears', row.id]"
-              [attr.aria-label]="(row.status === 'pending' && canAdjudicate() ? t('regears.reviewRequest') : t('regears.viewDetails')) + ': ' + row.player_name"
-              (click)="$event.stopPropagation()"
-            >
-              <span>{{
-                row.status === 'pending' && canAdjudicate()
-                  ? t('regears.reviewRequest')
-                  : t('regears.viewDetails')
-              }}</span>
-              &rarr;
-            </a>
-          }
+          <div class="regear-actions">
+            @if (canRequest(row)) {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                (click)="requestRegear(row.id, $event)"
+                [disabled]="acting()"
+              >
+                {{ t('regears.request') }}
+              </button>
+            } @else if (canAdjudicateRow(row)) {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                (click)="askApprove(row)"
+                [disabled]="acting()"
+              >
+                {{ t('regears.approve') }}
+              </button>
+            }
+            <app-menu
+              [items]="rowMenu(row)"
+              [label]="t('regears.rowMenu', { name: row.player_name })"
+              (itemSelect)="onRowMenu($event, row)"
+            />
+          </div>
         </ng-template>
       </app-data-table>
     </app-page-stack>
+
+    @if (approveTarget(); as target) {
+      <app-dialog [title]="t('regears.approveTitle')" size="sm" (closed)="closeApprove()">
+        <div class="grid gap-3">
+          <p class="text-sm">
+            <span class="font-semibold">{{ target.player_name }}</span>
+            · {{ target.event_title }}
+          </p>
+          <p class="text-sm text-[var(--color-text-secondary)]">{{ t('regears.approveBody') }}</p>
+          <p class="text-sm">
+            {{ t('regears.approveTotal') }}:
+            <span class="num font-semibold">{{ formatSilver(approveTotal(target)) }}</span>
+          </p>
+        </div>
+        <div dialogFooter>
+          <button type="button" class="btn btn--outline" (click)="closeApprove()">{{ t('common.cancel') }}</button>
+          <button
+            type="button"
+            class="btn btn--primary"
+            (click)="confirmApprove()"
+            [disabled]="acting()"
+          >
+            {{ t('regears.approveConfirm') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    @if (rejectTarget(); as target) {
+      <app-dialog [title]="t('regears.rejectTitle')" size="sm" (closed)="closeReject()">
+        <form id="regear-reject-form" class="grid gap-3" (submit)="confirmReject($event)">
+          <p class="text-sm">
+            <span class="font-semibold">{{ target.player_name }}</span>
+            · {{ target.event_title }}
+          </p>
+          <p class="text-sm text-[var(--color-text-secondary)]">{{ t('regears.rejectWarning') }}</p>
+          <label class="grid gap-1">
+            <span class="label">{{ t('regears.rejectReason') }}</span>
+            <textarea
+              class="textarea"
+              rows="3"
+              required
+              [value]="rejectNote()"
+              (input)="onRejectNote($event)"
+            ></textarea>
+          </label>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--outline" (click)="closeReject()">{{ t('common.cancel') }}</button>
+          <button
+            type="submit"
+            form="regear-reject-form"
+            class="btn btn--danger"
+            [disabled]="acting() || rejectNote().trim().length === 0"
+          >
+            {{ t('regears.reject') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Regears {
@@ -444,6 +324,7 @@ export class Regears {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly pageSize = PAGE_SIZE;
   protected readonly tab = signal<RegearTab>('mine');
@@ -454,42 +335,29 @@ export class Regears {
   protected readonly totalItems = signal(0);
   protected readonly summary = signal<RegearBudgetSummary | null>(null);
 
+  /** Officer decisions in progress (the dialogs render while these are set). */
+  protected readonly approveTarget = signal<RegearDeathView | null>(null);
+  protected readonly rejectTarget = signal<RegearDeathView | null>(null);
+  protected readonly rejectNote = signal('');
+
   /**
    * Full (unpaginated, up to `STATS_FETCH_LIMIT`) dataset for the current
-   * tab's scope, used only to aggregate the stat cards below — kept separate
-   * from `deaths()`, which holds just the table's current page.
+   * section's scope, used for the summary band and the status tab counts —
+   * kept separate from `deaths()`, which holds just the table's current page.
    */
   private readonly statsDeaths = signal<RegearDeathView[]>([]);
 
-  protected readonly pendingMineCount = computed(
-    () => this.statsDeaths().filter((d) => d.status === 'pending').length,
-  );
-  protected readonly approvedMineCount = computed(
-    () => this.statsDeaths().filter((d) => d.status === 'approved').length,
-  );
-  protected readonly rejectedMineCount = computed(
-    () => this.statsDeaths().filter((d) => d.status === 'rejected').length,
-  );
-  /** Sums `final_amount` (the officer-approved payout), not the pre-adjudication estimate. */
-  protected readonly approvedTotal = computed(() =>
-    this.statsDeaths().reduce((sum, d) => sum + (Number(d.final_amount) || 0), 0),
-  );
-
-  protected async refreshNow(): Promise<void> {
-    await this.load();
-  }
-
-  protected readonly trackById = (death: RegearDeathView): unknown => death.id;
+  /** Free-text search, owned by the page and sent to the server. */
+  protected readonly search = signal('');
+  protected readonly statusFilter = signal<StatusFilter>('all');
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
     defaultPageSize: PAGE_SIZE,
-    filterKeys: ['status'],
   });
   private readonly tablePage = signal(this.initialQuery.page);
   private readonly tablePageSize = signal(this.initialQuery.pageSize);
-  private readonly tableSearch = signal(this.initialQuery.search);
   private readonly tableSort = signal<DataTablePageChange['sort']>(this.initialQuery.sort);
-  private readonly tableFilters = signal<Readonly<Record<string, string>>>(this.initialQuery.columnFilters);
 
   protected readonly canAdjudicate = computed(() => this.auth.hasPermission('regear.adjudicate'));
   protected readonly canOpenNewRequest = computed(() => this.auth.hasPermission('regear.request'));
@@ -498,8 +366,10 @@ export class Regears {
   );
   protected readonly currentUserId = computed(() => this.auth.profile()?.user_id ?? null);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
-    const options: ViewToggleOption[] = [{ id: 'mine', label: this.t('regears.tab.mine') }];
+  protected readonly activeFilterCount = computed(() => (this.statusFilter() === 'all' ? 0 : 1));
+
+  protected readonly tabOptions = computed<TabOption[]>(() => {
+    const options: TabOption[] = [{ id: 'mine', label: this.t('regears.tab.mine') }];
     if (this.canAdjudicate()) {
       options.push(
         { id: 'queue', label: this.t('regears.tab.queue') },
@@ -509,45 +379,162 @@ export class Regears {
     return options;
   });
 
-  protected readonly columns = computed<readonly DataTableColumn<RegearDeathView>[]>(() => {
-    const statusOptions = this.statusFilterOptions();
+  /**
+   * Status switch shown next to the search. The queue is always pending, so it
+   * has none. Counts come from the unpaginated stats fetch.
+   */
+  protected readonly statusOptions = computed<TabOption[]>(() => {
+    const tab = this.tab();
+    if (tab === 'queue') {
+      return [];
+    }
+    const all = this.statsDeaths();
+    const count = (status: RegearStatus) => all.filter((d) => d.status === status).length;
+    if (tab === 'history') {
+      return [
+        { id: 'all', label: this.t('regears.status.all'), count: count('approved') + count('rejected') },
+        { id: 'approved', label: this.t('regears.status.approved'), count: count('approved') },
+        { id: 'rejected', label: this.t('regears.status.rejected'), count: count('rejected') },
+      ];
+    }
     return [
-      {
-        key: 'player_name',
-        label: 'common.player',
-        sortable: true,
-        searchable: true,
-        accessor: (death) => death.player_name,
-      },
-      {
-        key: 'event',
-        label: 'regears.event',
-        accessor: (death) => death.event_title,
-      },
-      {
-        key: 'status',
-        label: 'common.status',
-        sortable: true,
-        accessor: (death) => death.status,
-        filterOptions: statusOptions.length > 0 ? statusOptions : undefined,
-      },
-      {
-        key: 'estimate',
-        label: 'regears.estimate',
-        align: 'right',
-        accessor: (death) => death.auto_estimate_total,
-      },
-      {
-        key: 'actions',
-        label: 'common.actions',
-        align: 'right',
-      },
+      { id: 'all', label: this.t('regears.status.all'), count: all.length },
+      { id: 'available', label: this.t('regears.status.available'), count: count('available') },
+      { id: 'pending', label: this.t('regears.status.pending'), count: count('pending') },
+      { id: 'approved', label: this.t('regears.status.approved'), count: count('approved') },
+      { id: 'rejected', label: this.t('regears.status.rejected'), count: count('rejected') },
     ];
   });
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  /** Totals for the summary band; each section shows the figures its officers act on. */
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    const all = this.statsDeaths();
+    const pending = all.filter((d) => d.status === 'pending');
+    const credited: SummaryItem = {
+      label: this.t('regears.stat.totalReimbursed'),
+      value: this.formatSilver(this.approvedTotal()),
+      hint: this.t('regears.stat.approvedAmount'),
+    };
+
+    if (this.tab() === 'mine') {
+      const summary = this.summary();
+      return [
+        {
+          label: this.t('regears.budget.weekly'),
+          value: `${summary?.weekly_balance ?? 0} / ${summary?.weekly_cap ?? 0}`,
+          hint: this.t('regears.budget.weeklyHint'),
+        },
+        {
+          label: this.t('regears.budget.bonus'),
+          value: `${summary?.bonus_balance ?? 0} / ${summary?.bonus_cap ?? 0}`,
+          hint: this.t('regears.budget.bonusHint'),
+        },
+        {
+          label: this.t('regears.status.pending'),
+          value: pending.length,
+          hint: this.t('regears.summary.awaiting'),
+          tone: pending.length > 0 ? 'warning' : 'default',
+        },
+        credited,
+      ];
+    }
+
+    if (this.tab() === 'queue') {
+      return [
+        {
+          label: this.t('regears.summary.awaiting'),
+          value: pending.length,
+          hint: this.t('regears.summary.queueHint'),
+          tone: pending.length > 0 ? 'warning' : 'default',
+        },
+        {
+          label: this.t('regears.summary.pendingValue'),
+          value: this.formatSilver(
+            pending.reduce((sum, d) => sum + (Number(d.auto_estimate_total) || 0), 0),
+          ),
+          hint: this.t('regears.summary.pendingValueHint'),
+        },
+        credited,
+      ];
+    }
+
+    return [
+      {
+        label: this.t('regears.status.approved'),
+        value: all.filter((d) => d.status === 'approved').length,
+        hint: this.t('regears.summary.approvedHint'),
+      },
+      {
+        label: this.t('regears.status.rejected'),
+        value: all.filter((d) => d.status === 'rejected').length,
+        hint: this.t('regears.summary.rejectedHint'),
+      },
+      credited,
+    ];
+  });
+
+  /** Sums `final_amount` (the officer-approved payout), not the pre-adjudication estimate. */
+  private readonly approvedTotal = computed(() =>
+    this.statsDeaths().reduce((sum, d) => sum + (Number(d.final_amount) || 0), 0),
+  );
+
+  protected readonly headerMenu = computed<MenuItem[]>(() => {
+    const items: MenuItem[] = [
+      { id: 'refresh', label: this.t('common.refreshNow'), icon: 'sparkles', disabled: this.loading() },
+    ];
+    if (this.canManageSettings()) {
+      items.push({ id: 'settings', label: this.t('regears.settingsLink'), icon: 'settings' });
+    }
+    return items;
+  });
+
+  protected readonly trackById = (death: RegearDeathView): unknown => death.id;
+
+  protected readonly canAdjudicateRow = (death: RegearDeathView): boolean =>
+    this.canAdjudicate() && death.status === 'pending';
+
+  protected readonly columns = computed<readonly DataTableColumn<RegearDeathView>[]>(() => [
+    {
+      key: 'player_name',
+      label: 'common.player',
+      sortable: true,
+      searchable: true,
+      accessor: (death) => death.player_name,
+    },
+    {
+      key: 'event',
+      label: 'regears.event',
+      accessor: (death) => death.event_title,
+    },
+    {
+      key: 'status',
+      label: 'common.status',
+      sortable: true,
+      accessor: (death) => death.status,
+    },
+    {
+      key: 'estimate',
+      label: 'regears.itemsValue',
+      align: 'right',
+      accessor: (death) => death.auto_estimate_total,
+    },
+    {
+      key: 'killed',
+      label: 'regears.killedAt',
+      accessor: (death) => death.killed_at,
+    },
+    {
+      key: 'actions',
+      label: 'common.actions',
+      align: 'right',
+    },
+  ]);
+
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
+    this.destroyRef.onDestroy(() => clearTimeout(this.searchTimer));
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const requested = params.get('tab') ?? 'mine';
       const tab = isRegearTab(requested) && (requested === 'mine' || this.canAdjudicate())
@@ -570,23 +557,77 @@ export class Regears {
     }
     this.tab.set(next);
     this.tablePage.set(1);
-    this.tableSearch.set('');
+    this.search.set('');
+    this.statusFilter.set('all');
     this.tableSort.set(null);
-    this.tableFilters.set({});
+    void this.load();
+  }
+
+  protected setStatus(next: string): void {
+    if (!this.statusOptions().some((option) => option.id === next)) {
+      return;
+    }
+    this.statusFilter.set(next as StatusFilter);
+    this.tablePage.set(1);
+    void this.load();
+  }
+
+  protected onSearch(query: string): void {
+    this.search.set(query);
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.tablePage.set(1);
+      void this.load();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected clearFilters(): void {
+    clearTimeout(this.searchTimer);
+    this.search.set('');
+    this.statusFilter.set('all');
+    this.tablePage.set(1);
     void this.load();
   }
 
   protected onTableChange(event: DataTablePageChange): void {
+    // Search lives in the filter bar and status in the tab switch; the table's own
+    // search box is hidden, so its echoed search and column filters are ignored.
     this.tablePage.set(event.page);
     this.tablePageSize.set(event.pageSize);
-    this.tableSearch.set(event.search);
     this.tableSort.set(event.sort);
-    this.tableFilters.set(event.columnFilters);
     void this.load();
+  }
+
+  protected onHeaderMenu(id: string): void {
+    if (id === 'refresh') {
+      void this.refreshNow();
+    } else if (id === 'settings') {
+      void this.router.navigate(['/admin/regears']);
+    }
+  }
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
   }
 
   protected openDeath(death: RegearDeathView): void {
     void this.router.navigate(['/regears', death.id]);
+  }
+
+  protected rowMenu(death: RegearDeathView): MenuItem[] {
+    const items: MenuItem[] = [{ id: 'open', label: this.t('regears.viewDetails') }];
+    if (this.canAdjudicateRow(death)) {
+      items.push({ id: 'reject', label: this.t('regears.reject'), danger: true, separatorBefore: true });
+    }
+    return items;
+  }
+
+  protected onRowMenu(id: string, death: RegearDeathView): void {
+    if (id === 'open') {
+      this.openDeath(death);
+    } else if (id === 'reject') {
+      this.openReject(death);
+    }
   }
 
   protected canRequest(death: RegearDeathView): boolean {
@@ -609,8 +650,83 @@ export class Regears {
       await firstValueFrom(this.api.post<RegearDeathView>(`api/regear/deaths/${deathId}/request`));
       this.toasts.success(this.t('regears.requested'));
       await this.load();
-    } catch (error) {
-      this.toasts.error(this.errorMessage(error));
+    } catch {
+      this.toasts.error(this.t('common.error'));
+    } finally {
+      this.acting.set(false);
+    }
+  }
+
+  /** The approved amount is the sum of included slots at their estimated prices. */
+  protected approveTotal(death: RegearDeathView): number {
+    return death.auto_estimate_breakdown
+      .filter((row) => row.included)
+      .reduce((sum, row) => sum + (Number(row.unit_price) || 0) * row.quantity, 0);
+  }
+
+  protected askApprove(death: RegearDeathView): void {
+    this.approveTarget.set(death);
+  }
+
+  protected closeApprove(): void {
+    this.approveTarget.set(null);
+  }
+
+  protected async confirmApprove(): Promise<void> {
+    const death = this.approveTarget();
+    if (!death || this.acting()) {
+      return;
+    }
+    this.acting.set(true);
+    try {
+      const payload: AcceptRegearRequest = {
+        final_amount: this.approveTotal(death),
+        breakdown: death.auto_estimate_breakdown,
+      };
+      await firstValueFrom(
+        this.api.post<RegearDeathView>(`api/regear/requests/${death.id}/accept`, payload),
+      );
+      this.approveTarget.set(null);
+      this.toasts.success(this.t('regears.accepted'));
+      await this.load();
+    } catch {
+      this.toasts.error(this.t('common.error'));
+    } finally {
+      this.acting.set(false);
+    }
+  }
+
+  protected openReject(death: RegearDeathView): void {
+    this.rejectNote.set('');
+    this.rejectTarget.set(death);
+  }
+
+  protected closeReject(): void {
+    this.rejectTarget.set(null);
+  }
+
+  protected onRejectNote(event: Event): void {
+    this.rejectNote.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected async confirmReject(event: Event): Promise<void> {
+    event.preventDefault();
+    const death = this.rejectTarget();
+    const note = this.rejectNote().trim();
+    if (!death || !note || this.acting()) {
+      return;
+    }
+    this.acting.set(true);
+    try {
+      const payload: RejectRegearRequest = { note };
+      await firstValueFrom(
+        this.api.post<RegearDeathView>(`api/regear/requests/${death.id}/reject`, payload),
+      );
+      this.rejectTarget.set(null);
+      this.toasts.success(this.t('regears.rejected'));
+      await this.load();
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.acting.set(false);
     }
@@ -622,9 +738,17 @@ export class Regears {
     }
     const numeric = typeof value === 'string' ? Number(value) : value;
     if (Number.isNaN(numeric)) {
-      return String(value);
+      return '—';
     }
     return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${this.t('regears.silver')}`;
+  }
+
+  protected formatDate(value: string | null): string {
+    if (!value) {
+      return '—';
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
   }
 
   protected statusLabel(status: RegearStatus): string {
@@ -640,31 +764,18 @@ export class Regears {
     }
   }
 
-  protected statusChipClass(status: RegearDeathView['status']): string {
-    switch (status) {
-      case 'approved':
-        return 'chip--success';
-      case 'rejected':
-        return 'chip--error';
-      case 'pending':
-        return 'chip--warning';
-      default:
-        return '';
-    }
-  }
-
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
       const tab = this.tab();
+      const status = this.statusFilter();
       const sort = this.tableSort();
-      const statusFilter = this.tableFilters()['status'] as RegearStatus | undefined;
       const params: Record<string, string | number | boolean | undefined> = {
         page: this.tablePage(),
         limit: this.tablePageSize(),
         global: tab !== 'mine',
-        search: this.tableSearch().trim() || undefined,
+        search: this.search().trim() || undefined,
         sort: sort?.columnKey,
         order: sort?.direction,
       };
@@ -672,11 +783,11 @@ export class Regears {
         params['status'] = 'pending';
       } else if (tab === 'history') {
         params['history'] = true;
-        if (statusFilter === 'approved' || statusFilter === 'rejected') {
-          params['status'] = statusFilter;
+        if (status === 'approved' || status === 'rejected') {
+          params['status'] = status;
         }
-      } else if (statusFilter) {
-        params['status'] = statusFilter;
+      } else if (status !== 'all') {
+        params['status'] = status;
       }
 
       const page = await firstValueFrom(
@@ -695,7 +806,7 @@ export class Regears {
       await this.loadStats(params);
     } catch (error) {
       this.loadFailed.set(true);
-      this.toasts.error(this.errorMessage(error));
+      this.toasts.error(this.t('common.error'));
       this.deaths.set([]);
       this.totalItems.set(0);
     } finally {
@@ -705,10 +816,10 @@ export class Regears {
 
   /**
    * Fetches the full (well beyond one table page) dataset for the current
-   * tab's scope so the stat cards aggregate across every matching death, not
-   * just the page currently shown in the table. Reuses the same `global`
-   * scope as the table fetch (own deaths for "mine", guild-wide otherwise)
-   * but drops the status/search/sort narrowing so every status is counted.
+   * section's scope so the summary band and tab counts aggregate across every
+   * matching death, not just the page shown in the table. Reuses the same
+   * `global` scope as the table fetch but drops the status/search/sort
+   * narrowing so every status is counted.
    */
   private async loadStats(
     tableParams: Record<string, string | number | boolean | undefined>,
@@ -723,33 +834,7 @@ export class Regears {
       );
       this.statsDeaths.set(page.items);
     } catch {
-      // Stat cards are supplementary; the table fetch above already surfaced any error.
+      // Summary and counts are supplementary; the table fetch above already surfaced any error.
     }
-  }
-
-  private statusFilterOptions(): { value: string; label: string }[] {
-    const tab = this.tab();
-    if (tab === 'queue') {
-      return [];
-    }
-    if (tab === 'history') {
-      return [
-        { value: 'approved', label: this.t('regears.status.approved') },
-        { value: 'rejected', label: this.t('regears.status.rejected') },
-      ];
-    }
-    return [
-      { value: 'available', label: this.t('regears.status.available') },
-      { value: 'pending', label: this.t('regears.status.pending') },
-      { value: 'approved', label: this.t('regears.status.approved') },
-      { value: 'rejected', label: this.t('regears.status.rejected') },
-    ];
-  }
-
-  private errorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return this.t('common.error');
   }
 }

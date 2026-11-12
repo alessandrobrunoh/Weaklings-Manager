@@ -48,7 +48,7 @@ describe('regear queue navigation', () => {
     fixture.destroy();
   });
 
-  it('offers a review action for pending queue items to adjudicators', async () => {
+  it('offers approve and a reject menu for pending queue items to adjudicators', async () => {
     const params = new BehaviorSubject(convertToParamMap({ tab: 'queue' }));
     const death = {
       id: 42,
@@ -98,8 +98,9 @@ describe('regear queue navigation', () => {
     fixture.detectChanges();
 
     expect(get).toHaveBeenCalledWith('api/regear/deaths', expect.objectContaining({ global: true, status: 'pending' }));
-    expect(fixture.nativeElement.textContent).toContain('Review request');
+    expect(fixture.nativeElement.textContent).toContain('Approve');
     expect(fixture.nativeElement.querySelector('a[href="/regears/42"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-status-chip')).not.toBeNull();
     fixture.destroy();
   });
 });

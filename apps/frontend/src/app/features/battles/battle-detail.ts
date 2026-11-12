@@ -6,6 +6,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { EChartsOption } from 'echarts';
 import { firstValueFrom } from 'rxjs';
@@ -19,6 +20,7 @@ import type {
   BuildItemSlot,
   BuildSlot,
 } from '../../core/models/api.models';
+import type { MenuItem } from '../../shared/components/menu/menu';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
@@ -32,24 +34,52 @@ import { Chart, type ChartClickEvent, type ChartTableRow } from '../../shared/co
 import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
+import { EntityHeader } from '../../shared/components/entity-header/entity-header';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { ErrorState } from '../../shared/components/error-state/error-state';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+  Tabs,
+  type TabOption,
+} from '../../shared/components/tabs/tabs';
 
 const ALBION_RENDER_ITEM_BASE_URL = 'https://render.albiononline.com/v1/item';
 
-type DetailTab = 'overview' | 'guild_alliance' | 'guilds' | 'players' | 'timeline';
+/** Kills at or above this fame are the "high fame" filter of the kill feed. */
+const HIGH_FAME_THRESHOLD = 250_000;
 
-type KillFeedFilter = 'all' | 'our_kills' | 'our_deaths' | 'high_fame' | 'solo';
-type PlayerSideFilter = 'all' | 'allies' | 'enemies';
+type DetailTab = 'overview' | 'players' | 'guilds' | 'kills';
+
+type KillFeedFilter = 'all' | 'our_kills' | 'our_deaths' | 'high_fame';
+type PlayerSideFilter = 'all' | 'our_guild' | 'allies' | 'enemies';
 type KillSide = 'killer' | 'victim';
+type OutcomeTone = 'success' | 'warning' | 'error' | 'neutral';
+
+/** One row of the faction matchup table on the overview tab. */
+export interface MatchupRow {
+  readonly key: 'ours' | 'enemies';
+  readonly side: string;
+  readonly force: string;
+  readonly players: number;
+  readonly kills: number;
+  readonly deaths: number;
+  readonly kdRatio: number;
+  readonly killFame: number;
+}
+
+/** One honour of our guild on the players tab (the best player for that category). */
+export interface HonorRow {
+  readonly id: string;
+  readonly labelKey: TranslationKey;
+  readonly player: PlayerEnrichedRow | null;
+  readonly value: string;
+}
 
 type CombatRole = 'tank' | 'healer' | 'support' | 'melee_dps' | 'ranged_dps' | 'other';
 
@@ -137,955 +167,527 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
     Chart,
     DataTable,
     DataTableCell,
+    Dialog,
+    EntityHeader,
     EquipmentGrid,
     ErrorState,
+    FilterBar,
     Icon,
     Loading,
-    PageHeader,
     PageStack,
     RouterLink,
-    ViewToggle,
+    StatusChip,
+    SummaryBand,
+    Tabs,
   ],
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <app-loading variant="detail" [label]="t('common.loading')" />
     } @else if (battle(); as detail) {
-      <button type="button" class="btn btn--ghost btn--sm mb-4" (click)="backToBattles()">
+      <a class="btn btn--ghost btn--sm mb-3 inline-flex no-underline" [routerLink]="['/battles']">
         ← {{ t('nav.battles') }}
-      </button>
+      </a>
 
-      <app-page-header [title]="'#' + detail.battle_id" [subtitle]="battleSubtitle(detail)">
-        <button
-          type="button"
-          class="btn btn--outline btn--sm"
-          (click)="copyBattleLink()"
-          [title]="t('battles.copy_link')"
-        >
-          {{ t('battles.copy_link') }}
-        </button>
-        <a
-          class="btn btn--ghost btn--sm no-underline"
-          [href]="albionBattlesUrl(detail.battle_id)"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {{ t('battles.view_on_albion_battles') }} ↗
-        </a>
-        @if (canScoutBattle()) {
-          <button
-            type="button"
-            class="btn btn--outline btn--sm inline-flex items-center gap-1.5"
-            [disabled]="scouting()"
-            (click)="scoutBattle(detail.battle_id)"
-            title="Extract enemy comps to Intel"
-          >
-            <app-icon name="scan" size="0.875rem" />
-            {{ scouting() ? t('common.loading') : 'Scout Battle' }}
-          </button>
-        }
-        <app-view-toggle
-          pageTabs
-          [options]="tabOptions()"
-          [active]="tab()"
-          (activeChange)="switchTab($event)"
-        />
-      </app-page-header>
-
-      <app-page-stack>
-      <div class="flex flex-wrap items-center gap-2">
-        <span
-          class="chip font-semibold"
-          [class.chip--success]="battleVerdict().type === 'victory'"
-          [class.chip--error]="battleVerdict().type === 'defeat'"
-          [class.chip--warning]="battleVerdict().type === 'draw'"
-            [class.chip--neutral]="battleVerdict().type === 'unknown'"
-        >
-          {{ battleVerdict().label }}
+      <app-entity-header
+        [title]="'#' + detail.battle_id"
+        [menuItems]="menuItems()"
+        [menuLabel]="t('entityHeader.moreActions')"
+        (menuSelect)="onMenu($event)"
+      >
+        <span entityBadges class="inline-flex flex-wrap items-center gap-2">
+          <app-status-chip
+            [value]="detail.outcome ?? 'unknown'"
+            [label]="verdict().label"
+            [toneOverride]="verdict().tone"
+          />
+          @if (detail.linked_event; as event) {
+            <a
+              class="chip chip--info no-underline"
+              [routerLink]="['/events', event.id]"
+              [title]="t('battles.linkedEventHint')"
+            >
+              {{ event.title }}
+              @if (event.call_to_arms) {
+                · {{ t('events.call_to_arms') }}
+              }
+            </a>
+          } @else {
+            <span class="chip" [title]="t('battles.unlinkedHint')">
+              {{ t('battles.unlinked') }}
+            </span>
+          }
         </span>
 
-        @if (ourGuildAllianceName(); as allyName) {
-          <span class="chip chip--info font-mono font-medium">
-            [{{ allyName }}] {{ ourGuild()?.name || t('battles.allies') }}
-          </span>
-        } @else if (ourGuild()?.name; as gName) {
-          <span class="chip chip--info font-mono font-medium">
-            {{ gName }}
-          </span>
+        <div entityMeta class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span>{{ formatDate(detail.start_time) }}</span>
+          <span>{{ formatDuration(detail) }}</span>
+          <span>{{ detail.total_players }} {{ t('battles.players') }}</span>
+          <span>{{ detail.guilds.length }} {{ t('battles.guilds') }}</span>
+          @if (ourForceLabel(); as ours) {
+            <span class="font-mono">{{ ours }}</span>
+          }
+        </div>
+
+        @if (canScoutBattle()) {
+          <button
+            entityPrimary
+            type="button"
+            class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
+            [disabled]="scouting()"
+            [title]="t('battleDetail.scoutHint')"
+            (click)="scoutBattle(detail.battle_id)"
+          >
+            <app-icon name="scan" size="0.875rem" />
+            {{ scouting() ? t('common.loading') : t('battleDetail.scout') }}
+          </button>
         }
 
-        @if (detail.linked_event; as event) {
-          <a
-            class="chip chip--info no-underline"
-            [routerLink]="['/events', event.id]"
-            [title]="t('battles.linkedEventHint')"
-          >
-            {{ event.title }}
-            @if (event.call_to_arms) {
-              · {{ t('events.call_to_arms') }}
-            }
-          </a>
-        } @else {
-          <span class="chip" [title]="t('battles.unlinkedHint')">
-            {{ t('battles.unlinked') }}
-          </span>
-        }
+        <div entitySummary>
+          <app-summary-band [ariaLabel]="t('battleDetail.summaryLabel')" [items]="summaryItems()" />
+        </div>
+      </app-entity-header>
+
+      <div class="mb-4">
+        <app-tabs
+          [options]="tabOptions()"
+          [active]="tab()"
+          [ariaLabel]="t('battleDetail.sectionsLabel')"
+          (activeChange)="switchTab($event)"
+        />
       </div>
 
-      <!-- ================= 6 CORE KPI METRIC CARDS ================= -->
-      <section
-        class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6"
-        aria-label="Core Battle KPIs"
-      >
-        <article class="surface p-4">
-          <p class="battle-detail__label">{{ t('battles.total_fame') }}</p>
-          <p class="battle-detail__value text-warning">{{ formatCompact(detail.total_fame) }}</p>
-          <p class="battle-detail__sub">
-            Our share: <strong class="mono">{{ formatDecimal(ourAllianceFameShare()) }}%</strong>
-          </p>
-        </article>
+      <app-page-stack>
+        <!-- OVERVIEW: matchup, timeline, momentum, breakdown charts -->
+        @if (tab() === 'overview') {
+          <section class="card">
+            <h2 class="section-title">{{ t('battleDetail.matchup') }}</h2>
+            <div class="table-scroll">
+              <table class="table" [attr.aria-label]="t('battleDetail.matchup')">
+                <thead>
+                  <tr>
+                    <th scope="col">{{ t('battles.side') }}</th>
+                    <th scope="col">{{ t('battleDetail.force') }}</th>
+                    <th scope="col" class="text-right">{{ t('battles.players') }}</th>
+                    <th scope="col" class="text-right">{{ t('battles.kills') }}</th>
+                    <th scope="col" class="text-right">{{ t('battles.deaths') }}</th>
+                    <th scope="col" class="text-right">{{ t('battles.kill_death') }}</th>
+                    <th scope="col" class="text-right">{{ t('battles.kill_fame') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of matchupRows(); track row.key) {
+                    <tr>
+                      <td>{{ row.side }}</td>
+                      <td class="font-medium">{{ row.force }}</td>
+                      <td class="text-right num">{{ formatAmount(row.players) }}</td>
+                      <td class="text-right num">{{ formatAmount(row.kills) }}</td>
+                      <td class="text-right num">{{ formatAmount(row.deaths) }}</td>
+                      <td class="text-right num">{{ formatDecimal(row.kdRatio) }}</td>
+                      <td class="text-right num">{{ formatCompact(row.killFame) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-        <article class="surface p-4">
-          <p class="battle-detail__label">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
-          <p class="battle-detail__value">
-            {{ formatAmount(detail.total_kills) }} / {{ formatAmount(totalBattleDeaths()) }}
-          </p>
-          <p class="battle-detail__sub">
-            Our K/D:
-            <strong
-              class="mono"
-              [class.text-success]="ourGuildKdRatio() >= 1"
-              [class.text-error]="ourGuildKdRatio() < 1"
+          <section class="card">
+            <h2 class="section-title">{{ t('battles.timeline_density') }}</h2>
+            <p class="hint mb-3">{{ t('battleDetail.timelineHint') }}</p>
+            <app-chart
+              [option]="timelineDensityOption()"
+              height="16rem"
+              [label]="t('battles.timeline_density')"
+              [tableHead]="timelineDensityTableHead()"
+              [tableRows]="timelineDensityTableRows()"
+              (chartClick)="onTimelineChartClick($event)"
+            />
+          </section>
+
+          <section class="card">
+            <h2 class="section-title">{{ t('battles.momentum') }}</h2>
+            <p class="hint mb-3">{{ t('battles.momentum_hint') }}</p>
+            <app-chart
+              [option]="momentumOption()"
+              height="15rem"
+              [label]="t('battles.momentum')"
+              [tableHead]="momentumTableHead()"
+              [tableRows]="momentumTableRows()"
+            />
+          </section>
+
+          <div class="grid gap-4 lg:grid-cols-3">
+            <section class="card">
+              <h2 class="section-title">{{ t('battles.fame_by_alliance') }}</h2>
+              <app-chart
+                [option]="allianceFameOption()"
+                height="16rem"
+                [label]="t('battles.fame_by_alliance')"
+                [tableHead]="allianceFameTableHead()"
+                [tableRows]="allianceFameTableRows()"
+              />
+            </section>
+
+            <section class="card">
+              <h2 class="section-title">{{ t('battles.top_guilds_kd') }}</h2>
+              <app-chart
+                [option]="topGuildsKdOption()"
+                height="16rem"
+                [label]="t('battles.top_guilds_kd')"
+                [tableHead]="topGuildsKdTableHead()"
+                [tableRows]="topGuildsKdTableRows()"
+              />
+            </section>
+
+            <section class="card">
+              <h2 class="section-title">{{ t('battles.composition_by_side') }}</h2>
+              <p class="hint mb-3">{{ t('battles.composition_by_side_hint') }}</p>
+              <app-chart
+                [option]="roleCompositionOption()"
+                height="14rem"
+                [label]="t('battles.composition_by_side')"
+                [tableHead]="roleCompositionTableHead()"
+                [tableRows]="roleCompositionTableRows()"
+              />
+            </section>
+          </div>
+        }
+
+        <!-- PLAYERS: our honours, every player, IP against fame -->
+        @else if (tab() === 'players') {
+          <section class="card">
+            <h2 class="section-title">{{ t('battleDetail.honors') }}</h2>
+            <div class="table-scroll">
+              <table class="table" [attr.aria-label]="t('battleDetail.honors')">
+                <thead>
+                  <tr>
+                    <th scope="col">{{ t('battleDetail.honor') }}</th>
+                    <th scope="col">{{ t('common.name') }}</th>
+                    <th scope="col" class="text-right">{{ t('battleDetail.value') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (honor of honorRows(); track honor.id) {
+                    <tr>
+                      <th scope="row" class="font-medium">{{ t(honor.labelKey) }}</th>
+                      <td>
+                        @if (honor.player; as player) {
+                          <span class="bd__cell">
+                            <img
+                              [src]="itemIconUrl(player.weaponType || 'T4_MAIN_SWORD')"
+                              alt=""
+                              class="bd__icon"
+                              loading="lazy"
+                            />
+                            {{ player.name }}
+                          </span>
+                        } @else {
+                          <span class="text-secondary">{{ t('common.none') }}</span>
+                        }
+                      </td>
+                      <td class="text-right num">{{ honor.value || '—' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <app-filter-bar
+            [searchLabel]="t('battles.search_players')"
+            [searchPlaceholder]="t('battles.search_players')"
+            [query]="playerSearchQuery()"
+            [activeCount]="playerSearchQuery() ? 1 : 0"
+            (queryChange)="setPlayerQuery($event)"
+            (clear)="setPlayerQuery('')"
+          >
+            <app-tabs
+              filterPrimary
+              variant="segmented"
+              [options]="playerSideOptions()"
+              [active]="playerFilterSide()"
+              [ariaLabel]="t('battleDetail.playerSide')"
+              (activeChange)="setPlayerSide($event)"
+            />
+          </app-filter-bar>
+
+          <section class="card p-0">
+            <app-data-table
+              [syncUrl]="false"
+              [columns]="playerColumns"
+              [rows]="filteredAllPlayerRows()"
+              [trackBy]="trackPlayerRow"
+              [pageSize]="20"
+              [hideSearch]="true"
+              [stickyFirstColumn]="true"
+              [ariaLabel]="t('battles.players')"
             >
-              {{ formatDecimal(ourGuildKdRatio()) }}
-            </strong>
-          </p>
-        </article>
-
-        <article class="surface p-4">
-          <p class="battle-detail__label">{{ t('battles.kill_participation') }}</p>
-          <p class="battle-detail__value">{{ formatDecimal(ourKillParticipation()) }}%</p>
-          <p class="battle-detail__sub">
-            <span class="mono">{{ ourGuild()?.kills ?? 0 }}</span> our kills
-          </p>
-        </article>
-
-        <article class="surface p-4">
-          <p class="battle-detail__label">{{ t('battles.avg_ip') }}</p>
-          <p class="battle-detail__value">{{ formatDecimal(ourGuildAvgIp()) }}</p>
-          <p class="battle-detail__sub">
-            Battle avg: <span class="mono">{{ formatDecimal(battleAvgIp()) }}</span>
-          </p>
-        </article>
-
-        <article class="surface p-4">
-          <p class="battle-detail__label">{{ t('battles.silver_lost') }}</p>
-          <p class="battle-detail__value text-error">
-            {{ formatCompact(detail.estimated_losses.total_estimated_loss) }}
-          </p>
-          <p class="battle-detail__sub">
-            {{ detail.estimated_losses.priced_items }} /
-            {{ detail.estimated_losses.total_items }} items priced
-          </p>
-        </article>
-
-        <article class="surface p-4">
-          <p class="battle-detail__label">{{ t('battles.survival_rate') }}</p>
-          <p class="battle-detail__value">{{ formatDecimal(ourSurvivalRate()) }}%</p>
-          <p class="battle-detail__sub">
-            <span class="mono">{{ ourSurvivingCount() }} / {{ ourGuild()?.players ?? 0 }}</span> survived
-          </p>
-        </article>
-      </section>
-
-      <!-- ================= TAB CONTENT ================= -->
-
-      <!-- TAB 1: OVERVIEW & MATCHUP -->
-      @if (tab() === 'overview') {
-        <!-- Faction Head-to-Head Banner -->
-        <section class="mt-5 card p-5 overflow-hidden">
-          <h2 class="eyebrow mb-4">TACTICAL FACTION MATCHUP</h2>
-          <div class="grid gap-6 lg:grid-cols-11 lg:items-center">
-            <!-- OUR FORCES -->
-            <div class="lg:col-span-5 rounded-lg p-4 battle-detail__faction-card battle-detail__faction-card--allies">
-              <div class="flex items-center justify-between mb-2">
-                <span class="chip chip--success font-semibold">
-                  {{ ourGuildAllianceName() ? '[' + ourGuildAllianceName() + '] ' + (ourGuild()?.name || 'Allies') : (ourGuild()?.name || 'Our Guild') }}
-                </span>
-                <span class="text-xs text-secondary mono">{{ ourAlliance()?.players ?? ourGuild()?.players ?? 0 }} fighters</span>
-              </div>
-              <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
-                <div class="surface p-2 rounded">
-                  <p class="text-xs text-disabled">Kills / Deaths</p>
-                  <p class="font-bold text-base mono">
-                    {{ ourAlliance()?.kills ?? ourGuild()?.kills ?? 0 }} / {{ ourAlliance()?.deaths ?? ourGuild()?.deaths ?? 0 }}
-                  </p>
-                </div>
-                <div class="surface p-2 rounded">
-                  <p class="text-xs text-disabled">K/D Ratio</p>
-                  <p class="font-bold text-base mono" [class.text-success]="(ourAlliance()?.kdRatio ?? 1) >= 1">
-                    {{ formatDecimal(ourAlliance()?.kdRatio ?? ourGuildKdRatio()) }}
-                  </p>
-                </div>
-                <div class="surface p-2 rounded">
-                  <p class="text-xs text-disabled">Kill Fame</p>
-                  <p class="font-bold text-base mono text-warning">
-                    {{ formatCompact(ourAlliance()?.killFame ?? ourGuild()?.kill_fame ?? 0) }}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <!-- VS DIVIDER -->
-            <div class="lg:col-span-1 text-center flex flex-col items-center justify-center">
-              <span class="battle-detail__vs-badge">VS</span>
-            </div>
-
-            <!-- ENEMY FORCES -->
-            <div class="lg:col-span-5 rounded-lg p-4 battle-detail__faction-card battle-detail__faction-card--enemies">
-              <div class="flex items-center justify-between mb-2">
-                <span class="chip chip--error font-semibold">
-                  {{ topEnemyAlliance()?.name ? '[' + topEnemyAlliance()?.name + '] ' + (topEnemyAlliance()?.guilds?.[0]?.name || 'Enemies') : (topEnemyGuild()?.name || 'Hostile Coalition') }}
-                </span>
-                <span class="text-xs text-secondary mono">{{ enemyForcesPlayers() }} fighters</span>
-              </div>
-              <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
-                <div class="surface p-2 rounded">
-                  <p class="text-xs text-disabled">Kills / Deaths</p>
-                  <p class="font-bold text-base mono">
-                    {{ enemyForcesKills() }} / {{ enemyForcesDeaths() }}
-                  </p>
-                </div>
-                <div class="surface p-2 rounded">
-                  <p class="text-xs text-disabled">K/D Ratio</p>
-                  <p class="font-bold text-base mono">
-                    {{ formatDecimal(enemyForcesKdRatio()) }}
-                  </p>
-                </div>
-                <div class="surface p-2 rounded">
-                  <p class="text-xs text-disabled">Kill Fame</p>
-                  <p class="font-bold text-base mono text-warning">
-                    {{ formatCompact(enemyForcesKillFame()) }}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Interactive Timeline Skirmish Chart -->
-        <section class="mt-5 surface p-5">
-          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <h2 class="battle-detail__panel-title mb-0">{{ t('battles.timeline_density') }}</h2>
-              <p class="text-xs text-secondary">
-                Minute-by-minute combat intensity. Click any minute column to filter the kill feed.
-              </p>
-            </div>
-            @if (selectedTimelineMinute() !== null) {
-              <div class="flex items-center gap-2">
-                <span class="chip chip--info font-mono">
-                  Filtered: {{ selectedTimelineMinute() }}m
-                </span>
-                <button type="button" class="btn btn--ghost btn--sm" (click)="clearTimelineMinuteFilter()">
-                  Clear
-                </button>
-              </div>
-            }
-          </div>
-
-          <app-chart
-            [option]="timelineDensityOption()"
-            height="16rem"
-            [label]="t('battles.timeline_density')"
-            [tableHead]="timelineDensityTableHead()"
-            [tableRows]="timelineDensityTableRows()"
-            (chartClick)="onTimelineChartClick($event)"
-          />
-        </section>
-
-        <!-- Battle Momentum -->
-        <section class="mt-5 surface p-5">
-          <h2 class="battle-detail__panel-title mb-0">{{ t('battles.momentum') }}</h2>
-          <p class="text-xs text-secondary mb-4">{{ t('battles.momentum_hint') }}</p>
-          <app-chart
-            [option]="momentumOption()"
-            height="15rem"
-            [label]="t('battles.momentum')"
-            [tableHead]="momentumTableHead()"
-            [tableRows]="momentumTableRows()"
-          />
-        </section>
-
-        <!-- Charts Row -->
-        <section class="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-3">
-          <!-- Alliance & Guild Fame Distribution -->
-          <article class="surface p-5">
-            <h2 class="battle-detail__panel-title">{{ t('battles.fame_by_alliance') }}</h2>
-            <app-chart
-              [option]="allianceFameOption()"
-              height="16rem"
-              [label]="t('battles.fame_by_alliance')"
-              [tableHead]="allianceFameTableHead()"
-              [tableRows]="allianceFameTableRows()"
-            />
-          </article>
-
-          <!-- Top Guilds K/D Leaders -->
-          <article class="surface p-5">
-            <h2 class="battle-detail__panel-title">{{ t('battles.top_guilds_kd') }}</h2>
-            <app-chart
-              [option]="topGuildsKdOption()"
-              height="16rem"
-              [label]="t('battles.top_guilds_kd')"
-              [tableHead]="topGuildsKdTableHead()"
-              [tableRows]="topGuildsKdTableRows()"
-            />
-          </article>
-
-          <!-- Composition by Side -->
-          <article class="surface p-5">
-            <h2 class="battle-detail__panel-title mb-0">{{ t('battles.composition_by_side') }}</h2>
-            <p class="text-xs text-secondary mb-3">{{ t('battles.composition_by_side_hint') }}</p>
-            <app-chart
-              [option]="roleCompositionOption()"
-              height="14rem"
-              [label]="t('battles.composition_by_side')"
-              [tableHead]="roleCompositionTableHead()"
-              [tableRows]="roleCompositionTableRows()"
-            />
-          </article>
-        </section>
-      }
-
-      <!-- TAB 2: MY GUILD & ALLIANCE DEEP DIVE -->
-      @else if (tab() === 'guild_alliance') {
-        <!-- Alliance & Guild Command Overview -->
-        @if (ourGuild(); as guild) {
-          <section class="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-3">
-            <!-- Our Guild Performance Verdict Card -->
-            <article class="surface p-5 lg:col-span-2 border" [style.border-color]="'var(--color-primary)'">
-              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <h2 class="text-xl font-bold" style="color: var(--color-text)">
-                  {{ guild.name }} Performance Report
-                </h2>
-                @if (ourGuildAllianceName(); as allyName) {
-                  <span class="chip chip--info font-mono">
-                    Alliance: [{{ allyName }}]
+              <ng-template dataTableCell="name" let-row>
+                <span class="bd__cell">
+                  <img
+                    [src]="itemIconUrl(row.weaponType || 'T4_MAIN_SWORD')"
+                    alt=""
+                    class="bd__icon"
+                    loading="lazy"
+                  />
+                  <span class="min-w-0">
+                    <span class="block truncate font-medium" [class.text-primary]="row.isOurGuild">{{ row.name }}</span>
+                    <span class="block truncate text-xs text-secondary">
+                      {{ row.guild_name }}
+                      @if (row.alliance_name) {
+                        <span class="mono"> [{{ row.alliance_name }}]</span>
+                      }
+                    </span>
                   </span>
-                }
-              </div>
-              <p class="text-sm text-secondary mb-4">
-                {{ guild.players }} guild members engaged in this battle, achieving
-                {{ guild.kills }} kills and {{ guild.deaths }} deaths.
-              </p>
+                </span>
+              </ng-template>
 
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div class="surface p-3 rounded">
-                  <p class="text-xs text-disabled uppercase">{{ t('battles.fame_efficiency') }}</p>
-                  <p class="text-lg font-bold mono text-warning">
-                    {{ formatCompact(safeDivide(guild.kill_fame, guild.players)) }}
-                  </p>
-                  <p class="text-xs text-secondary">per player</p>
-                </div>
-                <div class="surface p-3 rounded">
-                  <p class="text-xs text-disabled uppercase">{{ t('battles.net_fame') }}</p>
-                  <p class="text-lg font-bold mono" [class.text-success]="ourGuildNetFame() >= 0" [class.text-error]="ourGuildNetFame() < 0">
-                    {{ ourGuildNetFame() >= 0 ? '+' : '' }}{{ formatCompact(ourGuildNetFame()) }}
-                  </p>
-                  <p class="text-xs text-secondary">earned - lost</p>
-                </div>
-                <div class="surface p-3 rounded">
-                  <p class="text-xs text-disabled uppercase">{{ t('battles.kill_death') }}</p>
-                  <p class="text-lg font-bold mono" [class.text-success]="ourGuildKdRatio() >= 1">
-                    {{ formatDecimal(ourGuildKdRatio()) }}
-                  </p>
-                  <p class="text-xs text-secondary">{{ guild.kills }}K / {{ guild.deaths }}D</p>
-                </div>
-                <div class="surface p-3 rounded">
-                  <p class="text-xs text-disabled uppercase">{{ t('battles.silver_lost') }}</p>
-                  <p class="text-lg font-bold mono text-error">
-                    {{ formatCompact(ourGuildEstimatedLoss()) }}
-                  </p>
-                  <p class="text-xs text-secondary">estimated gear</p>
-                </div>
-              </div>
-            </article>
+              <ng-template dataTableCell="item_power" let-row>
+                <span class="mono">{{ formatDecimal(row.item_power) }}</span>
+              </ng-template>
 
-            <!-- Alliance Share Meter -->
-            <article class="surface p-5 flex flex-col justify-between">
-              <h2 class="battle-detail__panel-title mb-2">{{ t('battles.alliance_fame_share') }}</h2>
-              <div class="my-auto py-2">
-                <div class="battle-detail__bar-row" style="grid-template-columns: 1fr;">
-                  <div class="battle-detail__bar battle-detail__bar--allies" style="height: 1.1rem;">
-                    <span [style.width.%]="ourAllianceFameShare()"></span>
-                  </div>
-                </div>
-                <p class="text-sm font-bold mono text-center mt-2" style="color: var(--color-text)">
-                  {{ formatDecimal(ourAllianceFameShare()) }}%
-                </p>
-              </div>
-              <p class="text-xs text-center text-secondary mt-2">
-                {{ t('battles.alliance_fame_share_meter', { share: formatDecimal(ourAllianceFameShare()), alliance: ourGuildAllianceName() || t('battles.allies') }) }}
-              </p>
-            </article>
+              <ng-template dataTableCell="kill_fame" let-row>
+                <span class="mono">{{ formatCompact(row.kill_fame) }}</span>
+              </ng-template>
+
+              <ng-template dataTableCell="death_fame" let-row>
+                <span class="mono">{{ formatCompact(row.death_fame) }}</span>
+              </ng-template>
+
+              <ng-template dataTableCell="net_fame" let-row>
+                <span class="mono" [class.text-success]="row.netFame >= 0" [class.text-error]="row.netFame < 0">
+                  {{ row.netFame >= 0 ? '+' : '' }}{{ formatCompact(row.netFame) }}
+                </span>
+              </ng-template>
+
+              <ng-template dataTableCell="estimated_loss" let-row>
+                <span class="mono">{{ row.estimatedLoss > 0 ? formatCompact(row.estimatedLoss) : '—' }}</span>
+              </ng-template>
+            </app-data-table>
+          </section>
+
+          <section class="card">
+            <h2 class="section-title">{{ t('battles.ip_performance') }}</h2>
+            <p class="hint mb-3">{{ t('battles.ip_performance_hint') }}</p>
+            <app-chart
+              [option]="ipPerformanceOption()"
+              height="18rem"
+              [label]="t('battles.ip_performance')"
+              [tableHead]="ipPerformanceTableHead()"
+              [tableRows]="ipPerformanceTableRows()"
+            />
           </section>
         }
 
-        <!-- Squad MVPs & Tactical Honors -->
-        <section class="mt-5" aria-label="Guild MVPs">
-          <h2 class="eyebrow mb-3">SQUAD MVPs & NOTABLE HONORS</h2>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <!-- Top Killer MVP -->
-            <article class="card p-4 border" style="border-color: var(--color-warning)">
-              <p class="text-xs text-disabled uppercase font-semibold">TOP EXECUTIONER</p>
-              <div class="mt-2 flex items-center gap-3">
-                @if (guildMvpKiller(); as player) {
-                  <img [src]="itemIconUrl(player.weaponType || 'T4_MAIN_SWORD')" alt="" class="w-10 h-10 rounded bg-surface-2 p-1" />
-                  <div class="truncate">
-                    <p class="font-bold text-sm truncate" style="color: var(--color-text)">{{ player.name }}</p>
-                    <p class="text-xs text-warning font-bold mono">{{ player.kills }} Kills</p>
-                  </div>
-                } @else {
-                  <p class="text-xs text-secondary">No kills recorded</p>
-                }
-              </div>
-            </article>
-
-            <!-- Top Fame Hunter -->
-            <article class="card p-4 border" style="border-color: var(--color-accent-gold)">
-              <p class="text-xs text-disabled uppercase font-semibold">FAME HUNTER</p>
-              <div class="mt-2 flex items-center gap-3">
-                @if (guildMvpFame(); as player) {
-                  <img [src]="itemIconUrl(player.weaponType || 'T4_MAIN_SWORD')" alt="" class="w-10 h-10 rounded bg-surface-2 p-1" />
-                  <div class="truncate">
-                    <p class="font-bold text-sm truncate" style="color: var(--color-text)">{{ player.name }}</p>
-                    <p class="text-xs text-warning font-bold mono">{{ formatCompact(player.kill_fame) }} Fame</p>
-                  </div>
-                } @else {
-                  <p class="text-xs text-secondary">No fame recorded</p>
-                }
-              </div>
-            </article>
-
-            <!-- Iron Vanguard (Highest IP) -->
-            <article class="card p-4 border" style="border-color: var(--color-primary)">
-              <p class="text-xs text-disabled uppercase font-semibold">IRON VANGUARD</p>
-              <div class="mt-2 flex items-center gap-3">
-                @if (guildMvpHighestIp(); as player) {
-                  <img [src]="itemIconUrl(player.weaponType || 'T4_MAIN_SWORD')" alt="" class="w-10 h-10 rounded bg-surface-2 p-1" />
-                  <div class="truncate">
-                    <p class="font-bold text-sm truncate" style="color: var(--color-text)">{{ player.name }}</p>
-                    <p class="text-xs text-primary font-bold mono">{{ formatDecimal(player.item_power) }} IP</p>
-                  </div>
-                } @else {
-                  <p class="text-xs text-secondary">—</p>
-                }
-              </div>
-            </article>
-
-            <!-- Top Survivor -->
-            <article class="card p-4 border" style="border-color: var(--color-success)">
-              <p class="text-xs text-disabled uppercase font-semibold">APEX SURVIVOR</p>
-              <div class="mt-2 flex items-center gap-3">
-                @if (guildMvpSurvivor(); as player) {
-                  <img [src]="itemIconUrl(player.weaponType || 'T4_MAIN_SWORD')" alt="" class="w-10 h-10 rounded bg-surface-2 p-1" />
-                  <div class="truncate">
-                    <p class="font-bold text-sm truncate" style="color: var(--color-text)">{{ player.name }}</p>
-                    <p class="text-xs text-success font-bold mono">0 Deaths ({{ player.kills }}K)</p>
-                  </div>
-                } @else {
-                  <p class="text-xs text-secondary">—</p>
-                }
-              </div>
-            </article>
-
-            <!-- Heaviest Loss -->
-            <article class="card p-4 border" style="border-color: var(--color-error)">
-              <p class="text-xs text-disabled uppercase font-semibold">HEAVIEST CASUALTY</p>
-              <div class="mt-2 flex items-center gap-3">
-                @if (guildHeaviestLoss(); as player) {
-                  <img [src]="itemIconUrl(player.weaponType || 'T4_MAIN_SWORD')" alt="" class="w-10 h-10 rounded bg-surface-2 p-1" />
-                  <div class="truncate">
-                    <p class="font-bold text-sm truncate" style="color: var(--color-text)">{{ player.name }}</p>
-                    <p class="text-xs text-error font-bold mono">{{ formatCompact(player.estimatedLoss) }} Lost</p>
-                  </div>
-                } @else {
-                  <p class="text-xs text-secondary">0 losses</p>
-                }
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <!-- Our Guild Roster Table -->
-        <section class="mt-5 surface overflow-hidden">
-          <header class="p-4 border-b flex flex-wrap items-center justify-between gap-3" style="border-color: var(--color-border)">
-            <div>
-              <h2 class="font-bold text-base" style="color: var(--color-text)">
-                {{ ourGuild()?.name || 'Guild' }} Roster & Individual Contributions
-              </h2>
-              <p class="text-xs text-secondary">
-                {{ ourGuildPlayers().length }} guild members who participated in this battle
-              </p>
+        <!-- GUILDS: alliances and guilds, as tables -->
+        @else if (tab() === 'guilds') {
+          <section class="card p-0">
+            <div class="bd__head">
+              <h2 class="section-title">{{ t('battleDetail.sections.alliances') }}</h2>
             </div>
-            <div class="w-full sm:w-64">
-              <input
-                type="text"
-                class="input input--sm"
-                [placeholder]="t('battles.search_players')"
-                [value]="playerSearchQuery()"
-                (input)="onPlayerSearch($event)"
-              />
-            </div>
-          </header>
-
-          <app-data-table
-            [columns]="guildRosterColumns"
-            [rows]="filteredGuildRosterRows()"
-            [error]="loadFailed()"
-            [trackBy]="trackPlayerRow"
-            [pageSize]="15"
-            [hideSearch]="true"
-            (retry)="load()"
-          >
-            <ng-template dataTableCell="player" let-row>
-              <div class="flex items-center gap-2.5">
-                <img
-                  [src]="itemIconUrl(row.weaponType || 'T4_MAIN_SWORD')"
-                  alt=""
-                  class="w-7 h-7 rounded bg-surface-2 object-contain p-0.5"
-                  loading="lazy"
-                />
-                <div>
-                  <span class="font-medium block text-sm" style="color: var(--color-text)">{{ row.name }}</span>
-                  <span class="chip text-xs py-0 px-1.5 capitalize font-mono text-secondary">
-                    {{ formatRoleName(row.role) }}
-                  </span>
-                </div>
-              </div>
-            </ng-template>
-
-            <ng-template dataTableCell="item_power" let-row>
-              <span class="mono font-medium">{{ formatDecimal(row.item_power) }}</span>
-            </ng-template>
-
-            <ng-template dataTableCell="kills_deaths" let-row>
-              <span class="mono">
-                <strong class="text-success">{{ row.kills }}</strong> /
-                <strong class="text-error">{{ row.deaths }}</strong>
-              </span>
-            </ng-template>
-
-            <ng-template dataTableCell="kill_fame" let-row>
-              <span class="mono text-warning font-medium">{{ formatCompact(row.kill_fame) }}</span>
-            </ng-template>
-
-            <ng-template dataTableCell="net_fame" let-row>
-              <span class="mono font-medium" [class.text-success]="row.netFame >= 0" [class.text-error]="row.netFame < 0">
-                {{ row.netFame >= 0 ? '+' : '' }}{{ formatCompact(row.netFame) }}
-              </span>
-            </ng-template>
-
-            <ng-template dataTableCell="estimated_loss" let-row>
-              <span class="mono" [class.text-error]="row.estimatedLoss > 0">
-                {{ row.estimatedLoss > 0 ? formatCompact(row.estimatedLoss) : '—' }}
-              </span>
-            </ng-template>
-          </app-data-table>
-        </section>
-      }
-
-      <!-- TAB 3: ALLIANCES & GUILDS -->
-      @else if (tab() === 'guilds') {
-        <!-- Alliance Summary Cards -->
-        <section class="mt-5 grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3" aria-label="Alliances in battle">
-          @for (ally of alliances(); track ally.name) {
-            <article class="card p-5" [class.border-2]="ally.isOurAlliance" [style.border-color]="ally.isOurAlliance ? 'var(--color-primary)' : 'var(--color-border)'">
-              <div class="flex items-center justify-between mb-3">
-                <div>
-                  <h3 class="text-lg font-bold" style="color: var(--color-text)">
-                    {{ ally.isSolo ? ally.name : '[' + ally.name + ']' }}
-                  </h3>
-                  <p class="text-xs text-secondary">{{ ally.guilds.length }} {{ ally.guilds.length === 1 ? 'guild' : 'guilds' }} · {{ ally.players }} fighters</p>
-                </div>
-                @if (ally.isOurAlliance) {
-                  <span class="chip chip--success">Our Alliance</span>
-                }
-              </div>
-
-              <dl class="grid grid-cols-2 gap-2 text-center my-3 sm:grid-cols-3">
-                <div class="surface p-2 rounded">
-                  <dt class="text-xs text-disabled">K / D</dt>
-                  <dd class="font-bold mono text-sm">{{ ally.kills }} / {{ ally.deaths }}</dd>
-                </div>
-                <div class="surface p-2 rounded">
-                  <dt class="text-xs text-disabled">K/D Ratio</dt>
-                  <dd class="font-bold mono text-sm" [class.text-success]="ally.kdRatio >= 1">
-                    {{ formatDecimal(ally.kdRatio) }}
-                  </dd>
-                </div>
-                <div class="surface p-2 rounded">
-                  <dt class="text-xs text-disabled">Fame</dt>
-                  <dd class="font-bold mono text-sm text-warning">{{ formatCompact(ally.killFame) }}</dd>
-                </div>
-              </dl>
-
-              <div class="mt-3 space-y-1 text-xs">
-                <p class="text-disabled font-semibold">MEMBER GUILDS:</p>
-                <div class="flex flex-wrap gap-1">
-                  @for (g of ally.guilds; track g.id || g.name) {
-                    <span class="chip chip--info text-xs py-0.5">
-                      {{ g.name }} ({{ g.players }}p)
-                    </span>
+            <app-data-table
+              [syncUrl]="false"
+              [columns]="allianceColumns"
+              [rows]="alliances()"
+              [trackBy]="trackAllianceRow"
+              [pageSize]="10"
+              [hideSearch]="true"
+              [stickyFirstColumn]="true"
+              [ariaLabel]="t('battleDetail.sections.alliances')"
+            >
+              <ng-template dataTableCell="name" let-row>
+                <span class="bd__cell">
+                  <span class="font-medium">{{ row.isSolo ? row.name : '[' + row.name + ']' }}</span>
+                  @if (row.isOurAlliance) {
+                    <span class="chip chip--success text-xs">{{ t('battles.allies') }}</span>
                   }
-                </div>
-              </div>
-            </article>
-          }
-        </section>
+                </span>
+              </ng-template>
 
-        <!-- Full Guilds Data Table -->
-        <article class="mt-5 surface overflow-hidden">
-          <header class="p-4 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-            <h2 class="font-bold text-base" style="color: var(--color-text)">All Guilds in Battle</h2>
-            <span class="text-xs text-secondary mono">{{ detail.guilds.length }} guilds</span>
-          </header>
+              <ng-template dataTableCell="kill_death" let-row>
+                <span class="mono">{{ formatDecimal(row.kdRatio) }}</span>
+              </ng-template>
 
-          <app-data-table
-            [columns]="allGuildColumns"
-            [rows]="enrichedGuildRows()"
-            [error]="loadFailed()"
-            [trackBy]="trackGuildRow"
-            [pageSize]="12"
-            (retry)="load()"
-          >
-            <ng-template dataTableCell="name" let-row>
-              <div class="flex items-center gap-2">
-                <span class="font-medium" [class.text-primary]="row.isOurGuild">{{ row.name }}</span>
-                @if (row.alliance_name) {
-                  <span class="chip text-xs py-0 px-1 font-mono">[{{ row.alliance_name }}]</span>
-                }
-                @if (row.winner) {
-                  <span class="chip chip--success text-xs py-0">{{ t('battles.winner') }}</span>
-                }
-              </div>
-            </ng-template>
+              <ng-template dataTableCell="kill_fame" let-row>
+                <span class="mono">{{ formatCompact(row.killFame) }}</span>
+              </ng-template>
 
-            <ng-template dataTableCell="kill_fame" let-row>
-              <span class="mono text-warning font-medium">{{ formatCompact(row.kill_fame) }}</span>
-            </ng-template>
+              <ng-template dataTableCell="net_fame" let-row>
+                <span class="mono" [class.text-success]="row.netFame >= 0" [class.text-error]="row.netFame < 0">
+                  {{ row.netFame >= 0 ? '+' : '' }}{{ formatCompact(row.netFame) }}
+                </span>
+              </ng-template>
 
-            <ng-template dataTableCell="kill_death" let-row>
-              <span class="mono" [class.text-success]="row.kdRatio >= 1">
-                {{ formatDecimal(row.kdRatio) }}
-              </span>
-            </ng-template>
+              <ng-template dataTableCell="estimated_loss" let-row>
+                <span class="mono">{{ row.estimatedLoss > 0 ? formatCompact(row.estimatedLoss) : '—' }}</span>
+              </ng-template>
+            </app-data-table>
+          </section>
 
-            <ng-template dataTableCell="fame_per_player" let-row>
-              <span class="mono">{{ formatCompact(row.famePerPlayer) }}</span>
-            </ng-template>
-          </app-data-table>
-        </article>
-      }
-
-      <!-- TAB 4: PLAYERS & LEADERBOARDS -->
-      @else if (tab() === 'players') {
-        <!-- Player Filters & Search Toolbar -->
-        <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="playerFilterSide() === 'all'"
-              [class.btn--outline]="playerFilterSide() !== 'all'"
-              (click)="setPlayerFilterSide('all')"
+          <section class="card p-0">
+            <div class="bd__head">
+              <h2 class="section-title">{{ t('battles.guilds') }}</h2>
+            </div>
+            <app-data-table
+              [syncUrl]="false"
+              [columns]="guildColumns"
+              [rows]="enrichedGuildRows()"
+              [trackBy]="trackGuildRow"
+              [pageSize]="12"
+              [stickyFirstColumn]="true"
+              [ariaLabel]="t('battles.guilds')"
             >
-              {{ t('battles.filter_all') }} ({{ detail.players.length }})
-            </button>
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="playerFilterSide() === 'allies'"
-              [class.btn--outline]="playerFilterSide() !== 'allies'"
-              (click)="setPlayerFilterSide('allies')"
-            >
-              {{ t('battles.filter_allies') }} ({{ allyPlayersCount() }})
-            </button>
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="playerFilterSide() === 'enemies'"
-              [class.btn--outline]="playerFilterSide() !== 'enemies'"
-              (click)="setPlayerFilterSide('enemies')"
-            >
-              {{ t('battles.filter_enemies') }} ({{ enemyPlayersCount() }})
-            </button>
-          </div>
-
-          <div class="w-full sm:w-72">
-            <input
-              type="text"
-              class="input input--sm"
-              [placeholder]="t('battles.search_players')"
-              [value]="playerSearchQuery()"
-              (input)="onPlayerSearch($event)"
-            />
-          </div>
-        </div>
-
-        <!-- IP vs. Net Fame Performance -->
-        <article class="mt-4 surface p-5">
-          <h2 class="battle-detail__panel-title mb-0">{{ t('battles.ip_performance') }}</h2>
-          <p class="text-xs text-secondary mb-3">{{ t('battles.ip_performance_hint') }}</p>
-          <app-chart
-            [option]="ipPerformanceOption()"
-            height="18rem"
-            [label]="t('battles.ip_performance')"
-            [tableHead]="ipPerformanceTableHead()"
-            [tableRows]="ipPerformanceTableRows()"
-          />
-        </article>
-
-        <!-- Full Players Data Table -->
-        <article class="mt-4 surface overflow-hidden">
-          <app-data-table
-            [columns]="allPlayerColumns"
-            [rows]="filteredAllPlayerRows()"
-            [error]="loadFailed()"
-            [trackBy]="trackPlayerRow"
-            [pageSize]="20"
-            [hideSearch]="true"
-            (retry)="load()"
-          >
-            <ng-template dataTableCell="name" let-row>
-              <div class="flex items-center gap-2">
-                <img
-                  [src]="itemIconUrl(row.weaponType || 'T4_MAIN_SWORD')"
-                  alt=""
-                  class="w-7 h-7 rounded bg-surface-2 object-contain p-0.5"
-                  loading="lazy"
-                />
-                <div>
-                  <span class="font-medium block text-sm" [class.text-primary]="row.isOurGuild">{{ row.name }}</span>
-                  <span class="text-xs text-secondary">{{ row.guild_name }}</span>
+              <ng-template dataTableCell="name" let-row>
+                <span class="bd__cell flex-wrap">
+                  <span class="font-medium" [class.text-primary]="row.isOurGuild">{{ row.name }}</span>
                   @if (row.alliance_name) {
-                    <span class="text-xs text-disabled mono"> [{{ row.alliance_name }}]</span>
+                    <span class="chip text-xs py-0 px-1 font-mono">[{{ row.alliance_name }}]</span>
                   }
-                </div>
-              </div>
-            </ng-template>
+                  @if (row.isOurGuild) {
+                    <span class="chip chip--success text-xs py-0">{{ t('battleDetail.ourGuild') }}</span>
+                  }
+                  @if (row.winner) {
+                    <span class="chip chip--success text-xs py-0">{{ t('battles.winner') }}</span>
+                  }
+                </span>
+              </ng-template>
 
-            <ng-template dataTableCell="item_power" let-row>
-              <span class="mono font-medium">{{ formatDecimal(row.item_power) }}</span>
-            </ng-template>
+              <ng-template dataTableCell="kill_fame" let-row>
+                <span class="mono">{{ formatCompact(row.kill_fame) }}</span>
+              </ng-template>
 
-            <ng-template dataTableCell="kills" let-row>
-              <span class="mono font-bold" [class.text-success]="row.kills > 0">{{ row.kills }}</span>
-            </ng-template>
+              <ng-template dataTableCell="kill_death" let-row>
+                <span class="mono">{{ formatDecimal(row.kdRatio) }}</span>
+              </ng-template>
 
-            <ng-template dataTableCell="deaths" let-row>
-              <span class="mono" [class.text-error]="row.deaths > 0">{{ row.deaths }}</span>
-            </ng-template>
-
-            <ng-template dataTableCell="kill_fame" let-row>
-              <span class="mono text-warning font-medium">{{ formatCompact(row.kill_fame) }}</span>
-            </ng-template>
-
-            <ng-template dataTableCell="death_fame" let-row>
-              <span class="mono text-error">{{ formatCompact(row.death_fame) }}</span>
-            </ng-template>
-          </app-data-table>
-        </article>
-      }
-
-      <!-- TAB 5: KILL FEED & TIMELINE -->
-      @else {
-        <!-- Filter Toolbar -->
-        <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="killFeedFilter() === 'all'"
-              [class.btn--outline]="killFeedFilter() !== 'all'"
-              (click)="setKillFeedFilter('all')"
-            >
-              {{ t('battles.filter_all') }} ({{ detail.kills.length }})
-            </button>
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="killFeedFilter() === 'our_kills'"
-              [class.btn--outline]="killFeedFilter() !== 'our_kills'"
-              (click)="setKillFeedFilter('our_kills')"
-            >
-              {{ t('battles.filter_our_kills') }} ({{ ourKillCount() }})
-            </button>
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="killFeedFilter() === 'our_deaths'"
-              [class.btn--outline]="killFeedFilter() !== 'our_deaths'"
-              (click)="setKillFeedFilter('our_deaths')"
-            >
-              {{ t('battles.filter_our_deaths') }} ({{ ourDeathCount() }})
-            </button>
-            <button
-              type="button"
-              class="btn btn--sm"
-              [class.btn--primary]="killFeedFilter() === 'high_fame'"
-              [class.btn--outline]="killFeedFilter() !== 'high_fame'"
-              (click)="setKillFeedFilter('high_fame')"
-            >
-              {{ t('battles.filter_high_fame') }} (>250k)
-            </button>
-          </div>
-
-          <div class="w-full sm:w-72">
-            <input
-              type="text"
-              class="input input--sm"
-              placeholder="Search killer or victim..."
-              [value]="killSearchQuery()"
-              (input)="onKillSearch($event)"
-            />
-          </div>
-        </div>
-
-        @if (selectedTimelineMinute() !== null) {
-          <div class="mt-3 p-3 bg-surface-1 rounded-lg border flex items-center justify-between text-xs" style="border-color: var(--color-border)">
-            <span>Showing kills occurring during <strong>Minute {{ selectedTimelineMinute() }}</strong> of the fight.</span>
-            <button type="button" class="btn btn--ghost btn--sm" (click)="clearTimelineMinuteFilter()">
-              Show All Minutes
-            </button>
-          </div>
+              <ng-template dataTableCell="fame_per_player" let-row>
+                <span class="mono">{{ formatCompact(row.famePerPlayer) }}</span>
+              </ng-template>
+            </app-data-table>
+          </section>
         }
 
-        <!-- Kill Event Feed Rows -->
-        <section class="mt-4 space-y-3" aria-label="Kill Events">
-          @for (kill of filteredKillRows(); track kill.event_id) {
-            <article
-              class="card p-4 battle-detail__kill-card"
-              [class.battle-detail__kill-card--our-kill]="isOurGuildParticipant(kill.killer)"
-              [class.battle-detail__kill-card--our-death]="isOurGuildParticipant(kill.victim)"
-            >
-              <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <!-- Timestamp & Combat Offset -->
-                <div class="flex items-center gap-2 text-xs text-secondary shrink-0">
-                  <span class="mono font-bold" style="color: var(--color-text)">
-                    {{ formatTimeOffset(kill.time, detail.start_time) }}
-                  </span>
-                  <span>·</span>
-                  <span class="mono">{{ formatTime(kill.time) }}</span>
-                </div>
+        <!-- KILLS: kill feed with side and search filters, gear in a dialog -->
+        @else {
+          <app-filter-bar
+            [searchLabel]="t('battleDetail.filter.search')"
+            [searchPlaceholder]="t('battleDetail.filter.search')"
+            [query]="killSearchQuery()"
+            [activeCount]="killSearchQuery() ? 1 : 0"
+            (queryChange)="setKillQuery($event)"
+            (clear)="setKillQuery('')"
+          >
+            <app-tabs
+              filterPrimary
+              variant="segmented"
+              [options]="killFilterOptions()"
+              [active]="killFeedFilter()"
+              [ariaLabel]="t('battleDetail.killFilter')"
+              (activeChange)="setKillFeedFilter($event)"
+            />
+          </app-filter-bar>
 
-                <!-- Combatants: Killer -> Victim -->
-                <div class="flex flex-wrap items-center gap-4 flex-1 justify-center">
-                  <!-- Killer -->
-                  <div class="flex items-center gap-2 text-left min-w-44">
-                    <img
-                      [src]="participantWeaponIcon(kill, 'killer')"
-                      alt=""
-                      class="w-9 h-9 rounded bg-surface-2 object-contain p-0.5 shrink-0"
-                      loading="lazy"
-                    />
-                    <div class="truncate">
-                      <p class="font-bold text-sm truncate" [class.text-success]="isOurGuildParticipant(kill.killer)" style="color: var(--color-text)">
-                        {{ kill.killer.name }}
-                      </p>
-                      <p class="text-xs text-secondary truncate">
-                        {{ kill.killer.guild_name || t('common.none') }}
-                        @if (resolveParticipantAlliance(kill.killer); as ally) {
-                          <span class="mono text-disabled"> [{{ ally }}]</span>
-                        }
-                      </p>
-                    </div>
-                  </div>
-
-                  <!-- VS & Bounty Badge -->
-                  <div class="flex flex-col items-center gap-1 shrink-0 px-2">
-                    <span class="chip chip--warning text-xs font-mono font-bold py-0.5">
-                      +{{ formatCompact(kill.total_kill_fame) }} Fame
-                    </span>
-                    <span class="text-xs text-disabled mono">
-                      {{ formatDecimal(kill.killer_item_power) }} IP → {{ formatDecimal(kill.victim_item_power) }} IP
-                    </span>
-                  </div>
-
-                  <!-- Victim -->
-                  <div class="flex items-center gap-2 text-left min-w-44">
-                    <img
-                      [src]="participantWeaponIcon(kill, 'victim')"
-                      alt=""
-                      class="w-9 h-9 rounded bg-surface-2 object-contain p-0.5 shrink-0"
-                      loading="lazy"
-                    />
-                    <div class="truncate">
-                      <p class="font-bold text-sm truncate" [class.text-error]="isOurGuildParticipant(kill.victim)" style="color: var(--color-text)">
-                        {{ kill.victim.name }}
-                      </p>
-                      <p class="text-xs text-secondary truncate">
-                        {{ kill.victim.guild_name || t('common.none') }}
-                        @if (resolveParticipantAlliance(kill.victim); as ally) {
-                          <span class="mono text-disabled"> [{{ ally }}]</span>
-                        }
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Loadout Toggle Action -->
-                <div class="shrink-0 text-right">
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [attr.aria-expanded]="expandedKill() === kill.event_id"
-                    (click)="toggleKillLoadout(kill.event_id)"
-                  >
-                    {{ expandedKill() === kill.event_id ? t('battles.hideGear') : t('battles.showGear') }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Expanded Gear Inspector (Victim & Killer) -->
-              @if (expandedKill() === kill.event_id) {
-                <div class="mt-4 border-t pt-4 grid gap-6 md:grid-cols-2" style="border-color: var(--color-border)">
-                  <!-- Victim Lost Loadout -->
-                  <div class="surface p-4 rounded-lg">
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-xs font-bold uppercase text-error">
-                        {{ t('battles.lostGear') }} — {{ kill.victim.name }}
-                      </h4>
-                      <span class="mono text-xs text-secondary">
-                        {{ kill.victim.guild_name || '' }}
-                      </span>
-                    </div>
-                    <app-equipment-grid [items]="participantLoadout(kill, 'victim')" />
-                  </div>
-
-                  <!-- Killer Loadout -->
-                  <div class="surface p-4 rounded-lg">
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-xs font-bold uppercase text-success">
-                        {{ t('battles.killer_loadout') }} — {{ kill.killer.name }}
-                      </h4>
-                      <span class="mono text-xs text-secondary">
-                        {{ kill.killer.guild_name || '' }}
-                      </span>
-                    </div>
-                    <app-equipment-grid [items]="participantLoadout(kill, 'killer')" />
-                  </div>
-                </div>
-              }
-            </article>
-          } @empty {
-            <p class="p-8 text-center text-sm text-secondary surface rounded-lg">
-              {{ t('battles.no_matching_kills') }}
-            </p>
+          @if (selectedTimelineMinute() !== null) {
+            <div class="bd__note" role="status">
+              <span>{{ t('battleDetail.minute.showing', { minute: selectedTimelineMinute() ?? 0 }) }}</span>
+              <button type="button" class="btn btn--ghost btn--sm" (click)="clearTimelineMinuteFilter()">
+                {{ t('battleDetail.minute.showAll') }}
+              </button>
+            </div>
           }
-        </section>
-      }
+
+          <section class="card p-0">
+            <app-data-table
+              [syncUrl]="false"
+              [columns]="killColumns"
+              [rows]="filteredKillRows()"
+              [trackBy]="trackKillRow"
+              [pageSize]="25"
+              [hideSearch]="true"
+              [stickyFirstColumn]="true"
+              [emptyLabel]="'battles.no_matching_kills'"
+              [ariaLabel]="t('battles.kill_feed')"
+            >
+              <ng-template dataTableCell="time" let-row>
+                <span class="mono block">{{ formatTimeOffset(row.time, detail.start_time) }}</span>
+                <span class="mono block text-xs text-secondary">{{ formatTime(row.time) }}</span>
+              </ng-template>
+
+              <ng-template dataTableCell="killer" let-row>
+                <span class="bd__cell">
+                  <img [src]="participantWeaponIcon(row, 'killer')" alt="" class="bd__icon" loading="lazy" />
+                  <span class="min-w-0">
+                    <span class="block truncate font-medium">{{ row.killer.name }}</span>
+                    <span class="block truncate text-xs text-secondary">
+                      {{ row.killer.guild_name || t('common.none') }}
+                      @if (resolveParticipantAlliance(row.killer); as ally) {
+                        <span class="mono"> [{{ ally }}]</span>
+                      }
+                    </span>
+                  </span>
+                </span>
+              </ng-template>
+
+              <ng-template dataTableCell="victim" let-row>
+                <span class="bd__cell">
+                  <img [src]="participantWeaponIcon(row, 'victim')" alt="" class="bd__icon" loading="lazy" />
+                  <span class="min-w-0">
+                    <span class="block truncate font-medium">{{ row.victim.name }}</span>
+                    <span class="block truncate text-xs text-secondary">
+                      {{ row.victim.guild_name || t('common.none') }}
+                      @if (resolveParticipantAlliance(row.victim); as ally) {
+                        <span class="mono"> [{{ ally }}]</span>
+                      }
+                    </span>
+                  </span>
+                </span>
+              </ng-template>
+
+              <ng-template dataTableCell="fame" let-row>
+                <span class="mono">{{ formatCompact(row.total_kill_fame) }}</span>
+              </ng-template>
+
+              <ng-template dataTableCell="item_power" let-row>
+                <span class="mono text-xs">
+                  {{ formatDecimal(row.killer_item_power) }} → {{ formatDecimal(row.victim_item_power) }}
+                </span>
+              </ng-template>
+
+              <ng-template dataTableCell="gear" let-row>
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  [attr.aria-label]="t('battleDetail.gear.aria', { victim: row.victim.name })"
+                  (click)="openGear(row)"
+                >
+                  {{ t('battles.showGear') }}
+                </button>
+              </ng-template>
+            </app-data-table>
+          </section>
+
+          @if (gearKill(); as kill) {
+            <app-dialog [title]="t('battleDetail.gear.title')" size="lg" (closed)="closeGear()">
+              <div class="grid gap-4 md:grid-cols-2">
+                <section class="card">
+                  <h3 class="section-title">{{ t('battles.lostGear') }}</h3>
+                  <p class="hint mb-3">{{ kill.victim.name }}</p>
+                  <app-equipment-grid [items]="participantLoadout(kill, 'victim')" />
+                </section>
+                <section class="card">
+                  <h3 class="section-title">{{ t('battles.killer_loadout') }}</h3>
+                  <p class="hint mb-3">{{ kill.killer.name }}</p>
+                  <app-equipment-grid [items]="participantLoadout(kill, 'killer')" />
+                </section>
+              </div>
+            </app-dialog>
+          }
+        }
       </app-page-stack>
+    } @else if (notFound()) {
+      <app-error-state variant="not-found" [message]="t('ui.errorState.notFound')" [hint]="t('ui.errorState.notFoundHint')">
+        <a class="btn btn--outline btn--sm no-underline" [routerLink]="['/battles']">{{ t('nav.battles') }}</a>
+      </app-error-state>
     } @else {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     }
@@ -1105,103 +707,43 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
       box-shadow: none;
     }
     @layer components {
-      .battle-detail__label {
-        color: var(--color-text-disabled);
-        font-size: 0.72rem;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        font-weight: 600;
+      .bd__head {
+        padding: var(--card-padding) var(--card-padding) 0;
       }
-      .battle-detail__value {
-        color: var(--color-text);
-        font-size: clamp(1.25rem, 2vw, 1.65rem);
-        font-weight: 700;
-        font-family: var(--font-mono);
+      .bd__head .section-title {
+        margin-bottom: 0;
       }
-      .battle-detail__sub {
-        color: var(--color-text-secondary);
-        font-size: 0.75rem;
-        margin-top: 0.25rem;
-      }
-      .battle-detail__panel-title {
-        color: var(--color-text);
-        font-size: 0.95rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-      }
-      .battle-detail__faction-card {
-        border: 1px solid var(--color-border);
-      }
-      .battle-detail__faction-card--allies {
-        background: color-mix(in srgb, var(--color-success-container) 40%, var(--color-surface));
-        border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border));
-      }
-      .battle-detail__faction-card--enemies {
-        background: color-mix(in srgb, var(--color-error-container) 40%, var(--color-surface));
-        border-color: color-mix(in srgb, var(--color-error) 30%, var(--color-border));
-      }
-      .battle-detail__vs-badge {
+      .bd__cell {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        width: 2.25rem;
-        height: 2.25rem;
-        border-radius: var(--radius-full);
-        background: var(--color-surface-2);
-        color: var(--color-text-secondary);
-        font-weight: 800;
-        font-size: 0.8rem;
-        border: 1px solid var(--color-border-strong);
+        gap: 0.5rem;
+        min-width: 0;
       }
-      .battle-detail__bar-row {
+      .bd__icon {
+        width: 2rem;
+        height: 2rem;
+        flex-shrink: 0;
+        object-fit: contain;
+        padding: 0.125rem;
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-2);
+      }
+      .bd__note {
+        display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        display: grid;
-        gap: 0.75rem;
-        grid-template-columns: minmax(6rem, 1.2fr) minmax(6rem, 2fr) auto;
-        margin-top: 0.75rem;
-      }
-      .battle-detail__bar {
-        background: var(--color-surface-2);
-        border-radius: var(--radius-full);
-        height: 0.65rem;
-        overflow: hidden;
-      }
-      .battle-detail__bar span {
-        background: var(--color-primary);
-        border-radius: inherit;
-        display: block;
-        height: 100%;
-        min-width: 0.25rem;
-      }
-      .battle-detail__bar--allies span {
-        background: var(--color-success);
-      }
-      .battle-detail__bar--kills span {
-        background: var(--color-warning);
-      }
-      .battle-detail__bar--danger span {
-        background: var(--color-error);
-      }
-      .battle-detail__bar--players span {
-        background: var(--color-primary);
-      }
-
-      /* Kill Feed Cards */
-      .battle-detail__kill-card {
+        justify-content: space-between;
+        gap: 0.5rem 1rem;
+        padding: 0.5rem var(--card-padding);
         border: 1px solid var(--color-border);
-        transition: border-color 120ms ease;
-      }
-      .battle-detail__kill-card--our-kill {
-        border-color: var(--color-success);
-        background: color-mix(in srgb, var(--color-success-container) 15%, var(--color-surface));
-      }
-      .battle-detail__kill-card--our-death {
-        border-color: var(--color-error);
-        background: color-mix(in srgb, var(--color-error-container) 15%, var(--color-surface));
+        border-radius: var(--radius-cards);
+        background: var(--color-surface-2);
+        font-size: var(--ui-text-sm);
       }
     }
   `,
 })
+
 export class BattleDetailPage {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
@@ -1216,10 +758,10 @@ export class BattleDetailPage {
   private readonly palette = computed(() => chartPalette(this.theme.isDark()));
   private readonly chrome = computed(() => chartChrome(this.theme.isDark()));
 
-  protected readonly albionBattlesUrl = albionBattlesUrl;
   protected readonly battle = signal<BattleDetail | null>(null);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
+  protected readonly notFound = signal(false);
   protected readonly tab = signal<DetailTab>('overview');
   protected readonly scouting = signal(false);
   protected readonly canScoutBattle = computed(() => {
@@ -1235,15 +777,170 @@ export class BattleDetailPage {
   protected readonly killSearchQuery = signal<string>('');
   protected readonly playerFilterSide = signal<PlayerSideFilter>('all');
   protected readonly playerSearchQuery = signal<string>('');
-  protected readonly expandedKill = signal<number | null>(null);
+  /** The kill whose gear is open in the dialog, or null when it is closed. */
+  protected readonly gearKill = signal<BattleKillEvent | null>(null);
 
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'overview', label: this.t('battles.overview') },
-    { id: 'guild_alliance', label: this.t('battles.my_guild_alliance') },
-    { id: 'guilds', label: this.t('battles.alliances_guilds') },
-    { id: 'players', label: this.t('battles.top_players') },
-    { id: 'timeline', label: this.t('battles.kill_feed') },
+  protected readonly tabOptions = computed<TabOption[]>(() => {
+    const detail = this.battle();
+    return [
+      { id: 'overview', label: this.t('battles.overview') },
+      { id: 'players', label: this.t('battles.players'), count: detail?.players.length ?? 0 },
+      { id: 'guilds', label: this.t('battles.guilds'), count: detail?.guilds.length ?? 0 },
+      { id: 'kills', label: this.t('battles.kill_feed'), count: detail?.kills.length ?? 0 },
+    ];
+  });
+
+  protected readonly killFilterOptions = computed<TabOption[]>(() => {
+    const kills = this.battle()?.kills ?? [];
+    return [
+      { id: 'all', label: this.t('battles.filter_all'), count: kills.length },
+      { id: 'our_kills', label: this.t('battles.filter_our_kills'), count: this.ourKillCount() },
+      { id: 'our_deaths', label: this.t('battles.filter_our_deaths'), count: this.ourDeathCount() },
+      {
+        id: 'high_fame',
+        label: this.t('battleDetail.filter.highFame'),
+        count: kills.filter((k) => k.total_kill_fame >= HIGH_FAME_THRESHOLD).length,
+      },
+    ];
+  });
+
+  protected readonly playerSideOptions = computed<TabOption[]>(() => [
+    { id: 'all', label: this.t('battles.filter_all'), count: this.battle()?.players.length ?? 0 },
+    { id: 'our_guild', label: this.t('battleDetail.ourGuild'), count: this.ourGuildPlayers().length },
+    { id: 'allies', label: this.t('battles.filter_allies'), count: this.allyPlayersCount() },
+    { id: 'enemies', label: this.t('battles.filter_enemies'), count: this.enemyPlayersCount() },
   ]);
+
+  /** Our guild, or our guild inside its alliance, as one display label. */
+  protected readonly ourForceLabel = computed<string | null>(() => {
+    const guild = this.ourGuild();
+    if (!guild) return null;
+    const alliance = this.ourGuildAllianceName();
+    return alliance ? `[${alliance}] ${guild.name}` : guild.name;
+  });
+
+  protected readonly menuItems = computed<MenuItem[]>(() => [
+    { id: 'copy', label: this.t('battles.copy_link') },
+    { id: 'albion', label: this.t('battles.view_on_albion_battles') },
+  ]);
+
+  /** Header band of key numbers, derived from the battle and our guild. */
+  protected readonly summaryItems = computed<SummaryItem[]>(() => {
+    const detail = this.battle();
+    if (!detail) return [];
+    const ours = this.ourGuild();
+    return [
+      {
+        label: this.t('battles.total_fame'),
+        value: this.formatCompact(detail.total_fame),
+        hint: this.t('battleDetail.hint.ourShare', { share: this.formatDecimal(this.ourAllianceFameShare()) }),
+      },
+      {
+        label: `${this.t('battles.kills')} / ${this.t('battles.deaths')}`,
+        value: `${this.formatAmount(detail.total_kills)} / ${this.formatAmount(this.totalBattleDeaths())}`,
+        hint: this.t('battleDetail.hint.ourKd', { kd: this.formatDecimal(this.ourGuildKdRatio()) }),
+      },
+      {
+        label: this.t('battles.kill_participation'),
+        value: `${this.formatDecimal(this.ourKillParticipation())}%`,
+        hint: this.t('battleDetail.hint.ourKills', { count: ours?.kills ?? 0 }),
+      },
+      {
+        label: this.t('battles.avg_ip'),
+        value: this.formatDecimal(this.ourGuildAvgIp()),
+        hint: this.t('battleDetail.hint.battleAvg', { avg: this.formatDecimal(this.battleAvgIp()) }),
+      },
+      {
+        label: this.t('battles.silver_lost'),
+        value: this.formatCompact(detail.estimated_losses.total_estimated_loss),
+        hint: this.t('battleDetail.hint.pricedItems', {
+          priced: detail.estimated_losses.priced_items,
+          total: detail.estimated_losses.total_items,
+        }),
+      },
+      {
+        label: this.t('battles.survival_rate'),
+        value: `${this.formatDecimal(this.ourSurvivalRate())}%`,
+        hint: this.t('battleDetail.hint.survived', {
+          surviving: this.ourSurvivingCount(),
+          players: ours?.players ?? 0,
+        }),
+      },
+    ];
+  });
+
+  /** Our side against the enemy forces, one row each. */
+  protected readonly matchupRows = computed<MatchupRow[]>(() => {
+    const ours = this.ourAlliance();
+    const guild = this.ourGuild();
+    const enemyAlliance = this.topEnemyAlliance();
+    const enemyGuild = this.topEnemyGuild();
+    return [
+      {
+        key: 'ours',
+        side: this.t('battles.allies'),
+        force: this.ourForceLabel() ?? '—',
+        players: ours?.players ?? guild?.players ?? 0,
+        kills: ours?.kills ?? guild?.kills ?? 0,
+        deaths: ours?.deaths ?? guild?.deaths ?? 0,
+        kdRatio: ours?.kdRatio ?? this.ourGuildKdRatio(),
+        killFame: ours?.killFame ?? guild?.kill_fame ?? 0,
+      },
+      {
+        key: 'enemies',
+        side: this.t('battles.enemies'),
+        force: enemyAlliance
+          ? `[${enemyAlliance.name}]`
+          : (enemyGuild?.name ?? this.t('battleDetail.hostileCoalition')),
+        players: this.enemyForcesPlayers(),
+        kills: this.enemyForcesKills(),
+        deaths: this.enemyForcesDeaths(),
+        kdRatio: this.enemyForcesKdRatio(),
+        killFame: this.enemyForcesKillFame(),
+      },
+    ];
+  });
+
+  /** Our guild's standout players, one row per honour. */
+  protected readonly honorRows = computed<HonorRow[]>(() => {
+    const killer = this.guildMvpKiller();
+    const fame = this.guildMvpFame();
+    const ip = this.guildMvpHighestIp();
+    const survivor = this.guildMvpSurvivor();
+    const loss = this.guildHeaviestLoss();
+    return [
+      {
+        id: 'killer',
+        labelKey: 'battles.mvp_killer',
+        player: killer,
+        value: killer ? this.t('battleDetail.hint.kills', { count: killer.kills }) : '',
+      },
+      {
+        id: 'fame',
+        labelKey: 'battles.mvp_fame',
+        player: fame,
+        value: fame ? this.t('battleDetail.hint.fame', { amount: this.formatCompact(fame.kill_fame) }) : '',
+      },
+      {
+        id: 'ip',
+        labelKey: 'battles.mvp_ip',
+        player: ip,
+        value: ip ? this.t('battleDetail.hint.ip', { value: this.formatDecimal(ip.item_power) }) : '',
+      },
+      {
+        id: 'survivor',
+        labelKey: 'battles.mvp_survivor',
+        player: survivor,
+        value: survivor ? this.t('battleDetail.hint.survivor', { kills: survivor.kills }) : '',
+      },
+      {
+        id: 'loss',
+        labelKey: 'battles.heaviest_loss',
+        player: loss,
+        value: loss ? this.t('battleDetail.hint.lost', { amount: this.formatCompact(loss.estimatedLoss) }) : '',
+      },
+    ];
+  });
 
   // Our guild, as decided by the backend from the tenant's Albion scope
   // (`is_own`, or the first `is_friendly` guild for an alliance tenant). The
@@ -1414,9 +1111,11 @@ export class BattleDetailPage {
   // Renders the verdict `GET /api/battles/{id}` already resolved. The browser
   // used to score the battle itself against its own fame thresholds, which is
   // how the same battle could read "Victory" in the list and "Contested" here.
-  protected readonly battleVerdict = computed<{ label: string; type: BattleOutcomeType }>(() => {
-    const type = this.battle()?.outcome ?? 'unknown';
-    return { label: this.t(battleOutcomeLabel(type)), type };
+  protected readonly verdict = computed<{ label: string; tone: OutcomeTone }>(() => {
+    const type: BattleOutcomeType = this.battle()?.outcome ?? 'unknown';
+    const tone: OutcomeTone =
+      type === 'victory' ? 'success' : type === 'defeat' ? 'error' : type === 'draw' ? 'warning' : 'neutral';
+    return { label: this.t(battleOutcomeLabel(type)), tone };
   });
 
   // Enemy forces totals
@@ -1588,23 +1287,13 @@ export class BattleDetailPage {
     return this.enrichedPlayerRows().filter((p) => p.isOurGuild);
   });
 
-  protected readonly filteredGuildRosterRows = computed<PlayerEnrichedRow[]>(() => {
-    const query = this.playerSearchQuery().trim().toLowerCase();
-    const rows = this.ourGuildPlayers();
-    if (!query) return rows;
-    return rows.filter(
-      (p) =>
-        p.name.toLowerCase().includes(query) ||
-        p.weaponName.toLowerCase().includes(query) ||
-        p.role.toLowerCase().includes(query),
-    );
-  });
-
   // Filtered All Players
   protected readonly filteredAllPlayerRows = computed<PlayerEnrichedRow[]>(() => {
     let rows = this.enrichedPlayerRows();
     const side = this.playerFilterSide();
-    if (side === 'allies') {
+    if (side === 'our_guild') {
+      rows = rows.filter((p) => p.isOurGuild);
+    } else if (side === 'allies') {
       rows = rows.filter((p) => p.isOurAlliance || p.isOurGuild);
     } else if (side === 'enemies') {
       rows = rows.filter((p) => !p.isOurAlliance && !p.isOurGuild);
@@ -1643,7 +1332,7 @@ export class BattleDetailPage {
     } else if (filter === 'our_deaths') {
       kills = kills.filter((k) => this.isOurGuildParticipant(k.victim));
     } else if (filter === 'high_fame') {
-      kills = kills.filter((k) => k.total_kill_fame >= 250000);
+      kills = kills.filter((k) => k.total_kill_fame >= HIGH_FAME_THRESHOLD);
     }
 
     // Search query
@@ -1734,15 +1423,6 @@ export class BattleDetailPage {
   protected readonly ourSurvivingCount = computed(() => {
     const g = this.ourGuild();
     return g ? Math.max(0, g.players - g.deaths) : 0;
-  });
-
-  protected readonly ourGuildNetFame = computed(() => {
-    const players = this.ourGuildPlayers();
-    return players.reduce((sum, p) => sum + p.netFame, 0);
-  });
-
-  protected readonly ourGuildEstimatedLoss = computed(() => {
-    return this.battle()?.estimated_losses.total_estimated_loss ?? 0;
   });
 
   protected readonly allyPlayersCount = computed(() => {
@@ -1950,14 +1630,6 @@ export class BattleDetailPage {
     ]),
   );
 
-  /** Click on a timeline column: filters the kill feed by that minute. */
-  protected onTimelineChartClick(event: ChartClickEvent): void {
-    const bucket = this.timelineBuckets()[event.dataIndex];
-    if (bucket) {
-      this.toggleTimelineMinute(bucket.minute);
-    }
-  }
-
   // Battle momentum — cumulative fame swing per minute, diverging area
   protected readonly momentumOption = computed<EChartsOption>(() => {
     const palette = this.palette();
@@ -2155,58 +1827,7 @@ export class BattleDetailPage {
   );
 
   // Table Columns
-  protected readonly guildRosterColumns: readonly DataTableColumn<PlayerEnrichedRow>[] = [
-    {
-      key: 'player',
-      label: 'common.name',
-      sortable: true,
-      searchable: true,
-      accessor: (p) => p.name,
-      comparator: (a, b) => a.name.localeCompare(b.name),
-    },
-    {
-      key: 'item_power',
-      label: 'battles.item_power',
-      sortable: true,
-      accessor: (p) => p.item_power,
-      comparator: (a, b) => a.item_power - b.item_power,
-      align: 'right',
-    },
-    {
-      key: 'kills_deaths',
-      label: 'battles.kills',
-      sortable: true,
-      accessor: (p) => p.kills,
-      comparator: (a, b) => a.kills - b.kills,
-      align: 'center',
-    },
-    {
-      key: 'kill_fame',
-      label: 'battles.kill_fame',
-      sortable: true,
-      accessor: (p) => p.kill_fame,
-      comparator: (a, b) => a.kill_fame - b.kill_fame,
-      align: 'right',
-    },
-    {
-      key: 'net_fame',
-      label: 'battles.net_fame',
-      sortable: true,
-      accessor: (p) => p.netFame,
-      comparator: (a, b) => a.netFame - b.netFame,
-      align: 'right',
-    },
-    {
-      key: 'estimated_loss',
-      label: 'battles.silver_lost',
-      sortable: true,
-      accessor: (p) => p.estimatedLoss,
-      comparator: (a, b) => a.estimatedLoss - b.estimatedLoss,
-      align: 'right',
-    },
-  ];
-
-  protected readonly allGuildColumns: readonly DataTableColumn<GuildEnrichedRow>[] = [
+  protected readonly guildColumns: readonly DataTableColumn<GuildEnrichedRow>[] = [
     {
       key: 'name',
       label: 'common.name',
@@ -2265,7 +1886,121 @@ export class BattleDetailPage {
     },
   ];
 
-  protected readonly allPlayerColumns: readonly DataTableColumn<PlayerEnrichedRow>[] = [
+  protected readonly allianceColumns: readonly DataTableColumn<AllianceSummary>[] = [
+    {
+      key: 'name',
+      label: 'battles.alliance',
+      sortable: true,
+      searchable: true,
+      accessor: (a) => a.name,
+      comparator: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      key: 'guilds',
+      label: 'battles.guilds',
+      sortable: true,
+      accessor: (a) => a.guilds.length,
+      comparator: (a, b) => a.guilds.length - b.guilds.length,
+      align: 'right',
+    },
+    {
+      key: 'players',
+      label: 'battles.players',
+      sortable: true,
+      accessor: (a) => a.players,
+      comparator: (a, b) => a.players - b.players,
+      align: 'right',
+    },
+    {
+      key: 'kills',
+      label: 'battles.kills',
+      sortable: true,
+      accessor: (a) => a.kills,
+      comparator: (a, b) => a.kills - b.kills,
+      align: 'right',
+    },
+    {
+      key: 'deaths',
+      label: 'battles.deaths',
+      sortable: true,
+      accessor: (a) => a.deaths,
+      comparator: (a, b) => a.deaths - b.deaths,
+      align: 'right',
+    },
+    {
+      key: 'kill_death',
+      label: 'battles.kill_death',
+      sortable: true,
+      accessor: (a) => a.kdRatio,
+      comparator: (a, b) => a.kdRatio - b.kdRatio,
+      align: 'right',
+    },
+    {
+      key: 'kill_fame',
+      label: 'battles.kill_fame',
+      sortable: true,
+      accessor: (a) => a.killFame,
+      comparator: (a, b) => a.killFame - b.killFame,
+      align: 'right',
+    },
+    {
+      key: 'net_fame',
+      label: 'battles.net_fame',
+      sortable: true,
+      accessor: (a) => a.killFame - a.deathFame,
+      comparator: (a, b) => a.killFame - a.deathFame - (b.killFame - b.deathFame),
+      align: 'right',
+    },
+    {
+      key: 'estimated_loss',
+      label: 'battles.silver_lost',
+      sortable: true,
+      accessor: (a) => a.estimatedLoss,
+      comparator: (a, b) => a.estimatedLoss - b.estimatedLoss,
+      align: 'right',
+    },
+  ];
+
+  protected readonly killColumns: readonly DataTableColumn<BattleKillEvent>[] = [
+    {
+      key: 'time',
+      label: 'battles.time',
+      sortable: true,
+      accessor: (k) => k.time,
+      comparator: (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+    },
+    {
+      key: 'killer',
+      label: 'battles.killer',
+      accessor: (k) => k.killer.name,
+    },
+    {
+      key: 'victim',
+      label: 'battles.victim',
+      accessor: (k) => k.victim.name,
+    },
+    {
+      key: 'fame',
+      label: 'battles.fame',
+      sortable: true,
+      accessor: (k) => k.total_kill_fame,
+      comparator: (a, b) => a.total_kill_fame - b.total_kill_fame,
+      align: 'right',
+    },
+    {
+      key: 'item_power',
+      label: 'battles.item_power',
+      accessor: (k) => k.killer_item_power,
+      align: 'right',
+    },
+    {
+      key: 'gear',
+      label: 'battles.gear',
+      align: 'right',
+    },
+  ];
+
+  protected readonly playerColumns: readonly DataTableColumn<PlayerEnrichedRow>[] = [
     {
       key: 'name',
       label: 'common.name',
@@ -2314,8 +2049,26 @@ export class BattleDetailPage {
       comparator: (a, b) => a.death_fame - b.death_fame,
       align: 'right',
     },
+    {
+      key: 'net_fame',
+      label: 'battles.net_fame',
+      sortable: true,
+      accessor: (p) => p.netFame,
+      comparator: (a, b) => a.netFame - b.netFame,
+      align: 'right',
+    },
+    {
+      key: 'estimated_loss',
+      label: 'battles.silver_lost',
+      sortable: true,
+      accessor: (p) => p.estimatedLoss,
+      comparator: (a, b) => a.estimatedLoss - b.estimatedLoss,
+      align: 'right',
+    },
   ];
 
+  protected readonly trackAllianceRow = (a: AllianceSummary): unknown => a.name;
+  protected readonly trackKillRow = (k: BattleKillEvent): unknown => k.event_id;
   protected readonly trackPlayerRow = (p: PlayerEnrichedRow): unknown => p.id || p.name;
   protected readonly trackGuildRow = (g: GuildEnrichedRow): unknown => g.id || g.name;
 
@@ -2342,22 +2095,28 @@ export class BattleDetailPage {
     this.tab.set(tab as DetailTab);
   }
 
-  protected setKillFeedFilter(filter: KillFeedFilter): void {
-    this.killFeedFilter.set(filter);
+  protected setKillFeedFilter(filter: string): void {
+    this.killFeedFilter.set(filter as KillFeedFilter);
   }
 
-  protected onKillSearch(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.killSearchQuery.set(input.value);
+  protected setKillQuery(query: string): void {
+    this.killSearchQuery.set(query);
   }
 
-  protected setPlayerFilterSide(side: PlayerSideFilter): void {
-    this.playerFilterSide.set(side);
+  protected setPlayerSide(side: string): void {
+    this.playerFilterSide.set(side as PlayerSideFilter);
   }
 
-  protected onPlayerSearch(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.playerSearchQuery.set(input.value);
+  protected setPlayerQuery(query: string): void {
+    this.playerSearchQuery.set(query);
+  }
+
+  /** A timeline column: filters the kill feed to that minute and opens the kill feed. */
+  protected onTimelineChartClick(event: ChartClickEvent): void {
+    const bucket = this.timelineBuckets()[event.dataIndex];
+    if (!bucket) return;
+    this.toggleTimelineMinute(bucket.minute);
+    this.tab.set('kills');
   }
 
   protected toggleTimelineMinute(minute: number): void {
@@ -2368,8 +2127,22 @@ export class BattleDetailPage {
     this.selectedTimelineMinute.set(null);
   }
 
-  protected toggleKillLoadout(eventId: number): void {
-    this.expandedKill.update((curr) => (curr === eventId ? null : eventId));
+  protected openGear(kill: BattleKillEvent): void {
+    this.gearKill.set(kill);
+  }
+
+  protected closeGear(): void {
+    this.gearKill.set(null);
+  }
+
+  protected onMenu(id: string): void {
+    const detail = this.battle();
+    if (!detail) return;
+    if (id === 'copy') {
+      void this.copyBattleLink();
+    } else if (id === 'albion') {
+      window.open(albionBattlesUrl(detail.battle_id), '_blank', 'noopener,noreferrer');
+    }
   }
 
   protected async copyBattleLink(): Promise<void> {
@@ -2377,20 +2150,11 @@ export class BattleDetailPage {
       await navigator.clipboard.writeText(window.location.href);
       this.toasts.success(this.t('battles.link_copied'));
     } catch {
-      this.toasts.error('Failed to copy link.');
+      this.toasts.error(this.t('battleDetail.copyFailed'));
     }
   }
 
   // Formatters
-  protected battleSubtitle(detail: BattleDetail): string {
-    return [
-      this.formatDate(detail.start_time),
-      this.formatDuration(detail),
-      `${detail.total_players} ${this.t('battles.players')}`,
-      `${detail.guilds.length} ${this.t('battles.guilds')}`,
-    ].join(' · ');
-  }
-
   protected formatDate(isoDate: string): string {
     return new Date(isoDate).toLocaleString(this.translate.locale());
   }
@@ -2443,7 +2207,7 @@ export class BattleDetailPage {
       case 'ranged_dps':
         return this.t('battles.ranged_dps');
       default:
-        return 'Combatant';
+        return this.t('battleDetail.role.other');
     }
   }
 
@@ -2689,8 +2453,8 @@ export class BattleDetailPage {
       const count = outcomes.length;
       this.toasts.success(
         count === 1
-          ? 'Extracted 1 enemy comp into intel'
-          : `Extracted ${count} enemy comps into intel`,
+          ? this.t('battleDetail.scoutDoneOne')
+          : this.t('battleDetail.scoutDoneMany', { count }),
       );
       void this.router.navigate(['/intel/opponents']);
     } catch (error) {
@@ -2709,11 +2473,14 @@ export class BattleDetailPage {
     }
     this.loading.set(true);
     this.loadFailed.set(false);
+    this.notFound.set(false);
     try {
       this.battle.set(await firstValueFrom(this.api.get<BattleDetail>(`api/battles/${battleId}`)));
     } catch (error) {
+      // A missing battle gets its own state; other failures get the retryable error.
+      this.notFound.set(error instanceof HttpErrorResponse && error.status === 404);
       this.loadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.toasts.error(this.t(this.notFound() ? 'ui.errorState.notFound' : 'common.error'));
     } finally {
       this.loading.set(false);
     }

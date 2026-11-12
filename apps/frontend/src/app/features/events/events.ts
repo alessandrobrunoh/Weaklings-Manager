@@ -2,6 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   Injector,
   afterNextRender,
   computed,
@@ -41,9 +42,10 @@ import {
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import type { MenuItem } from '../../shared/components/menu/menu';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { roleSelectOptionsMany } from '../../shared/discord/discord-options';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
 import {
   ownershipListParams,
@@ -52,6 +54,7 @@ import {
 } from '../../shared/data/ownership-scope';
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 const EVENT_STATUSES: readonly EventStatus[] = ['scheduled', 'live', 'stopped', 'auto_stopped', 'cancelled'];
 
 const SORT_COLUMNS: Readonly<Record<string, string>> = {
@@ -119,14 +122,14 @@ interface CreateFieldError {
     DataTableCell,
     Dialog,
     Checkbox,
+    FilterBar,
     Icon,
     NgTemplateOutlet,
     PageHeader,
     PageStack,
     RouterLink,
     SearchableSelect,
-    StatCard,
-    TooltipDirective,
+    SummaryBand,
     OwnershipScopeToggle,
   ],
   styles: `
@@ -372,27 +375,12 @@ interface CreateFieldError {
     }
   `,
   template: `
-    <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
-      <button
-        type="button"
-        class="btn btn--sm"
-        [class.btn--tonal]="showArchived()"
-        [class.btn--outline]="!showArchived()"
-        (click)="toggleShowArchived()"
-      >
-        {{ t('events.showArchived') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="refresh" size="0.875rem" [class.animate-spin]="loading()" />
-        {{ t('common.refreshNow') }}
-      </button>
+    <app-page-header
+      [title]="t('events.title')"
+      [subtitle]="t('events.subtitle')"
+      [menuItems]="headerMenu()"
+      (menuSelect)="onHeaderMenu($event)"
+    >
       @if (canCreate()) {
         <button type="button" class="btn btn--primary btn--sm" (click)="openCreate()">
           <app-icon name="plus" size="0.875rem" />
@@ -402,36 +390,31 @@ interface CreateFieldError {
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5" aria-label="Events summary">
-        <app-stat-card
-          [label]="t('events.stat.total')"
-          [value]="totalEventsCount()"
-          sub="All scheduled and past events"
-          icon="calendar"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('events.stat.live')"
-          [value]="liveEventsCount()"
-          sub="Active war rooms"
-          icon="zap"
-          tone="success"
-        />
-        <app-stat-card
-          [label]="t('events.stat.scheduled')"
-          [value]="scheduledEventsCount()"
-          sub="Upcoming deployments"
-          icon="calendar"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('events.stat.cta')"
-          [value]="ctaEventsCount()"
-          sub="Mandatory guild CTA"
-          icon="alert"
-          tone="warning"
-        />
-      </section>
+      <app-summary-band [ariaLabel]="t('events.summaryLabel')" [items]="summaryItems()" />
+
+      <app-filter-bar
+        [searchLabel]="t('events.searchLabel')"
+        [searchPlaceholder]="t('events.searchPlaceholder')"
+        [query]="search()"
+        [activeCount]="activeFilterCount()"
+        (queryChange)="onSearchChange($event)"
+        (clear)="clearFilters()"
+      >
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('common.status') }}</span>
+          <select class="select select--sm" (change)="onStatusChange($event)">
+            @for (option of statusOptions(); track option.value) {
+              <option [value]="option.value" [selected]="option.value === statusFilter()">
+                {{ option.label }}
+              </option>
+            }
+          </select>
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" [checked]="showArchived()" (change)="onShowArchivedChange($event)" />
+          {{ t('events.showArchived') }}
+        </label>
+      </app-filter-bar>
 
       <app-data-table
         [columns]="columns()"
@@ -440,16 +423,15 @@ interface CreateFieldError {
         [error]="loadFailed()"
         [trackBy]="trackById"
         [serverMode]="true"
+        [hideSearch]="true"
+        mobileLayout="stack"
         [totalItems]="totalItems()"
         [pageSize]="pageSize()"
         [pageSizeOptions]="[10, 20, 50]"
         itemLabel="events"
         emptyIcon="calendar"
-        emptyTitle="No events found"
-        emptySubtitle="There are no events matching the selected filters."
-        searchPlaceholder="Search events..."
-        [initialSearch]="initialQuery.search"
-        [initialColumnFilters]="initialQuery.columnFilters"
+        [emptyTitle]="t('events.emptyTitle')"
+        [emptySubtitle]="t('events.emptyHint')"
         [rowClickable]="true"
         (rowClick)="openEventDetail($event.id)"
         (pageChange)="onTablePageChange($event)"
@@ -461,7 +443,7 @@ interface CreateFieldError {
               <span class="text-warning font-bold text-sm select-none" [title]="t('events.call_to_arms')">★</span>
             }
             @if (event.event_kind === 'flash') {
-              <span class="chip chip--info text-[10px]">{{ t('events.flashMass') }}</span>
+              <span class="chip chip--info text-xs">{{ t('events.flashMass') }}</span>
             }
             <a
               [routerLink]="['/events', event.id]"
@@ -470,14 +452,14 @@ interface CreateFieldError {
               {{ event.title }}
             </a>
             @if (event.archived_at) {
-              <span class="chip chip--neutral text-[10px]">{{ t('events.archived') }}</span>
+              <span class="chip chip--neutral text-xs">{{ t('events.archived') }}</span>
             }
             @if (event.is_link) {
-              <span class="chip chip--neutral text-[10px]">{{ event.source_tenant_name ? t('events.linkFrom', { name: event.source_tenant_name }) : t('events.linkShared') }}</span>
+              <span class="chip chip--neutral text-xs">{{ event.source_tenant_name ? t('events.linkFrom', { name: event.source_tenant_name }) : t('events.linkShared') }}</span>
             }
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-            Mass: {{ formatMassTime(event) }}
+            {{ t('events.flashMass.mass') }}: {{ formatMassTime(event) }}
           </div>
         </ng-template>
 
@@ -983,6 +965,9 @@ export class Events {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Pending debounce for the search box; the filter reload waits for typing to settle. */
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
     defaultPageSize: PAGE_SIZE,
     filterKeys: ['status'],
@@ -996,16 +981,52 @@ export class Events {
   protected readonly totalItems = signal(0);
   protected readonly search = signal(this.initialQuery.search);
   protected readonly statusFilter = signal(this.initialQuery.columnFilters['status'] ?? '');
-  // Keep the initial table view aligned with the API's newest-first default.
-  protected readonly sortColumn = signal<string | null>(this.initialQuery.sort?.columnKey ?? 'date');
+  // No sort until the user picks one, which matches the table's own state. The API's newest-first
+  // default then applies, so the first view is the same as before.
+  protected readonly sortColumn = signal<string | null>(this.initialQuery.sort?.columnKey ?? null);
   protected readonly sortOrder = signal<'asc' | 'desc' | null>(
-    this.initialQuery.sort?.direction ?? 'desc',
+    this.initialQuery.sort?.direction ?? null,
   );
 
   protected readonly totalEventsCount = signal(0);
   protected readonly liveEventsCount = signal(0);
   protected readonly scheduledEventsCount = signal(0);
   protected readonly ctaEventsCount = signal(0);
+
+  protected readonly summaryItems = computed<readonly SummaryItem[]>(() => {
+    this.translate.dict();
+    return [
+      { label: this.t('events.stat.total'), value: this.totalEventsCount() },
+      { label: this.t('events.stat.live'), value: this.liveEventsCount(), tone: 'success' },
+      { label: this.t('events.stat.scheduled'), value: this.scheduledEventsCount() },
+      { label: this.t('events.stat.cta'), value: this.ctaEventsCount(), tone: 'warning' },
+    ];
+  });
+
+  protected readonly statusOptions = computed(() => {
+    this.translate.dict();
+    return EVENT_STATUSES.map((status) => ({
+      value: status,
+      label: this.t(`events.status.${status}` as TranslationKey),
+    }));
+  });
+
+  /** Facets in force, for the filter bar's badge and clear button. The search box has its own clear. */
+  protected readonly activeFilterCount = computed(
+    () => (this.statusFilter() ? 1 : 0) + (this.showArchived() ? 1 : 0),
+  );
+
+  protected readonly headerMenu = computed<readonly MenuItem[]>(() => {
+    this.translate.dict();
+    return [
+      {
+        id: 'refresh',
+        label: this.t('common.refreshNow'),
+        icon: 'refresh',
+        disabled: this.loading(),
+      },
+    ];
+  });
 
   protected readonly columns = computed<readonly DataTableColumn<EventView>[]>(() => {
     this.translate.dict();
@@ -1034,10 +1055,6 @@ export class Events {
         label: 'events.table.status',
         sortable: true,
         accessor: (event) => event.status,
-        filterOptions: EVENT_STATUSES.map((status) => ({
-          value: status,
-          label: this.t(`events.status.${status}` as TranslationKey),
-        })),
       },
       { key: 'actions', label: 'events.table.actions', align: 'right' },
     ];
@@ -1047,7 +1064,14 @@ export class Events {
     await Promise.all([this.load(), this.loadStats()]);
   }
 
+  protected onHeaderMenu(id: string): void {
+    if (id === 'refresh') {
+      void this.refreshNow();
+    }
+  }
+
   constructor() {
+    this.destroyRef.onDestroy(() => this.cancelSearchTimer());
     void this.load();
     void this.loadStats();
   }
@@ -1231,16 +1255,62 @@ export class Events {
     );
   }
 
-  protected toggleShowArchived(): void {
-    this.showArchived.update((value) => !value);
+  /** Search text: the reload waits until typing pauses. */
+  protected onSearchChange(query: string): void {
+    this.search.set(query);
+    this.cancelSearchTimer();
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.applyFilterChange();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected onStatusChange(event: Event): void {
+    this.cancelSearchTimer();
+    this.statusFilter.set((event.target as HTMLSelectElement).value);
+    this.applyFilterChange();
+  }
+
+  protected onShowArchivedChange(event: Event): void {
+    this.cancelSearchTimer();
+    this.showArchived.set((event.target as HTMLInputElement).checked);
+    this.applyFilterChange();
+  }
+
+  /** Drops every filter, the search box included. */
+  protected clearFilters(): void {
+    this.cancelSearchTimer();
+    this.search.set('');
+    this.statusFilter.set('');
+    this.showArchived.set(false);
+    this.applyFilterChange();
+  }
+
+  /**
+   * Reloads from page 1 with the current filters. The filters go into the URL, and the data table
+   * is moved back to page 1 through it, so its own paging state follows.
+   */
+  private applyFilterChange(): void {
     this.page.set(1);
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { archived: this.showArchived() ? 'true' : null },
+      queryParams: {
+        search: this.search().trim() || null,
+        status: this.statusFilter() || null,
+        archived: this.showArchived() ? 'true' : null,
+        page: null,
+      },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
     void this.load();
+  }
+
+  private cancelSearchTimer(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
   }
 
   protected cityLabel(city: SplitIslandCity): string {
@@ -1411,13 +1481,26 @@ export class Events {
     }
   }
 
+  /**
+   * Paging and sorting come from the table. Search and status belong to the filter bar, so the
+   * table's echo of a filter change (its page reset) is ignored when nothing else moved.
+   */
   protected onTablePageChange(change: DataTablePageChange): void {
+    const sortColumn = change.sort?.columnKey ?? null;
+    const sortOrder = change.sort?.direction ?? null;
+    if (
+      change.page === this.page() &&
+      change.pageSize === this.pageSize() &&
+      change.search.trim() === this.search().trim() &&
+      sortColumn === this.sortColumn() &&
+      sortOrder === this.sortOrder()
+    ) {
+      return;
+    }
     this.page.set(change.page);
     this.pageSize.set(change.pageSize);
-    this.search.set(change.search);
-    this.statusFilter.set(change.columnFilters['status'] ?? '');
-    this.sortColumn.set(change.sort?.columnKey ?? null);
-    this.sortOrder.set(change.sort?.direction ?? null);
+    this.sortColumn.set(sortColumn);
+    this.sortOrder.set(sortOrder);
     void this.load();
   }
 

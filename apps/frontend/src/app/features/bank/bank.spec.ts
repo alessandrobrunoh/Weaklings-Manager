@@ -122,6 +122,12 @@ describe('Bank withdrawal credit selection', () => {
     fixture.destroy();
   });
 
+  it('shows balances in the summary band and keeps a single primary action in the header', () => {
+    expect(fixture.nativeElement.querySelector('app-summary-band')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.kpi-card')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('app-page-header .btn--primary').length).toBe(1);
+  });
+
   it('requests only selected credits that fit the net balance', async () => {
     const requestButton = [...fixture.nativeElement.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Request withdrawal'),

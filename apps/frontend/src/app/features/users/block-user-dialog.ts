@@ -14,10 +14,10 @@ export const BLOCK_REASON_MAX = 500;
 /**
  * Confirm dialog for blocking or unblocking a member.
  *
- * Blocking explains what happens (the member loses the manager on the web and through the bot,
- * nothing changes on Discord) and takes an optional reason that only role managers can read.
- * The dialog does the API call itself and hands the updated profile back through `updated`, so
- * the members list and the member page share one implementation.
+ * Blocking lists exactly what the member loses (web app access and bot access; Discord is left
+ * alone) and takes an optional reason that only role managers can read. The dialog does the API
+ * call itself and hands the updated profile back through `updated`, so the members list and the
+ * member page share one implementation.
  *
  * @example
  * <app-block-user-dialog [member]="row" mode="block" (updated)="onUpdated($event)" (closed)="close()" />
@@ -37,12 +37,26 @@ export const BLOCK_REASON_MAX = 500;
       size="sm"
       (closed)="closed.emit()"
     >
-      <form id="block-user-form" class="grid gap-3" (submit)="confirm($event)">
+      <form id="block-user-form" class="grid gap-4" (submit)="confirm($event)">
         @if (mode() === 'block') {
-          <p class="text-sm" style="color: var(--color-text-secondary)">
-            {{ t('users.block.consequence', { name: member().username }) }}
-          </p>
-          <label>
+          <div class="grid gap-2">
+            <p class="text-sm" style="color: var(--color-text)">
+              {{ t('users.block.consequence', { name: member().username }) }}
+            </p>
+            <ul
+              class="grid gap-1.5 text-sm"
+              style="color: var(--color-text-secondary); list-style: disc; padding-inline-start: 1.25rem"
+            >
+              <li>{{ t('users.block.effect.web') }}</li>
+              <li>{{ t('users.block.effect.bot') }}</li>
+              <li>{{ t('users.block.effect.discord') }}</li>
+            </ul>
+            <p class="text-sm" style="color: var(--color-text-secondary)">
+              {{ t('users.block.reversible') }}
+            </p>
+          </div>
+
+          <label class="grid gap-1.5">
             <span class="label">{{ t('users.block.reason') }}</span>
             <textarea
               id="block-user-reason"
@@ -55,8 +69,7 @@ export const BLOCK_REASON_MAX = 500;
             ></textarea>
             <span
               id="block-user-reason-hint"
-              class="mt-1 block text-xs"
-              style="color: var(--color-text-secondary)"
+              class="hint"
             >
               {{ t('users.block.reasonHint') }}
             </span>
@@ -68,7 +81,7 @@ export const BLOCK_REASON_MAX = 500;
         }
       </form>
       <div dialogFooter class="flex justify-end gap-2">
-        <button type="button" class="btn btn--ghost btn--sm" (click)="closed.emit()">
+        <button type="button" class="btn btn--outline btn--sm" (click)="closed.emit()">
           {{ t('common.cancel') }}
         </button>
         <button
@@ -136,8 +149,9 @@ export class BlockUserDialog {
       );
       this.updated.emit(updated);
       this.closed.emit();
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      // Raw API text is never shown; the translated fallback is the only toast copy.
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.saving.set(false);
     }

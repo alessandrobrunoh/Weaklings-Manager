@@ -24,8 +24,8 @@ import { ErrorState } from '../error-state/error-state';
 import { Icon, type IconName } from '../icon/icon';
 import { Select, type SelectOption } from '../select/select';
 import { Loading } from '../loading/loading';
-import { TooltipDirective } from '../../directives/tooltip.directive';
 import { DataTableCell } from './data-table-cell';
+import { DataTableFooterCell } from './data-table-footer-cell';
 export type {
   DataTableColumn,
   DataTableFilterOption,
@@ -77,7 +77,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 @Component({
   selector: 'app-data-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Icon, Loading, NgTemplateOutlet, Select, TooltipDirective],
+  imports: [EmptyState, ErrorState, Icon, Loading, NgTemplateOutlet, Select],
   templateUrl: './data-table.html',
   styleUrl: './data-table.css',
 })
@@ -107,6 +107,27 @@ export class DataTable<T> {
 
   /** Emitted when the user presses retry on the error state. */
   readonly retry = output<void>();
+
+  /** Draw a frame around the table. Leave off inside a `.card`, which already has one. */
+  readonly bordered = input(false);
+
+  /** Pin the first column while the table scrolls sideways (phones, wide tables). */
+  readonly stickyFirstColumn = input(false);
+
+  /**
+   * Phone behaviour: `scroll` (default) scrolls the table sideways inside its own region;
+   * `stack` turns each row into a labelled block below 40rem (use for tables of 4-6 short columns).
+   */
+  readonly mobileLayout = input<'scroll' | 'stack'>('scroll');
+
+  /** CSS max-height of the scroll region (e.g. `'32rem'`); makes the header stick while rows scroll. */
+  readonly maxHeight = input('');
+
+  /** Accessible name of the scroll region; defaults to the generic "Table" name. */
+  readonly ariaLabel = input('');
+
+  /** Label of the first cell of the totals row. Defaults to "Total". */
+  readonly footerLabel = input('');
 
   /** Optional empty state message. */
   readonly emptyLabel = input<TranslationKey>('common.empty');
@@ -186,6 +207,19 @@ export class DataTable<T> {
   /** Per-column projected cell templates (`*dataTableCell="'key'"`). */
   readonly cellDirectives = contentChildren(DataTableCell);
 
+  /** Per-column projected totals-row cell templates (`*dataTableFooterCell="'key'"`). */
+  readonly footerDirectives = contentChildren(DataTableFooterCell);
+
+  protected readonly footerTemplates = computed(() => {
+    const map = new Map<string, DataTableFooterCell>();
+    for (const directive of this.footerDirectives()) {
+      map.set(directive.columnKey(), directive);
+    }
+    return map;
+  });
+
+  protected readonly hasFooter = computed(() => this.footerDirectives().length > 0);
+
   /** Map of column key -> projected cell template for O(1) lookup in the view. */
   protected readonly cellTemplates = computed(() => {
     const map = new Map<string, DataTableCell>();
@@ -202,7 +236,8 @@ export class DataTable<T> {
   protected readonly sort = signal<SortState | null>(null);
   protected readonly columnFilters = signal<Readonly<Record<string, string>>>({});
 
-  protected readonly t = (key: TranslationKey | '') => (key === '' ? '' : this.translate.t(key));
+  protected readonly t = (key: TranslationKey | '', params?: Record<string, string | number>) =>
+    key === '' ? '' : this.translate.t(key, params);
 
   /** Debounce timer for search input; see `onSearchInput`. */
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -409,7 +444,7 @@ export class DataTable<T> {
   protected pageSizeSelectOptions(): SelectOption[] {
     return this.pageSizeOptions().map((size) => ({
       value: String(size),
-      label: `${size} per page`,
+      label: this.t('ui.table.perPage', { count: size }),
     }));
   }
 

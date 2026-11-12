@@ -1,5 +1,4 @@
 import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
-import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { EChartsOption } from 'echarts';
@@ -19,15 +18,26 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
 import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
-import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { DataTableFooterCell } from '../../shared/components/data-table/data-table-footer-cell';
+import { ErrorState } from '../../shared/components/error-state/error-state';
+import { Icon } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
+import type { MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
+import {
+  Stat,
+  type StatTone,
+  SummaryBand,
+} from '../../shared/components/summary-band/summary-band';
 
 /** Preset windows, plus the escape hatch to arbitrary dates. */
 type PeriodId = '7' | '30' | '90' | 'custom';
 type SectionTabId = 'all' | 'position' | 'taxes' | 'flow' | 'combat' | 'origin' | 'members';
+type OriginView = 'sources' | 'destinations' | 'types';
 
 const PRESET_DAYS: Readonly<Record<Exclude<PeriodId, 'custom'>, number>> = {
   '7': 7,
@@ -46,26 +56,26 @@ interface ResolvedRange {
   readonly previousTo: Date;
 }
 
-/** One KPI tile: a figure, its context, and where to go to verify it. */
-interface FinanceKpi {
+/** One figure of a summary band, already formatted. */
+interface FinanceStat {
   readonly key: string;
   readonly label: string;
   readonly value: string;
+  /** Context line: the count, the split, or the state in words. */
   readonly detail: string;
-  readonly tone: 'default' | 'success' | 'warning' | 'danger';
-  readonly icon: IconName;
-  readonly badge?: string;
-  readonly delta?: FinanceDelta;
-  readonly link?: readonly [string, Record<string, string>];
-  readonly hint?: string;
+  readonly tone: StatTone;
+  /** Movement against the previous window, arrow included ("▲ +12%"). */
+  readonly delta?: string;
 }
 
-/** Period-over-period movement, already resolved to a direction and a label. */
-interface FinanceDelta {
+/** One row of the ledger breakdown table (sources, destinations or transaction types). */
+interface OriginRow {
+  readonly key: string;
   readonly label: string;
-  readonly direction: 'up' | 'down' | 'flat';
-  /** Whether the movement is a good thing, which is not the same as "up". */
-  readonly good: boolean;
+  readonly amount: number;
+  readonly entries: number;
+  /** Share of the absolute total, 0 to 1. */
+  readonly share: number;
 }
 
 /** Minimal shape of an ECharts tooltip callback payload. */
@@ -76,6 +86,103 @@ interface TooltipParam {
   readonly value?: unknown;
   readonly color?: string;
 }
+
+const ORIGIN_COLUMNS: readonly DataTableColumn<OriginRow>[] = [
+  { key: 'label', label: 'common.label' },
+  {
+    key: 'amount',
+    label: 'common.amount',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.amount,
+    comparator: (a, b) => a.amount - b.amount,
+  },
+  {
+    key: 'entries',
+    label: 'bank.finance.ledgerEntriesShort',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.entries,
+    comparator: (a, b) => a.entries - b.entries,
+  },
+  {
+    key: 'share',
+    label: 'bank.finance.share',
+    align: 'right',
+    accessor: (row) => row.share,
+  },
+];
+
+const MEMBER_COLUMNS: readonly DataTableColumn<ReportMemberRow>[] = [
+  {
+    key: 'member',
+    label: 'bank.finance.member',
+    sortable: true,
+    searchable: true,
+    accessor: (row) => `${row.username} ${row.albion_name ?? ''}`,
+    comparator: (a, b) => a.username.localeCompare(b.username),
+  },
+  {
+    key: 'split_earnings',
+    label: 'bank.finance.splitEarnings',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.split_earnings,
+    comparator: (a, b) => a.split_earnings - b.split_earnings,
+  },
+  {
+    key: 'regear_silver',
+    label: 'bank.finance.regearSilver',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.regear_silver,
+    comparator: (a, b) => a.regear_silver - b.regear_silver,
+  },
+  {
+    key: 'received',
+    label: 'bank.finance.totalReceived',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.split_earnings + row.regear_silver,
+    comparator: (a, b) =>
+      a.split_earnings + a.regear_silver - (b.split_earnings + b.regear_silver),
+  },
+  {
+    key: 'silver_lost',
+    label: 'bank.finance.silverLost',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.silver_lost,
+    comparator: (a, b) => a.silver_lost - b.silver_lost,
+  },
+  {
+    key: 'net',
+    label: 'bank.finance.netCombatBalance',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.split_earnings + row.regear_silver - row.silver_lost,
+    comparator: (a, b) =>
+      a.split_earnings + a.regear_silver - a.silver_lost -
+      (b.split_earnings + b.regear_silver - b.silver_lost),
+  },
+  {
+    key: 'bank_pending',
+    label: 'bank.finance.bankPending',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.bank_pending,
+    comparator: (a, b) => a.bank_pending - b.bank_pending,
+  },
+  {
+    key: 'siphoned',
+    label: 'bank.finance.siphoned',
+    align: 'right',
+    sortable: true,
+    accessor: (row) => row.siphoned,
+    comparator: (a, b) => a.siphoned - b.siphoned,
+  },
+  { key: 'actions', label: 'common.actions' },
+];
 
 function toParamList(input: unknown): TooltipParam[] {
   return Array.isArray(input) ? (input as TooltipParam[]) : [input as TooltipParam];
@@ -104,7 +211,7 @@ function toDateInput(date: Date): string {
  * Finance workspace for officers with bank reporting access.
  *
  * Two data sources meet on this page and they answer different questions, so
- * every block says which one it is reading:
+ * every section says which one it is reading:
  *
  * - `GET /api/bank/admin/summary` is the **whole ledger**, every row ever
  *   written, and ignores the period filter. It answers "what does the bank owe
@@ -114,97 +221,67 @@ function toDateInput(date: Date): string {
  *   guild earned in taxes, how much was spent on repairs, and net payouts), and
  *   is fetched twice — once for the selected window and once for the window
  *   immediately before it, which is what makes period-over-period deltas possible.
+ *
+ * Each section tab shows one summary band and then one chart or one table.
  */
 @Component({
   selector: 'app-admin-finance',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     Chart,
+    DataTable,
+    DataTableCell,
+    DataTableFooterCell,
+    ErrorState,
     Icon,
-    NgTemplateOutlet,
+    Loading,
     PageHeader,
     PageStack,
     RouterLink,
-    TooltipDirective,
-    ViewToggle,
+    Stat,
+    SummaryBand,
+    Tabs,
   ],
   styles: [COMPACT_FEATURE_STYLES, `
     .fin-toolbar {
       display: flex;
       flex-direction: column;
-      gap: 0.625rem;
-      padding: 0.75rem 0.875rem;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md);
-      background: var(--color-surface);
+      gap: 0.75rem;
+      padding: var(--card-padding);
     }
-    .fin-filters {
+    .fin-controls {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 0.75rem;
+      gap: 0.75rem 1.25rem;
     }
-    .fin-filters__group {
+    .fin-control {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.5rem;
+      min-inline-size: 0;
     }
-    .fin-filters__window,
-    .fin-meta {
-      margin: 0;
-      color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
-    }
-    .fin-filters__window strong,
-    .fin-meta strong {
+    .fin-control__label {
       color: var(--color-text-secondary);
+      font-size: var(--ui-text-xs);
       font-weight: 600;
+    }
+    .fin-dates {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 0.5rem;
     }
     .fin-date {
       inline-size: 9.5rem;
     }
 
-    .fin-nav {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.375rem;
-      padding-block-start: 0.625rem;
-      border-block-start: 1px solid var(--color-border);
-    }
-    .fin-nav__btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.3125rem 0.625rem;
-      border: 1px solid transparent;
-      border-radius: var(--radius-badges);
-      background: transparent;
-      color: var(--color-text-secondary);
-      font-size: 0.75rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition:
-        background-color 0.15s ease,
-        color 0.15s ease,
-        border-color 0.15s ease;
-    }
-    .fin-nav__btn:hover {
-      background: var(--color-surface-hover);
-      color: var(--color-text);
-    }
-    .fin-nav__btn--active {
-      border-color: var(--color-border-strong);
-      background: var(--color-surface-2);
-      color: var(--color-text);
-      font-weight: 600;
-    }
-
     .fin-section {
       display: grid;
-      gap: 0.875rem;
+      gap: 0.75rem;
+      min-inline-size: 0;
     }
     .fin-section__head {
       display: flex;
@@ -213,490 +290,48 @@ function toDateInput(date: Date): string {
       justify-content: space-between;
       gap: 0.5rem 0.75rem;
     }
-    .fin-section__title {
+    .fin-section__head .section-title {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.5rem;
-      margin: 0;
-      color: var(--color-text);
-      font-size: 0.9375rem;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-    .fin-section__icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      inline-size: 1.625rem;
-      block-size: 1.625rem;
-      border-radius: var(--radius-badges);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface-2);
-      color: var(--color-primary);
-    }
-    .fin-section__sub {
-      margin: 0.1875rem 0 0;
-      max-inline-size: 65ch;
-      color: var(--color-text-tertiary);
-      font-size: 0.75rem;
-      line-height: 1.45;
     }
     .fin-scope {
-      flex: 0 0 auto;
-      padding: 0.125rem 0.4375rem;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-pills);
-      background: var(--color-surface-2);
-      color: var(--color-text-secondary);
-      font-size: 0.625rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-    .fin-scope--accent {
-      border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
-      background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-      color: var(--color-primary);
-    }
-
-    .fin-kpis {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.5rem), 1fr));
-      gap: 0.75rem;
-    }
-    .fin-kpi {
-      position: relative;
-      display: flex;
-      min-inline-size: 0;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 0.5rem;
-      padding: 0.875rem 1rem;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md);
-      background: var(--color-surface);
-      color: inherit;
-      text-decoration: none;
-      transition:
-        border-color 0.15s ease,
-        background-color 0.15s ease,
-        transform 0.15s ease;
-    }
-    .fin-kpi--success {
-      border-inline-start: 3px solid var(--color-success);
-    }
-    .fin-kpi--warning {
-      border-inline-start: 3px solid var(--color-warning);
-    }
-    .fin-kpi--danger {
-      border-inline-start: 3px solid var(--color-error);
-    }
-    .fin-kpi--default {
-      border-inline-start: 3px solid var(--color-primary);
-    }
-    a.fin-kpi:hover {
-      border-color: var(--color-border-strong);
-      background: var(--color-surface-hover);
-      transform: translateY(-1px);
-    }
-    a.fin-kpi:focus-visible {
-      outline: 2px solid var(--color-primary);
-      outline-offset: 2px;
-    }
-    .fin-kpi__top {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.5rem;
-    }
-    .fin-kpi__title-group {
-      display: flex;
-      align-items: center;
-      gap: 0.4375rem;
-      min-inline-size: 0;
-    }
-    .fin-kpi__icon {
-      display: inline-flex;
-      flex: 0 0 auto;
-      align-items: center;
-      justify-content: center;
-      inline-size: 1.5rem;
-      block-size: 1.5rem;
-      border-radius: var(--radius-tick);
-      background: var(--color-surface-2);
-      color: var(--color-text-secondary);
-    }
-    .fin-kpi__icon--success {
-      background: var(--color-success-container);
-      color: var(--color-success);
-    }
-    .fin-kpi__icon--warning {
-      background: var(--color-warning-container, var(--color-surface-2));
-      color: var(--color-warning);
-    }
-    .fin-kpi__icon--danger {
-      background: var(--color-error-container);
-      color: var(--color-error);
-    }
-    .fin-kpi__label {
-      margin: 0;
-      overflow: hidden;
-      color: var(--color-text-secondary);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-      text-overflow: ellipsis;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-    .fin-kpi__badges {
-      display: flex;
-      flex: 0 0 auto;
-      align-items: center;
-      gap: 0.25rem;
-    }
-    .fin-kpi__pill {
-      padding: 0.0625rem 0.375rem;
-      border-radius: var(--radius-sm);
-      background: var(--color-surface-2);
-      color: var(--color-text-secondary);
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 0.625rem;
-      font-weight: 600;
-    }
-    .fin-kpi__value {
-      margin: 0;
-      color: var(--color-text);
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 1.4375rem;
-      font-weight: 700;
-      letter-spacing: -0.025em;
-      line-height: 1.15;
-    }
-    .fin-kpi__value--success {
-      color: var(--color-success);
-    }
-    .fin-kpi__value--warning {
-      color: var(--color-warning);
-    }
-    .fin-kpi__value--danger {
-      color: var(--color-error);
-    }
-    .fin-kpi__foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-    }
-    .fin-kpi__detail {
-      margin: 0;
-      color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
-      line-height: 1.35;
-    }
-    .fin-kpi__delta {
-      display: inline-flex;
-      flex: 0 0 auto;
-      align-items: center;
-      gap: 0.1875rem;
-      padding: 0.0625rem 0.3125rem;
-      border-radius: var(--radius-sm);
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 0.625rem;
-      font-weight: 700;
-    }
-    .fin-kpi__delta--good {
-      background: var(--color-success-container);
-      color: var(--color-success);
-    }
-    .fin-kpi__delta--bad {
-      background: var(--color-error-container);
-      color: var(--color-error);
-    }
-    .fin-kpi__delta--flat {
-      background: var(--color-surface-2);
-      color: var(--color-text-tertiary);
-    }
-    .fin-kpi__cta {
-      display: inline-flex;
-      flex: 0 0 auto;
-      align-items: center;
-      gap: 0.1875rem;
-      color: var(--color-primary);
-      font-size: 0.625rem;
-      font-weight: 600;
-    }
-
-    /* Pipeline / Waterfall card */
-    .fin-pipeline {
-      display: flex;
-      flex-direction: column;
-      gap: 0.875rem;
-      padding: 1rem;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md);
-      background: var(--color-surface);
-    }
-    .fin-pipeline__steps {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-      gap: 0.5rem;
-      align-items: stretch;
-    }
-    .fin-step {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 0.25rem;
-      padding: 0.625rem 0.75rem;
+      padding: 0.125rem 0.5rem;
       border: 1px solid var(--color-border);
       border-radius: var(--radius-badges);
-      background: var(--color-surface-2);
-    }
-    .fin-step--highlight {
-      border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
-      background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface));
-    }
-    .fin-step--deduct {
-      border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
-      background: color-mix(in srgb, var(--color-warning) 6%, var(--color-surface));
-    }
-    .fin-step--member {
-      border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
-      background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-    }
-    .fin-step__head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.375rem;
-    }
-    .fin-step__op {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.0625rem 0.3125rem;
-      border-radius: var(--radius-chip);
-      background: var(--color-surface);
       color: var(--color-text-secondary);
-      font-family: var(--font-mono);
-      font-size: 0.625rem;
-      font-weight: 700;
+      font-size: var(--ui-text-xs);
+      font-weight: 500;
     }
-    .fin-step__label {
-      color: var(--color-text-secondary);
-      font-size: 0.6875rem;
-      font-weight: 600;
-    }
-    .fin-step__val {
-      margin: 0;
-      color: var(--color-text);
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 1.0625rem;
-      font-weight: 700;
-    }
-    .fin-step__sub {
-      margin: 0;
-      color: var(--color-text-tertiary);
-      font-size: 0.625rem;
-    }
-
-    .fin-bar-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 0.375rem;
-    }
-    .fin-bar-track {
-      display: flex;
-      overflow: hidden;
-      block-size: 0.625rem;
-      border-radius: var(--radius-pills);
-      background: var(--color-surface-2);
-    }
-    .fin-bar-seg {
-      block-size: 100%;
-      transition: inline-size 0.25s ease;
-    }
-    .fin-bar-legend {
+    .fin-jump {
       display: flex;
       flex-wrap: wrap;
-      align-items: center;
-      gap: 0.75rem 1.25rem;
-      font-size: 0.6875rem;
-      color: var(--color-text-secondary);
+      gap: 0.25rem 1rem;
+      font-size: var(--ui-text-sm);
     }
-    .fin-bar-legend__item {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
+    .fin-jump a {
+      color: var(--color-primary);
+      font-weight: 500;
     }
-    .fin-bar-legend__dot {
-      inline-size: 0.5rem;
-      block-size: 0.5rem;
-      border-radius: 50%;
+    .fin-jump a:hover {
+      text-decoration: underline;
     }
 
-    .fin-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.75rem;
-    }
-    .fin-grid--thirds {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
     .fin-card {
       display: flex;
-      min-inline-size: 0;
       flex-direction: column;
-      padding: 0.875rem 1rem;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md);
-      background: var(--color-surface);
-    }
-    .fin-card--full {
-      grid-column: 1 / -1;
+      min-inline-size: 0;
+      padding: var(--card-padding);
     }
     .fin-card__head {
       display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.75rem;
-      margin-block-end: 0.625rem;
-    }
-    .fin-card__title {
-      margin: 0;
-      color: var(--color-text);
-      font-size: 0.8125rem;
-      font-weight: 600;
-    }
-    .fin-card__sub {
-      margin: 0.125rem 0 0;
-      color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
-      line-height: 1.4;
-    }
-    .fin-card__badge {
-      flex: 0 0 auto;
-      padding: 0.125rem 0.4375rem;
-      border-radius: var(--radius-sm);
-      background: var(--color-surface-2);
-      color: var(--color-text-secondary);
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 0.6875rem;
-      font-weight: 600;
-    }
-
-    .fin-table-controls {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-    }
-    .fin-search {
-      inline-size: min(100%, 18rem);
-    }
-
-    .fin-table-wrap {
-      overflow-x: auto;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md);
-      background: var(--color-surface);
-    }
-    .fin-table {
-      inline-size: 100%;
-      min-inline-size: 46rem;
-      border-collapse: collapse;
-      font-size: 0.75rem;
-    }
-    .fin-table th,
-    .fin-table td {
-      padding: 0.5625rem 0.75rem;
-      border-block-end: 1px solid var(--color-border);
-      text-align: end;
-      white-space: nowrap;
-    }
-    .fin-table th:first-child,
-    .fin-table td:first-child {
-      text-align: start;
-    }
-    .fin-table thead th {
-      position: sticky;
-      inset-block-start: 0;
-      background: var(--color-surface-2);
-      color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-    .fin-table tbody td {
-      color: var(--color-text-secondary);
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-    }
-    .fin-table tbody th {
-      color: var(--color-text);
-      font-weight: 500;
-    }
-    .fin-member-cell {
-      display: flex;
       flex-direction: column;
-      gap: 0.0625rem;
-    }
-    .fin-member-cell__sub {
-      color: var(--color-text-tertiary);
-      font-size: 0.625rem;
-      font-weight: 400;
-    }
-    .fin-table tbody tr:last-child td,
-    .fin-table tbody tr:last-child th {
-      border-block-end: 0;
-    }
-    .fin-table tbody tr:hover {
-      background: var(--color-surface-hover);
-    }
-    .fin-table a {
-      color: var(--color-primary);
-      text-decoration: none;
-      font-family: var(--font-sans);
-      font-weight: 500;
-    }
-    .fin-table a:hover {
-      text-decoration: underline;
-    }
-    .fin-val--pos {
-      color: var(--color-success) !important;
-      font-weight: 600;
-    }
-    .fin-val--neg {
-      color: var(--color-error) !important;
-    }
-    .fin-val--warn {
-      color: var(--color-warning) !important;
-    }
-
-    .fin-note {
-      margin: 0;
-      padding: 0.625rem 0.75rem;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-badges);
-      background: var(--color-surface);
-      color: var(--color-text-tertiary);
-      font-size: 0.6875rem;
-      line-height: 1.5;
+      gap: 0.125rem;
+      margin-block-end: 0.5rem;
     }
     .fin-empty {
-      margin: 0;
-      padding: 1.75rem 0;
-      color: var(--color-text-tertiary);
-      font-size: 0.75rem;
+      padding: 1.5rem 0;
       text-align: center;
     }
     .fin-stale {
@@ -704,60 +339,91 @@ function toDateInput(date: Date): string {
       transition: opacity 0.15s ease;
     }
 
-    @media (max-width: 72rem) {
-      .fin-grid,
-      .fin-grid--thirds {
-        grid-template-columns: 1fr;
+    .fin-val--pos {
+      color: var(--color-success);
+      font-weight: 600;
+    }
+    .fin-val--neg {
+      color: var(--color-error);
+    }
+    .fin-val--warn {
+      color: var(--color-warning);
+      font-weight: 600;
+    }
+    .fin-member-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 0.0625rem;
+    }
+    .fin-member-cell__sub {
+      color: var(--color-text-secondary);
+      font-size: var(--ui-text-xs);
+    }
+    .fin-member-link {
+      color: var(--color-primary);
+      font-weight: 500;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .fin-stale {
+        transition: none;
       }
     }
   `],
   template: `
-    <app-page-header [title]="t('bank.finance.heading')" [subtitle]="t('bank.finance.description')">
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="busy()"
-        (click)="loadFinance()"
-      >
-        <app-icon name="refresh" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="!summary()"
-        (click)="exportCsv()"
-      >
+    <app-page-header
+      [title]="t('bank.finance.heading')"
+      [subtitle]="t('bank.finance.description')"
+      [menuItems]="headerMenu()"
+      [menuLabel]="t('ui.menu.moreActions')"
+      (menuSelect)="onHeaderMenu($event)"
+    >
+      <button type="button" class="btn btn--outline btn--sm" [disabled]="!summary()" (click)="exportCsv()">
         <app-icon name="list" size="0.875rem" />
         {{ t('bank.finance.exportCsv') }}
       </button>
     </app-page-header>
 
     <app-page-stack>
-      <!-- Unified control toolbar: period filter, granularity, and section focus tabs -->
-      <div class="fin-toolbar">
-        <div class="fin-filters">
-          <div class="fin-filters__group">
-            <span class="eyebrow">{{ t('bank.finance.periodLabel') }}</span>
-            <app-view-toggle
+      <div class="card fin-toolbar">
+        <div class="fin-controls">
+          <div class="fin-control">
+            <span class="fin-control__label">{{ t('bank.finance.periodLabel') }}</span>
+            <app-tabs
+              variant="segmented"
               [options]="periodOptions()"
               [active]="period()"
+              [ariaLabel]="t('bank.finance.periodLabel')"
               (activeChange)="onPeriodChange($event)"
             />
-            @if (period() === 'custom') {
-              <label class="sr-only" for="fin-from">{{ t('bank.finance.from') }}</label>
+          </div>
+          <div class="fin-control">
+            <span class="fin-control__label">{{ t('bank.finance.granularityLabel') }}</span>
+            <app-tabs
+              variant="segmented"
+              [options]="granularityOptions()"
+              [active]="granularity()"
+              [ariaLabel]="t('bank.finance.granularityLabel')"
+              (activeChange)="onGranularityChange($event)"
+            />
+          </div>
+        </div>
+
+        @if (period() === 'custom') {
+          <div class="fin-dates">
+            <label class="filter-field">
+              <span class="filter-field__label">{{ t('bank.finance.from') }}</span>
               <input
-                id="fin-from"
                 class="input input--sm fin-date"
                 type="date"
                 [value]="customFrom()"
                 [max]="customTo()"
                 (change)="onCustomFrom($event)"
               />
-              <span aria-hidden="true" style="color: var(--color-text-tertiary)">→</span>
-              <label class="sr-only" for="fin-to">{{ t('bank.finance.to') }}</label>
+            </label>
+            <label class="filter-field">
+              <span class="filter-field__label">{{ t('bank.finance.to') }}</span>
               <input
-                id="fin-to"
                 class="input input--sm fin-date"
                 type="date"
                 [value]="customTo()"
@@ -765,678 +431,366 @@ function toDateInput(date: Date): string {
                 [max]="today()"
                 (change)="onCustomTo($event)"
               />
-            }
+            </label>
           </div>
-          <div class="fin-filters__group">
-            <span class="eyebrow">{{ t('bank.finance.granularityLabel') }}</span>
-            <app-view-toggle
-              [options]="granularityOptions()"
-              [active]="granularity()"
-              (activeChange)="onGranularityChange($event)"
-            />
-          </div>
-          <p class="fin-filters__window" aria-live="polite">
-            @if (busy()) {
-              {{ t('bank.finance.reloading') }}
-            } @else if (report(); as r) {
-              <strong>{{ formatDate(r.from) }} → {{ formatDate(r.to) }}</strong>
-              · {{ trackedWindowLabel() }}
-            }
-          </p>
-        </div>
+        }
 
-        <nav class="fin-nav" [attr.aria-label]="t('common.overview')">
-          @for (tab of sectionTabs(); track tab.id) {
-            <button
-              type="button"
-              class="fin-nav__btn"
-              [class.fin-nav__btn--active]="activeSection() === tab.id"
-              (click)="activeSection.set(tab.id)"
-            >
-              <app-icon [name]="tab.icon" size="0.8125rem" />
-              {{ tab.label }}
-            </button>
+        <p class="hint" aria-live="polite">
+          @if (busy()) {
+            {{ t('bank.finance.reloading') }}
+          } @else if (report(); as r) {
+            <strong>{{ formatDate(r.from) }} → {{ formatDate(r.to) }}</strong>
+            · {{ trackedWindowLabel() }}
+            · {{ t('bank.finance.vsPrevious', { days: rangeDays() }) }}
           }
-        </nav>
+        </p>
       </div>
 
+      <app-tabs
+        [options]="sectionTabs()"
+        [active]="activeSection()"
+        [ariaLabel]="t('common.overview')"
+        (activeChange)="onSectionChange($event)"
+      />
+
       @if (summary(); as bank) {
-        <!-- ============ 1. Bank position — whole ledger, period-independent ============ -->
-        @if (activeSection() === 'all' || activeSection() === 'position') {
-          <section class="fin-section" [attr.aria-label]="t('bank.finance.positionTitle')">
+        <!-- Bank position: whole ledger, independent of the period -->
+        @if (show('position')) {
+          <section class="fin-section" aria-labelledby="fin-position-title">
             <header class="fin-section__head">
               <div>
-                <h2 class="fin-section__title">
-                  <span class="fin-section__icon">
-                    <app-icon name="bank" size="0.9375rem" />
-                  </span>
+                <h2 class="section-title" id="fin-position-title">
                   {{ t('bank.finance.positionTitle') }}
                   <span class="fin-scope">{{ t('bank.finance.scopeAllTime') }}</span>
                 </h2>
-                <p class="fin-section__sub">{{ t('bank.finance.positionDescription') }}</p>
+                <p class="hint">{{ t('bank.finance.positionDescription') }}</p>
               </div>
-              <p class="fin-meta">
-                {{ t('bank.finance.ledgerVolume') }}
-                <strong class="mono">{{ formatAmount(bank.ledger_volume) }}</strong>
-                · {{ t('bank.finance.ledgerEntries', { count: bank.transaction_count }) }}
-              </p>
             </header>
 
-            <div class="fin-kpis">
-              @for (kpi of positionKpis(); track kpi.key) {
-                @if (kpi.link; as link) {
-                  <a
-                    class="fin-kpi"
-                    [class]="'fin-kpi fin-kpi--' + kpi.tone"
-                    [routerLink]="link[0]"
-                    [queryParams]="link[1]"
-                  >
-                    <ng-container
-                      *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: true }"
-                    />
-                  </a>
-                } @else {
-                  <div class="fin-kpi" [class]="'fin-kpi fin-kpi--' + kpi.tone">
-                    <ng-container
-                      *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
-                    />
-                  </div>
-                }
+            <app-summary-band [ariaLabel]="t('bank.finance.positionTitle')">
+              @for (stat of positionStats(); track stat.key) {
+                <app-stat
+                  [label]="stat.label"
+                  [value]="stat.value"
+                  [hint]="stat.detail"
+                  [tone]="stat.tone"
+                />
               }
-            </div>
+            </app-summary-band>
+
+            <nav class="fin-jump" [attr.aria-label]="t('bank.finance.positionTitle')">
+              <a [routerLink]="'/admin/transactions'" [queryParams]="{ status: 'pending' }">{{ t('bank.finance.openLiability') }}</a>
+              <a [routerLink]="'/admin/transactions'" [queryParams]="{ status: 'requested' }">{{ t('bank.finance.awaitingApproval') }}</a>
+              <a [routerLink]="'/admin/transactions'" [queryParams]="{ status: 'withdrawn' }">{{ t('bank.finance.paidOut') }}</a>
+              <a [routerLink]="'/admin/transactions'" [queryParams]="{ status: 'donated' }">{{ t('bank.finance.donatedBack') }}</a>
+            </nav>
           </section>
         }
 
-        @if (report(); as guildReport) {
-          <!-- ============ 2. Guild Taxes, Repairs & Split Economics ============ -->
-          @if (activeSection() === 'all' || activeSection() === 'taxes') {
-            <section class="fin-section" [attr.aria-label]="t('bank.finance.taxesTitle')">
+        @if (report()) {
+          <!-- Taxes, repairs and split economics in the selected window -->
+          @if (show('taxes')) {
+            <section class="fin-section" aria-labelledby="fin-taxes-title">
               <header class="fin-section__head">
                 <div>
-                  <h2 class="fin-section__title">
-                    <span class="fin-section__icon">
-                      <app-icon name="coins" size="0.9375rem" />
-                    </span>
+                  <h2 class="section-title" id="fin-taxes-title">
                     {{ t('bank.finance.taxesTitle') }}
-                    <span class="fin-scope fin-scope--accent">{{ t('bank.finance.scopeWindow') }}</span>
+                    <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
                   </h2>
-                  <p class="fin-section__sub">{{ t('bank.finance.taxesDescription') }}</p>
+                  <p class="hint">{{ t('bank.finance.taxesDescription') }}</p>
                 </div>
-                <p class="fin-meta">
-                  <strong>{{
-                    t('bank.finance.splitsCountBadge', {
-                      completed: guildReport.economy.split_completed_count ?? 0,
-                      pending: guildReport.economy.split_pending_count ?? 0,
-                    })
-                  }}</strong>
-                  @if ((guildReport.economy.split_completed_count ?? 0) > 0) {
-                    · {{ t('bank.finance.avgSplitValue') }}:
-                    <strong class="mono">{{ formatCompact(avgCompletedSplitValue()) }}</strong>
-                  }
-                </p>
               </header>
 
-              <div class="fin-kpis">
-                @for (kpi of taxAndRepairKpis(); track kpi.key) {
-                  @if (kpi.link; as link) {
-                    <a
-                      class="fin-kpi"
-                      [class]="'fin-kpi fin-kpi--' + kpi.tone"
-                      [routerLink]="link[0]"
-                      [queryParams]="link[1]"
-                    >
-                      <ng-container
-                        *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: true }"
-                      />
-                    </a>
-                  } @else {
-                    <div class="fin-kpi" [class]="'fin-kpi fin-kpi--' + kpi.tone">
-                      <ng-container
-                        *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
-                      />
-                    </div>
-                  }
+              <app-summary-band [ariaLabel]="t('bank.finance.taxesTitle')">
+                @for (stat of taxStats(); track stat.key) {
+                  <app-stat
+                    [label]="stat.label"
+                    [value]="stat.value"
+                    [hint]="stat.detail"
+                    [tone]="stat.tone"
+                    [delta]="stat.delta ?? ''"
+                  />
                 }
-              </div>
+              </app-summary-band>
 
-              <!-- Visual Loot Split Value Pipeline (Gross + Bags - Repairs = Pool -> Guild Tax + Member Net) -->
-              <article class="fin-pipeline">
-                <header class="fin-card__head" style="margin-block-end: 0">
-                  <div>
-                    <h3 class="fin-card__title">{{ t('bank.finance.pipelineTitle') }}</h3>
-                    <p class="fin-card__sub">{{ t('bank.finance.pipelineSubtitle') }}</p>
-                  </div>
-                  <span class="fin-card__badge">
-                    {{ t('bank.finance.repairBurden') }}: {{ repairToGrossPct() }}% ·
-                    Fee: {{ guildReport.economy.split_avg_fee_pct ?? 0 }}%
-                  </span>
+              <nav class="fin-jump" [attr.aria-label]="t('bank.finance.taxesTitle')">
+                <a [routerLink]="'/splits'">{{ t('bank.finance.viewSplits') }}</a>
+              </nav>
+
+              <article class="card fin-card">
+                <header class="fin-card__head">
+                  <h3 class="section-title section-title--sm">{{ t('bank.finance.splitEconomicsChartTitle') }}</h3>
+                  <p class="hint">{{ t('bank.finance.splitEconomicsChartSub') }}</p>
                 </header>
-
-                <div class="fin-pipeline__steps">
-                  <div class="fin-step">
-                    <div class="fin-step__head">
-                      <span class="fin-step__label">{{ t('bank.finance.grossLoot') }}</span>
-                      <span class="fin-step__op">BASE</span>
-                    </div>
-                    <p class="fin-step__val">{{ formatAmount(guildReport.economy.split_gross_loot ?? 0) }}</p>
-                    <p class="fin-step__sub">
-                      {{
-                        t('bank.finance.grossLootDetail', {
-                          count: guildReport.economy.split_completed_count ?? 0,
-                        })
-                      }}
-                    </p>
-                  </div>
-
-                  <div class="fin-step">
-                    <div class="fin-step__head">
-                      <span class="fin-step__label">{{ t('bank.finance.bagsSilver') }}</span>
-                      <span class="fin-step__op">+</span>
-                    </div>
-                    <p class="fin-step__val">+{{ formatAmount(guildReport.economy.split_bags_total ?? 0) }}</p>
-                    <p class="fin-step__sub">{{ t('bank.finance.bagsSilverDetail') }}</p>
-                  </div>
-
-                  <div class="fin-step fin-step--deduct">
-                    <div class="fin-step__head">
-                      <span class="fin-step__label">{{ t('bank.finance.repairSpent') }}</span>
-                      <span class="fin-step__op">−</span>
-                    </div>
-                    <p class="fin-step__val" style="color: var(--color-warning)">
-                      −{{ formatAmount(guildReport.economy.split_repair_total ?? 0) }}
-                    </p>
-                    <p class="fin-step__sub">{{ repairToGrossPct() }}% {{ t('bank.finance.grossLoot') }}</p>
-                  </div>
-
-                  <div class="fin-step">
-                    <div class="fin-step__head">
-                      <span class="fin-step__label">{{ t('bank.finance.preTaxPool') }}</span>
-                      <span class="fin-step__op">=</span>
-                    </div>
-                    <p class="fin-step__val">{{ formatAmount(guildReport.economy.split_completed) }}</p>
-                    <p class="fin-step__sub">{{ t('bank.finance.preTaxPoolDetail') }}</p>
-                  </div>
-
-                  <div class="fin-step fin-step--highlight">
-                    <div class="fin-step__head">
-                      <span class="fin-step__label">{{ t('bank.finance.guildTaxEarned') }}</span>
-                      <span class="fin-step__op">{{ guildReport.economy.split_avg_fee_pct ?? 0 }}%</span>
-                    </div>
-                    <p class="fin-step__val" style="color: var(--color-success)">
-                      +{{ formatAmount(guildReport.economy.split_tax_total ?? 0) }}
-                    </p>
-                    <p class="fin-step__sub">
-                      {{ t('bank.finance.taxRegearCoverage') }}: {{ taxToRegearCoveragePct() }}%
-                    </p>
-                  </div>
-
-                  <div class="fin-step fin-step--member">
-                    <div class="fin-step__head">
-                      <span class="fin-step__label">{{ t('bank.finance.memberNetDistributed') }}</span>
-                      <span class="fin-step__op">{{ memberShareOfPoolPct() }}%</span>
-                    </div>
-                    <p class="fin-step__val" style="color: var(--color-primary)">
-                      {{ formatAmount(guildReport.economy.split_net_distributed ?? 0) }}
-                    </p>
-                    <p class="fin-step__sub">
-                      {{ t('bank.finance.memberNetDistributedDetail', { pct: memberShareOfPoolPct() }) }}
-                    </p>
-                  </div>
-                </div>
-
-                @if (totalGrossPlusBags() > 0) {
-                  <div class="fin-bar-stack">
-                    <div class="fin-bar-track" role="img" [attr.aria-label]="t('bank.finance.pipelineTitle')">
-                      <div
-                        class="fin-bar-seg"
-                        [style.inline-size.%]="pipelineSharePct(guildReport.economy.split_repair_total ?? 0)"
-                        style="background: var(--color-warning)"
-                      ></div>
-                      <div
-                        class="fin-bar-seg"
-                        [style.inline-size.%]="pipelineSharePct(guildReport.economy.split_tax_total ?? 0)"
-                        style="background: var(--color-success)"
-                      ></div>
-                      <div
-                        class="fin-bar-seg"
-                        [style.inline-size.%]="pipelineSharePct(guildReport.economy.split_net_distributed ?? 0)"
-                        style="background: var(--color-primary)"
-                      ></div>
-                    </div>
-                    <div class="fin-bar-legend">
-                      <span class="fin-bar-legend__item">
-                        <span class="fin-bar-legend__dot" style="background: var(--color-warning)"></span>
-                        {{ t('bank.finance.repairSpent') }}:
-                        <strong class="mono">{{ formatCompact(guildReport.economy.split_repair_total ?? 0) }}</strong>
-                        ({{ pipelineSharePct(guildReport.economy.split_repair_total ?? 0) }}%)
-                      </span>
-                      <span class="fin-bar-legend__item">
-                        <span class="fin-bar-legend__dot" style="background: var(--color-success)"></span>
-                        {{ t('bank.finance.guildTaxEarned') }}:
-                        <strong class="mono">{{ formatCompact(guildReport.economy.split_tax_total ?? 0) }}</strong>
-                        ({{ pipelineSharePct(guildReport.economy.split_tax_total ?? 0) }}%)
-                      </span>
-                      <span class="fin-bar-legend__item">
-                        <span class="fin-bar-legend__dot" style="background: var(--color-primary)"></span>
-                        {{ t('bank.finance.memberNetDistributed') }}:
-                        <strong class="mono">{{ formatCompact(guildReport.economy.split_net_distributed ?? 0) }}</strong>
-                        ({{ pipelineSharePct(guildReport.economy.split_net_distributed ?? 0) }}%)
-                      </span>
-                    </div>
-                  </div>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="splitEconomicsOption()"
+                    height="17rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.splitEconomicsChartTitle')"
+                    [tableHead]="splitEconomicsTableHead()"
+                    [tableRows]="splitEconomicsTableRows()"
+                  />
+                } @else {
+                  <p class="hint fin-empty">{{ t('bank.finance.noChartData') }}</p>
                 }
               </article>
-
-              <div class="fin-grid">
-                <article class="fin-card">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ t('bank.finance.splitEconomicsChartTitle') }}</h3>
-                      <p class="fin-card__sub">{{ t('bank.finance.splitEconomicsChartSub') }}</p>
-                    </div>
-                    <span class="fin-card__badge">
-                      {{ formatCompact(guildReport.economy.split_tax_total ?? 0) }} Tax
-                    </span>
-                  </header>
-                  @if (hasTrends()) {
-                    <app-chart
-                      [option]="splitEconomicsOption()"
-                      height="17rem"
-                      [stale]="busy()"
-                      [label]="t('bank.finance.splitEconomicsChartTitle')"
-                      [tableHead]="splitEconomicsTableHead()"
-                      [tableRows]="splitEconomicsTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
-
-                <article class="fin-card">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ t('bank.finance.taxVsRegearChartTitle') }}</h3>
-                      <p class="fin-card__sub">{{ t('bank.finance.taxVsRegearChartSub') }}</p>
-                    </div>
-                    <span class="fin-card__badge">{{ taxToRegearCoveragePct() }}%</span>
-                  </header>
-                  @if (hasTrends()) {
-                    <app-chart
-                      [option]="taxVsRegearOption()"
-                      height="17rem"
-                      [stale]="busy()"
-                      [label]="t('bank.finance.taxVsRegearChartTitle')"
-                      [tableHead]="taxVsRegearTableHead()"
-                      [tableRows]="taxVsRegearTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
-              </div>
             </section>
           }
 
-          <!-- ============ 3. Silver flow in the selected window ============ -->
-          @if (activeSection() === 'all' || activeSection() === 'flow') {
-            <section class="fin-section" [attr.aria-label]="t('bank.finance.flowTitle')">
+          <!-- Silver flow in the selected window -->
+          @if (show('flow')) {
+            <section class="fin-section" aria-labelledby="fin-flow-title">
               <header class="fin-section__head">
                 <div>
-                  <h2 class="fin-section__title">
-                    <span class="fin-section__icon">
-                      <app-icon name="activity" size="0.9375rem" />
-                    </span>
+                  <h2 class="section-title" id="fin-flow-title">
                     {{ t('bank.finance.flowTitle') }}
                     <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
                   </h2>
-                  <p class="fin-section__sub">{{ t('bank.finance.flowDescription') }}</p>
+                  <p class="hint">{{ t('bank.finance.flowDescription') }}</p>
                 </div>
               </header>
 
-              <div class="fin-kpis">
-                @for (kpi of flowKpis(); track kpi.key) {
-                  @if (kpi.link; as link) {
-                    <a
-                      class="fin-kpi"
-                      [class]="'fin-kpi fin-kpi--' + kpi.tone"
-                      [routerLink]="link[0]"
-                      [queryParams]="link[1]"
-                    >
-                      <ng-container
-                        *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: true }"
-                      />
-                    </a>
-                  } @else {
-                    <div class="fin-kpi" [class]="'fin-kpi fin-kpi--' + kpi.tone">
-                      <ng-container
-                        *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
-                      />
-                    </div>
-                  }
+              <app-summary-band [ariaLabel]="t('bank.finance.flowTitle')">
+                @for (stat of flowStats(); track stat.key) {
+                  <app-stat
+                    [label]="stat.label"
+                    [value]="stat.value"
+                    [hint]="stat.detail"
+                    [tone]="stat.tone"
+                    [delta]="stat.delta ?? ''"
+                  />
                 }
-              </div>
+              </app-summary-band>
 
-              <div class="fin-grid">
-                <article class="fin-card fin-card--full">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ flowCardTitle() }}</h3>
-                      <p class="fin-card__sub">{{ flowCardDescription() }}</p>
-                    </div>
-                    <span class="fin-card__badge">
-                      {{ avgLootBadgeLabel() }} {{ formatCompact(avgLoot()) }}
-                    </span>
-                  </header>
-                  @if (hasTrends()) {
-                    <app-chart
-                      [option]="flowOption()"
-                      height="19rem"
-                      [stale]="busy()"
-                      [label]="flowCardTitle()"
-                      [tableHead]="flowTableHead()"
-                      [tableRows]="flowTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
+              <nav class="fin-jump" [attr.aria-label]="t('bank.finance.flowTitle')">
+                <a [routerLink]="'/admin/transactions'" [queryParams]="{ status: 'pending' }">{{ t('bank.finance.viewTransactions') }}</a>
+              </nav>
 
-                <article class="fin-card">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ netCardTitle() }}</h3>
-                      <p class="fin-card__sub">{{ netCardDescription() }}</p>
-                    </div>
-                    <span class="fin-card__badge">
-                      {{ avgNetBadgeLabel() }} {{ formatSigned(avgNet()) }}
-                    </span>
-                  </header>
-                  @if (hasTrends()) {
-                    <app-chart
-                      [option]="netOption()"
-                      height="16rem"
-                      [stale]="busy()"
-                      [label]="netCardTitle()"
-                      [tableHead]="netTableHead()"
-                      [tableRows]="netTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
-
-                <article class="fin-card">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ t('bank.finance.outflowAllocation') }}</h3>
-                      <p class="fin-card__sub">
-                        {{ t('bank.finance.outflowAllocationDescription') }}
-                      </p>
-                    </div>
-                    <span class="fin-card__badge">{{
-                      formatCompact(guildReport.economy.outflow_total)
-                    }}</span>
-                  </header>
-                  @if (guildReport.economy.outflow_total > 0) {
-                    <app-chart
-                      [option]="outflowOption()"
-                      height="16rem"
-                      [stale]="busy()"
-                      [label]="t('bank.finance.outflowAllocation')"
-                      [tableHead]="shareTableHead()"
-                      [tableRows]="outflowTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
-              </div>
+              <article class="card fin-card">
+                <header class="fin-card__head">
+                  <h3 class="section-title section-title--sm">{{ flowCardTitle() }}</h3>
+                  <p class="hint">{{ flowCardDescription() }}</p>
+                </header>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="flowOption()"
+                    height="19rem"
+                    [stale]="busy()"
+                    [label]="flowCardTitle()"
+                    [tableHead]="flowTableHead()"
+                    [tableRows]="flowTableRows()"
+                  />
+                } @else {
+                  <p class="hint fin-empty">{{ t('bank.finance.noChartData') }}</p>
+                }
+              </article>
             </section>
           }
 
-          <!-- ============ 4. Losses and recovery ============ -->
-          @if (activeSection() === 'all' || activeSection() === 'combat') {
-            <section class="fin-section" [attr.aria-label]="t('bank.finance.combatTitle')">
+          <!-- Losses and recovery -->
+          @if (show('combat')) {
+            <section class="fin-section" aria-labelledby="fin-combat-title">
               <header class="fin-section__head">
                 <div>
-                  <h2 class="fin-section__title">
-                    <span class="fin-section__icon">
-                      <app-icon name="shield" size="0.9375rem" />
-                    </span>
+                  <h2 class="section-title" id="fin-combat-title">
                     {{ t('bank.finance.combatTitle') }}
                     <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
                   </h2>
-                  <p class="fin-section__sub">{{ t('bank.finance.combatDescription') }}</p>
+                  <p class="hint">{{ t('bank.finance.combatDescription') }}</p>
                 </div>
               </header>
 
-              <div class="fin-kpis">
-                @for (kpi of combatKpis(); track kpi.key) {
-                  <div class="fin-kpi" [class]="'fin-kpi fin-kpi--' + kpi.tone">
-                    <ng-container
-                      *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
-                    />
-                  </div>
+              <app-summary-band [ariaLabel]="t('bank.finance.combatTitle')">
+                @for (stat of combatStats(); track stat.key) {
+                  <app-stat
+                    [label]="stat.label"
+                    [value]="stat.value"
+                    [hint]="stat.detail"
+                    [tone]="stat.tone"
+                    [delta]="stat.delta ?? ''"
+                  />
                 }
-              </div>
+              </app-summary-band>
 
-              <div class="fin-grid">
-                <article class="fin-card">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ t('bank.finance.lossVsRegear') }}</h3>
-                      <p class="fin-card__sub">{{ t('bank.finance.coverageDetail') }}</p>
-                    </div>
-                    <span class="fin-card__badge">{{ regearCoverageRatio() }}%</span>
-                  </header>
-                  @if (hasTrends()) {
-                    <app-chart
-                      [option]="lossRegearOption()"
-                      height="17rem"
-                      [stale]="busy()"
-                      [label]="t('bank.finance.lossVsRegear')"
-                      [tableHead]="lossTableHead()"
-                      [tableRows]="lossTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
-
-                <article class="fin-card">
-                  <header class="fin-card__head">
-                    <div>
-                      <h3 class="fin-card__title">{{ activityCardTitle() }}</h3>
-                      <p class="fin-card__sub">{{ activityCardDescription() }}</p>
-                    </div>
-                  </header>
-                  @if (hasTrends()) {
-                    <app-chart
-                      [option]="activityOption()"
-                      height="17rem"
-                      [stale]="busy()"
-                      [label]="activityCardTitle()"
-                      [tableHead]="activityTableHead()"
-                      [tableRows]="activityTableRows()"
-                    />
-                  } @else {
-                    <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                  }
-                </article>
-              </div>
+              <article class="card fin-card">
+                <header class="fin-card__head">
+                  <h3 class="section-title section-title--sm">{{ t('bank.finance.lossVsRegear') }}</h3>
+                  <p class="hint">{{ t('bank.finance.coverageDetail') }}</p>
+                </header>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="lossRegearOption()"
+                    height="17rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.lossVsRegear')"
+                    [tableHead]="lossTableHead()"
+                    [tableRows]="lossTableRows()"
+                  />
+                } @else {
+                  <p class="hint fin-empty">{{ t('bank.finance.noChartData') }}</p>
+                }
+              </article>
             </section>
           }
         } @else {
-          <p class="fin-note">{{ t('bank.finance.reportPermission') }}</p>
+          <p class="hint">{{ t('bank.finance.reportPermission') }}</p>
         }
 
-        <!-- ============ 5. Where money comes from and goes — whole ledger ============ -->
-        @if (activeSection() === 'all' || activeSection() === 'origin') {
-          <section class="fin-section" [attr.aria-label]="t('bank.finance.originTitle')">
+        <!-- Ledger breakdown: whole ledger, one table with a view switch -->
+        @if (show('origin')) {
+          <section class="fin-section" aria-labelledby="fin-origin-title">
             <header class="fin-section__head">
               <div>
-                <h2 class="fin-section__title">
-                  <span class="fin-section__icon">
-                    <app-icon name="scan" size="0.9375rem" />
-                  </span>
+                <h2 class="section-title" id="fin-origin-title">
                   {{ t('bank.finance.originTitle') }}
                   <span class="fin-scope">{{ t('bank.finance.scopeAllTime') }}</span>
                 </h2>
-                <p class="fin-section__sub">{{ t('bank.finance.originDescription') }}</p>
+                <p class="hint">{{ t('bank.finance.originDescription') }}</p>
               </div>
             </header>
 
-            <div class="fin-grid fin-grid--thirds">
-              <article class="fin-card">
-                <header class="fin-card__head">
-                  <h3 class="fin-card__title">{{ t('bank.finance.topSourcesTitle') }}</h3>
-                </header>
-                @if (bank.sources.length > 0) {
-                  <app-chart
-                    [option]="sourcesOption()"
-                    height="16rem"
-                    [stale]="busy()"
-                    [label]="t('bank.finance.topSourcesTitle')"
-                    [tableHead]="breakdownTableHead()"
-                    [tableRows]="sourcesTableRows()"
-                  />
-                } @else {
-                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </article>
+            <app-tabs
+              variant="segmented"
+              [options]="originOptions()"
+              [active]="originView()"
+              [ariaLabel]="t('bank.finance.breakdownLabel')"
+              (activeChange)="onOriginChange($event)"
+            />
 
-              <article class="fin-card">
-                <header class="fin-card__head">
-                  <h3 class="fin-card__title">{{ t('bank.finance.topDestinationsTitle') }}</h3>
-                </header>
-                @if (bank.destinations.length > 0) {
-                  <app-chart
-                    [option]="destinationsOption()"
-                    height="16rem"
-                    [stale]="busy()"
-                    [label]="t('bank.finance.topDestinationsTitle')"
-                    [tableHead]="breakdownTableHead()"
-                    [tableRows]="destinationsTableRows()"
-                  />
-                } @else {
-                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </article>
-
-              <article class="fin-card">
-                <header class="fin-card__head">
-                  <h3 class="fin-card__title">{{ t('bank.finance.ledgerMix') }}</h3>
-                  <span class="fin-card__badge">{{ t('bank.finance.byTransactionType') }}</span>
-                </header>
-                @if (bank.transaction_types.length > 0) {
-                  <app-chart
-                    [option]="typesOption()"
-                    height="16rem"
-                    [stale]="busy()"
-                    [label]="t('bank.finance.ledgerMix')"
-                    [tableHead]="breakdownTableHead()"
-                    [tableRows]="typesTableRows()"
-                  />
-                } @else {
-                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </article>
-            </div>
+            <app-data-table
+              [columns]="originColumns"
+              [rows]="originRows()"
+              [loading]="loading()"
+              [trackBy]="trackOrigin"
+              [syncUrl]="false"
+              [hideSearch]="true"
+              [hidePageSize]="true"
+              [pageSize]="25"
+              [ariaLabel]="t('bank.finance.originTitle')"
+              emptyIcon="scan"
+            >
+              <ng-template dataTableCell="label" let-row>{{ row.label }}</ng-template>
+              <ng-template dataTableCell="amount" let-row>
+                <span class="mono">{{ formatAmount(row.amount) }}</span>
+              </ng-template>
+              <ng-template dataTableCell="entries" let-row>
+                <span class="mono">{{ formatAmount(row.entries) }}</span>
+              </ng-template>
+              <ng-template dataTableCell="share" let-row>
+                <span class="mono">{{ formatPercent(row.share) }}</span>
+              </ng-template>
+              <ng-template dataTableFooterCell="amount">
+                <span class="mono">{{ formatAmount(originTotals().amount) }}</span>
+              </ng-template>
+              <ng-template dataTableFooterCell="entries">
+                <span class="mono">{{ formatAmount(originTotals().entries) }}</span>
+              </ng-template>
+            </app-data-table>
           </section>
         }
 
-        <!-- ============ 6. Per-member ledger — every figure traceable to a member ============ -->
-        @if ((activeSection() === 'all' || activeSection() === 'members') && allMemberRows().length > 0) {
-          <section class="fin-section" [attr.aria-label]="t('bank.finance.memberLedgerTitle')">
+        <!-- Per-member ledger: every figure traceable to a member -->
+        @if (report() && show('members')) {
+          <section class="fin-section" aria-labelledby="fin-members-title">
             <header class="fin-section__head">
               <div>
-                <h2 class="fin-section__title">
-                  <span class="fin-section__icon">
-                    <app-icon name="users" size="0.9375rem" />
-                  </span>
+                <h2 class="section-title" id="fin-members-title">
                   {{ t('bank.finance.memberLedgerTitle') }}
                   <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
                 </h2>
-                <p class="fin-section__sub">{{ t('bank.finance.memberLedgerDescription') }}</p>
-              </div>
-              <div class="fin-table-controls">
-                <input
-                  type="search"
-                  class="input input--sm fin-search"
-                  [placeholder]="t('bank.finance.searchMemberPlaceholder')"
-                  [value]="memberSearch()"
-                  (input)="onMemberSearch($event)"
-                />
-                <p class="fin-meta">
-                  {{ t('bank.finance.membersShown', { count: memberRows().length }) }}
-                </p>
+                <p class="hint">{{ t('bank.finance.memberLedgerDescription') }}</p>
               </div>
             </header>
 
-            <div class="fin-table-wrap" [class.fin-stale]="busy()">
-              <table class="fin-table">
-                <caption class="sr-only">
-                  {{ t('bank.finance.memberLedgerTitle') }}
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{{ t('bank.finance.member') }}</th>
-                    <th scope="col">{{ t('bank.finance.splitEarnings') }}</th>
-                    <th scope="col">{{ t('bank.finance.regearSilver') }}</th>
-                    <th scope="col">{{ t('bank.finance.totalReceived') }}</th>
-                    <th scope="col">{{ t('bank.finance.silverLost') }}</th>
-                    <th scope="col">{{ t('bank.finance.netCombatBalance') }}</th>
-                    <th scope="col">{{ t('bank.finance.bankPending') }}</th>
-                    <th scope="col">{{ t('bank.finance.siphoned') }}</th>
-                    <th scope="col">{{ t('common.actions') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of memberRows(); track row.user_id) {
-                    <tr>
-                      <th scope="row">
-                        <div class="fin-member-cell">
-                          <span>{{ row.username }}</span>
-                          @if (row.albion_name && row.albion_name !== row.username) {
-                            <span class="fin-member-cell__sub">{{ row.albion_name }}</span>
-                          }
-                        </div>
-                      </th>
-                      <td>{{ formatAmount(row.split_earnings) }}</td>
-                      <td>{{ formatAmount(row.regear_silver) }}</td>
-                      <td class="fin-val--pos">
-                        {{ formatAmount(row.split_earnings + row.regear_silver) }}
-                      </td>
-                      <td>{{ formatAmount(row.silver_lost) }}</td>
-                      <td
-                        [class.fin-val--pos]="row.split_earnings + row.regear_silver - row.silver_lost >= 0"
-                        [class.fin-val--neg]="row.split_earnings + row.regear_silver - row.silver_lost < 0"
-                      >
-                        {{ formatSigned(row.split_earnings + row.regear_silver - row.silver_lost) }}
-                      </td>
-                      <td [class.fin-val--warn]="row.bank_pending > 0">
-                        {{ formatAmount(row.bank_pending) }}
-                      </td>
-                      <td>{{ formatAmount(row.siphoned) }}</td>
-                      <td>
-                        <a
-                          [routerLink]="'/admin/transactions'"
-                          [queryParams]="{ search: row.username }"
-                          [appTooltip]="t('bank.finance.viewTransactions')"
-                        >
-                          {{ t('bank.finance.viewTransactions') }}
-                        </a>
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
+            <div [class.fin-stale]="busy()">
+              <app-data-table
+                [columns]="memberColumns"
+                [rows]="allMemberRows()"
+                [loading]="loading()"
+                [trackBy]="trackMember"
+                [syncUrl]="false"
+                [pageSize]="25"
+                [ariaLabel]="t('bank.finance.memberLedgerTitle')"
+                [searchPlaceholder]="t('bank.finance.searchMemberPlaceholder')"
+                [footerLabel]="t('bank.finance.allMembersTotal')"
+                emptyIcon="users"
+              >
+                <ng-template dataTableCell="member" let-row>
+                  <div class="fin-member-cell">
+                    <span class="font-medium">{{ row.username }}</span>
+                    @if (row.albion_name && row.albion_name !== row.username) {
+                      <span class="fin-member-cell__sub">{{ row.albion_name }}</span>
+                    }
+                  </div>
+                </ng-template>
+                <ng-template dataTableCell="split_earnings" let-row>
+                  <span class="mono">{{ formatAmount(row.split_earnings) }}</span>
+                </ng-template>
+                <ng-template dataTableCell="regear_silver" let-row>
+                  <span class="mono">{{ formatAmount(row.regear_silver) }}</span>
+                </ng-template>
+                <ng-template dataTableCell="received" let-row>
+                  <span class="mono fin-val--pos">{{ formatAmount(receivedOf(row)) }}</span>
+                </ng-template>
+                <ng-template dataTableCell="silver_lost" let-row>
+                  <span class="mono">{{ formatAmount(row.silver_lost) }}</span>
+                </ng-template>
+                <ng-template dataTableCell="net" let-row>
+                  <span
+                    class="mono"
+                    [class.fin-val--pos]="netOf(row) >= 0"
+                    [class.fin-val--neg]="netOf(row) < 0"
+                  >
+                    {{ formatSigned(netOf(row)) }}
+                  </span>
+                </ng-template>
+                <ng-template dataTableCell="bank_pending" let-row>
+                  <span class="mono" [class.fin-val--warn]="row.bank_pending > 0">
+                    {{ formatAmount(row.bank_pending) }}
+                  </span>
+                </ng-template>
+                <ng-template dataTableCell="siphoned" let-row>
+                  <span class="mono">{{ formatAmount(row.siphoned) }}</span>
+                </ng-template>
+                <ng-template dataTableCell="actions" let-row>
+                  <a
+                    class="fin-member-link"
+                    [routerLink]="'/admin/transactions'"
+                    [queryParams]="{ search: row.username }"
+                  >
+                    {{ t('bank.finance.viewTransactions') }}
+                  </a>
+                </ng-template>
+
+                <ng-template dataTableFooterCell="split_earnings">
+                  <span class="mono">{{ formatAmount(memberTotals().split) }}</span>
+                </ng-template>
+                <ng-template dataTableFooterCell="regear_silver">
+                  <span class="mono">{{ formatAmount(memberTotals().regear) }}</span>
+                </ng-template>
+                <ng-template dataTableFooterCell="received">
+                  <span class="mono">{{ formatAmount(memberTotals().received) }}</span>
+                </ng-template>
+                <ng-template dataTableFooterCell="silver_lost">
+                  <span class="mono">{{ formatAmount(memberTotals().lost) }}</span>
+                </ng-template>
+                <ng-template dataTableFooterCell="net">
+                  <span class="mono">{{ formatSigned(memberTotals().net) }}</span>
+                </ng-template>
+                <ng-template dataTableFooterCell="bank_pending">
+                  <span class="mono">{{ formatAmount(memberTotals().pending) }}</span>
+                </ng-template>
+                <ng-template dataTableFooterCell="siphoned">
+                  <span class="mono">{{ formatAmount(memberTotals().siphoned) }}</span>
+                </ng-template>
+              </app-data-table>
             </div>
           </section>
         }
 
         @if (report()?.data_quality; as quality) {
-          <p class="fin-note">
+          <p class="hint">
             <strong>{{ t('bank.finance.dataQuality') }}:</strong>
             {{
               t('bank.finance.dataQualityDetail', {
@@ -1449,51 +803,17 @@ function toDateInput(date: Date): string {
             }
           </p>
         }
-        <p class="fin-note">{{ t('bank.finance.ledgerNote') }}</p>
+        <p class="hint">{{ t('bank.finance.ledgerNote') }}</p>
       } @else if (loading()) {
-        <p class="fin-note">{{ t('bank.finance.loading') }}</p>
+        <app-loading variant="summary" [label]="t('bank.finance.loading')" />
       } @else {
-        <p class="fin-note">{{ t('bank.finance.unavailable') }}</p>
+        <app-error-state
+          [message]="t('bank.finance.unavailable')"
+          [retryLabel]="t('common.retry')"
+          (retry)="loadFinance()"
+        />
       }
     </app-page-stack>
-
-    <!-- Shared KPI body so the linked and unlinked tiles cannot drift apart. -->
-    <ng-template #kpiBody let-kpi let-linked="linked">
-      <div class="fin-kpi__top">
-        <div class="fin-kpi__title-group">
-          <span class="fin-kpi__icon" [class]="'fin-kpi__icon fin-kpi__icon--' + kpi.tone">
-            <app-icon [name]="kpi.icon" size="0.8125rem" />
-          </span>
-          <p class="fin-kpi__label">{{ kpi.label }}</p>
-        </div>
-        <div class="fin-kpi__badges">
-          @if (kpi.badge; as badge) {
-            <span class="fin-kpi__pill">{{ badge }}</span>
-          }
-          @if (kpi.delta; as delta) {
-            <span
-              class="fin-kpi__delta"
-              [class.fin-kpi__delta--good]="delta.direction !== 'flat' && delta.good"
-              [class.fin-kpi__delta--bad]="delta.direction !== 'flat' && !delta.good"
-              [class.fin-kpi__delta--flat]="delta.direction === 'flat'"
-              [appTooltip]="t('bank.finance.vsPrevious', { days: rangeDays() })"
-            >
-              {{ delta.label }}
-            </span>
-          }
-        </div>
-      </div>
-      <p class="fin-kpi__value" [class]="'fin-kpi__value--' + kpi.tone">{{ kpi.value }}</p>
-      <div class="fin-kpi__foot">
-        <p class="fin-kpi__detail">{{ kpi.detail }}</p>
-        @if (linked) {
-          <span class="fin-kpi__cta">
-            {{ t('bank.finance.viewTransactions') }}
-            <app-icon name="chevron-right" size="0.75rem" />
-          </span>
-        }
-      </div>
-    </ng-template>
   `,
 })
 export class AdminFinance {
@@ -1511,7 +831,7 @@ export class AdminFinance {
   protected readonly period = signal<PeriodId>('30');
   protected readonly granularity = signal<'day' | 'week'>('day');
   protected readonly activeSection = signal<SectionTabId>('all');
-  protected readonly memberSearch = signal('');
+  protected readonly originView = signal<OriginView>('sources');
   protected readonly customFrom = signal(toDateInput(new Date(Date.now() - 30 * MS_PER_DAY)));
   protected readonly customTo = signal(toDateInput(new Date()));
 
@@ -1520,7 +840,11 @@ export class AdminFinance {
 
   protected readonly today = computed(() => toDateInput(new Date()));
 
-  protected readonly sectionTabs = computed<ReadonlyArray<{ id: SectionTabId; label: string; icon: IconName }>>(() => [
+  protected readonly headerMenu = computed<readonly MenuItem[]>(() => [
+    { id: 'refresh', label: this.t('common.refreshNow'), icon: 'refresh', disabled: this.busy() },
+  ]);
+
+  protected readonly sectionTabs = computed<ReadonlyArray<TabOption & { id: SectionTabId }>>(() => [
     { id: 'all', label: this.t('bank.finance.navAll'), icon: 'dashboard' },
     { id: 'taxes', label: this.t('bank.finance.navTaxes'), icon: 'coins' },
     { id: 'position', label: this.t('bank.finance.navPosition'), icon: 'bank' },
@@ -1530,16 +854,41 @@ export class AdminFinance {
     { id: 'members', label: this.t('bank.finance.navMembers'), icon: 'users' },
   ]);
 
-  protected readonly periodOptions = computed<ViewToggleOption[]>(() => [
+  protected onSectionChange(id: string): void {
+    const tab = this.sectionTabs().find((candidate) => candidate.id === id);
+    if (tab) {
+      this.activeSection.set(tab.id);
+    }
+  }
+
+  protected onHeaderMenu(id: string): void {
+    if (id === 'refresh') {
+      void this.loadFinance();
+    }
+  }
+
+  /** A section shows on the overview tab and on its own tab. */
+  protected show(id: Exclude<SectionTabId, 'all'>): boolean {
+    const active = this.activeSection();
+    return active === 'all' || active === id;
+  }
+
+  protected readonly periodOptions = computed<TabOption[]>(() => [
     { id: '7', label: this.t('bank.finance.period7') },
     { id: '30', label: this.t('bank.finance.period30') },
     { id: '90', label: this.t('bank.finance.period90') },
     { id: 'custom', label: this.t('bank.finance.periodCustom'), icon: 'calendar' },
   ]);
 
-  protected readonly granularityOptions = computed<ViewToggleOption[]>(() => [
+  protected readonly granularityOptions = computed<TabOption[]>(() => [
     { id: 'day', label: this.t('bank.finance.granularityDay') },
     { id: 'week', label: this.t('bank.finance.granularityWeek') },
+  ]);
+
+  protected readonly originOptions = computed<TabOption[]>(() => [
+    { id: 'sources', label: this.t('bank.finance.topSourcesTitle') },
+    { id: 'destinations', label: this.t('bank.finance.topDestinationsTitle') },
+    { id: 'types', label: this.t('bank.finance.ledgerMix') },
   ]);
 
   protected readonly rangeDays = computed(() => this.resolveRange()?.days ?? 30);
@@ -1586,8 +935,8 @@ export class AdminFinance {
     void this.loadFinance();
   }
 
-  protected onMemberSearch(event: Event): void {
-    this.memberSearch.set((event.target as HTMLInputElement).value);
+  protected onOriginChange(id: string): void {
+    this.originView.set(id as OriginView);
   }
 
   /**
@@ -1668,13 +1017,13 @@ export class AdminFinance {
     this.refreshing.set(false);
   }
 
-  /* -------------------------------- KPIs ------------------------------- */
+  /* -------------------------------- Stats ------------------------------ */
 
   /**
-   * Whole-ledger position. Each tile links to the transaction queue filtered to
-   * the status it counts, so the figure can always be walked back to its rows.
+   * Whole-ledger position. The five figures are the ledger itself, so the
+   * transaction links below the band walk back to the rows each one counts.
    */
-  protected readonly positionKpis = computed<FinanceKpi[]>(() => {
+  protected readonly positionStats = computed<FinanceStat[]>(() => {
     const bank = this.summary();
     if (!bank) {
       return [];
@@ -1686,9 +1035,6 @@ export class AdminFinance {
         value: this.formatAmount(bank.outstanding_total),
         detail: this.t('bank.finance.creditsOwed', { count: bank.outstanding_count }),
         tone: 'warning',
-        icon: 'alert',
-        badge: `${bank.outstanding_count}`,
-        link: ['/admin/transactions', { status: 'pending' }],
       },
       {
         key: 'requested',
@@ -1696,9 +1042,6 @@ export class AdminFinance {
         value: this.formatAmount(bank.requested_total),
         detail: this.t('bank.finance.requestedWithdrawals', { count: bank.requested_count }),
         tone: bank.requested_count > 0 ? 'warning' : 'default',
-        icon: 'bell',
-        badge: `${bank.requested_count}`,
-        link: ['/admin/transactions', { status: 'requested' }],
       },
       {
         key: 'paid',
@@ -1706,9 +1049,6 @@ export class AdminFinance {
         value: this.formatAmount(bank.paid_out_total),
         detail: this.t('bank.finance.settledPayouts', { count: bank.paid_out_count }),
         tone: 'success',
-        icon: 'check',
-        badge: `${bank.paid_out_count}`,
-        link: ['/admin/transactions', { status: 'withdrawn' }],
       },
       {
         key: 'donated',
@@ -1716,55 +1056,45 @@ export class AdminFinance {
         value: this.formatAmount(bank.donated_total),
         detail: this.t('bank.finance.memberDonations', { count: bank.donated_count }),
         tone: 'default',
-        icon: 'trophy',
-        badge: `${bank.donated_count}`,
-        link: ['/admin/transactions', { status: 'donated' }],
+      },
+      {
+        key: 'volume',
+        label: this.t('bank.finance.ledgerVolume'),
+        value: this.formatAmount(bank.ledger_volume),
+        detail: this.t('bank.finance.ledgerEntries', { count: bank.transaction_count }),
+        tone: 'default',
       },
     ];
   });
 
-  /**
-   * Split economics, guild tax earnings, repair costs, and guild treasury balance.
-   */
-  protected readonly taxAndRepairKpis = computed<FinanceKpi[]>(() => {
+  /** Split economics: what the guild earned, spent on repairs, and distributed. */
+  protected readonly taxStats = computed<FinanceStat[]>(() => {
     const economy = this.report()?.economy;
     if (!economy) {
       return [];
     }
     const previous = this.previousReport()?.economy;
     const taxTotal = economy.split_tax_total ?? 0;
-    const prevTaxTotal = previous?.split_tax_total;
     const repairTotal = economy.split_repair_total ?? 0;
-    const prevRepairTotal = previous?.split_repair_total;
     const grossLoot = economy.split_gross_loot ?? economy.split_completed;
-    const prevGrossLoot = previous?.split_gross_loot ?? previous?.split_completed;
     const netDistributed = economy.split_net_distributed ?? economy.split_completed;
-    const prevNetDistributed = previous?.split_net_distributed ?? previous?.split_completed;
-    const treasuryNet =
-      economy.guild_treasury_net ??
-      taxTotal + (economy.bank_donated ?? 0) - economy.regear_paid - economy.outflow_other;
-    const prevTreasuryNet = previous
-      ? (previous.guild_treasury_net ??
-        (previous.split_tax_total ?? 0) +
-          (previous.bank_donated ?? 0) -
-          previous.regear_paid -
-          previous.outflow_other)
+    const treasuryNet = this.treasuryNetOf(economy, taxTotal);
+    const previousTreasuryNet = previous
+      ? this.treasuryNetOf(previous, previous.split_tax_total ?? 0)
       : undefined;
+    const coverage = this.taxToRegearCoveragePct();
 
     return [
       {
-        key: 'guild_tax',
-        label: this.t('bank.finance.guildTaxEarned'),
-        value: this.formatAmount(taxTotal),
-        detail: this.t('bank.finance.guildTaxEarnedDetail', {
-          pct: economy.split_avg_fee_pct ?? 0,
-          pending: this.formatCompact(economy.split_pending_tax_total ?? 0),
+        key: 'gross_loot',
+        label: this.t('bank.finance.grossLoot'),
+        value: this.formatAmount(grossLoot),
+        detail: this.t('bank.finance.grossLootBagsDetail', {
+          count: economy.split_completed_count ?? 0,
+          bags: this.formatCompact(economy.split_bags_total ?? 0),
         }),
-        tone: 'success',
-        icon: 'percent',
-        badge: `${economy.split_avg_fee_pct ?? 0}% fee`,
-        delta: this.buildDelta(taxTotal, prevTaxTotal, true),
-        link: ['/splits', {}],
+        tone: 'default',
+        delta: this.buildDelta(grossLoot, previous?.split_gross_loot ?? previous?.split_completed),
       },
       {
         key: 'repair_spent',
@@ -1775,22 +1105,18 @@ export class AdminFinance {
           pending: this.formatCompact(economy.split_pending_repair_total ?? 0),
         }),
         tone: repairTotal > 0 ? 'warning' : 'default',
-        icon: 'hammer',
-        badge: `${this.repairToGrossPct()}%`,
-        delta: this.buildDelta(repairTotal, prevRepairTotal, false),
-        link: ['/splits', {}],
+        delta: this.buildDelta(repairTotal, previous?.split_repair_total),
       },
       {
-        key: 'gross_loot',
-        label: this.t('bank.finance.grossLoot'),
-        value: this.formatAmount(grossLoot),
-        detail: this.t('bank.finance.grossLootDetail', {
-          count: economy.split_completed_count ?? 0,
+        key: 'guild_tax',
+        label: this.t('bank.finance.guildTaxEarned'),
+        value: this.formatAmount(taxTotal),
+        detail: this.t('bank.finance.guildTaxEarnedDetail', {
+          pct: economy.split_avg_fee_pct ?? 0,
+          pending: this.formatCompact(economy.split_pending_tax_total ?? 0),
         }),
-        tone: 'default',
-        icon: 'package',
-        badge: `+${this.formatCompact(economy.split_bags_total ?? 0)} bags`,
-        delta: this.buildDelta(grossLoot, prevGrossLoot, true),
+        tone: 'success',
+        delta: this.buildDelta(taxTotal, previous?.split_tax_total),
       },
       {
         key: 'member_net',
@@ -1800,37 +1126,28 @@ export class AdminFinance {
           pct: this.memberShareOfPoolPct(),
         }),
         tone: 'default',
-        icon: 'users',
-        badge: `${this.memberShareOfPoolPct()}%`,
-        delta: this.buildDelta(netDistributed, prevNetDistributed, true),
+        delta: this.buildDelta(netDistributed, previous?.split_net_distributed ?? previous?.split_completed),
       },
       {
         key: 'treasury_net',
         label: this.t('bank.finance.treasuryNet'),
         value: this.formatSigned(treasuryNet),
-        detail: this.t('bank.finance.treasuryNetDetail', {
-          tax: this.formatCompact(taxTotal),
-          donated: this.formatCompact(economy.bank_donated ?? 0),
-          regear: this.formatCompact(economy.regear_paid),
-        }),
+        detail: this.t('bank.finance.treasuryNetHint'),
         tone: treasuryNet >= 0 ? 'success' : 'danger',
-        icon: 'bank',
-        delta: this.buildDelta(treasuryNet, prevTreasuryNet, true),
+        delta: this.buildDelta(treasuryNet, previousTreasuryNet),
       },
       {
         key: 'tax_regear_cov',
         label: this.t('bank.finance.taxRegearCoverage'),
-        value: `${this.taxToRegearCoveragePct()}%`,
+        value: `${coverage}%`,
         detail: this.t('bank.finance.taxRegearCoverageDetail'),
-        tone: this.taxToRegearCoveragePct() >= 100 ? 'success' : 'warning',
-        icon: 'shield',
-        badge: `${this.formatCompact(taxTotal)} / ${this.formatCompact(economy.regear_paid)}`,
+        tone: coverage >= 100 ? 'success' : 'warning',
       },
     ];
   });
 
   /** Window-scoped flow, each figure carrying its movement against the prior window. */
-  protected readonly flowKpis = computed<FinanceKpi[]>(() => {
+  protected readonly flowStats = computed<FinanceStat[]>(() => {
     const economy = this.report()?.economy;
     if (!economy) {
       return [];
@@ -1841,12 +1158,12 @@ export class AdminFinance {
         key: 'loot',
         label: this.t('bank.finance.lootCreated'),
         value: this.formatAmount(economy.loot_in),
-        detail: this.granularity() === 'day'
-          ? this.t('bank.finance.perDay', { value: this.formatCompact(this.avgLoot()) })
-          : this.t('bank.finance.perWeek', { value: this.formatCompact(this.avgLoot()) }),
+        detail:
+          this.granularity() === 'day'
+            ? this.t('bank.finance.perDay', { value: this.formatCompact(this.avgLoot()) })
+            : this.t('bank.finance.perWeek', { value: this.formatCompact(this.avgLoot()) }),
         tone: 'success',
-        icon: 'coins',
-        delta: this.buildDelta(economy.loot_in, previous?.loot_in, true),
+        delta: this.buildDelta(economy.loot_in, previous?.loot_in),
       },
       {
         key: 'outflow',
@@ -1857,8 +1174,7 @@ export class AdminFinance {
           regear: this.formatCompact(economy.outflow_regear),
         }),
         tone: 'default',
-        icon: 'arrow-right',
-        delta: this.buildDelta(economy.outflow_total, previous?.outflow_total, false),
+        delta: this.buildDelta(economy.outflow_total, previous?.outflow_total),
       },
       {
         key: 'net',
@@ -1866,29 +1182,27 @@ export class AdminFinance {
         value: this.formatSigned(economy.net),
         detail: this.t('bank.finance.netDetail'),
         tone: economy.net >= 0 ? 'success' : 'danger',
-        icon: 'activity',
-        delta: this.buildDelta(economy.net, previous?.net, true),
+        delta: this.buildDelta(economy.net, previous?.net),
       },
       {
         key: 'pending',
         label: this.t('bank.finance.bankPending'),
         value: this.formatAmount(economy.bank_pending),
         detail: this.t('bank.finance.bankPendingDetail'),
-        tone: 'warning',
-        icon: 'alert',
-        delta: this.buildDelta(economy.bank_pending, previous?.bank_pending, false),
-        link: ['/admin/transactions', { status: 'pending' }],
+        tone: economy.bank_pending > 0 ? 'warning' : 'default',
+        delta: this.buildDelta(economy.bank_pending, previous?.bank_pending),
       },
     ];
   });
 
-  protected readonly combatKpis = computed<FinanceKpi[]>(() => {
+  protected readonly combatStats = computed<FinanceStat[]>(() => {
     const report = this.report();
     if (!report) {
       return [];
     }
     const previous = this.previousReport();
     const lost = report.overview.silver_lost;
+    const coverage = this.regearCoverageRatio();
     return [
       {
         key: 'lost',
@@ -1896,8 +1210,7 @@ export class AdminFinance {
         value: this.formatAmount(lost),
         detail: this.t('bank.finance.acrossFights', { count: report.overview.fights }),
         tone: 'danger',
-        icon: 'swords',
-        delta: this.buildDelta(lost, previous?.overview.silver_lost, false),
+        delta: this.buildDelta(lost, previous?.overview.silver_lost),
       },
       {
         key: 'regear',
@@ -1907,16 +1220,14 @@ export class AdminFinance {
           value: this.formatCompact(report.economy.regear_open),
         }),
         tone: 'default',
-        icon: 'shield',
-        delta: this.buildDelta(report.economy.regear_paid, previous?.economy.regear_paid, true),
+        delta: this.buildDelta(report.economy.regear_paid, previous?.economy.regear_paid),
       },
       {
         key: 'coverage',
         label: this.t('bank.finance.regearCoverage'),
-        value: `${this.regearCoverageRatio()}%`,
+        value: `${coverage}%`,
         detail: this.t('bank.finance.coverageDetail'),
-        tone: this.regearCoverageRatio() >= 80 ? 'success' : 'default',
-        icon: 'check',
+        tone: coverage >= 80 ? 'success' : 'default',
       },
       {
         key: 'fame',
@@ -1924,24 +1235,28 @@ export class AdminFinance {
         value: this.formatCompact(report.economy.fame_per_million_lost),
         detail: this.t('bank.finance.fameEfficiencyDetail'),
         tone: 'default',
-        icon: 'zap',
         delta: this.buildDelta(
           report.economy.fame_per_million_lost,
           previous?.economy.fame_per_million_lost,
-          true,
         ),
       },
     ];
   });
 
+  /** Guild treasury: taxes and donations in, regears out. */
+  private treasuryNetOf(economy: GuildReport['economy'], taxTotal: number): number {
+    return (
+      economy.guild_treasury_net ??
+      taxTotal + (economy.bank_donated ?? 0) - economy.regear_paid - economy.outflow_other
+    );
+  }
+
   /**
-   * Percentage movement against the previous window.
+   * Percentage movement against the previous window, with the arrow built in so
+   * the figure reads the same without colour. Returns `undefined` when there is
+   * nothing to compare with.
    */
-  private buildDelta(
-    current: number,
-    previous: number | undefined,
-    higherIsBetter: boolean,
-  ): FinanceDelta | undefined {
+  private buildDelta(current: number, previous: number | undefined): string | undefined {
     if (previous === undefined || previous === 0) {
       return undefined;
     }
@@ -1951,22 +1266,10 @@ export class AdminFinance {
     }
     const rounded = Math.round(change);
     if (rounded === 0) {
-      return { label: '0%', direction: 'flat', good: true };
+      return '0%';
     }
-    return {
-      label: `${rounded > 0 ? '+' : ''}${rounded}%`,
-      direction: rounded > 0 ? 'up' : 'down',
-      good: rounded > 0 === higherIsBetter,
-    };
+    return `${rounded > 0 ? '▲ +' : '▼ −'}${Math.abs(rounded)}%`;
   }
-
-  protected readonly totalGrossPlusBags = computed(() => {
-    const economy = this.report()?.economy;
-    if (!economy) {
-      return 0;
-    }
-    return (economy.split_gross_loot ?? 0) + (economy.split_bags_total ?? 0);
-  });
 
   protected readonly repairToGrossPct = computed(() => {
     const economy = this.report()?.economy;
@@ -2001,23 +1304,6 @@ export class AdminFinance {
     return Math.min(999, Math.round((tax / regear) * 100));
   });
 
-  protected readonly avgCompletedSplitValue = computed(() => {
-    const economy = this.report()?.economy;
-    const count = economy?.split_completed_count ?? 0;
-    if (!economy || count <= 0) {
-      return 0;
-    }
-    return Math.round(economy.split_completed / count);
-  });
-
-  protected pipelineSharePct(amount: number): number {
-    const total = this.totalGrossPlusBags();
-    if (total <= 0 || amount <= 0) {
-      return 0;
-    }
-    return Math.round((amount / total) * 1000) / 10;
-  }
-
   protected readonly avgLoot = computed(() => {
     const trends = this.trends();
     if (trends.length === 0) {
@@ -2025,18 +1311,6 @@ export class AdminFinance {
     }
     return Math.round(trends.reduce((acc, bucket) => acc + bucket.loot_in, 0) / trends.length);
   });
-
-  protected readonly avgNet = computed(() => {
-    const trends = this.trends();
-    if (trends.length === 0) {
-      return 0;
-    }
-    const total = trends.reduce((acc, bucket) => acc + (bucket.loot_in - bucket.outflow), 0);
-    return Math.round(total / trends.length);
-  });
-
-  protected readonly avgWeeklyLoot = this.avgLoot;
-  protected readonly avgWeeklyNet = this.avgNet;
 
   protected readonly flowCardTitle = computed(() =>
     this.granularity() === 'day'
@@ -2048,42 +1322,6 @@ export class AdminFinance {
     this.granularity() === 'day'
       ? this.t('bank.finance.dailyFlowDescription')
       : this.t('bank.finance.weeklyFlowDescription'),
-  );
-
-  protected readonly avgLootBadgeLabel = computed(() =>
-    this.granularity() === 'day'
-      ? this.t('bank.finance.avgDailyLoot')
-      : this.t('bank.finance.avgWeeklyLoot'),
-  );
-
-  protected readonly netCardTitle = computed(() =>
-    this.granularity() === 'day'
-      ? this.t('bank.finance.netDaily')
-      : this.t('bank.finance.netWeekly'),
-  );
-
-  protected readonly netCardDescription = computed(() =>
-    this.granularity() === 'day'
-      ? this.t('bank.finance.netDailyDescription')
-      : this.t('bank.finance.netWeeklyDescription'),
-  );
-
-  protected readonly avgNetBadgeLabel = computed(() =>
-    this.granularity() === 'day'
-      ? this.t('bank.finance.avgDailyNet')
-      : this.t('bank.finance.avgWeeklyNet'),
-  );
-
-  protected readonly activityCardTitle = computed(() =>
-    this.granularity() === 'day'
-      ? this.t('bank.finance.dailyActivity')
-      : this.t('bank.finance.weeklyActivity'),
-  );
-
-  protected readonly activityCardDescription = computed(() =>
-    this.granularity() === 'day'
-      ? this.t('bank.finance.dailyActivityDescription')
-      : this.t('bank.finance.weeklyActivityDescription'),
   );
 
   protected readonly timeColumnLabel = computed(() =>
@@ -2102,6 +1340,54 @@ export class AdminFinance {
     return Math.min(999, Math.round((paid / lost) * 100));
   });
 
+  /* ------------------------------- Tables ------------------------------ */
+
+  protected readonly originColumns = ORIGIN_COLUMNS;
+  protected readonly memberColumns = MEMBER_COLUMNS;
+
+  protected readonly trackOrigin = (row: OriginRow): string => row.key;
+  protected readonly trackMember = (row: ReportMemberRow): number => row.user_id;
+
+  /** Ledger breakdown for the selected view, largest movement first. */
+  protected readonly originRows = computed<OriginRow[]>(() => {
+    const bank = this.summary();
+    if (!bank) {
+      return [];
+    }
+    const view = this.originView();
+    const lines =
+      view === 'sources'
+        ? bank.sources
+        : view === 'destinations'
+          ? bank.destinations
+          : bank.transaction_types;
+    const ordered = [...lines].sort(
+      (a, b) => Math.abs(toNumber(b.total_amount)) - Math.abs(toNumber(a.total_amount)),
+    );
+    const absTotal = ordered.reduce((acc, line) => acc + Math.abs(toNumber(line.total_amount)), 0);
+    return ordered.map((line, index) => {
+      const amount = toNumber(line.total_amount);
+      return {
+        key: `${view}-${index}`,
+        label: line.label,
+        amount,
+        entries: toNumber(line.transaction_count),
+        share: absTotal > 0 ? Math.abs(amount) / absTotal : 0,
+      };
+    });
+  });
+
+  protected readonly originTotals = computed(() =>
+    this.originRows().reduce(
+      (acc, row) => ({ amount: acc.amount + row.amount, entries: acc.entries + row.entries }),
+      { amount: 0, entries: 0 },
+    ),
+  );
+
+  /**
+   * Every member with any movement in the ledger or the window. The table
+   * handles search, sort and paging; the totals row sums this full set.
+   */
   protected readonly allMemberRows = computed<readonly ReportMemberRow[]>(() => {
     const members = this.report()?.members ?? [];
     return [...members]
@@ -2116,18 +1402,27 @@ export class AdminFinance {
       .sort((a, b) => b.split_earnings + b.regear_silver - (a.split_earnings + a.regear_silver));
   });
 
-  protected readonly memberRows = computed<readonly ReportMemberRow[]>(() => {
-    const query = this.memberSearch().trim().toLowerCase();
-    const rows = this.allMemberRows();
-    const filtered = query
-      ? rows.filter(
-          (r) =>
-            r.username.toLowerCase().includes(query) ||
-            (r.albion_name?.toLowerCase().includes(query) ?? false),
-        )
-      : rows;
-    return filtered.slice(0, 30);
+  protected readonly memberTotals = computed(() => {
+    const totals = { split: 0, regear: 0, received: 0, lost: 0, net: 0, pending: 0, siphoned: 0 };
+    for (const row of this.allMemberRows()) {
+      totals.split += row.split_earnings;
+      totals.regear += row.regear_silver;
+      totals.received += row.split_earnings + row.regear_silver;
+      totals.lost += row.silver_lost;
+      totals.net += row.split_earnings + row.regear_silver - row.silver_lost;
+      totals.pending += row.bank_pending;
+      totals.siphoned += row.siphoned;
+    }
+    return totals;
   });
+
+  protected receivedOf(row: ReportMemberRow): number {
+    return row.split_earnings + row.regear_silver;
+  }
+
+  protected netOf(row: ReportMemberRow): number {
+    return row.split_earnings + row.regear_silver - row.silver_lost;
+  }
 
   /* ------------------------------- Charts ------------------------------ */
 
@@ -2145,7 +1440,7 @@ export class AdminFinance {
   }
 
   /** Axis tooltip listing every series at the hovered week, value first. */
-  private axisTooltip(unit: 'silver' | 'count'): Record<string, unknown> {
+  private axisTooltip(): Record<string, unknown> {
     return {
       trigger: 'axis',
       axisPointer: { type: 'line' },
@@ -2155,34 +1450,16 @@ export class AdminFinance {
         const rows = params
           .map((param) => {
             const raw = toNumber(param.value as number);
-            const value = unit === 'silver' ? this.formatAmount(raw) : this.formatAmount(raw);
             const key = `<span style="display:inline-block;width:12px;height:2px;border-radius:var(--radius-hairline);background:${
               param.color ?? 'currentColor'
             };vertical-align:middle;margin-inline-end:6px"></span>`;
             return `<div style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:3px">
               <span style="opacity:0.75">${key}${escapeHtml(param.seriesName ?? '')}</span>
-              <strong style="font-variant-numeric:tabular-nums">${escapeHtml(value)}</strong>
+              <strong style="font-variant-numeric:tabular-nums">${escapeHtml(this.formatAmount(raw))}</strong>
             </div>`;
           })
           .join('');
-        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
-      },
-    };
-  }
-
-  /** Per-mark tooltip for the horizontal breakdown bars. */
-  private itemTooltip(total: number): Record<string, unknown> {
-    return {
-      trigger: 'item',
-      formatter: (input: unknown) => {
-        const param = toParamList(input)[0];
-        const raw = toNumber(param?.value as number);
-        const share = total > 0 ? Math.round((raw / total) * 1000) / 10 : 0;
-        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${escapeHtml(
-          param?.name ?? '',
-        )}</div><strong style="font-variant-numeric:tabular-nums">${escapeHtml(
-          this.formatAmount(raw),
-        )}</strong> <span style="opacity:0.6">· ${share}%</span>`;
+        return `<div style="font-size: 12px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
       },
     };
   }
@@ -2212,7 +1489,7 @@ export class AdminFinance {
       aria: { enabled: true },
       grid: this.baseGrid(8),
       legend: { top: 0, left: 0 },
-      tooltip: this.axisTooltip('silver'),
+      tooltip: this.axisTooltip(),
       xAxis: { type: 'category', data: this.weekLabels() },
       yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
       series: [
@@ -2244,51 +1521,18 @@ export class AdminFinance {
     };
   });
 
-  protected readonly taxVsRegearOption = computed<EChartsOption>(() => {
-    const trends = this.trends();
-    const palette = this.palette();
-
-    return {
-      aria: { enabled: true },
-      grid: this.baseGrid(8),
-      legend: { top: 0, left: 0 },
-      tooltip: this.axisTooltip('silver'),
-      xAxis: { type: 'category', data: this.weekLabels() },
-      yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
-      series: [
-        {
-          name: this.t('bank.finance.guildTaxEarned'),
-          type: 'bar',
-          data: trends.map((b) => b.tax_in ?? 0),
-          itemStyle: { color: palette.regearPaid, borderRadius: [4, 4, 0, 0] },
-          barMaxWidth: 18,
-          barGap: '18%',
-          barCategoryGap: '40%',
-        },
-        {
-          name: this.t('bank.finance.regearPaid'),
-          type: 'bar',
-          data: trends.map((b) => Math.abs(b.regear_paid || 0)),
-          itemStyle: { color: palette.outflow, borderRadius: [4, 4, 0, 0] },
-          barMaxWidth: 18,
-        },
-      ],
-    };
-  });
-
   protected readonly flowOption = computed<EChartsOption>(() => {
     const trends = this.trends();
     const palette = this.palette();
     const surface = this.chrome().surface;
     const zoomable = trends.length > 10;
-
     const marker = (color: string) => ({ color, borderColor: surface, borderWidth: 2 });
 
     return {
       aria: { enabled: true },
       grid: this.baseGrid(zoomable ? 46 : 8),
       legend: { top: 0, left: 0 },
-      tooltip: this.axisTooltip('silver'),
+      tooltip: this.axisTooltip(),
       xAxis: { type: 'category', boundaryGap: false, data: this.weekLabels() },
       yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
       dataZoom: zoomable
@@ -2324,35 +1568,6 @@ export class AdminFinance {
     };
   });
 
-  protected readonly netOption = computed<EChartsOption>(() => {
-    const trends = this.trends();
-    const palette = this.palette();
-    const values = trends.map((bucket) => bucket.loot_in - bucket.outflow);
-
-    return {
-      aria: { enabled: true },
-      grid: this.baseGrid(8),
-      tooltip: this.axisTooltip('silver'),
-      xAxis: { type: 'category', data: this.weekLabels() },
-      yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
-      series: [
-        {
-          name: this.t('bank.finance.netResult'),
-          type: 'bar',
-          data: values.map((value) => ({
-            value,
-            itemStyle: {
-              color: value >= 0 ? palette.neutralSeries : palette.negativeSeries,
-              borderRadius: value >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4],
-            },
-          })),
-          barMaxWidth: 26,
-          barCategoryGap: '38%',
-        },
-      ],
-    };
-  });
-
   protected readonly lossRegearOption = computed<EChartsOption>(() => {
     const trends = this.trends();
     const palette = this.palette();
@@ -2361,7 +1576,7 @@ export class AdminFinance {
       aria: { enabled: true },
       grid: this.baseGrid(8),
       legend: { top: 0, left: 0 },
-      tooltip: this.axisTooltip('silver'),
+      tooltip: this.axisTooltip(),
       xAxis: { type: 'category', data: this.weekLabels() },
       yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
       series: [
@@ -2385,121 +1600,6 @@ export class AdminFinance {
     };
   });
 
-  protected readonly activityOption = computed<EChartsOption>(() => {
-    const trends = this.trends();
-    const palette = this.palette();
-
-    return {
-      aria: { enabled: true },
-      grid: this.baseGrid(8),
-      legend: { top: 0, left: 0 },
-      tooltip: this.axisTooltip('count'),
-      xAxis: { type: 'category', data: this.weekLabels() },
-      yAxis: { type: 'value', minInterval: 1 },
-      series: [
-        {
-          name: this.t('bank.finance.fights'),
-          type: 'bar',
-          data: trends.map((bucket) => bucket.fights),
-          itemStyle: { color: palette.fights, borderRadius: [4, 4, 0, 0] },
-          barMaxWidth: 18,
-          barGap: '18%',
-          barCategoryGap: '40%',
-        },
-        {
-          name: this.t('bank.finance.events'),
-          type: 'bar',
-          data: trends.map((bucket) => bucket.events),
-          itemStyle: { color: palette.events, borderRadius: [4, 4, 0, 0] },
-          barMaxWidth: 18,
-        },
-      ],
-    };
-  });
-
-  private horizontalBars(
-    rows: ReadonlyArray<{ label: string; value: number }>,
-    directLabels: boolean,
-  ): EChartsOption {
-    const palette = this.palette();
-    const ordered = [...rows].sort((a, b) => a.value - b.value);
-    const total = ordered.reduce((acc, row) => acc + row.value, 0);
-
-    return {
-      aria: { enabled: true },
-      grid: { left: 4, right: directLabels ? 72 : 16, top: 8, bottom: 4, containLabel: true },
-      tooltip: this.itemTooltip(total),
-      xAxis: {
-        type: 'value',
-        splitNumber: 3,
-        axisLabel: this.valueAxisLabel(),
-        splitLine: { show: true },
-      },
-      yAxis: {
-        type: 'category',
-        data: ordered.map((row) => row.label),
-        axisLabel: { width: 124, overflow: 'truncate' },
-      },
-      series: [
-        {
-          type: 'bar',
-          data: ordered.map((row) => row.value),
-          itemStyle: { color: palette.neutralSeries, borderRadius: [0, 4, 4, 0] },
-          barMaxWidth: 16,
-          barCategoryGap: '42%',
-          label: directLabels
-            ? {
-                show: true,
-                position: 'right',
-                distance: 8,
-                formatter: (param: { value?: unknown }) =>
-                  this.formatCompact(toNumber(param.value as number)),
-                fontSize: 11,
-                color: this.chrome().textSecondary,
-                textBorderWidth: 0,
-              }
-            : { show: false },
-        },
-      ],
-    };
-  }
-
-  protected readonly outflowOption = computed<EChartsOption>(() => {
-    const economy = this.report()?.economy;
-    if (!economy) {
-      return {};
-    }
-    return this.horizontalBars(
-      [
-        { label: this.t('bank.finance.splitOutflow'), value: economy.outflow_splits },
-        { label: this.t('bank.finance.regearPaid'), value: economy.outflow_regear },
-        { label: this.t('bank.finance.otherOutflow'), value: economy.outflow_other },
-      ],
-      true,
-    );
-  });
-
-  protected readonly sourcesOption = computed<EChartsOption>(() =>
-    this.horizontalBars(this.breakdownRows(this.summary()?.sources), false),
-  );
-
-  protected readonly destinationsOption = computed<EChartsOption>(() =>
-    this.horizontalBars(this.breakdownRows(this.summary()?.destinations), false),
-  );
-
-  protected readonly typesOption = computed<EChartsOption>(() =>
-    this.horizontalBars(this.breakdownRows(this.summary()?.transaction_types), false),
-  );
-
-  private breakdownRows(
-    lines: readonly BankBreakdown[] | undefined,
-  ): ReadonlyArray<{ label: string; value: number }> {
-    return [...(lines ?? [])]
-      .map((line) => ({ label: line.label, value: Math.abs(toNumber(line.total_amount)) }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
-  }
-
   /* ---------------------------- Table twins ---------------------------- */
 
   protected readonly splitEconomicsTableHead = computed(() => [
@@ -2520,26 +1620,6 @@ export class AdminFinance {
     ]),
   );
 
-  protected readonly taxVsRegearTableHead = computed(() => [
-    this.timeColumnLabel(),
-    this.t('bank.finance.guildTaxEarned'),
-    this.t('bank.finance.regearPaid'),
-    this.t('bank.finance.netResult'),
-  ]);
-
-  protected readonly taxVsRegearTableRows = computed<ChartTableRow[]>(() =>
-    this.trends().map((bucket) => {
-      const tax = bucket.tax_in ?? 0;
-      const regear = Math.abs(bucket.regear_paid || 0);
-      return [
-        this.formatWeek(bucket.week_start),
-        this.formatAmount(tax),
-        this.formatAmount(regear),
-        this.formatSigned(tax - regear),
-      ];
-    }),
-  );
-
   protected readonly flowTableHead = computed(() => [
     this.timeColumnLabel(),
     this.t('bank.finance.lootCreated'),
@@ -2552,18 +1632,6 @@ export class AdminFinance {
       this.formatWeek(bucket.week_start),
       this.formatAmount(bucket.loot_in),
       this.formatAmount(bucket.outflow),
-      this.formatSigned(bucket.loot_in - bucket.outflow),
-    ]),
-  );
-
-  protected readonly netTableHead = computed(() => [
-    this.timeColumnLabel(),
-    this.t('bank.finance.netResult'),
-  ]);
-
-  protected readonly netTableRows = computed<ChartTableRow[]>(() =>
-    this.trends().map((bucket) => [
-      this.formatWeek(bucket.week_start),
       this.formatSigned(bucket.loot_in - bucket.outflow),
     ]),
   );
@@ -2581,66 +1649,6 @@ export class AdminFinance {
       this.formatAmount(Math.abs(bucket.regear_paid || 0)),
     ]),
   );
-
-  protected readonly activityTableHead = computed(() => [
-    this.timeColumnLabel(),
-    this.t('bank.finance.fights'),
-    this.t('bank.finance.events'),
-  ]);
-
-  protected readonly activityTableRows = computed<ChartTableRow[]>(() =>
-    this.trends().map((bucket) => [
-      this.formatWeek(bucket.week_start),
-      String(bucket.fights),
-      String(bucket.events),
-    ]),
-  );
-
-  protected readonly shareTableHead = computed(() => [
-    this.t('bank.finance.destination'),
-    this.t('common.amount'),
-  ]);
-
-  protected readonly breakdownTableHead = computed(() => [
-    this.t('common.label'),
-    this.t('common.amount'),
-    this.t('bank.finance.ledgerEntriesShort'),
-  ]);
-
-  protected readonly outflowTableRows = computed<ChartTableRow[]>(() => {
-    const economy = this.report()?.economy;
-    if (!economy) {
-      return [];
-    }
-    return [
-      [this.t('bank.finance.splitOutflow'), this.formatAmount(economy.outflow_splits)],
-      [this.t('bank.finance.regearPaid'), this.formatAmount(economy.outflow_regear)],
-      [this.t('bank.finance.otherOutflow'), this.formatAmount(economy.outflow_other)],
-    ];
-  });
-
-  protected readonly sourcesTableRows = computed(() =>
-    this.breakdownTable(this.summary()?.sources),
-  );
-
-  protected readonly destinationsTableRows = computed(() =>
-    this.breakdownTable(this.summary()?.destinations),
-  );
-
-  protected readonly typesTableRows = computed(() =>
-    this.breakdownTable(this.summary()?.transaction_types),
-  );
-
-  private breakdownTable(lines: readonly BankBreakdown[] | undefined): ChartTableRow[] {
-    return [...(lines ?? [])]
-      .sort((a, b) => Math.abs(toNumber(b.total_amount)) - Math.abs(toNumber(a.total_amount)))
-      .slice(0, 8)
-      .map((line) => [
-        line.label,
-        this.formatAmount(line.total_amount),
-        String(line.transaction_count),
-      ]);
-  }
 
   /* ------------------------------- Export ------------------------------ */
 
@@ -2806,7 +1814,7 @@ export class AdminFinance {
       rows.push('');
     }
 
-    const blob = new Blob([`\uFEFF${rows.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([`﻿${rows.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -2841,6 +1849,13 @@ export class AdminFinance {
       notation: 'compact',
       maximumFractionDigits: 1,
     }).format(toNumber(value));
+  }
+
+  protected formatPercent(fraction: number): string {
+    return new Intl.NumberFormat(this.getLocale(), {
+      style: 'percent',
+      maximumFractionDigits: 1,
+    }).format(fraction);
   }
 
   protected formatDate(value: string): string {

@@ -32,6 +32,51 @@ const settings = {
   ],
 };
 
+const seasons = [
+  {
+    id: 1,
+    name: 'Current season',
+    starts_at: '2026-01-01T00:00:00Z',
+    ends_at: '2026-12-31T23:59:59Z',
+    is_active: true,
+  },
+];
+
+function stubDialogApi(): void {
+  if (typeof HTMLDialogElement === 'undefined') return;
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
+}
+
+function buttonWithText(root: ParentNode, text: string): HTMLButtonElement | undefined {
+  return [...root.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes(text),
+  );
+}
+
+async function render(api: unknown): Promise<ComponentFixture<AdminProgression>> {
+  stubDialogApi();
+  await TestBed.configureTestingModule({
+    imports: [AdminProgression],
+    providers: [
+      provideZonelessChangeDetection(),
+      { provide: ApiService, useValue: api },
+      { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+      { provide: TranslateService, useValue: { t: (key: string) => key } },
+    ],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(AdminProgression);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return fixture;
+}
+
 describe('AdminProgression required fields', () => {
   afterEach(() => TestBed.resetTestingModule());
 
@@ -42,35 +87,15 @@ describe('AdminProgression required fields', () => {
           url === 'api/progression/settings'
             ? settings
             : url === 'api/progression/seasons'
-              ? [
-                  {
-                    id: 1,
-                    name: 'Current season',
-                    starts_at: '2026-01-01T00:00:00Z',
-                    ends_at: '2026-12-31T23:59:59Z',
-                    is_active: true,
-                  },
-                ]
+              ? seasons
               : [],
         ),
       ),
       put: vi.fn(() => of(settings)),
     };
-    await TestBed.configureTestingModule({
-      imports: [AdminProgression],
-      providers: [
-        provideZonelessChangeDetection(),
-        { provide: ApiService, useValue: api },
-        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
-        { provide: TranslateService, useValue: { t: (key: string) => key } },
-      ],
-    }).compileComponents();
-
-    const fixture: ComponentFixture<AdminProgression> = TestBed.createComponent(AdminProgression);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
+    const fixture = await render(api);
     const compiled = fixture.nativeElement as HTMLElement;
+
     const forms = compiled.querySelectorAll('form');
     const settingsForm = forms[0] as HTMLFormElement;
     expect(settingsForm.textContent).toContain('validation.requiredLegend');
@@ -83,21 +108,34 @@ describe('AdminProgression required fields', () => {
     ).toBe(true);
 
     const rankForm = forms[1] as HTMLFormElement;
-    expect(rankForm.querySelectorAll('input[required]')).toHaveLength(10);
-    expect(rankForm.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(10);
-    expect(rankForm.querySelectorAll('select')).toHaveLength(5);
+    expect(rankForm.querySelectorAll('tbody tr')).toHaveLength(5);
 
-    const editForm = forms[2] as HTMLFormElement;
-    expect(editForm.textContent).toContain('validation.requiredLegend');
-    expect(editForm.querySelectorAll('input[required]')).toHaveLength(3);
-    expect(editForm.checkValidity()).toBe(true);
+    // The season table is the last one on the page; its edit button is the last match.
+    const editButton = [...compiled.querySelectorAll('button')]
+      .filter((button) => button.textContent?.includes('common.edit'))
+      .at(-1);
+    expect(editButton).toBeDefined();
+    editButton?.click();
+    fixture.detectChanges();
 
-    const createForm = forms[3] as HTMLFormElement;
-    expect(createForm.textContent).toContain('validation.requiredLegend');
-    expect(createForm.querySelectorAll('input[required]')).toHaveLength(3);
-    expect(createForm.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(3);
-    expect(createForm.checkValidity()).toBe(false);
+    const editForm = compiled.querySelector<HTMLFormElement>('#season-dialog-form');
+    expect(editForm).not.toBeNull();
+    expect(editForm?.textContent).toContain('validation.requiredLegend');
+    expect(editForm?.querySelectorAll('input[required]')).toHaveLength(3);
+    expect(editForm?.checkValidity()).toBe(true);
 
+    buttonWithText(compiled, 'common.cancel')?.click();
+    fixture.detectChanges();
+    expect(compiled.querySelector('#season-dialog-form')).toBeNull();
+
+    buttonWithText(compiled, 'admin.progression.createSeason')?.click();
+    fixture.detectChanges();
+
+    const createForm = compiled.querySelector<HTMLFormElement>('#season-dialog-form');
+    expect(createForm?.textContent).toContain('validation.requiredLegend');
+    expect(createForm?.querySelectorAll('input[required]')).toHaveLength(3);
+    expect(createForm?.querySelectorAll('label [aria-hidden="true"]')).toHaveLength(3);
+    expect(createForm?.checkValidity()).toBe(false);
   });
 
   it('lets admins add and remove tiers and submit the ordered configuration', async () => {
@@ -107,34 +145,33 @@ describe('AdminProgression required fields', () => {
       ),
       put: vi.fn(() => of(settings)),
     };
-    await TestBed.configureTestingModule({
-      imports: [AdminProgression],
-      providers: [
-        provideZonelessChangeDetection(),
-        { provide: ApiService, useValue: api },
-        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
-        { provide: TranslateService, useValue: { t: (key: string) => key } },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(AdminProgression);
-    await fixture.whenStable();
-    fixture.detectChanges();
+    const fixture = await render(api);
     const compiled = fixture.nativeElement as HTMLElement;
     const rankForm = [...compiled.querySelectorAll('form')][1] as HTMLFormElement;
-    const addButton = [...rankForm.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('rankAdd'));
-    expect(addButton).toBeDefined();
-    addButton?.click();
-    fixture.detectChanges();
-    expect(rankForm.querySelectorAll('input[required]')).toHaveLength(12);
 
-    const removeButton = [...rankForm.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('rankRemove'));
-    expect(removeButton).toBeDefined();
-    removeButton?.click();
+    // Remove the second tier ("Active") from its edit dialog.
+    const editButtons = [...rankForm.querySelectorAll('button')]
+      .filter((button) => button.textContent?.includes('common.edit'));
+    expect(editButtons).toHaveLength(5);
+    editButtons[1]?.click();
     fixture.detectChanges();
-    expect(rankForm.querySelectorAll('input[required]')).toHaveLength(10);
+    expect(compiled.querySelector('#rank-dialog-form')).not.toBeNull();
+
+    buttonWithText(compiled, 'admin.progression.rankRemove')?.click();
+    fixture.detectChanges();
+    expect(compiled.querySelector('#rank-dialog-form')).toBeNull();
+    expect(rankForm.querySelectorAll('tbody tr')).toHaveLength(4);
+
+    // Add a new tier at the end; the dialog defaults to the next minimum XP.
+    buttonWithText(rankForm, 'admin.progression.rankAdd')?.click();
+    fixture.detectChanges();
+    const addForm = compiled.querySelector<HTMLFormElement>('#rank-dialog-form');
+    expect(addForm?.querySelectorAll('input[required]')).toHaveLength(2);
+    expect(addForm?.checkValidity()).toBe(true);
+    addForm?.dispatchEvent(new Event('submit', { cancelable: true }));
+    fixture.detectChanges();
+    expect(compiled.querySelector('#rank-dialog-form')).toBeNull();
+    expect(rankForm.querySelectorAll('tbody tr')).toHaveLength(5);
 
     const saveButton = rankForm.querySelector('button[type="submit"]') as HTMLButtonElement;
     saveButton.click();

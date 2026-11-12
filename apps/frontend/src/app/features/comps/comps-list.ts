@@ -54,7 +54,7 @@ import {
 import { ListArchiveDialog } from './list-archive-dialog';
 import { ListFilterBar, type FilterCategory } from './list-filter-bar';
 import { LIST_TABLE_STYLES } from './list-table-styles';
-import { RowMenu } from './row-menu';
+import { Menu } from '../../shared/components/menu/menu';
 
 /** Simultaneous per-row requests (win rate and role mix); keeps a long list from flooding the API. */
 const ENRICH_CONCURRENCY = 6;
@@ -90,7 +90,7 @@ interface CompRow {
     Icon,
     ListArchiveDialog,
     ListFilterBar,
-    RowMenu,
+    Menu,
   ],
   styles: [LIST_TABLE_STYLES],
   template: `
@@ -110,10 +110,8 @@ interface CompRow {
       (showArchivedChange)="setShowArchived($event)"
       (clear)="clearFilters()"
     >
-      <label class="lf-field" style="display: grid; gap: 0.25rem">
-        <span style="font-size: 0.75rem; color: var(--color-text-secondary)">{{
-          t('compsList.type.label')
-        }}</span>
+      <label class="filter-field">
+        <span class="filter-field__label">{{ t('compsList.type.label') }}</span>
         <select class="select select--sm" [value]="filters().type" (change)="onType($event)">
           <option value="all">{{ t('compsList.type.all') }}</option>
           <option value="base">{{ t('compsList.type.base') }}</option>
@@ -170,7 +168,7 @@ interface CompRow {
             [hint]="t('compsList.empty.noMatchHint')"
           >
             <button type="button" class="btn btn--outline btn--sm" (click)="clearFilters()">
-              {{ t('compsList.filters.clear') }}
+              {{ t('ui.filters.clear') }}
             </button>
           </app-empty-state>
         }
@@ -315,10 +313,10 @@ interface CompRow {
                     <td class="lt-c-updated lt-muted" role="cell">{{ date(c.created_at) }}</td>
                     <td class="lt-muted" role="cell">{{ c.created_by_username }}</td>
                     <td class="lt-actions" role="cell">
-                      <app-row-menu
+                      <app-menu
                         [items]="menuItems(c)"
                         [label]="t('compsList.menu.label', { name: c.name })"
-                        (select)="onMenu($event, c)"
+                        (itemSelect)="onMenu($event, c)"
                       />
                     </td>
                   </tr>

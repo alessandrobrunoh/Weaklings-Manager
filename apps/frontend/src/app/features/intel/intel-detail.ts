@@ -295,7 +295,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
                 </a>
               }
               @if (hasSampledSimilarity()) {
-                <p class="mt-2 text-[11px] text-[var(--color-text-secondary)]">
+                <p class="mt-2 text-xs text-[var(--color-text-secondary)]">
                   * {{ t('intel.partialCoverage') }}
                 </p>
               }

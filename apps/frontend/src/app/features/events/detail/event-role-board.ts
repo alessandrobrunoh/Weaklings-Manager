@@ -344,12 +344,12 @@ import {
       white-space: nowrap;
     }
     .player-chip__party {
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 700;
       color: var(--color-text-secondary);
     }
     .player-chip__you {
-      font-size: 0.625rem;
+      font-size: 0.75rem;
       font-weight: 800;
       letter-spacing: 0.06em;
       text-transform: uppercase;

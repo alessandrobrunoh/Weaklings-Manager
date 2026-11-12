@@ -76,7 +76,7 @@ const SCOUT_PAGE_LIMIT = 25;
       </ng-template>
       <ng-template dataTableCell="coverage" let-row>
         @if (!row.full_weapon_coverage) {
-          <span class="chip chip--warning text-[11px]" [title]="t('intel.partialCoverageHint')">
+          <span class="chip chip--warning text-xs" [title]="t('intel.partialCoverageHint')">
             {{ row.weapon_sample_size }}/{{ row.player_count }}
           </span>
         }

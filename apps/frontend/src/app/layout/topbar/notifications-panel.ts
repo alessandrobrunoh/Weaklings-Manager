@@ -76,7 +76,7 @@ const BODY_MAX = 2000;
       <app-icon name="bell" size="1.125rem" />
       @if (unreadCount() > 0) {
         <span
-          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold text-[var(--color-on-primary)] bg-[var(--color-primary)]"
+          class="absolute flex items-center justify-center rounded-full text-xs font-bold text-[var(--color-on-primary)] bg-[var(--color-primary)]"
           style="
             top: 2px;
             right: 2px;
@@ -164,7 +164,7 @@ const BODY_MAX = 2000;
                       {{ row.body }}
                     </span>
                     <span
-                      class="mt-1 block text-[10px] mono"
+                      class="mt-1 block text-xs mono"
                       style="color: var(--color-text-tertiary)"
                     >
                       {{ row.created_at | date: 'MMM d, HH:mm' }}

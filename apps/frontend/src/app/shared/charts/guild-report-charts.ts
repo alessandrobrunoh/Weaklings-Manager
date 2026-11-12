@@ -110,7 +110,7 @@ function axisTooltip(): Record<string, unknown> {
           </div>`;
         })
         .join('');
-      return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
+      return `<div style="font-size: 12px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
     },
   };
 }
@@ -418,7 +418,7 @@ export function buildHorizontalBarsChart(
         const param = toParamList(input)[0];
         const raw = toNumber(param?.value);
         const share = total > 0 ? Math.round((raw / total) * 1000) / 10 : 0;
-        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${escapeHtml(
+        return `<div style="font-size: 12px;opacity:0.7;margin-bottom:2px">${escapeHtml(
           param?.name ?? '',
         )}</div><strong style="font-variant-numeric:tabular-nums">${escapeHtml(
           fmt(raw),
