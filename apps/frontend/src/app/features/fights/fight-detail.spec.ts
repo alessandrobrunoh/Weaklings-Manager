@@ -1,10 +1,10 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -163,6 +163,38 @@ describe('FightDetailPage friendly side', () => {
     expect(byName(players, 'Hawk')).toMatchObject({ isOurGuild: true, isOurAlliance: true });
     expect(byName(players, 'Buddy')).toMatchObject({ isOurGuild: false, isOurAlliance: true });
     expect(byName(players, 'Foe')).toMatchObject({ isOurGuild: false, isOurAlliance: false });
+    fixture.destroy();
+  });
+});
+
+describe('FightDetailPage load errors', () => {
+  it('shows the not-found state when the API answers 404', async () => {
+    const api = {
+      get: vi.fn().mockReturnValue(throwError(() => new ApiError(404, 'missing'))),
+      post: vi.fn(),
+    };
+    await TestBed.configureTestingModule({
+      imports: [FightDetailPage],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: { hasPermission: () => true, profile: () => null } },
+        { provide: ThemeService, useValue: { isDark: () => true } },
+        TranslateService,
+      ],
+    }).compileComponents();
+    TestBed.inject(TranslateService).use('en');
+    const fixture = TestBed.createComponent(FightDetailPage);
+    fixture.componentRef.setInput('fightId', '99');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const page = fixture.componentInstance as unknown as { notFound: () => boolean };
+    expect(page.notFound()).toBe(true);
+    expect(fixture.nativeElement.querySelector('app-error-state')).toBeTruthy();
+    expect(api.post).not.toHaveBeenCalled();
     fixture.destroy();
   });
 });

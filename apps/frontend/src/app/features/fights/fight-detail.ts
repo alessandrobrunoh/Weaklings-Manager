@@ -18,16 +18,16 @@ import type {
   BattlePlayer,
   FightDetail,
   FightMutationResult,
-  FightSegmentSummary,
   MergeFightsRequest,
   MoveBattleRequest,
+  ObservedFriendlyPlayer,
+  PlannedFightParticipant,
   SplitFightRequest,
 } from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { TranslateService } from '../../core/services/translate.service';
-import type { TranslationKey } from '../../i18n/en';
 import { battleOutcomeLabel, type BattleOutcomeType } from '../battles/battle-outcome';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
@@ -36,10 +36,13 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Icon } from '../../shared/components/icon/icon';
 import { albionBattlesUrl, formatConfidence } from '../battles/battle-metrics';
 import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
+import { EntityHeader, type EntityMenuItem } from '../../shared/components/entity-header/entity-header';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
+import { Menu } from '../../shared/components/menu/menu';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 
@@ -80,6 +83,28 @@ export interface FightAllianceSummary {
   readonly estimatedLoss: number;
 }
 
+export interface FightSideRow {
+  readonly key: string;
+  readonly label: string;
+  readonly ours: string;
+  readonly enemy: string;
+}
+
+export interface FightHonorRow {
+  readonly id: string;
+  readonly label: string;
+  readonly player: FightPlayerRow | null;
+  readonly value: string;
+  readonly emptyText: string;
+}
+
+export interface FightSegmentRow {
+  readonly battleId: string;
+  readonly index: number;
+  readonly kills: number | null;
+  readonly players: number | null;
+}
+
 type PendingFightMutation =
   | { readonly kind: 'merge'; readonly body: MergeFightsRequest; readonly description: string }
   | { readonly kind: 'split'; readonly body: SplitFightRequest; readonly description: string }
@@ -100,17 +125,28 @@ type PendingFightMutation =
     DataTable,
     DataTableCell,
     Dialog,
+    EntityHeader,
     ErrorState,
-    Icon,
+    FilterBar,
     Loading,
-    PageHeader,
+    Menu,
     PageStack,
     RouterLink,
+    StatusChip,
+    SummaryBand,
     Tabs,
   ],
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <app-loading [variant]="'detail'" [label]="t('common.loading')" />
+    } @else if (notFound()) {
+      <app-error-state
+        [variant]="'not-found'"
+        [message]="t('ui.errorState.notFound')"
+        [hint]="t('ui.errorState.notFoundHint')"
+      >
+        <a class="btn btn--outline btn--sm" routerLink="/battles">{{ t('nav.battles') }}</a>
+      </app-error-state>
     } @else if (loadFailed() || !fight()) {
       <app-error-state
         [message]="t('fights.loadFailed')"
@@ -118,454 +154,205 @@ type PendingFightMutation =
         (retry)="load()"
       />
     } @else if (fight(); as detail) {
-      <a class="btn btn--ghost btn--sm mb-4 inline-flex items-center gap-1.5 no-underline" routerLink="/battles">
+      <a class="btn btn--ghost btn--sm mb-3 inline-flex items-center gap-1.5 no-underline" routerLink="/battles">
         ← {{ t('nav.battles') }}
       </a>
 
-      <app-page-header
+      <app-entity-header
         [title]="t('fights.title', { id: detail.id })"
-        [subtitle]="fightWindow(detail)"
+        [description]="fightWindow(detail)"
+        [menuItems]="menuItems()"
+        [menuLabel]="t('entityHeader.moreActions')"
+        (menuSelect)="onMenu($event)"
       >
-        @if (canManageFights()) {
-          <button
-            type="button"
-            class="btn btn--outline btn--sm"
-            [disabled]="mutating()"
-            (click)="openMerge()"
-          >
-            <app-icon name="refresh" size="0.75rem" />
-            {{ t('fights.merge') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--outline btn--sm"
-            [disabled]="mutating() || detail.battle_ids.length < 2"
-            (click)="openSplit()"
-          >
-            <app-icon name="close" size="0.75rem" />
-            {{ t('fights.split') }}
-          </button>
-        }
-
-        <app-tabs
-          pageTabs
-          [options]="tabOptions()"
-          [active]="tab()"
-          (activeChange)="onTabChange($event)"
-        />
-      </app-page-header>
-
-      <app-page-stack>
-        <!-- ================= STATUS BADGES BAR ================= -->
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="chip chip--info text-xs">
-            {{ t('fights.groupedFightSegments', { count: detail.battle_ids.length }) }}
-          </span>
-          <span
-            class="chip font-semibold"
-            [class.chip--success]="fightVerdict().type === 'victory'"
-            [class.chip--error]="fightVerdict().type === 'defeat'"
-            [class.chip--warning]="fightVerdict().type === 'draw'"
-            [class.chip--neutral]="fightVerdict().type === 'unknown'"
-          >
-            {{ fightVerdict().label }}
-          </span>
-
-          <span class="chip chip--neutral font-mono text-xs capitalize">
-            {{ t('fights.grouping', { method: detail.grouping_method, confidence: formatConfidence(detail.grouping_confidence) }) }}
-          </span>
-
+        <div entityBadges class="flex flex-wrap items-center gap-2">
+          <app-status-chip
+            [value]="fightVerdict().type"
+            [label]="fightVerdict().label"
+            [toneOverride]="verdictTone()"
+          />
           @if (detail.needs_review) {
-            <span class="chip chip--warning font-bold text-xs">
-              {{ t('fights.needsReview') }}
-            </span>
-          }
-
-          @if (ourAllianceName(); as allyName) {
-            <span class="chip chip--info font-mono text-xs font-medium">
-              [{{ allyName }}] {{ ourGuild()?.name || ourGuildName() }}
-            </span>
-          } @else {
-            <span class="chip chip--info font-mono text-xs font-medium">
-              {{ ourGuild()?.name || ourGuildName() }}
-            </span>
-          }
-
-          @if (detail.event_id) {
-            <a
-              class="chip chip--info no-underline text-xs"
-              [routerLink]="['/events', detail.event_id]"
-              [title]="t('battles.linkedEventHint')"
-            >
-              {{ t('fights.linkedEvent', { id: detail.event_id }) }}
-            </a>
-          } @else {
-            <span class="chip text-xs text-[var(--color-text-tertiary)]">
-              {{ t('battles.unlinked') }}
-            </span>
+            <app-status-chip value="needs_review" [label]="t('fights.needsReview')" [toneOverride]="'warning'" />
           }
         </div>
 
-        <!-- ================= 6 CORE KPI METRIC CARDS ================= -->
-        <section
-          class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6"
-          [attr.aria-label]="t('fights.kpisAria')"
-        >
-          <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">{{ t('battles.total_fame') }}</p>
-            <p class="battle-detail__value text-warning">{{ formatCompact(totalFame()) }}</p>
-            <p class="battle-detail__sub">
-              {{ t('battles.guild_fame_vs_fight') }}:
-              <strong class="mono text-white">{{ formatDecimal(ourFameShare()) }}%</strong>
-            </p>
-          </article>
+        <div entityMeta class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span class="capitalize">
+            {{ t('fights.grouping', { method: detail.grouping_method, confidence: formatConfidence(detail.grouping_confidence) }) }}
+          </span>
+          <span>{{ ourSideLabel() }}</span>
+          @if (detail.event_id; as eventId) {
+            <a [routerLink]="['/events', eventId]" [title]="t('battles.linkedEventHint')">
+              {{ t('fights.linkedEvent', { id: eventId }) }}
+            </a>
+          } @else {
+            <span>{{ t('battles.unlinked') }}</span>
+          }
+        </div>
 
-          <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
-            <p class="battle-detail__value">
-              {{ formatAmount(totalKills()) }} / {{ formatAmount(totalDeaths()) }}
-            </p>
-            <p class="battle-detail__sub">
-              {{ t('fights.guildKd') }}
-              <strong
-                class="mono"
-                [class.text-success]="ourGuildKdRatio() >= 1"
-                [class.text-error]="ourGuildKdRatio() < 1"
-              >
-                {{ formatDecimal(ourGuildKdRatio()) }}
-              </strong>
-            </p>
-          </article>
+        <div entitySummary>
+          <app-summary-band [ariaLabel]="t('fights.kpisAria')" [items]="summaryItems()" />
+        </div>
+      </app-entity-header>
 
-          <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">{{ t('battles.kill_participation') }}</p>
-            <p class="battle-detail__value">{{ formatDecimal(ourKillParticipation()) }}%</p>
-            <p class="battle-detail__sub">
-              {{ t('fights.ourKills', { count: ourGuild()?.kills ?? 0 }) }}
-            </p>
-          </article>
-
-          <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">{{ t('battles.avg_ip') }}</p>
-            <p class="battle-detail__value">{{ formatDecimal(ourGuildAvgIp()) }}</p>
-            <p class="battle-detail__sub">
-              {{ t('fights.overallAvgIp') }}
-              <span class="mono">{{ formatDecimal(fightAvgIp()) }}</span>
-            </p>
-          </article>
-
-          <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">{{ t('battles.silver_lost') }}</p>
-            <p class="battle-detail__value text-error">
-              {{ formatCompact(totalEstimatedLoss()) }}
-            </p>
-            <p class="battle-detail__sub">
-              {{ t('fights.pricedItems', { priced: pricedItemsCount(), total: totalItemsCount() }) }}
-            </p>
-          </article>
-
-          <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">{{ t('fights.fightersAndSegments') }}</p>
-            <p class="battle-detail__value text-white">
-              {{ totalPlayersCount() }}
-            </p>
-            <p class="battle-detail__sub">
-              {{ t('fights.battleSegmentsCount', { count: detail.battle_ids.length }) }}
-            </p>
-          </article>
-        </section>
-
-        <!-- ================= TAB CONTENT ================= -->
-
-        <!-- TAB 1: OVERVIEW & MATCHUP -->
-        @if (tab() === 'overview') {
-          <!-- Tactical Faction Head-to-Head Banner -->
-          <section class="card p-5 overflow-hidden border border-[var(--color-border)]">
-            <h2 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-4">
-              {{ t('fights.tacticalComparison') }}
-            </h2>
-            <div class="grid gap-5 lg:grid-cols-11 lg:items-center">
-              <!-- OUR FORCES -->
-              <div class="lg:col-span-5 rounded-xl p-4 border border-[var(--color-success)] bg-[var(--color-success-container)]">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="chip chip--success font-semibold text-xs">
-                    {{ ourAllianceName() ? '[' + ourAllianceName() + '] ' + (ourGuild()?.name || ourGuildName()) : (ourGuild()?.name || ourGuildName()) }}
-                  </span>
-                  <span class="text-xs text-secondary mono">{{ t('fights.fightersCount', { count: ourForcesPlayers() }) }}</span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
-                  <div class="surface p-2 rounded-lg">
-                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
-                    <p class="font-bold text-sm mono text-white">
-                      {{ ourForcesKills() }} / {{ ourForcesDeaths() }}
-                    </p>
-                  </div>
-                  <div class="surface p-2 rounded-lg">
-                    <p class="text-xs uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
-                    <p class="font-bold text-sm mono" [class.text-success]="ourForcesKdRatio() >= 1" [class.text-error]="ourForcesKdRatio() < 1">
-                      {{ formatDecimal(ourForcesKdRatio()) }}
-                    </p>
-                  </div>
-                  <div class="surface p-2 rounded-lg">
-                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
-                    <p class="font-bold text-sm mono text-warning">
-                      {{ formatCompact(ourForcesKillFame()) }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- VS DIVIDER -->
-              <div class="lg:col-span-1 text-center flex flex-col items-center justify-center">
-                <span class="font-black font-mono text-xs px-2.5 py-1 rounded-full bg-white/10 text-white border border-white/10">
-                  {{ t('fights.vs') }}
-                </span>
-              </div>
-
-              <!-- ENEMY FORCES -->
-              <div class="lg:col-span-5 rounded-xl p-4 border border-[var(--color-error)] bg-[var(--color-error-container)]">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="chip chip--error font-semibold text-xs">
-                    {{ topEnemyAlliance()?.name ? '[' + topEnemyAlliance()?.name + '] ' + (topEnemyAlliance()?.guilds?.[0]?.name || t('battles.filter_enemies')) : t('fights.hostileCoalition') }}
-                  </span>
-                  <span class="text-xs text-secondary mono">{{ t('fights.fightersCount', { count: enemyForcesPlayers() }) }}</span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
-                  <div class="surface p-2 rounded-lg">
-                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
-                    <p class="font-bold text-sm mono text-white">
-                      {{ enemyForcesKills() }} / {{ enemyForcesDeaths() }}
-                    </p>
-                  </div>
-                  <div class="surface p-2 rounded-lg">
-                    <p class="text-xs uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
-                    <p class="font-bold text-sm mono" [class.text-success]="enemyForcesKdRatio() >= 1" [class.text-error]="enemyForcesKdRatio() < 1">
-                      {{ formatDecimal(enemyForcesKdRatio()) }}
-                    </p>
-                  </div>
-                  <div class="surface p-2 rounded-lg">
-                    <p class="text-xs uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
-                    <p class="font-bold text-sm mono text-warning">
-                      {{ formatCompact(enemyForcesKillFame()) }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Squad MVPs & Combat Honors -->
-          <section [attr.aria-label]="t('fights.mvpsAria')">
-            <h2 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-3">
-              {{ t('fights.combatHonors') }}
-            </h2>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <!-- Top Executioner -->
-              <article class="card p-4 border border-[var(--color-warning)]">
-                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_killer') }}</p>
-                <div class="mt-2 flex items-center gap-3">
-                  @if (mvpExecutioner(); as player) {
-                    <app-avatar [username]="player.name" size="md" />
-                    <div class="truncate min-w-0">
-                      <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-warning font-bold mono">{{ t('fights.mvpKillsKd', { kills: player.kills, kd: formatDecimal(player.kdRatio) }) }}</p>
-                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
-                    </div>
-                  } @else {
-                    <p class="text-xs text-secondary">{{ t('fights.noKillsRecorded') }}</p>
-                  }
-                </div>
-              </article>
-
-              <!-- Fame Hunter -->
-              <article class="card p-4 border border-[var(--color-warning)]">
-                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_fame') }}</p>
-                <div class="mt-2 flex items-center gap-3">
-                  @if (mvpFameHunter(); as player) {
-                    <app-avatar [username]="player.name" size="md" />
-                    <div class="truncate min-w-0">
-                      <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-warning font-bold mono">{{ t('fights.mvpFame', { fame: formatCompact(player.kill_fame) }) }}</p>
-                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
-                    </div>
-                  } @else {
-                    <p class="text-xs text-secondary">{{ t('fights.noFameRecorded') }}</p>
-                  }
-                </div>
-              </article>
-
-              <!-- Iron Vanguard (Highest IP) -->
-              <article class="card p-4 border border-[var(--color-info)]">
-                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_ip') }}</p>
-                <div class="mt-2 flex items-center gap-3">
-                  @if (mvpIronVanguard(); as player) {
-                    <app-avatar [username]="player.name" size="md" />
-                    <div class="truncate min-w-0">
-                      <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-primary font-bold mono">{{ formatDecimal(player.item_power ?? 0) }} IP</p>
-                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
-                    </div>
-                  } @else {
-                    <p class="text-xs text-secondary">—</p>
-                  }
-                </div>
-              </article>
-
-              <!-- Heaviest Casualty -->
-              <article class="card p-4 border border-[var(--color-error)]">
-                <p class="text-xs text-disabled uppercase font-bold tracking-wider">{{ t('battles.heaviest_loss') }}</p>
-                <div class="mt-2 flex items-center gap-3">
-                  @if (mvpHeaviestLoss(); as player) {
-                    <app-avatar [username]="player.name" size="md" />
-                    <div class="truncate min-w-0">
-                      <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-error font-bold mono">{{ t('fights.mvpLost', { amount: formatCompact(player.estimatedLoss) }) }}</p>
-                      <p class="text-xs text-secondary truncate">{{ player.guild_name }}</p>
-                    </div>
-                  } @else {
-                    <p class="text-xs text-secondary">{{ t('fights.noEstimatedLosses') }}</p>
-                  }
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <!-- Charts Row -->
-          <section class="grid gap-4 lg:grid-cols-3">
-            <!-- Fame Distribution -->
-            <article class="card p-4 border border-[var(--color-border)]">
-              <h3 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-2">
-                {{ t('fights.killFameDistribution') }}
-              </h3>
-              <app-chart
-                [option]="fameDistributionOption()"
-                height="15rem"
-                [label]="t('fights.killFameDistributionAria')"
-                [tableHead]="fameDistributionTableHead()"
-                [tableRows]="fameDistributionTableRows()"
-              />
-            </article>
-
-            <!-- Top Guilds K/D Leaders -->
-            <article class="card p-4 border border-[var(--color-border)]">
-              <h3 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-2">
-                {{ t('battles.top_guilds_kd') }}
-              </h3>
-              <app-chart
-                [option]="topGuildsKdOption()"
-                height="15rem"
-                [label]="t('battles.top_guilds_kd')"
-                [tableHead]="topGuildsKdTableHead()"
-                [tableRows]="topGuildsKdTableRows()"
-              />
-            </article>
-
-            <!-- Segments Combat Activity -->
-            <article class="card p-4 border border-[var(--color-border)]">
-              <h3 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-2">
-                {{ t('fights.segmentActivity') }}
-              </h3>
-              @if ((fight()?.segments?.length ?? 0) > 0) {
-                <app-chart
-                  [option]="segmentsIntensityOption()"
-                  height="15rem"
-                  [label]="t('fights.segmentActivityAria')"
-                  [tableHead]="segmentsIntensityTableHead()"
-                  [tableRows]="segmentsIntensityTableRows()"
-                />
-              } @else {
-                <div class="h-48 flex items-center justify-center text-xs text-secondary text-center p-4">
-                  {{ t('fights.segmentChartEmpty') }}
-                </div>
-              }
-            </article>
-          </section>
-
-          <!-- Attached Battle Segments Cards -->
-          <section class="card p-4 border border-[var(--color-border)]">
-            <div class="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <h3 class="font-bold text-sm text-white">{{ t('fights.attachedSegments') }}</h3>
-                <p class="text-xs text-secondary">
-                  {{ t('fights.attachedSegmentsHint', { count: detail.battle_ids.length }) }}
-                </p>
-              </div>
-              <button type="button" class="btn btn--outline btn--sm text-xs" (click)="tab.set('segments')">
-                {{ t('fights.viewAllSegments', { count: detail.battle_ids.length }) }}
-              </button>
-            </div>
-
-            <div class="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              @for (battleId of detail.battle_ids.slice(0, 8); track battleId; let idx = $index) {
-                <a
-                  [routerLink]="['/battles', battleId]"
-                  class="surface p-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-primary)] transition-all flex items-center justify-between no-underline group"
-                >
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    <span class="h-6 w-6 rounded bg-white/5 border border-white/10 font-mono text-xs font-bold flex items-center justify-center text-secondary group-hover:text-white">
-                      {{ idx + 1 }}
-                    </span>
-                    <div class="min-w-0">
-                      <p class="text-xs font-bold text-white group-hover:text-[var(--color-primary)] truncate">
-                        {{ t('fights.battleNumber', { id: battleId }) }}
-                      </p>
-                      <span class="text-xs text-secondary">{{ t('fights.viewReport') }}</span>
-                    </div>
-                  </div>
-                  <app-icon name="chevron-right" size="0.75rem" class="text-secondary group-hover:text-white transition-colors" />
-                </a>
-              }
-            </div>
-          </section>
+      <app-page-stack>
+        @if (mutationError(); as error) {
+          <p class="fight-feedback fight-feedback--error" role="alert">{{ error }}</p>
+        }
+        @if (mutationSuccess(); as message) {
+          <p class="fight-feedback fight-feedback--success" role="status">{{ message }}</p>
         }
 
-        <!-- TAB 2: GUILDS & ALLIANCES -->
-        @if (tab() === 'guilds') {
-          <!-- Alliance Summary Cards -->
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            @for (alliance of alliances().slice(0, 6); track alliance.name) {
-              <article class="card p-4 border border-[var(--color-border)]" [class.border]="alliance.isOurAlliance" [class.border-[var(--color-success)]]="alliance.isOurAlliance">
-                <div class="flex items-center justify-between gap-2 mb-2">
-                  <span class="chip font-bold text-xs" [class.chip--success]="alliance.isOurAlliance" [class.chip--neutral]="!alliance.isOurAlliance">
-                    {{ alliance.name }}
-                  </span>
-                  <span class="text-xs font-mono text-secondary">{{ t('fights.fightersCount', { count: alliance.players }) }}</span>
-                </div>
-                <div class="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
-                  <div class="surface p-2 rounded-lg">
-                    <span class="text-xs text-disabled block">{{ t('battles.kill_death') }}</span>
-                    <strong class="mono text-white">{{ formatDecimal(alliance.kdRatio) }}</strong>
-                  </div>
-                  <div class="surface p-2 rounded-lg">
-                    <span class="text-xs text-disabled block">{{ t('battles.fame') }}</span>
-                    <strong class="mono text-warning">{{ formatCompact(alliance.killFame) }}</strong>
-                  </div>
-                  <div class="surface p-2 rounded-lg">
-                    <span class="text-xs text-disabled block">{{ t('common.loss') }}</span>
-                    <strong class="mono text-error">{{ formatCompact(alliance.estimatedLoss) }}</strong>
-                  </div>
-                </div>
-              </article>
-            }
-          </div>
+        <app-tabs
+          [options]="tabOptions()"
+          [active]="tab()"
+          [ariaLabel]="t('fights.sectionsAria')"
+          (activeChange)="onTabChange($event)"
+        />
 
-          <!-- Guilds DataTable -->
-          <section class="card p-4 space-y-3 border border-[var(--color-border)]">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 class="text-sm font-bold text-white">{{ t('fights.participatingGuilds') }}</h2>
-                <p class="text-xs text-secondary">{{ t('fights.guildsSubtitle') }}</p>
+        <!-- ================= OVERVIEW ================= -->
+        @if (tab() === 'overview') {
+          <div class="fight-overview">
+            <section class="card p-4" aria-labelledby="fight-head-to-head">
+              <h2 id="fight-head-to-head" class="section-title">{{ t('fights.tacticalComparison') }}</h2>
+              <div class="table-scroll">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('fights.side') }}</th>
+                      <th scope="col" class="num">{{ ourSideLabel() }}</th>
+                      <th scope="col" class="num">{{ enemySideLabel() }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of headToHeadRows(); track row.key) {
+                      <tr>
+                        <th scope="row" class="font-medium">{{ row.label }}</th>
+                        <td class="num">{{ row.ours }}</td>
+                        <td class="num">{{ row.enemy }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
               </div>
-              <div class="w-full sm:w-64">
-                <input
-                  type="search"
-                  class="input input--sm text-xs w-full"
-                  [placeholder]="t('fights.searchGuilds')"
-                  [value]="guildSearchQuery()"
-                  (input)="guildSearchQuery.set(inputValue($event))"
+            </section>
+
+            <section class="card p-4" aria-labelledby="fight-honors">
+              <h2 id="fight-honors" class="section-title">{{ t('fights.combatHonors') }}</h2>
+              <div class="table-scroll">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('fights.honor') }}</th>
+                      <th scope="col">{{ t('common.player') }}</th>
+                      <th scope="col" class="num">{{ t('fights.honorResult') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (honor of honorRows(); track honor.id) {
+                      <tr>
+                        <th scope="row" class="font-medium">{{ honor.label }}</th>
+                        <td>
+                          @if (honor.player; as player) {
+                            <span class="block font-semibold">{{ player.name }}</span>
+                            <span class="hint">{{ player.guild_name }}</span>
+                          } @else {
+                            <span class="hint">{{ honor.emptyText }}</span>
+                          }
+                        </td>
+                        <td class="num">{{ honor.value }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div class="fight-charts">
+              <section class="card p-4">
+                <h2 class="section-title">{{ t('fights.killFameDistribution') }}</h2>
+                <app-chart
+                  [option]="fameDistributionOption()"
+                  height="15rem"
+                  [label]="t('fights.killFameDistributionAria')"
+                  [tableHead]="fameDistributionTableHead()"
+                  [tableRows]="fameDistributionTableRows()"
                 />
-              </div>
+              </section>
+
+              <section class="card p-4">
+                <h2 class="section-title">{{ t('battles.top_guilds_kd') }}</h2>
+                <app-chart
+                  [option]="topGuildsKdOption()"
+                  height="15rem"
+                  [label]="t('battles.top_guilds_kd')"
+                  [tableHead]="topGuildsKdTableHead()"
+                  [tableRows]="topGuildsKdTableRows()"
+                />
+              </section>
+
+              <section class="card p-4">
+                <h2 class="section-title">{{ t('fights.segmentActivity') }}</h2>
+                @if ((detail.segments?.length ?? 0) > 0) {
+                  <app-chart
+                    [option]="segmentsIntensityOption()"
+                    height="15rem"
+                    [label]="t('fights.segmentActivityAria')"
+                    [tableHead]="segmentsIntensityTableHead()"
+                    [tableRows]="segmentsIntensityTableRows()"
+                  />
+                } @else {
+                  <p class="hint py-8 text-center">{{ t('fights.segmentChartEmpty') }}</p>
+                }
+              </section>
             </div>
+          </div>
+        }
+
+        <!-- ================= GUILDS & ALLIANCES ================= -->
+        @if (tab() === 'guilds') {
+          <section class="card p-4 space-y-3" aria-labelledby="fight-alliances">
+            <h2 id="fight-alliances" class="section-title">{{ t('fights.alliances') }}</h2>
+            <div class="table-scroll">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">{{ t('fights.allianceColumn') }}</th>
+                    <th scope="col" class="num">{{ t('battles.players') }}</th>
+                    <th scope="col" class="num">{{ t('battles.kill_death') }}</th>
+                    <th scope="col" class="num">{{ t('battles.kill_fame') }}</th>
+                    <th scope="col" class="num">{{ t('common.loss') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (alliance of alliances(); track alliance.name) {
+                    <tr>
+                      <th scope="row" class="font-medium">{{ alliance.name }}</th>
+                      <td class="num">{{ formatAmount(alliance.players) }}</td>
+                      <td class="num">{{ formatDecimal(alliance.kdRatio) }}</td>
+                      <td class="num">{{ formatCompact(alliance.killFame) }}</td>
+                      <td class="num">{{ formatCompact(alliance.estimatedLoss) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="card p-4 space-y-3" aria-labelledby="fight-guilds">
+            <div>
+              <h2 id="fight-guilds" class="section-title">{{ t('fights.participatingGuilds') }}</h2>
+              <p class="hint">{{ t('fights.guildsSubtitle') }}</p>
+            </div>
+
+            <app-filter-bar
+              [searchLabel]="t('fights.searchGuilds')"
+              [searchPlaceholder]="t('fights.searchGuilds')"
+              [query]="guildSearchQuery()"
+              [activeCount]="guildSearchQuery().trim() ? 1 : 0"
+              (queryChange)="guildSearchQuery.set($event)"
+              (clear)="guildSearchQuery.set('')"
+            />
 
             <app-data-table
               [columns]="allGuildColumns"
@@ -573,91 +360,58 @@ type PendingFightMutation =
               [trackBy]="trackGuildRow"
               [pageSize]="10"
               [hideSearch]="true"
+              [syncUrl]="false"
+              [ariaLabel]="t('fights.participatingGuilds')"
             >
               <ng-template dataTableCell="name" let-row>
-                <div class="flex items-center gap-2">
-                  <span class="font-bold text-white text-xs">{{ row.name }}</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-semibold">{{ row.name }}</span>
                   @if (row.alliance_name) {
-                    <span class="chip chip--neutral text-xs py-0 px-1 font-mono">
-                      [{{ row.alliance_name }}]
-                    </span>
+                    <span class="chip chip--neutral font-mono">[{{ row.alliance_name }}]</span>
                   }
                   @if (row.isOurGuild) {
-                    <span class="chip chip--success text-xs py-0 px-1 font-bold">{{ t('fights.ourGuild') }}</span>
+                    <app-status-chip value="ours" [label]="t('fights.ourGuild')" [toneOverride]="'success'" />
                   }
                 </div>
               </ng-template>
 
               <ng-template dataTableCell="kill_death" let-row>
-                <span class="font-mono text-xs font-bold" [class.text-success]="row.kdRatio >= 1" [class.text-error]="row.kdRatio < 1">
-                  {{ formatDecimal(row.kdRatio) }}
-                </span>
+                <span class="num font-semibold">{{ formatDecimal(row.kdRatio) }}</span>
               </ng-template>
 
               <ng-template dataTableCell="kill_fame" let-row>
-                <span class="font-mono text-xs text-warning font-semibold">
-                  {{ formatCompact(row.kill_fame) }}
-                </span>
+                <span class="num">{{ formatCompact(row.kill_fame) }}</span>
               </ng-template>
 
               <ng-template dataTableCell="loss" let-row>
-                <span class="font-mono text-xs text-error">
-                  {{ formatCompact(row.estimatedLoss) }}
-                </span>
+                <span class="num">{{ formatCompact(row.estimatedLoss) }}</span>
               </ng-template>
             </app-data-table>
           </section>
         }
 
-        <!-- TAB 3: PLAYERS & COMBATANTS -->
+        <!-- ================= PLAYERS ================= -->
         @if (tab() === 'players') {
-          <section class="card p-4 space-y-4 border border-[var(--color-border)]">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <!-- Side Filters -->
-              <div class="flex items-center gap-1 p-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-                <button
-                  type="button"
-                  class="px-3 py-1 text-xs rounded-md font-medium transition-all"
-                  [class.bg-white/10]="playerSideFilter() === 'all'"
-                  [class.text-white]="playerSideFilter() === 'all'"
-                  [class.text-secondary]="playerSideFilter() !== 'all'"
-                  (click)="playerSideFilter.set('all')"
-                >
-                  {{ t('fights.allPlayers', { count: enrichedPlayers().length }) }}
-                </button>
-                <button
-                  type="button"
-                  class="px-3 py-1 text-xs rounded-md font-medium transition-all"
-                  [class.bg-white/10]="playerSideFilter() === 'allies'"
-                  [class.text-white]="playerSideFilter() === 'allies'"
-                  [class.text-secondary]="playerSideFilter() !== 'allies'"
-                  (click)="playerSideFilter.set('allies')"
-                >
-                  {{ t('battles.filter_allies') }} ({{ allyPlayersCount() }})
-                </button>
-                <button
-                  type="button"
-                  class="px-3 py-1 text-xs rounded-md font-medium transition-all"
-                  [class.bg-white/10]="playerSideFilter() === 'enemies'"
-                  [class.text-white]="playerSideFilter() === 'enemies'"
-                  [class.text-secondary]="playerSideFilter() !== 'enemies'"
-                  (click)="playerSideFilter.set('enemies')"
-                >
-                  {{ t('battles.filter_enemies') }} ({{ enemyPlayersCount() }})
-                </button>
-              </div>
+          <section class="card p-4 space-y-3" aria-labelledby="fight-players">
+            <h2 id="fight-players" class="section-title">{{ t('battles.players') }}</h2>
 
-              <!-- Search input -->
-              <div class="w-full sm:w-64">
-                <input
-                  type="search"
-                  class="input input--sm text-xs w-full"
-                  [placeholder]="t('fights.searchPlayers')"
-                  [value]="playerSearchQuery()"
-                  (input)="playerSearchQuery.set(inputValue($event))"
-                />
-              </div>
-            </div>
+            <app-filter-bar
+              [searchLabel]="t('fights.searchPlayers')"
+              [searchPlaceholder]="t('fights.searchPlayers')"
+              [query]="playerSearchQuery()"
+              [activeCount]="playerActiveCount()"
+              (queryChange)="playerSearchQuery.set($event)"
+              (clear)="clearPlayerFilters()"
+            >
+              <app-tabs
+                filterPrimary
+                [variant]="'segmented'"
+                [ariaLabel]="t('battles.players')"
+                [options]="sideOptions()"
+                [active]="playerSideFilter()"
+                (activeChange)="onSideChange($event)"
+              />
+            </app-filter-bar>
 
             <app-data-table
               [columns]="allPlayerColumns"
@@ -665,269 +419,171 @@ type PendingFightMutation =
               [trackBy]="trackPlayerRow"
               [pageSize]="15"
               [hideSearch]="true"
+              [syncUrl]="false"
+              [ariaLabel]="t('battles.players')"
             >
               <ng-template dataTableCell="name" let-row>
-                <div class="flex items-center gap-2.5 cursor-pointer" (click)="inspectedPlayer.set(row)">
+                <button type="button" class="fight-row-button" (click)="inspectedPlayer.set(row)">
                   <app-avatar [username]="row.name" size="xs" />
-                  <div class="min-w-0">
-                    <span class="font-bold text-white text-xs block truncate hover:text-[var(--color-primary)]" [class.text-[var(--color-primary)]]="row.isOurGuild">
-                      {{ row.name }}
+                  <span class="min-w-0">
+                    <span class="block truncate text-xs font-semibold">{{ row.name }}</span>
+                    <span class="block truncate hint">
+                      {{ row.guild_name }}@if (row.alliance_name) { [{{ row.alliance_name }}] }
                     </span>
-                    <span class="text-xs text-secondary truncate block">
-                      {{ row.guild_name }} @if (row.alliance_name) { [{{ row.alliance_name }}] }
-                    </span>
-                  </div>
-                </div>
+                  </span>
+                  @if (row.isOurGuild) {
+                    <app-status-chip value="ours" [label]="t('fights.ourGuild')" [toneOverride]="'success'" />
+                  }
+                </button>
               </ng-template>
 
               <ng-template dataTableCell="item_power" let-row>
-                <span class="font-mono text-xs text-white">
-                  {{ formatDecimal(row.item_power ?? 0) }}
-                </span>
+                <span class="num">{{ formatDecimal(row.item_power ?? 0) }}</span>
               </ng-template>
 
               <ng-template dataTableCell="kill_death" let-row>
-                <span class="font-mono text-xs font-bold" [class.text-success]="row.kdRatio >= 1" [class.text-error]="row.kdRatio < 1">
-                  {{ formatDecimal(row.kdRatio) }}
-                </span>
+                <span class="num font-semibold">{{ formatDecimal(row.kdRatio) }}</span>
               </ng-template>
 
               <ng-template dataTableCell="kill_fame" let-row>
-                <span class="font-mono text-xs text-warning font-semibold">
-                  {{ formatCompact(row.kill_fame) }}
-                </span>
+                <span class="num">{{ formatCompact(row.kill_fame) }}</span>
               </ng-template>
 
               <ng-template dataTableCell="loss" let-row>
-                <span class="font-mono text-xs text-error">
-                  {{ formatCompact(row.estimatedLoss) }}
-                </span>
+                <span class="num">{{ formatCompact(row.estimatedLoss) }}</span>
               </ng-template>
             </app-data-table>
           </section>
         }
 
-        <!-- TAB 4: ROSTER & PLANNING EVIDENCE -->
+        <!-- ================= ROSTER ================= -->
         @if (tab() === 'roster') {
-          <div class="space-y-4">
-            <!-- Coverage Metrics -->
-            @if (detail.participant_coverage; as coverage) {
-              <section class="card p-5 border border-[var(--color-border)]">
-                <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
-                  <div>
-                    <h2 class="text-sm font-bold text-white">{{ t('fights.planningEvidence') }}</h2>
-                    <p class="text-xs text-secondary">
-                      {{ t('fights.planningEvidenceHint') }}
-                    </p>
-                  </div>
-                  @if (detail.planned_comp; as comp) {
-                    <span class="chip chip--info text-xs font-semibold">
-                      {{ t('events.detail.comp') }}: {{ comp.name || ('#' + comp.id) }}
-                    </span>
-                  }
+          @if (detail.participant_coverage) {
+            <section class="card p-4 space-y-3" aria-labelledby="fight-planning">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 id="fight-planning" class="section-title">{{ t('fights.planningEvidence') }}</h2>
+                  <p class="hint">{{ t('fights.planningEvidenceHint') }}</p>
                 </div>
+                @if (detail.planned_comp; as comp) {
+                  <span class="chip chip--neutral">
+                    {{ t('events.detail.comp') }}: {{ comp.name || ('#' + comp.id) }}
+                  </span>
+                }
+              </div>
+              <app-summary-band [ariaLabel]="t('fights.planningEvidence')" [items]="coverageItems()" />
+            </section>
+          }
 
-                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.observedMembers') }}</p>
-                    <p class="text-base font-bold mono text-success mt-1">
-                      {{ coverage.observed_planned_participants }} / {{ coverage.matchable_planned_participants }}
-                    </p>
-                  </div>
-                  <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.unmatchedMembers') }}</p>
-                    <p class="text-base font-bold mono text-secondary mt-1">
-                      {{ coverage.unmatched_planned_participants }}
-                    </p>
-                  </div>
-                  <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.unplannedObserved') }}</p>
-                    <p class="text-base font-bold mono text-warning mt-1">
-                      {{ coverage.unplanned_observed_players }}
-                    </p>
-                  </div>
-                  <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-xs text-disabled uppercase font-bold">{{ t('fights.snapshotCoverage') }}</p>
-                    <p class="text-base font-bold mono text-white mt-1">
-                      {{ coverage.persisted_segments }} / {{ t('fights.segmentsCount', { count: coverage.total_segments }) }}
-                    </p>
-                  </div>
-                </div>
-              </section>
-            }
+          @if (detail.planned_participants?.length) {
+            <section class="card p-4 space-y-3" aria-labelledby="fight-planned">
+              <h2 id="fight-planned" class="section-title">{{ t('fights.plannedParticipants') }}</h2>
+              <app-data-table
+                [columns]="plannedColumns"
+                [rows]="detail.planned_participants ?? []"
+                [trackBy]="trackPlannedRow"
+                [pageSize]="25"
+                [hideSearch]="true"
+                [syncUrl]="false"
+                [mobileLayout]="'stack'"
+                [ariaLabel]="t('fights.plannedParticipants')"
+              >
+                <ng-template dataTableCell="primary" let-row>
+                  {{ row.primary_build_name || (row.primary_build_id !== null ? t('fights.buildNumber', { id: row.primary_build_id }) : t('common.none')) }}
+                </ng-template>
 
-            <!-- Planned Participants Table -->
-            @if (detail.planned_participants?.length) {
-              <section class="card p-4 space-y-3 border border-[var(--color-border)]">
-                <h3 class="font-bold text-sm text-white">{{ t('fights.plannedParticipants') }}</h3>
-                <div class="overflow-x-auto">
-                  <table class="table w-full">
-                    <thead>
-                      <tr>
-                        <th class="text-left text-xs">{{ t('common.username') }}</th>
-                        <th class="text-left text-xs">{{ t('events.detail.primary_build') }}</th>
-                        <th class="text-left text-xs">{{ t('events.detail.secondary_build') }}</th>
-                        <th class="text-left text-xs">{{ t('fights.observationStatus') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (p of detail.planned_participants; track p.user_id) {
-                        <tr class="hover:bg-[var(--color-surface-hover)]">
-                          <td class="text-xs font-semibold text-white py-2">{{ p.username }}</td>
-                          <td class="text-xs text-secondary py-2">{{ p.primary_build_name || (p.primary_build_id !== null ? t('fights.buildNumber', { id: p.primary_build_id }) : t('common.none')) }}</td>
-                          <td class="text-xs text-secondary py-2">{{ p.secondary_build_name || t('common.none') }}</td>
-                          <td class="py-2">
-                            <span class="chip text-xs font-bold" [class.chip--success]="p.observed" [class.chip--warning]="!p.observed">
-                              {{ p.observed ? t('fights.observedInBattle') : (p.albion_player_id ? t('fights.absentFromSnapshot') : t('fights.noLinkedCharacter')) }}
-                            </span>
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            }
+                <ng-template dataTableCell="secondary" let-row>
+                  {{ row.secondary_build_name || t('common.none') }}
+                </ng-template>
 
-            <!-- Observed Friendly Players -->
-            @if (detail.observed_friendly_players?.length) {
-              <section class="card p-4 space-y-3 border border-[var(--color-border)]">
-                <h3 class="font-bold text-sm text-white">{{ t('fights.observedAllies') }}</h3>
-                <div class="overflow-x-auto">
-                  <table class="table w-full">
-                    <thead>
-                      <tr>
-                        <th class="text-left text-xs">{{ t('common.player') }}</th>
-                        <th class="text-left text-xs">{{ t('nav.guild') }}</th>
-                        <th class="text-right text-xs">{{ t('battles.segments') }}</th>
-                        <th class="text-right text-xs">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</th>
-                        <th class="text-right text-xs">{{ t('battles.kill_fame') }}</th>
-                        <th class="text-right text-xs">{{ t('battles.avg_ip') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (pl of detail.observed_friendly_players; track pl.albion_player_id) {
-                        <tr class="hover:bg-[var(--color-surface-hover)]">
-                          <td class="text-xs font-semibold text-white py-2">{{ pl.name }}</td>
-                          <td class="text-xs text-secondary py-2">{{ pl.guild_name }}</td>
-                          <td class="text-xs font-mono text-right py-2">{{ pl.segments_observed }}</td>
-                          <td class="text-xs font-mono text-right py-2">{{ pl.kills }} / {{ pl.deaths }}</td>
-                          <td class="text-xs font-mono text-right text-warning py-2">{{ formatAmount(pl.kill_fame) }}</td>
-                          <td class="text-xs font-mono text-right py-2">{{ formatDecimal(pl.average_item_power) }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            }
-          </div>
+                <ng-template dataTableCell="observation" let-row>
+                  <app-status-chip
+                    [value]="row.observed ? 'observed' : (row.albion_player_id ? 'absent' : 'unlinked')"
+                    [label]="row.observed ? t('fights.observedInBattle') : (row.albion_player_id ? t('fights.absentFromSnapshot') : t('fights.noLinkedCharacter'))"
+                    [toneOverride]="row.observed ? 'success' : 'warning'"
+                  />
+                </ng-template>
+              </app-data-table>
+            </section>
+          }
+
+          @if (detail.observed_friendly_players?.length) {
+            <section class="card p-4 space-y-3" aria-labelledby="fight-observed">
+              <h2 id="fight-observed" class="section-title">{{ t('fights.observedAllies') }}</h2>
+              <app-data-table
+                [columns]="observedColumns"
+                [rows]="detail.observed_friendly_players ?? []"
+                [trackBy]="trackObservedRow"
+                [pageSize]="25"
+                [hideSearch]="true"
+                [syncUrl]="false"
+                [mobileLayout]="'stack'"
+                [ariaLabel]="t('fights.observedAllies')"
+              >
+                <ng-template dataTableCell="kill_fame" let-row>
+                  <span class="num">{{ formatAmount(row.kill_fame) }}</span>
+                </ng-template>
+
+                <ng-template dataTableCell="avg_ip" let-row>
+                  <span class="num">{{ formatDecimal(row.average_item_power) }}</span>
+                </ng-template>
+              </app-data-table>
+            </section>
+          }
         }
 
-        <!-- TAB 5: BATTLE SEGMENTS & OFFICER ACTIONS -->
+        <!-- ================= SEGMENTS ================= -->
         @if (tab() === 'segments') {
-          <div class="space-y-4">
-            <!-- Segments List -->
-            <section class="card p-0 overflow-hidden border border-[var(--color-border)]">
-              <header class="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-                <div>
-                  <h2 class="text-sm font-bold text-white">{{ t('fights.albionSegments') }}</h2>
-                  <p class="text-xs text-secondary">{{ t('fights.albionSegmentsHint') }}</p>
-                </div>
-                <span class="chip font-mono text-xs font-bold">{{ t('fights.segmentsCount', { count: detail.battle_ids.length }) }}</span>
-              </header>
+          <section class="card p-4 space-y-3" aria-labelledby="fight-segments">
+            <div>
+              <h2 id="fight-segments" class="section-title">{{ t('fights.albionSegments') }}</h2>
+              <p class="hint">{{ t('fights.albionSegmentsHint') }}</p>
+            </div>
 
-              <ol class="divide-y divide-[var(--color-border)]">
-                @for (battleId of detail.battle_ids; track battleId; let idx = $index) {
-                  <li class="p-3.5 hover:bg-[var(--color-surface-hover)] transition-all flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-3 min-w-0">
-                      <span class="h-7 w-7 rounded-lg bg-white/5 border border-white/10 font-mono text-xs font-bold flex items-center justify-center text-white">
-                        {{ idx + 1 }}
-                      </span>
-                      <div>
-                        <div class="flex items-center gap-2">
-                          <a [routerLink]="['/battles', battleId]" class="text-sm font-bold text-white hover:text-[var(--color-primary)] no-underline">
-                            {{ t('fights.battleNumber', { id: battleId }) }}
-                          </a>
-                          <a
-                            class="text-xs text-secondary hover:underline no-underline"
-                            [href]="albionBattlesUrl(battleId)"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {{ t('battles.view_on_albion_battles') }} ↗
-                          </a>
-                        </div>
-                        <p class="text-xs text-secondary">
-                          {{ t('fights.segmentOfFight', { id: detail.id }) }}
-                        </p>
-                      </div>
-                    </div>
+            <app-data-table
+              [columns]="segmentColumns"
+              [rows]="segmentRows()"
+              [trackBy]="trackSegmentRow"
+              [pageSize]="25"
+              [hideSearch]="true"
+              [syncUrl]="false"
+              [ariaLabel]="t('fights.albionSegments')"
+            >
+              <ng-template dataTableCell="segment" let-row>
+                <span class="block min-w-0">
+                  <a class="font-semibold" [routerLink]="['/battles', row.battleId]">
+                    {{ t('fights.battleNumber', { id: row.battleId }) }}
+                  </a>
+                  <span class="block hint">
+                    <a
+                      [href]="albionBattlesUrl(row.battleId)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ t('battles.view_on_albion_battles') }} ↗</a>
+                  </span>
+                </span>
+              </ng-template>
 
-                    <div class="flex items-center gap-2">
-                      <a [routerLink]="['/battles', battleId]" class="btn btn--outline btn--sm text-xs no-underline">
-                        {{ t('fights.viewReport') }}
-                      </a>
-                      @if (canManageFights()) {
-                        <button
-                          type="button"
-                          class="btn btn--ghost btn--sm text-xs"
-                          [disabled]="mutating()"
-                          (click)="openMove(battleId)"
-                        >
-                          {{ t('fights.move') }}
-                        </button>
-                      }
-                    </div>
-                  </li>
+              <ng-template dataTableCell="kills" let-row>
+                <span class="num">{{ row.kills === null ? '—' : formatAmount(row.kills) }}</span>
+              </ng-template>
+
+              <ng-template dataTableCell="players" let-row>
+                <span class="num">{{ row.players === null ? '—' : formatAmount(row.players) }}</span>
+              </ng-template>
+
+              <ng-template dataTableCell="actions" let-row>
+                @if (canManageFights()) {
+                  <app-menu
+                    [appearance]="'ghost'"
+                    [label]="t('fights.segmentActionsAria', { id: row.battleId })"
+                    [items]="segmentMenuItems()"
+                    (itemSelect)="openMove(row.battleId)"
+                  />
                 }
-              </ol>
-            </section>
-
-            <!-- Officer Controls Banner -->
-            @if (canManageFights()) {
-              <section class="card p-5 border border-[var(--color-border)] space-y-3">
-                <div>
-                  <h3 class="text-sm font-bold text-white">{{ t('fights.officerGrouping') }}</h3>
-                  <p class="text-xs text-secondary">
-                    {{ t('fights.officerGroupingHint') }}
-                  </p>
-                </div>
-
-                @if (mutationError(); as error) {
-                  <p class="text-xs text-error bg-[var(--color-error-container)] p-2.5 rounded-lg border border-[var(--color-error)]" role="alert">
-                    {{ error }}
-                  </p>
-                }
-                @if (mutationSuccess(); as message) {
-                  <p class="text-xs text-success bg-[var(--color-success-container)] p-2.5 rounded-lg border border-[var(--color-success)]" aria-live="polite">
-                    {{ message }}
-                  </p>
-                }
-
-                <div class="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [disabled]="mutating()"
-                    (click)="openMerge()"
-                  >
-                    <app-icon name="refresh" size="0.75rem" />
-                    {{ t('fights.merge') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [disabled]="mutating() || detail.battle_ids.length < 2"
-                    (click)="openSplit()"
-                  >
-                    <app-icon name="close" size="0.75rem" />
-                    {{ t('fights.split') }}
-                  </button>
-                </div>
-              </section>
-            }
-          </div>
+              </ng-template>
+            </app-data-table>
+          </section>
         }
       </app-page-stack>
 
@@ -943,9 +599,7 @@ type PendingFightMutation =
         >
           <form id="fight-merge-form" class="space-y-3" (submit)="stageMerge($event)">
             <div>
-              <label class="text-xs font-bold text-white block mb-1" for="fight-merge-target">
-                {{ t('fights.mergeTargetLabel') }}
-              </label>
+              <label class="label" for="fight-merge-target">{{ t('fights.mergeTargetLabel') }}</label>
               <input
                 id="fight-merge-target"
                 class="input input--sm text-xs w-full"
@@ -960,9 +614,7 @@ type PendingFightMutation =
             </div>
 
             <div>
-              <label class="text-xs font-bold text-white block mb-1" for="fight-merge-others">
-                {{ t('fights.mergeOthersLabel') }}
-              </label>
+              <label class="label" for="fight-merge-others">{{ t('fights.mergeOthersLabel') }}</label>
               <input
                 id="fight-merge-others"
                 class="input input--sm text-xs w-full"
@@ -973,11 +625,11 @@ type PendingFightMutation =
                 (input)="mergeOtherIds.set(inputValue($event)); clearDialogError()"
                 required
               />
-              <p class="text-xs text-secondary mt-1">{{ t('fights.mergeCurrentIncluded', { id: detail.id }) }}</p>
+              <p class="hint">{{ t('fights.mergeCurrentIncluded', { id: detail.id }) }}</p>
             </div>
 
             @if (dialogError(); as error) {
-              <p class="text-xs text-error bg-[var(--color-error-container)] p-2 rounded-lg" role="alert">{{ error }}</p>
+              <p class="fight-feedback fight-feedback--error" role="alert">{{ error }}</p>
             }
           </form>
 
@@ -1001,23 +653,23 @@ type PendingFightMutation =
           (closed)="closeMutationDialog()"
         >
           <form id="fight-split-form" class="space-y-3" (submit)="stageSplit($event)">
-            <p class="text-xs font-bold text-white mb-2">{{ t('fights.splitSelect') }}</p>
+            <p class="label">{{ t('fights.splitSelect') }}</p>
             <div class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
               @for (battleId of detail.battle_ids; track battleId) {
-                <label class="flex items-center gap-2 text-xs text-white p-2 rounded surface hover:bg-[var(--color-surface-hover)] cursor-pointer">
+                <label class="filter-check">
                   <input
                     type="checkbox"
                     class="checkbox"
                     [checked]="isSplitSelected(battleId)"
                     (change)="toggleSplitBattle(battleId)"
                   />
-                  <span class="mono font-semibold">{{ t('fights.battleNumber', { id: battleId }) }}</span>
+                  <span class="font-mono font-semibold">{{ t('fights.battleNumber', { id: battleId }) }}</span>
                 </label>
               }
             </div>
 
             @if (dialogError(); as error) {
-              <p class="text-xs text-error bg-[var(--color-error-container)] p-2 rounded-lg" role="alert">{{ error }}</p>
+              <p class="fight-feedback fight-feedback--error" role="alert">{{ error }}</p>
             }
           </form>
 
@@ -1042,9 +694,7 @@ type PendingFightMutation =
         >
           <form id="fight-move-form" class="space-y-3" (submit)="stageMove(battleId, $event)">
             <div>
-              <label class="text-xs font-bold text-white block mb-1" for="fight-move-target">
-                {{ t('fights.moveTargetLabel') }}
-              </label>
+              <label class="label" for="fight-move-target">{{ t('fights.moveTargetLabel') }}</label>
               <input
                 id="fight-move-target"
                 class="input input--sm text-xs w-full"
@@ -1059,7 +709,7 @@ type PendingFightMutation =
             </div>
 
             @if (dialogError(); as error) {
-              <p class="text-xs text-error bg-[var(--color-error-container)] p-2 rounded-lg" role="alert">{{ error }}</p>
+              <p class="fight-feedback fight-feedback--error" role="alert">{{ error }}</p>
             }
           </form>
 
@@ -1077,11 +727,11 @@ type PendingFightMutation =
       <!-- CONFIRM MUTATION DIALOG -->
       @if (pendingMutation(); as pending) {
         <app-dialog [title]="t('fights.confirmTitle')" size="sm" (closed)="cancelPendingMutation()">
-          <p class="text-sm text-white mb-2">{{ pending.description }}</p>
-          <p class="text-xs text-secondary">{{ t('fights.confirmPermanent') }}</p>
+          <p class="text-sm mb-2">{{ pending.description }}</p>
+          <p class="hint">{{ t('fights.confirmPermanent') }}</p>
 
           @if (dialogError(); as error) {
-            <p class="text-xs text-error bg-[var(--color-error-container)] p-2.5 rounded-lg mt-3" role="alert">{{ error }}</p>
+            <p class="fight-feedback fight-feedback--error mt-3" role="alert">{{ error }}</p>
           }
 
           <div dialogFooter>
@@ -1095,7 +745,7 @@ type PendingFightMutation =
         </app-dialog>
       }
 
-      <!-- PLAYER DETAIL INSPECT DIALOG -->
+      <!-- PLAYER DETAIL DIALOG -->
       @if (inspectedPlayer(); as p) {
         <app-dialog
           [title]="p.name"
@@ -1103,40 +753,28 @@ type PendingFightMutation =
           size="sm"
           (closed)="inspectedPlayer.set(null)"
         >
-          <div class="space-y-3">
-            <div class="flex items-center gap-3 p-3 rounded-xl surface border border-[var(--color-border)]">
-              <app-avatar [username]="p.name" size="md" />
-              <div>
-                <p class="text-sm font-bold text-white">{{ p.name }}</p>
-                <p class="text-xs text-secondary">{{ p.guild_name }}</p>
-              </div>
+          <dl class="grid grid-cols-2 gap-2">
+            <div class="surface p-2.5 rounded-lg">
+              <dt class="hint">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</dt>
+              <dd class="num font-semibold">{{ p.kills }} / {{ p.deaths }}</dd>
             </div>
-
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <div class="surface p-2.5 rounded-lg">
-                <span class="text-xs text-disabled block">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</span>
-                <strong class="mono text-white text-sm">{{ p.kills }} / {{ p.deaths }}</strong>
-              </div>
-              <div class="surface p-2.5 rounded-lg">
-                <span class="text-xs text-disabled block">{{ t('fights.kdRatio') }}</span>
-                <strong class="mono text-sm" [class.text-success]="p.kdRatio >= 1" [class.text-error]="p.kdRatio < 1">
-                  {{ formatDecimal(p.kdRatio) }}
-                </strong>
-              </div>
-              <div class="surface p-2.5 rounded-lg">
-                <span class="text-xs text-disabled block">{{ t('battles.kill_fame') }}</span>
-                <strong class="mono text-warning text-sm">{{ formatCompact(p.kill_fame) }}</strong>
-              </div>
-              <div class="surface p-2.5 rounded-lg">
-                <span class="text-xs text-disabled block">{{ t('battles.item_power') }}</span>
-                <strong class="mono text-white text-sm">{{ formatDecimal(p.item_power ?? 0) }}</strong>
-              </div>
-              <div class="surface p-2.5 rounded-lg col-span-2">
-                <span class="text-xs text-disabled block">{{ t('battles.estimated_value') }}</span>
-                <strong class="mono text-error text-sm">{{ formatCompact(p.estimatedLoss) }}</strong>
-              </div>
+            <div class="surface p-2.5 rounded-lg">
+              <dt class="hint">{{ t('fights.kdRatio') }}</dt>
+              <dd class="num font-semibold">{{ formatDecimal(p.kdRatio) }}</dd>
             </div>
-          </div>
+            <div class="surface p-2.5 rounded-lg">
+              <dt class="hint">{{ t('battles.kill_fame') }}</dt>
+              <dd class="num font-semibold">{{ formatCompact(p.kill_fame) }}</dd>
+            </div>
+            <div class="surface p-2.5 rounded-lg">
+              <dt class="hint">{{ t('battles.item_power') }}</dt>
+              <dd class="num font-semibold">{{ formatDecimal(p.item_power ?? 0) }}</dd>
+            </div>
+            <div class="surface p-2.5 rounded-lg col-span-2">
+              <dt class="hint">{{ t('battles.estimated_value') }}</dt>
+              <dd class="num font-semibold">{{ formatCompact(p.estimatedLoss) }}</dd>
+            </div>
+          </dl>
 
           <div dialogFooter>
             <button type="button" class="btn btn--outline btn--sm" (click)="inspectedPlayer.set(null)">
@@ -1152,50 +790,48 @@ type PendingFightMutation =
       display: block;
       color: var(--color-text);
     }
-    :host ::ng-deep .rounded-xl,
-    :host ::ng-deep .rounded-2xl,
-    :host ::ng-deep .rounded-lg,
-    :host ::ng-deep .rounded-md,
-    :host ::ng-deep .shadow-lg,
-    :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards);
-      box-shadow: none;
-    }
     @layer components {
-      .battle-detail__label {
-        color: var(--color-text-secondary);
-        font-family: var(--font-universalsans);
-        font-size: 0.75rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+      .fight-overview {
+        display: grid;
+        gap: var(--page-gap);
       }
-      .battle-detail__value {
-        color: var(--color-text);
-        font-family: var(--font-geistmono, monospace);
-        font-size: clamp(1.25rem, 2vw, 1.5rem);
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        margin-top: 0.25rem;
+      .fight-charts {
+        display: grid;
+        gap: var(--page-gap);
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
       }
-      .battle-detail__sub {
-        color: var(--color-text-secondary);
-        font-size: 0.75rem;
-        margin-top: 0.25rem;
+      .fight-feedback {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-smallcards);
+        font-size: var(--ui-text-sm);
+        padding: 0.5rem 0.75rem;
       }
-      .eyebrow {
-        color: var(--color-text-secondary);
-        font-family: var(--font-universalsans);
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
+      .fight-feedback--error {
+        background: var(--color-error-container);
+        border-color: var(--color-error);
+        color: var(--color-error);
       }
-      .mono {
-        font-family: var(--font-geistmono, monospace);
+      .fight-feedback--success {
+        background: var(--color-success-container);
+        border-color: var(--color-success);
+        color: var(--color-success);
       }
-      .numeric {
-        font-family: var(--font-geistmono, monospace);
-        text-align: right;
+      .fight-row-button {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        border-radius: var(--radius-badges);
+      }
+      .fight-row-button:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: var(--focus-ring-offset);
       }
     }
   `,
@@ -1241,6 +877,7 @@ export class FightDetailPage {
   // Loading signals
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
+  protected readonly notFound = signal(false);
 
   // Player inspect modal
   protected readonly inspectedPlayer = signal<FightPlayerRow | null>(null);
@@ -1564,18 +1201,18 @@ export class FightDetailPage {
     return [...this.enrichedPlayers()].sort((a, b) => b.estimatedLoss - a.estimatedLoss)[0] ?? null;
   });
 
-  // Tab options
+  // Tab options (counts are passed as data, not baked into the label)
   protected readonly tabOptions = computed<readonly TabOption[]>(() => {
     const fight = this.fight();
     const options: TabOption[] = [
       { id: 'overview', label: this.t('guild.tabs.overview') },
-      { id: 'guilds', label: `${this.t('battles.guilds')} (${fight?.guilds?.length ?? 0})` },
-      { id: 'players', label: `${this.t('battles.players')} (${fight?.players?.length ?? 0})` },
+      { id: 'guilds', label: this.t('battles.guilds'), count: fight?.guilds?.length ?? 0 },
+      { id: 'players', label: this.t('battles.players'), count: fight?.players?.length ?? 0 },
     ];
     if (this.hasRosterEvidence()) {
       options.push({ id: 'roster', label: this.t('fights.rosterTab') });
     }
-    options.push({ id: 'segments', label: `${this.t('battles.segments')} (${fight?.battle_ids?.length ?? 0})` });
+    options.push({ id: 'segments', label: this.t('battles.segments'), count: fight?.battle_ids?.length ?? 0 });
     return options;
   });
 
@@ -1705,6 +1342,311 @@ export class FightDetailPage {
       accessor: (p) => p.estimatedLoss,
       comparator: (a, b) => a.estimatedLoss - b.estimatedLoss,
       align: 'right',
+    },
+  ];
+
+  // Header menu: officer actions live here, never as header buttons.
+  protected readonly menuItems = computed<EntityMenuItem[]>(() => {
+    const fight = this.fight();
+    if (!fight || !this.canManageFights()) return [];
+    const busy = this.mutating();
+    return [
+      { id: 'merge', label: this.t('fights.merge'), disabled: busy },
+      { id: 'split', label: this.t('fights.split'), disabled: busy || fight.battle_ids.length < 2 },
+    ];
+  });
+
+  protected readonly segmentMenuItems = computed<EntityMenuItem[]>(() => [
+    { id: 'move', label: this.t('fights.move'), disabled: this.mutating() },
+  ]);
+
+  protected onMenu(id: string): void {
+    if (id === 'merge') {
+      this.openMerge();
+    } else if (id === 'split') {
+      this.openSplit();
+    }
+  }
+
+  protected onSideChange(id: string): void {
+    if (id === 'all' || id === 'allies' || id === 'enemies') {
+      this.playerSideFilter.set(id);
+    }
+  }
+
+  protected clearPlayerFilters(): void {
+    this.playerSideFilter.set('all');
+    this.playerSearchQuery.set('');
+  }
+
+  protected readonly playerActiveCount = computed(
+    () => (this.playerSideFilter() === 'all' ? 0 : 1) + (this.playerSearchQuery().trim() ? 1 : 0),
+  );
+
+  protected readonly sideOptions = computed<readonly TabOption[]>(() => [
+    { id: 'all', label: this.t('common.all'), count: this.enrichedPlayers().length },
+    { id: 'allies', label: this.t('battles.filter_allies'), count: this.allyPlayersCount() },
+    { id: 'enemies', label: this.t('battles.filter_enemies'), count: this.enemyPlayersCount() },
+  ]);
+
+  protected readonly ourSideLabel = computed(() => {
+    const guild = this.ourGuild()?.name || this.ourGuildName();
+    const alliance = this.ourAllianceName();
+    return alliance ? `[${alliance}] ${guild}` : guild;
+  });
+
+  protected readonly enemySideLabel = computed(() => {
+    const enemy = this.topEnemyAlliance();
+    if (!enemy) return this.t('fights.hostileCoalition');
+    const lead = enemy.guilds[0]?.name || this.t('battles.filter_enemies');
+    return enemy.isSolo ? lead : `[${enemy.name}] ${lead}`;
+  });
+
+  protected readonly summaryItems = computed<readonly SummaryItem[]>(() => {
+    const detail = this.fight();
+    if (!detail) return [];
+    return [
+      {
+        label: this.t('battles.total_fame'),
+        value: this.formatCompact(this.totalFame()),
+        hint: `${this.t('battles.guild_fame_vs_fight')}: ${this.formatDecimal(this.ourFameShare())}%`,
+      },
+      {
+        label: `${this.t('battles.kills')} / ${this.t('battles.deaths')}`,
+        value: `${this.formatAmount(this.totalKills())} / ${this.formatAmount(this.totalDeaths())}`,
+        hint: `${this.t('fights.guildKd')} ${this.formatDecimal(this.ourGuildKdRatio())}`,
+      },
+      {
+        label: this.t('battles.kill_participation'),
+        value: `${this.formatDecimal(this.ourKillParticipation())}%`,
+        hint: this.t('fights.ourKills', { count: this.ourGuild()?.kills ?? 0 }),
+      },
+      {
+        label: this.t('battles.avg_ip'),
+        value: this.formatDecimal(this.ourGuildAvgIp()),
+        hint: `${this.t('fights.overallAvgIp')} ${this.formatDecimal(this.fightAvgIp())}`,
+      },
+      {
+        label: this.t('battles.silver_lost'),
+        value: this.formatCompact(this.totalEstimatedLoss()),
+        hint: this.t('fights.pricedItems', { priced: this.pricedItemsCount(), total: this.totalItemsCount() }),
+      },
+      {
+        label: this.t('fights.fightersAndSegments'),
+        value: this.totalPlayersCount(),
+        hint: this.t('fights.battleSegmentsCount', { count: detail.battle_ids.length }),
+      },
+    ];
+  });
+
+  protected readonly coverageItems = computed<readonly SummaryItem[]>(() => {
+    const coverage = this.fight()?.participant_coverage;
+    if (!coverage) return [];
+    return [
+      {
+        label: this.t('fights.observedMembers'),
+        value: `${coverage.observed_planned_participants} / ${coverage.matchable_planned_participants}`,
+      },
+      { label: this.t('fights.unmatchedMembers'), value: coverage.unmatched_planned_participants },
+      { label: this.t('fights.unplannedObserved'), value: coverage.unplanned_observed_players },
+      {
+        label: this.t('fights.snapshotCoverage'),
+        value: `${coverage.persisted_segments} / ${this.t('fights.segmentsCount', { count: coverage.total_segments })}`,
+      },
+    ];
+  });
+
+  protected readonly headToHeadRows = computed<readonly FightSideRow[]>(() => [
+    {
+      key: 'players',
+      label: this.t('battles.players'),
+      ours: this.formatAmount(this.ourForcesPlayers()),
+      enemy: this.formatAmount(this.enemyForcesPlayers()),
+    },
+    {
+      key: 'kills',
+      label: `${this.t('battles.kills')} / ${this.t('battles.deaths')}`,
+      ours: `${this.formatAmount(this.ourForcesKills())} / ${this.formatAmount(this.ourForcesDeaths())}`,
+      enemy: `${this.formatAmount(this.enemyForcesKills())} / ${this.formatAmount(this.enemyForcesDeaths())}`,
+    },
+    {
+      key: 'kd',
+      label: this.t('fights.kdRatio'),
+      ours: this.formatDecimal(this.ourForcesKdRatio()),
+      enemy: this.formatDecimal(this.enemyForcesKdRatio()),
+    },
+    {
+      key: 'fame',
+      label: this.t('battles.kill_fame'),
+      ours: this.formatCompact(this.ourForcesKillFame()),
+      enemy: this.formatCompact(this.enemyForcesKillFame()),
+    },
+  ]);
+
+  protected readonly honorRows = computed<readonly FightHonorRow[]>(() => {
+    const killer = this.mvpExecutioner();
+    const fame = this.mvpFameHunter();
+    const ip = this.mvpIronVanguard();
+    const loss = this.mvpHeaviestLoss();
+    return [
+      {
+        id: 'killer',
+        label: this.t('battles.mvp_killer'),
+        player: killer,
+        value: killer
+          ? this.t('fights.mvpKillsKd', { kills: killer.kills, kd: this.formatDecimal(killer.kdRatio) })
+          : '—',
+        emptyText: this.t('fights.noKillsRecorded'),
+      },
+      {
+        id: 'fame',
+        label: this.t('battles.mvp_fame'),
+        player: fame,
+        value: fame ? this.t('fights.mvpFame', { fame: this.formatCompact(fame.kill_fame) }) : '—',
+        emptyText: this.t('fights.noFameRecorded'),
+      },
+      {
+        id: 'ip',
+        label: this.t('battles.mvp_ip'),
+        player: ip,
+        value: ip ? `${this.formatDecimal(ip.item_power ?? 0)} IP` : '—',
+        emptyText: '—',
+      },
+      {
+        id: 'loss',
+        label: this.t('battles.heaviest_loss'),
+        player: loss,
+        value: loss ? this.t('fights.mvpLost', { amount: this.formatCompact(loss.estimatedLoss) }) : '—',
+        emptyText: this.t('fights.noEstimatedLosses'),
+      },
+    ];
+  });
+
+  protected readonly verdictTone = computed<'success' | 'warning' | 'error' | 'neutral'>(() => {
+    switch (this.fightVerdict().type) {
+      case 'victory':
+        return 'success';
+      case 'defeat':
+        return 'error';
+      case 'draw':
+        return 'warning';
+      default:
+        return 'neutral';
+    }
+  });
+
+  // One row per attached segment; stats come from the snapshot when the backend has them.
+  protected readonly segmentRows = computed<FightSegmentRow[]>(() => {
+    const fight = this.fight();
+    if (!fight) return [];
+    const stats = new Map((fight.segments ?? []).map((s) => [String(s.battle_id), s]));
+    return fight.battle_ids.map((battleId, index) => {
+      const segment = stats.get(String(battleId));
+      return {
+        battleId,
+        index: index + 1,
+        kills: segment?.total_kills ?? null,
+        players: segment?.total_players ?? null,
+      };
+    });
+  });
+
+  protected readonly trackSegmentRow = (row: FightSegmentRow) => row.battleId;
+  protected readonly trackPlannedRow = (row: PlannedFightParticipant) => row.user_id;
+  protected readonly trackObservedRow = (row: ObservedFriendlyPlayer) => row.albion_player_id;
+
+  protected readonly segmentColumns: readonly DataTableColumn<FightSegmentRow>[] = [
+    {
+      key: 'segment',
+      label: 'fights.segment',
+      sortable: true,
+      accessor: (s) => s.index,
+      comparator: (a, b) => a.index - b.index,
+    },
+    {
+      key: 'kills',
+      label: 'battles.kills',
+      sortable: true,
+      align: 'right',
+      accessor: (s) => s.kills,
+      comparator: (a, b) => (a.kills ?? 0) - (b.kills ?? 0),
+    },
+    {
+      key: 'players',
+      label: 'battles.players',
+      sortable: true,
+      align: 'right',
+      accessor: (s) => s.players,
+      comparator: (a, b) => (a.players ?? 0) - (b.players ?? 0),
+    },
+    { key: 'actions', label: '' },
+  ];
+
+  protected readonly plannedColumns: readonly DataTableColumn<PlannedFightParticipant>[] = [
+    {
+      key: 'username',
+      label: 'common.username',
+      sortable: true,
+      accessor: (p) => p.username,
+      comparator: (a, b) => a.username.localeCompare(b.username),
+    },
+    { key: 'primary', label: 'events.detail.primary_build' },
+    { key: 'secondary', label: 'events.detail.secondary_build' },
+    {
+      key: 'observation',
+      label: 'fights.observationStatus',
+      sortable: true,
+      accessor: (p) => (p.observed ? 1 : 0),
+      comparator: (a, b) => Number(a.observed) - Number(b.observed),
+    },
+  ];
+
+  protected readonly observedColumns: readonly DataTableColumn<ObservedFriendlyPlayer>[] = [
+    {
+      key: 'name',
+      label: 'common.player',
+      sortable: true,
+      accessor: (p) => p.name,
+      comparator: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      key: 'guild',
+      label: 'nav.guild',
+      sortable: true,
+      accessor: (p) => p.guild_name,
+      comparator: (a, b) => a.guild_name.localeCompare(b.guild_name),
+    },
+    {
+      key: 'kills',
+      label: 'battles.kills',
+      sortable: true,
+      align: 'right',
+      accessor: (p) => p.kills,
+      comparator: (a, b) => a.kills - b.kills,
+    },
+    {
+      key: 'deaths',
+      label: 'battles.deaths',
+      sortable: true,
+      align: 'right',
+      accessor: (p) => p.deaths,
+      comparator: (a, b) => a.deaths - b.deaths,
+    },
+    {
+      key: 'kill_fame',
+      label: 'battles.kill_fame',
+      sortable: true,
+      align: 'right',
+      accessor: (p) => p.kill_fame,
+      comparator: (a, b) => a.kill_fame - b.kill_fame,
+    },
+    {
+      key: 'avg_ip',
+      label: 'battles.avg_ip',
+      sortable: true,
+      align: 'right',
+      accessor: (p) => p.average_item_power,
+      comparator: (a, b) => a.average_item_power - b.average_item_power,
     },
   ];
 
@@ -1849,16 +1791,19 @@ export class FightDetailPage {
   protected async load(): Promise<void> {
     const fightId = Number(this.fightId());
     if (!Number.isSafeInteger(fightId) || fightId <= 0) {
+      this.notFound.set(true);
       this.loadFailed.set(true);
       this.loading.set(false);
       return;
     }
     this.loading.set(true);
     this.loadFailed.set(false);
+    this.notFound.set(false);
     try {
       this.fight.set(await firstValueFrom(this.api.get<FightDetail>(`api/fights/${fightId}`)));
-    } catch {
+    } catch (error: unknown) {
       this.fight.set(null);
+      this.notFound.set(error instanceof ApiError && error.status === 404);
       this.loadFailed.set(true);
     } finally {
       this.loading.set(false);

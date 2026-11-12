@@ -3265,4 +3265,12 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/fight-detail
+  'fights.side': 'Сторона',
+  'fights.honor': 'Відзнака',
+  'fights.honorResult': 'Результат',
+  'fights.segmentActionsAria': 'Дії для сегмента {id}',
+  'fights.sectionsAria': 'Розділи бою',
+  'fights.alliances': 'Альянси',
+  'fights.allianceColumn': 'Альянс',
 };

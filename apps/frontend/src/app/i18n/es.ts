@@ -3451,4 +3451,12 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/fight-detail
+  'fights.side': 'Bando',
+  'fights.honor': 'Honor',
+  'fights.honorResult': 'Resultado',
+  'fights.segmentActionsAria': 'Acciones del segmento {id}',
+  'fights.sectionsAria': 'Secciones de la pelea',
+  'fights.alliances': 'Alianzas',
+  'fights.allianceColumn': 'Alianza',
 };

@@ -3269,4 +3269,12 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/fight-detail
+  'fights.side': 'Camp',
+  'fights.honor': 'Honneur',
+  'fights.honorResult': 'Résultat',
+  'fights.segmentActionsAria': 'Actions pour le segment {id}',
+  'fights.sectionsAria': 'Sections du combat',
+  'fights.alliances': 'Alliances',
+  'fights.allianceColumn': 'Alliance',
 };

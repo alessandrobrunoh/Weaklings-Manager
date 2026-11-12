@@ -3448,6 +3448,14 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/fight-detail
+  'fights.side': 'Side',
+  'fights.honor': 'Honor',
+  'fights.honorResult': 'Result',
+  'fights.segmentActionsAria': 'Actions for segment {id}',
+  'fights.sectionsAria': 'Fight sections',
+  'fights.alliances': 'Alliances',
+  'fights.allianceColumn': 'Alliance',
 } as const;
 
 export type TranslationKey = keyof typeof en;
