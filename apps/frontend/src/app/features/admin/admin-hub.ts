@@ -1,443 +1,218 @@
-import { COMPACT_FEATURE_STYLES } from '../compact-feature.styles';
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type {
-  BankAnalyticsSummary,
-  EventView,
-  PaginatedData,
-  PermissionMatrix,
-  SplitSummary,
-  UserProfile,
-} from '../../core/models/api.models';
+import type { BankAnalyticsSummary, PaginatedData, SplitSummary } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { ADMIN_ELSEWHERE_LINKS, ADMIN_PANELS } from '../../layout/nav';
-import { Icon } from '../../shared/components/icon/icon';
+import { ADMIN_PANELS } from '../../layout/nav';
+import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import type { AuditLog } from '../audit/audit';
 
+/** One destination on the hub. Permission gating comes from `ADMIN_PANELS` in the nav, by path. */
+interface HubEntry {
+  readonly path: string;
+  readonly icon: IconName;
+  readonly labelKey: TranslationKey;
+  readonly hintKey: TranslationKey;
+}
+
+interface HubSection {
+  readonly headingKey: TranslationKey;
+  readonly entries: readonly HubEntry[];
+}
+
 /**
- * Admin console landing page & command center.
+ * The hub's information architecture: where an officer goes to do a job.
+ * Sections follow the job, not the order the panels were added. A panel is shown only when
+ * `ADMIN_PANELS` grants it (permissions, alliance tenants), so an entry here can never widen access.
+ */
+const HUB_SECTIONS: readonly HubSection[] = [
+  {
+    headingKey: 'admin.hub.section.access',
+    entries: [
+      { path: '/users', icon: 'users', labelKey: 'nav.admin.users', hintKey: 'admin.hub.usersHint' },
+      { path: '/admin/roles', icon: 'shield', labelKey: 'nav.admin.roles', hintKey: 'admin.hub.rolesHint' },
+      { path: '/admin/permissions', icon: 'lock', labelKey: 'nav.admin.permissions', hintKey: 'admin.hub.permissionsHint' },
+      { path: '/admin/applications', icon: 'list', labelKey: 'nav.admin.applications', hintKey: 'admin.hub.applicationsHint' },
+    ],
+  },
+  {
+    headingKey: 'admin.hub.section.economy',
+    entries: [
+      { path: '/admin/finance', icon: 'chart', labelKey: 'nav.admin.finance', hintKey: 'admin.hub.financeHint' },
+      { path: '/admin/transactions', icon: 'coins', labelKey: 'nav.admin.transactions', hintKey: 'admin.hub.transactionsHint' },
+      { path: '/admin/withdrawals', icon: 'bank', labelKey: 'nav.admin.withdrawals', hintKey: 'admin.hub.withdrawalsHint' },
+      { path: '/admin/regears', icon: 'settings', labelKey: 'admin.hub.regearSettings', hintKey: 'admin.hub.regearsHint' },
+    ],
+  },
+  {
+    headingKey: 'admin.hub.section.activities',
+    entries: [
+      { path: '/admin/giveaways', icon: 'sparkles', labelKey: 'nav.admin.giveaways', hintKey: 'admin.hub.giveawaysHint' },
+      { path: '/admin/islands', icon: 'swords', labelKey: 'nav.admin.islands', hintKey: 'admin.hub.islandsHint' },
+      { path: '/admin/progression', icon: 'trophy', labelKey: 'nav.admin.progression', hintKey: 'admin.hub.progressionHint' },
+    ],
+  },
+  {
+    headingKey: 'admin.hub.section.setup',
+    entries: [
+      { path: '/admin/general', icon: 'settings', labelKey: 'nav.admin.general', hintKey: 'admin.hub.generalHint' },
+      { path: '/admin/features', icon: 'package', labelKey: 'nav.admin.features', hintKey: 'admin.hub.featuresHint' },
+      { path: '/admin/alliance', icon: 'link', labelKey: 'nav.admin.alliance', hintKey: 'admin.hub.allianceHint' },
+      { path: '/admin/discord', icon: 'discord', labelKey: 'nav.admin.discord', hintKey: 'admin.hub.discordHint' },
+    ],
+  },
+];
+
+/** Pages outside the admin console that officers reach from here. They carry no admin permission. */
+const RELATED_ENTRIES: readonly HubEntry[] = [
+  { path: '/regears', icon: 'shield', labelKey: 'admin.hub.regearRequests', hintKey: 'admin.hub.regearRequestsHint' },
+  { path: '/comps', icon: 'hammer', labelKey: 'admin.link.comps', hintKey: 'admin.link.compsHint' },
+  { path: '/splits', icon: 'coins', labelKey: 'admin.link.splits', hintKey: 'admin.link.splitsHint' },
+  { path: '/audit', icon: 'activity', labelKey: 'admin.link.audit', hintKey: 'admin.link.auditHint' },
+];
+
+/**
+ * Admin console landing page: a finder for the admin panels, grouped by the job they do,
+ * with the few figures an officer acts on at the top.
  *
- * Displays live administrative KPIs, urgent action queues (regears, splits, withdrawals),
- * categorized management workspaces, and recent audit activity.
+ * Attention figures come from the same endpoints as before and only for the permissions that
+ * gate them. A figure with no permission is left out rather than shown as a dash.
  */
 @Component({
   selector: 'app-admin-hub',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, PageStack, RouterLink, TooltipDirective],
-  styles: [COMPACT_FEATURE_STYLES, `
-    .admin-card-hover {
-      transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
-    }
-    .admin-card-hover:hover {
-      border-color: var(--color-border-hover);
-      background: var(--color-surface-hover);
-    }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
+  imports: [Icon, Loading, NgTemplateOutlet, PageHeader, PageStack, RouterLink, SummaryBand],
+  styles: `
+    .hub-entry-icon {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
+      width: 2rem;
+      height: 2rem;
       flex-shrink: 0;
+      border-radius: var(--radius-md);
+      background: var(--color-surface-2);
+      color: var(--color-text);
     }
-    .admin-queue-card {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-cards);
-      padding: 1.125rem 1.25rem;
-      background: var(--color-surface);
-      position: relative;
-      overflow: hidden;
-      transition: border-color var(--motion-fast);
-    }
-    .admin-queue-card:hover {
-      border-color: var(--color-border-hover);
-    }
-  `],
+  `,
   template: `
-    <app-page-header
-      [title]="t('admin.title')"
-      [subtitle]="t('admin.hub.subtitle')"
-    >
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
+    <app-page-header [title]="t('admin.title')" [subtitle]="t('admin.hub.subtitle')">
+      <button type="button" class="btn btn--outline btn--sm" [disabled]="loading()" (click)="refreshNow()">
+        <app-icon name="refresh" size="0.875rem" />
         {{ t('common.refreshNow') }}
       </button>
     </app-page-header>
 
     <app-page-stack>
-      <!-- Core Administrative KPIs: 6 Modern Cards -->
-      <section class="grid gap-3.5 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
-        <!-- Card 1: Total Members -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.stat.totalMembers') }}
-              </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCount(totalMembers()) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
-                Guild roster
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-              <app-icon name="users" size="1.125rem" />
-            </div>
+      @if (!ready()) {
+        <app-loading variant="summary" />
+      } @else if (attentionItems().length > 0) {
+        <section class="space-y-2" aria-labelledby="admin-hub-attention">
+          <h2 id="admin-hub-attention" class="section-title section-title--sm">{{ t('admin.hub.section.attention') }}</h2>
+          <app-summary-band [ariaLabel]="t('admin.hub.section.attention')" [items]="attentionItems()" />
+        </section>
+      }
+
+      @for (section of sections(); track section.headingKey; let i = $index) {
+        <section class="space-y-2" [attr.aria-labelledby]="'admin-hub-section-' + i">
+          <h2 [id]="'admin-hub-section-' + i" class="section-title section-title--sm">{{ t(section.headingKey) }}</h2>
+          <ul class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            @for (entry of section.entries; track entry.path) {
+              <li>
+                <ng-container [ngTemplateOutlet]="entryLink" [ngTemplateOutletContext]="{ $implicit: entry }" />
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (auth.hasPermission('audit.view')) {
+        <section class="space-y-2" aria-labelledby="admin-hub-activity">
+          <div class="flex items-center justify-between gap-3">
+            <h2 id="admin-hub-activity" class="section-title section-title--sm">{{ t('admin.hub.recentActivity') }}</h2>
+            <a routerLink="/audit" class="text-xs no-underline hover:underline" style="color: var(--color-primary)">
+              {{ t('admin.hub.viewAudit') }}
+            </a>
           </div>
-        </article>
 
-        <!-- Card 2: Ledger Volume -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.stat.ledgerVolume') }}
-              </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
-                {{ formatCompact(bankSummary()?.ledger_volume) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
-                {{ bankSummary()?.transaction_count ?? 0 }} entries
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-              <app-icon name="bank" size="1.125rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 3: Open Liability -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.stat.openLiability') }}
-              </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-warning mt-1">
-                {{ formatCompact(bankSummary()?.outstanding_total) }}
-              </p>
-              <p class="text-xs text-warning mt-0.5 truncate flex items-center gap-1">
-                <span class="h-1 w-1 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                {{ bankSummary()?.outstanding_count ?? 0 }} requests
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-              <app-icon name="alert" size="1.125rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 4: Paid Out -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.stat.paidOut') }}
-              </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-success mt-1">
-                {{ formatCompact(bankSummary()?.paid_out_total) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
-                {{ bankSummary()?.paid_out_count ?? 0 }} paid
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-              <app-icon name="coins" size="1.125rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 5: Total Roles -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.stat.totalRoles') }}
-              </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCount(matrix()?.roles?.length) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
-                Auth roles
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-              <app-icon name="shield" size="1.125rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 6: Total Events -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('admin.stat.totalEvents') }}
-              </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCount(totalEvents()) }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 truncate">
-                Scheduled activities
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-              <app-icon name="calendar" size="1.125rem" />
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <!-- Urgent Officer Action Queues -->
-      @if (hasPendingQueues()) {
-        <section aria-labelledby="admin-queues-heading">
-          <div class="flex items-center justify-between mb-3">
-            <h2 id="admin-queues-heading" class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)] flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-              {{ t('admin.hub.quickQueues') }}
-            </h2>
-          </div>
-          <div class="grid gap-3.5 sm:grid-cols-3">
-            <!-- Pending Regears Queue -->
-            <div class="admin-queue-card admin-queue-card--warning">
-              <div class="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider block text-warning">
-                    {{ t('admin.stat.pendingRegears') }}
-                  </span>
-                  <div class="text-2xl font-mono font-bold mt-0.5 text-(--color-text)">
-                    {{ formatCount(pendingRegearsCount()) }}
-                  </div>
-                </div>
-                <span class="p-2 rounded-lg bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
-                  <app-icon name="shield" size="1.25rem" />
-                </span>
-              </div>
-              <p class="text-xs mb-3 text-[var(--color-text-secondary)] leading-relaxed">
-                Reimbursement claims awaiting officer inspection and approval.
-              </p>
-              <a
-                routerLink="/regears"
-                [queryParams]="{ tab: 'queue' }"
-                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
-              >
-                <span>{{ t('admin.hub.goToQueue') }}</span>
-                &rarr;
-              </a>
-            </div>
-
-            <!-- Pending Splits Queue -->
-            <div class="admin-queue-card admin-queue-card--primary">
-              <div class="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider block text-[var(--color-primary)]">
-                    {{ t('admin.stat.pendingSplits') }}
-                  </span>
-                  <div class="text-2xl font-mono font-bold mt-0.5 text-(--color-text)">
-                    {{ formatCount(pendingSplitsCount()) }}
-                  </div>
-                </div>
-                <span class="p-2 rounded-lg bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
-                  <app-icon name="swords" size="1.25rem" />
-                </span>
-              </div>
-              <p class="text-xs mb-3 text-[var(--color-text-secondary)] leading-relaxed">
-                Active loot splits awaiting calculation and member share payouts.
-              </p>
-              <a
-                routerLink="/splits"
-                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
-              >
-                <span>{{ t('admin.hub.goToQueue') }}</span>
-                &rarr;
-              </a>
-            </div>
-
-            <!-- Pending Withdrawals Queue -->
-            <div class="admin-queue-card admin-queue-card--success">
-              <div class="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider block text-success">
-                    {{ t('admin.stat.pendingWithdrawals') }}
-                  </span>
-                  <div class="text-2xl font-mono font-bold mt-0.5 text-success">
-                    {{ formatCount(pendingWithdrawalsCount()) }}
-                  </div>
-                </div>
-                <span class="p-2 rounded-lg bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
-                  <app-icon name="bank" size="1.25rem" />
-                </span>
-              </div>
-              <p class="text-xs mb-3 text-[var(--color-text-secondary)] leading-relaxed">
-                Silver withdrawals requested by members ready to trade in-game.
-              </p>
-              <a
-                routerLink="/admin/withdrawals"
-                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
-              >
-                <span>{{ t('admin.hub.goToQueue') }}</span>
-                &rarr;
-              </a>
-            </div>
+          <div class="card p-4">
+            @if (recentAudit().length === 0) {
+              <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('admin.hub.noRecentActivity') }}</p>
+            } @else {
+              <ul class="divide-y" style="border-color: var(--color-border)">
+                @for (log of recentAudit(); track log.id) {
+                  <li class="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span
+                          class="rounded px-1.5 py-0.5 font-mono text-xs font-semibold"
+                          [style.backgroundColor]="actionBadgeBg(log.action)"
+                          [style.color]="actionBadgeFg(log.action)"
+                        >
+                          {{ formatActionName(log.action) }}
+                        </span>
+                        @if (log.entity_type) {
+                          <span class="text-xs" style="color: var(--color-text-secondary)">
+                            {{ log.entity_type }} #{{ log.entity_id }}
+                          </span>
+                        }
+                      </div>
+                      <p class="mt-1 truncate text-xs" style="color: var(--color-text-secondary)">
+                        @if (log.user_id) {
+                          {{ t('admin.hub.actorUser', { id: log.user_id }) }}
+                        } @else {
+                          {{ t('admin.hub.actorSystem') }}
+                        }
+                      </p>
+                    </div>
+                    <time class="shrink-0 text-end text-xs tabular-nums" style="color: var(--color-text-secondary)" [attr.datetime]="log.created_at">
+                      {{ formatRelative(log.created_at) }}
+                    </time>
+                  </li>
+                }
+              </ul>
+            }
           </div>
         </section>
       }
 
-      <!-- Categorized Admin Panels Grid -->
-      <section class="space-y-4" aria-labelledby="admin-workspaces-heading">
-        <h2 id="admin-workspaces-heading" class="eyebrow">
-          {{ t('admin.hub.panels') }}
-        </h2>
-        
-        <div class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          @for (panel of visiblePanels(); track panel.path) {
-            <a
-              [routerLink]="panel.path"
-              class="card p-4 flex flex-col justify-between no-underline admin-card-hover"
-              style="color: var(--color-text)"
-            >
-              <div>
-                <div class="flex items-center justify-between gap-2 mb-2">
-                  <div class="flex items-center gap-2.5">
-                    <span
-                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
-                      style="background: var(--color-surface-2); color: var(--color-text)"
-                      aria-hidden="true"
-                    >
-                      <app-icon [name]="panel.icon" size="1.125rem" />
-                    </span>
-                    <span class="font-semibold text-sm">{{ t(panel.labelKey) }}</span>
-                  </div>
-                  <app-icon name="chevron-right" size="1rem" style="color: var(--color-text-tertiary)" aria-hidden="true" />
-                </div>
-                <p class="text-xs leading-relaxed mt-1" style="color: var(--color-text-secondary)">
-                  {{ t(panel.hintKey) }}
-                </p>
-              </div>
-            </a>
+      <section class="space-y-2" aria-labelledby="admin-hub-related">
+        <h2 id="admin-hub-related" class="section-title section-title--sm">{{ t('admin.hub.section.related') }}</h2>
+        <ul class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          @for (entry of relatedEntries; track entry.path) {
+            <li>
+              <ng-container [ngTemplateOutlet]="entryLink" [ngTemplateOutletContext]="{ $implicit: entry }" />
+            </li>
           }
-        </div>
-      </section>
-
-      <!-- Two-Column Section: Recent Audit Feed & Quick Shortcuts -->
-      <section class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <!-- Recent Audit Events (2 cols) -->
-        <div class="card p-4 lg:col-span-2">
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-primary)"></span>
-              <h2 class="eyebrow">
-                {{ t('admin.hub.recentActivity') }}
-              </h2>
-            </div>
-            @if (auth.hasPermission('audit.view')) {
-              <a
-                routerLink="/audit"
-                class="text-xs font-medium no-underline hover:underline"
-                style="color: var(--color-text-secondary)"
-              >
-                {{ t('admin.hub.viewAudit') }} →
-              </a>
-            }
-          </div>
-
-          @if (recentAudit().length === 0) {
-            <div class="py-6 text-center" style="color: var(--color-text-secondary)">
-              <app-icon name="activity" size="1.75rem" class="opacity-40 mx-auto mb-1.5" />
-              <p class="text-xs">{{ t('admin.hub.noRecentActivity') }}</p>
-            </div>
-          } @else {
-            <div class="divide-y divide-[var(--color-border)]">
-              @for (log of recentAudit(); track log.id) {
-                <div class="py-2.5 flex items-center justify-between gap-3 first:pt-0 last:pb-0">
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
-                      <span
-                        class="text-xs font-mono font-semibold px-1.5 py-0.5 rounded"
-                        [style.backgroundColor]="actionBadgeBg(log.action)"
-                        [style.color]="actionBadgeFg(log.action)"
-                      >
-                        {{ formatActionName(log.action) }}
-                      </span>
-                      @if (log.entity_type) {
-                        <span class="text-xs text-[var(--color-text-tertiary)]">
-                          {{ log.entity_type }} #{{ log.entity_id }}
-                        </span>
-                      }
-                    </div>
-                    <div class="text-xs truncate mt-1" style="color: var(--color-text-secondary)">
-                      @if (log.user_id) {
-                        <span>Utente #{{ log.user_id }}</span>
-                      } @else {
-                        <span>Sistema automatico</span>
-                      }
-                    </div>
-                  </div>
-                  <div class="text-xs tabular-nums text-end shrink-0" style="color: var(--color-text-tertiary)">
-                    {{ formatRelative(log.created_at) }}
-                  </div>
-                </div>
-              }
-            </div>
-          }
-        </div>
-
-        <!-- Quick Shortcuts -->
-        <div class="card p-4 flex flex-col justify-between">
-          <div>
-            <h2 class="eyebrow mb-3">{{ t('admin.hub.elsewhere') }}</h2>
-            <div class="flex flex-col gap-2">
-              @for (link of elsewhereLinks; track link.path) {
-                <a
-                  class="flex items-center justify-between gap-2.5 rounded-md p-2.5 no-underline border transition-colors hover:bg-[var(--color-surface-hover)]"
-                  style="color: var(--color-text); border-color: var(--color-border); background: var(--color-surface-2)"
-                  [routerLink]="link.path"
-                >
-                  <div class="min-w-0">
-                    <div class="font-medium text-xs truncate">{{ t(link.labelKey) }}</div>
-                    <div class="text-xs truncate mt-0.5" style="color: var(--color-text-secondary)">{{ t(link.hintKey) }}</div>
-                  </div>
-                  <app-icon name="chevron-right" size="0.875rem" style="color: var(--color-text-secondary)" />
-                </a>
-              }
-            </div>
-          </div>
-        </div>
+        </ul>
       </section>
     </app-page-stack>
+
+    <ng-template #entryLink let-entry>
+      <a
+        [routerLink]="entry.path"
+        class="card card--interactive flex h-full items-center gap-3 p-3 no-underline"
+        style="color: var(--color-text)"
+      >
+        <span class="hub-entry-icon" aria-hidden="true">
+          <app-icon [name]="entry.icon" size="1rem" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium">{{ t(entry.labelKey) }}</span>
+          <span class="block truncate text-xs" style="color: var(--color-text-secondary)">{{ t(entry.hintKey) }}</span>
+        </span>
+        <app-icon name="chevron-right" size="0.875rem" aria-hidden="true" style="color: var(--color-text-secondary)" />
+      </a>
+    </ng-template>
   `,
 })
 export class AdminHub {
@@ -446,34 +221,54 @@ export class AdminHub {
   private readonly translate = inject(TranslateService);
 
   protected readonly loading = signal(false);
-  protected readonly totalMembers = signal<number | null>(null);
+  protected readonly ready = signal(false);
   protected readonly bankSummary = signal<BankAnalyticsSummary | null>(null);
   protected readonly pendingRegearsCount = signal<number | null>(null);
   protected readonly pendingSplitsCount = signal<number | null>(null);
   protected readonly pendingWithdrawalsCount = signal<number | null>(null);
-  protected readonly totalEvents = signal<number | null>(null);
-  protected readonly matrix = signal<PermissionMatrix | null>(null);
   protected readonly recentAudit = signal<ReadonlyArray<AuditLog>>([]);
 
-  protected readonly visiblePanels = computed(() =>
-    ADMIN_PANELS.filter((panel) => {
+  /** Panels this user may open, after permission and tenant-kind gating from the nav. */
+  private readonly visiblePaths = computed(() => {
+    const paths = new Set<string>();
+    for (const panel of ADMIN_PANELS) {
       if (panel.hiddenForAlliance && this.auth.profile()?.tenant_kind === 'alliance') {
-        return false;
+        continue;
       }
-      if (!panel.permissions?.length) {
-        return true;
+      if (!panel.permissions?.length || panel.permissions.some((permission) => this.auth.hasPermission(permission))) {
+        paths.add(panel.path);
       }
-      return panel.permissions.some((permission) => this.auth.hasPermission(permission));
-    }),
+    }
+    return paths;
+  });
+
+  protected readonly sections = computed(() =>
+    HUB_SECTIONS.map((section) => ({
+      headingKey: section.headingKey,
+      entries: section.entries.filter((entry) => this.visiblePaths().has(entry.path)),
+    })).filter((section) => section.entries.length > 0),
   );
 
-  protected readonly elsewhereLinks = ADMIN_ELSEWHERE_LINKS;
+  protected readonly relatedEntries = RELATED_ENTRIES;
 
-  protected readonly hasPendingQueues = computed(() => {
-    const regears = this.pendingRegearsCount() ?? 0;
-    const splits = this.pendingSplitsCount() ?? 0;
-    const withdrawals = this.pendingWithdrawalsCount() ?? 0;
-    return regears > 0 || splits > 0 || withdrawals > 0;
+  protected readonly attentionItems = computed<readonly SummaryItem[]>(() => {
+    const items: SummaryItem[] = [];
+    if (this.auth.hasPermission('bank.withdraw.accept')) {
+      items.push(this.queueItem('admin.stat.pendingWithdrawals', this.pendingWithdrawalsCount()));
+    }
+    if (this.auth.hasPermission('regear.adjudicate')) {
+      items.push(this.queueItem('admin.stat.pendingRegears', this.pendingRegearsCount()));
+    }
+    items.push(this.queueItem('admin.stat.pendingSplits', this.pendingSplitsCount()));
+    if (this.auth.hasPermission('bank.view_others')) {
+      const summary = this.bankSummary();
+      items.push({
+        label: this.t('admin.stat.openLiability'),
+        value: summary ? this.formatCompact(summary.outstanding_total) : null,
+        hint: summary ? this.t('admin.hub.attention.openRequests', { count: summary.outstanding_count ?? 0 }) : undefined,
+      });
+    }
+    return items;
   });
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
@@ -494,17 +289,9 @@ export class AdminHub {
 
   private async loadOverview(): Promise<void> {
     const requests: Promise<unknown>[] = [
-      firstValueFrom(this.api.get<PaginatedData<UserProfile>>('api/users', { page: 1, limit: 1 }))
-        .then((res) => this.totalMembers.set(res.total_items))
-        .catch(() => this.totalMembers.set(null)),
-
       firstValueFrom(this.api.get<PaginatedData<SplitSummary>>('api/splits', { status: 'pending', page: 1, limit: 1 }))
         .then((res) => this.pendingSplitsCount.set(res.total_items))
         .catch(() => this.pendingSplitsCount.set(null)),
-
-      firstValueFrom(this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 1 }))
-        .then((res) => this.totalEvents.set(res.total_items))
-        .catch(() => this.totalEvents.set(null)),
     ];
 
     if (this.auth.hasPermission('bank.view_others')) {
@@ -542,14 +329,6 @@ export class AdminHub {
       );
     }
 
-    if (this.auth.hasPermission('permissions.reload')) {
-      requests.push(
-        firstValueFrom(this.api.get<PermissionMatrix>('api/admin/permissions'))
-          .then((res) => this.matrix.set(res))
-          .catch(() => this.matrix.set(null)),
-      );
-    }
-
     if (this.auth.hasPermission('audit.view')) {
       requests.push(
         firstValueFrom(this.api.get<PaginatedData<AuditLog>>('api/audit', { page: 1, limit: 5 }))
@@ -559,15 +338,20 @@ export class AdminHub {
     }
 
     await Promise.allSettled(requests);
+    this.ready.set(true);
+  }
+
+  private queueItem(labelKey: TranslationKey, count: number | null): SummaryItem {
+    return {
+      label: this.t(labelKey),
+      value: count,
+      tone: count !== null && count > 0 ? 'warning' : 'default',
+      hint: count === null ? undefined : this.t(count > 0 ? 'admin.hub.attention.waiting' : 'admin.hub.attention.none'),
+    };
   }
 
   private getLocale(): string {
     return this.translate.locale();
-  }
-
-  protected formatCount(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '—';
-    return value.toLocaleString(this.getLocale());
   }
 
   protected formatCompact(value: number | string | null | undefined): string {
@@ -584,18 +368,6 @@ export class AdminHub {
       return `${(num / 1_000).toFixed(1)}k`;
     }
     return num.toLocaleString(this.getLocale());
-  }
-
-  protected formatAmount(value: number | string | null | undefined): string {
-    if (value === null || value === undefined || value === '') return '—';
-    const num = typeof value === 'number' ? value : Number(value);
-    if (Number.isNaN(num)) return '—';
-    return num.toLocaleString(this.getLocale(), { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  }
-
-  protected formatCountHint(count: number | null | undefined, unit: string): string {
-    if (count === null || count === undefined) return '';
-    return `${count.toLocaleString(this.getLocale())} ${unit}`;
   }
 
   protected formatActionName(action: string): string {
@@ -641,4 +413,3 @@ export class AdminHub {
     return rtf.format(diffMinutes, 'minute');
   }
 }
-

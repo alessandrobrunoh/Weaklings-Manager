@@ -12,6 +12,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
 - `AdminGiveaways` lists giveaways in a `app-data-table` (server-paged, status chip, end time) with an `app-filter-bar` search and one primary action, "New giveaway", which opens the create dialog. The Discord channel and role settings open from the page menu. The table's own search box is hidden; the page owns the search text and sends it as the `search` query.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID. The entity header carries the status, the key numbers and "Draw now" while the giveaway is open; cancel sits in its menu. Both confirm in a dialog first. Prizes and entrants are tables. A 404 shows the not-found state, any other failed load shows the error state with retry.
+- `AdminHub` lists the admin panels in sections by the job they do (`HUB_SECTIONS`: members and access, economy, activities and content, guild setup) plus related pages. Attention figures (pending withdrawals, regears, splits, open liability) appear only for users whose permissions gate them. Panel visibility still comes from `ADMIN_PANELS` in `layout/nav.ts`, so the hub can only hide a panel, never grant one.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
 - `AdminApplications` edits the Discord applications panel (`api/admin/settings`): an open/closed `app-tabs` switch, channel and role pickers, and bot copy, saved with one primary action. It has no applicant queue: the backend has no list endpoint for applications.
 - `AdminDiscord` edits the guild's Discord channels, split forum, notifications and roles in one form with one save. It writes `api/admin/settings` and `api/admin/autorole`; its connection status comes from loading the Discord channel and role catalog.
@@ -21,6 +22,8 @@ This directory contains administrative pages and helpers for tenant configuratio
 ## Invariants
 
 - Feature rows are all catalog entries. A row is editable only when its key is in `allowed_keys` and it is not platform-managed; enabled state resolves from local override, API value, then `false`. Save sends only editable rows and is disabled while nothing has changed.
+- Hub entries are matched to `ADMIN_PANELS` by path; an entry with no matching panel is never shown.
+- Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
 - `AdminDiscord` hides its form when the guild settings or default join role cannot be read, so a save never writes blank defaults over them. A failed catalog load shows a "not connected" status with retry and keeps the form.
 - Finance income comes only from splits the user created (`split_*` economics); battle data is never used to infer earnings.
