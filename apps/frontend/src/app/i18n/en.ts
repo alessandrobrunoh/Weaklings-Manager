@@ -3870,6 +3870,21 @@ export const en = {
   'regears.approveBody': 'The item estimate is credited to the Guild Bank. To change prices or slots, open the review page first.',
   'regears.approveTotal': 'Credit amount',
   'regears.approveConfirm': 'Approve and credit',
+  // design/siphoned
+  'siphoned.summary': 'Siphoned energy summary',
+  'siphoned.hint':
+    'Deposited is the energy members banked, withdrawn is the energy paid out to them, and net is the difference. A negative net is a debt: the member withdrew more than they deposited. Settle creates a bank transaction for it.',
+  'siphoned.balancesHint': 'The totals row adds up the members in this view.',
+  'siphoned.entriesHint': 'Each row is one movement of energy. Balances are built from these rows.',
+  'siphoned.batchesHint': 'Each batch is one pasted export, kept as an immutable record.',
+  'siphoned.filter.status': 'Balance',
+  'siphoned.filter.debt': 'In debt',
+  'siphoned.filter.credit': 'In credit',
+  'siphoned.settle.button': 'Settle debt',
+  'siphoned.settle.total': 'Total: {amount} silver',
+  'siphoned.stat.netHint': "Sum of every member's net",
+  'siphoned.stat.membersInDebt': 'Members in debt',
+  'siphoned.stat.membersInDebtHint': 'Net below zero, can be settled',
 } as const;
 
 export type TranslationKey = keyof typeof en;

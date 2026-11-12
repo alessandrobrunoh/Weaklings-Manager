@@ -3687,4 +3687,19 @@ export const uk: TranslationDict = {
   'regears.approveBody': 'Оцінка предметів зараховується до банку гільдії. Щоб змінити ціни або слоти, спершу відкрийте сторінку перевірки.',
   'regears.approveTotal': 'Сума до зарахування',
   'regears.approveConfirm': 'Схвалити й зарахувати',
+  // design/siphoned
+  'siphoned.summary': 'Підсумок сифонованої енергії',
+  'siphoned.hint':
+    'Внесено — це енергія, яку внесли учасники, виведено — енергія, виплачена їм, а чистий баланс — різниця. Від’ємний баланс означає борг: учасник вивів більше, ніж вніс. «Сплатити борг» створює банківську транзакцію.',
+  'siphoned.balancesHint': 'Рядок підсумків додає учасників, що відображаються.',
+  'siphoned.entriesHint': 'Кожен рядок — це рух енергії. Баланси обчислюються з цих рядків.',
+  'siphoned.batchesHint': 'Кожна партія — це вставлений експорт, що зберігається як незмінний запис.',
+  'siphoned.filter.status': 'Баланс',
+  'siphoned.filter.debt': 'З боргом',
+  'siphoned.filter.credit': 'З кредитом',
+  'siphoned.settle.button': 'Сплатити борг',
+  'siphoned.settle.total': 'Разом: {amount} срібла',
+  'siphoned.stat.netHint': 'Сума чистого балансу всіх учасників',
+  'siphoned.stat.membersInDebt': 'Учасники з боргом',
+  'siphoned.stat.membersInDebtHint': 'Баланс нижче нуля, можна погасити',
 };

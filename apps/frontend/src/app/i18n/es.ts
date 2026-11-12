@@ -3873,4 +3873,19 @@ export const es: TranslationDict = {
   'regears.approveBody': 'La estimación de objetos se abona al banco del gremio. Para cambiar precios o huecos, abre primero la página de revisión.',
   'regears.approveTotal': 'Importe a abonar',
   'regears.approveConfirm': 'Aprobar y abonar',
+  // design/siphoned
+  'siphoned.summary': 'Resumen de energía sifonada',
+  'siphoned.hint':
+    'Depositado es la energía que los miembros han guardado, retirado es la energía que se les ha pagado y neto es la diferencia. Un neto negativo es una deuda: el miembro retiró más de lo que depositó. Saldar deuda crea una transacción bancaria.',
+  'siphoned.balancesHint': 'La fila de totales suma los miembros de esta vista.',
+  'siphoned.entriesHint': 'Cada fila es un movimiento de energía. Los saldos se calculan a partir de estas filas.',
+  'siphoned.batchesHint': 'Cada lote es una exportación pegada, guardada como registro inmutable.',
+  'siphoned.filter.status': 'Saldo',
+  'siphoned.filter.debt': 'Con deuda',
+  'siphoned.filter.credit': 'Con crédito',
+  'siphoned.settle.button': 'Saldar deuda',
+  'siphoned.settle.total': 'Total: {amount} plata',
+  'siphoned.stat.netHint': 'Suma del neto de todos los miembros',
+  'siphoned.stat.membersInDebt': 'Miembros con deuda',
+  'siphoned.stat.membersInDebtHint': 'Neto bajo cero, se puede saldar',
 };
