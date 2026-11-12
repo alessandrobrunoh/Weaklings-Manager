@@ -1,7 +1,6 @@
 //! Combat routing module.
 //!
-//! Exposes the Item Power calculator. Every handler here is a read: nothing in this module writes
-//! to the database, which is why none of them log to the audit trail.
+//! Exposes the Item Power calculator and the combat test scenarios.
 
 use axum::{
     Extension, Json, Router,
@@ -9,15 +8,14 @@ use axum::{
     routing::{get, post},
 };
 
-use crate::schemas::{ApiResponseCombatDataset, ApiResponseItemPower, ApiResponseMasteryGroups};
+use crate::schemas::{ApiResponseCombatDataset, ApiResponseItemPower};
 use backend_core::errors::{AppError, ProblemDetails};
 use backend_core::responses::ApiResponse;
 use backend_identity::auth::{Permission, Permissions, UserContext};
 
 use super::models::{
-    CalibrationView, CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView,
-    MasteryGroupsView, RunDetail, ScenarioDetail, ScenarioSummary, SimulateRequest, SimulateView,
-    UpdateScenarioRequest,
+    CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView, RunDetail,
+    ScenarioDetail, ScenarioSummary, SimulateRequest, SimulateView, UpdateScenarioRequest,
 };
 use super::service::CombatService;
 use super::sim;
@@ -27,7 +25,6 @@ use backend_gamedata::dataset::dataset_version;
 pub fn router() -> Router {
     Router::new()
         .route("/dataset", get(get_dataset))
-        .route("/mastery-groups", get(get_mastery_groups))
         .route("/tests", get(list_scenarios).post(create_scenario))
         .route("/tests/{id}", get(get_scenario).patch(update_scenario))
         .route("/tests/{id}/versions", post(create_scenario_version))
@@ -37,9 +34,7 @@ pub fn router() -> Router {
         .route("/tests/{id}/runs", get(list_runs))
         .route("/runs/{run_id}", get(get_run))
         .route("/item-power", post(post_item_power))
-        .route("/members/{user_id}/item-power", get(get_member_item_power))
         .route("/simulate", post(post_simulate))
-        .route("/calibration", get(get_calibration))
 }
 
 /// Reports which ao-bin-dumps commit the bundled combat data came from.
@@ -70,37 +65,6 @@ async fn get_dataset(
     Ok(Json(ApiResponse::new(CombatService::dataset())))
 }
 
-/// Reports which equippable base identifiers have a family mastery node, and which one.
-///
-/// A client uses this to attach a "family mastery" level control to one specific weapon or armor
-/// entry — the exact identifier it is already rendering — without having to reconcile its own
-/// weapon/armor grouping against the game's Destiny Board.
-#[utoipa::path(
-    get,
-    path = "/api/combat/mastery-groups",
-    tag = "combat",
-    summary = "Get the item-to-family-mastery mapping",
-    description = "Maps every equippable base identifier that has a Destiny Board specialization \
-                   to the family mastery node above it, e.g. `2H_POLEHAMMER -> COMBAT_HAMMERS`. \
-                   Capes, bags and gathering gear are absent: they have no combat specialization.",
-    security(("session_cookie" = [])),
-    responses(
-        (status = 200, description = "Item to mastery-node mapping", body = ApiResponseMasteryGroups),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
-    )
-)]
-async fn get_mastery_groups(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-) -> Result<Json<ApiResponse<MasteryGroupsView>>, AppError> {
-    user.require(&perms, Permission::CombatCalculatorUse)
-        .await?;
-    Ok(Json(ApiResponse::new(MasteryGroupsView {
-        dataset_version: dataset_version().clone(),
-        groups: CombatService::mastery_groups(),
-    })))
-}
-
 /// Computes Item Power for a loadout described inline.
 #[utoipa::path(
     post,
@@ -108,10 +72,11 @@ async fn get_mastery_groups(
     tag = "combat",
     summary = "Calculate Item Power for an ad-hoc loadout",
     description = "Item Power = base(tier, enchantment) + quality bonus + the Destiny Board \
-                   bonuses of whichever specialization levels `spec` selects. The response \
+                   bonuses of the hypothetical specialization level `spec` selects (`max` or a \
+                   flat `fixed` level). Members' own levels are not stored. The response \
                    itemises every contribution, so each point can be traced to the node that \
                    granted it. `mastery_levels_known` is false while no family mastery level is \
-                   recorded, which makes the figure a lower bound rather than the number the game \
+                   assumed, which makes the figure a lower bound rather than the number the game \
                    would show.",
     security(("session_cookie" = [])),
     request_body = ItemPowerRequest,
@@ -124,74 +89,12 @@ async fn get_mastery_groups(
 async fn post_item_power(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(request): Json<ItemPowerRequest>,
 ) -> Result<Json<ApiResponse<ItemPowerView>>, AppError> {
     user.require(&perms, Permission::CombatCalculatorUse)
         .await?;
-    let view = CombatService::new().item_power(&db, &request).await?;
+    let view = CombatService::item_power(&request)?;
     Ok(Json(ApiResponse::new(view)))
-}
-
-/// Computes what one member's Item Power would be on a stored build.
-#[utoipa::path(
-    get,
-    path = "/api/combat/members/{user_id}/item-power",
-    tag = "combat",
-    summary = "Calculate a member's Item Power on a build",
-    description = "Scores a stored build with one member's Destiny Board levels — the \"could this \
-                   person fly this?\" question. `at_max_spec` is the same build with every node at \
-                   100, and `readiness` is the ratio between them, which is comparable across \
-                   builds in a way raw Item Power is not.",
-    security(("session_cookie" = [])),
-    params(
-        ("user_id" = i64, Path, description = "Internal user ID"),
-        MemberItemPowerParams
-    ),
-    responses(
-        (status = 200, description = "Item Power breakdown", body = ApiResponseItemPower),
-        (status = 400, description = "Missing build_id or unusable parameters", body = ProblemDetails),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 404, description = "Build not found", body = ProblemDetails)
-    )
-)]
-async fn get_member_item_power(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Path(user_id): Path<i64>,
-    Query(params): Query<MemberItemPowerParams>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<ItemPowerView>>, AppError> {
-    user.require(&perms, Permission::CombatCalculatorUse)
-        .await?;
-    let loadout = super::service::parse_loadout(params.loadout.as_deref())?;
-    let view = CombatService::new()
-        .build_item_power(
-            &db,
-            params.build_id,
-            loadout,
-            params.spec.unwrap_or_default(),
-            Some(user_id),
-            params.level,
-        )
-        .await?;
-    Ok(Json(ApiResponse::new(view)))
-}
-
-/// Query parameters for a member's Item Power on a build.
-#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
-pub struct MemberItemPowerParams {
-    /// The build to score. Required.
-    pub build_id: i64,
-    /// Which loadout to score: `main` (the default) or `swap`.
-    #[serde(default)]
-    pub loadout: Option<String>,
-    /// Which levels to apply. Defaults to the member's own.
-    #[serde(default)]
-    pub spec: Option<super::models::SpecSource>,
-    /// The flat level for `spec=fixed`.
-    #[serde(default)]
-    pub level: Option<i32>,
 }
 
 /// Resolves a declared burst window: every cast's damage, healing and crowd control, after area
@@ -535,35 +438,4 @@ async fn get_run(
     user.require(&perms, Permission::CombatTestsView).await?;
     let run = CombatService::new().get_run(&db, run_id).await?;
     Ok(Json(ApiResponse::new(run)))
-}
-
-/// Checks the Item Power calculator's predictions against Item Power actually observed in battle.
-#[utoipa::path(
-    get,
-    path = "/api/combat/calibration",
-    tag = "combat",
-    summary = "Get the Item Power calculator's calibration against observed battle data",
-    description = "Compares what `combat::ip` calculates for a member's signed-up build against \
-                   the Item Power AlbionBB reported for that player in a battle fetched around the \
-                   same time, and reports the mean/median absolute error plus the worst 20 \
-                   mismatches. Every match is best-effort — see the response schema's docs on what \
-                   this figure does and does not prove. Requires `combat.calibration.view`, an \
-                   officer-tier permission distinct from the member-facing calculator: this reports \
-                   accuracy across the whole guild, not a member's own Item Power.",
-    security(("session_cookie" = [])),
-    responses(
-        (status = 200, description = "The calibration report", body = crate::schemas::ApiResponseCalibration),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Missing combat.calibration.view", body = ProblemDetails)
-    )
-)]
-async fn get_calibration(
-    user: UserContext,
-    Extension(perms): Extension<Permissions>,
-    Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<CalibrationView>>, AppError> {
-    user.require(&perms, Permission::CombatCalibrationView)
-        .await?;
-    let calibration = CombatService::new().calibration(&db).await?;
-    Ok(Json(ApiResponse::new(calibration)))
 }

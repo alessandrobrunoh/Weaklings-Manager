@@ -1,25 +1,20 @@
 //! Database-facing layer over the pure Item Power calculator.
 //!
 //! Everything arithmetic lives in [`super::ip`]; this module only turns rows into the plain structs
-//! that calculator takes — a build's `build_items` into [`EquippedItem`]s, and a member's
-//! `user_specializations` into [`SpecLevels`].
-
-use std::collections::HashMap;
+//! that calculator takes — a build's `build_items` into [`EquippedItem`]s, and a requested
+//! hypothetical specialization level into [`SpecLevels`].
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 
-use super::fit;
 use super::ip::{self, EquippedItem, SpecLevels};
 use super::models::{
-    BlockingNode, BuildRosterFitView, CalibrationOutlier, CalibrationView, CombatDatasetView,
-    CompReadinessView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView, LoadoutItemRequest,
-    MemberItemPowerView, ReadinessObservation, RunDetail, RunSummary, ScenarioDefinition,
-    ScenarioDetail, ScenarioSummary, ScenarioVersionRef, SpecSource, UpdateScenarioRequest,
+    CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView, LoadoutItemRequest,
+    RunDetail, RunSummary, ScenarioDefinition, ScenarioDetail, ScenarioSummary, ScenarioVersionRef,
+    SpecSource, UpdateScenarioRequest,
 };
-use super::seats::canonical_comp_seats;
 use backend_albion_data::openalbion::service::{base_identifier, base_identifier_for_stored_item};
 use backend_core::errors::AppError;
 use backend_entities::combat::combat_run;
@@ -27,24 +22,16 @@ use backend_entities::combat::combat_run::Column as CombatRunColumn;
 use backend_entities::combat::combat_scenario;
 use backend_entities::combat::combat_scenario::Column as CombatScenarioColumn;
 use backend_entities::comps::build_item::{Column as BuildItemColumn, Entity as BuildItemEntity};
-use backend_entities::comps::{build, comp};
 use backend_entities::status::comps::{
     BuildLoadout, BuildSlot, DEFAULT_ITEM_QUALITY, parse_item_quality,
 };
-use backend_gamedata::dataset::{
-    combat_items, combat_rules, combat_spells, dataset_version, spec_node,
-};
-use backend_identity::users::specializations;
+use backend_gamedata::dataset::{combat_items, combat_rules, combat_spells, dataset_version};
 
 /// The tier assumed when a caller supplies an identifier with no tier prefix.
 ///
 /// Eight, because every guild loadout is T8 in practice and a bare `2H_POLEHAMMER` from a client
 /// almost certainly means the one being flown, not a T4.
 const ASSUMED_TIER: u8 = 8;
-
-/// How many members a build-fit listing returns at most, so a large guild cannot produce an
-/// unbounded response.
-const MAX_FIT_MEMBERS: usize = 200;
 
 /// Item Power and, later, the rest of the combat mathematics.
 #[derive(Clone, Copy, Default)]
@@ -71,360 +58,38 @@ impl CombatService {
         }
     }
 
-    /// Every equippable base identifier that has a Destiny Board specialization, mapped to the
-    /// family mastery node above it — `"2H_POLEHAMMER" -> "COMBAT_HAMMERS"`.
-    ///
-    /// An associated function: the mapping is derived entirely from the compiled-in dataset. It
-    /// exists so a client can attach a family-mastery level control to *one specific item's* entry
-    /// rather than needing to reconcile its own weapon/armor grouping against the game's — capes,
-    /// bags and gathering gear are simply absent, matching [`super::ip::EquippedItem::spec_node_id`].
-    #[must_use]
-    pub fn mastery_groups() -> std::collections::BTreeMap<String, String> {
-        combat_items()
-            .iter()
-            .filter_map(|(base, item)| {
-                let parent = spec_node(item.spec_node.as_deref()?)?.parent.as_deref()?;
-                Some((base.clone(), parent.to_string()))
-            })
-            .collect()
-    }
-
     /// Item Power for a loadout the caller describes inline.
     ///
     /// # Errors
     ///
     /// Returns [`AppError::Validation`] when the request names a specialization source it does not
     /// supply the input for, or an item with a tier or quality outside the game's range.
-    pub async fn item_power(
-        &self,
-        db: &DatabaseConnection,
-        request: &ItemPowerRequest,
-    ) -> Result<ItemPowerView, AppError> {
+    pub fn item_power(request: &ItemPowerRequest) -> Result<ItemPowerView, AppError> {
         let items = request
             .items
             .iter()
             .map(parse_loadout_item)
             .collect::<Result<Vec<_>, _>>()?;
-        let specs = self
-            .resolve_spec_levels(db, request.spec, request.user_id, request.level)
-            .await?;
+        let specs = resolve_spec_levels(request.spec, request.level)?;
         Ok(view_for(&items, &specs))
     }
 
-    /// Item Power for a stored build, optionally scored with one member's specialization.
+    /// Item Power for a stored build, at a hypothetical Destiny Board level.
     ///
     /// # Errors
     ///
     /// Returns [`AppError::NotFound`] when the build does not exist, and [`AppError::Validation`]
     /// for an unusable specialization source.
     pub async fn build_item_power(
-        &self,
         db: &DatabaseConnection,
         build_id: i64,
         loadout: BuildLoadout,
         spec: SpecSource,
-        user_id: Option<i64>,
         level: Option<i32>,
     ) -> Result<ItemPowerView, AppError> {
         let items = Self::build_loadout(db, build_id, loadout).await?;
-        let specs = self.resolve_spec_levels(db, spec, user_id, level).await?;
+        let specs = resolve_spec_levels(spec, level)?;
         Ok(view_for(&items, &specs))
-    }
-
-    /// Every member with a recorded specialization, scored against one build.
-    ///
-    /// Members are sorted by Item Power descending, so the first row is the best available pilot.
-    /// A member with no relevant specialization still appears — at the build's unspecialised
-    /// value — because "nobody is trained for this" is exactly what the caller needs to see.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AppError::NotFound`] when the build does not exist.
-    pub async fn build_roster_fit(
-        &self,
-        db: &DatabaseConnection,
-        build_id: i64,
-        loadout: BuildLoadout,
-    ) -> Result<BuildRosterFitView, AppError> {
-        let build = build::Entity::find_by_id(build_id)
-            .one(db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))?;
-        let items = Self::build_loadout(db, build_id, loadout).await?;
-
-        let ceiling = ip::character_ip(&items, &SpecLevels::all_at(100)).average;
-        let levels_by_user = specializations::Entity::find()
-            .all(db)
-            .await
-            .map_err(AppError::Database)?
-            .into_iter()
-            .fold(HashMap::<i64, Vec<(String, i32)>>::new(), |mut acc, row| {
-                acc.entry(row.user_id).or_default().push((
-                    specializations::canonical_node_key(&row.node_key),
-                    row.level,
-                ));
-                acc
-            });
-
-        // One users read and one display-name read for the whole fit, not one per member.
-        let users = backend_entities::users::Entity::find()
-            .filter(
-                backend_entities::users::Column::Id
-                    .is_in(levels_by_user.keys().copied().collect::<Vec<_>>()),
-            )
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        let display_names =
-            backend_identity::users::display_name::resolve_for_users(db, &users).await?;
-        let users_by_id: HashMap<i64, backend_entities::users::Model> =
-            users.into_iter().map(|user| (user.id, user)).collect();
-
-        let mut members = Vec::with_capacity(levels_by_user.len());
-        for (user_id, rows) in levels_by_user {
-            let Some(user) = users_by_id.get(&user_id) else {
-                continue; // The row outlived its user; nothing to report.
-            };
-            let specs =
-                SpecLevels::from_rows(rows.iter().map(|(key, level)| (key.as_str(), *level)));
-            let breakdown = ip::character_ip(&items, &specs);
-            members.push(MemberItemPowerView {
-                user_id,
-                username: display_names
-                    .get(&user_id)
-                    .cloned()
-                    .unwrap_or_else(|| user.username.clone()),
-                item_power: breakdown.average,
-                at_max_spec: ceiling,
-                readiness: readiness_of(breakdown.average, ceiling),
-                blocking_nodes: blocking_nodes(&items, &specs),
-                mastery_levels_known: breakdown.mastery_levels_known,
-            });
-        }
-
-        members.sort_by(|a, b| {
-            b.item_power
-                .partial_cmp(&a.item_power)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.username.cmp(&b.username))
-        });
-        members.truncate(MAX_FIT_MEMBERS);
-
-        Ok(BuildRosterFitView {
-            build_id,
-            build_name: build.name,
-            at_max_spec: ceiling,
-            members,
-            dataset_version: dataset_version().clone(),
-        })
-    }
-
-    /// Whether this composition could actually be fielded tonight, and where it is weakest —
-    /// plus, when `event_id` is given and that event has been analyzed, how that prediction
-    /// compares against what the roster that actually fought turned out to have.
-    ///
-    /// The candidate pool is the participants of `event_id` when given, otherwise every user with
-    /// any recorded specialization — the difference between "can we field this for the mass at
-    /// 21:00" and "who in the guild could ever fly this comp at all". `predicted` is this
-    /// prediction, computed the same way regardless of `event_id`.
-    ///
-    /// `observed` is `None` unless `event_id` is given AND that event's fights have a computed
-    /// `fight_stats` rollup — before an event, or before `fight_analytics` has processed its
-    /// fights, there is simply nothing yet to compare the prediction against. When it is
-    /// `Some`, it reports the average `avg_friendly_item_power` `fight_analytics` actually
-    /// recorded across that event's fights, and the signed delta against `predicted`'s
-    /// `avg_item_power_now`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AppError::NotFound`] when the comp, or the given event, does not exist.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "a sequential pipeline building seats/candidates, scoring readiness, then \
-            layering the observed comparison on top; splitting it further would separate steps \
-            that only make sense read together"
-    )]
-    pub async fn comp_readiness(
-        &self,
-        db: &DatabaseConnection,
-        comp_id: i64,
-        event_id: Option<i64>,
-    ) -> Result<CompReadinessView, AppError> {
-        use backend_entities::events::event_participation;
-
-        let seat_views = canonical_comp_seats(db, comp_id).await?;
-        if seat_views.is_empty() {
-            comp::Entity::find_by_id(comp_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-                .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))?;
-        }
-        let build_names: HashMap<i64, String> = seat_views
-            .iter()
-            .map(|seat| (seat.build_id, seat.build_name.clone()))
-            .collect();
-
-        let mut items_by_build: HashMap<i64, Vec<EquippedItem>> = HashMap::new();
-        let mut seats = Vec::with_capacity(seat_views.len());
-        for seat in &seat_views {
-            let items = if let Some(items) = items_by_build.get(&seat.build_id) {
-                items.clone()
-            } else {
-                let items = Self::build_loadout(db, seat.build_id, BuildLoadout::Main).await?;
-                items_by_build.insert(seat.build_id, items.clone());
-                items
-            };
-            seats.push(fit::Seat {
-                seat_key: seat.key.clone(),
-                build_id: seat.build_id,
-                items,
-            });
-        }
-
-        let candidate_ids: Vec<i64> = match event_id {
-            Some(event_id) => event_participation::Entity::find()
-                .filter(event_participation::Column::EventId.eq(event_id))
-                .all(db)
-                .await
-                .map_err(AppError::Database)?
-                .into_iter()
-                .map(|row| row.user_id)
-                .collect(),
-            None => specializations::Entity::find()
-                .all(db)
-                .await
-                .map_err(AppError::Database)?
-                .into_iter()
-                .map(|row| row.user_id)
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect(),
-        };
-        let levels_by_user = specializations::load_levels_for_users(db, &candidate_ids).await?;
-        let members: Vec<fit::Member> = candidate_ids
-            .iter()
-            .map(|&user_id| fit::Member {
-                user_id,
-                specs: SpecLevels::from_rows(
-                    levels_by_user
-                        .get(&user_id)
-                        .into_iter()
-                        .flatten()
-                        .map(|(key, level)| (key.as_str(), *level)),
-                ),
-                primary_build_id: None,
-                secondary_build_id: None,
-                // Readiness is a property of the composition, not of anyone's declared weapons.
-                weapons: fit::MemberWeapons::default(),
-            })
-            .collect();
-
-        let mut readiness = super::readiness::evaluate(&seats, &members);
-        Self::fill_readiness_names(db, &build_names, &mut readiness).await?;
-
-        let observed = match event_id {
-            Some(event_id) => {
-                Self::readiness_observation(db, event_id, readiness.avg_item_power_now).await?
-            }
-            None => None,
-        };
-
-        Ok(CompReadinessView {
-            predicted: readiness,
-            observed,
-        })
-    }
-
-    /// Fills in the build/username display fields `readiness::evaluate` leaves blank, since that
-    /// function is pure and has no database access of its own.
-    ///
-    /// Only the handful of seats actually shown need a resolved name, not every candidate in the
-    /// pool — `readiness::evaluate` already capped `weakest_seats` for this reason.
-    async fn fill_readiness_names(
-        db: &DatabaseConnection,
-        build_names: &HashMap<i64, String>,
-        readiness: &mut super::readiness::CompReadiness,
-    ) -> Result<(), AppError> {
-        let mut usernames: HashMap<i64, String> = HashMap::new();
-        for user_id in readiness
-            .weakest_seats
-            .iter()
-            .filter_map(|seat| seat.best_candidate_user_id)
-        {
-            if let std::collections::hash_map::Entry::Vacant(entry) = usernames.entry(user_id)
-                && let Some(user) = backend_entities::users::Entity::find_by_id(user_id)
-                    .one(db)
-                    .await
-                    .map_err(AppError::Database)?
-            {
-                entry.insert(backend_identity::users::display_name::resolve(db, &user).await?);
-            }
-        }
-
-        for seat in &mut readiness.weakest_seats {
-            seat.build_name = build_names.get(&seat.build_id).cloned().unwrap_or_default();
-            if let Some(user_id) = seat.best_candidate_user_id {
-                seat.best_candidate_username = usernames.get(&user_id).cloned().unwrap_or_default();
-            }
-        }
-        for build in &mut readiness.bench_coverage {
-            build.build_name = build_names
-                .get(&build.build_id)
-                .cloned()
-                .unwrap_or_default();
-        }
-        Ok(())
-    }
-
-    /// Compares an event's actually-recorded Item Power against `comp_readiness`'s pre-event
-    /// prediction for it.
-    ///
-    /// `None` when the event has no fights yet, or those fights have no computed `fight_stats`
-    /// rollup yet — not an error, a real "nothing to compare yet" state.
-    #[allow(
-        clippy::cast_precision_loss,
-        reason = "fight_count is a small real-world per-event fight count, never near f64's precision limit"
-    )]
-    async fn readiness_observation(
-        db: &DatabaseConnection,
-        event_id: i64,
-        predicted_avg_item_power_now: f64,
-    ) -> Result<Option<ReadinessObservation>, AppError> {
-        use backend_entities::events::fight;
-        use backend_entities::fight_analytics::fight_stat;
-
-        let fight_ids: Vec<i64> = fight::Entity::find()
-            .filter(fight::Column::EventId.eq(event_id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?
-            .into_iter()
-            .map(|row| row.id)
-            .collect();
-        if fight_ids.is_empty() {
-            return Ok(None);
-        }
-
-        let stats = fight_stat::Entity::find()
-            .filter(fight_stat::Column::FightId.is_in(fight_ids))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        if stats.is_empty() {
-            return Ok(None);
-        }
-
-        let fight_count = stats.len();
-        let avg_item_power =
-            stats.iter().map(|s| s.avg_friendly_item_power).sum::<f64>() / fight_count as f64;
-
-        Ok(Some(ReadinessObservation {
-            fight_count: i64::try_from(fight_count).unwrap_or(i64::MAX),
-            avg_item_power,
-            item_power_delta: avg_item_power - predicted_avg_item_power_now,
-        }))
     }
 
     /// Reads one loadout of a build into the calculator's item shape.
@@ -467,40 +132,6 @@ impl CombatService {
                 })
             })
             .collect())
-    }
-
-    /// Turns a specialization source into concrete Destiny Board levels.
-    async fn resolve_spec_levels(
-        &self,
-        db: &DatabaseConnection,
-        spec: SpecSource,
-        user_id: Option<i64>,
-        level: Option<i32>,
-    ) -> Result<SpecLevels, AppError> {
-        match spec {
-            SpecSource::Max => Ok(SpecLevels::all_at(100)),
-            SpecSource::Fixed => {
-                let level = level.ok_or_else(|| {
-                    AppError::Validation("spec=fixed requires a level".to_string())
-                })?;
-                if !(0..=100).contains(&level) {
-                    return Err(AppError::Validation(format!(
-                        "specialization level must be between 0 and 100, got {level}"
-                    )));
-                }
-                Ok(SpecLevels::all_at(level))
-            }
-            SpecSource::Current => {
-                let user_id = user_id.ok_or_else(|| {
-                    AppError::Validation("spec=current requires a user_id".to_string())
-                })?;
-                let mut by_user = specializations::load_levels_for_users(db, &[user_id]).await?;
-                let rows = by_user.remove(&user_id).unwrap_or_default();
-                Ok(SpecLevels::from_rows(
-                    rows.iter().map(|(key, level)| (key.as_str(), *level)),
-                ))
-            }
-        }
     }
 
     /// Creates a new combat test scenario at version 1.
@@ -798,177 +429,6 @@ impl CombatService {
         })
     }
 
-    /// Level-2 calibration: checks `combat::ip`'s predictions against Item Power actually observed
-    /// in fetched battles.
-    ///
-    /// The match, for every guild battle snapshot: a player row in `players_json` whose id is
-    /// claimed by an `albion_links` row, whose linked user has an `event_participations` row for
-    /// an event within a day of the battle, with a `primary_build_id` set. That build's items,
-    /// scored with the member's current spec levels, is the "expected" figure; the snapshot's own
-    /// `item_power` is the "observed" one. See [`CalibrationView`]'s docs on how much weight one
-    /// observation can bear.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AppError::Database`] on a query failure. Never fails for lack of data — an empty
-    /// guild history returns `sample_size: 0`, not an error.
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::cast_precision_loss)] // A guild's battle count would still be exact at f64.
-    pub async fn calibration(&self, db: &DatabaseConnection) -> Result<CalibrationView, AppError> {
-        use backend_entities::albion::albion_link;
-        use backend_entities::battles::{
-            BattlePlayer, Column as SnapshotColumn, Entity as SnapshotEntity,
-        };
-        use backend_entities::events::{event, event_participation};
-
-        const MATCH_WINDOW_HOURS: i64 = 24;
-
-        let links: HashMap<String, albion_link::Model> = albion_link::Entity::find()
-            .all(db)
-            .await
-            .map_err(AppError::Database)?
-            .into_iter()
-            .map(|link| (link.albion_player_id.clone(), link))
-            .collect();
-        if links.is_empty() {
-            return Ok(Self::empty_calibration());
-        }
-
-        let discord_id_to_user: HashMap<String, backend_entities::users::Model> =
-            backend_entities::users::Entity::find()
-                .all(db)
-                .await
-                .map_err(AppError::Database)?
-                .into_iter()
-                .filter_map(|user| user.discord_id.clone().map(|discord_id| (discord_id, user)))
-                .collect();
-
-        // (user_id, event_date_utc, primary_build_id) for every sign-up that named a build.
-        let participations: Vec<(i64, sea_orm::prelude::DateTimeWithTimeZone, i64)> =
-            event_participation::Entity::find()
-                .find_also_related(event::Entity)
-                .all(db)
-                .await
-                .map_err(AppError::Database)?
-                .into_iter()
-                .filter_map(|(participation, event)| {
-                    let build_id = participation.primary_build_id?;
-                    let event = event?;
-                    Some((participation.user_id, event.event_date_utc, build_id))
-                })
-                .collect();
-
-        let snapshots = SnapshotEntity::find()
-            .order_by_asc(SnapshotColumn::StartTime)
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-
-        let mut errors: Vec<f64> = Vec::new();
-        let mut outliers: Vec<CalibrationOutlier> = Vec::new();
-
-        for snapshot in &snapshots {
-            let Ok(players) = serde_json::from_str::<Vec<BattlePlayer>>(&snapshot.players_json)
-            else {
-                continue; // A malformed row should not fail every other observation.
-            };
-            for player in players {
-                let Some(link) = links.get(&player.id) else {
-                    continue;
-                };
-                let Some(user) = discord_id_to_user.get(&link.discord_id) else {
-                    continue;
-                };
-
-                let nearest = participations
-                    .iter()
-                    .filter(|(user_id, _, _)| *user_id == user.id)
-                    .filter(|(_, event_date, _)| {
-                        (event_date.timestamp() - snapshot.start_time.timestamp()).abs()
-                            <= MATCH_WINDOW_HOURS * 3600
-                    })
-                    .min_by_key(|(_, event_date, _)| {
-                        (event_date.timestamp() - snapshot.start_time.timestamp()).abs()
-                    });
-                let Some((_, _, build_id)) = nearest else {
-                    continue;
-                };
-
-                let Ok(view) = self
-                    .build_item_power(
-                        db,
-                        *build_id,
-                        BuildLoadout::Main,
-                        SpecSource::Current,
-                        Some(user.id),
-                        None,
-                    )
-                    .await
-                else {
-                    continue; // The build may since have been deleted; skip rather than fail the whole report.
-                };
-                let Some(build) = build::Entity::find_by_id(*build_id)
-                    .one(db)
-                    .await
-                    .map_err(AppError::Database)?
-                else {
-                    continue;
-                };
-
-                let expected_ip = view.breakdown.average;
-                let observed_ip = player.item_power;
-                let error = expected_ip - observed_ip;
-                errors.push(error);
-                outliers.push(CalibrationOutlier {
-                    user_id: user.id,
-                    username: backend_identity::users::display_name::resolve(db, user).await?,
-                    build_id: *build_id,
-                    build_name: build.name,
-                    expected_ip,
-                    observed_ip,
-                    error,
-                    observed_at: snapshot.fetched_at.to_rfc3339(),
-                });
-            }
-        }
-
-        let sample_size = errors.len();
-        if sample_size == 0 {
-            return Ok(Self::empty_calibration());
-        }
-
-        let mean_absolute_error =
-            errors.iter().map(|error| error.abs()).sum::<f64>() / sample_size as f64;
-        let mut absolute_errors: Vec<f64> = errors.iter().map(|error| error.abs()).collect();
-        let median_absolute_error = median(&mut absolute_errors);
-
-        outliers.sort_by(|a, b| {
-            b.error
-                .abs()
-                .partial_cmp(&a.error.abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        outliers.truncate(20);
-
-        Ok(CalibrationView {
-            dataset_version: dataset_version().clone(),
-            sample_size,
-            mean_absolute_error,
-            median_absolute_error,
-            outliers,
-        })
-    }
-
-    fn empty_calibration() -> CalibrationView {
-        CalibrationView {
-            dataset_version: dataset_version().clone(),
-            sample_size: 0,
-            mean_absolute_error: 0.0,
-            median_absolute_error: 0.0,
-            outliers: Vec::new(),
-        }
-    }
-
     async fn scenario_summary(
         &self,
         db: &DatabaseConnection,
@@ -1095,20 +555,20 @@ async fn ensure_scenario_name_free<C: ConnectionTrait>(
     Ok(())
 }
 
-/// The middle value of a sorted copy of `values`; `0.0` for an empty slice.
-///
-/// Even-length slices average the two central values, the conventional definition.
-#[allow(clippy::cast_precision_loss)] // A sample size in the thousands would still be exact at f64.
-fn median(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mid = values.len() / 2;
-    if values.len().is_multiple_of(2) {
-        f64::midpoint(values[mid - 1], values[mid])
-    } else {
-        values[mid]
+/// Turns a specialization source into the hypothetical Destiny Board levels to score with.
+fn resolve_spec_levels(spec: SpecSource, level: Option<i32>) -> Result<SpecLevels, AppError> {
+    match spec {
+        SpecSource::Max => Ok(SpecLevels::all_at(100)),
+        SpecSource::Fixed => {
+            let level = level
+                .ok_or_else(|| AppError::Validation("spec=fixed requires a level".to_string()))?;
+            if !(0..=100).contains(&level) {
+                return Err(AppError::Validation(format!(
+                    "specialization level must be between 0 and 100, got {level}"
+                )));
+            }
+            Ok(SpecLevels::all_at(level))
+        }
     }
 }
 
@@ -1142,43 +602,6 @@ fn readiness_of(current: f64, ceiling: f64) -> f64 {
         return 0.0;
     }
     (current / ceiling).clamp(0.0, 1.0)
-}
-
-/// The nodes this loadout needs where the member is furthest from the ceiling.
-///
-/// Computed by re-scoring the loadout with each relevant node raised to its own maximum, so the
-/// gap reported is the Item Power actually recoverable rather than a proxy for it.
-fn blocking_nodes(items: &[EquippedItem], specs: &SpecLevels) -> Vec<BlockingNode> {
-    let current = ip::character_ip(items, specs).average;
-    let mut gaps: Vec<BlockingNode> = items
-        .iter()
-        .filter_map(EquippedItem::spec_node_id)
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|node_id| {
-            let node = spec_node(&node_id)?;
-            let level = specs.level(&node_id);
-            if level >= node.max_level {
-                return None;
-            }
-            let raised = specs.with_level(&node_id, node.max_level);
-            let gap = ip::character_ip(items, &raised).average - current;
-            (gap > 0.0).then_some(BlockingNode {
-                node: node_id,
-                level,
-                max_level: node.max_level,
-                item_power_gap: gap,
-            })
-        })
-        .collect();
-
-    gaps.sort_by(|a, b| {
-        b.item_power_gap
-            .partial_cmp(&a.item_power_gap)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.node.cmp(&b.node))
-    });
-    gaps
 }
 
 /// Turns a request item into the calculator's shape, validating tier, enchantment and quality.
@@ -1254,54 +677,9 @@ mod service_tests {
         CombatService, enchantment_suffix_of, parse_loadout_item, readiness_of, tier_from_stored,
         tier_prefix_of,
     };
-    use crate::models::LoadoutItemRequest;
+    use crate::models::{ItemPowerRequest, LoadoutItemRequest, SpecSource};
+    use backend_core::errors::AppError;
     use backend_entities::status::comps::BuildSlot;
-    use backend_gamedata::dataset::{combat_items, spec_node};
-
-    #[test]
-    fn mastery_groups_maps_a_known_weapon_to_its_family() {
-        let groups = CombatService::mastery_groups();
-        assert_eq!(
-            groups.get("2H_POLEHAMMER").map(String::as_str),
-            Some("COMBAT_HAMMERS")
-        );
-    }
-
-    #[test]
-    fn mastery_groups_covers_every_item_that_has_a_specialization() {
-        let groups = CombatService::mastery_groups();
-        for (base, item) in combat_items() {
-            let Some(node) = item.spec_node.as_deref() else {
-                continue;
-            };
-            let Some(node) = spec_node(node) else {
-                continue;
-            };
-            let Some(parent) = node.parent.as_deref() else {
-                continue;
-            };
-            assert_eq!(
-                groups.get(base).map(String::as_str),
-                Some(parent),
-                "{base}: mastery_groups disagrees with the dataset's own parent link"
-            );
-        }
-    }
-
-    #[test]
-    fn every_mapped_mastery_id_is_actually_a_mastery_node() {
-        for node_id in CombatService::mastery_groups().values() {
-            let node = spec_node(node_id).unwrap_or_else(|| panic!("{node_id} does not exist"));
-            assert_eq!(node.kind, "mastery", "{node_id} is not a mastery node");
-        }
-    }
-
-    #[test]
-    fn capes_and_bags_have_no_mastery_group() {
-        let groups = CombatService::mastery_groups();
-        assert!(!groups.contains_key("CAPE"));
-        assert!(!groups.contains_key("BAG"));
-    }
 
     fn request(identifier: &str) -> LoadoutItemRequest {
         LoadoutItemRequest {
@@ -1389,357 +767,43 @@ mod service_tests {
         assert_eq!(enchantment_suffix_of("T5_MAIN_SWORD"), None);
     }
 
+    fn item_power_request(spec: SpecSource, level: Option<i32>) -> ItemPowerRequest {
+        ItemPowerRequest {
+            items: vec![request("T8_2H_POLEHAMMER")],
+            spec,
+            level,
+        }
+    }
+
+    #[test]
+    fn a_fixed_spec_needs_a_level_inside_the_game_range() {
+        let missing = CombatService::item_power(&item_power_request(SpecSource::Fixed, None));
+        assert!(matches!(missing, Err(AppError::Validation(_))));
+        let too_high = CombatService::item_power(&item_power_request(SpecSource::Fixed, Some(101)));
+        assert!(matches!(too_high, Err(AppError::Validation(_))));
+        let negative = CombatService::item_power(&item_power_request(SpecSource::Fixed, Some(-1)));
+        assert!(matches!(negative, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn the_max_spec_is_the_ceiling_a_fixed_hundred_also_reaches() {
+        let max = CombatService::item_power(&item_power_request(SpecSource::Max, None)).unwrap();
+        let fixed =
+            CombatService::item_power(&item_power_request(SpecSource::Fixed, Some(100))).unwrap();
+        assert!((max.breakdown.average - fixed.breakdown.average).abs() < f64::EPSILON);
+        assert!((max.readiness - 1.0).abs() < f64::EPSILON);
+
+        let untrained =
+            CombatService::item_power(&item_power_request(SpecSource::Fixed, Some(0))).unwrap();
+        assert!(untrained.breakdown.average < max.breakdown.average);
+        assert!((untrained.at_max_spec - max.breakdown.average).abs() < f64::EPSILON);
+    }
+
     #[test]
     fn readiness_is_a_clamped_ratio_that_survives_a_zero_ceiling() {
         assert!((readiness_of(50.0, 100.0) - 0.5).abs() < f64::EPSILON);
         assert!((readiness_of(0.0, 0.0) - 0.0).abs() < f64::EPSILON);
         assert!((readiness_of(150.0, 100.0) - 1.0).abs() < f64::EPSILON);
-    }
-}
-
-#[cfg(test)]
-mod comp_readiness_tests {
-    use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
-
-    use super::CombatService;
-    use backend_entities::comps::{
-        build, build_category, build_item, comp, comp_build, comp_category,
-    };
-    use backend_entities::events::{event, fight};
-    use backend_entities::fight_analytics::fight_stat;
-    use backend_entities::users::ActiveModel as UserActiveModel;
-    use backend_identity::users::specializations;
-
-    async fn seed_db() -> DatabaseConnection {
-        backend_migration::testkit::migrated_sqlite().await
-    }
-
-    /// One comp with a single seat requiring a Polehammer.
-    async fn seed_polehammer_comp(db: &DatabaseConnection) -> (i64, i64) {
-        let owner = UserActiveModel {
-            username: Set("owner".to_string()),
-            email: Set("owner@example.com".to_string()),
-            role: Set("Admin".to_string()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert owner");
-
-        let category = build_category::ActiveModel {
-            name: Set("readiness-builds".to_string()),
-            slug: Set("readiness-builds".to_string()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert build category");
-        let built = build::ActiveModel {
-            name: Set("readiness-build".to_string()),
-            role: Set("dps".to_string()),
-            category_id: Set(category.id),
-            created_by: Set(owner.id),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert build");
-        build_item::ActiveModel {
-            build_id: Set(built.id),
-            loadout: Set("main".to_string()),
-            slot: Set("weapon".to_string()),
-            openalbion_item_type: Set("weapon".to_string()),
-            openalbion_item_id: Set(0),
-            openalbion_item_name: Set("T8_2H_POLEHAMMER".to_string()),
-            openalbion_item_icon: Set(Some(
-                "https://render.albiononline.com/v1/item/T8_2H_POLEHAMMER.png?quality=1&size=64"
-                    .to_string(),
-            )),
-            openalbion_item_tier: Set(Some("8".to_string())),
-            openalbion_item_quality: Set(4),
-            openalbion_item_enchantment: Set(0),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert build item");
-
-        let comp_cat = comp_category::ActiveModel {
-            name: Set("readiness-comps".to_string()),
-            slug: Set("readiness-comps".to_string()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert comp category");
-        let comp = comp::ActiveModel {
-            name: Set("readiness-comp".to_string()),
-            category_id: Set(comp_cat.id),
-            created_by: Set(owner.id),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert comp");
-        comp_build::ActiveModel {
-            comp_id: Set(comp.id),
-            build_id: Set(built.id),
-            quantity: Set(1),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert comp build");
-
-        (comp.id, built.id)
-    }
-
-    /// A minimal event whose `comp_id` is whatever comp is passed in — the event's own comp
-    /// linkage is irrelevant to `comp_readiness`, which takes its comp id as a separate argument.
-    async fn seed_event(db: &DatabaseConnection, comp_id: i64, created_by: i64) -> i64 {
-        let now = Utc::now();
-        event::ActiveModel {
-            title: Set("readiness-event".to_string()),
-            description: Set(None),
-            call_to_arms: Set(false),
-            regear: Set(false),
-            comp_id: Set(Some(comp_id)),
-            player_cap: Set(None),
-            created_by: Set(created_by),
-            event_date_utc: Set(now.into()),
-            mass_time_utc: Set(None),
-            start_time_utc: Set(None),
-            created_at: Set(now.into()),
-            updated_at: Set(now.into()),
-            status: Set("completed".to_string()),
-            started_at: Set(None),
-            stopped_at: Set(None),
-            auto_stop_deadline: Set(None),
-            link_status: Set("idle".to_string()),
-            link_attempts: Set(0),
-            link_last_error: Set(None),
-            link_battles_completed_at: Set(None),
-            discord_voice_channel_id: Set(None),
-            roster_version: Set(0),
-            archived_at: Set(None),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert event")
-        .id
-    }
-
-    async fn seed_fight(db: &DatabaseConnection, event_id: Option<i64>) -> i64 {
-        let now = Utc::now();
-        fight::ActiveModel {
-            event_id: Set(event_id),
-            started_at: Set(now.into()),
-            ended_at: Set(None),
-            grouping_method: Set("automatic".to_string()),
-            grouping_confidence: Set(1.0),
-            grouping_version: Set("v1".to_string()),
-            needs_review: Set(false),
-            created_at: Set(now.into()),
-            updated_at: Set(now.into()),
-            outcome: Set("unknown".to_string()),
-            outcome_method: Set(None),
-            analytics_computed_at: Set(None),
-            analytics_stale: Set(true),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert fight")
-        .id
-    }
-
-    async fn seed_fight_stat(db: &DatabaseConnection, fight_id: i64, avg_friendly_item_power: f64) {
-        let now = Utc::now();
-        fight_stat::ActiveModel {
-            fight_id: Set(fight_id),
-            segment_count: Set(1),
-            unique_friendly_players: Set(1),
-            unique_enemy_players: Set(1),
-            friendly_kills: Set(0),
-            friendly_deaths: Set(0),
-            friendly_kill_fame: Set(0),
-            enemy_kills: Set(0),
-            enemy_deaths: Set(0),
-            enemy_kill_fame: Set(0),
-            avg_friendly_item_power: Set(avg_friendly_item_power),
-            avg_enemy_item_power: Set(0.0),
-            friendly_estimated_loss: Set(0),
-            enemy_estimated_loss: Set(0),
-            computed_at: Set(now.into()),
-            created_at: Set(now.into()),
-            updated_at: Set(now.into()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert fight_stat");
-    }
-
-    #[tokio::test]
-    async fn an_untrained_guild_leaves_every_seat_uncovered() {
-        let db = seed_db().await;
-        let (comp_id, build_id) = seed_polehammer_comp(&db).await;
-
-        let view = CombatService::new()
-            .comp_readiness(&db, comp_id, None)
-            .await
-            .expect("readiness should compute with no candidates");
-        let readiness = view.predicted;
-
-        assert_eq!(readiness.seat_count, 1);
-        assert_eq!(
-            readiness.uncovered_seats,
-            vec![format!("build:{build_id}:1")]
-        );
-        assert_eq!(readiness.weakest_seats[0].build_name, "readiness-build");
-        assert!((readiness.avg_item_power_now - 0.0).abs() < f64::EPSILON);
-        assert!(readiness.avg_item_power_at_max > 0.0);
-        assert!(
-            view.observed.is_none(),
-            "no event_id was requested, so there is nothing to compare against"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_trained_member_is_surfaced_as_the_best_candidate() {
-        let db = seed_db().await;
-        let (comp_id, _) = seed_polehammer_comp(&db).await;
-        let trained = UserActiveModel {
-            username: Set("trained".to_string()),
-            email: Set("trained@example.com".to_string()),
-            role: Set("User".to_string()),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert trained member");
-        specializations::ActiveModel {
-            user_id: Set(trained.id),
-            node_key: Set("weapon:2H_POLEHAMMER".to_string()),
-            node_name: Set("Great Polehammer".to_string()),
-            category: Set("weapon".to_string()),
-            level: Set(100),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert specialization");
-
-        let view = CombatService::new()
-            .comp_readiness(&db, comp_id, None)
-            .await
-            .expect("readiness should compute");
-        let readiness = view.predicted;
-
-        assert!(readiness.uncovered_seats.is_empty());
-        assert_eq!(
-            readiness.weakest_seats[0].best_candidate_user_id,
-            Some(trained.id)
-        );
-        assert_eq!(
-            readiness.weakest_seats[0].best_candidate_username,
-            "trained"
-        );
-        assert_eq!(readiness.bench_coverage[0].build_name, "readiness-build");
-        assert_eq!(readiness.bench_coverage[0].qualified_members, 1);
-        assert!(view.observed.is_none());
-    }
-
-    #[tokio::test]
-    async fn a_comp_with_no_such_id_is_not_found() {
-        let db = seed_db().await;
-        let error = CombatService::new()
-            .comp_readiness(&db, 999_999, None)
-            .await
-            .expect_err("a nonexistent comp should not compute readiness");
-        assert!(matches!(error, backend_core::errors::AppError::NotFound(_)));
-    }
-
-    #[tokio::test]
-    async fn an_event_with_no_fights_yet_has_nothing_to_observe() {
-        let db = seed_db().await;
-        let (comp_id, _) = seed_polehammer_comp(&db).await;
-        let owner = UserActiveModel {
-            username: Set("owner2".to_string()),
-            email: Set("owner2@example.com".to_string()),
-            role: Set("Admin".to_string()),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert second owner");
-        let event_id = seed_event(&db, comp_id, owner.id).await;
-
-        let without_event = CombatService::new()
-            .comp_readiness(&db, comp_id, None)
-            .await
-            .expect("readiness should compute with no event");
-        let view = CombatService::new()
-            .comp_readiness(&db, comp_id, Some(event_id))
-            .await
-            .expect("readiness should compute with an event that has no fights");
-
-        assert!(view.observed.is_none());
-        assert!(
-            (view.predicted.avg_item_power_now - without_event.predicted.avg_item_power_now).abs()
-                < f64::EPSILON
-        );
-        assert_eq!(
-            view.predicted.seat_count,
-            without_event.predicted.seat_count
-        );
-    }
-
-    #[tokio::test]
-    async fn observed_item_power_is_averaged_across_the_events_fights_and_the_delta_is_signed() {
-        let db = seed_db().await;
-        let (comp_id, _) = seed_polehammer_comp(&db).await;
-        let owner = UserActiveModel {
-            username: Set("owner3".to_string()),
-            email: Set("owner3@example.com".to_string()),
-            role: Set("Admin".to_string()),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert third owner");
-        let event_id = seed_event(&db, comp_id, owner.id).await;
-
-        let fight_a = seed_fight(&db, Some(event_id)).await;
-        seed_fight_stat(&db, fight_a, 1300.0).await;
-        let fight_b = seed_fight(&db, Some(event_id)).await;
-        seed_fight_stat(&db, fight_b, 1400.0).await;
-
-        // A decoy fight/fight_stat under a different event must never be pulled into the average.
-        let other_event_id = seed_event(&db, comp_id, owner.id).await;
-        let decoy_fight = seed_fight(&db, Some(other_event_id)).await;
-        seed_fight_stat(&db, decoy_fight, 1_000_000.0).await;
-
-        let view = CombatService::new()
-            .comp_readiness(&db, comp_id, Some(event_id))
-            .await
-            .expect("readiness should compute with an analyzed event");
-
-        let observed = view
-            .observed
-            .expect("two analyzed fights should produce an observation");
-        assert_eq!(observed.fight_count, 2);
-        assert!((observed.avg_item_power - 1350.0).abs() < f64::EPSILON);
-        assert!(
-            (observed.item_power_delta - (1350.0 - view.predicted.avg_item_power_now)).abs()
-                < f64::EPSILON
-        );
-        // With an untrained candidate pool, `avg_item_power_now` is 0.0, so observed IP is
-        // entirely positive delta.
-        assert!((view.predicted.avg_item_power_now - 0.0).abs() < f64::EPSILON);
-        assert!((observed.item_power_delta - 1350.0).abs() < f64::EPSILON);
     }
 }
 
@@ -2073,255 +1137,5 @@ mod scenario_tests {
             .await
             .expect_err("a nonexistent run should not resolve");
         assert!(matches!(error, backend_core::errors::AppError::NotFound(_)));
-    }
-}
-
-#[cfg(test)]
-mod calibration_tests {
-    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
-
-    use super::{BuildLoadout, CombatService, SpecSource};
-    use backend_entities::albion::albion_link;
-    use backend_entities::battles::{ActiveModel as SnapshotActiveModel, BattlePlayer};
-    use backend_entities::comps::{build, build_category, build_item};
-    use backend_entities::events::{event, event_participation};
-    use backend_entities::users::ActiveModel as UserActiveModel;
-    use backend_identity::users::specializations;
-
-    async fn seed_db() -> DatabaseConnection {
-        backend_migration::testkit::migrated_sqlite().await
-    }
-
-    /// One member, fully trained, with a Polehammer build and an event sign-up naming it.
-    /// Returns `(user_id, build_id, expected_ip)`, the last computed by the same calculator the
-    /// service method under test calls — so assertions never need to hand-derive a dataset value.
-    async fn seed_trained_member(db: &DatabaseConnection, discord_id: &str) -> (i64, i64, f64) {
-        let owner = UserActiveModel {
-            username: Set("member".to_string()),
-            email: Set("member@example.com".to_string()),
-            role: Set("User".to_string()),
-            discord_id: Set(Some(discord_id.to_string())),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert member");
-
-        specializations::ActiveModel {
-            user_id: Set(owner.id),
-            node_key: Set("weapon:2H_POLEHAMMER".to_string()),
-            node_name: Set("Great Polehammer".to_string()),
-            category: Set("weapon".to_string()),
-            level: Set(100),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert specialization");
-
-        let category = build_category::ActiveModel {
-            name: Set("calibration-builds".to_string()),
-            slug: Set("calibration-builds".to_string()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert build category");
-        let built = build::ActiveModel {
-            name: Set("calibration-build".to_string()),
-            role: Set("dps".to_string()),
-            category_id: Set(category.id),
-            created_by: Set(owner.id),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert build");
-        build_item::ActiveModel {
-            build_id: Set(built.id),
-            loadout: Set("main".to_string()),
-            slot: Set("weapon".to_string()),
-            openalbion_item_type: Set("weapon".to_string()),
-            openalbion_item_id: Set(0),
-            openalbion_item_name: Set("T8_2H_POLEHAMMER".to_string()),
-            openalbion_item_tier: Set(Some("8".to_string())),
-            openalbion_item_quality: Set(4),
-            openalbion_item_enchantment: Set(0),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert build item");
-
-        let expected_ip = CombatService::new()
-            .build_item_power(
-                db,
-                built.id,
-                BuildLoadout::Main,
-                SpecSource::Current,
-                Some(owner.id),
-                None,
-            )
-            .await
-            .expect("build item power should compute")
-            .breakdown
-            .average;
-
-        (owner.id, built.id, expected_ip)
-    }
-
-    async fn seed_event_signup(
-        db: &DatabaseConnection,
-        user_id: i64,
-        build_id: i64,
-        when: sea_orm::prelude::DateTimeWithTimeZone,
-    ) {
-        let comp_cat = backend_entities::comps::comp_category::ActiveModel {
-            name: Set("calibration-comps".to_string()),
-            slug: Set("calibration-comps".to_string()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert comp category");
-        let comp = backend_entities::comps::comp::ActiveModel {
-            name: Set("calibration-comp".to_string()),
-            category_id: Set(comp_cat.id),
-            created_by: Set(user_id),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert comp");
-        let created_event = event::ActiveModel {
-            title: Set("Calibration mass".to_string()),
-            comp_id: Set(Some(comp.id)),
-            created_by: Set(user_id),
-            event_date_utc: Set(when),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert event");
-        event_participation::ActiveModel {
-            event_id: Set(created_event.id),
-            user_id: Set(user_id),
-            primary_build_id: Set(Some(build_id)),
-            secondary_build_id: Set(None),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert participation");
-    }
-
-    async fn seed_battle_snapshot(
-        db: &DatabaseConnection,
-        albion_player_id: &str,
-        item_power: f64,
-        start_time: sea_orm::prelude::DateTimeWithTimeZone,
-    ) {
-        let player = BattlePlayer {
-            id: albion_player_id.to_string(),
-            name: "Weaklings Player".to_string(),
-            guild_id: "guild".to_string(),
-            guild_name: "Weaklings".to_string(),
-            alliance_name: None,
-            alliance_id: None,
-            kills: 1,
-            deaths: 0,
-            kill_fame: 1000,
-            death_fame: 0,
-            item_power,
-            is_friendly: false,
-        };
-        SnapshotActiveModel {
-            battle_id: Set(1),
-            start_time: Set(start_time),
-            end_time: Set(None),
-            total_players: Set(1),
-            total_kills: Set(1),
-            total_fame: Set(1000),
-            guilds_json: Set("[]".to_string()),
-            players_json: Set(serde_json::to_string(&[player]).unwrap()),
-            kills_json: Set("[]".to_string()),
-            losses_json: Set("[]".to_string()),
-            fetched_at: Set(chrono::Utc::now().into()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("failed to insert battle snapshot");
-    }
-
-    #[tokio::test]
-    async fn no_battle_data_means_an_empty_report() {
-        let db = seed_db().await;
-        let report = CombatService::new()
-            .calibration(&db)
-            .await
-            .expect("calibration should compute with no data");
-        assert_eq!(report.sample_size, 0);
-        assert!((report.mean_absolute_error - 0.0).abs() < f64::EPSILON);
-        assert!((report.median_absolute_error - 0.0).abs() < f64::EPSILON);
-        assert!(report.outliers.is_empty());
-    }
-
-    #[tokio::test]
-    async fn a_well_matched_member_shows_near_zero_error() {
-        let db = seed_db().await;
-        let (user_id, build_id, expected_ip) = seed_trained_member(&db, "discord-1").await;
-        let now = chrono::Utc::now().into();
-        seed_event_signup(&db, user_id, build_id, now).await;
-        albion_link::ActiveModel {
-            discord_id: Set("discord-1".to_string()),
-            albion_player_id: Set("albion-1".to_string()),
-            albion_player_name: Set("Weaklings Player".to_string()),
-            linked_at: Set(now),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert albion link");
-        seed_battle_snapshot(&db, "albion-1", expected_ip, now).await;
-
-        let report = CombatService::new()
-            .calibration(&db)
-            .await
-            .expect("calibration should compute");
-        assert_eq!(report.sample_size, 1);
-        assert!(report.mean_absolute_error < 1e-6);
-        assert_eq!(report.outliers[0].user_id, user_id);
-        assert_eq!(report.outliers[0].build_id, build_id);
-    }
-
-    #[tokio::test]
-    async fn a_genuine_mismatch_surfaces_as_an_outlier() {
-        let db = seed_db().await;
-        let (user_id, build_id, expected_ip) = seed_trained_member(&db, "discord-2").await;
-        let now = chrono::Utc::now().into();
-        seed_event_signup(&db, user_id, build_id, now).await;
-        albion_link::ActiveModel {
-            discord_id: Set("discord-2".to_string()),
-            albion_player_id: Set("albion-2".to_string()),
-            albion_player_name: Set("Mismatched Player".to_string()),
-            linked_at: Set(now),
-            ..Default::default()
-        }
-        .insert(&db)
-        .await
-        .expect("failed to insert albion link");
-        // 500 below the calculator's own figure — a clear, deliberate mismatch rather than a
-        // hand-derived dataset constant.
-        seed_battle_snapshot(&db, "albion-2", expected_ip - 500.0, now).await;
-
-        let report = CombatService::new()
-            .calibration(&db)
-            .await
-            .expect("calibration should compute");
-        assert_eq!(report.sample_size, 1);
-        assert!(report.mean_absolute_error > 100.0);
-        assert_eq!(report.outliers.len(), 1);
-        assert!((report.outliers[0].error - 500.0).abs() < 1e-6);
     }
 }

@@ -75,7 +75,6 @@ function seat(
             user_id: userId,
             username: `Member ${userId}`,
             discord_id: null,
-            specializations: {},
             weapons: [],
             primary_build_id: position,
             primary_build_name: `Build ${position}`,
@@ -276,7 +275,6 @@ describe('EventDetailPage roster room', () => {
       user_id: 201,
       username: 'BenchGuy',
       discord_id: null,
-      specializations: {},
       weapons: [],
       primary_build_id: 1,
       primary_build_name: 'Build 1',
@@ -551,8 +549,7 @@ interface EventDetailRosterSuggestionsAccess {
       seatKey: string;
       buildName: string;
       username: string;
-      itemPower: number;
-      readiness: number;
+      proficiency: { tone: string; label: string } | null;
       preferenceLabel: string;
     }>
   >;
@@ -601,7 +598,6 @@ describe('EventDetailPage roster suggestions', () => {
           user_id: 7,
           username: 'Tacos',
           discord_id: null,
-          specializations: {},
           weapons: [],
           primary_build_id: 3,
           primary_build_name: 'Build 3',
@@ -615,7 +611,7 @@ describe('EventDetailPage roster suggestions', () => {
         {
           seat_key: 'party:1:build:3:1',
           user_id: 7,
-          score: { item_power: 1536, max_item_power: 1600, readiness: 0.96, preference: 'primary', blocking: [] },
+          score: { proficiency: 'main', preference: 'primary', blocking: [], score: 3.5 },
         },
       ],
       unplaced_members: [],
@@ -628,10 +624,9 @@ describe('EventDetailPage roster suggestions', () => {
       seatKey: 'party:1:build:3:1',
       buildName: 'Build 3',
       username: 'Tacos',
-      itemPower: 1536,
-      preferenceLabel: 'Primaria',
+      proficiency: { tone: 'success', label: 'weapons.proficiency.main' },
+      preferenceLabel: 'events.detail.preferencePrimary',
     });
-    expect(rows[0].readiness).toBeCloseTo(0.96);
   });
 
   it('falls back to a bare id when the member is not found on the roster snapshot', () => {
@@ -649,7 +644,7 @@ describe('EventDetailPage roster suggestions', () => {
         {
           seat_key: 'party:1:build:1:1',
           user_id: 99,
-          score: { item_power: 0, max_item_power: 0, readiness: 0, preference: 'none', blocking: [] },
+          score: { proficiency: null, preference: 'none', blocking: [], score: 0.5 },
         },
       ],
       unplaced_members: [],
@@ -657,6 +652,7 @@ describe('EventDetailPage roster suggestions', () => {
     });
 
     expect(page.rosterSuggestionRows()[0].username).toBe('#99');
+    expect(page.rosterSuggestionRows()[0].proficiency).toBeNull();
   });
 
   it('drops a placement whose seat no longer exists rather than throwing', () => {
@@ -674,7 +670,7 @@ describe('EventDetailPage roster suggestions', () => {
         {
           seat_key: 'party:1:build:1:1',
           user_id: 1,
-          score: { item_power: 0, max_item_power: 0, readiness: 0, preference: 'none', blocking: [] },
+          score: { proficiency: null, preference: 'none', blocking: [], score: 0.5 },
         },
       ],
       unplaced_members: [],
@@ -1079,7 +1075,6 @@ describe('EventDetailPage weapon fit on the Parties board', () => {
       user_id: userId,
       username: `Member ${userId}`,
       discord_id: null,
-      specializations: {},
       weapons,
       primary_build_id: 1,
       primary_build_name: 'Build 1',

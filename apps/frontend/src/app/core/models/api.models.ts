@@ -58,7 +58,7 @@ export type PermissionKey =
   | 'splits.delete'
   | 'splits.islands.manage'
   | 'users.create'
-  | 'users.specializations.manage'
+  | 'users.weapons.manage'
   | 'permissions.reload'
   | 'roles.manage'
   | 'autorole.manage'
@@ -296,35 +296,13 @@ export interface UserProfile {
   role: Role;
 }
 
-export type AlbionCombatCategory = 'weapon' | 'armor';
-
-export interface UserSpecialization {
-  node_key: string;
-  node_name: string;
-  category: AlbionCombatCategory;
-  level: number;
-  updated_at: string;
-}
-
-export interface UserSpecializationInput {
-  node_key: string;
-  node_name: string;
-  category: AlbionCombatCategory;
-  level: number;
-}
-
-export interface UpdateSpecializationsRequest {
-  specializations: UserSpecializationInput[];
-}
-
 /** How well a member plays a weapon. UI labels are Main / Good / Basic. */
 export type WeaponProficiency = 'main' | 'good' | 'basic';
 
 /**
  * One weapon in a member's "My weapons" list.
  *
- * `weapon_key` is `weapon:{BASE}` (tier-less base identifier, no enchantment), the same format as
- * the Destiny Board node key. `proficiency: null` means the member never declared it and the row
+ * `weapon_key` is `weapon:{BASE}` (tier-less base identifier, no enchantment). `proficiency: null` means the member never declared it and the row
  * only exists because an officer locked it.
  */
 export interface UserWeapon {
@@ -975,7 +953,6 @@ export interface EventParticipant {
   secondary_build_name: string | null;
   assigned_build_id?: number | null;
   assigned_build_name?: string | null;
-  specializations?: Record<string, number>;
   /** Weapons the member declared (or an officer locked). Empty when none. */
   weapons: ParticipantWeapon[];
   /** Member guild the participant signed up for; `null` when unattributed or the event is not linked. */
@@ -999,7 +976,6 @@ export interface EventRosterParticipant {
   secondary_build_name: string | null;
   assigned_build_id?: number | null;
   assigned_build_name?: string | null;
-  specializations: Record<string, number>;
   weapons: ParticipantWeapon[];
   guild?: ParticipantGuild | null;
 }
@@ -1127,23 +1103,30 @@ export interface AutoFillRosterRequest {
   expected_roster_version: number;
   /**
    * `'greedy'` (the default when omitted) keeps today's first-fit-in-signup-order behaviour.
-   * `'spec_optimal'` solves the whole unassigned roster at once against Destiny Board readiness.
+   * `'best_fit'` solves the whole unassigned roster at once, maximising the weapon fit of every
+   * pairing plus signup preference.
    */
-  strategy?: 'greedy' | 'spec_optimal';
+  strategy?: 'greedy' | 'best_fit';
 }
 
 /** Whether a member asked for this seat's build, or the pairing is unrelated to their signup. */
 export type RosterFitPreference = 'none' | 'secondary' | 'primary';
 
-/** How well one member fits one seat, from the Item Power calculator. */
+/** How well one member fits one seat, from their declared weapons ("My weapons"). */
 export interface RosterFitScore {
-  item_power: number;
-  max_item_power: number;
-  /** `0..1`. Comparable across different builds, unlike raw Item Power. */
-  readiness: number;
+  /**
+   * The member's level on the seat's weapon. `null` when they declared no weapons at all, or
+   * declared only other weapons.
+   */
+  proficiency: WeaponProficiency | null;
   preference: RosterFitPreference;
   /** Reasons this pairing cannot be made; empty when it can. */
   blocking: string[];
+  /**
+   * Higher is better: main 3, good 2, basic 1, no declared weapons 0.5, only other weapons 0.1,
+   * plus 0.5 for a primary and 0.25 for a secondary signup preference.
+   */
+  score: number;
 }
 
 /** One seat the optimiser proposes filling. */
@@ -1154,7 +1137,7 @@ export interface RosterPlacement {
 }
 
 /**
- * A preview of `POST .../roster/auto-fill` with `strategy: 'spec_optimal'` — every placement here
+ * A preview of `POST .../roster/auto-fill` with `strategy: 'best_fit'` — every placement here
  * targets a currently-empty seat, so applying it never displaces someone already assigned.
  */
 export interface RosterSuggestions {
@@ -1670,7 +1653,7 @@ export interface DatasetVersion {
   generator_version: number;
 }
 
-/** One Destiny Board node's contribution to a single item's Item Power. */
+/** One specialization node's contribution to a single item's Item Power. */
 export interface SpecContribution {
   node: string;
   /** `'spec'` for a leaf specialization, `'mastery'` for the family node. */
@@ -1714,81 +1697,9 @@ export interface CharacterIpBreakdown {
 /** An Item Power figure, with the ceiling it is measured against. */
 export interface ItemPowerView {
   breakdown: CharacterIpBreakdown;
-  /** The same loadout with every Destiny Board node at 100. */
+  /** The same loadout with every specialization node at 100. */
   at_max_spec: number;
-  /** `breakdown.average / at_max_spec`, `0..1`. Comparable across builds unlike raw Item Power. */
-  readiness: number;
   dataset_version: DatasetVersion;
-}
-
-/** A Destiny Board node holding a member back on a build. */
-export interface BlockingNode {
-  node: string;
-  level: number;
-  max_level: number;
-  item_power_gap: number;
-}
-
-/** One member's Item Power on a given build. */
-export interface MemberItemPowerView {
-  user_id: number;
-  username: string;
-  item_power: number;
-  at_max_spec: number;
-  readiness: number;
-  blocking_nodes: BlockingNode[];
-  mastery_levels_known: boolean;
-}
-
-/** Every member with a recorded specialization, scored against one build, best first. */
-export interface BuildRosterFitView {
-  build_id: number;
-  build_name: string;
-  at_max_spec: number;
-  members: MemberItemPowerView[];
-  dataset_version: DatasetVersion;
-}
-
-/** One seat's best available candidate against a comp's readiness ceiling, or the absence of one. */
-export interface SeatReadiness {
-  seat_key: string;
-  build_id: number;
-  build_name: string;
-  best_candidate_user_id: number | null;
-  best_candidate_username: string;
-  best_candidate_item_power: number;
-  max_item_power: number;
-  readiness: number;
-  item_power_gap: number;
-  qualified_members: number;
-}
-
-/** How deep the bench is for one build across every seat it fills. */
-export interface BuildCoverage {
-  build_id: number;
-  build_name: string;
-  seat_count: number;
-  qualified_members: number;
-}
-
-/** Whether a composition can actually be fielded tonight, and where it is weakest. */
-export interface CompReadiness {
-  seat_count: number;
-  avg_item_power_now: number;
-  avg_item_power_at_max: number;
-  /** `0..1`. */
-  readiness_pct: number;
-  /** The seats furthest from their ceiling, worst first. */
-  weakest_seats: SeatReadiness[];
-  bench_coverage: BuildCoverage[];
-  uncovered_seats: string[];
-  mastery_levels_known: boolean;
-}
-
-/** `base_identifier -> mastery_node_id`, for every equippable that has a family mastery node. */
-export interface MasteryGroupsView {
-  dataset_version: DatasetVersion;
-  groups: Record<string, string>;
 }
 
 /** Which auto-attack category a target's incoming damage is measured against for focus fire. */

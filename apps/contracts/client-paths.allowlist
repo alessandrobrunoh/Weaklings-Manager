@@ -2,16 +2,12 @@
 # SA-1 deviation: the spec starts this list empty, but the clients call routes that
 # have no ApiDoc entry yet (see undocumented.allowlist, same routes). Each line is
 # removed when its handler gets a #[utoipa::path] and the route moves into openapi.json.
-# Event roster, specializations, albion-alliances, alliance setup:
+# Event roster, albion-alliances, alliance setup:
 GET /api/events/{id}/roster
 PUT /api/events/{id}/roster/seats/{seat_id}
 DELETE /api/events/{id}/roster/seats/{seat_id}
 POST /api/events/{id}/roster/swaps
 POST /api/events/{id}/roster/auto-fill
-GET /api/users/me/specializations
-PUT /api/users/me/specializations
-GET /api/users/{id}/specializations
-PUT /api/users/{id}/specializations
 GET /api/tenants/albion-alliances
 POST /api/alliances/{id}/setup
 POST /api/alliances/{id}/reset-setup

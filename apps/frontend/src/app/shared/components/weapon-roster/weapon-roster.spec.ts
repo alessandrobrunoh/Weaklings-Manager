@@ -7,7 +7,6 @@ import type { UserWeapon } from '../../../core/models/api.models';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { TranslateService } from '../../../core/services/translate.service';
-import type { DestinyItemNode } from '../../data/albion-destiny-board';
 import { AlbionCatalogService } from '../../services/albion-catalog.service';
 import { WeaponRoster } from './weapon-roster';
 
@@ -42,22 +41,20 @@ describe('WeaponRoster', () => {
   let fixture: ComponentFixture<WeaponRoster>;
   let get: ReturnType<typeof vi.fn>;
   let put: ReturnType<typeof vi.fn>;
-  let info: ReturnType<typeof vi.fn>;
 
   async function create(
     rows: UserWeapon[],
-    inputs: { mode?: 'self' | 'manage'; userId?: number; editable?: boolean; specNodes?: DestinyItemNode[] } = {},
+    inputs: { mode?: 'self' | 'manage'; userId?: number; editable?: boolean } = {},
   ): Promise<WeaponRoster> {
     get = vi.fn().mockReturnValue(of(rows));
     put = vi.fn().mockReturnValue(of(rows));
-    info = vi.fn();
     await TestBed.configureTestingModule({
       imports: [WeaponRoster],
       providers: [
         provideZonelessChangeDetection(),
         TranslateService,
         { provide: ApiService, useValue: { get, put } },
-        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info } },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info: vi.fn() } },
         { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve(catalog) } },
       ],
     }).compileComponents();
@@ -113,38 +110,79 @@ describe('WeaponRoster', () => {
     });
   });
 
-  it('shows a locked weapon with a badge and no way to change or remove it', async () => {
+  it('shows a locked weapon with a quiet lock state and no way to change or remove it', async () => {
     await create([row(POLE, 'Polehammer', 'good', true)]);
 
-    expect(host().textContent).toContain('Locked');
+    expect(host().textContent).toContain('Locked by an officer');
+    expect(host().querySelector('.wr__row--locked')).not.toBeNull();
     expect(host().querySelector('fieldset')?.disabled).toBe(true);
     expect(host().querySelector('button[aria-label^="Remove"]')).toBeNull();
+    expect(host().textContent).toContain('Locked by an officer');
   });
 
-  it('imports undeclared weapons from the Destiny Board without saving', async () => {
-    const nodes: DestinyItemNode[] = [
-      { node_key: POLE, node_name: 'Polehammer', category: 'weapon', level: 100, icon: null, identifier: '2H_POLEHAMMER' },
-      { node_key: HOLY, node_name: 'Holy Staff', category: 'weapon', level: 50, icon: null, identifier: 'MAIN_HOLYSTAFF' },
-    ];
-    await create([], { specNodes: nodes });
+  it('groups weapons by family and keeps a row in place when its level changes', async () => {
+    await create([
+      row(POLE, 'Polehammer', 'main'),
+      row('weapon:2H_BOW', 'Bow', 'basic'),
+      row('weapon:2H_LONGBOW', 'Longbow', 'good'),
+    ]);
 
-    const importButton = [...host().querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-      button.textContent?.includes('Import from Destiny Board'),
+    const titles = [...host().querySelectorAll('.wr__group-title')].map((title) =>
+      title.textContent?.replace(/\s+/g, ' ').trim(),
     );
-    importButton?.click();
+    expect(titles).toEqual(['Hammers 1', 'Bows 2']);
+    const names = () =>
+      [...host().querySelectorAll('.wr__name')].map((name) => name.textContent?.trim());
+    const before = names();
+
+    host()
+      .querySelector<HTMLInputElement>('input[name="weapon-level-weapon:2H_BOW"][value="main"]')
+      ?.click();
     await settle();
 
-    const checked = [...host().querySelectorAll<HTMLInputElement>('input[type="radio"]:checked')];
-    expect(checked.map((input) => input.value)).toEqual(['main', 'good']);
-    expect(put).not.toHaveBeenCalled();
-    expect(info).toHaveBeenCalled();
+    expect(names()).toEqual(before);
+    const bow = host().querySelector<HTMLInputElement>(
+      'input[name="weapon-level-weapon:2H_BOW"]:checked',
+    );
+    expect(bow?.value).toBe('main');
+  });
+
+  it('summarises how many weapons sit at each level', async () => {
+    await create([row(POLE, 'Polehammer', 'main'), row(HOLY, 'Holy Staff', 'main', true)]);
+
+    const summary = host().querySelector('.wr__summary')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(summary).toContain('Main 2');
+    expect(summary).toContain('1 locked');
+    expect(summary).not.toContain('Basic');
+  });
+
+  it('shows an empty state with guidance and announces an added weapon', async () => {
+    const cmp = await create([]);
+
+    expect(host().textContent).toContain('No weapons declared yet');
+    expect(host().querySelector('.wr__empty')).not.toBeNull();
+
+    (cmp as unknown as { addWeapon(key: string): void }).addWeapon(POLE);
+    await settle();
+
+    expect(host().querySelector('.wr__empty')).toBeNull();
+    expect(host().querySelector('.sr-only[aria-live="polite"]')?.textContent).toContain(
+      'Polehammer added',
+    );
+    const discard = [...host().querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes('Discard'),
+    );
+    discard?.click();
+    await settle();
+    expect(host().textContent).toContain('No weapons declared yet');
   });
 
   it('lets an officer lock a weapon and sends levels and locks to the member endpoint', async () => {
     await create([row(POLE, 'Polehammer', 'main')], { mode: 'manage', userId: 9 });
 
     expect(get).toHaveBeenCalledWith('api/users/9/weapons');
-    const lock = host().querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const lock = host().querySelector<HTMLButtonElement>('button[aria-label="Lock Polehammer"]');
+    expect(lock?.getAttribute('aria-pressed')).toBe('false');
     lock?.click();
     await settle();
     const save = [...host().querySelectorAll<HTMLButtonElement>('button')].find((button) =>
@@ -161,7 +199,7 @@ describe('WeaponRoster', () => {
   it('is read-only for an officer without the manage permission', async () => {
     await create([row(POLE, 'Polehammer', 'main')], { mode: 'manage', userId: 9, editable: false });
 
-    expect(host().querySelector('input[type="checkbox"]')).toBeNull();
+    expect(host().querySelector('button[aria-pressed]')).toBeNull();
     expect(host().querySelector('app-searchable-select')).toBeNull();
     expect(host().textContent).not.toContain('Save weapons');
   });

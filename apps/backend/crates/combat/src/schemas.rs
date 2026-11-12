@@ -25,17 +25,6 @@ pub struct ApiResponseUserWeapons {
     pub data: Vec<backend_identity::users::weapons::UserWeaponView>,
 }
 
-/// `OpenAPI` schema wrapper for a comp readiness response.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponseCompReadinessView {
-    /// Indicates the outcome of the request, always "success".
-    #[schema(example = "success")]
-    pub status: String,
-    /// The readiness roll-up, plus its comparison against observed battle evidence when
-    /// available.
-    pub data: crate::models::CompReadinessView,
-}
-
 /// `OpenAPI` schema wrapper for the combat dataset response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseCombatDataset {
@@ -96,26 +85,6 @@ pub struct ApiResponseRunSummaryList {
     pub data: Vec<crate::models::RunSummary>,
 }
 
-/// `OpenAPI` schema wrapper for the Item Power calibration report response.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponseCalibration {
-    /// Indicates the outcome of the request, always "success".
-    #[schema(example = "success")]
-    pub status: String,
-    /// The calibration report.
-    pub data: crate::models::CalibrationView,
-}
-
-/// `OpenAPI` schema wrapper for the mastery-groups mapping response.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponseMasteryGroups {
-    /// Indicates the outcome of the request, always "success".
-    #[schema(example = "success")]
-    pub status: String,
-    /// The item-to-mastery-node payload.
-    pub data: crate::models::MasteryGroupsView,
-}
-
 /// `OpenAPI` schema wrapper for an Item Power response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseItemPower {
@@ -124,14 +93,4 @@ pub struct ApiResponseItemPower {
     pub status: String,
     /// The itemised Item Power payload.
     pub data: crate::models::ItemPowerView,
-}
-
-/// `OpenAPI` schema wrapper for a build's roster-fit response.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponseBuildRosterFit {
-    /// Indicates the outcome of the request, always "success".
-    #[schema(example = "success")]
-    pub status: String,
-    /// Every member scored against the build.
-    pub data: crate::models::BuildRosterFitView,
 }

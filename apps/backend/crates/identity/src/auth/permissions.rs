@@ -95,9 +95,9 @@ pub enum Permission {
     /// Reload the in-memory permission cache after a DB change. Admin-only.
     #[strum(serialize = "permissions.reload")]
     PermissionsReload,
-    /// Edit another member's Albion combat specialization levels. Admin-only.
-    #[strum(serialize = "users.specializations.manage")]
-    UsersSpecializationsManage,
+    /// Edit another member's declared weapons, including officer locks. Admin-only.
+    #[strum(serialize = "users.weapons.manage")]
+    UsersWeaponsManage,
     /// Create, update, link, and delete gestionale roles. Distinct from editing the matrix.
     #[strum(serialize = "roles.manage")]
     RolesManage,
@@ -214,23 +214,12 @@ pub enum Permission {
     /// Use the Item Power calculator and read the bundled combat dataset. Member+.
     #[strum(serialize = "combat.calculator.use")]
     CombatCalculatorUse,
-    /// Read comp readiness roll-ups and per-build roster fit across the whole guild. Officer+.
-    ///
-    /// Separate from the calculator because it reports on every member at once, which is a
-    /// different thing from a member working out their own Item Power.
-    #[strum(serialize = "combat.readiness.view")]
-    CombatReadinessView,
     /// Read and run a saved combat test scenario. Member+.
     #[strum(serialize = "combat.tests.view")]
     CombatTestsView,
     /// Create, edit and archive combat test scenarios. Officer+.
     #[strum(serialize = "combat.tests.manage")]
     CombatTestsManage,
-    /// Read how well the Item Power calculator's predictions track battle data actually observed
-    /// for members. Officer+: unlike the calculator itself, this reports per-member accuracy
-    /// across the whole guild, which is a diagnostic for tuning the model, not self-service.
-    #[strum(serialize = "combat.calibration.view")]
-    CombatCalibrationView,
     /// View scouted enemy comps, similarity scores and matchup tallies. Member+.
     #[strum(serialize = "intel.view")]
     IntelView,

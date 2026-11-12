@@ -2,8 +2,7 @@
 //!
 //! A member declares the weapons they can play (`main`, `good` or `basic`); an officer can
 //! additionally lock a weapon for a member. Event signup, the roster board and auto-fill read
-//! these rows (see `backend_events`); the Destiny Board specialization levels stay optional and
-//! keep feeding Item Power suggestions.
+//! these rows (see `backend_events`); they are the only member-skill data the app keeps.
 //!
 //! The rows, DTOs and per-user lookups live in `backend_identity::users::weapons`. The routes and
 //! the catalog-aware validation live here because the catalog crate (`backend_albion_data`)
@@ -103,7 +102,7 @@ pub async fn update_my_weapons(
     path = "/api/users/{user_id}/weapons",
     tag = "users",
     summary = "List a member's weapons",
-    description = "Readable by any authenticated member, like specializations.",
+    description = "Readable by any authenticated member.",
     security(("session_cookie" = [])),
     params(("user_id" = i64, Path, description = "Internal user ID")),
     responses(
@@ -129,7 +128,7 @@ pub async fn get_user_weapons(
     summary = "Replace a member's weapons and locks",
     description = "Officer endpoint: replaces every weapon row of the member, including officer \
                    locks. Rows with no level and no lock are dropped. Requires \
-                   `users.specializations.manage` even for the caller's own rows, because it can \
+                   `users.weapons.manage` even for the caller's own rows, because it can \
                    clear locks. Returns the full list afterwards.",
     security(("session_cookie" = [])),
     params(("user_id" = i64, Path, description = "Internal user ID")),
@@ -137,7 +136,7 @@ pub async fn get_user_weapons(
     responses(
         (status = 200, description = "The member's weapons after the update", body = crate::schemas::ApiResponseUserWeapons),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Missing users.specializations.manage", body = ProblemDetails),
+        (status = 403, description = "Missing users.weapons.manage", body = ProblemDetails),
         (status = 404, description = "User not found", body = ProblemDetails),
         (status = 422, description = "Unknown or duplicate weapon", body = ProblemDetails)
     )
@@ -149,7 +148,7 @@ pub async fn update_user_weapons(
     Path(user_id): Path<i64>,
     Json(body): Json<ManageUserWeaponsRequest>,
 ) -> Result<Json<ApiResponse<Vec<UserWeaponView>>>, AppError> {
-    user.require(&perms, Permission::UsersSpecializationsManage)
+    user.require(&perms, Permission::UsersWeaponsManage)
         .await?;
     ensure_user_exists(&db, user_id).await?;
     Ok(Json(ApiResponse::new(

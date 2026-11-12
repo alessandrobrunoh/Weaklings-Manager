@@ -80,7 +80,7 @@ describe('Albion equipment catalog names', () => {
     expect(albionItemSupportsEnchantment('T8_MOUNT_HORSE')).toBe(false);
   });
 
-  it('keeps one specialization node per weapon family across all tiers', () => {
+  it('keeps one entry per weapon across all tiers', () => {
     const catalog = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8'].flatMap((tier) => [
       item('MAIN_CURSEDSTAFF', tier),
       item('2H_CURSEDSTAFF', tier),

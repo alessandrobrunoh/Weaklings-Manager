@@ -2,16 +2,20 @@
 //!
 //! Pure over plain structs — no database, no async — so the scoring and the assignment algorithm
 //! are each unit-testable on their own. The service layer above this turns `event_participations`,
-//! `canonical_comp_seats` and `user_specializations` into [`Member`] and [`Seat`]; nothing here
-//! knows those tables exist.
+//! `canonical_comp_seats` and `user_weapons` into [`Member`] and [`Seat`]; nothing here knows those
+//! tables exist.
+//!
+//! A member fits a seat through the weapons they declared ("My weapons"): the proficiency they
+//! gave the seat's weapon decides the score, an officer lock forbids the pairing, and the signup
+//! preference breaks ties.
 //!
 //! # Why Hungarian, not greedy
 //!
 //! `auto_fill_roster` today is first-fit: it walks participants in signup order and gives each the
 //! first seat matching their preferred build. That is provably wrong the moment two members are
 //! both the only viable pilot for two different seats — the one who signed up first eats a seat the
-//! other member also fits, and the seat that actually needed the second member's specialization
-//! goes unfilled or falls back to someone worse.
+//! other member also fits, and the seat that actually needed the second member's weapon goes
+//! unfilled or falls back to someone worse.
 //!
 //! [`assign`] instead solves the whole matrix at once with the Kuhn–Munkres (Hungarian) algorithm,
 //! O(n³) on a square matrix padded with zero-cost dummies. A guild roster is bounded by
@@ -24,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::ip::{self, CharacterIpBreakdown, EquippedItem, SpecLevels};
+use super::ip::EquippedItem;
 use backend_entities::status::comps::BuildSlot;
 use backend_identity::users::weapons::{UserWeaponSet, WeaponProficiency};
 
@@ -42,25 +46,30 @@ pub enum Preference {
 }
 
 impl Preference {
-    /// Additive Item Power bonus a preference contributes to a score.
+    /// Additive bonus a preference contributes to a score.
     ///
-    /// Calibrated to matter without dominating: 50 Item Power is roughly what one mid Destiny
-    /// Board level of a single node is worth, enough to break a near-tie in the preferred
-    /// direction without overriding a member who is dramatically better trained for a seat they
-    /// did not ask for.
+    /// Smaller than the step between two proficiency levels (1.0), so a preference breaks a tie in
+    /// the preferred direction without overriding a member who declared a better level on the
+    /// seat's weapon than the one who asked for the build.
     const fn bonus(self) -> f64 {
         match self {
             Self::None => 0.0,
-            Self::Secondary => 25.0,
-            Self::Primary => 50.0,
+            Self::Secondary => 0.25,
+            Self::Primary => 0.5,
         }
     }
 }
 
+/// Score of a member who declared no weapons at all: unknown, but still placeable.
+const UNKNOWN_SCORE: f64 = 0.5;
+
+/// Score of a member who declared weapons, none of them the seat's: possible as a last resort.
+const OTHER_WEAPON_SCORE: f64 = 0.1;
+
 /// The weapons a member declared and the ones an officer locked for them.
 ///
 /// Locks are a hard rule for assignment (a locked weapon's seat is never filled by the member);
-/// declarations are a soft preference that breaks ties between otherwise similar members.
+/// declarations decide how well the member fits a seat.
 #[derive(Debug, Clone, Default)]
 pub struct MemberWeapons {
     levels: HashMap<String, WeaponProficiency>,
@@ -95,19 +104,10 @@ impl MemberWeapons {
         self.levels.get(weapon_key).copied()
     }
 
-    /// Item Power points a declared weapon adds to a seat's score: `main` 60, `good` 40,
-    /// `basic` 20, undeclared 0.
-    ///
-    /// Sized like [`Preference::bonus`]: enough to decide between near-equal candidates in favour
-    /// of someone who said they play the weapon, not enough to seat a clearly worse-trained member
-    /// over a better one who never declared it.
-    fn bonus(&self, weapon_key: &str) -> f64 {
-        match self.proficiency(weapon_key) {
-            Some(WeaponProficiency::Main) => 60.0,
-            Some(WeaponProficiency::Good) => 40.0,
-            Some(WeaponProficiency::Basic) => 20.0,
-            None => 0.0,
-        }
+    /// Whether the member declared at least one weapon.
+    #[must_use]
+    pub fn has_declared_any(&self) -> bool {
+        !self.levels.is_empty()
     }
 }
 
@@ -116,8 +116,6 @@ impl MemberWeapons {
 pub struct Member {
     /// Internal user id.
     pub user_id: i64,
-    /// Destiny Board levels.
-    pub specs: SpecLevels,
     /// The build they signed up as primary, if any.
     pub primary_build_id: Option<i64>,
     /// The build they signed up as secondary, if any.
@@ -155,48 +153,39 @@ impl Seat {
 /// How well one member fits one seat.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FitScore {
-    /// Item Power the member would bring to this seat's build.
-    pub item_power: f64,
-    /// The same build's Item Power with every node at 100 — the shared ceiling.
-    pub max_item_power: f64,
-    /// `item_power / max_item_power`, `0.0` through `1.0`. Comparable across different builds in a
-    /// way raw Item Power is not.
-    pub readiness: f64,
+    /// The level the member declared on the seat's weapon, `None` when they did not declare it
+    /// (or the seat has no recognisable weapon).
+    pub proficiency: Option<WeaponProficiency>,
     /// The member's signup preference for this seat's build.
     pub preference: Preference,
     /// Reasons this pairing cannot be made, empty when it can.
     pub blocking: Vec<String>,
-    /// Item Power points the member's declared level on the seat's weapon adds to the score.
-    /// Internal tie-break, not part of the API.
-    #[serde(skip)]
-    pub weapon_bonus: f64,
+    /// Higher is a better fit. Declared proficiency on the seat's weapon scores `main` 3, `good`
+    /// 2, `basic` 1; a member who declared no weapons at all scores 0.5 and one who declared only
+    /// other weapons 0.1; a primary signup adds 0.5 and a secondary one 0.25.
+    pub score: f64,
 }
 
 impl FitScore {
-    /// The number the assignment algorithm actually optimises: readiness, nudged by preference.
-    ///
-    /// Readiness rather than raw Item Power, so a healer seat is not structurally worth less than
-    /// a tank seat to the solver. Preference enters as Item-Power-scaled points converted to the
-    /// same 0..1 readiness units via the seat's own ceiling, so its weight does not depend on how
-    /// high that ceiling happens to be.
+    /// The number the assignment algorithm actually optimises: the score, or zero when the
+    /// pairing is blocked.
     #[must_use]
     pub fn combined(&self) -> f64 {
-        if !self.blocking.is_empty() || self.max_item_power <= 0.0 {
-            return 0.0;
+        if self.blocking.is_empty() {
+            self.score
+        } else {
+            0.0
         }
-        self.readiness + (self.preference.bonus() + self.weapon_bonus) / self.max_item_power
     }
 }
 
 /// Scores one member against one seat.
 ///
-/// Never fails: a seat with no data behind it, or a member with no relevant specialization, comes
-/// back as a real (low) score rather than an error, because "this pairing is bad" and "this
-/// pairing is impossible" are different facts the caller needs told apart.
+/// Never fails: a seat with no data behind it, or a member who declared nothing, comes back as a
+/// real (low) score rather than an error, because "this pairing is bad" and "this pairing is
+/// impossible" are different facts the caller needs told apart.
 #[must_use]
 pub fn score(member: &Member, seat: &Seat) -> FitScore {
-    let breakdown: CharacterIpBreakdown = ip::character_ip(&seat.items, &member.specs);
-    let ceiling = ip::character_ip(&seat.items, &SpecLevels::all_at(100)).average;
     let preference = if Some(seat.build_id) == member.primary_build_id {
         Preference::Primary
     } else if Some(seat.build_id) == member.secondary_build_id {
@@ -209,27 +198,28 @@ pub fn score(member: &Member, seat: &Seat) -> FitScore {
     if seat.items.is_empty() {
         blocking.push("seat has no equipped items to score against".to_string());
     }
-    // A weapon an officer locked for the member is a hard rule; a declared level only nudges.
-    let mut weapon_bonus = 0.0;
-    if let Some(weapon_key) = seat.weapon_key() {
+
+    let mut proficiency = None;
+    let base = if let Some(weapon_key) = seat.weapon_key() {
+        // A weapon an officer locked for the member is a hard rule.
         if member.weapons.is_locked(&weapon_key) {
             blocking.push("an officer locked this weapon for the member".to_string());
-        } else {
-            weapon_bonus = member.weapons.bonus(&weapon_key);
         }
-    }
+        proficiency = member.weapons.proficiency(&weapon_key);
+        match proficiency {
+            Some(level) => f64::from(level.rank()),
+            None if member.weapons.has_declared_any() => OTHER_WEAPON_SCORE,
+            None => UNKNOWN_SCORE,
+        }
+    } else {
+        UNKNOWN_SCORE
+    };
 
     FitScore {
-        item_power: breakdown.average,
-        max_item_power: ceiling,
-        readiness: if ceiling > 0.0 {
-            (breakdown.average / ceiling).clamp(0.0, 1.0)
-        } else {
-            0.0
-        },
+        proficiency,
         preference,
         blocking,
-        weapon_bonus,
+        score: base + preference.bonus(),
     }
 }
 
@@ -242,7 +232,7 @@ pub enum FitStrategy {
     #[default]
     Greedy,
     /// Optimal assignment maximising the sum of [`FitScore::combined`] over the whole roster.
-    SpecOptimal,
+    BestFit,
 }
 
 /// One placement the solver chose.
@@ -505,17 +495,20 @@ mod hungarian {
 #[cfg(test)]
 mod fit_tests {
     use super::{Assignment, Member, MemberWeapons, Preference, Seat, assign, score};
-    use crate::ip::{EquippedItem, SpecLevels};
+    use crate::ip::EquippedItem;
     use backend_entities::status::comps::BuildSlot;
     use backend_identity::users::weapons::{self, UserWeaponSet, WeaponProficiency};
 
-    fn polehammer_seat(seat_key: &str, build_id: i64) -> Seat {
+    const HAMMER: &str = "weapon:2H_POLEHAMMER";
+    const STAFF: &str = "weapon:MAIN_ARCANESTAFF";
+
+    fn seat_of_weapon(seat_key: &str, build_id: i64, base: &str) -> Seat {
         Seat {
             seat_key: seat_key.to_string(),
             build_id,
             items: vec![EquippedItem {
                 slot: BuildSlot::Weapon,
-                base: "2H_POLEHAMMER".to_string(),
+                base: base.to_string(),
                 tier: 8,
                 enchantment: 0,
                 quality: 1,
@@ -523,10 +516,17 @@ mod fit_tests {
         }
     }
 
-    fn member(user_id: i64, specs: &[(&str, i32)], primary: Option<i64>) -> Member {
+    fn polehammer_seat(seat_key: &str, build_id: i64) -> Seat {
+        seat_of_weapon(seat_key, build_id, "2H_POLEHAMMER")
+    }
+
+    fn staff_seat(seat_key: &str, build_id: i64) -> Seat {
+        seat_of_weapon(seat_key, build_id, "MAIN_ARCANESTAFF")
+    }
+
+    fn member(user_id: i64, primary: Option<i64>) -> Member {
         Member {
             user_id,
-            specs: SpecLevels::from_rows(specs.iter().map(|(k, l)| (*k, *l))),
             primary_build_id: primary,
             secondary_build_id: None,
             weapons: MemberWeapons::default(),
@@ -562,54 +562,73 @@ mod fit_tests {
         }
     }
 
-    #[test]
-    fn spec_and_mastery_reach_most_but_not_all_of_the_ceiling() {
-        // `SpecLevels::all_at(100)` maxes every node in the game, and a hammer's sibling families
-        // (Great Hammer, Undead Hammer, …) each carry their own copy of the same family bonus
-        // against a Polehammer — see `SpecLevels::all_at`'s docs. So maxing only the Polehammer's
-        // own spec and mastery gets close to the ceiling but cannot equal it.
-        let seat = polehammer_seat("build:1:1", 1);
-        let specs = &[
-            ("weapon:2H_POLEHAMMER", 100),
-            ("mastery:COMBAT_HAMMERS", 100),
-        ];
-        let fit = score(&member(1, specs, None), &seat);
-        assert!(fit.readiness < 1.0, "got {}", fit.readiness);
+    fn declared(user_id: i64, key: &str, level: WeaponProficiency) -> Member {
+        with_weapons(member(user_id, None), &[(key, level)], &[])
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
         assert!(
-            fit.readiness > 0.9,
-            "should still be close to the ceiling: got {}",
-            fit.readiness
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn declared_proficiency_on_the_seats_weapon_decides_the_score() {
+        let seat = polehammer_seat("build:1:1", 1);
+        let main = score(&declared(1, HAMMER, WeaponProficiency::Main), &seat);
+        let good = score(&declared(2, HAMMER, WeaponProficiency::Good), &seat);
+        let basic = score(&declared(3, HAMMER, WeaponProficiency::Basic), &seat);
+
+        assert_close(main.score, 3.0);
+        assert_close(good.score, 2.0);
+        assert_close(basic.score, 1.0);
+        assert_eq!(main.proficiency, Some(WeaponProficiency::Main));
+        assert!(main.blocking.is_empty());
+        assert!(main.combined() > good.combined());
+        assert!(good.combined() > basic.combined());
+    }
+
+    #[test]
+    fn a_member_with_no_declared_weapons_is_unknown_but_placeable() {
+        let seat = polehammer_seat("build:1:1", 1);
+        let fit = score(&member(1, None), &seat);
+        assert_close(fit.score, 0.5);
+        assert_eq!(fit.proficiency, None);
         assert!(fit.blocking.is_empty());
     }
 
     #[test]
-    fn spec_without_mastery_scores_lower_than_spec_with_mastery() {
+    fn declaring_only_other_weapons_ranks_below_declaring_nothing() {
         let seat = polehammer_seat("build:1:1", 1);
-        let spec_only = score(&member(1, &[("weapon:2H_POLEHAMMER", 100)], None), &seat);
-        let with_mastery = score(
-            &member(
-                1,
-                &[
-                    ("weapon:2H_POLEHAMMER", 100),
-                    ("mastery:COMBAT_HAMMERS", 100),
-                ],
-                None,
-            ),
-            &seat,
-        );
-        assert!(spec_only.readiness < with_mastery.readiness);
+        let unknown = score(&member(1, None), &seat);
+        let other = score(&declared(2, STAFF, WeaponProficiency::Main), &seat);
+        let basic = score(&declared(3, HAMMER, WeaponProficiency::Basic), &seat);
+
+        assert_close(other.score, 0.1);
+        assert_eq!(other.proficiency, None);
+        assert!(other.blocking.is_empty(), "a last resort, not impossible");
+        assert!(unknown.combined() > other.combined());
+        assert!(basic.combined() > unknown.combined());
     }
 
     #[test]
-    fn an_untrained_member_scores_low_but_not_blocked() {
-        let seat = polehammer_seat("build:1:1", 1);
-        let fit = score(&member(1, &[], None), &seat);
-        assert!(fit.readiness < 1.0);
-        assert!(
-            fit.blocking.is_empty(),
-            "no specialization is a low score, not an impossibility"
-        );
+    fn a_seat_without_a_recognisable_weapon_scores_unknown_for_everyone() {
+        let seat = Seat {
+            seat_key: "build:3:1".to_string(),
+            build_id: 3,
+            items: vec![EquippedItem {
+                slot: BuildSlot::Head,
+                base: "HEAD_PLATE_SET1".to_string(),
+                tier: 8,
+                enchantment: 0,
+                quality: 1,
+            }],
+        };
+        let fit = score(&declared(1, HAMMER, WeaponProficiency::Main), &seat);
+        assert_close(fit.score, 0.5);
+        assert_eq!(fit.proficiency, None);
+        assert!(fit.blocking.is_empty());
     }
 
     #[test]
@@ -619,46 +638,71 @@ mod fit_tests {
             build_id: 2,
             items: Vec::new(),
         };
-        let fit = score(&member(1, &[], None), &empty_seat);
+        let fit = score(&member(1, None), &empty_seat);
         assert!(!fit.blocking.is_empty());
-        assert!((fit.combined() - 0.0).abs() < f64::EPSILON);
+        assert!(fit.combined().abs() < f64::EPSILON);
     }
 
     #[test]
-    fn a_primary_signup_scores_above_the_same_readiness_without_it() {
+    fn a_locked_weapon_blocks_the_seat_for_that_member_only() {
         let seat = polehammer_seat("build:1:1", 1);
-        let specs = &[("weapon:2H_POLEHAMMER", 50)];
-        let with_preference = score(&member(1, specs, Some(1)), &seat);
-        let without = score(&member(1, specs, None), &seat);
-        assert!(with_preference.combined() > without.combined());
-        assert_eq!(with_preference.preference, Preference::Primary);
+        let locked = with_weapons(member(1, None), &[], &[HAMMER]);
+        let fit = score(&locked, &seat);
+        assert!(!fit.blocking.is_empty());
+        assert!(fit.combined().abs() < f64::EPSILON);
+
+        let free = score(&declared(2, HAMMER, WeaponProficiency::Basic), &seat);
+        assert!(free.blocking.is_empty());
     }
 
     #[test]
-    fn the_specialist_keeps_their_only_seat_over_a_generalist() {
-        // Member 1 has spec only for the astral staff seat; member 2 is middling everywhere.
-        // A greedy first-fit that considers member 2 first for seat "astral" would strand member 1.
-        let astral_seat = Seat {
-            seat_key: "build:2:1".to_string(),
-            build_id: 2,
-            items: vec![EquippedItem {
-                slot: BuildSlot::Weapon,
-                base: "MAIN_ARCANESTAFF".to_string(),
-                tier: 8,
-                enchantment: 0,
-                quality: 1,
-            }],
-        };
-        let hammer_seat = polehammer_seat("build:1:1", 1);
+    fn a_preference_adds_to_the_score_and_breaks_a_tie() {
+        let seat = polehammer_seat("build:1:1", 1);
+        let plain = declared(1, HAMMER, WeaponProficiency::Good);
+        let mut secondary = declared(2, HAMMER, WeaponProficiency::Good);
+        secondary.secondary_build_id = Some(1);
+        let mut primary = declared(3, HAMMER, WeaponProficiency::Good);
+        primary.primary_build_id = Some(1);
 
-        let specialist = member(1, &[("weapon:MAIN_ARCANESTAFF", 100)], None);
-        let generalist = member(
-            2,
+        let plain_fit = score(&plain, &seat);
+        let secondary_fit = score(&secondary, &seat);
+        let primary_fit = score(&primary, &seat);
+        assert_eq!(plain_fit.preference, Preference::None);
+        assert_eq!(secondary_fit.preference, Preference::Secondary);
+        assert_eq!(primary_fit.preference, Preference::Primary);
+        assert_close(secondary_fit.score, 2.25);
+        assert_close(primary_fit.score, 2.5);
+
+        let result = assign(&[plain, secondary, primary], std::slice::from_ref(&seat));
+        assert_eq!(result.placements[0].user_id, 3);
+    }
+
+    #[test]
+    fn a_preference_does_not_outweigh_a_better_declared_level() {
+        let seat = polehammer_seat("build:1:1", 1);
+        let mut good_but_asked = declared(1, HAMMER, WeaponProficiency::Good);
+        good_but_asked.primary_build_id = Some(1);
+        let main = declared(2, HAMMER, WeaponProficiency::Main);
+
+        let result = assign(&[good_but_asked, main], std::slice::from_ref(&seat));
+        assert_eq!(result.placements[0].user_id, 2);
+    }
+
+    #[test]
+    fn best_fit_keeps_the_specialist_on_their_only_seat() {
+        // Member 1 only plays the staff; member 2 is good on both. A first-fit that considers
+        // member 2 first for the staff seat would strand member 1 on a seat they never declared.
+        let hammer_seat = polehammer_seat("build:1:1", 1);
+        let astral_seat = staff_seat("build:2:1", 2);
+
+        let specialist = declared(1, STAFF, WeaponProficiency::Main);
+        let generalist = with_weapons(
+            member(2, None),
             &[
-                ("weapon:2H_POLEHAMMER", 40),
-                ("weapon:MAIN_ARCANESTAFF", 40),
+                (HAMMER, WeaponProficiency::Good),
+                (STAFF, WeaponProficiency::Good),
             ],
-            None,
+            &[],
         );
 
         let result = assign(&[specialist, generalist], &[hammer_seat, astral_seat]);
@@ -669,11 +713,7 @@ mod fit_tests {
                 .find(|p| p.user_id == user_id)
                 .map(|p| p.seat_key.clone())
         };
-        assert_eq!(
-            seat_of(1).as_deref(),
-            Some("build:2:1"),
-            "the specialist keeps their one fit"
-        );
+        assert_eq!(seat_of(1).as_deref(), Some("build:2:1"));
         assert_eq!(seat_of(2).as_deref(), Some("build:1:1"));
         assert!(result.unplaced_members.is_empty());
         assert!(result.unfilled_seats.is_empty());
@@ -683,21 +723,21 @@ mod fit_tests {
     fn more_members_than_seats_leaves_the_rest_on_the_bench() {
         let seat = polehammer_seat("build:1:1", 1);
         let members = vec![
-            member(1, &[("weapon:2H_POLEHAMMER", 100)], None),
-            member(2, &[("weapon:2H_POLEHAMMER", 50)], None),
+            declared(1, HAMMER, WeaponProficiency::Main),
+            declared(2, HAMMER, WeaponProficiency::Basic),
         ];
         let result = assign(&members, &[seat]);
         assert_eq!(result.placements.len(), 1);
         assert_eq!(
             result.placements[0].user_id, 1,
-            "the better-trained member gets the seat"
+            "the member who plays it best gets the seat"
         );
         assert_eq!(result.unplaced_members, vec![2]);
     }
 
     #[test]
     fn more_seats_than_members_leaves_the_rest_unfilled() {
-        let member = member(1, &[("weapon:2H_POLEHAMMER", 100)], None);
+        let member = declared(1, HAMMER, WeaponProficiency::Main);
         let seats = vec![
             polehammer_seat("build:1:1", 1),
             polehammer_seat("build:1:2", 1),
@@ -718,19 +758,9 @@ mod fit_tests {
     #[test]
     fn assignment_is_deterministic_regardless_of_input_order() {
         let hammer = polehammer_seat("build:1:1", 1);
-        let astral = Seat {
-            seat_key: "build:2:1".to_string(),
-            build_id: 2,
-            items: vec![EquippedItem {
-                slot: BuildSlot::Weapon,
-                base: "MAIN_ARCANESTAFF".to_string(),
-                tier: 8,
-                enchantment: 0,
-                quality: 1,
-            }],
-        };
-        let a = member(1, &[("weapon:2H_POLEHAMMER", 70)], None);
-        let b = member(2, &[("weapon:MAIN_ARCANESTAFF", 70)], None);
+        let astral = staff_seat("build:2:1", 2);
+        let a = declared(1, HAMMER, WeaponProficiency::Good);
+        let b = declared(2, STAFF, WeaponProficiency::Good);
 
         let forward = assign(&[a.clone(), b.clone()], &[hammer.clone(), astral.clone()]);
         let reversed = assign(&[b, a], &[astral, hammer]);
@@ -754,7 +784,7 @@ mod fit_tests {
     fn a_seat_reports_the_weapon_of_its_loadout() {
         assert_eq!(
             polehammer_seat("build:1:1", 1).weapon_key().as_deref(),
-            Some("weapon:2H_POLEHAMMER")
+            Some(HAMMER)
         );
         let unarmed = Seat {
             seat_key: "build:2:1".to_string(),
@@ -765,31 +795,11 @@ mod fit_tests {
     }
 
     #[test]
-    fn a_locked_weapon_blocks_the_seat_for_that_member_only() {
-        let seat = polehammer_seat("build:1:1", 1);
-        let locked = with_weapons(
-            member(1, &[("weapon:2H_POLEHAMMER", 100)], None),
-            &[],
-            &["weapon:2H_POLEHAMMER"],
-        );
-        let fit = score(&locked, &seat);
-        assert!(!fit.blocking.is_empty());
-        assert!((fit.combined() - 0.0).abs() < f64::EPSILON);
-
-        let free = score(&member(2, &[("weapon:2H_POLEHAMMER", 100)], None), &seat);
-        assert!(free.blocking.is_empty());
-    }
-
-    #[test]
     fn auto_assignment_never_seats_a_member_on_a_weapon_locked_for_them() {
         let seat = polehammer_seat("build:1:1", 1);
-        // The locked member is far better trained, and still must not take the seat.
-        let locked = with_weapons(
-            member(1, &[("weapon:2H_POLEHAMMER", 100)], Some(1)),
-            &[],
-            &["weapon:2H_POLEHAMMER"],
-        );
-        let weaker = member(2, &[("weapon:2H_POLEHAMMER", 10)], None);
+        // The locked member signed up for the build, and still must not take the seat.
+        let locked = with_weapons(member(1, Some(1)), &[], &[HAMMER]);
+        let weaker = declared(2, HAMMER, WeaponProficiency::Basic);
         let result = assign(&[locked.clone(), weaker], std::slice::from_ref(&seat));
         assert_eq!(result.placements.len(), 1);
         assert_eq!(result.placements[0].user_id, 2);
@@ -801,38 +811,5 @@ mod fit_tests {
             "a lone locked member is left on the bench"
         );
         assert_eq!(alone.unfilled_seats, vec!["build:1:1".to_string()]);
-    }
-
-    #[test]
-    fn a_declared_weapon_breaks_a_tie_and_main_beats_good_beats_basic() {
-        let seat = polehammer_seat("build:1:1", 1);
-        let specs = &[("weapon:2H_POLEHAMMER", 60)];
-        let undeclared = member(1, specs, None);
-        let basic = with_weapons(
-            member(2, specs, None),
-            &[("weapon:2H_POLEHAMMER", WeaponProficiency::Basic)],
-            &[],
-        );
-        let good = with_weapons(
-            member(3, specs, None),
-            &[("weapon:2H_POLEHAMMER", WeaponProficiency::Good)],
-            &[],
-        );
-        let main = with_weapons(
-            member(4, specs, None),
-            &[("weapon:2H_POLEHAMMER", WeaponProficiency::Main)],
-            &[],
-        );
-
-        let combined = |member: &Member| score(member, &seat).combined();
-        assert!(combined(&basic) > combined(&undeclared));
-        assert!(combined(&good) > combined(&basic));
-        assert!(combined(&main) > combined(&good));
-
-        let result = assign(
-            &[undeclared, basic, good, main],
-            std::slice::from_ref(&seat),
-        );
-        assert_eq!(result.placements[0].user_id, 4);
     }
 }

@@ -1,8 +1,7 @@
 //! A comp's seat list: its `comp_builds` rows expanded into one ordered seat per build copy.
 //!
-//! Readiness scores these seats with no event context at all — readiness is a property of the
-//! composition, not of any one night's roster — and every event roster view lays its sign-ups
-//! over the same list, so both read it from here.
+//! Every event roster view lays its sign-ups over the same list, so the roster and the
+//! auto-fill read it from here.
 
 use std::collections::HashMap;
 
@@ -35,7 +34,7 @@ impl EventSeatKey {
     }
 
     /// Parses a key written by [`Self::render`]; `None` for anything else, including the
-    /// comp-level `build:<id>:<n>` keys readiness uses.
+    /// comp-level `build:<id>:<n>` keys.
     #[must_use]
     pub fn parse(key: &str) -> Option<Self> {
         let mut parts = key.split(':');
@@ -61,7 +60,7 @@ impl EventSeatKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompSeat {
     /// Comp-level seat key: `build:<build_id>:<ordinal>`. Event rosters re-key the seat per party
-    /// with [`EventSeatKey`]; readiness, which has no event, keeps this form.
+    /// with [`EventSeatKey`]; the comp itself, which has no event, keeps this form.
     pub key: String,
     /// 1-based party the seat falls in (20 seats per party).
     pub party_number: i32,

@@ -1,7 +1,7 @@
 # Mounted /api routes with no ApiDoc entry yet. This list may only shrink.
 # SA-1 deviation: the spec asks for every existing path in ApiDoc. These handlers
 # (applications, tickets, health, event roster, split discord-sync, tenant members,
-# alliance setup, user specializations, VOD forum post delete/archive) are deferred
+# alliance setup, VOD forum post delete/archive) are deferred
 # to follow-up slices; remove a line when its handler gets a #[utoipa::path].
 DELETE /api/events/{}/roster/seats/{}
 GET /api/applications/active
@@ -14,8 +14,6 @@ GET /api/splits/discord-sync
 GET /api/splits/{}/discord-sync
 GET /api/tenants/albion-alliances
 GET /api/tickets/active
-GET /api/users/me/specializations
-GET /api/users/{}/specializations
 PATCH /api/tenants/{}/members/{}
 POST /api/alliances/{}/reset-setup
 POST /api/alliances/{}/setup
@@ -35,5 +33,3 @@ POST /api/tickets
 POST /api/tickets/{}/close
 PUT /api/events/{}/roster/seats/{}
 PUT /api/splits/{}/discord-sync
-PUT /api/users/me/specializations
-PUT /api/users/{}/specializations

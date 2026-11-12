@@ -873,7 +873,7 @@ export class CompBuildDetailPage {
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
   protected readonly performance = signal<BuildPerformanceView | null>(null);
   /**
-   * This build's Item Power with every Destiny Board node at 100 — the ceiling every member is
+   * This build's Item Power with every specialization node at 100 — the ceiling every member is
    * measured against, not any one person's actual figure. `null` while loading or on failure, so
    * the KPI card and breakdown panel can render nothing rather than a stale number.
    */
