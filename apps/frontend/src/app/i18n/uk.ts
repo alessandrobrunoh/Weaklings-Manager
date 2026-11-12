@@ -3793,4 +3793,18 @@ export const uk: TranslationDict = {
   'guild.roster.covered': 'Покрито',
   'guild.leaderboard.rank': 'Місце',
   'guild.leaderboard.value': 'Значення',
+  // design/test-detail
+  'tests.resultsSummary': 'Підсумок запуску',
+  'tests.deathsHint': 'Юніти, що дійшли до 0 HP',
+  'tests.timeline.legend': 'Легенда',
+  'tests.timeline.legendForeign': 'Здібності немає на цій зброї',
+  'tests.timeline.legendUnknown': 'Рушій не знає цієї здібності',
+  'tests.timeline.legendNoTargets': 'Немає цілей',
+  'tests.timeline.legendHpHigh': 'HP понад 60%',
+  'tests.timeline.legendHpMid': 'HP від 30 до 60%',
+  'tests.timeline.legendHpLow': 'HP нижче 30%',
+  'tests.timeline.legendDamage': '▼ отримана шкода',
+  'tests.timeline.legendHeal': '▲ отримане лікування',
+  'tests.timeline.legendDied': '✕ загинув',
+  'tests.timeline.legendCooldown': 'Перезарядка після застосування',
 };

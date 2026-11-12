@@ -7,6 +7,7 @@ This submodule contains pure timeline calculation helpers and the editor, cast t
 ## Interface
 
 - `TimelineEditor` accepts scenario/timing metadata and emits cast create/move/remove/select and run-requested events.
+- `TimelineEditor` draws a text legend above the lanes (foreign spell, unknown spell, no targets, HP bands, damage, healing, death, cooldown). Each clip carries its cast time and a tooltip with its full label.
 - `CastTable`, `TimelineSpellLibrary`, and `TimelineInspector` accept scenario or selection data and emit edits, selections, drag events, close, and build/weapon requests.
 - `scenario-timeline.ts` exports unit expansion, snapping, coordinate conversion, lane construction, result lookup, HP replay, and cast/land-time helpers.
 

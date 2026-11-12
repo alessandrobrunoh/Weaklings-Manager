@@ -7,7 +7,7 @@ This is an application feature for saved combat scenarios, not a unit-test harne
 ## Interface
 
 - `Tests` switches between active and archived scenario lists and navigates to scenario details.
-- `TestDetailPage` presents setup, timeline, and results, with unit groups, imports, weapon selection, and timeline tools.
+- `TestDetailPage` heads the scenario with `app-entity-header` (one primary Run action, overflow menu for rename, new version and archive), switches Setup / Timeline / Results with `app-tabs`, and shows the latest run as an `app-summary-band`. Unsaved edits sit in a bar above the tabs.
 - `hpOverTimeSeries` derives ally/enemy HP points from a scenario result.
 - The timeline editing boundary is documented in [timeline](timeline/README.md).
 

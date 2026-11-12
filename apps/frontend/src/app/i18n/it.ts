@@ -3987,4 +3987,18 @@ export const it: TranslationDict = {
   'guild.roster.covered': 'Coperto',
   'guild.leaderboard.rank': 'Posizione',
   'guild.leaderboard.value': 'Valore',
+  // design/test-detail
+  'tests.resultsSummary': 'Riepilogo della simulazione',
+  'tests.deathsHint': 'Unità arrivate a 0 HP',
+  'tests.timeline.legend': 'Legenda',
+  'tests.timeline.legendForeign': 'Abilità non presente su quest’arma',
+  'tests.timeline.legendUnknown': 'Il motore non conosce questa abilità',
+  'tests.timeline.legendNoTargets': 'Nessun bersaglio',
+  'tests.timeline.legendHpHigh': 'HP sopra il 60%',
+  'tests.timeline.legendHpMid': 'HP tra 30 e 60%',
+  'tests.timeline.legendHpLow': 'HP sotto il 30%',
+  'tests.timeline.legendDamage': '▼ danno subito',
+  'tests.timeline.legendHeal': '▲ cura ricevuta',
+  'tests.timeline.legendDied': '✕ morto',
+  'tests.timeline.legendCooldown': 'Ricarica dopo il lancio',
 };

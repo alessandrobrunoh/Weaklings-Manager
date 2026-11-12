@@ -38,7 +38,7 @@ interface LibrarySection {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="card p-3">
-      <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--color-text-secondary)]">
+      <h3 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
         {{ t('tests.timeline.library') }}
       </h3>
 
