@@ -3953,4 +3953,8 @@ export const es: TranslationDict = {
   'settings.appearance.hint': 'Guardado en este dispositivo. Los cambios se aplican al momento.',
   'settings.language.hint': 'Guardado en este dispositivo.',
   'settings.ledger.summary': 'Resumen del libro',
+  // design/battles-list
+  'battles.search': 'Buscar batallas',
+  'battles.participants': 'Participantes',
+  'battles.summaryLabel': 'Totales de batallas',
 };

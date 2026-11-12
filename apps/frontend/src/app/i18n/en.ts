@@ -3950,6 +3950,10 @@ export const en = {
   'settings.appearance.hint': 'Saved on this device. Changes apply right away.',
   'settings.language.hint': 'Saved on this device.',
   'settings.ledger.summary': 'Ledger summary',
+  // design/battles-list
+  'battles.search': 'Search battles',
+  'battles.participants': 'Participants',
+  'battles.summaryLabel': 'Battle totals',
 } as const;
 
 export type TranslationKey = keyof typeof en;

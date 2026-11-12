@@ -3768,4 +3768,8 @@ export const uk: TranslationDict = {
   'settings.appearance.hint': 'Зберігається на цьому пристрої. Зміни застосовуються одразу.',
   'settings.language.hint': 'Зберігається на цьому пристрої.',
   'settings.ledger.summary': 'Підсумок обліку',
+  // design/battles-list
+  'battles.search': 'Пошук битв',
+  'battles.participants': 'Учасники',
+  'battles.summaryLabel': 'Підсумки битв',
 };

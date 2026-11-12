@@ -3962,4 +3962,8 @@ export const it: TranslationDict = {
   'settings.appearance.hint': 'Salvato su questo dispositivo. Le modifiche valgono subito.',
   'settings.language.hint': 'Salvato su questo dispositivo.',
   'settings.ledger.summary': 'Riepilogo contabile',
+  // design/battles-list
+  'battles.search': 'Cerca battaglie',
+  'battles.participants': 'Partecipanti',
+  'battles.summaryLabel': 'Totali delle battaglie',
 };

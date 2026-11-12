@@ -3772,4 +3772,8 @@ export const fr: TranslationDict = {
   'settings.appearance.hint': 'Enregistré sur cet appareil. Les changements s’appliquent immédiatement.',
   'settings.language.hint': 'Enregistré sur cet appareil.',
   'settings.ledger.summary': 'Résumé des comptes',
+  // design/battles-list
+  'battles.search': 'Rechercher des batailles',
+  'battles.participants': 'Participants',
+  'battles.summaryLabel': 'Totaux des batailles',
 };
