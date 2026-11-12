@@ -48,20 +48,17 @@ use super::models::{
     SetEventVoiceChannelRequest, SetParticipantRequest, SwapRosterSeatsRequest,
     UpdateEventBattlesRequest, UpdateEventPartyRequest, UpdateEventRequest,
 };
-use super::officer_sync::{
-    RosterRoleChange, sync_officer_participation, sync_roster_role, sync_roster_seats,
-};
-use super::parties::party_position_of_role;
+use super::link_proxy::EventLink;
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{EventService, apply_alliance_ping_targets, load_alliance_ping_targets};
-use super::sync::{assert_active_alliance, create_mirror, sync_participation};
+use super::sync::{assert_active_alliance, create_mirror};
 use crate::alliance_share::ShareActor;
 use backend_albion_data::albionbb::service::AlbionBbService;
 use backend_core::sync_origin::SyncKind;
 use backend_identity::admin::models::DiscordRoleView;
 use backend_identity::admin::service::AdminService;
 use backend_runtime::sync::event_links::canonical_event_origin;
-use backend_runtime::sync::{LegacyLinks, assert_writable, copy_role};
+use backend_runtime::sync::{LegacyLinks, copy_role};
 
 /// The member-guild island locator carried by an event request: `(origin guild, tab id)`.
 ///
@@ -140,141 +137,19 @@ async fn localize_island_locator(
     Ok(())
 }
 
-/// Rejects a write on a read-only copy of another tenant's event (403 + `origin`).
+/// The tenant and event id the caller addressed: the link they opened, or the event itself.
 ///
-/// Detached copies (sync link disabled) stay locally managed and pass.
-/// Tells the viewers of the other tenants that a participation change reached their copy of the
-/// event. The hub is keyed by tenant and event, so without this an officer watching the origin
-/// would see a join made on a guild copy only after a manual reload.
-async fn publish_to_peers(
-    hub: &RosterHub,
-    registry: &TenantRegistry,
-    peers: &[(String, i64)],
-    change_kind: &'static str,
-) {
-    for (peer_tenant, peer_event_id) in peers {
-        let version = match registry.get_or_load(peer_tenant).await {
-            Ok(context) => backend_entities::events::event::Entity::find_by_id(*peer_event_id)
-                .one(&context.db)
-                .await
-                .ok()
-                .flatten()
-                .map(|event| event.roster_version),
-            Err(_) => None,
-        };
-        if let Some(version) = version {
-            hub.publish(
-                peer_tenant.clone(),
-                *peer_event_id,
-                version,
-                change_kind,
-                Vec::new(),
-            );
-        }
-    }
-}
-
-/// Copies an officer's seat change to every linked copy and tells their viewers.
-///
-/// The change is already committed on the edited event, so a copy that cannot take it is logged
-/// instead of failing the request (see [`sync_roster_seats`]).
-#[allow(clippy::too_many_arguments)]
-async fn forward_seats(
-    control: &ControlDb,
-    registry: &TenantRegistry,
-    hub: &RosterHub,
-    tenant_id: &str,
-    event_id: i64,
-    user: &UserContext,
-    seat_keys: &[String],
-    change_kind: &'static str,
-) {
-    match sync_roster_seats(
-        &control.0,
-        registry,
-        tenant_id,
-        event_id,
-        &ShareActor::from_user(user),
-        seat_keys,
-    )
-    .await
-    {
-        Ok(synced) => publish_to_peers(hub, registry, &synced, change_kind).await,
-        Err(error) => {
-            tracing::error!(event_id, tenant_id, %error, "roster seat sync failed after commit");
-        }
-    }
-}
-
-/// Copies an officer's extra-roster-role change to every linked copy and tells their viewers.
-async fn forward_roster_role(
-    control: &ControlDb,
-    registry: &TenantRegistry,
-    hub: &RosterHub,
-    tenant_id: &str,
-    event_id: i64,
-    user: &UserContext,
-    change: RosterRoleChange,
-) {
-    match sync_roster_role(
-        &control.0,
-        registry,
-        tenant_id,
-        event_id,
-        &ShareActor::from_user(user),
-        change,
-    )
-    .await
-    {
-        Ok(synced) => publish_to_peers(hub, registry, &synced, "roles_changed").await,
-        Err(error) => {
-            tracing::error!(event_id, tenant_id, %error, "roster role sync failed after commit");
-        }
-    }
-}
-
-/// Copies an officer's participant change to every linked copy and tells their viewers.
-#[allow(clippy::too_many_arguments)]
-async fn forward_officer_participation(
-    control: &ControlDb,
-    registry: &TenantRegistry,
-    hub: &RosterHub,
-    db: &sea_orm::DatabaseConnection,
-    tenant_id: &str,
-    event_id: i64,
-    target_user_id: i64,
-    request: Option<ParticipateEventRequest>,
-    change_kind: &'static str,
-) {
-    match sync_officer_participation(
-        &control.0,
-        registry,
-        db,
-        tenant_id,
-        event_id,
-        target_user_id,
-        request,
-    )
-    .await
-    {
-        Ok(synced) => publish_to_peers(hub, registry, &synced, change_kind).await,
-        Err(error) => {
-            tracing::error!(event_id, tenant_id, target_user_id, %error, "participant sync failed after commit");
-        }
-    }
-}
-
-async fn assert_event_writable(
-    db: &sea_orm::DatabaseConnection,
-    control: &ControlDb,
-    tenant_id: &str,
+/// Guild attribution depends on the server a participant signed up from, which is the link's
+/// tenant when the request was re-addressed to the origin (see [`super::link_proxy`]).
+fn caller_event(
+    tenant: &CurrentTenantId,
     id: i64,
-) -> Result<(), AppError> {
-    let legacy = LegacyLinks {
-        control: &control.0,
-        tenant_id,
-    };
-    assert_writable(db, legacy, SyncKind::Event, id).await
+    link: Option<&Extension<EventLink>>,
+) -> (String, i64) {
+    link.map_or_else(
+        || (tenant.0.clone(), id),
+        |Extension(link)| (link.link_tenant_id.clone(), link.link_event_id),
+    )
 }
 
 async fn hydrate_event_view(
@@ -418,7 +293,17 @@ async fn hydrate_event_copy_identities(
 }
 
 /// Returns the compiled router containing all event endpoints.
+///
+/// Every request first passes [`super::link_proxy::proxy_event_links`], which re-addresses a
+/// request on an event link to the event's origin tenant before the routes below match it.
 pub fn router() -> Router {
+    use tower::Layer as _;
+    let linked = axum::middleware::from_fn(super::link_proxy::proxy_event_links).layer(routes());
+    Router::new().fallback_service(linked)
+}
+
+/// The event endpoints, addressed in the tenant the request runs against.
+fn routes() -> Router {
     Router::new()
         .route("/", get(list_events).post(create_event))
         .route("/{id}/fanout-status", get(get_event_fanout_status))
@@ -983,7 +868,6 @@ async fn assign_roster_seat(
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
         .await?;
@@ -994,17 +878,6 @@ async fn assign_roster_seat(
         seat_key,
         "roster seat assigned"
     );
-    forward_seats(
-        &control,
-        &registry,
-        &hub,
-        &tenant.0,
-        id,
-        &user,
-        std::slice::from_ref(&seat_key),
-        "assigned",
-    )
-    .await;
     hub.publish(&tenant.0, id, version, "assigned", vec![seat_key]);
     Ok(Json(ApiResponse::new(
         load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
@@ -1024,7 +897,6 @@ async fn clear_roster_seat(
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let version = EventService::new()
         .clear_roster_seat(&db, id, &seat_key, request)
         .await?;
@@ -1035,17 +907,6 @@ async fn clear_roster_seat(
         seat_key,
         "roster seat cleared"
     );
-    forward_seats(
-        &control,
-        &registry,
-        &hub,
-        &tenant.0,
-        id,
-        &user,
-        std::slice::from_ref(&seat_key),
-        "cleared",
-    )
-    .await;
     hub.publish(&tenant.0, id, version, "cleared", vec![seat_key]);
     Ok(Json(ApiResponse::new(
         load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
@@ -1065,7 +926,6 @@ async fn swap_roster_seats(
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let keys = vec![
         request.source_seat_key.clone(),
         request.target_seat_key.clone(),
@@ -1079,10 +939,6 @@ async fn swap_roster_seats(
         actor_id = user.user_id,
         "roster seats swapped"
     );
-    forward_seats(
-        &control, &registry, &hub, &tenant.0, id, &user, &keys, "swapped",
-    )
-    .await;
     hub.publish(&tenant.0, id, version, "swapped", keys);
     Ok(Json(ApiResponse::new(
         load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
@@ -1102,7 +958,6 @@ async fn auto_fill_roster(
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let (version, changed) = EventService::new()
         .auto_fill_roster(&db, id, request, user.user_id)
         .await?;
@@ -1113,17 +968,6 @@ async fn auto_fill_roster(
         assignments = changed.len(),
         "roster auto-filled"
     );
-    forward_seats(
-        &control,
-        &registry,
-        &hub,
-        &tenant.0,
-        id,
-        &user,
-        &changed,
-        "auto_filled",
-    )
-    .await;
     hub.publish(&tenant.0, id, version, "auto_filled", changed);
     Ok(Json(ApiResponse::new(
         load_attributed_roster(&db, &control.0, &tenant.0, id).await?,
@@ -1139,6 +983,7 @@ async fn roster_live(
     Extension(cfg): Extension<Config>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    link: Option<Extension<EventLink>>,
     headers: HeaderMap,
     Path(id): Path<i64>,
     websocket: WebSocketUpgrade,
@@ -1156,7 +1001,12 @@ async fn roster_live(
             "websocket origin is not allowed".to_string(),
         ));
     }
-    Ok(websocket.on_upgrade(move |socket| roster_socket(socket, hub, db, tenant.0, id)))
+    // A viewer of a link listens on the origin event's channel, where every change of the one
+    // roster is published, and is told about it under the id it opened.
+    let client_event_id = link.map_or(id, |Extension(link)| link.link_event_id);
+    Ok(websocket.on_upgrade(move |socket| {
+        roster_socket(socket, hub, db, tenant.0, id, client_event_id)
+    }))
 }
 
 async fn roster_socket(
@@ -1165,6 +1015,7 @@ async fn roster_socket(
     db: sea_orm::DatabaseConnection,
     tenant_id: String,
     event_id: i64,
+    client_event_id: i64,
 ) {
     let mut receiver = hub.subscribe();
     let roster_version = match backend_entities::events::event::Entity::find_by_id(event_id)
@@ -1175,7 +1026,7 @@ async fn roster_socket(
         Ok(None) | Err(_) => return,
     };
     let mut latest_roster_version = roster_version;
-    let ready = RosterNotification::ready(tenant_id.clone(), event_id, roster_version);
+    let ready = RosterNotification::ready(tenant_id.clone(), client_event_id, roster_version);
     if send_roster_notification(&mut socket, &ready).await.is_err() {
         return;
     }
@@ -1187,6 +1038,7 @@ async fn roster_socket(
                 if notification.event_id == event_id && notification.tenant_id == tenant_id =>
             {
                 latest_roster_version = notification.roster_version;
+                let notification = RosterNotification { event_id: client_event_id, ..notification };
                 if send_roster_notification(&mut socket, &notification)
                     .await
                     .is_err()
@@ -1198,7 +1050,7 @@ async fn roster_socket(
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                 let resync = RosterNotification::resync_required(
                     tenant_id.clone(),
-                    event_id,
+                    client_event_id,
                     latest_roster_version,
                 );
                 if send_roster_notification(&mut socket, &resync)
@@ -1282,26 +1134,9 @@ async fn create_event_roster_role(
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
-    if let Some(build_id) = role.build_id {
-        let party_position = party_position_of_role(&db, id, role.party_id).await?;
-        forward_roster_role(
-            &control,
-            &registry,
-            &hub,
-            &tenant.0,
-            id,
-            &user,
-            RosterRoleChange::Added {
-                build_id,
-                party_position,
-            },
-        )
-        .await;
-    }
     notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(Json(ApiResponse::new(role)))
 }
@@ -1336,35 +1171,9 @@ async fn delete_event_roster_role(
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
-    // The copies hold their own role rows, so the removal is forwarded by build.
-    let removed_role = backend_entities::events::event_roster_role::Entity::find_by_id(role_id)
-        .one(&db)
-        .await
-        .map_err(AppError::Database)?
-        .filter(|role| role.event_id == id);
-    let removed_party_position = match &removed_role {
-        Some(role) => party_position_of_role(&db, id, role.party_id).await?,
-        None => 1,
-    };
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
-    if let Some(role) = removed_role {
-        forward_roster_role(
-            &control,
-            &registry,
-            &hub,
-            &tenant.0,
-            id,
-            &user,
-            RosterRoleChange::Removed {
-                build_id: role.build_id,
-                party_position: removed_party_position,
-            },
-        )
-        .await;
-    }
     notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1861,7 +1670,6 @@ async fn retry_event_mirror(
         ));
     }
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     super::sync::assert_active_alliance(&control.0, &tenant_id).await?;
     super::mirror_retry::requeue(&control.0, &tenant_id, id).await?;
     super::mirror_retry::process_due(&control.0, &registry).await?;
@@ -1932,7 +1740,6 @@ async fn update_event(
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     if req.ping_alliance == Some(true) {
         assert_active_alliance(&control.0, &tenant_id).await?;
     }
@@ -2051,7 +1858,6 @@ async fn delete_event(
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     run_transition(
         &user,
         &db,
@@ -2091,7 +1897,6 @@ async fn archive_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, _) = run_transition(
         &user,
         &db,
@@ -2131,7 +1936,6 @@ async fn unarchive_event(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, _) = run_transition(
         &user,
         &db,
@@ -2183,19 +1987,20 @@ async fn participate(
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Extension(control): Extension<ControlDb>,
-    Extension(registry): Extension<TenantRegistry>,
+    link: Option<Extension<EventLink>>,
     Path(id): Path<i64>,
     Query(query): Query<ParticipateQuery>,
     Json(req): Json<ParticipateEventRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
-    let request_for_sync = req.clone();
     // Resolve and persist guild attribution before touching any roster so an
-    // invalid or ambiguous choice cannot leave a partial signup behind.
+    // invalid or ambiguous choice cannot leave a partial signup behind. The guilds a
+    // participant may be credited to are those of the server they signed up from.
+    let (caller_tenant, caller_event) = caller_event(&tenant, id, link.as_ref());
     resolve_join_attribution(
         &control.0,
-        &tenant.0,
-        id,
+        &caller_tenant,
+        caller_event,
         &user.id,
         query.guild_tenant_id.as_deref(),
     )
@@ -2204,27 +2009,6 @@ async fn participate(
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
     attribute_detail(&control.0, &tenant.0, &mut detail).await;
-    match sync_participation(
-        &control.0,
-        &registry,
-        &tenant.0,
-        id,
-        &ShareActor {
-            discord_id: user.id.clone(),
-            username: user.username.clone(),
-            email: user.email.clone(),
-        },
-        Some(request_for_sync),
-    )
-    .await
-    {
-        Ok(synced) => publish_to_peers(&hub, &registry, &synced, "participation_changed").await,
-        // The signup above is already committed; surfacing an error here would tell the caller it
-        // failed when it did not, and would skip the roster broadcast below.
-        Err(error) => {
-            tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
-        }
-    }
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
@@ -2254,33 +2038,12 @@ async fn cancel_participation(
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
     Extension(control): Extension<ControlDb>,
-    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let (mut detail, version, seat_key) =
         service.cancel_participation(&db, id, user.user_id).await?;
     attribute_detail(&control.0, &tenant.0, &mut detail).await;
-    match sync_participation(
-        &control.0,
-        &registry,
-        &tenant.0,
-        id,
-        &ShareActor {
-            discord_id: user.id.clone(),
-            username: user.username.clone(),
-            email: user.email.clone(),
-        },
-        None,
-    )
-    .await
-    {
-        Ok(synced) => publish_to_peers(&hub, &registry, &synced, "participant_left").await,
-        // See `participate`: the cancellation is already committed locally.
-        Err(error) => {
-            tracing::error!(event_id = id, tenant_id = %tenant.0, %error, "participation sync failed after commit");
-        }
-    }
     tracing::info!(
         event_id = id,
         roster_version = version,
@@ -2322,6 +2085,7 @@ async fn get_participation_guilds(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(tenant): Extension<CurrentTenantId>,
     Extension(control): Extension<ControlDb>,
+    link: Option<Extension<EventLink>>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<Vec<ParticipationGuild>>>, AppError> {
     // Fail closed on unknown events so the endpoint cannot be used to probe
@@ -2331,7 +2095,8 @@ async fn get_participation_guilds(
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-    let guilds = eligible_participation_guilds(&control.0, &tenant.0, &user.id).await?;
+    let (caller_tenant, _) = caller_event(&tenant, id, link.as_ref());
+    let guilds = eligible_participation_guilds(&control.0, &caller_tenant, &user.id).await?;
     if guilds.is_empty() {
         return Err(AppError::Conflict(
             "you are not a member of any active guild in this alliance; join a member guild server or ask the alliance staff to add you".to_owned(),
@@ -2416,7 +2181,6 @@ async fn add_event_member(
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let target_user_id = req.user_id;
     let request_for_sync = ParticipateEventRequest {
@@ -2424,18 +2188,6 @@ async fn add_event_member(
         secondary_build_id: req.secondary_build_id,
     };
     let (mut detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
-    forward_officer_participation(
-        &control,
-        &registry,
-        &hub,
-        &db,
-        &tenant.0,
-        id,
-        target_user_id,
-        Some(request_for_sync),
-        "participation_changed",
-    )
-    .await;
     attribute_detail(&control.0, &tenant.0, &mut detail).await;
     tracing::info!(
         event_id = id,
@@ -2488,7 +2240,6 @@ pub async fn set_participant(
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let request_for_sync = ParticipateEventRequest {
         primary_build_id: req.primary_build_id,
@@ -2497,18 +2248,6 @@ pub async fn set_participant(
     let (mut detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
         .await?;
-    forward_officer_participation(
-        &control,
-        &registry,
-        &hub,
-        &db,
-        &tenant.0,
-        id,
-        target_user_id,
-        Some(request_for_sync),
-        "participation_changed",
-    )
-    .await;
     attribute_detail(&control.0, &tenant.0, &mut detail).await;
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
@@ -2548,23 +2287,10 @@ pub async fn remove_participant(
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant.0, id).await?;
     let service = EventService::new();
     let (mut detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
         .await?;
-    forward_officer_participation(
-        &control,
-        &registry,
-        &hub,
-        &db,
-        &tenant.0,
-        id,
-        target_user_id,
-        None,
-        "participant_left",
-    )
-    .await;
     attribute_detail(&control.0, &tenant.0, &mut detail).await;
     tracing::info!(
         event_id = id,
@@ -2611,7 +2337,6 @@ async fn remind_event(
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
     let effects = emit_manual_reminder(&db, id).await?;
 
@@ -2704,7 +2429,6 @@ async fn set_event_voice_channel(
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
         .await?;
@@ -2747,7 +2471,6 @@ async fn clear_event_voice_channel(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
         .await?;
@@ -2794,7 +2517,6 @@ async fn start_event(
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, effects) = run_transition(
         &user,
         &db,
@@ -2840,7 +2562,6 @@ async fn cancel_event(
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, effects) = run_transition(
         &user,
         &db,
@@ -2886,7 +2607,6 @@ async fn uncancel_event(
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let (event, effects) = run_transition(
         &user,
         &db,
@@ -2933,7 +2653,6 @@ async fn stop_event(
     Path(id): Path<i64>,
 ) -> Result<Json<EventEffectsResponse>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     // Only a detached copy reaches this point; it still awards nothing, exactly as
     // before (progression belongs to the origin tenant).
     let legacy = LegacyLinks {
@@ -3033,7 +2752,6 @@ async fn replace_event_battles(
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
-    assert_event_writable(&db, &control, &tenant_id, id).await?;
     let service = EventService::new();
     let scope = backend_identity::albion_scope::load_albion_scope(&control.0, &tenant_id)
         .await
