@@ -3733,4 +3733,9 @@ export const fr: TranslationDict = {
   'dashboard.col.comp': 'Composition',
   'dashboard.col.status': 'Statut',
   'dashboard.recent.empty': 'Aucun événement terminé pour le moment.',
+  // design/users-list
+  'users.searchLabel': 'Rechercher des membres',
+  'users.searchPlaceholder': 'Rechercher par nom',
+  'users.summaryLabel': 'Résumé des membres',
+  'users.rowActions': 'Actions pour {name}',
 };

@@ -3915,4 +3915,9 @@ export const es: TranslationDict = {
   'dashboard.col.comp': 'Composición',
   'dashboard.col.status': 'Estado',
   'dashboard.recent.empty': 'Aún no hay eventos finalizados.',
+  // design/users-list
+  'users.searchLabel': 'Buscar miembros',
+  'users.searchPlaceholder': 'Buscar por nombre',
+  'users.summaryLabel': 'Resumen de miembros',
+  'users.rowActions': 'Acciones para {name}',
 };

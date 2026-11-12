@@ -3729,4 +3729,9 @@ export const uk: TranslationDict = {
   'dashboard.col.comp': 'Склад',
   'dashboard.col.status': 'Статус',
   'dashboard.recent.empty': 'Завершених подій ще немає.',
+  // design/users-list
+  'users.searchLabel': 'Пошук учасників',
+  'users.searchPlaceholder': 'Пошук за іменем',
+  'users.summaryLabel': 'Підсумок учасників',
+  'users.rowActions': 'Дії для {name}',
 };

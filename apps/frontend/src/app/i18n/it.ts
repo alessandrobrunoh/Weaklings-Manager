@@ -3924,4 +3924,9 @@ export const it: TranslationDict = {
   'dashboard.col.comp': 'Composizione',
   'dashboard.col.status': 'Stato',
   'dashboard.recent.empty': 'Nessun evento concluso.',
+  // design/users-list
+  'users.searchLabel': 'Cerca membri',
+  'users.searchPlaceholder': 'Cerca per nome',
+  'users.summaryLabel': 'Riepilogo membri',
+  'users.rowActions': 'Azioni per {name}',
 };

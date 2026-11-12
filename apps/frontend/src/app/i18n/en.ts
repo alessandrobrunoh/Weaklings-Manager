@@ -3912,6 +3912,11 @@ export const en = {
   'dashboard.col.comp': 'Composition',
   'dashboard.col.status': 'Status',
   'dashboard.recent.empty': 'No finished events yet.',
+  // design/users-list
+  'users.searchLabel': 'Search members',
+  'users.searchPlaceholder': 'Search by name',
+  'users.summaryLabel': 'Members summary',
+  'users.rowActions': 'Actions for {name}',
 } as const;
 
 export type TranslationKey = keyof typeof en;
