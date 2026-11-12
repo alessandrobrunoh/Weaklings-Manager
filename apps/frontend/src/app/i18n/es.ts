@@ -3645,4 +3645,19 @@ export const es: TranslationDict = {
   'admin.regears.pricingLocationHelp': 'Ciudad cuyos precios de mercado valoran cada objeto de un regear.'
   'admin.regears.pricingFallbackHelp': 'Se usa cuando la ciudad de precios no tiene precio para un objeto.'
   'admin.regears.slotsHelp': 'En un regear aprobado solo se reembolsan los slots marcados.'
+  // design/admin-roles
+  'admin.roles.edit': 'Editar rol',
+  'admin.roles.priority': 'Prioridad',
+  'admin.roles.powers': 'Permisos',
+  'admin.roles.flags': 'Marcas',
+  'admin.roles.powersNone': 'Sin permisos todavía',
+  'admin.roles.powersSummary': '{count} concedidos: {modules}',
+  'admin.roles.powersMore': '+{count} más',
+  'admin.roles.grantsHint': 'Es un resumen. Define los permisos exactos de cada rol en la página de Permisos.',
+  'admin.roles.openPermissions': 'Abrir permisos',
+  'admin.roles.defaultLocked': 'El rol predeterminado no se puede eliminar.',
+  'admin.roles.rowActions': 'Acciones para {name}',
+  'admin.roles.summaryLinked': 'Vinculados a Discord',
+  'admin.roles.linkedUnknown': 'Rol vinculado ({id})',
+  'admin.roles.discordIdHint': 'Las marcas de staff requieren un rol de Discord vinculado.',
 };

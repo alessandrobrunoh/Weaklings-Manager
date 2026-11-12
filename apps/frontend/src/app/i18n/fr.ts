@@ -3463,4 +3463,19 @@ export const fr: TranslationDict = {
   'admin.regears.pricingLocationHelp': 'Ville dont les prix du marché valorisent chaque objet d’un regear.'
   'admin.regears.pricingFallbackHelp': 'Utilisée lorsque la ville de tarification n’a pas de prix pour un objet.'
   'admin.regears.slotsHelp': 'Sur un regear approuvé, seuls les emplacements cochés sont remboursés.'
+  // design/admin-roles
+  'admin.roles.edit': 'Modifier le rôle',
+  'admin.roles.priority': 'Priorité',
+  'admin.roles.powers': 'Droits',
+  'admin.roles.flags': 'Options',
+  'admin.roles.powersNone': 'Aucun droit pour le moment',
+  'admin.roles.powersSummary': '{count} accordés : {modules}',
+  'admin.roles.powersMore': '+{count} de plus',
+  'admin.roles.grantsHint': 'Ceci est un résumé. Définissez les droits exacts de chaque rôle sur la page Permissions.',
+  'admin.roles.openPermissions': 'Ouvrir les permissions',
+  'admin.roles.defaultLocked': 'Le rôle par défaut ne peut pas être supprimé.',
+  'admin.roles.rowActions': 'Actions pour {name}',
+  'admin.roles.summaryLinked': 'Liés à Discord',
+  'admin.roles.linkedUnknown': 'Rôle lié ({id})',
+  'admin.roles.discordIdHint': 'Les options staff nécessitent un rôle Discord lié.',
 };

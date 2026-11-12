@@ -3654,4 +3654,19 @@ export const it: TranslationDict = {
   'admin.regears.pricingLocationHelp': 'Città i cui prezzi di mercato valutano ogni oggetto del regear.'
   'admin.regears.pricingFallbackHelp': 'Usata quando la città dei prezzi non ha un prezzo per un oggetto.'
   'admin.regears.slotsHelp': 'Su un regear approvato vengono rimborsati solo gli slot selezionati.'
+  // design/admin-roles
+  'admin.roles.edit': 'Modifica ruolo',
+  'admin.roles.priority': 'Priorità',
+  'admin.roles.powers': 'Permessi',
+  'admin.roles.flags': 'Contrassegni',
+  'admin.roles.powersNone': 'Nessun permesso ancora',
+  'admin.roles.powersSummary': '{count} concessi: {modules}',
+  'admin.roles.powersMore': '+{count} altri',
+  'admin.roles.grantsHint': 'Questo è un riepilogo. Imposta i permessi esatti di ogni ruolo nella pagina Permessi.',
+  'admin.roles.openPermissions': 'Apri permessi',
+  'admin.roles.defaultLocked': 'Il ruolo predefinito non può essere eliminato.',
+  'admin.roles.rowActions': 'Azioni per {name}',
+  'admin.roles.summaryLinked': 'Collegati a Discord',
+  'admin.roles.linkedUnknown': 'Ruolo collegato ({id})',
+  'admin.roles.discordIdHint': 'I contrassegni staff richiedono un ruolo Discord collegato.',
 };

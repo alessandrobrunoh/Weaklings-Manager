@@ -3642,6 +3642,21 @@ export const en = {
   'admin.regears.pricingLocationHelp': 'City whose market prices value each item in a regear.'
   'admin.regears.pricingFallbackHelp': 'Used when the pricing city has no price for an item.'
   'admin.regears.slotsHelp': 'Only checked slots are reimbursed on an approved regear.'
+  // design/admin-roles
+  'admin.roles.edit': 'Edit role',
+  'admin.roles.priority': 'Priority',
+  'admin.roles.powers': 'Powers',
+  'admin.roles.flags': 'Flags',
+  'admin.roles.powersNone': 'No permissions yet',
+  'admin.roles.powersSummary': '{count} granted: {modules}',
+  'admin.roles.powersMore': '+{count} more',
+  'admin.roles.grantsHint': 'This is a summary. Set the exact grants for each role on the Permissions page.',
+  'admin.roles.openPermissions': 'Open permissions',
+  'admin.roles.defaultLocked': 'The default role cannot be deleted.',
+  'admin.roles.rowActions': 'Actions for {name}',
+  'admin.roles.summaryLinked': 'Linked to Discord',
+  'admin.roles.linkedUnknown': 'Linked role ({id})',
+  'admin.roles.discordIdHint': 'Staff flags need a linked Discord role.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

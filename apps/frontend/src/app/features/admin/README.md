@@ -22,6 +22,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminFinance` loads `api/bank/admin/summary` (whole ledger, ignores the period) and `api/intel/report` twice (the selected window and the window before it, for deltas). Each section tab shows one `app-summary-band` and then one chart or one `app-data-table`; the ledger breakdown and member ledger are tables with a totals row.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `permissionParts` splits a key into its verb and object for plain-language row titles. `groupIslandsBySourceGuild` groups island records by source guild.
 - `AdminPermissions` is the role x permission matrix. It uses `app-filter-bar` for search, the area select and the visible-roles facet, and `app-summary-band` for roles, permissions and permissions no role grants. Each row shows its title, its key and the roles that hold it. Each box saves on its own; saves for one role run in a queue so each starts from the permissions the previous save left. The save state line above the matrix reports saving, saved or failed.
+- `AdminRoles` lists roles in a `app-data-table` from `api/admin/permissions`. Create and edit share one dialog (`api/admin/roles` POST and PATCH); delete is in the row menu behind a confirmation. The powers column summarises `RolePermissionsView.permissions` (count and modules). Detailed grants stay on the Permissions page, which the page tabs link to.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 
 ## Invariants
@@ -29,6 +30,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - Feature rows are all catalog entries. A row is editable only when its key is in `allowed_keys` and it is not platform-managed; enabled state resolves from local override, API value, then `false`. Save sends only editable rows and is disabled while nothing has changed.
 - Hub entries are matched to `ADMIN_PANELS` by path; an entry with no matching panel is never shown.
 - Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
+- Roles: the default role cannot be deleted (its menu entry is disabled). Staff flags are only offered and sent for a linked Discord role; unlinking clears them. A Discord role already linked to another gestionale role is not offered in the picker.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
 - `AdminDiscord` hides its form when the guild settings or default join role cannot be read, so a save never writes blank defaults over them. A failed catalog load shows a "not connected" status with retry and keeps the form.
 - Finance income comes only from splits the user created (`split_*` economics); battle data is never used to infer earnings.

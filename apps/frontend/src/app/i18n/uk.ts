@@ -3459,4 +3459,19 @@ export const uk: TranslationDict = {
   'admin.regears.pricingLocationHelp': 'Місто, ринкові ціни якого визначають вартість кожного предмета в regear.'
   'admin.regears.pricingFallbackHelp': 'Використовується, коли в місті ціноутворення немає ціни для предмета.'
   'admin.regears.slotsHelp': 'За схваленим regear відшкодовуються лише позначені слоти.'
+  // design/admin-roles
+  'admin.roles.edit': 'Редагувати роль',
+  'admin.roles.priority': 'Пріоритет',
+  'admin.roles.powers': 'Повноваження',
+  'admin.roles.flags': 'Позначки',
+  'admin.roles.powersNone': 'Повноважень ще немає',
+  'admin.roles.powersSummary': '{count} надано: {modules}',
+  'admin.roles.powersMore': '+ще {count}',
+  'admin.roles.grantsHint': 'Це короткий опис. Точні права для кожної ролі задаються на сторінці дозволів.',
+  'admin.roles.openPermissions': 'Відкрити дозволи',
+  'admin.roles.defaultLocked': 'Роль за замовчуванням не можна видалити.',
+  'admin.roles.rowActions': 'Дії для {name}',
+  'admin.roles.summaryLinked': 'Пов’язані з Discord',
+  'admin.roles.linkedUnknown': 'Пов’язана роль ({id})',
+  'admin.roles.discordIdHint': 'Позначки staff потребують пов’язаної ролі Discord.',
 };
