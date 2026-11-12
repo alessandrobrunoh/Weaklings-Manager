@@ -1311,26 +1311,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/combat/calibration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the Item Power calculator's calibration against observed battle data
-         * @description Compares what `combat::ip` calculates for a member's signed-up build against the Item Power AlbionBB reported for that player in a battle fetched around the same time, and reports the mean/median absolute error plus the worst 20 mismatches. Every match is best-effort — see the response schema's docs on what this figure does and does not prove. Requires `combat.calibration.view`, an officer-tier permission distinct from the member-facing calculator: this reports accuracy across the whole guild, not a member's own Item Power.
-         */
-        get: operations["get_calibration"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/combat/dataset": {
         parameters: {
             query?: never;
@@ -1362,49 +1342,9 @@ export interface paths {
         put?: never;
         /**
          * Calculate Item Power for an ad-hoc loadout
-         * @description Item Power = base(tier, enchantment) + quality bonus + the Destiny Board bonuses of whichever specialization levels `spec` selects. The response itemises every contribution, so each point can be traced to the node that granted it. `mastery_levels_known` is false while no family mastery level is recorded, which makes the figure a lower bound rather than the number the game would show.
+         * @description Item Power = base(tier, enchantment) + quality bonus + the Destiny Board bonuses of the hypothetical specialization level `spec` selects (`max` or a flat `fixed` level). Members' own levels are not stored. The response itemises every contribution, so each point can be traced to the node that granted it. `mastery_levels_known` is false while no family mastery level is assumed, which makes the figure a lower bound rather than the number the game would show.
          */
         post: operations["post_item_power"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/combat/mastery-groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the item-to-family-mastery mapping
-         * @description Maps every equippable base identifier that has a Destiny Board specialization to the family mastery node above it, e.g. `2H_POLEHAMMER -> COMBAT_HAMMERS`. Capes, bags and gathering gear are absent: they have no combat specialization.
-         */
-        get: operations["get_mastery_groups"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/combat/members/{user_id}/item-power": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Calculate a member's Item Power on a build
-         * @description Scores a stored build with one member's Destiny Board levels — the "could this person fly this?" question. `at_max_spec` is the same build with every node at 100, and `readiness` is the ratio between them, which is comparable across builds in a way raw Item Power is not.
-         */
-        get: operations["get_member_item_power"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1761,7 +1701,7 @@ export interface paths {
         };
         /**
          * Calculate a build's Item Power
-         * @description Item Power = base(tier, enchantment) + quality bonus + Destiny Board bonuses. Pass `spec=max` for the build's ceiling, `spec=current` with a `user_id` for what one member would actually field, or `spec=fixed` with a `level` to compare builds rather than people. Every contribution is itemised, so each point traces back to the node that granted it.
+         * @description Item Power = base(tier, enchantment) + quality bonus + Destiny Board bonuses. Pass `spec=max` for the build's ceiling, or `spec=fixed` with a `level` to compare builds at the same assumed level. Members' own Destiny Board levels are not stored. Every contribution is itemised, so each point traces back to the node that granted it.
          */
         get: operations["get_build_item_power"];
         put?: never;
@@ -1848,26 +1788,6 @@ export interface paths {
          * @description Prices the build's main-loadout items live from Albion Online Data, using the guild's configured `pricing_location`/`pricing_fallback_strategy` (the same knobs the regear admin panel exposes). Prices ignore item quality (cheapest listing of the tier and enchantment), and `unpriced_item_count` reports items with no listing. A market outage is returned as an error and never cached; edits to the build evict its cached price.
          */
         get: operations["get_build_price"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/comps/builds/{id}/roster-fit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Rank the roster against a build
-         * @description Returns every member with any recorded Destiny Board level, scored on this build and sorted by Item Power descending — the answer to "who should fly this?". `blocking_nodes` names, per member, the specializations that would gain them the most Item Power, so the list doubles as a training plan.
-         */
-        get: operations["get_build_roster_fit"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2088,26 +2008,6 @@ export interface paths {
          * @description Prices every build in the comp in one combined Albion Online Data query (Σ build price × quantity). `unpriced_item_count` reports item slots with no listing. A market outage is returned as an error and never cached; edits to the comp or its builds evict its cached price.
          */
         get: operations["get_comp_price"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/comps/{id}/readiness": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get a composition's readiness roll-up
-         * @description For every seat the comp defines, finds the best-scoring candidate in the pool and rolls the result up to comp level: average Item Power now vs. at the ceiling, the weakest seats, per-build bench depth, and which seats nobody can currently fill. Pass `event_id` to score against that event's sign-ups instead of every specialised member in the guild. When `event_id` is given and that event's fights have a computed analytics rollup, the response also carries `observed`: the average Item Power the roster that actually fought turned out to have, and its delta against the prediction. `observed` is `None` — not an error — when no `event_id` was given, or that event has no analyzed fights yet.
-         */
-        get: operations["get_comp_readiness"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2906,8 +2806,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Preview an optimal roster assignment
-         * @description Solves every unassigned participant against every open seat with the Hungarian algorithm, maximising total Item-Power readiness plus signup preference. Never applied automatically — `POST .../roster/auto-fill` with `strategy: "spec_optimal"` applies the same solve for real.
+         * Preview the best-fit roster assignment
+         * @description Solves every unassigned participant against every open seat with the Hungarian algorithm, maximising the total fit: the proficiency each member declared on the seat's weapon in My weapons (an officer-locked weapon is never placed), plus signup preference. Each placement carries its `score`. Never applied automatically — `POST .../roster/auto-fill` with `strategy: "best_fit"` applies the same solve for real.
          */
         get: operations["get_roster_suggestions"];
         put?: never;
@@ -5411,12 +5311,12 @@ export interface paths {
         };
         /**
          * List a member's weapons
-         * @description Readable by any authenticated member, like specializations.
+         * @description Readable by any authenticated member.
          */
         get: operations["get_user_weapons"];
         /**
          * Replace a member's weapons and locks
-         * @description Officer endpoint: replaces every weapon row of the member, including officer locks. Rows with no level and no lock are dropped. Requires `users.specializations.manage` even for the caller's own rows, because it can clear locks. Returns the full list afterwards.
+         * @description Officer endpoint: replaces every weapon row of the member, including officer locks. Rows with no level and no lock are dropped. Requires `users.weapons.manage` even for the caller's own rows, because it can clear locks. Returns the full list afterwards.
          */
         put: operations["update_user_weapons"];
         post?: never;
@@ -6615,26 +6515,6 @@ export interface components {
              */
             status: string;
         };
-        /** @description `OpenAPI` schema wrapper for a build's roster-fit response. */
-        ApiResponseBuildRosterFit: {
-            /** @description Every member scored against the build. */
-            data: components["schemas"]["BuildRosterFitView"];
-            /**
-             * @description Indicates the outcome of the request, always "success".
-             * @example success
-             */
-            status: string;
-        };
-        /** @description `OpenAPI` schema wrapper for the Item Power calibration report response. */
-        ApiResponseCalibration: {
-            /** @description The calibration report. */
-            data: components["schemas"]["CalibrationView"];
-            /**
-             * @description Indicates the outcome of the request, always "success".
-             * @example success
-             */
-            status: string;
-        };
         /** @description `OpenAPI` wrapper for the success envelope of [`Capabilities`]. */
         ApiResponseCapabilities: {
             /** @description The document. */
@@ -6679,19 +6559,6 @@ export interface components {
         ApiResponseCompPerformance: {
             /** @description The comp performance data payload. */
             data: components["schemas"]["CompPerformanceView"];
-            /**
-             * @description Indicates the outcome of the request, always "success".
-             * @example success
-             */
-            status: string;
-        };
-        /** @description `OpenAPI` schema wrapper for a comp readiness response. */
-        ApiResponseCompReadinessView: {
-            /**
-             * @description The readiness roll-up, plus its comparison against observed battle evidence when
-             *     available.
-             */
-            data: components["schemas"]["CompReadinessView"];
             /**
              * @description Indicates the outcome of the request, always "success".
              * @example success
@@ -6942,16 +6809,6 @@ export interface components {
         ApiResponseItemPower: {
             /** @description The itemised Item Power payload. */
             data: components["schemas"]["ItemPowerView"];
-            /**
-             * @description Indicates the outcome of the request, always "success".
-             * @example success
-             */
-            status: string;
-        };
-        /** @description `OpenAPI` schema wrapper for the mastery-groups mapping response. */
-        ApiResponseMasteryGroups: {
-            /** @description The item-to-mastery-node payload. */
-            data: components["schemas"]["MasteryGroupsView"];
             /**
              * @description Indicates the outcome of the request, always "success".
              * @example success
@@ -10258,26 +10115,6 @@ export interface components {
              */
             total_players: number;
         };
-        /** @description A Destiny Board node holding a member back on a build. */
-        BlockingNode: {
-            /**
-             * Format: double
-             * @description Item Power the member would gain by taking it to the ceiling.
-             */
-            item_power_gap: number;
-            /**
-             * Format: int32
-             * @description The member's level in it.
-             */
-            level: number;
-            /**
-             * Format: int32
-             * @description The level it can reach.
-             */
-            max_level: number;
-            /** @description The node id, e.g. `COMBAT_HAMMERS_POLE`. */
-            node: string;
-        };
         /**
          * @description The guild's three brand colours, as the web app reads them.
          *
@@ -10433,23 +10270,6 @@ export interface components {
             name: string;
             /** @description A URL-friendly slug for the build category. */
             slug: string;
-        };
-        /** @description How deep the bench is for one build across every seat it fills. */
-        BuildCoverage: {
-            /**
-             * Format: int64
-             * @description The build in question.
-             */
-            build_id: number;
-            /** @description Its name. */
-            build_name: string;
-            /**
-             * @description How many members in the pool clear [`QUALIFIED_READINESS_FLOOR`] for it — the number that
-             *     answers "can we actually field this many tonight".
-             */
-            qualified_members: number;
-            /** @description How many distinct seats in the comp need this build. */
-            seat_count: number;
         };
         /** @description A build's full detail, including items. */
         BuildDetail: components["schemas"]["BuildSummary"] & {
@@ -10660,25 +10480,6 @@ export interface components {
          * @enum {string}
          */
         BuildRole: "healer" | "support" | "dps" | "tank" | "battle_mount" | "brawler";
-        /** @description Every member scored against one build, best first. */
-        BuildRosterFitView: {
-            /**
-             * Format: double
-             * @description Item Power of the build with every node at 100 — the shared ceiling.
-             */
-            at_max_spec: number;
-            /**
-             * Format: int64
-             * @description The build that was scored.
-             */
-            build_id: number;
-            /** @description Its name, for a caller rendering this on its own. */
-            build_name: string;
-            /** @description Provenance of the numbers. */
-            dataset_version: components["schemas"]["DatasetVersion"];
-            /** @description One row per member with any recorded specialization, sorted by Item Power descending. */
-            members: components["schemas"]["MemberItemPowerView"][];
-        };
         /**
          * @description The equipment slot of a build item.
          *
@@ -10799,76 +10600,6 @@ export interface components {
              *     *was* found.
              */
             unknown_spells: string[];
-        };
-        /**
-         * @description One observation where a calculated Item Power could be checked against a real one.
-         *
-         *     Every field here is a best-effort match, not a certainty: the player may have swapped gear,
-         *     died and re-geared, or fought with their secondary loadout rather than the primary build their
-         *     sign-up recorded. A single row proves nothing; the point of [`CalibrationView`] is the
-         *     distribution across many of them.
-         */
-        CalibrationOutlier: {
-            /**
-             * Format: int64
-             * @description The build whose `primary_build_id` sign-up supplied the expected figure.
-             */
-            build_id: number;
-            build_name: string;
-            /**
-             * Format: double
-             * @description `expected_ip - observed_ip`. Positive means the calculator overestimates for this member.
-             */
-            error: number;
-            /**
-             * Format: double
-             * @description What `combat::ip` calculates for this member on that build, at their current spec.
-             */
-            expected_ip: number;
-            /** @description When the matched battle snapshot was fetched. */
-            observed_at: string;
-            /**
-             * Format: double
-             * @description What `AlbionBB` reported for this player in the matched battle.
-             */
-            observed_ip: number;
-            /**
-             * Format: int64
-             * @description The member this observation is about.
-             */
-            user_id: number;
-            username: string;
-        };
-        /**
-         * @description Level-2 calibration: how well `combat::ip`'s predictions track Item Power actually observed in
-         *     battle, across every match the app could make between a signed-up build and a fetched battle.
-         *
-         *     This is a **distribution check, not an oracle** — see [`CalibrationOutlier`]'s docs on why any
-         *     one row can be wrong for reasons that have nothing to do with the IP model. What it is good at:
-         *     a systematic bias (every prediction low by roughly the same amount) is the signature of a
-         *     missing or mis-modelled rule, e.g. an un-collected mastery level — see `combat::ip`'s docs on
-         *     that gap.
-         */
-        CalibrationView: {
-            dataset_version: components["schemas"]["DatasetVersion"];
-            /**
-             * Format: double
-             * @description Mean of `|expected_ip - observed_ip|` across every observation. `0.0` when `sample_size` is
-             *     `0` — read alongside `sample_size` before treating a small figure as good news.
-             */
-            mean_absolute_error: number;
-            /**
-             * Format: double
-             * @description Median of the same. Less sensitive than the mean to a handful of bad matches.
-             */
-            median_absolute_error: number;
-            /**
-             * @description The worst 20 observations by `|error|`, descending — where to look first for a modelling
-             *     gap or a bad match.
-             */
-            outliers: components["schemas"]["CalibrationOutlier"][];
-            /** @description How many (member, matched battle) observations went into the figures below. */
-            sample_size: number;
         };
         /** @description The capabilities document. */
         Capabilities: {
@@ -11147,54 +10878,6 @@ export interface components {
              * @example 0
              */
             unpriced_item_count: number;
-        };
-        /** @description The full readiness roll-up for a composition. */
-        CompReadiness: {
-            /**
-             * Format: double
-             * @description Mean of each seat's Item Power ceiling.
-             */
-            avg_item_power_at_max: number;
-            /**
-             * Format: double
-             * @description Mean of each seat's best available candidate's Item Power. `0.0` when the pool is empty.
-             */
-            avg_item_power_now: number;
-            /** @description One row per distinct build the comp uses. */
-            bench_coverage: components["schemas"]["BuildCoverage"][];
-            /**
-             * @description False when nobody in the pool has a recorded family mastery level, which makes every
-             *     Item Power figure here a lower bound.
-             */
-            mastery_levels_known: boolean;
-            /**
-             * Format: double
-             * @description `avg_item_power_now / avg_item_power_at_max`, clamped `0.0` through `1.0`.
-             */
-            readiness_pct: number;
-            /** @description Seats the comp defines. */
-            seat_count: number;
-            /** @description Seats with zero qualified candidates — the training priorities. */
-            uncovered_seats: string[];
-            /**
-             * @description The seats furthest from their ceiling, worst first, capped at
-             *     [`MAX_WEAKEST_SEATS`].
-             */
-            weakest_seats: components["schemas"]["SeatReadiness"][];
-        };
-        /**
-         * @description `CombatService::comp_readiness`'s response. `predicted` is
-         *     [`super::readiness::evaluate`]'s pure output, unchanged. `observed` is the first real
-         *     "previsto vs osservato" connection between the combat simulator family and actual battle
-         *     evidence: when `event_id` was requested and that event has fights with a computed
-         *     `fight_stats` rollup, this is what Item Power the roster that actually fought turned out to
-         *     have, versus what the pre-event roster prediction said it would be.
-         *
-         *     This is an Item Power comparison only — `combat::sim` has no calibrated damage scaling and
-         *     produces no probability, so nothing here claims to predict or validate win rate or survival.
-         */
-        CompReadinessView: components["schemas"]["CompReadiness"] & {
-            observed?: null | components["schemas"]["ReadinessObservation"];
         };
         /** @description One of our comps and how it has performed. */
         CompRow: {
@@ -12993,10 +12676,6 @@ export interface components {
             secondary_build_id?: number | null;
             /** @description The name of the secondary build (if any). */
             secondary_build_name?: string | null;
-            /** @description Combat specialization levels keyed by `weapon:<id>` or `armor:<id>`. */
-            specializations: {
-                [key: string]: number;
-            };
             /**
              * Format: int64
              * @description The unique database user ID of the participant.
@@ -14171,31 +13850,23 @@ export interface components {
         FitScore: {
             /** @description Reasons this pairing cannot be made, empty when it can. */
             blocking: string[];
-            /**
-             * Format: double
-             * @description Item Power the member would bring to this seat's build.
-             */
-            item_power: number;
-            /**
-             * Format: double
-             * @description The same build's Item Power with every node at 100 — the shared ceiling.
-             */
-            max_item_power: number;
             /** @description The member's signup preference for this seat's build. */
             preference: components["schemas"]["Preference"];
+            proficiency?: null | components["schemas"]["WeaponProficiency"];
             /**
              * Format: double
-             * @description `item_power / max_item_power`, `0.0` through `1.0`. Comparable across different builds in a
-             *     way raw Item Power is not.
+             * @description Higher is a better fit. Declared proficiency on the seat's weapon scores `main` 3, `good`
+             *     2, `basic` 1; a member who declared no weapons at all scores 0.5 and one who declared only
+             *     other weapons 0.1; a primary signup adds 0.5 and a secondary one 0.25.
              */
-            readiness: number;
+            score: number;
         };
         /**
          * @description Which algorithm produced an assignment, so a caller can tell a considered plan from the
          *     existing first-fit behaviour.
          * @enum {string}
          */
-        FitStrategy: "greedy" | "spec_optimal";
+        FitStrategy: "greedy" | "best_fit";
         /** @description Detail view including every participant. */
         GiveawayDetailView: components["schemas"]["GiveawayView"] & {
             /** @description Current entries, oldest first. */
@@ -14656,7 +14327,7 @@ export interface components {
             unknown_item: boolean;
         };
         /**
-         * @description Ad-hoc Item Power request: a loadout plus whose specialization to score it with.
+         * @description Ad-hoc Item Power request: a loadout plus the hypothetical specialization to score it with.
          * @example {
          *       "items": [
          *         {
@@ -14677,13 +14348,8 @@ export interface components {
              * @description The flat level to apply, required when `spec` is `fixed`.
              */
             level?: number | null;
-            /** @description Which specialization levels to apply. Defaults to `current`. */
+            /** @description Which specialization levels to apply. Defaults to `max`. */
             spec?: components["schemas"]["SpecSource"];
-            /**
-             * Format: int64
-             * @description The member whose levels to read, required when `spec` is `current`.
-             */
-            user_id?: number | null;
         };
         /**
          * @description An Item Power figure, with the loadout it was computed from and the ceiling it is measured
@@ -14692,7 +14358,7 @@ export interface components {
         ItemPowerView: {
             /**
              * Format: double
-             * @description The same loadout with every Destiny Board node at 100 — what the member is working toward.
+             * @description The same loadout with every Destiny Board node at 100 — the ceiling.
              */
             at_max_spec: number;
             /** @description The itemised figure. */
@@ -14701,10 +14367,11 @@ export interface components {
             dataset_version: components["schemas"]["DatasetVersion"];
             /**
              * Format: double
-             * @description How far along that road they are, `0.0` through `1.0`.
+             * @description `breakdown.average / at_max_spec`, `0.0` through `1.0`: how close the assumed levels are to
+             *     the ceiling.
              *
              *     Comparable across builds in a way raw Item Power is not: a plate tank always out-numbers a
-             *     cloth healer without that saying anything about how ready either of them is.
+             *     cloth healer without that saying anything about how far either is from its ceiling.
              */
             readiness: number;
         };
@@ -14852,23 +14519,6 @@ export interface components {
             weapon_key: string;
         };
         /**
-         * @description Every equippable base identifier that has a family mastery node, and which node it is.
-         * @example {
-         *       "dataset_version": {},
-         *       "groups": {
-         *         "2H_POLEHAMMER": "COMBAT_HAMMERS"
-         *       }
-         *     }
-         */
-        MasteryGroupsView: {
-            /** @description Provenance stamp, so a client can tell when the mapping last changed. */
-            dataset_version: components["schemas"]["DatasetVersion"];
-            /** @description `base_identifier -> mastery_node_id`. */
-            groups: {
-                [key: string]: string;
-            };
-        };
-        /**
          * @description Request body for matching a list of raw (e.g. OCR-extracted) names against known,
          *     already-linked Albion Online players.
          * @example {
@@ -14965,35 +14615,6 @@ export interface components {
              * @description Fights won.
              */
             wins: number;
-        };
-        /** @description One member's Item Power on a given build. */
-        MemberItemPowerView: {
-            /**
-             * Format: double
-             * @description Item Power the same member would have with every node at 100.
-             */
-            at_max_spec: number;
-            /** @description Nodes this build needs where the member is furthest from the ceiling, worst first. */
-            blocking_nodes: components["schemas"]["BlockingNode"][];
-            /**
-             * Format: double
-             * @description Item Power with the levels this member has actually trained.
-             */
-            item_power: number;
-            /** @description False when no family mastery level is recorded, making the figure a lower bound. */
-            mastery_levels_known: boolean;
-            /**
-             * Format: double
-             * @description `item_power / at_max_spec`, `0.0` through `1.0`.
-             */
-            readiness: number;
-            /**
-             * Format: int64
-             * @description Internal user id.
-             */
-            user_id: number;
-            /** @description Display name, resolved the same way the rest of the app resolves it. */
-            username: string;
         };
         /** @description One member's contribution over the window. */
         MemberRow: {
@@ -16685,31 +16306,6 @@ export interface components {
              */
             updated: number;
         };
-        /**
-         * @description What Item Power the roster that actually fought an event turned out to have, versus what
-         *     [`super::readiness::evaluate`] predicted for it beforehand.
-         */
-        ReadinessObservation: {
-            /**
-             * Format: double
-             * @description Simple average of `fight_stats.avg_friendly_item_power` across those fights — one fight,
-             *     one vote, unweighted by player count, matching the same per-fight-averaging convention
-             *     `attention::rules::evaluate_ip_deficit` already uses for exactly this kind of cross-fight
-             *     IP averaging.
-             */
-            avg_item_power: number;
-            /**
-             * Format: int64
-             * @description Distinct fights this event has a `fight_stats` rollup for.
-             */
-            fight_count: number;
-            /**
-             * Format: double
-             * @description `avg_item_power - predicted.avg_item_power_now`. Positive means the roster that actually
-             *     fought brought more Item Power than the pre-event prediction; negative means less.
-             */
-            item_power_delta: number;
-        };
         RecordVodForumPostRequest: {
             /** @description Discord thread snowflake created for the VOD post. */
             thread_id: string;
@@ -17447,52 +17043,6 @@ export interface components {
             /** @description Inclusive start, RFC 3339. */
             starts_at: string;
         };
-        /** @description One seat's best available candidate, or the absence of one. */
-        SeatReadiness: {
-            /**
-             * Format: double
-             * @description That member's Item Power on this seat.
-             */
-            best_candidate_item_power: number;
-            /**
-             * Format: int64
-             * @description The best-scoring member for this seat, or `None` when nobody in the pool has any relevant
-             *     specialization at all.
-             */
-            best_candidate_user_id?: number | null;
-            /**
-             * @description That member's display name. Filled in by the caller, which resolves it the same way the
-             *     rest of the app does; empty when there is no candidate.
-             */
-            best_candidate_username: string;
-            /**
-             * Format: int64
-             * @description The build this seat requires.
-             */
-            build_id: number;
-            /** @description The build's name. */
-            build_name: string;
-            /**
-             * Format: double
-             * @description `max_item_power - best_candidate_item_power`: the Item Power a training push could still
-             *     recover for this seat.
-             */
-            item_power_gap: number;
-            /**
-             * Format: double
-             * @description This seat's Item Power ceiling — every relevant node at 100.
-             */
-            max_item_power: number;
-            /** @description How many members in the pool clear [`QUALIFIED_READINESS_FLOOR`] for this seat. */
-            qualified_members: number;
-            /**
-             * Format: double
-             * @description `best_candidate_item_power / max_item_power`, `0.0` when nobody is available.
-             */
-            readiness: number;
-            /** @description The seat key, e.g. `build:12:3`. */
-            seat_key: string;
-        };
         /** @description One build available inside an event's comp, for the self-service "swap build" picker. */
         SelfServiceCompBuildOption: {
             /**
@@ -17706,10 +17256,12 @@ export interface components {
             node: string;
         };
         /**
-         * @description Where the Destiny Board levels behind an Item Power figure come from.
+         * @description Which hypothetical Destiny Board levels an Item Power figure is computed with.
+         *
+         *     Members' own levels are not stored, so the calculator always works with an assumed level.
          * @enum {string}
          */
-        SpecSource: "current" | "max" | "fixed";
+        SpecSource: "max" | "fixed";
         /** @description A split's full detail, including participants. */
         SplitDetail: components["schemas"]["SplitSummary"] & {
             /**
@@ -22814,44 +22366,6 @@ export interface operations {
             };
         };
     };
-    get_calibration: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The calibration report */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseCalibration"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Missing combat.calibration.view */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
     get_dataset: {
         parameters: {
             query?: never;
@@ -22914,93 +22428,6 @@ export interface operations {
             };
             /** @description Unauthorized - no active session */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    get_mastery_groups: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Item to mastery-node mapping */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseMasteryGroups"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    get_member_item_power: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Internal user ID */
-                user_id: number;
-                /** @description The build to score. Required. */
-                build_id: number;
-                /** @description Which loadout to score: `main` (the default) or `swap`. */
-                loadout: string | null;
-                /** @description Which levels to apply. Defaults to the member's own. */
-                spec: null | components["schemas"]["SpecSource"];
-                /** @description The flat level for `spec=fixed`. */
-                level: number | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Item Power breakdown */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseItemPower"];
-                };
-            };
-            /** @description Missing build_id or unusable parameters */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Build not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -24136,9 +23563,7 @@ export interface operations {
             path: {
                 /** @description Build version ID */
                 id: number;
-                /** @description Score the build with this member's Destiny Board levels. */
-                user_id: number | null;
-                /** @description Which levels to apply: `current`, `max` or `fixed`. Defaults to `current`. */
+                /** @description Which levels to apply: `max` or `fixed`. Defaults to `max`. */
                 spec: null | components["schemas"]["SpecSource"];
                 /** @description The flat level for `spec=fixed`. */
                 level: number | null;
@@ -24437,64 +23862,6 @@ export interface operations {
                 };
             };
             /** @description Forbidden - lacks comps.builds.view */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Build not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    get_build_roster_fit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Build version ID */
-                id: number;
-                /** @description Score the build with this member's Destiny Board levels. */
-                user_id: number | null;
-                /** @description Which levels to apply: `current`, `max` or `fixed`. Defaults to `current`. */
-                spec: null | components["schemas"]["SpecSource"];
-                /** @description The flat level for `spec=fixed`. */
-                level: number | null;
-                /** @description Which loadout to score: `main` or `swap`. Defaults to `main`. */
-                loadout: string | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Members ranked against the build */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseBuildRosterFit"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Missing combat.readiness.view */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25289,58 +24656,6 @@ export interface operations {
                 };
             };
             /** @description Forbidden - lacks comps.comps.view */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Comp not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    get_comp_readiness: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Comp ID */
-                id: number;
-                /** @description Score against this event's participants rather than every specialised member. */
-                event_id: number | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Readiness roll-up */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseCompReadinessView"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Missing combat.readiness.view */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27864,7 +27179,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing combat.readiness.view */
+            /** @description Not allowed to manage this event's roster */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34229,7 +33544,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing users.specializations.manage */
+            /** @description Missing users.weapons.manage */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -1885,44 +1885,6 @@
         ],
         "type": "object"
       },
-      "ApiResponseBuildRosterFit": {
-        "description": "`OpenAPI` schema wrapper for a build's roster-fit response.",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/BuildRosterFitView",
-            "description": "Every member scored against the build."
-          },
-          "status": {
-            "description": "Indicates the outcome of the request, always \"success\".",
-            "example": "success",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponseCalibration": {
-        "description": "`OpenAPI` schema wrapper for the Item Power calibration report response.",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/CalibrationView",
-            "description": "The calibration report."
-          },
-          "status": {
-            "description": "Indicates the outcome of the request, always \"success\".",
-            "example": "success",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "data"
-        ],
-        "type": "object"
-      },
       "ApiResponseCapabilities": {
         "description": "`OpenAPI` wrapper for the success envelope of [`Capabilities`].",
         "properties": {
@@ -2008,25 +1970,6 @@
           "data": {
             "$ref": "#/components/schemas/CompPerformanceView",
             "description": "The comp performance data payload."
-          },
-          "status": {
-            "description": "Indicates the outcome of the request, always \"success\".",
-            "example": "success",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponseCompReadinessView": {
-        "description": "`OpenAPI` schema wrapper for a comp readiness response.",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/CompReadinessView",
-            "description": "The readiness roll-up, plus its comparison against observed battle evidence when\navailable."
           },
           "status": {
             "description": "Indicates the outcome of the request, always \"success\".",
@@ -2514,25 +2457,6 @@
           "data": {
             "$ref": "#/components/schemas/ItemPowerView",
             "description": "The itemised Item Power payload."
-          },
-          "status": {
-            "description": "Indicates the outcome of the request, always \"success\".",
-            "example": "success",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponseMasteryGroups": {
-        "description": "`OpenAPI` schema wrapper for the mastery-groups mapping response.",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/MasteryGroupsView",
-            "description": "The item-to-mastery-node payload."
           },
           "status": {
             "description": "Indicates the outcome of the request, always \"success\".",
@@ -9234,37 +9158,6 @@
         ],
         "type": "object"
       },
-      "BlockingNode": {
-        "description": "A Destiny Board node holding a member back on a build.",
-        "properties": {
-          "item_power_gap": {
-            "description": "Item Power the member would gain by taking it to the ceiling.",
-            "format": "double",
-            "type": "number"
-          },
-          "level": {
-            "description": "The member's level in it.",
-            "format": "int32",
-            "type": "integer"
-          },
-          "max_level": {
-            "description": "The level it can reach.",
-            "format": "int32",
-            "type": "integer"
-          },
-          "node": {
-            "description": "The node id, e.g. `COMBAT_HAMMERS_POLE`.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "node",
-          "level",
-          "max_level",
-          "item_power_gap"
-        ],
-        "type": "object"
-      },
       "BrandColorsView": {
         "description": "The guild's three brand colours, as the web app reads them.\n\nKept apart from [`GuildSettingsView`] even though they share a row: this is\nthe one slice of guild settings every member's session carries, so it stays\na small payload of its own rather than dragging the Discord configuration\nalong with it.",
         "properties": {
@@ -9485,37 +9378,6 @@
           "name",
           "slug",
           "created_at"
-        ],
-        "type": "object"
-      },
-      "BuildCoverage": {
-        "description": "How deep the bench is for one build across every seat it fills.",
-        "properties": {
-          "build_id": {
-            "description": "The build in question.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "build_name": {
-            "description": "Its name.",
-            "type": "string"
-          },
-          "qualified_members": {
-            "description": "How many members in the pool clear [`QUALIFIED_READINESS_FLOOR`] for it — the number that\nanswers \"can we actually field this many tonight\".",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "seat_count": {
-            "description": "How many distinct seats in the comp need this build.",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "build_id",
-          "build_name",
-          "seat_count",
-          "qualified_members"
         ],
         "type": "object"
       },
@@ -9885,44 +9747,6 @@
         ],
         "type": "string"
       },
-      "BuildRosterFitView": {
-        "description": "Every member scored against one build, best first.",
-        "properties": {
-          "at_max_spec": {
-            "description": "Item Power of the build with every node at 100 — the shared ceiling.",
-            "format": "double",
-            "type": "number"
-          },
-          "build_id": {
-            "description": "The build that was scored.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "build_name": {
-            "description": "Its name, for a caller rendering this on its own.",
-            "type": "string"
-          },
-          "dataset_version": {
-            "$ref": "#/components/schemas/DatasetVersion",
-            "description": "Provenance of the numbers."
-          },
-          "members": {
-            "description": "One row per member with any recorded specialization, sorted by Item Power descending.",
-            "items": {
-              "$ref": "#/components/schemas/MemberItemPowerView"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "build_id",
-          "build_name",
-          "at_max_spec",
-          "members",
-          "dataset_version"
-        ],
-        "type": "object"
-      },
       "BuildSlot": {
         "description": "The equipment slot of a build item.\n\nStored in the database as its `lowercase/snake_case` string form (see [`FromStr`]/\n[`fmt::Display`]), since the `build_items.slot` column is a plain string rather than a native\nDB enum.",
         "enum": [
@@ -10105,95 +9929,6 @@
           "total_damage_to_enemies",
           "total_healing_to_allies",
           "unknown_spells"
-        ],
-        "type": "object"
-      },
-      "CalibrationOutlier": {
-        "description": "One observation where a calculated Item Power could be checked against a real one.\n\nEvery field here is a best-effort match, not a certainty: the player may have swapped gear,\ndied and re-geared, or fought with their secondary loadout rather than the primary build their\nsign-up recorded. A single row proves nothing; the point of [`CalibrationView`] is the\ndistribution across many of them.",
-        "properties": {
-          "build_id": {
-            "description": "The build whose `primary_build_id` sign-up supplied the expected figure.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "build_name": {
-            "type": "string"
-          },
-          "error": {
-            "description": "`expected_ip - observed_ip`. Positive means the calculator overestimates for this member.",
-            "format": "double",
-            "type": "number"
-          },
-          "expected_ip": {
-            "description": "What `combat::ip` calculates for this member on that build, at their current spec.",
-            "format": "double",
-            "type": "number"
-          },
-          "observed_at": {
-            "description": "When the matched battle snapshot was fetched.",
-            "type": "string"
-          },
-          "observed_ip": {
-            "description": "What `AlbionBB` reported for this player in the matched battle.",
-            "format": "double",
-            "type": "number"
-          },
-          "user_id": {
-            "description": "The member this observation is about.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "username": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "username",
-          "build_id",
-          "build_name",
-          "expected_ip",
-          "observed_ip",
-          "error",
-          "observed_at"
-        ],
-        "type": "object"
-      },
-      "CalibrationView": {
-        "description": "Level-2 calibration: how well `combat::ip`'s predictions track Item Power actually observed in\nbattle, across every match the app could make between a signed-up build and a fetched battle.\n\nThis is a **distribution check, not an oracle** — see [`CalibrationOutlier`]'s docs on why any\none row can be wrong for reasons that have nothing to do with the IP model. What it is good at:\na systematic bias (every prediction low by roughly the same amount) is the signature of a\nmissing or mis-modelled rule, e.g. an un-collected mastery level — see `combat::ip`'s docs on\nthat gap.",
-        "properties": {
-          "dataset_version": {
-            "$ref": "#/components/schemas/DatasetVersion"
-          },
-          "mean_absolute_error": {
-            "description": "Mean of `|expected_ip - observed_ip|` across every observation. `0.0` when `sample_size` is\n`0` — read alongside `sample_size` before treating a small figure as good news.",
-            "format": "double",
-            "type": "number"
-          },
-          "median_absolute_error": {
-            "description": "Median of the same. Less sensitive than the mean to a handful of bad matches.",
-            "format": "double",
-            "type": "number"
-          },
-          "outliers": {
-            "description": "The worst 20 observations by `|error|`, descending — where to look first for a modelling\ngap or a bad match.",
-            "items": {
-              "$ref": "#/components/schemas/CalibrationOutlier"
-            },
-            "type": "array"
-          },
-          "sample_size": {
-            "description": "How many (member, matched battle) observations went into the figures below.",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "dataset_version",
-          "sample_size",
-          "mean_absolute_error",
-          "median_absolute_error",
-          "outliers"
         ],
         "type": "object"
       },
@@ -10798,91 +10533,6 @@
           "priced_at"
         ],
         "type": "object"
-      },
-      "CompReadiness": {
-        "description": "The full readiness roll-up for a composition.",
-        "properties": {
-          "avg_item_power_at_max": {
-            "description": "Mean of each seat's Item Power ceiling.",
-            "format": "double",
-            "type": "number"
-          },
-          "avg_item_power_now": {
-            "description": "Mean of each seat's best available candidate's Item Power. `0.0` when the pool is empty.",
-            "format": "double",
-            "type": "number"
-          },
-          "bench_coverage": {
-            "description": "One row per distinct build the comp uses.",
-            "items": {
-              "$ref": "#/components/schemas/BuildCoverage"
-            },
-            "type": "array"
-          },
-          "mastery_levels_known": {
-            "description": "False when nobody in the pool has a recorded family mastery level, which makes every\nItem Power figure here a lower bound.",
-            "type": "boolean"
-          },
-          "readiness_pct": {
-            "description": "`avg_item_power_now / avg_item_power_at_max`, clamped `0.0` through `1.0`.",
-            "format": "double",
-            "type": "number"
-          },
-          "seat_count": {
-            "description": "Seats the comp defines.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "uncovered_seats": {
-            "description": "Seats with zero qualified candidates — the training priorities.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "weakest_seats": {
-            "description": "The seats furthest from their ceiling, worst first, capped at\n[`MAX_WEAKEST_SEATS`].",
-            "items": {
-              "$ref": "#/components/schemas/SeatReadiness"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "seat_count",
-          "avg_item_power_now",
-          "avg_item_power_at_max",
-          "readiness_pct",
-          "weakest_seats",
-          "bench_coverage",
-          "uncovered_seats",
-          "mastery_levels_known"
-        ],
-        "type": "object"
-      },
-      "CompReadinessView": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CompReadiness"
-          },
-          {
-            "properties": {
-              "observed": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ReadinessObservation",
-                    "description": "`None` when no `event_id` was requested, or the event has no fights with a computed\n`fight_stats` rollup yet — not an error, a real \"nothing to compare yet\" state."
-                  }
-                ]
-              }
-            },
-            "type": "object"
-          }
-        ],
-        "description": "`CombatService::comp_readiness`'s response. `predicted` is\n[`super::readiness::evaluate`]'s pure output, unchanged. `observed` is the first real\n\"previsto vs osservato\" connection between the combat simulator family and actual battle\nevidence: when `event_id` was requested and that event has fights with a computed\n`fight_stats` rollup, this is what Item Power the roster that actually fought turned out to\nhave, versus what the pre-event roster prediction said it would be.\n\nThis is an Item Power comparison only — `combat::sim` has no calibrated damage scaling and\nproduces no probability, so nothing here claims to predict or validate win rate or survival."
       },
       "CompRow": {
         "description": "One of our comps and how it has performed.",
@@ -14174,17 +13824,6 @@
               "null"
             ]
           },
-          "specializations": {
-            "additionalProperties": {
-              "format": "int32",
-              "type": "integer"
-            },
-            "description": "Combat specialization levels keyed by `weapon:<id>` or `armor:<id>`.",
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
           "user_id": {
             "description": "The unique database user ID of the participant.",
             "example": 2,
@@ -14207,7 +13846,6 @@
           "user_id",
           "username",
           "primary_build_name",
-          "specializations",
           "weapons"
         ],
         "type": "object"
@@ -16375,32 +16013,31 @@
             },
             "type": "array"
           },
-          "item_power": {
-            "description": "Item Power the member would bring to this seat's build.",
-            "format": "double",
-            "type": "number"
-          },
-          "max_item_power": {
-            "description": "The same build's Item Power with every node at 100 — the shared ceiling.",
-            "format": "double",
-            "type": "number"
-          },
           "preference": {
             "$ref": "#/components/schemas/Preference",
             "description": "The member's signup preference for this seat's build."
           },
-          "readiness": {
-            "description": "`item_power / max_item_power`, `0.0` through `1.0`. Comparable across different builds in a\nway raw Item Power is not.",
+          "proficiency": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WeaponProficiency",
+                "description": "The level the member declared on the seat's weapon, `None` when they did not declare it\n(or the seat has no recognisable weapon)."
+              }
+            ]
+          },
+          "score": {
+            "description": "Higher is a better fit. Declared proficiency on the seat's weapon scores `main` 3, `good`\n2, `basic` 1; a member who declared no weapons at all scores 0.5 and one who declared only\nother weapons 0.1; a primary signup adds 0.5 and a secondary one 0.25.",
             "format": "double",
             "type": "number"
           }
         },
         "required": [
-          "item_power",
-          "max_item_power",
-          "readiness",
           "preference",
-          "blocking"
+          "blocking",
+          "score"
         ],
         "type": "object"
       },
@@ -16408,7 +16045,7 @@
         "description": "Which algorithm produced an assignment, so a caller can tell a considered plan from the\nexisting first-fit behaviour.",
         "enum": [
           "greedy",
-          "spec_optimal"
+          "best_fit"
         ],
         "type": "string"
       },
@@ -17484,7 +17121,7 @@
         "type": "object"
       },
       "ItemPowerRequest": {
-        "description": "Ad-hoc Item Power request: a loadout plus whose specialization to score it with.",
+        "description": "Ad-hoc Item Power request: a loadout plus the hypothetical specialization to score it with.",
         "example": {
           "items": [
             {
@@ -17514,15 +17151,7 @@
           },
           "spec": {
             "$ref": "#/components/schemas/SpecSource",
-            "description": "Which specialization levels to apply. Defaults to `current`."
-          },
-          "user_id": {
-            "description": "The member whose levels to read, required when `spec` is `current`.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
+            "description": "Which specialization levels to apply. Defaults to `max`."
           }
         },
         "required": [
@@ -17534,7 +17163,7 @@
         "description": "An Item Power figure, with the loadout it was computed from and the ceiling it is measured\nagainst.",
         "properties": {
           "at_max_spec": {
-            "description": "The same loadout with every Destiny Board node at 100 — what the member is working toward.",
+            "description": "The same loadout with every Destiny Board node at 100 — the ceiling.",
             "format": "double",
             "type": "number"
           },
@@ -17547,7 +17176,7 @@
             "description": "Provenance of the numbers."
           },
           "readiness": {
-            "description": "How far along that road they are, `0.0` through `1.0`.\n\nComparable across builds in a way raw Item Power is not: a plate tank always out-numbers a\ncloth healer without that saying anything about how ready either of them is.",
+            "description": "`breakdown.average / at_max_spec`, `0.0` through `1.0`: how close the assumed levels are to\nthe ceiling.\n\nComparable across builds in a way raw Item Power is not: a plate tank always out-numbers a\ncloth healer without that saying anything about how far either is from its ceiling.",
             "format": "double",
             "type": "number"
           }
@@ -17822,36 +17451,6 @@
         ],
         "type": "object"
       },
-      "MasteryGroupsView": {
-        "description": "Every equippable base identifier that has a family mastery node, and which node it is.",
-        "example": {
-          "dataset_version": {},
-          "groups": {
-            "2H_POLEHAMMER": "COMBAT_HAMMERS"
-          }
-        },
-        "properties": {
-          "dataset_version": {
-            "$ref": "#/components/schemas/DatasetVersion",
-            "description": "Provenance stamp, so a client can tell when the mapping last changed."
-          },
-          "groups": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "`base_identifier -> mastery_node_id`.",
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        },
-        "required": [
-          "dataset_version",
-          "groups"
-        ],
-        "type": "object"
-      },
       "MatchParticipantsRequest": {
         "description": "Request body for matching a list of raw (e.g. OCR-extracted) names against known,\nalready-linked Albion Online players.",
         "example": {
@@ -17989,56 +17588,6 @@
           "wins",
           "losses",
           "win_rate"
-        ],
-        "type": "object"
-      },
-      "MemberItemPowerView": {
-        "description": "One member's Item Power on a given build.",
-        "properties": {
-          "at_max_spec": {
-            "description": "Item Power the same member would have with every node at 100.",
-            "format": "double",
-            "type": "number"
-          },
-          "blocking_nodes": {
-            "description": "Nodes this build needs where the member is furthest from the ceiling, worst first.",
-            "items": {
-              "$ref": "#/components/schemas/BlockingNode"
-            },
-            "type": "array"
-          },
-          "item_power": {
-            "description": "Item Power with the levels this member has actually trained.",
-            "format": "double",
-            "type": "number"
-          },
-          "mastery_levels_known": {
-            "description": "False when no family mastery level is recorded, making the figure a lower bound.",
-            "type": "boolean"
-          },
-          "readiness": {
-            "description": "`item_power / at_max_spec`, `0.0` through `1.0`.",
-            "format": "double",
-            "type": "number"
-          },
-          "user_id": {
-            "description": "Internal user id.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "username": {
-            "description": "Display name, resolved the same way the rest of the app resolves it.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "username",
-          "item_power",
-          "at_max_spec",
-          "readiness",
-          "blocking_nodes",
-          "mastery_levels_known"
         ],
         "type": "object"
       },
@@ -21138,32 +20687,6 @@
         ],
         "type": "object"
       },
-      "ReadinessObservation": {
-        "description": "What Item Power the roster that actually fought an event turned out to have, versus what\n[`super::readiness::evaluate`] predicted for it beforehand.",
-        "properties": {
-          "avg_item_power": {
-            "description": "Simple average of `fight_stats.avg_friendly_item_power` across those fights — one fight,\none vote, unweighted by player count, matching the same per-fight-averaging convention\n`attention::rules::evaluate_ip_deficit` already uses for exactly this kind of cross-fight\nIP averaging.",
-            "format": "double",
-            "type": "number"
-          },
-          "fight_count": {
-            "description": "Distinct fights this event has a `fight_stats` rollup for.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "item_power_delta": {
-            "description": "`avg_item_power - predicted.avg_item_power_now`. Positive means the roster that actually\nfought brought more Item Power than the pre-event prediction; negative means less.",
-            "format": "double",
-            "type": "number"
-          }
-        },
-        "required": [
-          "fight_count",
-          "avg_item_power",
-          "item_power_delta"
-        ],
-        "type": "object"
-      },
       "RecordVodForumPostRequest": {
         "properties": {
           "thread_id": {
@@ -22763,73 +22286,6 @@
         ],
         "type": "object"
       },
-      "SeatReadiness": {
-        "description": "One seat's best available candidate, or the absence of one.",
-        "properties": {
-          "best_candidate_item_power": {
-            "description": "That member's Item Power on this seat.",
-            "format": "double",
-            "type": "number"
-          },
-          "best_candidate_user_id": {
-            "description": "The best-scoring member for this seat, or `None` when nobody in the pool has any relevant\nspecialization at all.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "best_candidate_username": {
-            "description": "That member's display name. Filled in by the caller, which resolves it the same way the\nrest of the app does; empty when there is no candidate.",
-            "type": "string"
-          },
-          "build_id": {
-            "description": "The build this seat requires.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "build_name": {
-            "description": "The build's name.",
-            "type": "string"
-          },
-          "item_power_gap": {
-            "description": "`max_item_power - best_candidate_item_power`: the Item Power a training push could still\nrecover for this seat.",
-            "format": "double",
-            "type": "number"
-          },
-          "max_item_power": {
-            "description": "This seat's Item Power ceiling — every relevant node at 100.",
-            "format": "double",
-            "type": "number"
-          },
-          "qualified_members": {
-            "description": "How many members in the pool clear [`QUALIFIED_READINESS_FLOOR`] for this seat.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "readiness": {
-            "description": "`best_candidate_item_power / max_item_power`, `0.0` when nobody is available.",
-            "format": "double",
-            "type": "number"
-          },
-          "seat_key": {
-            "description": "The seat key, e.g. `build:12:3`.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "seat_key",
-          "build_id",
-          "build_name",
-          "best_candidate_username",
-          "best_candidate_item_power",
-          "max_item_power",
-          "readiness",
-          "item_power_gap",
-          "qualified_members"
-        ],
-        "type": "object"
-      },
       "SelfServiceCompBuildOption": {
         "description": "One build available inside an event's comp, for the self-service \"swap build\" picker.",
         "properties": {
@@ -23222,9 +22678,8 @@
         "type": "object"
       },
       "SpecSource": {
-        "description": "Where the Destiny Board levels behind an Item Power figure come from.",
+        "description": "Which hypothetical Destiny Board levels an Item Power figure is computed with.\n\nMembers' own levels are not stored, so the calculator always works with an assumed level.",
         "enum": [
-          "current",
           "max",
           "fixed"
         ],
@@ -31566,53 +31021,6 @@
         ]
       }
     },
-    "/api/combat/calibration": {
-      "get": {
-        "description": "Compares what `combat::ip` calculates for a member's signed-up build against the Item Power AlbionBB reported for that player in a battle fetched around the same time, and reports the mean/median absolute error plus the worst 20 mismatches. Every match is best-effort — see the response schema's docs on what this figure does and does not prove. Requires `combat.calibration.view`, an officer-tier permission distinct from the member-facing calculator: this reports accuracy across the whole guild, not a member's own Item Power.",
-        "operationId": "get_calibration",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseCalibration"
-                }
-              }
-            },
-            "description": "The calibration report"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Missing combat.calibration.view"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ],
-        "summary": "Get the Item Power calculator's calibration against observed battle data",
-        "tags": [
-          "combat"
-        ]
-      }
-    },
     "/api/combat/dataset": {
       "get": {
         "description": "Returns the ao-bin-dumps commit the bundled Albion combat data was generated from, together with how many items, spells and Destiny Board nodes it covers. The data is compiled into the binary and refreshed by hand after a patch, so this is what tells a reader how current the numbers are.",
@@ -31652,7 +31060,7 @@
     },
     "/api/combat/item-power": {
       "post": {
-        "description": "Item Power = base(tier, enchantment) + quality bonus + the Destiny Board bonuses of whichever specialization levels `spec` selects. The response itemises every contribution, so each point can be traced to the node that granted it. `mastery_levels_known` is false while no family mastery level is recorded, which makes the figure a lower bound rather than the number the game would show.",
+        "description": "Item Power = base(tier, enchantment) + quality bonus + the Destiny Board bonuses of the hypothetical specialization level `spec` selects (`max` or a flat `fixed` level). Members' own levels are not stored. The response itemises every contribution, so each point can be traced to the node that granted it. `mastery_levels_known` is false while no family mastery level is assumed, which makes the figure a lower bound rather than the number the game would show.",
         "operationId": "post_item_power",
         "requestBody": {
           "content": {
@@ -31702,163 +31110,6 @@
           }
         ],
         "summary": "Calculate Item Power for an ad-hoc loadout",
-        "tags": [
-          "combat"
-        ]
-      }
-    },
-    "/api/combat/mastery-groups": {
-      "get": {
-        "description": "Maps every equippable base identifier that has a Destiny Board specialization to the family mastery node above it, e.g. `2H_POLEHAMMER -> COMBAT_HAMMERS`. Capes, bags and gathering gear are absent: they have no combat specialization.",
-        "operationId": "get_mastery_groups",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMasteryGroups"
-                }
-              }
-            },
-            "description": "Item to mastery-node mapping"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ],
-        "summary": "Get the item-to-family-mastery mapping",
-        "tags": [
-          "combat"
-        ]
-      }
-    },
-    "/api/combat/members/{user_id}/item-power": {
-      "get": {
-        "description": "Scores a stored build with one member's Destiny Board levels — the \"could this person fly this?\" question. `at_max_spec` is the same build with every node at 100, and `readiness` is the ratio between them, which is comparable across builds in a way raw Item Power is not.",
-        "operationId": "get_member_item_power",
-        "parameters": [
-          {
-            "description": "Internal user ID",
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "The build to score. Required.",
-            "in": "path",
-            "name": "build_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Which loadout to score: `main` (the default) or `swap`.",
-            "in": "path",
-            "name": "loadout",
-            "required": true,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "description": "Which levels to apply. Defaults to the member's own.",
-            "in": "path",
-            "name": "spec",
-            "required": true,
-            "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/SpecSource"
-                }
-              ]
-            }
-          },
-          {
-            "description": "The flat level for `spec=fixed`.",
-            "in": "path",
-            "name": "level",
-            "required": true,
-            "schema": {
-              "format": "int32",
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseItemPower"
-                }
-              }
-            },
-            "description": "Item Power breakdown"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Missing build_id or unusable parameters"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Build not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ],
-        "summary": "Calculate a member's Item Power on a build",
         "tags": [
           "combat"
         ]
@@ -33432,7 +32683,7 @@
     },
     "/api/comps/builds/{id}/item-power": {
       "get": {
-        "description": "Item Power = base(tier, enchantment) + quality bonus + Destiny Board bonuses. Pass `spec=max` for the build's ceiling, `spec=current` with a `user_id` for what one member would actually field, or `spec=fixed` with a `level` to compare builds rather than people. Every contribution is itemised, so each point traces back to the node that granted it.",
+        "description": "Item Power = base(tier, enchantment) + quality bonus + Destiny Board bonuses. Pass `spec=max` for the build's ceiling, or `spec=fixed` with a `level` to compare builds at the same assumed level. Members' own Destiny Board levels are not stored. Every contribution is itemised, so each point traces back to the node that granted it.",
         "operationId": "get_build_item_power",
         "parameters": [
           {
@@ -33446,20 +32697,7 @@
             }
           },
           {
-            "description": "Score the build with this member's Destiny Board levels.",
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          },
-          {
-            "description": "Which levels to apply: `current`, `max` or `fixed`. Defaults to `current`.",
+            "description": "Which levels to apply: `max` or `fixed`. Defaults to `max`.",
             "in": "path",
             "name": "spec",
             "required": true,
@@ -33970,129 +33208,6 @@
           }
         ],
         "summary": "Get a build's total market price",
-        "tags": [
-          "comps"
-        ]
-      }
-    },
-    "/api/comps/builds/{id}/roster-fit": {
-      "get": {
-        "description": "Returns every member with any recorded Destiny Board level, scored on this build and sorted by Item Power descending — the answer to \"who should fly this?\". `blocking_nodes` names, per member, the specializations that would gain them the most Item Power, so the list doubles as a training plan.",
-        "operationId": "get_build_roster_fit",
-        "parameters": [
-          {
-            "description": "Build version ID",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Score the build with this member's Destiny Board levels.",
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          },
-          {
-            "description": "Which levels to apply: `current`, `max` or `fixed`. Defaults to `current`.",
-            "in": "path",
-            "name": "spec",
-            "required": true,
-            "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/SpecSource"
-                }
-              ]
-            }
-          },
-          {
-            "description": "The flat level for `spec=fixed`.",
-            "in": "path",
-            "name": "level",
-            "required": true,
-            "schema": {
-              "format": "int32",
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          },
-          {
-            "description": "Which loadout to score: `main` or `swap`. Defaults to `main`.",
-            "in": "path",
-            "name": "loadout",
-            "required": true,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseBuildRosterFit"
-                }
-              }
-            },
-            "description": "Members ranked against the build"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Missing combat.readiness.view"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Build not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ],
-        "summary": "Rank the roster against a build",
         "tags": [
           "comps"
         ]
@@ -35180,88 +34295,6 @@
           }
         ],
         "summary": "Get a comp's total market price",
-        "tags": [
-          "comps"
-        ]
-      }
-    },
-    "/api/comps/{id}/readiness": {
-      "get": {
-        "description": "For every seat the comp defines, finds the best-scoring candidate in the pool and rolls the result up to comp level: average Item Power now vs. at the ceiling, the weakest seats, per-build bench depth, and which seats nobody can currently fill. Pass `event_id` to score against that event's sign-ups instead of every specialised member in the guild. When `event_id` is given and that event's fights have a computed analytics rollup, the response also carries `observed`: the average Item Power the roster that actually fought turned out to have, and its delta against the prediction. `observed` is `None` — not an error — when no `event_id` was given, or that event has no analyzed fights yet.",
-        "operationId": "get_comp_readiness",
-        "parameters": [
-          {
-            "description": "Comp ID",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Score against this event's participants rather than every specialised member.",
-            "in": "path",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseCompReadinessView"
-                }
-              }
-            },
-            "description": "Readiness roll-up"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Missing combat.readiness.view"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Comp not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ],
-        "summary": "Get a composition's readiness roll-up",
         "tags": [
           "comps"
         ]
@@ -38864,7 +37897,7 @@
     },
     "/api/events/{id}/roster/suggestions": {
       "get": {
-        "description": "Solves every unassigned participant against every open seat with the Hungarian algorithm, maximising total Item-Power readiness plus signup preference. Never applied automatically — `POST .../roster/auto-fill` with `strategy: \"spec_optimal\"` applies the same solve for real.",
+        "description": "Solves every unassigned participant against every open seat with the Hungarian algorithm, maximising the total fit: the proficiency each member declared on the seat's weapon in My weapons (an officer-locked weapon is never placed), plus signup preference. Each placement carries its `score`. Never applied automatically — `POST .../roster/auto-fill` with `strategy: \"best_fit\"` applies the same solve for real.",
         "operationId": "get_roster_suggestions",
         "parameters": [
           {
@@ -38907,7 +37940,7 @@
                 }
               }
             },
-            "description": "Missing combat.readiness.view"
+            "description": "Not allowed to manage this event's roster"
           },
           "404": {
             "content": {
@@ -38925,7 +37958,7 @@
             "session_cookie": []
           }
         ],
-        "summary": "Preview an optimal roster assignment",
+        "summary": "Preview the best-fit roster assignment",
         "tags": [
           "events"
         ]
@@ -48348,7 +47381,7 @@
     },
     "/api/users/{user_id}/weapons": {
       "get": {
-        "description": "Readable by any authenticated member, like specializations.",
+        "description": "Readable by any authenticated member.",
         "operationId": "get_user_weapons",
         "parameters": [
           {
@@ -48405,7 +47438,7 @@
         ]
       },
       "put": {
-        "description": "Officer endpoint: replaces every weapon row of the member, including officer locks. Rows with no level and no lock are dropped. Requires `users.specializations.manage` even for the caller's own rows, because it can clear locks. Returns the full list afterwards.",
+        "description": "Officer endpoint: replaces every weapon row of the member, including officer locks. Rows with no level and no lock are dropped. Requires `users.weapons.manage` even for the caller's own rows, because it can clear locks. Returns the full list afterwards.",
         "operationId": "update_user_weapons",
         "parameters": [
           {
@@ -48458,7 +47491,7 @@
                 }
               }
             },
-            "description": "Missing users.specializations.manage"
+            "description": "Missing users.weapons.manage"
           },
           "404": {
             "content": {
