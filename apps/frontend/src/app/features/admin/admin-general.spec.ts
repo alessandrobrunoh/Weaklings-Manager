@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
@@ -15,11 +15,13 @@ describe('AdminGeneral', () => {
   let fixture: ComponentFixture<AdminGeneral>;
   let put: ReturnType<typeof vi.fn>;
   let branding: { preview: ReturnType<typeof vi.fn>; clearPreview: ReturnType<typeof vi.fn> };
+  let toasts: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 
-  const hexInputs = () =>
-    Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLInputElement>('.slot__hex'),
-    );
+  const host = () => fixture.nativeElement as HTMLElement;
+
+  const hexInputs = () => Array.from(host().querySelectorAll<HTMLInputElement>('.slot__hex'));
+
+  const saveButton = () => host().querySelector<HTMLButtonElement>('button[type="submit"]');
 
   const type = async (index: number, value: string) => {
     const input = hexInputs()[index];
@@ -29,9 +31,16 @@ describe('AdminGeneral', () => {
     fixture.detectChanges();
   };
 
+  const submit = async () => {
+    host().querySelector<HTMLFormElement>('form')?.dispatchEvent(new Event('submit'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
   beforeEach(async () => {
     put = vi.fn().mockReturnValue(of({ primary: '#22c55e', secondary: null, tertiary: null }));
     branding = { preview: vi.fn(), clearPreview: vi.fn() };
+    toasts = { success: vi.fn(), error: vi.fn() };
 
     await TestBed.configureTestingModule({
       imports: [AdminGeneral],
@@ -47,7 +56,7 @@ describe('AdminGeneral', () => {
         },
         { provide: BrandingService, useValue: branding },
         { provide: AuthService, useValue: { profile: signal({ tenant_name: 'Weaklings' }) } },
-        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+        { provide: ToastService, useValue: toasts },
         { provide: TranslateService, useValue: { t: (key: string) => key } },
       ],
     }).compileComponents();
@@ -66,6 +75,17 @@ describe('AdminGeneral', () => {
     expect(hexInputs()[1].value).toBe('');
   });
 
+  it('labels every colour input and marks the section as affecting members', () => {
+    expect(hexInputs()[0].labels?.[0]?.textContent?.trim()).toBe('admin.general.primary');
+    expect(host().textContent).toContain('admin.general.affectsMembers');
+  });
+
+  it('keeps save disabled until something changes', async () => {
+    expect(saveButton()?.disabled).toBe(true);
+    await type(0, '#22c55e');
+    expect(saveButton()?.disabled).toBe(false);
+  });
+
   it('previews every edit so the colour can be judged in place', async () => {
     await type(0, '#22c55e');
     expect(branding.preview).toHaveBeenCalledWith(
@@ -75,20 +95,15 @@ describe('AdminGeneral', () => {
 
   it('refuses to save a colour that is not a hex value', async () => {
     await type(0, 'not-a-colour');
-    const save = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
-      'button[type="submit"]',
-    );
-    expect(save?.disabled).toBe(true);
-    expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')).not.toBeNull();
+    expect(saveButton()?.disabled).toBe(true);
+    expect(host().querySelector('[role="alert"]')).not.toBeNull();
+    expect(hexInputs()[0].getAttribute('aria-invalid')).toBe('true');
   });
 
   /** Omitting a field would keep the old colour; `""` is the API's "clear it". */
   it('sends an empty string for a slot put back on the default', async () => {
     await type(0, '');
-    (fixture.nativeElement as HTMLElement)
-      .querySelector<HTMLFormElement>('form')
-      ?.dispatchEvent(new Event('submit'));
-    await fixture.whenStable();
+    await submit();
 
     expect(put).toHaveBeenCalledWith('api/admin/branding', {
       primary: '',
@@ -97,8 +112,36 @@ describe('AdminGeneral', () => {
     });
   });
 
-  it('drops the preview when the admin navigates away unsaved', () => {
+  it('reports the saved state after a successful save', async () => {
+    await type(0, '#22c55e');
+    await submit();
+
+    expect(host().textContent).toContain('admin.general.stateSaved');
+    expect(toasts.success).toHaveBeenCalledWith('admin.general.saved');
+    expect(saveButton()?.disabled).toBe(true);
+  });
+
+  it('shows a translated error and keeps the draft when save fails', async () => {
+    put.mockReturnValue(throwError(() => new Error('raw api text')));
+    await type(0, '#22c55e');
+    await submit();
+
+    expect(host().textContent).toContain('admin.general.saveError');
+    expect(host().textContent).not.toContain('raw api text');
+    expect(toasts.error).toHaveBeenCalledWith('admin.general.saveError');
+    expect(hexInputs()[0].value).toBe('#22c55e');
+  });
+
+  it('drops the preview when the admin navigates away with unsaved edits', async () => {
+    await type(0, '#22c55e');
     fixture.destroy();
     expect(branding.clearPreview).toHaveBeenCalled();
+  });
+
+  it('keeps the saved colours painted when the admin leaves after saving', async () => {
+    await type(0, '#22c55e');
+    await submit();
+    fixture.destroy();
+    expect(branding.clearPreview).not.toHaveBeenCalled();
   });
 });

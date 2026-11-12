@@ -1522,7 +1522,7 @@ export const en = {
   'admin.general.invalid': 'A colour must be a hex value like #dc2626.',
   'admin.general.saved': 'Colours saved. Other members see them on their next page load.',
   'admin.general.previewLabel': 'Preview',
-  'admin.general.previewHint': 'The whole app is already showing your changes — save to keep them, cancel to drop them.',
+  'admin.general.previewHint': 'The whole app is already showing your changes — save to keep them, or discard them to drop them.',
   'admin.general.whereTitle': 'Where these show up',
   'admin.general.wherePrimary': 'Primary paints buttons, the active nav row, focus outlines and the server badge.',
   'admin.general.whereSecondary': 'Secondary and tertiary blend into the brand gradient on headers and panels.',
@@ -3448,6 +3448,17 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-general
+  'admin.general.affectsMembers': 'Affects every member',
+  'admin.general.membersHint': 'These colours are shared by every member of this server. They change for everyone on their next page load, not while you are editing.',
+  'admin.general.discard': 'Discard changes',
+  'admin.general.stateClean': 'No unsaved changes',
+  'admin.general.stateDirty': 'Unsaved changes',
+  'admin.general.stateSaving': 'Saving…',
+  'admin.general.stateSaved': 'Saved',
+  'admin.general.stateError': 'Not saved',
+  'admin.general.saveError': 'Could not save. Your changes are still here; try again.',
+  'admin.general.loadError': 'Could not load the brand colours.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

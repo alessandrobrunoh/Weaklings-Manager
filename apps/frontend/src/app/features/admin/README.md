@@ -16,6 +16,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
+- `AdminGeneral` saves the brand colours as one `PUT api/admin/branding`; an empty string clears a slot. The save state is `clean | dirty | saving | saved | error`, `saved` lasts until the next edit, and a failed save keeps the draft. Leaving with unsaved edits drops the preview; saved colours stay painted.
 
 ## Side Effects
 
