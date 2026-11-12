@@ -3451,4 +3451,16 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/admin-features
+  'admin.features.area.combat': 'Combates e inteligencia',
+  'admin.features.area.members': 'Miembros y eventos',
+  'admin.features.area.economy': 'Dinero y botín',
+  'admin.features.area.platform': 'Gremio y plataforma',
+  'admin.features.area.other': 'Otros módulos',
+  'admin.features.lock.rank': 'Bloqueado: no incluido en tu Rango.',
+  'admin.features.lock.noRank': 'Bloqueado: el gremio no tiene Rango, así que no se incluye ningún módulo opcional.',
+  'admin.features.lock.platform': 'Bloqueado: lo gestiona la plataforma, no tu Rango.',
+  'admin.features.unsaved': 'Tienes cambios sin guardar.',
+  'admin.features.noChanges': 'No hay cambios que guardar.',
+  'admin.features.saveFailed': 'No se pudieron guardar los módulos. Tus cambios siguen aquí.',
 };

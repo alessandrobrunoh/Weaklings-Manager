@@ -3460,4 +3460,16 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/admin-features
+  'admin.features.area.combat': 'Combattimenti e intel',
+  'admin.features.area.members': 'Membri ed eventi',
+  'admin.features.area.economy': 'Denaro e bottino',
+  'admin.features.area.platform': 'Gilda e piattaforma',
+  'admin.features.area.other': 'Altri moduli',
+  'admin.features.lock.rank': 'Bloccato: non incluso nel tuo Rank.',
+  'admin.features.lock.noRank': 'Bloccato: la gilda non ha un Rank, quindi nessun modulo opzionale è incluso.',
+  'admin.features.lock.platform': 'Bloccato: il modulo è gestito dalla piattaforma, non dal tuo Rank.',
+  'admin.features.unsaved': 'Hai modifiche non salvate.',
+  'admin.features.noChanges': 'Nessuna modifica da salvare.',
+  'admin.features.saveFailed': 'Non è stato possibile salvare i moduli. Le modifiche sono ancora qui.',
 };

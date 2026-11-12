@@ -3269,4 +3269,16 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/admin-features
+  'admin.features.area.combat': 'Combats et renseignement',
+  'admin.features.area.members': 'Membres et événements',
+  'admin.features.area.economy': 'Argent et butin',
+  'admin.features.area.platform': 'Guilde et plateforme',
+  'admin.features.area.other': 'Autres modules',
+  'admin.features.lock.rank': 'Verrouillé : non inclus dans ton Rang.',
+  'admin.features.lock.noRank': 'Verrouillé : la guilde n’a pas de Rang, donc aucun module optionnel n’est inclus.',
+  'admin.features.lock.platform': 'Verrouillé : géré par la plateforme, pas par ton Rang.',
+  'admin.features.unsaved': 'Tu as des modifications non enregistrées.',
+  'admin.features.noChanges': 'Aucune modification à enregistrer.',
+  'admin.features.saveFailed': 'Les modules n’ont pas pu être enregistrés. Tes modifications sont toujours là.',
 };

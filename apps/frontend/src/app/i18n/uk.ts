@@ -3265,4 +3265,16 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/admin-features
+  'admin.features.area.combat': 'Бої та розвідка',
+  'admin.features.area.members': 'Учасники та події',
+  'admin.features.area.economy': 'Гроші та здобич',
+  'admin.features.area.platform': 'Гільдія та платформа',
+  'admin.features.area.other': 'Інші модулі',
+  'admin.features.lock.rank': 'Заблоковано: не входить до твого рангу.',
+  'admin.features.lock.noRank': 'Заблоковано: у гільдії немає рангу, тож необов’язкові модулі не входять.',
+  'admin.features.lock.platform': 'Заблоковано: керує платформа, а не твій ранг.',
+  'admin.features.unsaved': 'Є незбережені зміни.',
+  'admin.features.noChanges': 'Немає змін для збереження.',
+  'admin.features.saveFailed': 'Не вдалося зберегти модулі. Твої зміни збережено тут.',
 };
