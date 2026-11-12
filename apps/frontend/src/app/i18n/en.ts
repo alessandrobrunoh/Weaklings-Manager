@@ -3448,6 +3448,28 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-alliance
+  'admin.alliance.about': 'About this alliance',
+  'admin.alliance.yourStatus': 'Your guild',
+  'admin.alliance.albionLink': 'Albion alliance link',
+  'admin.alliance.linked': 'Linked',
+  'admin.alliance.notLinked': 'Not linked',
+  'admin.alliance.membersHint': 'Guilds in this alliance and where each one stands.',
+  'admin.alliance.membersEmpty': 'No member guilds yet. Link the Albion alliance to attach them.',
+  'admin.alliance.memberActions': 'Actions for {name}',
+  'admin.alliance.statActive': 'Active guilds',
+  'admin.alliance.statPending': 'Pending invites',
+  'admin.alliance.statPendingHint': 'Guild owners still have to accept.',
+  'admin.alliance.statLeft': 'Left',
+  'admin.alliance.statusActive': 'Active',
+  'admin.alliance.statusPending': 'Pending',
+  'admin.alliance.statusLeft': 'Left',
+  'admin.alliance.sharedTitle': 'What is shared',
+  'admin.alliance.sharedHint': 'Discord roles and pings the alliance uses. Splits, builds and compositions are shared from their own pages.',
+  'admin.alliance.setupHint': 'Choose the Albion alliance, then the member guilds already set up on this Discord.',
+  'admin.alliance.resultsLabel': 'Alliances found',
+  'admin.alliance.guildsLabel': 'Member guilds to attach',
+  'admin.alliance.linkedDone': 'Alliance linked.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
