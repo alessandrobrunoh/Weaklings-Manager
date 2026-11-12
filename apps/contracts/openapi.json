@@ -950,74 +950,6 @@
         ],
         "type": "object"
       },
-      "AlbionLinkRequestView": {
-        "description": "One open claim as an officer sees it.",
-        "properties": {
-          "albion_guild_name": {
-            "description": "The character's Albion guild when the claim was made, if it had one.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "albion_player_id": {
-            "description": "The character being claimed.",
-            "type": "string"
-          },
-          "albion_player_name": {
-            "description": "The character's name when the claim was made.",
-            "type": "string"
-          },
-          "character_already_linked": {
-            "description": "`true` when the character is already linked to an account, so approving would fail with\n`409` until that link is removed.",
-            "type": "boolean"
-          },
-          "competing_requests": {
-            "description": "How many *other* open claims name the same character; the officer must pick the real owner.",
-            "format": "int32",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "discord_id": {
-            "description": "Discord id of the account asking for the link.",
-            "type": "string"
-          },
-          "id": {
-            "description": "Request id, as used by the approve/reject endpoints.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "requested_at": {
-            "description": "RFC 3339 timestamp.",
-            "type": "string"
-          },
-          "user_id": {
-            "description": "Internal user id of that account, when it has a row in this tenant.",
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "username": {
-            "description": "Username of that account, when it has a row in this tenant.",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "discord_id",
-          "albion_player_id",
-          "albion_player_name",
-          "requested_at",
-          "competing_requests",
-          "character_already_linked"
-        ],
-        "type": "object"
-      },
       "AlbionLinkStatus": {
         "description": "The current Discord-to-Albion-player link status for a user, as returned by\n`GET /albion/link/me` and `POST /albion/link`.\n\nWhen `linked` is `false`, the other three fields are entirely absent from the JSON (not sent\nas `null`) — check `linked` first before reading them.",
         "example": {
@@ -1054,39 +986,10 @@
               "string",
               "null"
             ]
-          },
-          "pending": {
-            "description": "`true` while a self-service claim waits for an officer. A pending claim is **not** a link:\n`linked` stays `false` and nothing keyed on the character (guild role, loot, regears)\napplies until it is approved.",
-            "type": "boolean"
-          },
-          "pending_albion_player_id": {
-            "description": "Present only when `pending` is `true`: the character the account asked to link.",
-            "example": "aPngkjfLT2CGiZoWXLr8UQ",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "pending_albion_player_name": {
-            "description": "Present only when `pending` is `true`.",
-            "example": "Kay",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "requested_at": {
-            "description": "Present only when `pending` is `true`. RFC 3339 timestamp.",
-            "example": "2026-07-08T02:15:00.631376+00:00",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
-          "linked",
-          "pending"
+          "linked"
         ],
         "type": "object"
       },
@@ -1592,28 +1495,6 @@
             "description": "The current market rows returned by Albion Online Data.",
             "items": {
               "$ref": "#/components/schemas/AlbionDataMarketPrice"
-            },
-            "type": "array"
-          },
-          "status": {
-            "description": "Indicates the outcome of the request, always \"success\".",
-            "example": "success",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponseAlbionLinkRequests": {
-        "description": "`OpenAPI` schema wrapper for the list of pending Albion link requests.",
-        "properties": {
-          "data": {
-            "description": "Open requests, oldest first.",
-            "items": {
-              "$ref": "#/components/schemas/AlbionLinkRequestView"
             },
             "type": "array"
           },
@@ -5043,6 +4924,329 @@
         ],
         "type": "object"
       },
+      "ApiResponse_IntelComps": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "description": "`GET /api/intel/comps`.",
+            "properties": {
+              "comps": {
+                "items": {
+                  "$ref": "#/components/schemas/CompUsage"
+                },
+                "type": "array"
+              },
+              "period": {
+                "$ref": "#/components/schemas/PeriodView"
+              },
+              "total_fights": {
+                "description": "Fights in the period, with or without a comp.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "unattributed_fights": {
+                "description": "Fights not linked to an event, so counted in no comp row.",
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "period",
+              "comps",
+              "total_fights",
+              "unattributed_fights"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_IntelFightList": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "description": "`GET /api/intel/fights`: a page of fights plus what the filters were applied to.",
+            "properties": {
+              "comps": {
+                "description": "Comps fielded in the period (before filtering).",
+                "items": {
+                  "$ref": "#/components/schemas/CompOption"
+                },
+                "type": "array"
+              },
+              "current_page": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/IntelFightRow"
+                },
+                "type": "array"
+              },
+              "limit": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "opponents": {
+                "description": "Enemy guilds met in the period (before filtering), most frequent first.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "period": {
+                "$ref": "#/components/schemas/PeriodView"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/PeriodTotals",
+                "description": "Totals over every fight matching the filters, not just this page."
+              },
+              "total_items": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total_pages": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "period",
+              "items",
+              "total_items",
+              "total_pages",
+              "current_page",
+              "limit",
+              "summary",
+              "opponents",
+              "comps"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_IntelOverview": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "description": "`GET /api/intel/overview`.",
+            "properties": {
+              "current": {
+                "$ref": "#/components/schemas/PeriodTotals"
+              },
+              "data_quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              },
+              "period": {
+                "$ref": "#/components/schemas/PeriodView"
+              },
+              "previous": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PeriodTotals",
+                    "description": "The same figures for the preceding window of equal length. `None` for `period=all`."
+                  }
+                ]
+              },
+              "recent_fights": {
+                "description": "The newest fights in the period.",
+                "items": {
+                  "$ref": "#/components/schemas/IntelFightRow"
+                },
+                "type": "array"
+              },
+              "top_opponents": {
+                "description": "The enemy guilds we met most often.",
+                "items": {
+                  "$ref": "#/components/schemas/OpponentRecord"
+                },
+                "type": "array"
+              },
+              "weekly": {
+                "description": "One bucket per calendar week, oldest first, quiet weeks included.",
+                "items": {
+                  "$ref": "#/components/schemas/WeekBucket"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "period",
+              "current",
+              "weekly",
+              "recent_fights",
+              "top_opponents",
+              "data_quality"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_IntelPlayer": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "description": "`GET /api/intel/roster/{user_id}`.",
+            "properties": {
+              "builds": {
+                "items": {
+                  "$ref": "#/components/schemas/BuildUse"
+                },
+                "type": "array"
+              },
+              "comps": {
+                "items": {
+                  "$ref": "#/components/schemas/PlayerCompUse"
+                },
+                "type": "array"
+              },
+              "fights": {
+                "description": "Newest first, capped.",
+                "items": {
+                  "$ref": "#/components/schemas/PlayerFightRow"
+                },
+                "type": "array"
+              },
+              "member": {
+                "$ref": "#/components/schemas/RosterMember"
+              },
+              "period": {
+                "$ref": "#/components/schemas/PeriodView"
+              },
+              "roles": {
+                "items": {
+                  "$ref": "#/components/schemas/RoleShare"
+                },
+                "type": "array"
+              },
+              "total_fights": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "weapons": {
+                "items": {
+                  "$ref": "#/components/schemas/WeaponShare"
+                },
+                "type": "array"
+              },
+              "weekly": {
+                "description": "One bucket per week, oldest first, quiet weeks included.",
+                "items": {
+                  "$ref": "#/components/schemas/PlayerWeek"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "period",
+              "total_fights",
+              "member",
+              "weekly",
+              "fights",
+              "weapons",
+              "roles",
+              "builds",
+              "comps"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_IntelRoster": {
+        "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
+        "properties": {
+          "data": {
+            "description": "`GET /api/intel/roster`.",
+            "properties": {
+              "members": {
+                "items": {
+                  "$ref": "#/components/schemas/RosterMember"
+                },
+                "type": "array"
+              },
+              "period": {
+                "$ref": "#/components/schemas/PeriodView"
+              },
+              "scope": {
+                "description": "`all` for officers, `self` when the caller sees only their own row.",
+                "type": "string"
+              },
+              "total_fights": {
+                "description": "Fights with a computed rollup: the denominator of every attendance rate.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "unlinked_players": {
+                "description": "Empty unless `scope` is `all`.",
+                "items": {
+                  "$ref": "#/components/schemas/UnlinkedPlayer"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "period",
+              "total_fights",
+              "scope",
+              "members",
+              "unlinked_players"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Indicates the outcome of the request, always \"success\" for this envelope.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_MatchupReport": {
         "description": "The standard success wrapper envelope (`JSend` style) for generics.\n\nAnnotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.",
         "properties": {
@@ -7073,8 +7277,8 @@
                   "format": "int64",
                   "type": "integer"
                 },
-                "is_synchronized_copy": {
-                  "description": "Whether the copy is currently linked for synchronization.",
+                "is_link": {
+                  "description": "True when this view is a link to an event owned by another tenant (the alliance hub of a\nguild event, or a member guild of an alliance event). Roster, signups, comp, split and VOD\nlive on the owning event; requests addressed to the link are served by it.",
                   "type": "boolean"
                 },
                 "link_attempts": {
@@ -7133,6 +7337,7 @@
                   "type": "integer"
                 },
                 "source_event_id": {
+                  "description": "The event's id in [`Self::source_tenant_id`]; absent on events this tenant owns.",
                   "format": "int64",
                   "type": [
                     "integer",
@@ -7140,7 +7345,14 @@
                   ]
                 },
                 "source_tenant_id": {
-                  "description": "Canonical source identity for synchronized copies; both are absent on owned events.",
+                  "description": "Tenant that owns the event when this view is a link to another tenant's event; absent on\nevents this tenant owns.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source_tenant_name": {
+                  "description": "Display name of [`Self::source_tenant_id`], filled on the detail and list views of a link.",
                   "type": [
                     "string",
                     "null"
@@ -7213,8 +7425,7 @@
                 "link_attempts",
                 "ping_alliance",
                 "vod_forum_post_enabled",
-                "vod_forum_post_status",
-                "is_synchronized_copy"
+                "vod_forum_post_status"
               ],
               "type": "object"
             },
@@ -9158,6 +9369,20 @@
         ],
         "type": "object"
       },
+      "BlockUserRequest": {
+        "description": "Body of `POST /api/users/{user_id}/block`.",
+        "properties": {
+          "reason": {
+            "description": "Why the member is blocked (at most 500 characters). Optional; shown to `roles.manage`\nholders only, never to the blocked member.",
+            "example": "Spamming the loot channel",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "BrandColorsView": {
         "description": "The guild's three brand colours, as the web app reads them.\n\nKept apart from [`GuildSettingsView`] even though they share a row: this is\nthe one slice of guild settings every member's session carries, so it stays\na small payload of its own rather than dragging the Discord configuration\nalong with it.",
         "properties": {
@@ -9870,6 +10095,33 @@
         ],
         "type": "object"
       },
+      "BuildUse": {
+        "description": "A build the member signed up with for events they then fought in.",
+        "properties": {
+          "build_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "events": {
+            "description": "Events fought with this build as the primary choice.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "name",
+          "role",
+          "events"
+        ],
+        "type": "object"
+      },
       "BuildVersionRef": {
         "description": "One sibling version of a build, for the version switcher.",
         "example": {
@@ -10463,6 +10715,23 @@
         },
         "type": "object"
       },
+      "CompOption": {
+        "description": "A comp offered as a filter option.",
+        "properties": {
+          "comp_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "comp_id",
+          "name"
+        ],
+        "type": "object"
+      },
       "CompPerformanceView": {
         "description": "Historical performance of a comp across linked event sessions.",
         "properties": {
@@ -10688,6 +10957,68 @@
           "created_at",
           "build_count",
           "total_quantity"
+        ],
+        "type": "object"
+      },
+      "CompUsage": {
+        "description": "One comp we fielded.",
+        "properties": {
+          "best_matchup": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OpponentRecord",
+                "description": "Enemy guild we beat more often than not, best rate first."
+              }
+            ]
+          },
+          "comp_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "events": {
+            "description": "Distinct events that fielded the comp.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "matchups": {
+            "description": "Most frequent opponents, capped.",
+            "items": {
+              "$ref": "#/components/schemas/OpponentRecord"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/PeriodTotals",
+            "description": "Record and combat figures over the fights played with this comp."
+          },
+          "worst_matchup": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OpponentRecord",
+                "description": "Enemy guild that beat us more often than not, worst rate first."
+              }
+            ]
+          }
+        },
+        "required": [
+          "comp_id",
+          "name",
+          "events",
+          "totals",
+          "last_used_at",
+          "matchups"
         ],
         "type": "object"
       },
@@ -11784,6 +12115,32 @@
         },
         "required": [
           "discord_id"
+        ],
+        "type": "object"
+      },
+      "DataQuality": {
+        "description": "How complete the data behind a response is.",
+        "properties": {
+          "fights_unknown_outcome": {
+            "description": "Fights whose outcome is `unknown`: counted as fights, absent from the win rate.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights_without_comp": {
+            "description": "Fights not linked to an event, so attributable to no comp.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights_without_stats": {
+            "description": "Fights with no computed rollup: counted as fights, absent from combat figures.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fights_without_stats",
+          "fights_unknown_outcome",
+          "fights_without_comp"
         ],
         "type": "object"
       },
@@ -14533,8 +14890,8 @@
             "format": "int64",
             "type": "integer"
           },
-          "is_synchronized_copy": {
-            "description": "Whether the copy is currently linked for synchronization.",
+          "is_link": {
+            "description": "True when this view is a link to an event owned by another tenant (the alliance hub of a\nguild event, or a member guild of an alliance event). Roster, signups, comp, split and VOD\nlive on the owning event; requests addressed to the link are served by it.",
             "type": "boolean"
           },
           "link_attempts": {
@@ -14593,6 +14950,7 @@
             "type": "integer"
           },
           "source_event_id": {
+            "description": "The event's id in [`Self::source_tenant_id`]; absent on events this tenant owns.",
             "format": "int64",
             "type": [
               "integer",
@@ -14600,7 +14958,14 @@
             ]
           },
           "source_tenant_id": {
-            "description": "Canonical source identity for synchronized copies; both are absent on owned events.",
+            "description": "Tenant that owns the event when this view is a link to another tenant's event; absent on\nevents this tenant owns.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_tenant_name": {
+            "description": "Display name of [`Self::source_tenant_id`], filled on the detail and list views of a link.",
             "type": [
               "string",
               "null"
@@ -14673,8 +15038,7 @@
           "link_attempts",
           "ping_alliance",
           "vod_forum_post_enabled",
-          "vod_forum_post_status",
-          "is_synchronized_copy"
+          "vod_forum_post_status"
         ],
         "type": "object"
       },
@@ -16984,6 +17348,392 @@
         ],
         "type": "object"
       },
+      "IntelComps": {
+        "description": "`GET /api/intel/comps`.",
+        "properties": {
+          "comps": {
+            "items": {
+              "$ref": "#/components/schemas/CompUsage"
+            },
+            "type": "array"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodView"
+          },
+          "total_fights": {
+            "description": "Fights in the period, with or without a comp.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "unattributed_fights": {
+            "description": "Fights not linked to an event, so counted in no comp row.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "comps",
+          "total_fights",
+          "unattributed_fights"
+        ],
+        "type": "object"
+      },
+      "IntelFightList": {
+        "description": "`GET /api/intel/fights`: a page of fights plus what the filters were applied to.",
+        "properties": {
+          "comps": {
+            "description": "Comps fielded in the period (before filtering).",
+            "items": {
+              "$ref": "#/components/schemas/CompOption"
+            },
+            "type": "array"
+          },
+          "current_page": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IntelFightRow"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "opponents": {
+            "description": "Enemy guilds met in the period (before filtering), most frequent first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodView"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PeriodTotals",
+            "description": "Totals over every fight matching the filters, not just this page."
+          },
+          "total_items": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total_pages": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "items",
+          "total_items",
+          "total_pages",
+          "current_page",
+          "limit",
+          "summary",
+          "opponents",
+          "comps"
+        ],
+        "type": "object"
+      },
+      "IntelFightRow": {
+        "description": "One fight, from our side.",
+        "properties": {
+          "avg_item_power": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "comp_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "comp_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "death_fame": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deaths": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "enemy_avg_item_power": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "enemy_players": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "estimated_silver_lost": {
+            "description": "Withheld (`None`) from callers without `intel.report.view`.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "event_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "event_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fight_id": {
+            "description": "Canonical fight id; the detail page lives at `/fights/{id}`.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kd_ratio": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "kill_fame": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kills": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "opponent": {
+            "description": "The enemy guild with the most players across the fight's segments.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "our_players": {
+            "description": "Distinct friendly players. `None` when the fight has no computed rollup.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BattleOutcome",
+            "description": "The stored `fights.outcome`."
+          },
+          "segments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fight_id",
+          "started_at",
+          "outcome",
+          "segments"
+        ],
+        "type": "object"
+      },
+      "IntelOverview": {
+        "description": "`GET /api/intel/overview`.",
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/PeriodTotals"
+          },
+          "data_quality": {
+            "$ref": "#/components/schemas/DataQuality"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodView"
+          },
+          "previous": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PeriodTotals",
+                "description": "The same figures for the preceding window of equal length. `None` for `period=all`."
+              }
+            ]
+          },
+          "recent_fights": {
+            "description": "The newest fights in the period.",
+            "items": {
+              "$ref": "#/components/schemas/IntelFightRow"
+            },
+            "type": "array"
+          },
+          "top_opponents": {
+            "description": "The enemy guilds we met most often.",
+            "items": {
+              "$ref": "#/components/schemas/OpponentRecord"
+            },
+            "type": "array"
+          },
+          "weekly": {
+            "description": "One bucket per calendar week, oldest first, quiet weeks included.",
+            "items": {
+              "$ref": "#/components/schemas/WeekBucket"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "period",
+          "current",
+          "weekly",
+          "recent_fights",
+          "top_opponents",
+          "data_quality"
+        ],
+        "type": "object"
+      },
+      "IntelPlayer": {
+        "description": "`GET /api/intel/roster/{user_id}`.",
+        "properties": {
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/BuildUse"
+            },
+            "type": "array"
+          },
+          "comps": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerCompUse"
+            },
+            "type": "array"
+          },
+          "fights": {
+            "description": "Newest first, capped.",
+            "items": {
+              "$ref": "#/components/schemas/PlayerFightRow"
+            },
+            "type": "array"
+          },
+          "member": {
+            "$ref": "#/components/schemas/RosterMember"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodView"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleShare"
+            },
+            "type": "array"
+          },
+          "total_fights": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "weapons": {
+            "items": {
+              "$ref": "#/components/schemas/WeaponShare"
+            },
+            "type": "array"
+          },
+          "weekly": {
+            "description": "One bucket per week, oldest first, quiet weeks included.",
+            "items": {
+              "$ref": "#/components/schemas/PlayerWeek"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "period",
+          "total_fights",
+          "member",
+          "weekly",
+          "fights",
+          "weapons",
+          "roles",
+          "builds",
+          "comps"
+        ],
+        "type": "object"
+      },
+      "IntelRoster": {
+        "description": "`GET /api/intel/roster`.",
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/RosterMember"
+            },
+            "type": "array"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodView"
+          },
+          "scope": {
+            "description": "`all` for officers, `self` when the caller sees only their own row.",
+            "type": "string"
+          },
+          "total_fights": {
+            "description": "Fights with a computed rollup: the denominator of every attendance rate.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "unlinked_players": {
+            "description": "Empty unless `scope` is `all`.",
+            "items": {
+              "$ref": "#/components/schemas/UnlinkedPlayer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "period",
+          "total_fights",
+          "scope",
+          "members",
+          "unlinked_players"
+        ],
+        "type": "object"
+      },
       "IntelScoutCategory": {
         "description": "The engagement bracket a scouted composition belongs to.\n\nDerived purely from enemy headcount, which is crude but stable: it is the\none property of a comp that is always observable, even when the kill feed\ncovers only a fraction of the players. Stored as its `snake_case` string,\nmatching how `builds.role` is persisted.",
         "enum": [
@@ -18552,6 +19302,45 @@
         ],
         "type": "object"
       },
+      "OpponentRecord": {
+        "description": "Our record against one enemy guild.",
+        "properties": {
+          "draws": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "losses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "opponent": {
+            "type": "string"
+          },
+          "win_rate": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "opponent",
+          "fights",
+          "wins",
+          "losses",
+          "draws"
+        ],
+        "type": "object"
+      },
       "OriginRef": {
         "description": "Reference to the authoritative entity a read-only copy points back to.\n\nFields the legacy data does not record are `None` (and absent from the JSON);\nthe `sync_copies` backing fills them all.",
         "properties": {
@@ -19999,6 +20788,148 @@
         },
         "type": "object"
       },
+      "PeriodTotals": {
+        "description": "Combat totals over a set of fights.\n\nRates are `None` when their denominator is empty, so a client can tell \"no data\" from \"zero\".\nCombat figures cover only fights that have a computed rollup (`fights_with_stats`).",
+        "properties": {
+          "avg_item_power": {
+            "description": "Mean friendly item power across player appearances.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_players": {
+            "description": "Mean distinct friendly players per fight.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "death_fame": {
+            "description": "Fame the enemy earned by killing our players.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "deaths": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "decided": {
+            "description": "Fights with a decided outcome (`wins + losses + draws`).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "draws": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "enemy_avg_item_power": {
+            "description": "Mean enemy item power across player appearances.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "estimated_silver_lost": {
+            "description": "Estimated silver value of our equipment lost. Present only for callers holding\n`intel.report.view`; `None` otherwise (and `0` is a real figure, not a placeholder).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fights": {
+            "description": "Fights in the set.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights_with_stats": {
+            "description": "Fights whose combat rollup has been computed.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kd_ratio": {
+            "description": "Kill/death ratio; equals `kills` when there were no deaths. `None` without rollups.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "kill_fame": {
+            "description": "Fame our side earned from kills.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kills": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "losses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Fights whose outcome could not be decided; never counted as losses.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "win_rate": {
+            "description": "Percentage `0..=100`, `wins / decided`. `None` when nothing was decided.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fights",
+          "wins",
+          "losses",
+          "draws",
+          "unknown",
+          "decided",
+          "fights_with_stats",
+          "kills",
+          "deaths",
+          "kill_fame",
+          "death_fame"
+        ],
+        "type": "object"
+      },
+      "PeriodView": {
+        "description": "The window a response was computed over.",
+        "properties": {
+          "from": {
+            "description": "Window start, RFC 3339. For `all`, the first fight on record; `None` when there is none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "description": "`7d`, `30d`, `90d`, `all` or `custom`.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Window end, RFC 3339.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "to"
+        ],
+        "type": "object"
+      },
       "PermissionCatalogEntry": {
         "description": "Grouping metadata for one assignable permission key.",
         "properties": {
@@ -20231,6 +21162,129 @@
         ],
         "type": "object"
       },
+      "PlayerCompUse": {
+        "description": "A comp the member fought in.",
+        "properties": {
+          "comp_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "draws": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "losses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "wins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comp_id",
+          "name",
+          "fights",
+          "wins",
+          "losses",
+          "draws"
+        ],
+        "type": "object"
+      },
+      "PlayerFightRow": {
+        "description": "One fight a member took part in.",
+        "properties": {
+          "avg_item_power": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "comp_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "comp_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "death_fame": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deaths": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "event_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fight_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kill_fame": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kills": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "opponent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BattleOutcome"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "weapon": {
+            "description": "The weapon the member used most in this fight.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "fight_id",
+          "started_at",
+          "outcome",
+          "kills",
+          "deaths",
+          "kill_fame",
+          "death_fame"
+        ],
+        "type": "object"
+      },
       "PlayerLossEstimate": {
         "description": "Per-player loss estimate for one battle.",
         "properties": {
@@ -20388,6 +21442,53 @@
           "deaths",
           "kill_fame",
           "silver_lost"
+        ],
+        "type": "object"
+      },
+      "PlayerWeek": {
+        "description": "One week of a member's activity.",
+        "properties": {
+          "deaths": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "draws": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kill_fame": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kills": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "losses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "week_start": {
+            "type": "string"
+          },
+          "wins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "week_start",
+          "fights",
+          "wins",
+          "losses",
+          "draws",
+          "kills",
+          "deaths",
+          "kill_fame"
         ],
         "type": "object"
       },
@@ -21686,6 +22787,163 @@
           "is_staff",
           "grants_staff",
           "permissions"
+        ],
+        "type": "object"
+      },
+      "RoleShare": {
+        "description": "One role's share of a member's appearances.",
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "count"
+        ],
+        "type": "object"
+      },
+      "RosterMember": {
+        "description": "One member's combat record over the period.",
+        "properties": {
+          "active": {
+            "description": "Still present in the Discord server. Former members appear only if they fought.",
+            "type": "boolean"
+          },
+          "albion_name": {
+            "description": "The linked Albion character, when the member has linked one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attendance_rate": {
+            "description": "`fights / fights with a computed rollup`, as a percentage. `None` when there were none.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_item_power": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "death_fame": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deaths": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "draws": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights": {
+            "description": "Fights the member took part in.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "is_officer": {
+            "type": "boolean"
+          },
+          "kd_ratio": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "kill_fame": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kills": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_fight_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_fight_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "losses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "main_role": {
+            "description": "Most-played role (`dps`, `healer`, ...), when any role was observed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "weapons": {
+            "description": "Most-played main-hand weapons (item id with the tier stripped), most used first.",
+            "items": {
+              "$ref": "#/components/schemas/WeaponShare"
+            },
+            "type": "array"
+          },
+          "win_rate": {
+            "description": "Win rate of the fights the member attended.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "role",
+          "is_officer",
+          "active",
+          "linked",
+          "fights",
+          "wins",
+          "losses",
+          "draws",
+          "kills",
+          "deaths",
+          "kill_fame",
+          "death_fame",
+          "weapons"
         ],
         "type": "object"
       },
@@ -24075,6 +25333,23 @@
         ],
         "type": "object"
       },
+      "UnlinkedPlayer": {
+        "description": "A character seen fighting for us that no member has linked.",
+        "properties": {
+          "fights": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fights"
+        ],
+        "type": "object"
+      },
       "UnreadCountView": {
         "description": "Unread badge payload.",
         "properties": {
@@ -25644,6 +26919,31 @@
       "UserProfile": {
         "description": "The profile of a user containing identification and authorization details.",
         "properties": {
+          "blocked": {
+            "description": "`true` when an officer blocked this member from the manager. Always `false` for viewers\nwithout `roles.manage`, who are not told who is blocked.",
+            "type": "boolean"
+          },
+          "blocked_at": {
+            "description": "When the member was blocked, RFC 3339. Present only while `blocked` is `true` and only\nfor `roles.manage` viewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocked_by": {
+            "description": "Display name of the officer who blocked the member. Same visibility as `blocked_at`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocked_reason": {
+            "description": "The officer's optional note. Same visibility as `blocked_at`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "email": {
             "description": "The registered email address of the user. Only present for the user themselves and for\nviewers holding `users.create` or `roles.manage` (or the tenant owner); everyone else gets\nthe field omitted.",
             "example": "dev@example.com",
@@ -25673,7 +26973,8 @@
         "required": [
           "id",
           "username",
-          "role"
+          "role",
+          "blocked"
         ],
         "type": "object"
       },
@@ -26049,6 +27350,68 @@
         "required": [
           "weapon",
           "count"
+        ],
+        "type": "object"
+      },
+      "WeekBucket": {
+        "description": "One calendar week (Monday-anchored, UTC) of the trend.",
+        "properties": {
+          "avg_players": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "deaths": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "draws": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fights": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kill_fame": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kills": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "losses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "week_start": {
+            "description": "Monday 00:00 UTC, RFC 3339.",
+            "type": "string"
+          },
+          "win_rate": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "week_start",
+          "fights",
+          "wins",
+          "losses",
+          "draws",
+          "kills",
+          "deaths",
+          "kill_fame"
         ],
         "type": "object"
       },
@@ -27326,7 +28689,7 @@
     },
     "/api/albion/link": {
       "delete": {
-        "description": "No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. When the account has only an open request (not yet approved), this withdraws it. Not idempotent-by-design: calling this when there's neither a link nor a request returns `404`, so a naive \"always call unlink then re-link\" client pattern must handle that case (or check `GET /albion/link/me` first).",
+        "description": "No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. Not idempotent-by-design: calling this when there's no link returns `404`, so a naive \"always call unlink then re-link\" client pattern must handle that case (or check `GET /albion/link/me` first).",
         "operationId": "unlink_player",
         "responses": {
           "200": {
@@ -27350,7 +28713,7 @@
                 }
               }
             },
-            "description": "No link and no open request exist for this account"
+            "description": "No link exists for this account"
           }
         },
         "security": [
@@ -27364,7 +28727,7 @@
         ]
       },
       "post": {
-        "description": "Albion offers no way to prove who owns a character, so a self-service link is a *request* until an officer approves it. The response is `200` with `pending: true` and `linked: false`: no guild role, nickname change, alliance copy or loot/regear attribution happens until `POST /albion/link/requests/{id}/approve`. Asking again replaces the account's open request. A caller holding `roles.manage` is linked immediately, with the effects below. Strictly 1:1 once linked: one Discord account holds at most one link, and one Albion character belongs to at most one account — enforced by unique constraints in the database. The server resolves the selected player from Albion and persists that authoritative name, so callers may claim characters in any guild or without a guild. On approval the backend best-effort sets the account's Discord guild nickname to the character name and assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild. Discord failures never roll back the link. To withdraw a request, `DELETE /albion/link`.",
+        "description": "The link applies immediately: the server resolves the selected player from Albion and persists that authoritative name, so callers may link characters in any guild or without a guild. Strictly 1:1: one Discord account holds at most one link, and one Albion character belongs to at most one account — enforced by unique constraints in the database, so a character already linked to someone else answers `409` (an officer holding `roles.manage` can re-assign it with `POST /albion/link/users/{user_id}`). After the link the backend best-effort sets the account's Discord guild nickname to the character name, assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild, copies the link to paired alliance/guild tenants, and posts a notice to the guild's audit-log Discord channel. Discord failures never roll back the link.",
         "operationId": "link_player",
         "requestBody": {
           "content": {
@@ -27374,7 +28737,7 @@
               }
             }
           },
-          "description": "The Albion character to claim, as picked from GET /albion/search.",
+          "description": "The Albion character to link, as picked from GET /albion/search.",
           "required": true
         },
         "responses": {
@@ -27386,7 +28749,7 @@
                 }
               }
             },
-            "description": "Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true)"
+            "description": "Linked; linked is true"
           },
           "401": {
             "content": {
@@ -27424,7 +28787,7 @@
             "session_cookie": []
           }
         ],
-        "summary": "Ask to link the caller's Discord account to one Albion character",
+        "summary": "Link the caller's Discord account to one Albion character",
         "tags": [
           "albion"
         ]
@@ -27462,200 +28825,6 @@
           }
         ],
         "summary": "Check whether the caller's Discord account is linked to an Albion character",
-        "tags": [
-          "albion"
-        ]
-      }
-    },
-    "/api/albion/link/requests": {
-      "get": {
-        "description": "Requires `roles.manage`. Oldest first. `competing_requests` counts other open claims on the same character and `character_already_linked` warns that approving would fail with `409` until that link is removed.",
-        "operationId": "list_link_requests",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseAlbionLinkRequests"
-                }
-              }
-            },
-            "description": "Open requests"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Forbidden - requires roles.manage"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": [
-              "roles.manage"
-            ]
-          }
-        ],
-        "summary": "Officer: list pending Albion link requests",
-        "tags": [
-          "albion"
-        ]
-      }
-    },
-    "/api/albion/link/requests/{request_id}/approve": {
-      "post": {
-        "description": "Requires `roles.manage`. Creates the link, drops competing claims on the same character, then best-effort applies what the self-service link used to do at once: the Discord nickname, the Guild base role (only when the live character is in the configured Albion guild) and the copy to paired alliance/guild tenants. Never replaces an existing link: `409` if the account or the character got linked meanwhile (remove that link first). Audited as `ALBION_LINK` with `via: approval`.",
-        "operationId": "approve_link_request",
-        "parameters": [
-          {
-            "description": "Link request id",
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseAlbionLinkStatus"
-                }
-              }
-            },
-            "description": "Linked; the body is the requester's new link status"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Forbidden - requires roles.manage"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "The request no longer exists"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "The account or the character is already linked"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": [
-              "roles.manage"
-            ]
-          }
-        ],
-        "summary": "Officer: approve a pending Albion link request",
-        "tags": [
-          "albion"
-        ]
-      }
-    },
-    "/api/albion/link/requests/{request_id}/reject": {
-      "post": {
-        "description": "Requires `roles.manage`. Discards the claim; the account can ask again. Audited as `ALBION_LINK_REJECT`.",
-        "operationId": "reject_link_request",
-        "parameters": [
-          {
-            "description": "Link request id",
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Rejected; data is null"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Unauthorized - no active session"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Forbidden - requires roles.manage"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "The request no longer exists"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": [
-              "roles.manage"
-            ]
-          }
-        ],
-        "summary": "Officer: reject a pending Albion link request",
         "tags": [
           "albion"
         ]
@@ -27952,7 +29121,7 @@
     },
     "/api/albion/register": {
       "post": {
-        "description": "Searches Albion for `ign`, requires a unique exact name match, then behaves exactly like `POST /api/albion/link`: a request an officer must approve (`pending: true`), or an immediate link for a caller with `roles.manage`. Zero hits are 404; two or more exact hits are 400. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.",
+        "description": "Searches Albion for `ign`, requires a unique exact name match, then behaves exactly like `POST /api/albion/link`: the link applies immediately. Zero hits are 404; two or more exact hits are 400. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.",
         "operationId": "register_by_ign",
         "requestBody": {
           "content": {
@@ -27973,7 +29142,7 @@
                 }
               }
             },
-            "description": "Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true)"
+            "description": "Linked; linked is true"
           },
           "400": {
             "content": {
@@ -28011,7 +29180,7 @@
             "session_cookie": []
           }
         ],
-        "summary": "Ask to link by Albion IGN",
+        "summary": "Link by Albion IGN",
         "tags": [
           "albion"
         ]
@@ -29898,6 +31067,16 @@
               }
             },
             "description": "Unauthorized - no active session or invalid/expired session cookie"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - an officer blocked this member from the manager (problem code `account_blocked`); render the access-blocked screen"
           }
         },
         "summary": "Check whether the caller is logged in, and get their profile/roles",
@@ -29990,7 +31169,7 @@
                 }
               }
             },
-            "description": "Chosen tenant is not in the pending set"
+            "description": "Chosen tenant is not in the pending set, or the member is blocked there (problem code `account_blocked`)"
           }
         },
         "summary": "Finish login with the chosen Discord server",
@@ -36445,7 +37624,7 @@
                 }
               }
             },
-            "description": "Event is not scheduled/live or has another voice channel"
+            "description": "Event is not scheduled/live, has another voice channel, or is a link to another tenant's event (the voice channel belongs to the owning Discord server)"
           }
         },
         "security": [
@@ -36461,7 +37640,7 @@
     },
     "/api/events/{id}/fanout-status": {
       "get": {
-        "description": "Returns per-guild copy status for an alliance-owned event. Requires event management authority.",
+        "description": "Returns per-guild link status for an alliance-owned event. Requires event management authority.",
         "operationId": "get_event_fanout_status",
         "parameters": [
           {
@@ -37199,7 +38378,7 @@
     },
     "/api/events/{id}/parties": {
       "post": {
-        "description": "The roster version carried in the body is checked like every other roster write. The change is\nbroadcast on the live roster socket. Alliance copies keep their own single party and are not\nupdated.",
+        "description": "The roster version carried in the body is checked like every other roster write. The change is\nbroadcast on the live roster socket of the origin and of every link tenant. Parties belong to\nthe origin event only; a link has none.",
         "operationId": "create_event_party",
         "parameters": [
           {
@@ -39984,6 +41163,93 @@
         ]
       }
     },
+    "/api/intel/comps": {
+      "get": {
+        "description": "Every comp fielded in a fight during the period, with usage, record, K/D, average players, last use and its best and worst matchups against enemy guilds. A fight is attributed to a comp through its event; fights with no event are reported as `unattributed_fights` rather than guessed.",
+        "operationId": "our_comps",
+        "parameters": [
+          {
+            "description": "`7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given.",
+            "in": "path",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window start, RFC 3339.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window end, RFC 3339. Defaults to now.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IntelComps"
+                }
+              }
+            },
+            "description": "Comps computed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid period"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - lacks intel.view"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "intel.view"
+            ]
+          }
+        ],
+        "summary": "Our comps for a period",
+        "tags": [
+          "intel"
+        ]
+      }
+    },
     "/api/intel/comps/{comp_id}/threats": {
       "get": {
         "description": "Scores every scout against one of our own comps, expanded from its build quantities into virtual players. Comp variants do not inherit their parent's builds.",
@@ -40053,6 +41319,208 @@
           }
         ],
         "summary": "Find enemy compositions resembling one of our comps",
+        "tags": [
+          "intel"
+        ]
+      }
+    },
+    "/api/intel/fights": {
+      "get": {
+        "description": "Canonical fights from our side: outcome (as stored on the fight), opponent guild, comp, friendly and enemy player counts, kills, deaths, fame and item power. Filter by outcome, opponent name, comp and friendly player count; sort by start time, players, kills, deaths, kill fame or K/D. `summary` covers every fight matching the filters, and `opponents`/`comps` list the filter options for the whole period. Rows link to the fight detail page by `fight_id`.",
+        "operationId": "our_fights",
+        "parameters": [
+          {
+            "description": "`7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given.",
+            "in": "path",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window start, RFC 3339.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window end, RFC 3339.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "`victory`, `defeat`, `draw` or `unknown`.",
+            "in": "path",
+            "name": "outcome",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Case-insensitive substring of the opponent guild name.",
+            "in": "path",
+            "name": "opponent",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Only fights planned with this comp.",
+            "in": "path",
+            "name": "comp_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Minimum distinct friendly players.",
+            "in": "path",
+            "name": "min_players",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Maximum distinct friendly players.",
+            "in": "path",
+            "name": "max_players",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "`started_at` (default), `players`, `kills`, `deaths`, `kill_fame` or `kd`.",
+            "in": "path",
+            "name": "sort",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "`asc` or `desc` (default).",
+            "in": "path",
+            "name": "order",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Page number, 1-indexed.",
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Page size, defaults to 10.",
+            "in": "path",
+            "name": "limit",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IntelFightList"
+                }
+              }
+            },
+            "description": "Fights listed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid filter"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - lacks intel.view"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "intel.view"
+            ]
+          }
+        ],
+        "summary": "Our fights for a period",
         "tags": [
           "intel"
         ]
@@ -40204,6 +41672,93 @@
           }
         ],
         "summary": "Matchup matrix",
+        "tags": [
+          "intel"
+        ]
+      }
+    },
+    "/api/intel/overview": {
+      "get": {
+        "description": "Headline combat numbers over the selected period (`7d`, `30d`, `90d`, `all`, or a custom `from`/`to`), the same numbers for the preceding period of equal length, a weekly trend, the newest fights and the opponents met most often. Outcomes are the stored fight outcomes. Rates are null, not zero, when there is nothing to divide by. Estimated silver lost is only returned to callers who also hold `intel.report.view`.",
+        "operationId": "overview",
+        "parameters": [
+          {
+            "description": "`7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given.",
+            "in": "path",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window start, RFC 3339.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window end, RFC 3339. Defaults to now.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IntelOverview"
+                }
+              }
+            },
+            "description": "Overview computed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid period"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - lacks intel.view"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "intel.view"
+            ]
+          }
+        ],
+        "summary": "Guild overview for a period",
         "tags": [
           "intel"
         ]
@@ -40485,6 +42040,200 @@
           }
         ],
         "summary": "Recompute the guild report",
+        "tags": [
+          "intel"
+        ]
+      }
+    },
+    "/api/intel/roster": {
+      "get": {
+        "description": "One row per guild member: fights attended and attendance rate, kills, deaths, K/D, kill and death fame, average item power, most-played weapons and role, and the last fight. Attendance is measured against fights that have a computed rollup. Members are matched to battle characters through their linked Albion character; characters nobody has linked are listed in `unlinked_players`. Callers with only `intel.view` receive just their own row (`scope` is `self`); `intel.report.view` returns everyone.",
+        "operationId": "roster",
+        "parameters": [
+          {
+            "description": "`7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given.",
+            "in": "path",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window start, RFC 3339.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window end, RFC 3339. Defaults to now.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IntelRoster"
+                }
+              }
+            },
+            "description": "Roster computed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid period"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - lacks intel.view"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "intel.view"
+            ]
+          }
+        ],
+        "summary": "Our players for a period",
+        "tags": [
+          "intel"
+        ]
+      }
+    },
+    "/api/intel/roster/{user_id}": {
+      "get": {
+        "description": "The member's roster row plus a weekly breakdown, their fights (newest first), weapons and roles played, the builds they signed up with and the comps they fought in. Any member may read their own page with `intel.view`; reading someone else's needs `intel.report.view`.",
+        "operationId": "roster_member",
+        "parameters": [
+          {
+            "description": "App user id",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given.",
+            "in": "path",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window start, RFC 3339.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Custom window end, RFC 3339. Defaults to now.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IntelPlayer"
+                }
+              }
+            },
+            "description": "Player computed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid period"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - another member's page needs intel.report.view"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such user"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "intel.view"
+            ]
+          }
+        ],
+        "summary": "One player's intel for a period",
         "tags": [
           "intel"
         ]
@@ -46783,6 +48532,18 @@
             }
           },
           {
+            "description": "`true` lists only blocked members, `false` only members who are not blocked. Ignored for\ncallers without `roles.manage`. Declared inline for the same reason as `page`/`limit`.",
+            "in": "path",
+            "name": "blocked",
+            "required": true,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
             "description": "The filter query parameters.",
             "in": "path",
             "name": "filters",
@@ -47123,6 +48884,168 @@
           }
         ],
         "summary": "Get one guild member by internal id",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/users/{user_id}/block": {
+      "delete": {
+        "description": "Requires `roles.manage`. The member can log in and use the manager again on their next request. Idempotent: unblocking a member who is not blocked changes nothing. Audited as `USER_UNBLOCK`.",
+        "operationId": "unblock_user",
+        "parameters": [
+          {
+            "description": "Internal user id",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseUserProfile"
+                }
+              }
+            },
+            "description": "Member unblocked; the body is their profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - lacks roles.manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "roles.manage"
+            ]
+          }
+        ],
+        "summary": "Unblock a member",
+        "tags": [
+          "users"
+        ]
+      },
+      "post": {
+        "description": "Requires `roles.manage`. A blocked member cannot log in and every authenticated request of theirs (web session or Discord bot interaction) is refused with `403 account_blocked`; the web app then shows an \"access blocked\" screen. The block is scoped to this server (tenant) and takes effect on the member's next request, even on a live session. Nothing changes on Discord: the member is not kicked, banned or stripped of roles. Cannot target yourself, the server owner or a platform admin, nor a member whose role is above your own (unless you are the owner or a platform admin). Idempotent: blocking a blocked member keeps the first block. Audited as `USER_BLOCK`.",
+        "operationId": "block_user",
+        "parameters": [
+          {
+            "description": "Internal user id",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseUserProfile"
+                }
+              }
+            },
+            "description": "Member blocked; the body is their profile with the block details"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Reason too long"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized - no active session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden - lacks roles.manage, or the target is protected"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "roles.manage"
+            ]
+          }
+        ],
+        "summary": "Block a member from the manager",
         "tags": [
           "users"
         ]
