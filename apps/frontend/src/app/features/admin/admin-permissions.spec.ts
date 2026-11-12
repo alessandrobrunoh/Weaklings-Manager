@@ -111,7 +111,7 @@ describe('AdminPermissions', () => {
   });
 
   it('filters permissions by search query', async () => {
-    const searchInput = fixture.nativeElement.querySelector('input[type="search"]') as HTMLInputElement;
+    const searchInput = fixture.nativeElement.querySelector('[role="search"] input') as HTMLInputElement;
     searchInput.value = 'splits';
     searchInput.dispatchEvent(new Event('input'));
 
@@ -177,5 +177,30 @@ describe('AdminPermissions', () => {
 
     expect(api.post).toHaveBeenCalledWith('api/admin/permissions/reload');
     expect(toasts.success).toHaveBeenCalled();
+  });
+
+  it('saves a toggled permission against the role and reports it saved', async () => {
+    const instance = fixture.componentInstance;
+    const member = mockMatrix.roles[1];
+
+    await instance['toggle'](member, 'events.delete', {
+      target: { checked: true },
+    } as unknown as Event);
+
+    expect(api.put).toHaveBeenCalledWith('api/admin/roles/member/permissions', {
+      permissions: ['splits.create', 'events.delete'],
+    });
+    expect(instance['saveState']()).toBe('saved');
+  });
+
+  it('lists which roles grant each permission', () => {
+    const instance = fixture.componentInstance;
+    expect(instance['grantedRoleNames']('splits.create')).toEqual(['Officer', 'Member']);
+    expect(instance['grantedRoleNames']('admin.settings.manage')).toEqual([]);
+  });
+
+  it('counts permissions that no role grants in the summary band', () => {
+    const items = fixture.componentInstance['summaryItems']();
+    expect(items.map((item) => item.value)).toEqual([2, 6, 3]);
   });
 });

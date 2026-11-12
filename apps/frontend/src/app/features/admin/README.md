@@ -17,6 +17,8 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminApplications` edits the Discord applications panel (`api/admin/settings`): an open/closed `app-tabs` switch, channel and role pickers, and bot copy, saved with one primary action. It has no applicant queue: the backend has no list endpoint for applications.
 - `AdminDiscord` edits the guild's Discord channels, split forum, notifications and roles in one form with one save. It writes `api/admin/settings` and `api/admin/autorole`; its connection status comes from loading the Discord channel and role catalog.
 - `AdminFinance` loads `api/bank/admin/summary` (whole ledger, ignores the period) and `api/intel/report` twice (the selected window and the window before it, for deltas). Each section tab shows one `app-summary-band` and then one chart or one `app-data-table`; the ledger breakdown and member ledger are tables with a totals row.
+- `groupPermissions` maps catalog or available permission keys into permission groups. `permissionParts` splits a key into its verb and object for plain-language row titles. `groupIslandsBySourceGuild` groups island records by source guild.
+- `AdminPermissions` is the role x permission matrix. It uses `app-filter-bar` for search, the area select and the visible-roles facet, and `app-summary-band` for roles, permissions and permissions no role grants. Each row shows its title, its key and the roles that hold it. Each box saves on its own; saves for one role run in a queue so each starts from the permissions the previous save left. The save state line above the matrix reports saving, saved or failed.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 
 ## Invariants
@@ -31,6 +33,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminGeneral` saves the brand colours as one `PUT api/admin/branding`; an empty string clears a slot. The save state is `clean | dirty | saving | saved | error`, `saved` lasts until the next edit, and a failed save keeps the draft. Leaving with unsaved edits drops the preview; saved colours stay painted.
 - Island list (`admin-islands`): a summary band, then one `app-data-table` per source guild for alliance tenants (headed by the guild name) or a single table for guild tenants. Each table has its own URL sync turned off. Edit is a row button and delete sits in the row menu. Adding tabs happens on the detail page only.
 - Island detail (`admin-island-detail`): `app-entity-header` (delete in its menu) with a summary band, then sections for the island details (guild tenants only), its chest tabs (`app-data-table` with a row menu for move and delete), and who manages it.
+- Permission grouping prefers a nonempty catalog. The last visible role cannot be hidden. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
 
 ## Side Effects
 
