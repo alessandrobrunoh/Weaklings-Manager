@@ -134,7 +134,7 @@ describe('Dashboard', () => {
   it('renders the personalized greeting with the username', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Galvdon');
-    expect(text).toContain('Your balance, season, and next mass.');
+    expect(text).toContain('Albion character: GalvdonAO');
   });
 
   it('renders personal identity, albion character, and season progress', () => {
@@ -146,12 +146,14 @@ describe('Dashboard', () => {
     expect(text).toContain('Rank #8');
   });
 
-  it('keeps the DOM order aligned with the visual dashboard order', () => {
-    const page = fixture.nativeElement.querySelector('.dashboard-page') as HTMLElement;
-    const sections = Array.from(page.querySelectorAll(':scope > section'));
-    expect(sections[0].querySelector('h2')?.textContent).toContain('Requires your attention');
-    expect(sections[1].classList).toContain('identity-card');
-    expect(sections[2].getAttribute('aria-label')).toBe('Your snapshot');
+  it('orders the page: attention, upcoming events, summary band, then recent activity', () => {
+    const stack = fixture.nativeElement.querySelector('app-page-stack') as HTMLElement;
+    const blocks = Array.from(stack.children);
+    expect(blocks[0].querySelector('h2')?.textContent).toContain('Requires your attention');
+    expect(blocks[1].querySelector('h2')?.textContent).toContain('Live & upcoming events');
+    expect(blocks[2].tagName.toLowerCase()).toBe('app-summary-band');
+    expect(blocks[2].getAttribute('aria-label')).toBe('Your snapshot');
+    expect(blocks[3].querySelector('h2')?.textContent).toContain('Recent activity');
   });
 
   it('renders progression details when the response has no active season', async () => {
@@ -192,10 +194,11 @@ describe('Dashboard', () => {
     mockApiService.get.mockImplementation(original);
   });
 
-  it('renders personal KPI cards instead of guild totals', () => {
+  it('renders one summary band of personal figures instead of guild totals', () => {
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('Bank pending');
-    expect(text).toContain('Bank requested');
+    expect(text).toContain('Available to request');
+    expect(text).not.toContain('Bank pending');
+    expect(text).not.toContain('Bank requested');
     expect(text).toContain('Split earnings');
     expect(text).toContain('Attendance');
     expect(text).toContain('1.70M');
@@ -210,17 +213,17 @@ describe('Dashboard', () => {
   it('renders personal attention items and hides the caught-up banner', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Requires your attention');
-    expect(text).toContain('silver available to request');
+    expect(text).toContain('Silver is available to request from the bank');
     expect(text).toContain('withdrawals awaiting payout');
     expect(text).toContain('regear requests pending');
     expect(text).not.toContain("You're all caught up");
     expect(text).not.toContain('bank request awaiting approval');
   });
 
-  it('renders an empty next-mass state when nothing is scheduled', () => {
+  it('renders an empty upcoming and recent state when nothing is scheduled or finished', () => {
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('Next mass');
-    expect(text).toContain('No mass scheduled');
+    expect(text).toContain('No scheduled or live events.');
+    expect(text).toContain('No finished events yet.');
     expect(text).not.toContain('Launch Terry Grove');
     expect(text).not.toContain('Composition ready');
     expect(text).not.toContain('Build assigned');
@@ -347,7 +350,7 @@ describe('Dashboard', () => {
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain("You're all caught up");
-    expect(text).not.toContain('silver available to request');
+    expect(text).not.toContain('Silver is available to request');
   });
 
   it('does not show zeros or a caught-up state while refreshing', async () => {
@@ -361,7 +364,7 @@ describe('Dashboard', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Loading…');
     expect(text).not.toContain("You're all caught up");
-    expect(text).not.toContain('No mass scheduled');
+    expect(text).not.toContain('No scheduled or live events.');
     expect(text).not.toContain('0 credits');
     pending.next(mockBalance);
     pending.complete();
@@ -386,7 +389,7 @@ describe('Dashboard', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Something went wrong.');
     expect(text).not.toContain("You're all caught up");
-    expect(text).not.toContain('No mass scheduled');
+    expect(text).not.toContain('No scheduled or live events.');
     mockApiService.get.mockImplementation(original);
   });
 });
