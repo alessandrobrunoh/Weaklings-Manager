@@ -47,14 +47,12 @@ import type {
   UpdateEventBattlesRequest,
   UpdateEventRequest,
   UserProfile,
-  OpenAlbionItem,
 } from '../../core/models/api.models';
 import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeRosterService } from '../../core/services/realtime-roster.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import {
   abilityKeyForItem,
@@ -64,8 +62,6 @@ import {
 } from '../../shared/data/albion-abilities';
 import {
   albionEquipmentIconUrl,
-  albionSpecializationKey,
-  deduplicateAlbionCombatCatalog,
   normalizeAlbionEquipmentName,
 } from '../../shared/data/albion-equipment-catalog';
 import {
@@ -514,18 +510,6 @@ const BENCH_FIT_CHIP: Readonly<
                     <span class="party-toolbar__hint">{{ t('events.lobby.liveHint') }}</span>
                   </div>
                   <div class="party-toolbar__actions">
-                    <label class="sr-only" for="party-spec-filter">{{ t('events.lobby.specFilter') }}</label>
-                    <select
-                      id="party-spec-filter"
-                      class="select select--sm party-toolbar__spec"
-                      [value]="selectedSpecializationKey()"
-                      (change)="selectSpecialization($event)"
-                    >
-                      <option value="">{{ t('events.lobby.allSpecs') }}</option>
-                      @for (item of specializationCatalog(); track item.id + ':' + item.type) {
-                        <option [value]="specializationKey(item)">{{ item.name }}</option>
-                      }
-                    </select>
                     @if (canManageParticipants()) {
                       <button
                         type="button"
@@ -537,17 +521,15 @@ const BENCH_FIT_CHIP: Readonly<
                         <app-icon name="sparkles" size="0.875rem" />
                         {{ t('events.detail.auto_fill') }}
                       </button>
-                      @if (canViewRosterSuggestions()) {
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm"
-                          [disabled]="rosterCommandSaving() || rosterSuggestionsLoading() || roster.bench.length === 0"
-                          (click)="openRosterSuggestions()"
-                        >
-                          <app-icon name="zap" size="0.875rem" />
-                          {{ rosterSuggestionsLoading() ? t('events.roster.calculating') : t('events.roster.suggest') }}
-                        </button>
-                      }
+                      <button
+                        type="button"
+                        class="btn btn--outline btn--sm"
+                        [disabled]="rosterCommandSaving() || rosterSuggestionsLoading() || roster.bench.length === 0"
+                        (click)="openRosterSuggestions()"
+                      >
+                        <app-icon name="zap" size="0.875rem" />
+                        {{ rosterSuggestionsLoading() ? t('events.roster.calculating') : t('events.roster.suggest') }}
+                      </button>
                       <button
                         type="button"
                         class="btn btn--outline btn--sm"
@@ -775,15 +757,6 @@ const BENCH_FIT_CHIP: Readonly<
                                       <span class="seat__you">{{ t('events.lobby.you') }}</span>
                                     }
                                     <app-event-guild-badge [guild]="occupant.guild" />
-                                    @if (selectedSpecializationKey()) {
-                                      <span
-                                        class="seat__spec"
-                                        [class.seat__spec--high]="participantSpecLevel(occupant) >= 100"
-                                        [class.seat__spec--mid]="participantSpecLevel(occupant) > 0 && participantSpecLevel(occupant) < 100"
-                                      >
-                                        {{ participantSpecLevel(occupant) }}/120
-                                      </span>
-                                    }
                                   </p>
                                   @if (seatWarning(seat); as warning) {
                                     <p class="seat__warn">
@@ -1106,7 +1079,7 @@ const BENCH_FIT_CHIP: Readonly<
                 <a
                   class="btn btn--outline btn--sm"
                   routerLink="/profile"
-                  [queryParams]="{ tab: 'destiny' }"
+                  [queryParams]="{ tab: 'weapons' }"
                   (click)="showJoinForm.set(false)"
                 >
                   {{ t('events.detail.weapons_hint_link') }}
@@ -1524,9 +1497,8 @@ const BENCH_FIT_CHIP: Readonly<
                   <tr>
                     <th class="text-left">{{ t('events.detail.seat') }}</th>
                     <th class="text-left">{{ t('events.detail.member') }}</th>
-                    <th class="text-right">IP</th>
-                    <th class="text-right">{{ t('events.detail.readiness') }}</th>
-                    <th class="text-left">Preferenza</th>
+                    <th class="text-left">{{ t('events.detail.weaponLevel') }}</th>
+                    <th class="text-left">{{ t('events.detail.preference') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1536,9 +1508,12 @@ const BENCH_FIT_CHIP: Readonly<
                         {{ row.buildName }} · {{ row.position }}
                       </td>
                       <td>{{ row.username }}</td>
-                      <td class="text-right font-mono">{{ Math.round(row.itemPower) }}</td>
-                      <td class="text-right font-mono" [style.color]="row.readinessColor">
-                        {{ Math.round(row.readiness * 100) }}%
+                      <td>
+                        @if (row.proficiency; as level) {
+                          <span class="chip" [class]="'chip chip--' + level.tone">{{ level.label }}</span>
+                        } @else {
+                          <span class="text-secondary">—</span>
+                        }
                       </td>
                       <td class="text-secondary">{{ row.preferenceLabel }}</td>
                     </tr>
@@ -1559,14 +1534,14 @@ const BENCH_FIT_CHIP: Readonly<
           }
           @if ((rosterSuggestions()?.unfilled_seats?.length ?? 0) > 0) {
             <p class="text-[10px] text-warning">
-              ⚠ {{ rosterSuggestions()?.unfilled_seats?.length }} sedie restano scoperte.
+              ⚠ {{ t('events.detail.unfilled', { count: rosterSuggestions()?.unfilled_seats?.length ?? 0 }) }}
             </p>
           }
         </div>
 
         <div dialogFooter class="flex items-center justify-end gap-2 w-full">
           <button type="button" class="btn btn--outline btn--sm" (click)="closeRosterSuggestions()">
-            Ignora
+            {{ t('events.detail.suggestion_dismiss') }}
           </button>
           <button
             type="button"
@@ -1574,7 +1549,7 @@ const BENCH_FIT_CHIP: Readonly<
             [disabled]="rosterCommandSaving() || rosterSuggestionRows().length === 0"
             (click)="applyRosterSuggestions()"
           >
-            Applica
+            {{ t('events.detail.suggestion_apply') }}
           </button>
         </div>
       </app-dialog>
@@ -2353,11 +2328,6 @@ const BENCH_FIT_CHIP: Readonly<
         align-items: center;
         gap: 0.5rem;
       }
-      .party-toolbar__spec {
-        width: auto;
-        min-width: 10rem;
-        max-width: 14rem;
-      }
       .party-mode {
         display: flex;
         align-items: center;
@@ -2759,23 +2729,6 @@ const BENCH_FIT_CHIP: Readonly<
         letter-spacing: 0.06em;
         text-transform: uppercase;
       }
-      .seat__spec {
-        flex: none;
-        padding: 0 0.25rem;
-        border-radius: var(--radius-chip);
-        font-family: var(--font-mono);
-        font-size: 0.625rem;
-        font-weight: 700;
-        color: var(--color-text-disabled);
-      }
-      .seat__spec--mid {
-        background: var(--color-warning-container);
-        color: var(--color-warning);
-      }
-      .seat__spec--high {
-        background: var(--color-success-container);
-        color: var(--color-success);
-      }
       .seat__actions {
         display: flex;
         flex: none;
@@ -2834,7 +2787,6 @@ export class EventDetailPage {
   private readonly toasts = inject(ToastService);
   private readonly realtimeRoster = inject(RealtimeRosterService);
   private readonly translate = inject(TranslateService);
-  private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly albionAbilities = inject(AlbionAbilitiesService);
   private readonly destroyRef = inject(DestroyRef);
   private eventId = 0;
@@ -2905,18 +2857,8 @@ export class EventDetailPage {
   protected readonly draggedBenchMember = signal<EventParticipant | null>(null);
   protected readonly dropTargetSeatKey = signal<string | null>(null);
   protected readonly isDropTargetBench = signal(false);
-  protected readonly specializationCatalog = signal<OpenAlbionItem[]>([]);
-  protected readonly selectedSpecializationKey = signal('');
   /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
-
-  protected readonly selectedSpecializationName = computed(() => {
-    const key = this.selectedSpecializationKey();
-    const item = this.specializationCatalog().find(
-      (entry) => this.specializationKey(entry) === key,
-    );
-    return item ? normalizeAlbionEquipmentName(item.identifier ?? '', item.name) : this.t('events.detail.none');
-  });
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
     const detail = this.event();
@@ -3131,17 +3073,9 @@ export class EventDetailPage {
   protected readonly rosterSwapSource = signal<EventRosterSeat | null>(null);
   protected readonly rosterAssignTarget = signal<EventRosterSeat | null>(null);
 
-  /** Whether the viewer can preview an Item-Power-optimal assignment; officer-only, like the
-   *  comp readiness roll-up it is built on. */
-  protected readonly canViewRosterSuggestions = computed(() =>
-    this.auth.hasPermission('combat.readiness.view'),
-  );
   protected readonly rosterSuggestions = signal<RosterSuggestions | null>(null);
   protected readonly rosterSuggestionsOpen = signal(false);
   protected readonly rosterSuggestionsLoading = signal(false);
-  /** Exposed for the suggestions dialog, which rounds figures inline. */
-  protected readonly Math = Math;
-
   /** The suggested placements, enriched with the seat/build/member names the raw
    *  `RosterPlacement[]` doesn't carry, sorted by party then position. */
   protected readonly rosterSuggestionRows = computed(() => {
@@ -3166,19 +3100,17 @@ export class EventDetailPage {
           position: seat.position,
           partyNumber: seat.party_number,
           username: namesByUserId.get(placement.user_id) ?? `#${placement.user_id}`,
-          itemPower: placement.score.item_power,
-          readiness: placement.score.readiness,
-          readinessColor:
-            placement.score.readiness >= 0.8
-              ? 'var(--color-success)'
-              : placement.score.readiness >= 0.5
-                ? 'var(--color-text)'
-                : 'var(--color-warning)',
+          proficiency: placement.score.proficiency
+            ? {
+                tone: BENCH_FIT_CHIP[placement.score.proficiency].tone,
+                label: this.t(BENCH_FIT_CHIP[placement.score.proficiency].labelKey),
+              }
+            : null,
           preferenceLabel:
             placement.score.preference === 'primary'
-              ? 'Primaria'
+              ? this.t('events.detail.preferencePrimary')
               : placement.score.preference === 'secondary'
-                ? 'Secondaria'
+                ? this.t('events.detail.preferenceSecondary')
                 : '—',
         };
       })
@@ -3781,14 +3713,6 @@ export class EventDetailPage {
       },
     },
     {
-      key: 'specialization_level',
-      label: 'events.detail.specialization',
-      sortable: true,
-      accessor: (participant) => this.participantSpecLevel(participant),
-      comparator: (a, b) => this.participantSpecLevel(a) - this.participantSpecLevel(b),
-      align: 'right',
-    },
-    {
       key: 'secondary_build_name',
       label: 'events.detail.secondary_build',
       sortable: true,
@@ -3805,10 +3729,6 @@ export class EventDetailPage {
   protected readonly trackParticipant = (participant: EventParticipant): unknown =>
     participant.user_id;
 
-  protected specializationKey(item: OpenAlbionItem): string {
-    return albionSpecializationKey(item);
-  }
-
   /** Chip describing how a waiting-list member fits the seat being filled; `null` outside assign mode. */
   protected benchFit(member: EventParticipant): {
     tone: string;
@@ -3824,14 +3744,6 @@ export class EventDetailPage {
   /** Warning for the member on a seat: danger when the weapon is locked for them, warning when undeclared. */
   protected seatWarning(seat: EventRosterSeat): 'locked' | 'not_declared' | null {
     return seat.participant ? seatWeaponWarning(seat.participant.weapons, seat.weapon_key) : null;
-  }
-
-  protected participantSpecLevel(participant: EventParticipant): number {
-    return participant.specializations?.[this.selectedSpecializationKey()] ?? 0;
-  }
-
-  protected selectSpecialization(event: Event): void {
-    this.selectedSpecializationKey.set((event.target as HTMLSelectElement).value);
   }
 
   protected onBenchSearchInput(event: Event): void {
@@ -4389,7 +4301,7 @@ export class EventDetailPage {
       firstValueFrom(
         this.api.post<EventRosterView>(`api/events/${this.eventId}/roster/auto-fill`, {
           expected_roster_version: roster.roster_version,
-          strategy: 'spec_optimal',
+          strategy: 'best_fit',
         }),
       ),
     );
@@ -5560,16 +5472,6 @@ export class EventDetailPage {
     return Math.min(100, Math.round((current / target) * 100));
   }
 
-  private async loadSpecializationCatalog(): Promise<void> {
-    if (this.specializationCatalog().length > 0) return;
-    try {
-      const catalog = await this.albionCatalog.load();
-      this.specializationCatalog.set(deduplicateAlbionCombatCatalog(catalog));
-    } catch {
-      // The roster remains usable without the optional specialization selector.
-    }
-  }
-
   private async loadAbilityCatalog(): Promise<void> {
     if (Object.keys(this.abilityCatalog()).length > 0) return;
     try {
@@ -5630,7 +5532,6 @@ export class EventDetailPage {
         return;
       }
       this.realtimeRoster.connect(eventId);
-      void this.loadSpecializationCatalog();
       void this.loadAbilityCatalog();
       await Promise.all([
         this.loadRosterSnapshot(silent, generation, eventId),

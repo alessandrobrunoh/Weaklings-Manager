@@ -8,19 +8,15 @@ import type {
 } from '../../core/models/api.models';
 import {
   classifyWeaponFamily,
-  destinyWeaponFamilyOrder,
-  type DestinyItemNode,
-  type DestinyWeaponFamilyId,
-} from './albion-destiny-board';
-import {
-  albionSpecializationIdentifier,
-  deduplicateAlbionCombatCatalog,
-} from './albion-equipment-catalog';
+  weaponFamilyOrder,
+  type WeaponFamilyId,
+} from './albion-weapon-families';
+import { albionBaseIdentifier, deduplicateAlbionCombatCatalog } from './albion-equipment-catalog';
 
 /**
  * "My weapons": the weapons a member declares they can play, each with a level. Pure helpers shared
  * by the profile, the admin member view, the event signup dialog, the Parties board and the builds
- * page. A weapon key is `weapon:{BASE}` (tier-less base identifier), the Destiny Board node key.
+ * page. A weapon key is `weapon:{BASE}` (tier-less base identifier).
  */
 
 /** Proficiencies from strongest to weakest. */
@@ -34,15 +30,7 @@ export function proficiencyRank(proficiency: WeaponProficiency | null): number {
 
 /** Canonical weapon key for a catalog identifier, tier and enchantment stripped. */
 export function weaponKeyForIdentifier(identifier: string): string {
-  return `weapon:${albionSpecializationIdentifier(identifier).split('@')[0]}`;
-}
-
-/** Destiny Board level to proficiency used by "Import from Destiny Board": 100+ main, 50+ good, 1+ basic. */
-export function proficiencyFromSpecLevel(level: number): WeaponProficiency | null {
-  if (!Number.isFinite(level) || level < 1) return null;
-  if (level >= 100) return 'main';
-  if (level >= 50) return 'good';
-  return 'basic';
+  return `weapon:${albionBaseIdentifier(identifier).split('@')[0]}`;
 }
 
 /** An editable weapon row. `proficiency: null` with `locked` is a lock-only row (never declared). */
@@ -71,36 +59,6 @@ export function sortWeaponDrafts(drafts: readonly WeaponDraft[]): WeaponDraft[] 
       proficiencyRank(left.proficiency) - proficiencyRank(right.proficiency) ||
       left.weapon_name.localeCompare(right.weapon_name),
   );
-}
-
-/**
- * Pre-fills drafts from the Destiny Board without saving anything.
- *
- * Weapons the member has not declared yet are added at the level their spec implies. Anything
- * already declared keeps its level (an explicit choice beats an inferred one) and a locked weapon
- * is never touched.
- */
-export function importDraftsFromSpecs(
-  drafts: readonly WeaponDraft[],
-  nodes: readonly DestinyItemNode[],
-): { drafts: WeaponDraft[]; added: number } {
-  const byKey = new Map(drafts.map((draft) => [draft.weapon_key, draft]));
-  let added = 0;
-  for (const node of nodes) {
-    if (node.category !== 'weapon') continue;
-    const proficiency = proficiencyFromSpecLevel(node.level);
-    if (proficiency === null) continue;
-    const existing = byKey.get(node.node_key);
-    if (existing?.locked || existing?.proficiency) continue;
-    byKey.set(node.node_key, {
-      weapon_key: node.node_key,
-      weapon_name: existing?.weapon_name ?? node.node_name,
-      proficiency,
-      locked: false,
-    });
-    added += 1;
-  }
-  return { drafts: sortWeaponDrafts([...byKey.values()]), added };
 }
 
 /** Body for `PUT /api/users/me/weapons`: declared, unlocked rows only (locked rows are server-owned). */
@@ -137,17 +95,66 @@ export function weaponDraftsChanged(
   return left.length !== right.length || left.some((entry, index) => entry !== right[index]);
 }
 
+/** Family a weapon key (`weapon:{BASE}`) belongs to, for grouping the list. */
+export function weaponFamilyOfKey(weaponKey: string): WeaponFamilyId {
+  return classifyWeaponFamily(weaponKey.replace(/^weapon:/, ''));
+}
+
+/** Weapons of one family, alphabetical so changing a level never moves a row. */
+export interface WeaponGroup {
+  readonly family: WeaponFamilyId;
+  readonly drafts: readonly WeaponDraft[];
+}
+
+/** Groups drafts by weapon family in display order; empty families are omitted. */
+export function groupWeaponDrafts(drafts: readonly WeaponDraft[]): WeaponGroup[] {
+  const byFamily = new Map<WeaponFamilyId, WeaponDraft[]>();
+  for (const draft of drafts) {
+    const family = weaponFamilyOfKey(draft.weapon_key);
+    const group = byFamily.get(family);
+    if (group) group.push(draft);
+    else byFamily.set(family, [draft]);
+  }
+  return weaponFamilyOrder()
+    .filter((family) => byFamily.has(family))
+    .map((family) => ({
+      family,
+      drafts: (byFamily.get(family) ?? []).sort((left, right) =>
+        left.weapon_name.localeCompare(right.weapon_name),
+      ),
+    }));
+}
+
+/** How many weapons sit at each level, and how many an officer locked. */
+export interface WeaponSummary {
+  readonly main: number;
+  readonly good: number;
+  readonly basic: number;
+  readonly locked: number;
+}
+
+export function summarizeWeaponDrafts(drafts: readonly WeaponDraft[]): WeaponSummary {
+  const count = (level: WeaponProficiency) =>
+    drafts.filter((draft) => draft.proficiency === level).length;
+  return {
+    main: count('main'),
+    good: count('good'),
+    basic: count('basic'),
+    locked: drafts.filter((draft) => draft.locked).length,
+  };
+}
+
 /** A weapon the picker can add. */
 export interface WeaponOption {
   readonly key: string;
   readonly name: string;
   readonly icon: string | null;
-  readonly family: DestinyWeaponFamilyId;
+  readonly family: WeaponFamilyId;
 }
 
-/** Tier-less catalog weapons, grouped by family in Destiny Board order and alphabetical inside. */
+/** Tier-less catalog weapons, grouped by family and alphabetical inside. */
 export function weaponOptionsFromCatalog(catalog: readonly OpenAlbionItem[]): WeaponOption[] {
-  const familyOrder = destinyWeaponFamilyOrder();
+  const familyOrder = weaponFamilyOrder();
   return deduplicateAlbionCombatCatalog(catalog)
     .filter((item) => item.type === 'weapon' && item.identifier)
     .map((item) => ({

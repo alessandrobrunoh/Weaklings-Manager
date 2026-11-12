@@ -23,7 +23,6 @@ import type {
   Role,
   UserProfile,
   UserRolesView,
-  UserSpecialization,
   WarnView,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -31,15 +30,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
-import {
-  mergeSpecializationNodes,
-  type DestinyItemNode,
-} from '../../shared/data/albion-destiny-board';
-import { normalizeAlbionSpecializationKey } from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
-import { DestinyBoard } from '../../shared/components/destiny-board/destiny-board';
 import { WeaponRoster } from '../../shared/components/weapon-roster/weapon-roster';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
@@ -82,7 +74,6 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     Avatar,
     DatePipe,
     DecimalPipe,
-    DestinyBoard,
     WeaponRoster,
     Dialog,
     EmptyState,
@@ -551,27 +542,6 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           />
         }
 
-        <!-- Albion Combat Specializations -->
-        <section class="card p-6" aria-labelledby="specializations-heading">
-          <div class="mb-4">
-            <h2 id="specializations-heading" class="text-base font-semibold" style="color: var(--color-text)">
-              {{ t('destiny.title') }}
-            </h2>
-            <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
-              {{ t('destiny.subtitle') }}
-            </p>
-          </div>
-          <app-destiny-board
-            [nodes]="specializationNodes()"
-            [editable]="canManageSpecializations()"
-            [loading]="specLoading()"
-            [loadFailed]="specLoadFailed()"
-            [saving]="specSaving()"
-            (retry)="loadSpecializations()"
-            (save)="saveSpecializations($event)"
-          />
-        </section>
-
         <!-- Warns Section -->
         @if (canViewWarns()) {
           <section class="card p-6">
@@ -733,7 +703,6 @@ export class UserDetailPage {
   private readonly intel = inject(IntelService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
-  private readonly albionCatalog = inject(AlbionCatalogService);
 
   /** Bound from the route via `withComponentInputBinding`. */
   readonly userId = input.required<string>();
@@ -763,11 +732,6 @@ export class UserDetailPage {
     { key: string; label: string; rank: number; value: number }[] | null
   >(null);
 
-  protected readonly specLoading = signal(false);
-  protected readonly specLoadFailed = signal(false);
-  protected readonly specSaving = signal(false);
-  protected readonly specializationNodes = signal<DestinyItemNode[]>([]);
-
   // Albion Link Management State
   protected readonly linkDialogOpen = signal(false);
   protected readonly unlinkConfirmOpen = signal(false);
@@ -791,18 +755,9 @@ export class UserDetailPage {
    * table already shows for every member, just isolated to one row.
    */
   protected readonly canViewPlayerIntel = computed(() => this.auth.hasPermission('intel.report.view'));
-  protected readonly canManageSpecializations = computed(() => {
-    const target = this.member()?.id;
-    const ownId = this.auth.profile()?.user_id;
-    return (
-      (target != null && ownId === target) ||
-      this.auth.hasPermission('users.specializations.manage')
-    );
-  });
-
-  /** Declaring and locking another member's weapons takes the same permission as editing their specs. */
+  /** Declaring and locking another member's weapons takes `users.weapons.manage`. */
   protected readonly canManageWeapons = computed(() =>
-    this.auth.hasPermission('users.specializations.manage'),
+    this.auth.hasPermission('users.weapons.manage'),
   );
 
   protected readonly canManageLinks = computed(
@@ -905,43 +860,6 @@ export class UserDetailPage {
 
   protected formatDate(value: string): string {
     return new Date(value).toLocaleString();
-  }
-
-  protected async saveSpecializations(nodes: DestinyItemNode[]): Promise<void> {
-    const member = this.member();
-    if (!member || !this.canManageSpecializations() || this.specSaving()) return;
-    if (nodes.some((node) => !Number.isInteger(node.level) || node.level < 0 || node.level > 120)) {
-      this.toasts.error(this.t('destiny.invalidLevel'));
-      return;
-    }
-    this.specSaving.set(true);
-    try {
-      const payload = nodes.map(({ icon: _icon, identifier: _identifier, ...node }) => node);
-      const updated: UserSpecialization[] = [];
-      for (let offset = 0; offset < payload.length; offset += 500) {
-        const batch = payload.slice(offset, offset + 500);
-        const result = await firstValueFrom(
-          this.api.put<UserSpecialization[]>(`api/users/${member.id}/specializations`, {
-            specializations: batch,
-          }),
-        );
-        updated.push(...result);
-      }
-      const updatedByKey = new Map(
-        updated.map((row) => [normalizeAlbionSpecializationKey(row.node_key), row.level]),
-      );
-      this.specializationNodes.set(
-        nodes.map((node) => ({
-          ...node,
-          level: updatedByKey.get(node.node_key) ?? node.level,
-        })),
-      );
-      this.toasts.success(this.t('destiny.saved'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.specSaving.set(false);
-    }
   }
 
   protected toggleEditing(): void {
@@ -1200,24 +1118,6 @@ export class UserDetailPage {
     }
   }
 
-  protected async loadSpecializations(userId = Number(this.userId())): Promise<void> {
-    if (!Number.isFinite(userId) || userId <= 0) return;
-    this.specLoading.set(true);
-    this.specLoadFailed.set(false);
-    try {
-      const [saved, catalog] = await Promise.all([
-        firstValueFrom(this.api.get<UserSpecialization[]>(`api/users/${userId}/specializations`)),
-        this.albionCatalog.load(),
-      ]);
-      this.specializationNodes.set(mergeSpecializationNodes(saved, catalog));
-    } catch (error) {
-      this.specLoadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('destiny.loadError'));
-    } finally {
-      this.specLoading.set(false);
-    }
-  }
-
   protected async loadPlayerIntel(userId: number): Promise<void> {
     this.playerIntelLoading.set(true);
     try {
@@ -1275,7 +1175,6 @@ export class UserDetailPage {
       const member = await firstValueFrom(this.api.get<UserProfile>(`api/users/${userId}`));
       this.member.set(member);
 
-      void this.loadSpecializations(userId);
       void this.loadRoles(userId);
 
       const [xp, link] = await Promise.all([

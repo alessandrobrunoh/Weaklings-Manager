@@ -26,7 +26,7 @@ function stubDialogApi(): void {
   };
 }
 
-describe('UserDetail Destiny Board', () => {
+describe('UserDetail', () => {
   let fixture: ComponentFixture<UserDetailPage>;
   let apiGet: ReturnType<typeof vi.fn>;
   let apiPost: ReturnType<typeof vi.fn>;
@@ -39,7 +39,7 @@ describe('UserDetail Destiny Board', () => {
       if (path === 'api/users/42') {
         return of({ id: 42, username: 'Officer', email: 'o@x', role: 'Officer' });
       }
-      if (path === 'api/users/42/specializations') {
+      if (path === 'api/users/42/weapons') {
         return of([]);
       }
       if (path === 'api/users/42/roles') {
@@ -85,7 +85,7 @@ describe('UserDetail Destiny Board', () => {
     hasPermission = vi
       .fn()
       .mockImplementation(
-        (perm: string) => perm === 'users.specializations.manage' || perm === 'roles.manage',
+        (perm: string) => perm === 'users.weapons.manage' || perm === 'roles.manage',
       );
 
     await TestBed.configureTestingModule({
@@ -108,7 +108,7 @@ describe('UserDetail Destiny Board', () => {
               highest_role: 'Officer',
               is_superadmin: false,
               is_platform_admin: false,
-              permissions: ['users.specializations.manage'],
+              permissions: ['users.weapons.manage'],
             }),
             hasPermission,
           },
@@ -145,16 +145,15 @@ describe('UserDetail Destiny Board', () => {
     fixture.destroy();
   });
 
-  it('loads another member specializations from /users/:id, not /me', async () => {
+  it("loads another member's weapons from /users/:id, not /me", async () => {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       fixture.detectChanges();
       await fixture.whenStable();
       await Promise.resolve();
-      if ((fixture.nativeElement.textContent as string).includes('Destiny Board')) break;
+      if (apiGet.mock.calls.some((call) => call[0] === 'api/users/42/weapons')) break;
     }
-    expect(apiGet).toHaveBeenCalledWith('api/users/42/specializations');
-    expect(apiGet.mock.calls.some((call) => call[0] === 'api/users/me/specializations')).toBe(false);
-    expect(fixture.nativeElement.textContent).toContain('Destiny Board');
+    expect(apiGet).toHaveBeenCalledWith('api/users/42/weapons');
+    expect(apiGet.mock.calls.some((call) => call[0] === 'api/users/me/weapons')).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('Weapons');
   });
 

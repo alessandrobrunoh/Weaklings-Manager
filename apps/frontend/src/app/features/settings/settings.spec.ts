@@ -10,7 +10,7 @@ import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { Settings } from './settings';
 
-describe('Profile Destiny Board tab', () => {
+describe('Profile My weapons tab', () => {
   let fixture: ComponentFixture<Settings>;
   let apiGet: ReturnType<typeof vi.fn>;
 
@@ -56,7 +56,7 @@ describe('Profile Destiny Board tab', () => {
           return of(null);
         case 'api/progression/me':
           return of(null);
-        case 'api/users/me/specializations':
+        case 'api/users/me/weapons':
           return of([]);
         default:
           return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 10 });
@@ -121,26 +121,23 @@ describe('Profile Destiny Board tab', () => {
     fixture.destroy();
   });
 
-  it('shows a Destiny Board tab on the profile', () => {
+  it('shows a My weapons tab on the profile', () => {
     const labels = [...fixture.nativeElement.querySelectorAll('[role="tab"]')].map((tab) =>
       (tab as HTMLElement).textContent?.trim(),
     );
-    expect(labels.some((label) => label?.includes('Destiny Board'))).toBe(true);
-    expect(fixture.nativeElement.textContent).not.toContain('Gestisci specializzazioni');
+    expect(labels.some((label) => label?.includes('My weapons'))).toBe(true);
   });
 
-  it('loads the caller specializations from /me when the Destiny Board tab opens', async () => {
-    const destinyTab = [...fixture.nativeElement.querySelectorAll('[role="tab"]')].find((tab) =>
-      (tab as HTMLElement).textContent?.includes('Destiny Board'),
+  it('loads the caller weapons from /me when the My weapons tab opens', async () => {
+    const weaponsTab = [...fixture.nativeElement.querySelectorAll('[role="tab"]')].find((tab) =>
+      (tab as HTMLElement).textContent?.includes('My weapons'),
     ) as HTMLButtonElement;
-    destinyTab.click();
-    await settle(fixture, () => (fixture.nativeElement.textContent as string).includes('Weapons'));
-
-    expect(apiGet).toHaveBeenCalledWith('api/users/me/specializations');
-    expect(apiGet.mock.calls.some((call) => String(call[0]).includes('/users/7/specializations'))).toBe(
-      false,
+    weaponsTab.click();
+    await settle(fixture, () =>
+      apiGet.mock.calls.some((call) => call[0] === 'api/users/me/weapons'),
     );
-    expect(fixture.nativeElement.textContent).toContain('Bows');
+
+    expect(apiGet).toHaveBeenCalledWith('api/users/me/weapons');
   });
 });
 

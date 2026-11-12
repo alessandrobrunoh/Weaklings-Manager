@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import type { OpenAlbionItem, ParticipantWeapon } from '../../core/models/api.models';
-import type { DestinyItemNode } from './albion-destiny-board';
 import {
   draftsFromWeapons,
+  groupWeaponDrafts,
   groupBuildsByWeapon,
-  importDraftsFromSpecs,
   manageUserWeaponsRequest,
-  proficiencyFromSpecLevel,
   seatWeaponWarning,
   sortBenchForWeapon,
+  summarizeWeaponDrafts,
   updateMyWeaponsRequest,
   weaponDraftsChanged,
+  weaponFamilyOfKey,
   weaponFit,
   weaponKeyForIdentifier,
   weaponOptionsFromCatalog,
@@ -29,67 +29,10 @@ function weapon(
   return { weapon_key, proficiency, locked };
 }
 
-function node(key: string, level: number, name = key): DestinyItemNode {
-  return {
-    node_key: key,
-    node_name: name,
-    category: key.startsWith('armor:') ? 'armor' : 'weapon',
-    level,
-    icon: null,
-    identifier: key.split(':')[1],
-  };
-}
-
 describe('weaponKeyForIdentifier', () => {
   it('strips tier and enchantment', () => {
     expect(weaponKeyForIdentifier('T8_2H_POLEHAMMER@2')).toBe(POLE);
     expect(weaponKeyForIdentifier('main_holystaff')).toBe(HOLY);
-  });
-});
-
-describe('proficiencyFromSpecLevel', () => {
-  it.each([
-    [0, null],
-    [1, 'basic'],
-    [49, 'basic'],
-    [50, 'good'],
-    [99, 'good'],
-    [100, 'main'],
-    [120, 'main'],
-  ])('maps level %i to %s', (level, expected) => {
-    expect(proficiencyFromSpecLevel(level)).toBe(expected);
-  });
-});
-
-describe('importDraftsFromSpecs', () => {
-  it('adds undeclared weapons at the level their spec implies and ignores armor', () => {
-    const { drafts, added } = importDraftsFromSpecs(
-      [],
-      [node(POLE, 100, 'Polehammer'), node(HOLY, 60, 'Holy Staff'), node('armor:HEAD_PLATE_SET1', 100)],
-    );
-    expect(added).toBe(2);
-    expect(drafts.map((draft) => [draft.weapon_key, draft.proficiency])).toEqual([
-      [POLE, 'main'],
-      [HOLY, 'good'],
-    ]);
-  });
-
-  it('keeps declared levels and never touches a locked weapon', () => {
-    const existing: WeaponDraft[] = [
-      { weapon_key: POLE, weapon_name: 'Polehammer', proficiency: 'basic', locked: false },
-      { weapon_key: HOLY, weapon_name: 'Holy Staff', proficiency: null, locked: true },
-    ];
-    const { drafts, added } = importDraftsFromSpecs(existing, [node(POLE, 120), node(HOLY, 120)]);
-    expect(added).toBe(0);
-    expect(drafts.find((draft) => draft.weapon_key === POLE)?.proficiency).toBe('basic');
-    expect(drafts.find((draft) => draft.weapon_key === HOLY)).toMatchObject({
-      proficiency: null,
-      locked: true,
-    });
-  });
-
-  it('skips untrained weapons', () => {
-    expect(importDraftsFromSpecs([], [node(POLE, 0)]).drafts).toEqual([]);
   });
 });
 
@@ -246,5 +189,42 @@ describe('groupBuildsByWeapon', () => {
 
   it('returns nothing for no builds', () => {
     expect(groupBuildsByWeapon([])).toEqual([]);
+  });
+});
+
+describe('groupWeaponDrafts', () => {
+  const draft = (
+    weapon_key: string,
+    weapon_name: string,
+    proficiency: WeaponDraft['proficiency'] = 'good',
+    locked = false,
+  ): WeaponDraft => ({ weapon_key, weapon_name, proficiency, locked });
+
+  it('classifies a weapon key into its family', () => {
+    expect(weaponFamilyOfKey(POLE)).toBe('hammers');
+    expect(weaponFamilyOfKey(HOLY)).toBe('holy_staffs');
+    expect(weaponFamilyOfKey('weapon:MAIN_UNKNOWN_WIDGET')).toBe('other');
+  });
+
+  it('groups by family in display order and sorts by name so a level change never moves a row', () => {
+    const groups = groupWeaponDrafts([
+      draft(HOLY, 'Holy Staff', 'main'),
+      draft('weapon:2H_BOW', 'Bow', 'basic'),
+      draft('weapon:2H_LONGBOW', 'Longbow', 'main'),
+      draft('weapon:2H_WARBOW', 'Warbow', 'good'),
+    ]);
+    expect(groups.map((group) => group.family)).toEqual(['bows', 'holy_staffs']);
+    expect(groups[0].drafts.map((entry) => entry.weapon_name)).toEqual(['Bow', 'Longbow', 'Warbow']);
+  });
+
+  it('counts levels and locks', () => {
+    expect(
+      summarizeWeaponDrafts([
+        draft(POLE, 'Polehammer', 'main'),
+        draft(HOLY, 'Holy Staff', 'main', true),
+        draft('weapon:2H_BOW', 'Bow', null, true),
+        draft('weapon:2H_AXE', 'Greataxe', 'basic'),
+      ]),
+    ).toEqual({ main: 2, good: 0, basic: 1, locked: 2 });
   });
 });

@@ -869,29 +869,20 @@ export function isAlbionCatalogItemAvailable(identifier: string): boolean {
   return validTiers?.includes(tier) ?? true;
 }
 
-/** Removes the tier prefix so all eight tiers share one specialization node. */
-export function albionSpecializationIdentifier(identifier: string): string {
+/** Removes the tier prefix so all eight tiers share one base identifier. */
+export function albionBaseIdentifier(identifier: string): string {
    return identifier.trim().toUpperCase().replace(/^T\d+_/, '');
  }
 
-/** True for gathering tools and gatherer armour. They have no combat Destiny Board node. */
+/** True for gathering tools and gatherer armour. They are not combat gear. */
 export function isAlbionGatheringGear(identifier: string): boolean {
-  return albionSpecializationIdentifier(identifier).includes('_GATHERER');
+  return albionBaseIdentifier(identifier).includes('_GATHERER');
 }
 
-/** Returns the stable key shared by profile and event specialization views. */
-export function albionSpecializationKey(item: Pick<OpenAlbionItem, 'type' | 'identifier' | 'id'>): string {
+/** Stable tier-less `weapon:`/`armor:` key of a catalog item. */
+function albionCatalogKey(item: Pick<OpenAlbionItem, 'type' | 'identifier' | 'id'>): string {
    const category = item.type === 'armor' ? 'armor' : 'weapon';
-   const identifier = albionSpecializationIdentifier(item.identifier ?? String(item.id));
-   return `${category}:${identifier}`;
- }
-
-/** Canonicalizes keys saved by older versions that included the tier. */
-export function normalizeAlbionSpecializationKey(nodeKey: string): string {
-   const separator = nodeKey.indexOf(':');
-   if (separator < 0) return nodeKey.trim();
-   const category = nodeKey.slice(0, separator).trim().toLowerCase();
-   const identifier = albionSpecializationIdentifier(nodeKey.slice(separator + 1));
+   const identifier = albionBaseIdentifier(item.identifier ?? String(item.id));
    return `${category}:${identifier}`;
  }
 
@@ -900,7 +891,7 @@ export function normalizeAlbionEquipmentName(identifier: string, fallback = iden
    const tiered = ALBION_TIERED_ITEM_DISPLAY_NAMES[identifier.trim().toUpperCase()];
    if (tiered) return tiered;
 
-   const baseIdentifier = albionSpecializationIdentifier(identifier);
+   const baseIdentifier = albionBaseIdentifier(identifier);
    const mapped = ALBION_ITEM_DISPLAY_NAMES[baseIdentifier];
    if (mapped) return mapped;
 
@@ -911,7 +902,7 @@ export function normalizeAlbionEquipmentName(identifier: string, fallback = iden
      .replace(/_/g, ' ')
      .trim();
   const curatedName = fallback.trim();
-  const normalizedFallback = albionSpecializationIdentifier(curatedName).replace(/_/g, ' ');
+  const normalizedFallback = albionBaseIdentifier(curatedName).replace(/_/g, ' ');
   const technicalName = baseIdentifier.replace(/_/g, ' ');
   if (curatedName && normalizedFallback.toLowerCase() !== technicalName.toLowerCase()) {
     return curatedName;
@@ -920,17 +911,17 @@ export function normalizeAlbionEquipmentName(identifier: string, fallback = iden
   return spaced.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-/** Returns one specialization item per base weapon/armor identifier. */
+/** Returns one item per base weapon/armor identifier. */
 export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[]): OpenAlbionItem[] {
    const seen = new Set<string>();
    return catalog.flatMap((item) => {
      if (item.type !== 'weapon' && item.type !== 'armor') return [];
      const identifier = item.identifier?.trim();
      if (!identifier || isAlbionGatheringGear(identifier)) return [];
-     const key = albionSpecializationKey(item);
+     const key = albionCatalogKey(item);
      if (seen.has(key)) return [];
      seen.add(key);
-     const baseIdentifier = albionSpecializationIdentifier(identifier);
+     const baseIdentifier = albionBaseIdentifier(identifier);
     return [{
        ...item,
        identifier: baseIdentifier,
@@ -952,14 +943,14 @@ export function albionEquipmentIconUrl(identifier: string, quality = 4): string 
 }
 
 /**
- * Render URL for a combat specialization node.
+ * Render URL for a combat item.
  *
  * Albion's CDN keys items as `T{n}_{BASE}` (e.g. `T8_2H_BOW`). T1 unique names
  * 404 for most weapons — hunter/mage lines don't exist until T3/T4 — so the
- * Destiny Board always requests T8, which every combat item has.
+ * icons always request T8, which every combat item has.
  */
 export function albionCombatIconUrl(identifier: string, quality = 1): string {
-  const base = albionSpecializationIdentifier(identifier).replace(/^T\d+_/, '');
+  const base = albionBaseIdentifier(identifier).replace(/^T\d+_/, '');
   const grade = quality >= 1 && quality <= 5 ? quality : 1;
   return `https://render.albiononline.com/v1/item/${encodeURIComponent(`T8_${base}`)}.png?quality=${grade}&size=96`;
 }
@@ -1001,34 +992,34 @@ function normalizeSearchText(value: string): string {
 
 function belongsToSlot(fileName: string, slot: BuildSlot): boolean {
   // The API catalog uses tiered identifiers (for example `T8_2H_CLAYMORE_AVALON`),
-  // while the slot prefixes describe the tier-independent specialization.
-  const specialization = albionSpecializationIdentifier(fileName);
+  // while the slot prefixes describe the tier-independent base.
+  const base = albionBaseIdentifier(fileName);
 
   switch (slot) {
     case 'weapon':
-      return specialization.startsWith('MAIN_') || specialization.startsWith('2H_');
+      return base.startsWith('MAIN_') || base.startsWith('2H_');
     case 'off_hand':
-      return specialization.startsWith('OFF_');
+      return base.startsWith('OFF_');
     case 'head':
-      return specialization.startsWith('HEAD_');
+      return base.startsWith('HEAD_');
     case 'armor':
-      return specialization.startsWith('ARMOR_');
+      return base.startsWith('ARMOR_');
     case 'shoes':
-      return specialization.startsWith('SHOES_');
+      return base.startsWith('SHOES_');
     case 'cape':
-      return specialization === 'CAPE' || specialization.startsWith('CAPEITEM_');
+      return base === 'CAPE' || base.startsWith('CAPEITEM_');
     case 'bag':
       return (
-        specialization === 'BAG' ||
-        specialization.startsWith('BAG_') ||
-        specialization.startsWith('BACKPACK_')
+        base === 'BAG' ||
+        base.startsWith('BAG_') ||
+        base.startsWith('BACKPACK_')
       );
     case 'potion':
-      return specialization.startsWith('POTION_');
+      return base.startsWith('POTION_');
     case 'food':
-      return specialization.startsWith('MEAL_');
+      return base.startsWith('MEAL_');
     case 'mount':
-      return specialization.startsWith('MOUNT_');
+      return base.startsWith('MOUNT_');
   }
 }
 

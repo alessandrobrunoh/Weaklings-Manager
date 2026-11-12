@@ -42,7 +42,6 @@ function seat(
           primary_build_name: `Build ${buildId}`,
           secondary_build_id: null,
           secondary_build_name: null,
-          specializations: {},
           weapons: [],
         }
       : null,

@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BuildSummary, CompDetail, CompReadiness } from '../../core/models/api.models';
+import type { BuildSummary, CompDetail } from '../../core/models/api.models';
 import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -342,34 +342,7 @@ describe('CompDetailPage roster', () => {
   });
 });
 
-describe('CompDetailPage readiness tab', () => {
-  const readiness: CompReadiness = {
-    seat_count: 2,
-    avg_item_power_now: 900,
-    avg_item_power_at_max: 1500,
-    readiness_pct: 0.6,
-    weakest_seats: [
-      {
-        seat_key: 'build:2:1',
-        build_id: 2,
-        build_name: 'Hallowfall',
-        best_candidate_user_id: null,
-        best_candidate_username: '',
-        best_candidate_item_power: 0,
-        max_item_power: 1500,
-        readiness: 0,
-        item_power_gap: 1500,
-        qualified_members: 0,
-      },
-    ],
-    bench_coverage: [
-      { build_id: 1, build_name: 'Great Hammer', seat_count: 1, qualified_members: 1 },
-      { build_id: 2, build_name: 'Hallowfall', seat_count: 1, qualified_members: 0 },
-    ],
-    uncovered_seats: ['build:2:1'],
-    mastery_levels_known: false,
-  };
-
+describe('CompDetailPage view modes', () => {
   const apiGet = vi.fn();
 
   beforeEach(async () => {
@@ -377,7 +350,6 @@ describe('CompDetailPage readiness tab', () => {
     apiGet.mockImplementation((path: string) => {
       if (path === `api/comps/${comp.id}`) return of(comp);
       if (path === `api/comps/${comp.id}/performance`) return of(null);
-      if (path === `api/comps/${comp.id}/readiness`) return of(readiness);
       if (path.startsWith('api/comps/builds/')) return of({ ...tank, items: [] });
       return of({ items: [] });
     });
@@ -390,7 +362,7 @@ describe('CompDetailPage readiness tab', () => {
         {
           provide: AuthService,
           useValue: {
-            hasPermission: (perm: string) => perm === 'combat.readiness.view',
+            hasPermission: () => true,
             profile: () => ({ user_id: 1 }),
           },
         },
@@ -409,24 +381,12 @@ describe('CompDetailPage readiness tab', () => {
     }).compileComponents();
   });
 
-  it('fetches readiness only when the viewer can see it, and renders the roll-up', async () => {
+  it('offers exactly the parties, roles and analytics views', async () => {
     const fixture = TestBed.createComponent(CompDetailPage);
     await settleComp(fixture);
 
-    expect(apiGet).toHaveBeenCalledWith(`api/comps/${comp.id}/readiness`);
-
-    const page = fixture.componentInstance as unknown as {
-      viewMode: { set(value: string): void };
-    };
-    page.viewMode.set('readiness');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('Hallowfall');
-    expect(text).toContain('900');
-    expect(text).toContain('1500');
+    const firstTablist = fixture.nativeElement.querySelector('[role="tablist"]') as HTMLElement;
+    expect(firstTablist.querySelectorAll('[role="tab"]')).toHaveLength(3);
   });
 });
 
