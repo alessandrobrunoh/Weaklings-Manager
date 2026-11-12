@@ -3331,4 +3331,11 @@ export const fr: TranslationDict = {
   'admin.features.unsaved': 'Tu as des modifications non enregistrées.',
   'admin.features.noChanges': 'Aucune modification à enregistrer.',
   'admin.features.saveFailed': 'Les modules n’ont pas pu être enregistrés. Tes modifications sont toujours là.',
+  // design/admin-finance
+  'bank.finance.share': 'Part',
+  'bank.finance.viewSplits': 'Voir les splits',
+  'bank.finance.allMembersTotal': 'Tous les membres',
+  'bank.finance.treasuryNetHint': 'Taxes de guilde et dons, moins les regears versés',
+  'bank.finance.grossLootBagsDetail': '{count} splits terminés · {bags} en sacs d’argent',
+  'bank.finance.breakdownLabel': 'Vue par poste',
 };

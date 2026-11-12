@@ -3327,4 +3327,11 @@ export const uk: TranslationDict = {
   'admin.features.unsaved': 'Є незбережені зміни.',
   'admin.features.noChanges': 'Немає змін для збереження.',
   'admin.features.saveFailed': 'Не вдалося зберегти модулі. Твої зміни збережено тут.',
+  // design/admin-finance
+  'bank.finance.share': 'Частка',
+  'bank.finance.viewSplits': 'Переглянути спліти',
+  'bank.finance.allMembersTotal': 'Усі учасники',
+  'bank.finance.treasuryNetHint': 'Податки гільдії та пожертви, без виплачених регірів',
+  'bank.finance.grossLootBagsDetail': '{count} завершених сплітів · {bags} у срібних мішках',
+  'bank.finance.breakdownLabel': 'Перегляд за статтями',
 };

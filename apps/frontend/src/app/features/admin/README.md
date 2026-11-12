@@ -12,6 +12,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
 - `AdminApplications` edits the Discord applications panel (`api/admin/settings`): an open/closed `app-tabs` switch, channel and role pickers, and bot copy, saved with one primary action. It has no applicant queue: the backend has no list endpoint for applications.
 - `AdminDiscord` edits the guild's Discord channels, split forum, notifications and roles in one form with one save. It writes `api/admin/settings` and `api/admin/autorole`; its connection status comes from loading the Discord channel and role catalog.
+- `AdminFinance` loads `api/bank/admin/summary` (whole ledger, ignores the period) and `api/intel/report` twice (the selected window and the window before it, for deltas). Each section tab shows one `app-summary-band` and then one chart or one `app-data-table`; the ledger breakdown and member ledger are tables with a totals row.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 
 ## Invariants
@@ -19,6 +20,7 @@ This directory contains administrative pages and helpers for tenant configuratio
 - Feature rows are all catalog entries. A row is editable only when its key is in `allowed_keys` and it is not platform-managed; enabled state resolves from local override, API value, then `false`. Save sends only editable rows and is disabled while nothing has changed.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
 - `AdminDiscord` hides its form when the guild settings or default join role cannot be read, so a save never writes blank defaults over them. A failed catalog load shows a "not connected" status with retry and keeps the form.
+- Finance income comes only from splits the user created (`split_*` economics); battle data is never used to infer earnings.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
 
 ## Side Effects

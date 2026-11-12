@@ -3510,6 +3510,13 @@ export const en = {
   'admin.features.unsaved': 'You have unsaved changes.',
   'admin.features.noChanges': 'No changes to save.',
   'admin.features.saveFailed': 'Modules could not be saved. Your changes are still here.',
+  // design/admin-finance
+  'bank.finance.share': 'Share',
+  'bank.finance.viewSplits': 'View splits',
+  'bank.finance.allMembersTotal': 'All members',
+  'bank.finance.treasuryNetHint': 'Guild taxes and donations, less regears paid',
+  'bank.finance.grossLootBagsDetail': '{count} completed splits · {bags} in silver bags',
+  'bank.finance.breakdownLabel': 'Breakdown view',
 } as const;
 
 export type TranslationKey = keyof typeof en;

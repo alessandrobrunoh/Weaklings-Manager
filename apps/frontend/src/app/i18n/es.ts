@@ -3513,4 +3513,11 @@ export const es: TranslationDict = {
   'admin.features.unsaved': 'Tienes cambios sin guardar.',
   'admin.features.noChanges': 'No hay cambios que guardar.',
   'admin.features.saveFailed': 'No se pudieron guardar los módulos. Tus cambios siguen aquí.',
+  // design/admin-finance
+  'bank.finance.share': 'Parte',
+  'bank.finance.viewSplits': 'Ver splits',
+  'bank.finance.allMembersTotal': 'Todos los miembros',
+  'bank.finance.treasuryNetHint': 'Impuestos del gremio y donaciones, menos los regear pagados',
+  'bank.finance.grossLootBagsDetail': '{count} splits completados · {bags} en bolsas de plata',
+  'bank.finance.breakdownLabel': 'Vista por concepto',
 };

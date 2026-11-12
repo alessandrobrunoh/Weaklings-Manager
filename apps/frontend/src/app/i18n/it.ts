@@ -3522,4 +3522,11 @@ export const it: TranslationDict = {
   'admin.features.unsaved': 'Hai modifiche non salvate.',
   'admin.features.noChanges': 'Nessuna modifica da salvare.',
   'admin.features.saveFailed': 'Non è stato possibile salvare i moduli. Le modifiche sono ancora qui.',
+  // design/admin-finance
+  'bank.finance.share': 'Quota',
+  'bank.finance.viewSplits': 'Vedi split',
+  'bank.finance.allMembersTotal': 'Tutti i membri',
+  'bank.finance.treasuryNetHint': 'Tasse di gilda e donazioni, meno i rimborsi pagati',
+  'bank.finance.grossLootBagsDetail': '{count} split completati · {bags} in sacchi d’argento',
+  'bank.finance.breakdownLabel': 'Vista per voce',
 };
