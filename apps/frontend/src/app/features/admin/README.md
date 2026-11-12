@@ -9,12 +9,14 @@ This directory contains administrative pages and helpers for tenant configuratio
 - `AdminFeatures` reads and saves `TenantFeaturesView` through `api/admin/features`; its rows are drawn from the feature catalog.
 - `AdminGiveawayDetail` loads `GiveawayDetailView` for the route's giveaway ID and exposes draw/cancel controls when eligible.
 - `groupPermissions` maps catalog or available permission keys into permission groups. `groupIslandsBySourceGuild` groups island records by source guild.
+- `AdminWithdrawals` is the officer withdrawal queue. Status tabs (`status` URL param) read `api/bank/transactions`; the summary band and tab counts come from a `requested` fetch and limit-1 count calls that ignore search. Each player's requested transactions form one row; pay and reject post every id of that row to `api/bank/transactions/withdraw/{accept,reject}` after a confirmation.
 - Other admin pages use shared API model contracts; this scan does not establish the complete page or route inventory.
 
 ## Invariants
 
 - Feature rows are restricted to `allowed_keys`; enabled state resolves from local override, API value, then `false`.
 - Giveaway actions are displayed only for an open giveaway and users with `giveaways.manage`; this is a frontend gate, not evidence of backend authorization.
+- Withdrawal rows group `requested` transactions by guild tenant and player; the row's pay action sends every id of that row, while the review dialog may send a selected subset.
 - Permission grouping prefers a nonempty catalog. Island grouping uses trimmed source-guild IDs, sorts unknown groups last, and sorts items by name then ID.
 
 ## Side Effects
