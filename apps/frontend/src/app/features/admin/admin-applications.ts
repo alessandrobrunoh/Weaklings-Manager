@@ -14,11 +14,11 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { channelSelectOptions, roleSelectOptions } from '../../shared/discord/discord-options';
 
 interface ApplicationsDraft {
@@ -267,7 +267,36 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
       },
     ],
   },
+  {
+    legendKey: 'admin.applications.ticketGroup',
+    fields: [
+      {
+        field: 'discord_tickets_welcome_title',
+        labelKey: 'admin.applications.ticketWelcomeTitle',
+        kind: 'title',
+      },
+      {
+        field: 'discord_tickets_welcome_message',
+        labelKey: 'admin.applications.ticketWelcomeMessage',
+        kind: 'message',
+      },
+      {
+        field: 'discord_tickets_closed_title',
+        labelKey: 'admin.applications.ticketClosedTitle',
+        kind: 'title',
+      },
+      {
+        field: 'discord_tickets_closed_message',
+        labelKey: 'admin.applications.ticketClosedMessage',
+        kind: 'message',
+      },
+    ],
+  },
 ];
+
+/** Open/closed switch for the Discord applications panel. */
+const STATUS_TABS = ['open', 'closed'] as const;
+type StatusTab = (typeof STATUS_TABS)[number];
 
 /**
  * Discord applications panel: open/closed state, channels, roles, and bot copy.
@@ -275,7 +304,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
 @Component({
   selector: 'app-admin-applications',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, Loading, PageHeader, PageStack, SearchableSelect],
+  imports: [Loading, PageHeader, PageStack, SearchableSelect, Tabs],
   styles: [COMPACT_FEATURE_STYLES, `
     .status-card {
       display: flex;
@@ -283,40 +312,6 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
       align-items: center;
       justify-content: space-between;
       gap: 1rem;
-    }
-    .status-toggle {
-      display: inline-flex;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-buttons);
-      background: var(--color-surface-2);
-      overflow: hidden;
-    }
-    .status-toggle__btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.375rem;
-      min-height: 2.5rem;
-      min-width: 6.5rem;
-      padding: 0.5rem 1.25rem;
-      border: 0;
-      background: transparent;
-      color: var(--color-text-secondary);
-      font: inherit;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .status-toggle__btn:hover {
-      background: var(--color-surface-hover);
-      color: var(--color-text);
-    }
-    .status-toggle__btn.is-open.is-active {
-      background: var(--color-success-container);
-      color: var(--color-success);
-    }
-    .status-toggle__btn.is-closed.is-active {
-      background: var(--color-error-container);
-      color: var(--color-error);
     }
     .message-group {
       margin: 0;
@@ -328,7 +323,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
     .message-group legend {
       padding-inline: 0.375rem;
       color: var(--color-text);
-      font-size: 0.8125rem;
+      font-size: var(--ui-text-sm);
       font-weight: 600;
     }
   `],
@@ -348,51 +343,32 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
 
       <app-page-stack>
         @if (loading()) {
-          <app-loading [label]="t('common.loading')" />
+          <app-loading variant="detail" [label]="t('common.loading')" />
         } @else {
-          <section class="card p-5">
+          <section class="card">
             <div class="status-card">
               <div class="min-w-0">
-                <h2 class="eyebrow mb-1">{{ t('admin.applications.statusLabel') }}</h2>
-                <p class="max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+                <h2 class="section-title">{{ t('admin.applications.statusLabel') }}</h2>
+                <p class="hint mt-1 max-w-2xl">
                   {{ isOpen() ? t('admin.applications.openHint') : t('admin.applications.closedHint') }}
                 </p>
-                <p class="mt-1 max-w-2xl text-xs" style="color: var(--color-text-tertiary)">
+                <p class="hint mt-1 max-w-2xl">
                   {{ t('admin.applications.saveStatusHint') }}
                 </p>
               </div>
-              <div
-                class="status-toggle"
-                role="group"
-                [attr.aria-label]="t('admin.applications.statusLabel')"
-              >
-                <button
-                  type="button"
-                  class="status-toggle__btn is-open"
-                  [class.is-active]="isOpen()"
-                  [attr.aria-pressed]="isOpen()"
-                  (click)="setOpen(true)"
-                >
-                  <app-icon name="check" size="0.875rem" />
-                  {{ t('admin.applications.open') }}
-                </button>
-                <button
-                  type="button"
-                  class="status-toggle__btn is-closed"
-                  [class.is-active]="!isOpen()"
-                  [attr.aria-pressed]="!isOpen()"
-                  (click)="setOpen(false)"
-                >
-                  <app-icon name="close" size="0.875rem" />
-                  {{ t('admin.applications.closed') }}
-                </button>
-              </div>
+              <app-tabs
+                variant="segmented"
+                [ariaLabel]="t('admin.applications.statusLabel')"
+                [options]="statusTabs()"
+                [active]="statusTab()"
+                (activeChange)="onStatusChange($event)"
+              />
             </div>
           </section>
 
-          <section class="card p-5">
-            <h2 class="eyebrow mb-1">{{ t('admin.applications.channelsTitle') }}</h2>
-            <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+          <section class="card">
+            <h2 class="section-title">{{ t('admin.applications.channelsTitle') }}</h2>
+            <p class="hint mb-4 mt-1 max-w-2xl">
               {{ t('admin.applications.channelsHint') }}
             </p>
             <div class="grid gap-4 sm:grid-cols-2">
@@ -410,7 +386,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   [ariaLabel]="t('admin.applications.panelChannel')"
                   (valueChange)="setDraft('discord_applications_channel_id', $event)"
                 />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                <span class="hint mt-1 block">
                   {{ t('admin.applications.panelChannelHint') }}
                 </span>
               </label>
@@ -428,8 +404,8 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   [ariaLabel]="t('admin.applications.archiveCategory')"
                   (valueChange)="setDraft('discord_tickets_archive_channel_id', $event)"
                 />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  I thread chiusi restano archiviati nel canale originale; qui viene pubblicato il riferimento per gli amministratori.
+                <span class="hint mt-1 block">
+                  {{ t('admin.applications.archiveHint') }}
                 </span>
               </label>
               <label>
@@ -446,7 +422,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   [ariaLabel]="t('admin.applications.manageRole')"
                   (valueChange)="setDraft('discord_applications_manage_role_id', $event)"
                 />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                <span class="hint mt-1 block">
                   {{ t('admin.applications.manageRoleHint') }}
                 </span>
               </label>
@@ -464,7 +440,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   [ariaLabel]="t('admin.applications.acceptedRole')"
                   (valueChange)="setDraft('discord_applications_accepted_role_id', $event)"
                 />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                <span class="hint mt-1 block">
                   {{ t('admin.applications.acceptedRoleHint') }}
                 </span>
               </label>
@@ -482,16 +458,16 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   [ariaLabel]="t('admin.applications.statusChannel')"
                   (valueChange)="setDraft('discord_applications_status_channel_id', $event)"
                 />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                <span class="hint mt-1 block">
                   {{ t('admin.applications.statusChannelHint') }}
                 </span>
               </label>
             </div>
           </section>
 
-          <section class="card p-5">
-            <h2 class="eyebrow mb-1">{{ t('admin.applications.panelCardTitle') }}</h2>
-            <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+          <section class="card">
+            <h2 class="section-title">{{ t('admin.applications.panelCardTitle') }}</h2>
+            <p class="hint mb-4 mt-1 max-w-2xl">
               {{ t('admin.applications.panelCardHint') }}
             </p>
             <div class="grid gap-4">
@@ -507,7 +483,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   aria-describedby="applications-panel-title-hint"
                   (input)="updateField('discord_applications_panel_title', $event)"
                 />
-                <span id="applications-panel-title-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                <span id="applications-panel-title-hint" class="hint mt-1 block">
                   {{ t('admin.applications.panelTitleHint') }}
                 </span>
               </label>
@@ -522,16 +498,16 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   aria-describedby="applications-panel-message-hint"
                   (input)="updateField('discord_applications_panel_message', $event)"
                 ></textarea>
-                <span id="applications-panel-message-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                <span id="applications-panel-message-hint" class="hint mt-1 block">
                   {{ t('admin.applications.panelMessageHint') }}
                 </span>
               </label>
             </div>
           </section>
 
-          <section class="card p-5">
-            <h2 class="eyebrow mb-1">{{ t('admin.applications.messagesTitle') }}</h2>
-            <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+          <section class="card">
+            <h2 class="section-title">{{ t('admin.applications.messagesTitle') }}</h2>
+            <p class="hint mb-4 mt-1 max-w-2xl">
               {{ t('admin.applications.messagesHint') }}
             </p>
             <div class="grid gap-4 lg:grid-cols-2">
@@ -564,11 +540,7 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                             (input)="updateField(field.field, $event)"
                           ></textarea>
                         }
-                        <span
-                          class="mt-1 block text-xs"
-                          style="color: var(--color-text-secondary)"
-                          [id]="fieldId(field.field) + '-hint'"
-                        >
+                        <span class="hint mt-1 block" [id]="fieldId(field.field) + '-hint'">
                           {{ field.kind === 'title' ? t('admin.applications.titleHint') : t('admin.applications.textHint') }}
                         </span>
                       </label>
@@ -576,35 +548,8 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   </div>
                 </fieldset>
               }
-              <fieldset class="message-group">
-                <legend>Ticket</legend>
-                <div class="grid gap-3">
-                  <label>
-                    <span class="label">Titolo di benvenuto</span>
-                    <input class="input" type="text" maxlength="256" [value]="draft().discord_tickets_welcome_title" (input)="updateField('discord_tickets_welcome_title', $event)" />
-                  </label>
-                  <label>
-                    <span class="label">Messaggio di benvenuto</span>
-                    <textarea class="input min-h-24" maxlength="4000" [value]="draft().discord_tickets_welcome_message" (input)="updateField('discord_tickets_welcome_message', $event)"></textarea>
-                  </label>
-                  <label>
-                    <span class="label">Titolo di chiusura</span>
-                    <input class="input" type="text" maxlength="256" [value]="draft().discord_tickets_closed_title" (input)="updateField('discord_tickets_closed_title', $event)" />
-                  </label>
-                  <label>
-                    <span class="label">Messaggio di chiusura</span>
-                    <textarea class="input min-h-24" maxlength="4000" [value]="draft().discord_tickets_closed_message" (input)="updateField('discord_tickets_closed_message', $event)"></textarea>
-                  </label>
-                </div>
-              </fieldset>
             </div>
           </section>
-
-          <div>
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">
-              {{ t('admin.applications.save') }}
-            </button>
-          </div>
         }
       </app-page-stack>
     </form>
@@ -626,6 +571,13 @@ export class AdminApplications {
 
   protected readonly loaded = computed(() => !this.loading());
   protected readonly isOpen = computed(() => this.draft().discord_applications_open === 'true');
+  protected readonly statusTab = computed<StatusTab>(() => (this.isOpen() ? 'open' : 'closed'));
+  protected readonly statusTabs = computed<readonly TabOption[]>(() =>
+    STATUS_TABS.map((id) => ({
+      id,
+      label: this.t(id === 'open' ? 'admin.applications.open' : 'admin.applications.closed'),
+    })),
+  );
   protected readonly canManage = computed(() => this.auth.hasPermission('admin.settings.manage'));
 
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -654,8 +606,8 @@ export class AdminApplications {
     this.draft.update((draft) => ({ ...draft, [field]: value }));
   }
 
-  protected setOpen(open: boolean): void {
-    this.setDraft('discord_applications_open', open ? 'true' : 'false');
+  protected onStatusChange(id: string): void {
+    this.setDraft('discord_applications_open', id === 'open' ? 'true' : 'false');
   }
 
   protected updateField(field: keyof ApplicationsDraft, event: Event): void {
@@ -709,8 +661,8 @@ export class AdminApplications {
       );
       this.draft.set(toDraft(updated));
       this.toasts.success(this.t('admin.applications.saved'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.saving.set(false);
     }
@@ -726,8 +678,8 @@ export class AdminApplications {
     try {
       const settings = await firstValueFrom(this.api.get<GuildSettingsView>('api/admin/settings'));
       this.draft.set(toDraft(settings));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     }
   }
 
@@ -742,8 +694,8 @@ export class AdminApplications {
       ]);
       this.discordRoles.set(roles);
       this.discordChannels.set(channels);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('common.error'));
     } finally {
       this.catalogLoading.set(false);
     }

@@ -3451,4 +3451,12 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Los hilos cerrados permanecen en su canal original. Este canal recibe un enlace por cada candidatura resuelta.',
+  'admin.applications.ticketGroup': 'Tickets de soporte',
+  'admin.applications.ticketWelcomeTitle': 'Título de bienvenida',
+  'admin.applications.ticketWelcomeMessage': 'Mensaje de bienvenida',
+  'admin.applications.ticketClosedTitle': 'Título de cierre',
+  'admin.applications.ticketClosedMessage': 'Mensaje de cierre',
 };

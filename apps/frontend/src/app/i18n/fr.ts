@@ -3269,4 +3269,12 @@ export const fr: TranslationDict = {
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Les fils fermés restent dans leur salon d’origine. Ce salon reçoit un lien pour chaque candidature résolue.',
+  'admin.applications.ticketGroup': 'Tickets de support',
+  'admin.applications.ticketWelcomeTitle': 'Titre d’accueil',
+  'admin.applications.ticketWelcomeMessage': 'Message d’accueil',
+  'admin.applications.ticketClosedTitle': 'Titre de fermeture',
+  'admin.applications.ticketClosedMessage': 'Message de fermeture',
 };

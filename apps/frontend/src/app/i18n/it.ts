@@ -3460,4 +3460,12 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'I thread chiusi restano nel canale originale. Questo canale riceve un collegamento per ogni candidatura conclusa.',
+  'admin.applications.ticketGroup': 'Ticket di supporto',
+  'admin.applications.ticketWelcomeTitle': 'Titolo di benvenuto',
+  'admin.applications.ticketWelcomeMessage': 'Messaggio di benvenuto',
+  'admin.applications.ticketClosedTitle': 'Titolo di chiusura',
+  'admin.applications.ticketClosedMessage': 'Messaggio di chiusura',
 };

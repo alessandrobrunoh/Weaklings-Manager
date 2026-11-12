@@ -3265,4 +3265,12 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Закриті гілки лишаються в початковому каналі. Цей канал отримує посилання на кожну завершену заявку.',
+  'admin.applications.ticketGroup': 'Тикети підтримки',
+  'admin.applications.ticketWelcomeTitle': 'Заголовок привітання',
+  'admin.applications.ticketWelcomeMessage': 'Текст привітання',
+  'admin.applications.ticketClosedTitle': 'Заголовок закриття',
+  'admin.applications.ticketClosedMessage': 'Текст закриття',
 };

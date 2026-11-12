@@ -3448,6 +3448,14 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/admin-applications
+  'admin.applications.archiveHint':
+    'Closed threads stay in their original channel. This channel gets a link to each resolved application.',
+  'admin.applications.ticketGroup': 'Support tickets',
+  'admin.applications.ticketWelcomeTitle': 'Welcome title',
+  'admin.applications.ticketWelcomeMessage': 'Welcome message',
+  'admin.applications.ticketClosedTitle': 'Closed title',
+  'admin.applications.ticketClosedMessage': 'Closed message',
 } as const;
 
 export type TranslationKey = keyof typeof en;
