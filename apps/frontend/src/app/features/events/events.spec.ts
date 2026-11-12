@@ -378,8 +378,8 @@ describe('Events', () => {
     expect(text).toContain('CALL TO ARMS');
   });
 
-  it('labels synchronized read-only events in the list', () => {
-    expect(fixture.nativeElement.textContent).toContain('Read-only copy');
+  it('labels events shared by another tenant in the list', () => {
+    expect(fixture.nativeElement.textContent).toContain('Shared event');
   });
 
   it('renders the search box and status dropdown', () => {
@@ -448,7 +448,12 @@ describe('Events', () => {
       canDelete: (event?: EventView) => boolean;
     };
 
-    const ownedEvent = { ...mockEvents[0], source_event_id: undefined, source_tenant_id: undefined } as EventView;
+    const ownedEvent = {
+      ...mockEvents[0],
+      source_event_id: undefined,
+      source_tenant_id: undefined,
+      is_link: false,
+    } as EventView;
     expect(page.canEdit(ownedEvent)).toBe(true);
     expect(page.canDelete(ownedEvent)).toBe(true);
     expect(page.canEdit(mockEvents[0] as EventView)).toBe(false);

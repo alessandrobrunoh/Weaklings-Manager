@@ -505,6 +505,8 @@ describe('SplitDetailPage money flow and participants', () => {
         ],
       },
     );
+    // The transactions load after the split; let that second request settle too.
+    await settle(fixture);
     await settle(fixture);
     const rows = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('tbody tr')).map(
       (row) => row.textContent ?? '',

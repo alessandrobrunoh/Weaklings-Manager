@@ -130,7 +130,7 @@ const EMPTY_SPELLS: BuildItemSpells = { active: {}, passive: {} };
       width: 1.375rem;
       height: 1.375rem;
       border: 1px solid var(--color-border-strong);
-      border-radius: 999px;
+      border-radius: var(--radius-full);
       font-family: var(--font-mono);
       font-size: 0.75rem;
     }

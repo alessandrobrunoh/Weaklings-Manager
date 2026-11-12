@@ -3103,7 +3103,7 @@ export const it: TranslationDict = {
   // Composition detail page, role tag, loadout view and entity header.
   'role.tank': 'Tank',
   'role.healer': 'Healer',
-  'role.support': 'Support',
+  'role.support': 'Supporto',
   'role.dps': 'DPS',
   'role.brawler': 'Brawler',
   'role.battle_mount': 'Battle mount',

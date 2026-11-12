@@ -676,7 +676,9 @@ export class BuildsList {
   private async post(id: number, action: 'archive' | 'unarchive', success: string): Promise<boolean> {
     this.saving.set(true);
     try {
-      await firstValueFrom(this.api.post(`api/comps/builds/${id}/${action}`, {}));
+      const path =
+        action === 'archive' ? `api/comps/builds/${id}/archive` : `api/comps/builds/${id}/unarchive`;
+      await firstValueFrom(this.api.post(path, {}));
       await this.load();
       this.toasts.success(success);
       return true;

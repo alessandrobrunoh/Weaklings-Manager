@@ -32,7 +32,7 @@ describe('accessBlockedInterceptor', () => {
     controller = TestBed.inject(HttpTestingController);
   });
 
-  function fail(url: string, status: number, body: unknown): { error: unknown } {
+  function fail(url: string, status: number, body: Record<string, unknown> | string | null): { error: unknown } {
     const seen: { error: unknown } = { error: null };
     http.get(url).subscribe({ error: (err) => (seen.error = err) });
     controller.expectOne(url).flush(body, { status, statusText: 'err' });

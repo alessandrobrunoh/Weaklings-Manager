@@ -85,7 +85,7 @@ describe('build loadouts', () => {
       'mount',
     ]);
     expect(Object.keys(SLOT_LABEL_KEYS).sort()).toEqual([...SLOT_ORDER].sort());
-    expect(CORE_SLOTS.every((slot) => SLOT_ORDER.includes(slot))).toBe(true);
+    expect([...CORE_SLOTS].every((slot) => SLOT_ORDER.includes(slot))).toBe(true);
   });
 
   it('offers T4 to T8 for build items, with T8 as the default', () => {

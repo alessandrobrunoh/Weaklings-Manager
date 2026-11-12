@@ -258,8 +258,7 @@ export interface CompBuildAddition {
                   <app-weapon-icon class="cab__icon" [weaponKey]="build.weapon_key" [fallback]="glyph(build.role)" />
                   <span class="cab__name">
                     <span class="cab__title">
-                      <span>{{ build.name }}</span>
-                      <span class="cab__version">v{{ build.version }}</span>
+                      <span>{{ build.name }}</span>{{ ' ' }}<span class="cab__version">v{{ build.version }}</span>
                     </span>
                     <span class="cab__meta">
                       {{ build.weapon_name || t('comps.noWeapon') }} · {{ build.category_name || t('comps.noCategory') }} ·

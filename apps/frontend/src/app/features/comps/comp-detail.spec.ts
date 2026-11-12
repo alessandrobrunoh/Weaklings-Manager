@@ -124,7 +124,26 @@ describe('CompDetailPage', () => {
     }
     apiGet.mockImplementation((path: string) => {
       if (path === `api/comps/${comp.id}`) return of(comp);
-      if (path === `api/comps/${comp.id}/performance`) return of(null);
+      if (path === `api/comps/${comp.id}/performance`) {
+        return of({
+          comp_id: comp.id,
+          comp_name: comp.name,
+          events_with_battles: 0,
+          stats: {
+            total_battles: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0,
+            total_kills: 0,
+            total_deaths: 0,
+            kill_death_ratio: 0,
+            total_kill_fame: 0,
+            average_guild_players: 0,
+            top_opponents: [],
+          },
+        });
+      }
+      if (path === 'api/comps/comp-categories') return of([{ id: 1, name: 'ZvZ' }]);
       if (path === `api/comps/${comp.id}/price`) return of({ total: '0', builds: [] });
       if (path === `api/alliance/shares/comp/${comp.id}`) return of({ shared: false });
       if (path === 'api/comps/builds/1') {
