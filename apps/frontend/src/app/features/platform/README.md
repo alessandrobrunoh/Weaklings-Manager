@@ -7,7 +7,7 @@ This directory contains control-plane pages for the platform hub, platform admin
 ## Interface
 
 - `PlatformHub` displays tenant/admin counts and panel links.
-- `PlatformAdmins` lists and assigns/revokes admins.
+- `PlatformAdmins` lists admins in an `app-data-table`. Access is granted from a dialog opened by the header action; each row menu removes access after a confirmation dialog. The page closes with an explanation of what platform admin access allows.
 - `PlatformFeatureFlags` displays a tenant feature catalog and saves flag values.
 - `PlatformTenants` lists, creates, suspends, and resumes tenants.
 

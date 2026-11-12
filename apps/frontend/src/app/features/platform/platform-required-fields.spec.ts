@@ -96,7 +96,11 @@ describe('platform required-field markers', () => {
 
   it('marks the required platform admin Discord ID', async () => {
     const fixture = await configure(PlatformAdmins);
-    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    const compiled = fixture.nativeElement as HTMLElement;
+    compiled.querySelector('app-page-header button')?.dispatchEvent(new Event('click'));
+    fixture.detectChanges();
+
+    const form = compiled.querySelector('#assign-admin-form') as HTMLFormElement;
     expect(form.textContent).toContain('validation.requiredLegend');
     expect((form.querySelector('input[required]') as HTMLInputElement).required).toBe(true);
     expect(form.querySelector('label [aria-hidden="true"]')?.textContent).toBe('*');
