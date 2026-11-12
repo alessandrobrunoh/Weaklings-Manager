@@ -75,7 +75,8 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(AlbionLinkRequests::Table).to_owned())
+            // `m20261113_000001` drops the table; going down past it finds nothing to drop.
+            .drop_table(Table::drop().table(AlbionLinkRequests::Table).if_exists().to_owned())
             .await
     }
 }

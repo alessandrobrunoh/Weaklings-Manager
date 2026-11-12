@@ -3,14 +3,10 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
-import { validateBuildName } from '../../shared/validation/build-validation';
-
 import type {
   BuildDetail,
-  BuildItemSlot,
-  OpenAlbionItemAbilities,
   BuildRole,
-  BuildSummary,
+  CompBuildEntry,
   CompCategoryView,
   CompDetail,
   CompPerformanceView,
@@ -28,53 +24,41 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import {
+  EntityHeader,
+  type EntityMenuItem,
+} from '../../shared/components/entity-header/entity-header';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
-import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
-import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
-import { diffCompVersions } from './version-diff';
-import type { VersionDiffEntry } from './version-diff';
-import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
-import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
-import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { Icon } from '../../shared/components/icon/icon';
+import { LoadoutView } from '../../shared/components/loadout-view/loadout-view';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import {
+  BUILD_ROLES,
+  RoleTag,
+  roleGlyph,
+  roleLabelKey,
+} from '../../shared/components/role-tag/role-tag';
+import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
+import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { WeaponIcon } from '../../shared/components/weapon-icon/weapon-icon';
 import {
   ownershipListParams,
   ownershipOptionLabel,
   type OwnershipScope,
 } from '../../shared/data/ownership-scope';
-import { itemsForLoadout } from './build-loadouts';
-import type { BuildLoadout } from '../../core/models/api.models';
-import { abilityKeyForItem, abilitySlotsFor, albionAbilityIconUrl } from '../../shared/data/albion-abilities';
-import type { AbilitySlotView } from '../../shared/data/albion-abilities';
-import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
-import { Icon } from '../../shared/components/icon/icon';
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { CompAddBuildDialog, type CompBuildAddition } from './comp-add-build-dialog';
 import { canChangeAuthored } from './comp-access';
-import { COMP_PARTY_SIZE, simulateCompParties, type CompPartyView } from './comp-parties';
+import {
+  COMP_PARTY_SIZE,
+  groupPartySeats,
+  partyRoleMix,
+  simulateCompParties,
+  type CompPartyView,
+} from './comp-parties';
+import { diffCompVersions, type VersionDiffEntry } from './version-diff';
 
-const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
-
-const ROLE_LABELS: Record<BuildRole, string> = {
-  healer: 'Healer',
-  support: 'Support',
-  dps: 'DPS',
-  tank: 'Tank',
-  battle_mount: 'Battle Mount',
-  brawler: 'Brawler',
-};
-
-const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
-  tank: 'chip chip--info',
-  healer: 'chip chip--success',
-  support: 'chip chip--warning',
-  dps: 'chip chip--error',
-  battle_mount: 'chip',
-  brawler: 'chip',
-};
+type DetailTab = 'roster' | 'parties' | 'analytics';
 
 interface AllianceShareStatus {
   shared: boolean;
@@ -84,31 +68,23 @@ interface AllianceShareStatus {
   };
 }
 
-const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
-  tank: 'T',
-  healer: 'H',
-  support: 'S',
-  dps: 'DPS',
-  battle_mount: 'BM',
-  brawler: 'BR',
-};
+/** Longest composition name the lists lay out without truncating awkwardly. */
+const MAX_NAME_LENGTH = 80;
 
-/** One `(category, name)` group of build versions in the "Add Build" picker, newest version first. */
-interface BuildOptionGroup {
-  key: string;
-  name: string;
-  categoryName: string | null;
-  createdBy: string;
-  role: BuildRole;
-  versions: BuildSummary[];
-}
+/** How long a quantity stepper waits for more clicks before it saves. */
+const QUANTITY_SAVE_DELAY_MS = 450;
 
 /**
  * Composition detail page.
  *
- * Shows aggregated event/battle analytics and lets officers fully edit the
- * composition (metadata, builds, quantities) without leaving the page. Built
- * on top of the existing `/api/comps/{id}` and `/performance` endpoints.
+ * Leads with a summary header (key numbers, one primary action, an overflow menu) and then three
+ * views of the same roster: a compact build list whose rows expand to the full loadout, the
+ * parties the roster splits into, and the analysis (role balance, weapons, battle performance,
+ * market price). Editing is one mode switched on by the header's Edit action: quantity steppers on
+ * the roster, remove buttons, and a single "Add build" dialog.
+ *
+ * Build loadouts are fetched lazily, the first time a build is expanded or inspected, and cached
+ * for the lifetime of the page.
  *
  * @example
  * ```ts
@@ -120,983 +96,1068 @@ interface BuildOptionGroup {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
-    PageHeader,
-    PageStack,
-    EmptyState,
-    ErrorState,
-    Loading,
+    CompAddBuildDialog,
     Dialog,
-    StatCard,
-    VersionSwitcher,
-    VersionDiffList,
-    AbilityBar,
-    EquipmentGrid,
-    ViewToggle,
-    OwnershipScopeToggle,
+    EmptyState,
+    EntityHeader,
+    ErrorState,
     Icon,
-    TooltipDirective,
+    LoadoutView,
+    OwnershipScopeToggle,
+    RoleTag,
+    VersionDiffList,
+    VersionSwitcher,
+    ViewToggle,
+    WeaponIcon,
   ],
   styles: `
     :host {
       display: block;
       color: var(--color-text);
     }
-    :host ::ng-deep .rounded-xl,
-    :host ::ng-deep .rounded-2xl,
-    :host ::ng-deep .rounded-lg,
-    :host ::ng-deep .rounded-md,
-    :host ::ng-deep .shadow-lg,
-    :host ::ng-deep .shadow-xl {
-      border-radius: var(--radius-cards);
-      box-shadow: none;
+    .cd-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
     }
-    :host ::ng-deep input,
-    :host ::ng-deep select,
-    :host ::ng-deep button {
+    .cd-muted {
+      color: var(--color-text-secondary);
+    }
+    .cd-mono {
+      font-family: var(--font-mono);
+    }
+    .cd-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      min-height: 1.375rem;
+      padding: 0 0.5rem;
+      border: 1px solid var(--color-border);
       border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
     }
-    .comp-detail__party-tab--active {
-      border-bottom-color: var(--color-primary);
+    .cd-tag--state {
+      border-color: color-mix(in oklab, var(--color-warning) 40%, transparent);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+    }
+    .cd-badges {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+    }
+    .cd-badges:empty {
+      display: none;
+    }
+    .cd-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem 1rem;
+    }
+    .cd-meta a {
+      color: var(--color-text-secondary);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .cd-meta a:hover {
       color: var(--color-text);
+    }
+
+    /* ---- summary band -------------------------------------------------- */
+    .cd-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.875rem 1.5rem;
+      margin: 0;
+    }
+    @media (min-width: 40rem) {
+      .cd-stats {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+    .cd-stat dt {
+      font-size: 0.75rem;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-stat dd {
+      margin: 0;
+    }
+    .cd-stat__value {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 500;
+      line-height: 1.75rem;
+      color: var(--color-text-heading);
+    }
+    .cd-stat__hint {
+      font-size: 0.75rem;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-roles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      margin: 0.875rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .cd-roles li {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+    .cd-roles__n {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 600;
+    }
+
+    /* ---- shared bits --------------------------------------------------- */
+    .cd-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem 1rem;
+      min-height: 2rem;
+    }
+    .cd-toolbar__note {
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-panel {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-surface);
+    }
+    .cd-panel__title {
+      margin: 0 0 0.75rem;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--color-text-heading);
+    }
+    .cd-panel__note {
+      margin: 0;
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-link-btn {
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--color-text-secondary);
+      font: inherit;
+      font-size: 0.8125rem;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+    }
+    .cd-link-btn:hover {
+      color: var(--color-text);
+    }
+    .cd-link-btn:focus-visible,
+    .cd-toggle:focus-visible,
+    .cd-line:focus-visible,
+    .cd-step:focus-visible,
+    .cd-icon-btn:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+
+    /* ---- roster table -------------------------------------------------- */
+    .cd-roster {
+      container-type: inline-size;
+      container-name: roster;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-surface);
+    }
+    .cd-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .cd-table th {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--color-border);
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-align: start;
+      color: var(--color-text-secondary);
+    }
+    .cd-table td {
+      padding: 0.375rem 0.75rem;
+      border-top: 1px solid var(--color-border);
+      vertical-align: middle;
+    }
+    .cd-table tbody tr:first-child td {
+      border-top: 0;
+    }
+    .cd-num {
+      text-align: end;
+      white-space: nowrap;
+    }
+    .cd-table th.cd-num {
+      text-align: end;
+    }
+    .cd-tr--open > td {
+      background: var(--color-surface-2);
+    }
+    .cd-tr--detail > td {
+      padding: 0.25rem 0.75rem 1rem 4.375rem;
+      background: var(--color-surface-2);
+      border-top: 0;
+    }
+    .cd-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      width: 100%;
+      min-height: 2.75rem;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: start;
+      cursor: pointer;
+    }
+    .cd-chevron {
+      display: inline-flex;
+      flex: 0 0 auto;
+      color: var(--color-text-secondary);
+    }
+    .cd-build {
+      min-width: 0;
+    }
+    .cd-build__name {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1.25rem;
+      overflow-wrap: anywhere;
+    }
+    .cd-build__version {
+      margin-inline-start: 0.375rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--color-text-secondary);
+    }
+    .cd-build__sub {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.125rem 0.5rem;
+      font-size: 0.75rem;
+      line-height: 1.125rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-role-inline {
+      display: none;
+    }
+    .cd-qty {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+    .cd-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.25rem;
+    }
+    .cd-icon-btn {
+      display: inline-grid;
+      place-items: center;
+      width: 2rem;
+      height: 2rem;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: none;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+    }
+    .cd-icon-btn:hover:not(:disabled) {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+    .cd-icon-btn--danger:hover:not(:disabled) {
+      color: var(--color-error);
+    }
+    .cd-icon-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .cd-stepper {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-surface);
+    }
+    .cd-step {
+      width: 2rem;
+      height: 2rem;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: none;
+      color: var(--color-text);
+      font-size: 1.125rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .cd-step:hover:not(:disabled) {
+      background: var(--color-surface-hover);
+    }
+    .cd-step:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .cd-step__value {
+      min-width: 2rem;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+    @container roster (max-width: 38rem) {
+      .cd-col--role {
+        display: none;
+      }
+      .cd-role-inline {
+        display: inline-flex;
+      }
+      .cd-tr--detail > td {
+        padding-inline-start: 0.75rem;
+      }
+    }
+
+    /* ---- parties ------------------------------------------------------- */
+    .cd-parties {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+    .cd-party__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.25rem 0.75rem;
+    }
+    .cd-party__title {
+      margin: 0;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--color-text-heading);
+    }
+    .cd-party__count {
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-party__mix {
+      margin: 0.25rem 0 0.5rem;
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary);
+    }
+    .cd-lines {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .cd-lines li + li {
+      border-top: 1px solid var(--color-border);
+    }
+    .cd-line {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      width: 100%;
+      min-height: 2.75rem;
+      padding: 0.25rem 0.25rem;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: start;
+      cursor: pointer;
+    }
+    .cd-line:hover {
+      background: var(--color-surface-hover);
+    }
+    .cd-line__name {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 0.875rem;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+    }
+    .cd-line__qty {
+      flex: 0 0 auto;
+      min-width: 2rem;
+      text-align: end;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    /* ---- analytics ----------------------------------------------------- */
+    .cd-analytics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+    .cd-balance {
+      display: grid;
+      grid-template-columns: auto minmax(3rem, 1fr) auto;
+      align-items: center;
+      gap: 0.5rem 0.75rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .cd-balance li {
+      display: contents;
+    }
+    .cd-bar {
+      height: 0.5rem;
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+      overflow: hidden;
+    }
+    .cd-bar > span {
+      display: block;
+      height: 100%;
+      background: var(--color-text-muted);
+    }
+    .cd-balance__value {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      text-align: end;
+      white-space: nowrap;
+    }
+    .cd-kv {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+      gap: 0.75rem 1rem;
+      margin: 0 0 1rem;
+    }
+    .cd-weapons {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .cd-weapons li {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      min-height: 2.5rem;
+    }
+    .cd-weapons li + li {
+      border-top: 1px solid var(--color-border);
+    }
+    .cd-data {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+    }
+    .cd-data th,
+    .cd-data td {
+      padding: 0.375rem 0.5rem;
+      border-top: 1px solid var(--color-border);
+      text-align: start;
+    }
+    .cd-data thead th {
+      border-top: 0;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+    }
+    .cd-data .cd-num {
+      text-align: end;
+    }
+    .cd-outcome {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .cd-outcome--ahead {
+      color: var(--color-success);
+    }
+    .cd-outcome--behind {
+      color: var(--color-error);
+    }
+    .cd-table-scroll {
+      overflow-x: auto;
+    }
+
+    /* ---- skeleton ------------------------------------------------------ */
+    .cd-skel__bar,
+    .cd-skel__cell,
+    .cd-skel__row {
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+    }
+    .cd-skel__bar--title {
+      width: min(18rem, 70%);
+      height: 1.75rem;
+    }
+    .cd-skel__bar--meta {
+      width: min(26rem, 90%);
+      height: 1rem;
+      margin-block-start: 0.625rem;
+    }
+    .cd-skel__stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-block: 1.25rem;
+    }
+    @media (min-width: 40rem) {
+      .cd-skel__stats {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+    .cd-skel__cell {
+      height: 3.25rem;
+    }
+    .cd-skel__row {
+      height: 2.75rem;
+      margin-block-start: 0.5rem;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .cd-skel__bar,
+      .cd-skel__cell,
+      .cd-skel__row {
+        animation: cd-pulse 1.4s ease-in-out infinite;
+      }
+    }
+    @keyframes cd-pulse {
+      50% {
+        opacity: 0.5;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cd-chevron {
+        transition: none;
+      }
     }
   `,
   template: `
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <div role="status" aria-busy="true">
+        <span class="sr-only">{{ t('common.loading') }}</span>
+        <div aria-hidden="true">
+          <div class="cd-skel__bar cd-skel__bar--title"></div>
+          <div class="cd-skel__bar cd-skel__bar--meta"></div>
+          <div class="cd-skel__stats">
+            <div class="cd-skel__cell"></div>
+            <div class="cd-skel__cell"></div>
+            <div class="cd-skel__cell"></div>
+            <div class="cd-skel__cell"></div>
+          </div>
+          <div class="cd-skel__row"></div>
+          <div class="cd-skel__row"></div>
+          <div class="cd-skel__row"></div>
+          <div class="cd-skel__row"></div>
+          <div class="cd-skel__row"></div>
+        </div>
+      </div>
     } @else if (comp(); as current) {
-      <app-page-header
+      <app-entity-header
         [title]="current.name"
-        [subtitle]="current.category_name || t('comps.noCategory')"
-        [badge]="current.archived_at ? t('comps.archived') : undefined"
+        [description]="current.description"
+        [menuItems]="menuItems()"
+        [menuLabel]="t('entityHeader.moreActions')"
+        (menuSelect)="onMenu($event)"
       >
-        <div pageActions class="flex flex-wrap items-center gap-2">
-          <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
-          <app-version-switcher
-            [versions]="current.versions ?? []"
-            [currentId]="current.id"
-            [canManage]="canVersion()"
-            [busy]="saving()"
-            [label]="t('comps.version')"
-            [createLabel]="t('comps.newVersion')"
-            (select)="openVersion($event)"
-            (create)="createVersion()"
-          />
-          @if (parentComp(); as parent) {
-            <a class="btn btn--outline" [routerLink]="['/comps', parent.id]">
-              ↑ {{ parent.name }}
-            </a>
-          }
-          @if ((current.versions ?? []).length > 1) {
-            <button type="button" class="btn btn--outline" (click)="openCompare()">
-              {{ t('comps.compare') }}
-            </button>
-          }
-          @if ((canManage() || canDelete()) && mode() === 'view') {
-            <span
-              class="hidden sm:block w-px h-6 self-center bg-[var(--color-border)]"
-              aria-hidden="true"
-            ></span>
-          }
-          @if (canManage() && mode() === 'view') {
-            <button
-              type="button"
-              class="btn btn--outline"
-              (click)="enterEdit()"
-              [disabled]="saving()"
-            >
-              {{ t('comps.editMeta') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--tonal"
-              (click)="cloneComp()"
-              [disabled]="saving()"
-            >
-              {{ t('common.clone') }}
-            </button>
+        <span entityBadges class="cd-badges">
+          @if (current.archived_at) {
+            <span class="cd-tag cd-tag--state">{{ t('comps.archived') }}</span>
           }
           @if (isGuildTenant() && shareStatus()?.shared) {
-            <span class="chip text-xs">{{ t('comps.sharedWithAlliance') }}</span>
+            <span class="cd-tag">{{ t('comps.sharedWithAlliance') }}</span>
           }
-          @if (canShare()) {
-            <button
-              type="button"
-              class="btn btn--outline"
-              (click)="shareWithAlliance()"
-              [disabled]="saving()"
-            >
-              {{ t('comps.shareWithAlliance') }}
-            </button>
-            @if (shareStatus()?.shared) {
-              <button
-                type="button"
-                class="btn btn--ghost"
-                (click)="unshareWithAlliance()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.unshareWithAlliance') }}
-              </button>
-            }
+        </span>
+
+        <div entityMeta class="cd-meta">
+          @if ((current.versions ?? []).length > 1) {
+            <app-version-switcher
+              [versions]="current.versions ?? []"
+              [currentId]="current.id"
+              [busy]="saving()"
+              [label]="t('comps.version')"
+              [compact]="true"
+              (select)="openVersion($event)"
+            />
+          } @else {
+            <span class="cd-mono">v{{ current.version }}</span>
           }
-          @if (canDelete() && mode() === 'view') {
-            @if (current.archived_at) {
-              <button
-                type="button"
-                class="btn btn--outline"
-                (click)="unarchiveComp()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.unarchive') }}
-              </button>
-            } @else {
-              <button
-                type="button"
-                class="btn btn--outline"
-                (click)="askArchiveComp()"
-                [disabled]="saving()"
-              >
-                {{ t('comps.archive') }}
-              </button>
-            }
+          <span>{{ current.category_name || t('comps.noCategory') }}</span>
+          <span>{{ t('compDetail.byAuthor', { name: current.created_by_username }) }}</span>
+          <span>{{ t('compDetail.createdOn', { date: formatDate(current.created_at) }) }}</span>
+          @if (parentComp(); as parent) {
+            <a [routerLink]="['/comps', parent.id]">{{ t('compDetail.variantOf', { name: parent.name }) }}</a>
           }
         </div>
-      </app-page-header>
 
-      <app-page-stack>
-        <!-- At-a-glance KPIs: orients the reader before they dig into the roster or the sidebar. -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <app-stat-card
-            [label]="t('comps.totalSlots')"
-            [value]="current.total_quantity"
-            icon="users"
-          />
-          <app-stat-card
-            [label]="t('comps.builds')"
-            [value]="current.builds.length"
-            icon="package"
-          />
-          <app-stat-card
-            [label]="t('comps.winrate')"
-            [value]="performance() ? formatPercent(performance()!.stats.win_rate) : null"
-            [tone]="performance() ? winRateTone(performance()!.stats.win_rate) : 'default'"
-            icon="trophy"
-          />
-          <app-stat-card
-            [label]="t('comps.totalBattles')"
-            [value]="performance() ? performance()!.stats.total_battles : null"
-            icon="swords"
-          />
-        </div>
+        @if (canManage()) {
+          <button
+            entityPrimary
+            type="button"
+            class="btn btn--primary"
+            [disabled]="saving()"
+            (click)="toggleEdit()"
+          >
+            <app-icon [name]="editing() ? 'check' : 'edit'" size="1rem" />
+            {{ editing() ? t('compDetail.action.done') : t('compDetail.action.edit') }}
+          </button>
+        }
 
-        @if (current.builds.length > 0) {
-          <section class="space-y-3" aria-labelledby="composition-builds-heading">
-            <h2 id="composition-builds-heading" class="text-lg font-bold">{{ t('comps.overviewBuilds') }}</h2>
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-              @for (entry of current.builds; track entry.build_id) {
-                <article class="card p-4 min-w-0 space-y-3 border border-[var(--color-border)]">
-                  <header class="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h3 class="font-bold">{{ entry.build.name }} <span class="text-secondary">×{{ entry.quantity }}</span></h3>
-                      <p class="text-xs text-secondary">{{ roleLabel(entry.build.role) }} · {{ entry.build.category_name || t('comps.noCategory') }} · v{{ entry.build.version }}</p>
-                    </div>
-                    <a class="btn btn--outline btn--sm" [routerLink]="['/builds', entry.build_id]" [attr.aria-label]="t('comps.openNamedBuild', { name: entry.build.name })">{{ t('comps.openBuild') }}</a>
-                  </header>
-                  @if (buildDetailsLoading()) {
-                    <p role="status" class="text-sm text-secondary">{{ t('common.loading') }}</p>
-                  } @else if (overviewBuilds().get(entry.build_id); as detail) {
-                    <h4 class="text-sm font-semibold">{{ t('comps.mainSet') }}</h4>
-                    <app-equipment-grid
-                      [items]="detail.items"
-                      [canManage]="false"
-                      [editingSlot]="null"
-                      [draftTier]="'T8'"
-                      [draftSearch]="''"
-                      [draftItemId]="''"
-                      [searchResults]="[]"
-                      [searchLoading]="false"
-                      [tiers]="[]"
-                      [draftAbilitySlots]="[]"
-                    />
-                    @if (detail.rows; as rows) {
-                      @if (rows.length > 0) {
-                        <h4 class="text-sm font-semibold">{{ t('comps.selectedAbilities') }}</h4>
-                        <ul class="space-y-2">
-                          @for (row of rows; track row.slot) {
-                            <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
-                              <span>{{ row.itemName }}</span>
-                              <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
-                            </li>
-                          }
-                        </ul>
-                      }
-                    }
-                    @if (detail.swapItems.length > 0) {
-                      <h4 class="text-sm font-semibold">{{ t('comps.swapLoadout') }}</h4>
-                      <app-equipment-grid
-                        [items]="detail.swapItems"
-                        [canManage]="false"
-                        [editingSlot]="null"
-                        [draftTier]="'T8'"
-                        [draftSearch]="''"
-                        [draftItemId]="''"
-                        [searchResults]="[]"
-                        [searchLoading]="false"
-                        [tiers]="[]"
-                        [draftAbilitySlots]="[]"
-                      />
-                      @if (detail.swapRows.length > 0) {
-                        <h4 class="text-sm font-semibold">{{ t('comps.selectedAbilities') }}</h4>
-                        <ul class="space-y-2">
-                          @for (row of detail.swapRows; track row.slot) {
-                            <li class="flex flex-wrap items-center justify-between gap-2 text-sm">
-                              <span>{{ row.itemName }}</span>
-                              <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
-                            </li>
-                          }
-                        </ul>
-                      }
-                    }
-                    <button type="button" class="btn btn--ghost btn--sm" [attr.aria-label]="t('comps.inspectBuild', { name: entry.build.name })" (click)="inspectedBuildId.set(entry.build_id)">
-                      {{ t('comps.inspectSets') }}
-                    </button>
-                  } @else {
-                    <p class="text-sm text-secondary">{{ t('comps.buildDetailsUnavailable') }}</p>
-                  }
-                </article>
+        <div entitySummary>
+          <dl class="cd-stats">
+            <div class="cd-stat">
+              <dt>{{ t('compDetail.stat.players') }}</dt>
+              <dd class="cd-stat__value">{{ current.total_quantity }}</dd>
+            </div>
+            <div class="cd-stat">
+              <dt>{{ t('compDetail.stat.parties') }}</dt>
+              <dd class="cd-stat__value">{{ parties().length }}</dd>
+              @if (lastPartyShort(); as last) {
+                <dd class="cd-stat__hint">{{ t('compDetail.stat.lastParty', { count: last, size: partySize }) }}</dd>
               }
             </div>
+            <div class="cd-stat">
+              <dt>{{ t('compDetail.stat.builds') }}</dt>
+              <dd class="cd-stat__value">{{ current.builds.length }}</dd>
+              <dd class="cd-stat__hint">{{ t('compDetail.stat.weapons', { count: weapons().length }) }}</dd>
+            </div>
+            <div class="cd-stat">
+              <dt>{{ t('comps.winrate') }}</dt>
+              <dd class="cd-stat__value">{{ winRateText() }}</dd>
+              <dd class="cd-stat__hint">{{ winRateHint() }}</dd>
+            </div>
+          </dl>
+          @if (roleDistribution().length > 0) {
+            <ul class="cd-roles" [attr.aria-label]="t('compDetail.roleBreakdown')">
+              @for (dist of roleDistribution(); track dist.role) {
+                <li>
+                  <app-role-tag [role]="dist.role" />
+                  <span class="cd-roles__n">{{ dist.quantity }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      </app-entity-header>
+
+      <div class="cd-stack">
+        <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="onTabChange($event)" />
+
+        <!-- ================= ROSTER ================= -->
+        @if (tab() === 'roster') {
+          <section class="cd-stack" [attr.aria-label]="t('compDetail.tab.roster')">
+            @if (current.builds.length === 0) {
+              <app-empty-state
+                icon="package"
+                [message]="t('comps.noBuilds')"
+                [hint]="canManage() ? t('compDetail.empty.hint') : undefined"
+              >
+                @if (canManage()) {
+                  <button type="button" class="btn btn--primary btn--sm" (click)="openAdd()">
+                    <app-icon name="plus" size="0.875rem" />
+                    {{ t('comps.addBuild') }}
+                  </button>
+                }
+              </app-empty-state>
+            } @else {
+              <div class="cd-toolbar">
+                @if (editing()) {
+                  <span class="cd-toolbar__note" role="status">{{ t('compDetail.edit.hint') }}</span>
+                  <button type="button" class="btn btn--outline btn--sm" [disabled]="saving()" (click)="openAdd()">
+                    <app-icon name="plus" size="0.875rem" />
+                    {{ t('comps.addBuild') }}
+                  </button>
+                } @else {
+                  <span class="cd-toolbar__note">{{ t('compDetail.roster.hint') }}</span>
+                  <button type="button" class="cd-link-btn" (click)="toggleAll()">
+                    {{ allOpen() ? t('comps.collapseAll') : t('comps.expandAll') }}
+                  </button>
+                }
+              </div>
+
+              <div class="cd-roster">
+                <table class="cd-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('compDetail.col.build') }}</th>
+                      <th scope="col" class="cd-col--role">{{ t('common.role') }}</th>
+                      <th scope="col" class="cd-num">{{ t('compDetail.col.players') }}</th>
+                      <th scope="col"><span class="sr-only">{{ t('common.actions') }}</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (entry of rosterEntries(); track entry.build_id) {
+                      <tr class="cd-tr" [class.cd-tr--open]="isOpen(entry.build_id)">
+                        <td>
+                          <button
+                            type="button"
+                            class="cd-toggle"
+                            [attr.aria-expanded]="isOpen(entry.build_id)"
+                            [attr.aria-controls]="'cd-detail-' + entry.build_id"
+                            (click)="toggleBuild(entry.build_id)"
+                          >
+                            <span class="cd-chevron" aria-hidden="true">
+                              <app-icon [name]="isOpen(entry.build_id) ? 'chevron-down' : 'chevron-right'" size="1rem" />
+                            </span>
+                            <app-weapon-icon [weaponKey]="entry.build.weapon_key" [fallback]="glyph(entry.build.role)" />
+                            <span class="cd-build">
+                              <span class="cd-build__name">
+                                {{ entry.build.name }}
+                                <span class="cd-build__version">v{{ entry.build.version }}</span>
+                              </span>
+                              <span class="cd-build__sub">
+                                <app-role-tag class="cd-role-inline" [role]="entry.build.role" />
+                                <span>{{ entry.build.weapon_name || t('comps.noWeapon') }}</span>
+                              </span>
+                            </span>
+                          </button>
+                        </td>
+                        <td class="cd-col--role"><app-role-tag [role]="entry.build.role" /></td>
+                        <td class="cd-num">
+                          @if (editing()) {
+                            <span class="cd-stepper" role="group" [attr.aria-label]="t('compDetail.quantity.of', { name: entry.build.name })">
+                              <button
+                                type="button"
+                                class="cd-step"
+                                [disabled]="saving() || displayedQuantity(entry) <= 1"
+                                [attr.aria-label]="t('compDetail.quantity.decreaseNamed', { name: entry.build.name })"
+                                (click)="step(entry, -1)"
+                              >
+                                −
+                              </button>
+                              <output class="cd-step__value" aria-live="polite">{{ displayedQuantity(entry) }}</output>
+                              <button
+                                type="button"
+                                class="cd-step"
+                                [disabled]="saving()"
+                                [attr.aria-label]="t('compDetail.quantity.increaseNamed', { name: entry.build.name })"
+                                (click)="step(entry, 1)"
+                              >
+                                +
+                              </button>
+                            </span>
+                          } @else {
+                            <span class="cd-qty">×{{ entry.quantity }}</span>
+                          }
+                        </td>
+                        <td class="cd-num">
+                          <span class="cd-actions">
+                            <a
+                              class="cd-icon-btn"
+                              [routerLink]="['/builds', entry.build_id]"
+                              [attr.aria-label]="t('comps.openNamedBuild', { name: entry.build.name })"
+                              [title]="t('comps.openBuild')"
+                            >
+                              <app-icon name="arrow-right" size="1rem" />
+                            </a>
+                            @if (editing()) {
+                              <button
+                                type="button"
+                                class="cd-icon-btn cd-icon-btn--danger"
+                                [disabled]="saving()"
+                                [attr.aria-label]="t('compDetail.remove', { name: entry.build.name })"
+                                [title]="t('compDetail.removeShort')"
+                                (click)="removeBuild(entry.build_id)"
+                              >
+                                <app-icon name="close" size="1rem" />
+                              </button>
+                            }
+                          </span>
+                        </td>
+                      </tr>
+                      @if (isOpen(entry.build_id)) {
+                        <tr class="cd-tr--detail" [id]="'cd-detail-' + entry.build_id">
+                          <td colspan="4">
+                            <app-loadout-view
+                              [items]="buildDetails().get(entry.build_id)?.items"
+                              [loading]="isBuildLoading(entry.build_id)"
+                              [unavailable]="isBuildFailed(entry.build_id)"
+                            />
+                          </td>
+                        </tr>
+                      }
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
           </section>
         }
 
-        <!-- ================= ROSTER CONTROL & VIEW TOGGLE ================= -->
-        <div class="card p-4 border border-[var(--color-border)] flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <app-view-toggle
-              [options]="viewModeOptions()"
-              [active]="viewMode()"
-              (activeChange)="onViewModeChange($event)"
-            />
-          </div>
-
-          <div class="flex items-center gap-2">
-            @if (canManage()) {
-              <button
-                type="button"
-                class="btn btn--sm"
-                [class.btn--primary]="mode() === 'edit'"
-                [class.btn--outline]="mode() === 'view'"
-                (click)="toggleEditMode()"
-                [disabled]="saving()"
-              >
-                <app-icon [name]="mode() === 'edit' ? 'check' : 'edit'" size="0.75rem" />
-                {{ mode() === 'edit' ? t('comps.doneEditing') : t('comps.editRoster') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn--sm btn--primary"
-                (click)="openAddBuildModal()"
-                [disabled]="saving()"
-              >
-                <app-icon name="plus" size="0.75rem" />
-                {{ t('comps.addBuild') }}
-              </button>
-            }
-          </div>
-        </div>
-
-        <!-- ================= EDIT MODE BANNER ================= -->
-        @if (mode() === 'edit') {
-          <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div class="flex items-center gap-2 text-warning">
-              <app-icon name="edit" size="1rem" />
-              <span>{{ t('comps.editRosterHint') }} {{ t('comps.rosterSaveHint') }}</span>
-            </div>
-            <button type="button" class="btn btn--sm btn--primary" (click)="toggleEditMode()" [disabled]="saving()">
-              {{ t('comps.doneEditing') }}
-            </button>
-          </div>
-        }
-
-        <!-- ================= VIEW 1: PARTIES ROSTER ================= -->
-        @if (viewMode() === 'parties') {
-          <div class="space-y-3">
-            @if (partySimulation().length === 0) {
-              <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
-            } @else {
-              @if (partySimulation().length > 1) {
-                <div
-                  class="flex gap-1 overflow-x-auto border-b border-[var(--color-border)]"
-                  role="tablist"
-                  [attr.aria-label]="t('comps.partyTabs')"
-                >
-                  @for (party of partySimulation(); track party.partyNumber) {
-                    <button
-                      type="button"
-                      role="tab"
-                      class="shrink-0 border-b-2 border-transparent px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] focus-visible:outline-offset-[-2px]"
-                      [class.comp-detail__party-tab--active]="activeRosterParty()?.partyNumber === party.partyNumber"
-                      [attr.aria-selected]="activeRosterParty()?.partyNumber === party.partyNumber"
-                      [attr.tabindex]="activeRosterParty()?.partyNumber === party.partyNumber ? 0 : -1"
-                      [attr.aria-controls]="'comp-party-panel-' + party.partyNumber"
-                      (click)="selectRosterParty(party.partyNumber)"
-                      (keydown)="onRosterPartyKeydown($event, party.partyNumber)"
-                    >
-                      {{ partyName(party) }}
-                      <span class="ml-1 font-mono text-[10px] text-[var(--color-text-tertiary)]">
-                        {{ party.seats.length }}/{{ partySize }}
-                      </span>
-                    </button>
-                  }
-                </div>
-              }
-
-              @if (activeRosterParty(); as party) {
-                <section
-                  class="card overflow-hidden border border-[var(--color-border)] p-0 shadow-sm"
-                  role="tabpanel"
-                  [id]="'comp-party-panel-' + party.partyNumber"
-                  [attr.aria-label]="partyName(party)"
-                >
-                  <header
-                    class="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-3.5 py-2.5"
-                  >
-                    <div class="flex items-center gap-2">
-                      <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-                        {{ partyName(party) }}
-                      </h3>
-                      <span class="text-[11px] font-mono text-[var(--color-text-secondary)]">
-                        ({{ t('comps.partySeats', { count: party.seats.length }) }})
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <div class="h-1.5 w-14 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
-                        <div
-                          class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                          [style.width.%]="(party.seats.length / partySize) * 100"
-                        ></div>
-                      </div>
-                      <span class="font-mono text-xs font-bold text-[var(--color-text)]">
-                        {{ party.seats.length }}/{{ partySize }}
-                      </span>
-                    </div>
+        <!-- ================= PARTIES ================= -->
+        @if (tab() === 'parties') {
+          @if (parties().length === 0) {
+            <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
+          } @else {
+            <div class="cd-parties">
+              @for (party of parties(); track party.partyNumber) {
+                <section class="cd-panel" [attr.aria-labelledby]="'cd-party-' + party.partyNumber">
+                  <header class="cd-party__head">
+                    <h2 class="cd-party__title" [id]="'cd-party-' + party.partyNumber">
+                      {{ t('comps.partyNum', { number: party.partyNumber }) }}
+                    </h2>
+                    <span class="cd-party__count">
+                      @if (party.seats.length < partySize) {
+                        {{ t('compDetail.party.playersPartial', { count: party.seats.length, size: partySize }) }}
+                      } @else {
+                        {{ t('compDetail.party.players', { count: party.seats.length }) }}
+                      }
+                    </span>
                   </header>
-
-                  <ol class="divide-y divide-[var(--color-border)]" [attr.aria-label]="partyName(party)">
-                    @for (seat of party.seats; track seat.globalIndex) {
-                      <li
-                        class="px-3 py-2 transition-all flex items-center justify-between gap-2.5 hover:bg-[var(--color-surface-hover)]"
-                        [class]="roleBorderClass(seat.role)"
-                        [class.bg-[var(--color-surface-2)]]="inspectedBuildId() === seat.buildId"
-                        [class.ring-1]="inspectedBuildId() === seat.buildId"
-                        [class.ring-[var(--color-primary)]]="inspectedBuildId() === seat.buildId"
-                      >
-                        <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                          <button
-                            type="button"
-                            class="relative flex-shrink-0 h-9 w-9 rounded-lg p-0.5 flex items-center justify-center border border-[var(--color-border)] bg-[var(--color-surface-1)] cursor-pointer hover:border-[var(--color-primary)] hover:scale-105 transition-all focus:outline-none"
-                            (click)="inspectedBuildId.set(seat.buildId)"
-                            (mouseenter)="onWeaponMouseEnter(seat.buildId, $event)"
-                            (mouseleave)="onWeaponMouseLeave()"
-                            [attr.aria-label]="t('comps.inspectBuild', { name: seat.build.name })"
-                          >
-                            @if (weaponIconFor(seat.buildId); as weaponIcon) {
-                              <img
-                                [src]="weaponIcon"
-                                [alt]="seat.build.name"
-                                class="h-full w-full object-contain pointer-events-none"
-                                loading="lazy"
-                                (error)="hideBrokenIcon($event)"
-                              />
-                            } @else {
-                              <span class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]">
-                                {{ roleGlyph(seat.role) }}
-                              </span>
-                            }
-                          </button>
-
-                          <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-1.5 flex-wrap">
-                              <span
-                                class="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded"
-                                [class]="roleChip(seat.role)"
-                              >
-                                {{ roleLabel(seat.role) }}
-                              </span>
-                              <span class="text-xs font-bold text-[var(--color-text)] truncate max-w-[11rem]">
-                                {{ seat.build.name }}
-                              </span>
-                              <span class="text-[10px] font-mono text-[var(--color-text-secondary)]">
-                                #{{ seat.seatNumber }}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            type="button"
-                            class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
-                            (click)="inspectedBuildId.set(seat.buildId)"
-                          >
-                            {{ t('comps.inspect') }}
-                          </button>
-                        </div>
+                  <p class="cd-party__mix">{{ roleMixText(party) }}</p>
+                  <ul class="cd-lines">
+                    @for (group of groupSeats(party); track group.buildId) {
+                      <li>
+                        <button
+                          type="button"
+                          class="cd-line"
+                          [attr.aria-label]="t('comps.inspectBuild', { name: group.build.name })"
+                          (click)="inspect(group.buildId)"
+                        >
+                          <app-weapon-icon size="sm" [weaponKey]="group.build.weapon_key" [fallback]="glyph(group.role)" />
+                          <span class="cd-line__name">
+                            {{ group.build.name }}
+                            <span class="cd-build__version">v{{ group.build.version }}</span>
+                          </span>
+                          <app-role-tag [role]="group.role" />
+                          <span class="cd-line__qty">×{{ group.count }}</span>
+                        </button>
                       </li>
                     }
-                  </ol>
+                  </ul>
                 </section>
               }
-            }
-          </div>
+            </div>
+          }
         }
 
-        <!-- ================= VIEW 2: ROLES MATRIX ================= -->
-        @if (viewMode() === 'roles') {
-          <div class="space-y-6">
-            @if (current.builds.length === 0) {
-              <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
-            } @else {
-              @for (roleGroup of groupedBuildsByRole(); track roleGroup.role) {
-                <section class="space-y-3">
-                  <!-- Role Group Header -->
-                  <div class="flex flex-wrap items-center justify-between gap-2 px-1">
-                    <div
-                      class="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
-                      [style.background-color]="roleBadgeBg(roleGroup.role)"
-                    >
-                      <span
-                        class="w-2 h-2 rounded-full"
-                        [style.background-color]="roleColorHex(roleGroup.role)"
-                      ></span>
-                      <h3
-                        class="text-xs font-bold uppercase tracking-wider"
-                        [style.color]="roleColorHex(roleGroup.role)"
-                      >
-                        {{ roleLabel(roleGroup.role) }}
-                      </h3>
-                      <span
-                        class="text-xs font-semibold"
-                        [style.color]="roleColorHex(roleGroup.role)"
-                      >
-                        · {{ roleGroup.totalSlots }} {{ t('comps.slotsShort') }}
-                      </span>
-                    </div>
-                    <span class="text-xs text-secondary">
-                      {{ roleGroup.entries.length }} {{ t('comps.buildVariants') }}
-                    </span>
-                  </div>
-
-                  <!-- Builds Grid for this Role -->
-                  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    @for (entry of roleGroup.entries; track entry.build_id) {
-                      <div
-                        class="card p-4 border border-[var(--color-border)] flex flex-col justify-between gap-3 transition-all hover:border-[var(--color-border-strong)]"
-                        [style.border-left-width]="'4px'"
-                        [style.border-left-color]="roleColorHex(entry.build.role)"
-                      >
-                        <div class="flex items-start justify-between gap-2">
-                          <div class="flex items-start gap-2.5 min-w-0">
-                            <!-- Weapon Icon -->
-                            <div
-                              class="shrink-0 w-10 h-10 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)] grid place-items-center overflow-hidden cursor-pointer"
-                              (mouseenter)="onWeaponMouseEnter(entry.build_id, $event)"
-                              (mouseleave)="onWeaponMouseLeave()"
-                              (click)="inspectedBuildId.set(entry.build_id)"
-                            >
-                              @if (weaponIconFor(entry.build_id); as weaponIcon) {
-                                <img
-                                  class="w-full h-full object-contain p-1"
-                                  [src]="weaponIcon"
-                                  [alt]="entry.build.name"
-                                  loading="lazy"
-                                  (error)="hideBrokenIcon($event)"
-                                />
-                              } @else {
-                                <app-icon name="swords" size="1rem" color="var(--color-text-secondary)" />
-                              }
-                            </div>
-
-                            <div class="min-w-0">
-                              <span
-                                class="font-bold text-sm text-[var(--color-text)] block truncate hover:text-[var(--color-primary)] cursor-pointer"
-                                (click)="inspectedBuildId.set(entry.build_id)"
-                              >
-                                {{ entry.build.name }}
-                              </span>
-                              <span class="text-[11px] text-secondary truncate block">
-                                {{ entry.build.category_name || t('comps.noCategory') }}
-                              </span>
-                            </div>
-                          </div>
-
-                          <!-- Quantity Stepper / Badge -->
-                          @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
-                            <div class="flex items-center gap-1">
-                              <input
-                                class="input text-center w-14"
-                                type="number"
-                                min="1"
-                                [attr.aria-label]="t('comps.addBuildQuantity') + ': ' + entry.build.name"
-                                [value]="editingBuildQty()"
-                                (input)="onEditingBuildQtyChange($event)"
-                              />
-                              <button
-                                type="button"
-                                class="btn btn--primary btn--xs"
-                                (click)="saveBuildQty(entry.build_id)"
-                                [disabled]="saving()"
-                                [attr.aria-label]="t('common.save')"
-                              >
-                                ✓
-                              </button>
-                              <button
-                                type="button"
-                                class="btn btn--ghost btn--xs"
-                                (click)="cancelEditBuild()"
-                                [attr.aria-label]="t('common.cancel')"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          } @else {
-                            <div class="flex items-center gap-1.5">
-                              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-[var(--color-text)] border border-[var(--color-border)] font-mono">
-                                x{{ entry.quantity }}
-                              </span>
-                              @if (canManage() && mode() === 'edit') {
-                                <button
-                                  type="button"
-                                  class="btn btn--ghost btn--xs"
-                                  (click)="startEditBuild(entry.build_id, entry.quantity)"
-                                  [attr.aria-label]="t('common.edit') + ' ' + t('comps.addBuildQuantity') + ': ' + entry.build.name"
-                                >
-                                  <app-icon name="edit" size="0.75rem" />
-                                </button>
-                                <button
-                                  type="button"
-                                  class="btn btn--ghost btn--xs text-error"
-                                  (click)="removeBuild(entry.build_id)"
-                                  [disabled]="saving()"
-                                  [attr.aria-label]="t('common.delete') + ': ' + entry.build.name"
-                                >
-                                  <app-icon name="close" size="0.75rem" />
-                                </button>
-                              }
-                            </div>
-                          }
-                        </div>
-
-                        <!-- Action Footer -->
-                        <div class="flex items-center justify-between gap-2 pt-2 border-t border-[var(--color-border)] text-xs">
-                          <button
-                            type="button"
-                            class="text-xs text-[var(--color-primary)] hover:underline font-medium inline-flex items-center gap-1"
-                            (click)="inspectedBuildId.set(entry.build_id)"
-                          >
-                            <app-icon name="scan" size="0.75rem" />
-                            Ispeziona Equip
-                          </button>
-                          <a
-                            class="text-xs text-secondary hover:text-[var(--color-text)]"
-                            [routerLink]="['/builds', entry.build_id]"
-                          >
-                            Vai alla build &rarr;
-                          </a>
-                        </div>
-                      </div>
+        <!-- ================= ANALYTICS ================= -->
+        @if (tab() === 'analytics') {
+          <div class="cd-analytics">
+            <div class="cd-stack">
+              <section class="cd-panel" aria-labelledby="cd-balance-title">
+                <h2 class="cd-panel__title" id="cd-balance-title">{{ t('comps.roleBalance') }}</h2>
+                @if (roleDistribution().length === 0) {
+                  <p class="cd-panel__note">{{ t('comps.noBuilds') }}</p>
+                } @else {
+                  <ul class="cd-balance">
+                    @for (dist of roleDistribution(); track dist.role) {
+                      <li>
+                        <app-role-tag [role]="dist.role" />
+                        <span class="cd-bar" aria-hidden="true">
+                          <span [style.width.%]="rolePercent(dist.quantity)"></span>
+                        </span>
+                        <span class="cd-balance__value">{{ dist.quantity }} · {{ rolePercent(dist.quantity) }}%</span>
+                      </li>
                     }
-                  </div>
-                </section>
-              }
-            }
-          </div>
-        }
+                  </ul>
+                }
+              </section>
 
-        <!-- ================= VIEW 3: ANALYTICS & BLUEPRINT ================= -->
-        @if (viewMode() === 'analytics') {
-          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div class="lg:col-span-6 space-y-6">
-              <!-- Blueprint Stats Card -->
-              <section class="card p-5 border border-[var(--color-border)] space-y-4">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                  {{ t('comps.roleBalance') }}
-                </h3>
-
-                <!-- Role Balance Progress Bar -->
-                <div class="flex h-3 w-full rounded-full overflow-hidden bg-[var(--color-surface-2)]">
-                  @for (dist of compositionStats().roleDistribution; track dist.role) {
-                    <div
-                      [style.width.%]="formatRolePercent(dist.quantity, current.total_quantity)"
-                      [style.background-color]="roleColorHex(dist.role)"
-                      [appTooltip]="roleLabel(dist.role) + ': ' + dist.quantity"
-                    ></div>
-                  }
-                </div>
-
-                <div class="grid grid-cols-2 gap-2 text-xs">
-                  @for (dist of compositionStats().roleDistribution; track dist.role) {
-                    <div class="flex items-center justify-between p-2.5 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)]">
-                      <div class="flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full" [style.background-color]="roleColorHex(dist.role)"></span>
-                        <span class="text-[var(--color-text)] font-medium">{{ roleLabel(dist.role) }}</span>
-                      </div>
-                      <span class="font-bold text-[var(--color-text)] font-mono">
-                        {{ dist.quantity }} ({{ formatRolePercent(dist.quantity, current.total_quantity) }}%)
-                      </span>
-                    </div>
-                  }
-                </div>
-
-                @if (compositionStats().weaponNames.length > 0) {
-                  <div class="pt-3 border-t border-[var(--color-border)]">
-                    <span class="text-xs font-semibold text-secondary block mb-2">
-                      {{ t('comps.weaponsInComp') }} ({{ compositionStats().weaponCount }})
-                    </span>
-                    <div class="flex flex-wrap gap-1.5">
-                      @for (wName of compositionStats().weaponNames; track wName) {
-                        <span class="chip chip--neutral text-xs">{{ wName }}</span>
-                      }
-                    </div>
-                  </div>
+              <section class="cd-panel" aria-labelledby="cd-weapons-title">
+                <h2 class="cd-panel__title" id="cd-weapons-title">{{ t('comps.weaponsInComp') }}</h2>
+                @if (weapons().length === 0) {
+                  <p class="cd-panel__note">{{ t('comps.noBuilds') }}</p>
+                } @else {
+                  <ul class="cd-weapons">
+                    @for (weapon of weapons(); track weapon.key) {
+                      <li>
+                        <app-weapon-icon size="sm" [weaponKey]="weapon.key" fallback="–" />
+                        <span class="flex-1 min-w-0 text-sm">{{ weapon.name }}</span>
+                        <span class="cd-mono text-sm">×{{ weapon.players }}</span>
+                      </li>
+                    }
+                  </ul>
                 }
               </section>
             </div>
 
-            <div class="lg:col-span-6 space-y-6">
-              <!-- Performance Telemetry Card -->
-              @if (performance(); as perf) {
-                <section class="card p-5 border border-[var(--color-border)] space-y-4">
-                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                    {{ t('comps.battlePerformance') }}
-                  </h3>
+            <div class="cd-stack">
+              <section class="cd-panel" aria-labelledby="cd-perf-title">
+                <h2 class="cd-panel__title" id="cd-perf-title">{{ t('comps.battlePerformance') }}</h2>
+                @if (performance(); as perf) {
+                  @if (perf.stats.total_battles === 0) {
+                    <p class="cd-panel__note">{{ t('compDetail.perf.none') }}</p>
+                  } @else {
+                    <dl class="cd-kv">
+                      <div class="cd-stat">
+                        <dt>{{ t('comps.winrate') }}</dt>
+                        <dd class="cd-stat__value">{{ percentText(perf.stats.win_rate) }}</dd>
+                      </div>
+                      <div class="cd-stat">
+                        <dt>{{ t('comps.winsLosses') }}</dt>
+                        <dd class="cd-stat__value">{{ perf.stats.wins }} / {{ perf.stats.losses }}</dd>
+                      </div>
+                      <div class="cd-stat">
+                        <dt>{{ t('comps.totalBattles') }}</dt>
+                        <dd class="cd-stat__value">{{ perf.stats.total_battles }}</dd>
+                      </div>
+                      <div class="cd-stat">
+                        <dt>{{ t('comps.kdRatio') }}</dt>
+                        <dd class="cd-stat__value">{{ formatRatio(perf.stats.kill_death_ratio) }}</dd>
+                        <dd class="cd-stat__hint">{{ perf.stats.total_kills }} / {{ perf.stats.total_deaths }}</dd>
+                      </div>
+                      <div class="cd-stat">
+                        <dt>{{ t('comps.killFame') }}</dt>
+                        <dd class="cd-stat__value">{{ formatNumber(perf.stats.total_kill_fame) }}</dd>
+                      </div>
+                    </dl>
 
-                  <div class="grid grid-cols-2 gap-3">
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
-                      <span class="text-[10px] text-disabled block">{{ t('comps.kdRatio') }}</span>
-                      <strong class="text-lg font-bold text-[var(--color-text)] font-mono">{{ formatRatio(perf.stats.kill_death_ratio) }}</strong>
-                      <span class="text-[10px] text-secondary block mt-0.5">{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</span>
-                    </div>
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
-                      <span class="text-[10px] text-disabled block">{{ t('comps.killFame') }}</span>
-                      <strong class="text-lg font-bold text-warning font-mono">{{ formatNumber(perf.stats.total_kill_fame) }}</strong>
-                      <span class="text-[10px] text-secondary block mt-0.5">{{ perf.stats.total_battles }} battaglie</span>
-                    </div>
-                  </div>
-
-                  @if (perf.stats.top_opponents.length > 0) {
-                    <div class="pt-3 border-t border-[var(--color-border)]">
-                      <span class="text-xs font-semibold text-secondary block mb-2">
-                        {{ t('comps.topOpponents') }}
-                      </span>
-                      <div class="overflow-x-auto">
-                        <table class="table text-xs">
+                    @if (perf.stats.top_opponents.length > 0) {
+                      <h3 class="text-sm font-semibold mb-1">{{ t('comps.topOpponents') }}</h3>
+                      <div class="cd-table-scroll">
+                        <table class="cd-data">
                           <thead>
                             <tr>
-                              <th class="text-left">{{ t('comps.opponent') }}</th>
-                              <th class="text-right">W-L</th>
-                              <th class="text-right">{{ t('comps.winPercent') }}</th>
+                              <th scope="col">{{ t('comps.opponent') }}</th>
+                              <th scope="col" class="cd-num">{{ t('compDetail.perf.wins') }}</th>
+                              <th scope="col" class="cd-num">{{ t('compDetail.perf.losses') }}</th>
+                              <th scope="col" class="cd-num">{{ t('comps.winPercent') }}</th>
                             </tr>
                           </thead>
                           <tbody>
                             @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
                               <tr>
-                                <td class="font-medium text-[var(--color-text)]">{{ opponent.guild_name }}</td>
-                                <td class="text-right font-mono">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                                <td class="text-right font-mono font-bold" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
-                                  {{ formatPercent(opponentBattlesWinRate(opponent)) }}
+                                <th scope="row" class="font-medium">{{ opponent.guild_name }}</th>
+                                <td class="cd-num cd-mono">{{ opponent.wins }}</td>
+                                <td class="cd-num cd-mono">{{ opponent.losses }}</td>
+                                <td class="cd-num cd-mono">
+                                  <span class="cd-outcome" [class.cd-outcome--ahead]="outcome(opponent) === 'ahead'" [class.cd-outcome--behind]="outcome(opponent) === 'behind'">
+                                    @switch (outcome(opponent)) {
+                                      @case ('ahead') { <app-icon name="check" size="0.875rem" /> }
+                                      @case ('behind') { <app-icon name="close" size="0.875rem" /> }
+                                    }
+                                    <span class="sr-only">{{ outcomeLabel(opponent) }}</span>
+                                    {{ percentText(opponentWinRate(opponent)) }}
+                                  </span>
                                 </td>
                               </tr>
                             }
                           </tbody>
                         </table>
                       </div>
-                    </div>
+                    }
                   }
-                </section>
-              }
+                } @else {
+                  <p class="cd-panel__note">{{ t('compDetail.perf.unavailable') }}</p>
+                }
+              </section>
 
-              <!-- Market Price Card -->
-              <section class="card p-5 border border-[var(--color-border)] space-y-4">
-                <div class="flex items-center justify-between gap-2">
-                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
-                    {{ t('comps.price.title') }}
-                  </h3>
+              <section class="cd-panel" aria-labelledby="cd-price-title">
+                <div class="flex items-baseline justify-between gap-2">
+                  <h2 class="cd-panel__title" id="cd-price-title">{{ t('comps.price.title') }}</h2>
                   @if (compPrice(); as price) {
-                    <span class="chip text-xs font-mono">{{ formatSilverPrice(price.total) }}</span>
+                    <span class="cd-mono text-sm font-semibold">{{ formatSilver(price.total) }}</span>
                   }
                 </div>
                 @if (compPrice(); as price) {
                   @if (price.builds.length > 0) {
-                    <div class="space-y-1.5">
-                      @for (row of price.builds; track row.build_id) {
-                        <div class="flex items-center justify-between gap-2 p-2 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] text-xs">
-                          <div class="min-w-0">
-                            <span class="font-semibold text-[var(--color-text)]">{{ row.build_name }}</span>
-                            <span class="text-[10px] text-secondary block">×{{ row.quantity }} · {{ formatSilverPrice(row.unit_total) }} {{ t('comps.price.perItem') }}</span>
-                          </div>
-                          <strong class="font-mono text-[var(--color-text)] shrink-0">{{ formatSilverPrice(row.subtotal) }}</strong>
-                        </div>
-                      }
+                    <div class="cd-table-scroll">
+                      <table class="cd-data">
+                        <thead>
+                          <tr>
+                            <th scope="col">{{ t('compDetail.col.build') }}</th>
+                            <th scope="col" class="cd-num">{{ t('compDetail.col.players') }}</th>
+                            <th scope="col" class="cd-num">{{ t('comps.price.perItem') }}</th>
+                            <th scope="col" class="cd-num">{{ t('comps.price.total') }}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (row of price.builds; track row.build_id) {
+                            <tr>
+                              <th scope="row" class="font-medium">{{ row.build_name }}</th>
+                              <td class="cd-num cd-mono">×{{ row.quantity }}</td>
+                              <td class="cd-num cd-mono">{{ formatSilver(row.unit_total) }}</td>
+                              <td class="cd-num cd-mono">{{ formatSilver(row.subtotal) }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
                     </div>
                   } @else {
-                    <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
+                    <p class="cd-panel__note">{{ t('comps.price.unavailable') }}</p>
                   }
                 } @else {
-                  <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
+                  <p class="cd-panel__note">{{ t('comps.price.unavailable') }}</p>
                 }
               </section>
             </div>
           </div>
         }
+      </div>
 
-      </app-page-stack>
+      <!-- ================= ADD BUILD ================= -->
+      @if (addOpen()) {
+        <app-comp-add-build-dialog
+          [assignedIds]="assignedBuildIds()"
+          [saving]="saving()"
+          (add)="addBuild($event)"
+          (closed)="addOpen.set(false)"
+        />
+      }
 
-      <!-- Quick Build Inspect Modal -->
-      @if (inspectedBuild(); as inspected) {
-        <app-dialog [title]="inspected.name" size="lg" (closed)="inspectedBuildId.set(null)">
-          <div class="space-y-4">
-            <div class="flex items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
-              <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="roleColorHex(inspected.role)"></span>
-                <span class="text-xs font-bold uppercase tracking-wider" [style.color]="roleColorHex(inspected.role)">
-                  {{ roleLabel(inspected.role) }}
-                </span>
-                <span class="text-xs text-secondary">
-                  &bull; {{ inspected.category_name || t('comps.noCategory') }}
-                </span>
-              </div>
-              <div class="flex items-center gap-1 bg-[var(--color-surface-2)] p-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)]">
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs rounded-[var(--radius-md)] font-medium"
-                  [class.bg-[var(--color-surface-hover)]]="inspectedBuildLoadout() === 'main'"
-                  [class.text-[var(--color-text)]]="inspectedBuildLoadout() === 'main'"
-                  [class.text-secondary]="inspectedBuildLoadout() !== 'main'"
-                  (click)="inspectedBuildLoadout.set('main')"
-                >
-                  Main Set
-                </button>
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs rounded-[var(--radius-md)] font-medium"
-                  [class.bg-[var(--color-surface-hover)]]="inspectedBuildLoadout() === 'swap'"
-                  [class.text-[var(--color-text)]]="inspectedBuildLoadout() === 'swap'"
-                  [class.text-secondary]="inspectedBuildLoadout() !== 'swap'"
-                  (click)="inspectedBuildLoadout.set('swap')"
-                >
-                  Swap Set
-                </button>
-              </div>
+      <!-- ================= INSPECT ================= -->
+      @if (inspectedEntry(); as inspected) {
+        <app-dialog
+          [title]="inspected.build.name"
+          [subtitle]="t('compDetail.inspect.subtitle', { version: inspected.build.version })"
+          size="lg"
+          (closed)="inspectedBuildId.set(null)"
+        >
+          <div class="cd-stack">
+            <div class="cd-meta text-sm cd-muted">
+              <app-role-tag [role]="inspected.build.role" />
+              <span>{{ inspected.build.category_name || t('comps.noCategory') }}</span>
+              <span>{{ t('compDetail.byAuthor', { name: inspected.build.created_by_username }) }}</span>
+              <span class="cd-mono">×{{ inspected.quantity }}</span>
             </div>
-
-            <!-- Paperdoll Equipment Grid -->
-            <app-equipment-grid
-              [items]="inspectedItems()"
-              [canManage]="false"
-              [editingSlot]="null"
-              [draftTier]="'T8'"
-              [draftSearch]="''"
-              [draftItemId]="''"
-              [searchResults]="[]"
-              [searchLoading]="false"
-              [tiers]="[]"
-              [draftAbilitySlots]="[]"
+            <app-loadout-view
+              [items]="buildDetails().get(inspected.build_id)?.items"
+              [loading]="isBuildLoading(inspected.build_id)"
+              [unavailable]="isBuildFailed(inspected.build_id)"
             />
-
-            <!-- Selected Abilities -->
-            @if (inspectedAbilityRows().length > 0) {
-              <div class="space-y-2 pt-2 border-t border-[var(--color-border)]">
-                <span class="text-[10px] font-bold text-disabled uppercase tracking-wider block">Incantesimi Equipaggiati</span>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  @for (row of inspectedAbilityRows(); track row.slot) {
-                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-[var(--radius-md)] border border-[var(--color-border)] flex items-center justify-between gap-2">
-                      <span class="text-xs text-[var(--color-text)] font-medium truncate">{{ row.itemName }}</span>
-                      <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
-                    </div>
-                  }
-                </div>
-              </div>
-            }
           </div>
-
-          <div dialogFooter class="flex items-center justify-between w-full">
-            <button type="button" class="btn btn--outline btn--sm" (click)="inspectedBuildId.set(null)">
-              Chiudi
+          <div dialogFooter class="flex items-center justify-end gap-2 w-full">
+            <button type="button" class="btn btn--ghost btn--sm" (click)="inspectedBuildId.set(null)">
+              {{ t('common.close') }}
             </button>
-            <a class="btn btn--primary btn--sm" [routerLink]="['/builds', inspected.id]" (click)="inspectedBuildId.set(null)">
-              Apri Scheda Build Completa &rarr;
+            <a
+              class="btn btn--primary btn--sm"
+              [routerLink]="['/builds', inspected.build_id]"
+              (click)="inspectedBuildId.set(null)"
+            >
+              {{ t('compDetail.inspect.open') }}
+              <app-icon name="arrow-right" size="0.875rem" />
             </a>
           </div>
         </app-dialog>
       }
 
-      <!-- Add Build Modal Dialog -->
-      @if (addBuildModalOpen()) {
-        <app-dialog [title]="t('comps.addBuild')" size="md" (closed)="closeAddBuildModal()">
-          <div class="space-y-4">
-            <div class="space-y-2" role="search">
-              <app-ownership-scope-toggle
-                [scope]="addBuildScope()"
-                (scopeChange)="setAddBuildScope($event)"
-              />
-              <input
-                type="search"
-                class="input input--sm w-full text-xs"
-                [attr.aria-label]="t('comps.searchBuilds')"
-                [placeholder]="t('comps.searchBuilds')"
-                [value]="newBuildSearch()"
-                (input)="onNewBuildSearchChange($event)"
-              />
-              <div class="flex flex-wrap gap-1" role="group" [attr.aria-label]="t('common.role')">
-                <button
-                  type="button"
-                  class="chip text-[11px]"
-                  [class.chip--primary]="addBuildRoleFilter() === 'all'"
-                  (click)="setAddBuildRoleFilter('all')"
-                >
-                  {{ t('common.all') }}
-                </button>
-                @for (role of roles; track role) {
-                  <button
-                    type="button"
-                    class="chip text-[11px]"
-                    [class.chip--primary]="addBuildRoleFilter() === role"
-                    (click)="setAddBuildRoleFilter(role)"
-                  >
-                    {{ roleLabel(role) }}
-                  </button>
-                }
-              </div>
-            </div>
-
-            <div
-              class="max-h-64 overflow-y-auto space-y-1.5 pr-1"
-              [attr.aria-busy]="buildOptionsLoading()"
-            >
-              @if (buildOptionsLoading() && filteredAvailableBuilds().length === 0) {
-                <div class="py-6">
-                  <app-loading [label]="t('common.loading')" />
-                </div>
-              } @else {
-                @for (group of availableBuildGroups(); track group.key) {
-                  <div
-                    class="rounded-[var(--radius-md)] border overflow-hidden"
-                    [class.border-[var(--color-primary)]]="expandedBuildGroupKey() === group.key"
-                    [class.border-[var(--color-border)]]="expandedBuildGroupKey() !== group.key"
-                  >
-                    <button
-                      type="button"
-                      class="w-full text-left p-2.5 flex items-center justify-between gap-2.5 transition-all"
-                      [class.bg-[var(--color-primary)]/10]="expandedBuildGroupKey() === group.key"
-                      [class.bg-[var(--color-surface-2)]]="expandedBuildGroupKey() !== group.key"
-                      [attr.aria-expanded]="expandedBuildGroupKey() === group.key"
-                      (click)="toggleBuildGroup(group)"
-                    >
-                      <div class="flex items-center gap-2.5 min-w-0">
-                        <div class="shrink-0 w-8 h-8 rounded bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden">
-                          @if (weaponIconFor(group.versions[0].id); as weaponIcon) {
-                            <img [src]="weaponIcon" [alt]="" class="w-full h-full object-contain p-0.5" />
-                          } @else {
-                            <span class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]">
-                              {{ roleGlyph(group.role) }}
-                            </span>
-                          }
-                        </div>
-                        <div class="min-w-0">
-                          <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ group.name }}</span>
-                          <span class="text-[10px] text-secondary">
-                            {{ group.categoryName || t('comps.noCategory') }}
-                            @if (addBuildScope() === 'all') {
-                              · {{ group.createdBy }}
-                            }
-                          </span>
-                        </div>
-                      </div>
-                      <div class="flex items-center gap-1.5 shrink-0">
-                        @if (group.versions.length > 1) {
-                          <span class="text-[9px] font-mono text-secondary">{{ group.versions.length }}&times;</span>
-                        }
-                        <span
-                          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-                          [class]="roleChip(group.role)"
-                        >
-                          {{ roleLabel(group.role) }}
-                        </span>
-                        <app-icon
-                          [name]="expandedBuildGroupKey() === group.key ? 'chevron-up' : 'chevron-down'"
-                          size="0.7rem"
-                        />
-                      </div>
-                    </button>
-
-                    @if (expandedBuildGroupKey() === group.key) {
-                      <div class="border-t border-[var(--color-border)] p-1.5 space-y-1 bg-[var(--color-surface-1)]">
-                        @for (version of group.versions; track version.id) {
-                          <button
-                            type="button"
-                            class="w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-xs flex items-center justify-between gap-2 transition-all"
-                            [class.bg-[var(--color-primary)]/15]="isSelectedBuild(version.id)"
-                            [class.text-[var(--color-primary)]]="isSelectedBuild(version.id)"
-                            [class.font-bold]="isSelectedBuild(version.id)"
-                            (click)="selectAddBuild(version)"
-                          >
-                            <span>{{ t('comps.version') }} {{ version.version }}</span>
-                            @if (version.id === group.versions[0].id) {
-                              <span class="text-[9px] uppercase text-secondary">{{ t('comps.latestVersion') }}</span>
-                            }
-                          </button>
-                        }
-                      </div>
-                    }
-                  </div>
-                } @empty {
-                  <p class="text-xs text-secondary text-center py-6">{{ t('comps.noBuildsAvailable') }}</p>
-                }
-              }
-            </div>
-
-            @if (newBuildId()) {
-              <div class="flex items-center justify-between p-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)]">
-                <span class="text-xs font-bold text-[var(--color-text)]">{{ t('comps.addBuildQuantity') }}</span>
-                <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--xs w-7 h-7 p-0"
-                    [disabled]="newBuildQuantity() <= 1"
-                    (click)="newBuildQuantity.set(newBuildQuantity() - 1)"
-                  >
-                    -
-                  </button>
-                  <span class="font-mono font-bold text-[var(--color-text)] text-sm w-6 text-center">{{ newBuildQuantity() }}</span>
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--xs w-7 h-7 p-0"
-                    (click)="newBuildQuantity.set(newBuildQuantity() + 1)"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            }
-          </div>
-
-          <div dialogFooter class="flex justify-end gap-2">
-            <button type="button" class="btn btn--ghost btn--sm" (click)="closeAddBuildModal()">
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--primary btn--sm"
-              [disabled]="!newBuildId() || saving()"
-              (click)="submitAddBuildModal()"
-            >
-              {{ t('common.add') }}
-            </button>
-          </div>
-        </app-dialog>
-      }
-
-      <!-- Edit Metadata Modal Dialog -->
+      <!-- ================= EDIT DETAILS ================= -->
       @if (editMetaOpen()) {
         <app-dialog [title]="t('comps.editComp')" size="md" (closed)="closeEditMeta()">
           <form class="grid gap-4" (submit)="saveEdit($event)">
@@ -1108,20 +1169,20 @@ interface BuildOptionGroup {
                   class="input"
                   type="text"
                   required
+                  [attr.aria-invalid]="nameError() ? 'true' : null"
+                  [attr.aria-describedby]="nameError() ? 'cd-name-error' : null"
                   [value]="editName()"
                   (input)="onEditNameChange($event)"
                 />
+                @if (nameError(); as message) {
+                  <span id="cd-name-error" class="text-xs text-error" role="alert">{{ message }}</span>
+                }
               </label>
               <label>
                 <span class="label">{{ t('common.category') }} <span class="text-error" aria-hidden="true">*</span></span>
-                <select
-                  class="select"
-                  required
-                  [value]="editCategoryId()"
-                  (change)="onEditCategoryChange($event)"
-                >
+                <select class="select" required [value]="editCategoryId()" (change)="onEditCategoryChange($event)">
                   @for (category of editCategoryOptions(); track category.id) {
-                    <option [value]="category.id">
+                    <option [value]="category.id" [selected]="isSelectedId(editCategoryId(), category.id)">
                       {{ category.name }}
                     </option>
                   }
@@ -1131,27 +1192,16 @@ interface BuildOptionGroup {
             </div>
             <label>
               <span class="label">{{ t('common.description') }}</span>
-              <textarea
-                class="textarea"
-                rows="3"
-                [value]="editDescription()"
-                (input)="onEditDescriptionChange($event)"
-              ></textarea>
+              <textarea class="textarea" rows="3" [value]="editDescription()" (input)="onEditDescriptionChange($event)"></textarea>
             </label>
             <div class="grid gap-2">
-              <app-ownership-scope-toggle
-                [scope]="editParentScope()"
-                (scopeChange)="setEditParentScope($event)"
-              />
+              <app-ownership-scope-toggle [scope]="editParentScope()" (scopeChange)="setEditParentScope($event)" />
               <label>
                 <span class="label">{{ t('comps.parent') }}</span>
                 <select class="select" (change)="onEditParentChange($event)">
                   <option value="" [selected]="!editParentId()">{{ t('comps.noParent') }}</option>
                   @for (sibling of editParentOptions(); track sibling.id) {
-                    <option
-                      [value]="sibling.id"
-                      [selected]="isSelectedId(editParentId(), sibling.id)"
-                    >
+                    <option [value]="sibling.id" [selected]="isSelectedId(editParentId(), sibling.id)">
                       {{ ownershipLabel(sibling.name, sibling.created_by_username) }}
                     </option>
                   }
@@ -1159,137 +1209,92 @@ interface BuildOptionGroup {
               </label>
             </div>
             <div class="flex justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
-              <button type="button" class="btn btn--ghost" (click)="closeEditMeta()">
-                {{ t('common.cancel') }}
-              </button>
-              <button type="submit" class="btn btn--primary" [disabled]="saving()">
-                {{ t('common.save') }}
-              </button>
+              <button type="button" class="btn btn--ghost" (click)="closeEditMeta()">{{ t('common.cancel') }}</button>
+              <button type="submit" class="btn btn--primary" [disabled]="saving()">{{ t('common.save') }}</button>
             </div>
           </form>
         </app-dialog>
       }
 
-      <!-- Weapon Spell Fixed Tooltip -->
-      @if (activeWeaponTooltip(); as tip) {
-        <div
-          class="fixed z-50 pointer-events-none rounded-[var(--radius-cards)] p-3 border border-[var(--color-border)] shadow-2xl backdrop-blur-md bg-[var(--color-surface-1)] text-xs space-y-2 max-w-[280px]"
-          [style.left.px]="tip.x"
-          [style.top.px]="tip.y"
-        >
-          <div class="flex items-center gap-2.5 pb-2 border-b border-[var(--color-border)]">
-            @if (tip.icon) {
-              <img [src]="tip.icon" [alt]="tip.name" class="w-8 h-8 object-contain rounded bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)]" />
-            }
-            <div class="min-w-0">
-              <p class="font-bold text-[var(--color-text)] text-xs truncate">{{ tip.name }}</p>
-              <p class="text-[10px] text-secondary truncate">{{ tip.buildName }} &bull; {{ roleLabel(tip.role) }}</p>
-            </div>
-          </div>
-          @if (tip.spells.length > 0) {
-            <div class="space-y-1.5">
-              <span class="text-[9px] font-bold text-disabled uppercase tracking-wider block">Incantesimi Selezionati</span>
-              <div class="space-y-1">
-                @for (spell of tip.spells; track spell.key) {
-                  <div class="flex items-center gap-2">
-                    @if (spell.iconUrl) {
-                      <img [src]="spell.iconUrl" [alt]="spell.name" class="w-5 h-5 object-contain rounded bg-[var(--color-surface-2)]" />
-                    }
-                    <span class="text-[11px] text-[var(--color-text)] font-medium truncate">{{ spell.name }}</span>
-                  </div>
-                }
-              </div>
-            </div>
-          } @else {
-            <p class="text-[10px] text-disabled italic">Nessun incantesimo salvato</p>
-          }
-        </div>
-      }
-
+      <!-- ================= COMPARE VERSIONS ================= -->
       @if (comparing()) {
         <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
           <div class="grid gap-4">
             <label>
               <span class="label">{{ t('comps.compareWith') }}</span>
-              <select
-                class="select"
-                [value]="compareWithId()"
-                (change)="onCompareTargetChange($event)"
-              >
+              <select class="select" [value]="compareWithId()" (change)="onCompareTargetChange($event)">
                 @for (entry of current.versions ?? []; track entry.id) {
                   @if (entry.id !== current.id) {
-                    <option [value]="entry.id">v{{ entry.version }}</option>
+                    <option [value]="entry.id" [selected]="compareWithId() === '' + entry.id">v{{ entry.version }}</option>
                   }
                 }
               </select>
             </label>
 
-            @if (compareWith(); as other) {
+            @if (comparison(); as pair) {
+              <p class="text-sm cd-muted">
+                {{ t('compDetail.compare.direction', { from: 'v' + pair.before.version, to: 'v' + pair.after.version }) }}
+              </p>
               <div class="grid gap-3 sm:grid-cols-2">
-                <div class="card p-4">
-                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                    v{{ other.version }} — {{ t('comps.performance') }}
-                  </h3>
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ performanceSummary(comparePerformance()) }}
-                  </p>
-                </div>
-                <div class="card p-4">
-                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                    v{{ current.version }} — {{ t('comps.performance') }}
-                  </h3>
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ performanceSummary(performance()) }}
-                  </p>
-                </div>
+                <section class="cd-panel">
+                  <h3 class="text-sm font-semibold">{{ t('compDetail.compare.older', { version: pair.before.version }) }}</h3>
+                  <p class="text-sm cd-muted mt-1">{{ performanceSummary(pair.beforePerformance) }}</p>
+                </section>
+                <section class="cd-panel">
+                  <h3 class="text-sm font-semibold">{{ t('compDetail.compare.newer', { version: pair.after.version }) }}</h3>
+                  <p class="text-sm cd-muted mt-1">{{ performanceSummary(pair.afterPerformance) }}</p>
+                </section>
               </div>
 
               <app-version-diff-list
                 [entries]="compareDiff()"
                 [emptyLabel]="t('comps.noDifferences')"
+                [subjectLabel]="t('compDetail.compare.build')"
+                [beforeLabel]="'v' + pair.before.version"
+                [afterLabel]="'v' + pair.after.version"
+                [changeLabel]="t('compDetail.compare.change')"
+                [noneLabel]="t('versionDiff.none')"
                 [addedLabel]="t('comps.added')"
                 [removedLabel]="t('comps.removed')"
                 [changedLabel]="t('comps.changed')"
               />
+            } @else if (compareLoading()) {
+              <p class="text-sm cd-muted" role="status">{{ t('common.loading') }}</p>
             }
           </div>
           <div dialogFooter>
-            <button type="button" class="btn btn--ghost" (click)="closeCompare()">
-              {{ t('common.close') }}
-            </button>
+            <button type="button" class="btn btn--ghost" (click)="closeCompare()">{{ t('common.close') }}</button>
           </div>
         </app-dialog>
       }
 
+      <!-- ================= ARCHIVE CONFIRM ================= -->
       @if (pendingArchive()) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeArchiveConfirm()">
           <p>{{ t('comps.archiveConfirm') }}</p>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-            {{ current.name }}
-          </p>
+          <p class="mt-2 text-sm cd-muted">{{ current.name }}</p>
           <div dialogFooter>
-            <button type="button" class="btn btn--ghost" (click)="closeArchiveConfirm()">
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--tonal"
-              [disabled]="saving()"
-              (click)="confirmArchiveComp()"
-            >
+            <button type="button" class="btn btn--ghost" (click)="closeArchiveConfirm()">{{ t('common.cancel') }}</button>
+            <button type="button" class="btn btn--tonal" [disabled]="saving()" (click)="confirmArchiveComp()">
               {{ t('comps.archive') }}
             </button>
           </div>
         </app-dialog>
       }
-    } @else if (loadFailed()) {
+    } @else if (notFound()) {
+      <app-empty-state icon="package" [message]="t('comps.notFound')" [hint]="t('compDetail.notFound.hint')">
+        <a class="btn btn--outline btn--sm" routerLink="/comps">
+          <app-icon name="chevron-left" size="0.875rem" />
+          {{ t('compDetail.notFound.back') }}
+        </a>
+      </app-empty-state>
+    } @else {
       <app-error-state
         [message]="t('common.error')"
+        [hint]="t('compDetail.error.load')"
         [retryLabel]="t('common.retry')"
         (retry)="load(compId())"
       />
-    } @else if (!loading()) {
-      <app-empty-state [message]="t('comps.notFound')" icon="package" />
     }
   `,
 })
@@ -1297,143 +1302,93 @@ export class CompDetailPage {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly toasts = inject(ToastService);
-  private readonly albionAbilities = inject(AlbionAbilitiesService);
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
+
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
+  protected readonly notFound = signal(false);
   protected readonly saving = signal(false);
 
   protected readonly comp = signal<CompDetail | null>(null);
   protected readonly parentComp = signal<CompSummary | null>(null);
   protected readonly performance = signal<CompPerformanceView | null>(null);
-  /** The comp's total market price, priced live from Albion Online Data (Σ build × quantity). */
+  /** The comp's total market price, priced live from Albion Online Data (sum of build x quantity). */
   protected readonly compPrice = signal<CompPriceView | null>(null);
-  protected readonly compCategories = signal<CompCategoryView[]>([]);
-  protected readonly buildOptions = signal<BuildSummary[]>([]);
-  protected readonly compSummaries = signal<CompSummary[]>([]);
-  private readonly buildDetails = signal<ReadonlyMap<number, BuildDetail>>(new Map());
-  private buildDetailsRequest = 0;
-  private readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
-  protected readonly comparing = signal(false);
-  protected readonly compareWithId = signal('');
-  protected readonly compareWith = signal<CompDetail | null>(null);
-  protected readonly comparePerformance = signal<CompPerformanceView | null>(null);
-  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
-    const current = this.comp();
-    const other = this.compareWith();
-    return current && other ? diffCompVersions(other, current) : [];
-  });
-  protected readonly buildDetailsLoading = signal(false);
+  protected readonly shareStatus = signal<AllianceShareStatus | null>(null);
 
-  protected readonly mode = signal<'view' | 'edit'>('view');
-  protected readonly viewMode = signal<'parties' | 'roles' | 'analytics'>('parties');
+  protected readonly tab = signal<DetailTab>('roster');
+  protected readonly editing = signal(false);
   protected readonly partySize = COMP_PARTY_SIZE;
-  protected readonly selectedRosterPartyNumber = signal(1);
-  protected readonly viewModeOptions = computed<readonly ViewToggleOption[]>(() => {
-    return [
-      { id: 'parties', label: this.t('comps.viewParties', { count: this.totalPartyCount() }) },
-      { id: 'roles', label: this.t('comps.viewRoles', { count: this.comp()?.builds.length ?? 0 }) },
-      { id: 'analytics', label: this.t('comps.viewAnalytics') },
-    ];
-  });
+  protected readonly glyph = roleGlyph;
+
+  // ---- lazily loaded build loadouts ----------------------------------------
+  protected readonly buildDetails = signal<ReadonlyMap<number, BuildDetail>>(new Map());
+  private readonly buildLoading = signal<ReadonlySet<number>>(new Set());
+  private readonly buildFailed = signal<ReadonlySet<number>>(new Set());
+  private readonly expanded = signal<ReadonlySet<number>>(new Set());
+  protected readonly inspectedBuildId = signal<number | null>(null);
+
+  // ---- editing ---------------------------------------------------------------
+  protected readonly addOpen = signal(false);
+  protected readonly pendingQuantity = signal<ReadonlyMap<number, number>>(new Map());
+  private readonly quantityTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   protected readonly editMetaOpen = signal(false);
-  protected readonly addBuildModalOpen = signal(false);
-  protected readonly addBuildRoleFilter = signal<BuildRole | 'all'>('all');
-  protected readonly addBuildScope = signal<OwnershipScope>('mine');
-  protected readonly editParentScope = signal<OwnershipScope>('mine');
-  protected readonly buildOptionsLoading = signal(false);
-  /** Key (`categoryId::name`) of the build group currently expanded to show its version list, if any. */
-  protected readonly expandedBuildGroupKey = signal<string | null>(null);
-  private buildSearchTimer: ReturnType<typeof setTimeout> | null = null;
-  private buildSearchSeq = 0;
-
-  protected readonly inspectedBuildId = signal<number | null>(null);
-  protected readonly inspectedBuild = computed(() =>
-    this.inspectedBuildId() ? this.buildDetails().get(this.inspectedBuildId()!) ?? null : null,
-  );
-  protected readonly inspectedBuildLoadout = signal<BuildLoadout>('main');
-  protected readonly inspectedItems = computed<BuildItemSlot[]>(() => {
-    const b = this.inspectedBuild();
-    if (!b) return [];
-    return itemsForLoadout(b.items, this.inspectedBuildLoadout());
-  });
-  protected readonly inspectedAbilityRows = computed(() => {
-    const b = this.inspectedBuild();
-    if (!b) return [];
-    return this.abilityRows(this.inspectedItems());
-  });
-
-  protected readonly overviewBuilds = computed(() => {
-    const result = new Map<number, { items: BuildItemSlot[]; rows: ReturnType<CompDetailPage['abilityRows']>; swapItems: BuildItemSlot[]; swapRows: ReturnType<CompDetailPage['abilityRows']> }>();
-    for (const [id, build] of this.buildDetails()) {
-      const items = itemsForLoadout(build.items, 'main');
-      const swapItems = itemsForLoadout(build.items, 'swap');
-      const selectedRows = (loadoutItems: BuildItemSlot[]) => this.abilityRows(loadoutItems)
-        .map((row) => ({ ...row, slots: row.slots.filter((slot) => slot.selected !== null) }))
-        .filter((row) => row.slots.length > 0);
-      result.set(id, { items, rows: selectedRows(items), swapItems, swapRows: selectedRows(swapItems) });
-    }
-    return result;
-  });
-
-  protected abilityRows(items: BuildItemSlot[]) {
-    const catalog = this.abilityCatalog();
-    return items.flatMap((item) => {
-      const key = abilityKeyForItem(item);
-      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells, this.t('comps.passiveAbilityLabel'));
-      for (const kind of ['active', 'passive'] as const) {
-        for (const [indexText, id] of Object.entries(item.spells?.[kind] ?? {})) {
-          const index = Number(indexText);
-          const existing = slots.find((slot) => slot.kind === kind && slot.index === index);
-          if (existing) {
-            if (!existing.choices.some((choice) => choice.id === id)) {
-              existing.choices = [...existing.choices, { id, name: id }];
-            }
-          } else {
-            const label = this.t(kind === 'active' ? 'comps.activeAbilitySlot' : 'comps.passiveAbilitySlot', { index });
-            slots.push({ kind, index, label, choices: [{ id, name: id }], selected: id });
-          }
-        }
-      }
-      return slots.length === 0
-        ? []
-        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
-    });
-  }
-
-  protected readonly activeWeaponTooltip = signal<{
-    x: number;
-    y: number;
-    name: string;
-    buildName: string;
-    role: BuildRole;
-    icon: string | null;
-    spells: { key: string; name: string; iconUrl: string }[];
-  } | null>(null);
-
-  protected readonly pendingArchive = signal(false);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
   protected readonly editParentId = signal('');
+  protected readonly editParentScope = signal<OwnershipScope>('mine');
+  protected readonly nameError = signal<string | null>(null);
+  protected readonly compCategories = signal<CompCategoryView[]>([]);
+  protected readonly compSummaries = signal<CompSummary[]>([]);
+  protected readonly pendingArchive = signal(false);
 
-  protected readonly newBuildId = signal('');
-  protected readonly newBuildSearch = signal('');
-  protected readonly newBuildQuantity = signal(1);
+  // ---- compare ---------------------------------------------------------------
+  protected readonly comparing = signal(false);
+  protected readonly compareLoading = signal(false);
+  protected readonly compareWithId = signal('');
+  private readonly compareWith = signal<CompDetail | null>(null);
+  private readonly comparePerformance = signal<CompPerformanceView | null>(null);
 
-  protected readonly editingBuildId = signal<number | null>(null);
-  protected readonly editingBuildQty = signal(1);
+  /** Older version first, so the diff always reads in chronological order. */
+  protected readonly comparison = computed(() => {
+    const current = this.comp();
+    const other = this.compareWith();
+    if (!current || !other) {
+      return null;
+    }
+    const otherIsOlder = other.version < current.version;
+    return otherIsOlder
+      ? { before: other, after: current, beforePerformance: this.comparePerformance(), afterPerformance: this.performance() }
+      : { before: current, after: other, beforePerformance: this.performance(), afterPerformance: this.comparePerformance() };
+  });
 
-  protected readonly roles: BuildRole[] = ['tank', 'healer', 'support', 'dps', 'brawler', 'battle_mount'];
+  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
+    const pair = this.comparison();
+    return pair
+      ? diffCompVersions(pair.before, pair.after, {
+          version: this.t('versionDiff.version'),
+          players: this.t('versionDiff.players'),
+        })
+      : [];
+  });
 
-  protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
-    this.translate.t(key, params);
+  /**
+   * The comp row on screen.
+   *
+   * Switching versions navigates within the same route, so Angular reuses this component and the
+   * snapshot never changes - the id has to come from the live `paramMap` instead.
+   */
+  protected readonly compId = signal(Number(this.route.snapshot.paramMap.get('compId')));
 
+  // ---- permissions -----------------------------------------------------------
   /** Edit and delete apply to comps the caller authored; `comps.comps.manage` covers anyone's. */
   private canChange(own: string): boolean {
     return canChangeAuthored(
@@ -1448,16 +1403,133 @@ export class CompDetailPage {
   protected readonly canDelete = computed(() => this.canChange('comps.comps.delete'));
   /** A new version joins its author's group, so it follows the same author-or-manage rule. */
   protected readonly canVersion = computed(() => this.canChange('comps.comps.create'));
-  protected readonly isGuildTenant = computed(
-    () => this.auth.profile()?.tenant_kind !== 'alliance',
-  );
+  protected readonly isGuildTenant = computed(() => this.auth.profile()?.tenant_kind !== 'alliance');
   protected readonly canShare = computed(
     () => this.isGuildTenant() && this.auth.hasPermission('alliance.share'),
   );
-  protected readonly shareStatus = signal<AllianceShareStatus | null>(null);
-  protected readonly availableParents = computed(() =>
-    this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
+
+  // ---- derived view data -----------------------------------------------------
+  protected readonly menuItems = computed<EntityMenuItem[]>(() => {
+    const current = this.comp();
+    if (!current) {
+      return [];
+    }
+    const disabled = this.saving();
+    const items: EntityMenuItem[] = [];
+    if (this.canManage()) {
+      items.push({ id: 'editDetails', label: this.t('compDetail.action.editDetails'), disabled });
+      items.push({ id: 'clone', label: this.t('common.clone'), disabled });
+    }
+    if ((current.versions ?? []).length > 1) {
+      items.push({ id: 'compare', label: this.t('compDetail.action.compareVersions') });
+    }
+    if (this.canVersion()) {
+      items.push({ id: 'newVersion', label: this.t('comps.newVersion'), disabled });
+    }
+    if (this.canShare()) {
+      items.push(
+        this.shareStatus()?.shared
+          ? { id: 'unshare', label: this.t('comps.unshareWithAlliance'), disabled }
+          : { id: 'share', label: this.t('comps.shareWithAlliance'), disabled },
+      );
+    }
+    if (this.canDelete()) {
+      items.push(
+        current.archived_at
+          ? { id: 'unarchive', label: this.t('comps.unarchive'), disabled, separatorBefore: true }
+          : { id: 'archive', label: this.t('comps.archive'), disabled, danger: true, separatorBefore: true },
+      );
+    }
+    return items;
+  });
+
+  protected readonly tabOptions = computed<readonly ViewToggleOption[]>(() => [
+    { id: 'roster', label: this.t('compDetail.tab.roster') },
+    { id: 'parties', label: this.t('compDetail.tab.parties') },
+    { id: 'analytics', label: this.t('compDetail.tab.analytics') },
+  ]);
+
+  /** Roster order: front line first (role priority), then by name and version. */
+  protected readonly rosterEntries = computed<CompBuildEntry[]>(() => {
+    const entries = [...(this.comp()?.builds ?? [])];
+    return entries.sort(
+      (left, right) =>
+        BUILD_ROLES.indexOf(left.build.role) - BUILD_ROLES.indexOf(right.build.role) ||
+        left.build.name.localeCompare(right.build.name, this.translate.locale()) ||
+        left.build.version - right.build.version,
+    );
+  });
+
+  protected readonly assignedBuildIds = computed(() =>
+    (this.comp()?.builds ?? []).map((entry) => entry.build_id),
   );
+
+  protected readonly parties = computed(() => simulateCompParties(this.comp()?.builds ?? []));
+
+  /** Seats in the last party when it is not full, so the header can say the last party is short. */
+  protected readonly lastPartyShort = computed(() => {
+    const parties = this.parties();
+    const last = parties[parties.length - 1];
+    return last && last.seats.length < COMP_PARTY_SIZE ? last.seats.length : null;
+  });
+
+  protected readonly roleDistribution = computed(() => {
+    const quantities = new Map<BuildRole, number>();
+    for (const entry of this.comp()?.builds ?? []) {
+      quantities.set(entry.build.role, (quantities.get(entry.build.role) ?? 0) + entry.quantity);
+    }
+    return BUILD_ROLES.filter((role) => quantities.has(role)).map((role) => ({
+      role,
+      quantity: quantities.get(role) ?? 0,
+    }));
+  });
+
+  /** One line per weapon with the players carrying it, most used first. */
+  protected readonly weapons = computed(() => {
+    const byWeapon = new Map<string, { key: string; name: string; players: number }>();
+    for (const entry of this.comp()?.builds ?? []) {
+      const key = entry.build.weapon_key ?? '';
+      const existing = byWeapon.get(key);
+      if (existing) {
+        existing.players += entry.quantity;
+      } else {
+        byWeapon.set(key, {
+          key,
+          name: entry.build.weapon_name ?? this.t('comps.noWeapon'),
+          players: entry.quantity,
+        });
+      }
+    }
+    return [...byWeapon.values()].sort(
+      (left, right) => right.players - left.players || left.name.localeCompare(right.name),
+    );
+  });
+
+  protected readonly allOpen = computed(() => {
+    const builds = this.comp()?.builds ?? [];
+    return builds.length > 0 && builds.every((entry) => this.expanded().has(entry.build_id));
+  });
+
+  protected readonly inspectedEntry = computed(() => {
+    const id = this.inspectedBuildId();
+    return id === null ? null : (this.comp()?.builds.find((entry) => entry.build_id === id) ?? null);
+  });
+
+  protected readonly winRateText = computed(() => {
+    const stats = this.performance()?.stats;
+    return stats && stats.total_battles > 0 ? this.percentText(stats.win_rate) : '—';
+  });
+
+  protected readonly winRateHint = computed(() => {
+    const stats = this.performance()?.stats;
+    if (!stats) {
+      return this.t('compDetail.perf.unavailableShort');
+    }
+    return stats.total_battles === 0
+      ? this.t('compDetail.perf.noBattles')
+      : this.t('compDetail.stat.record', { wins: stats.wins, losses: stats.losses });
+  });
+
   // Keep the current values visible even when the options request is paginated or temporarily
   // unavailable. Native selects otherwise fall back to the first option (usually "No ...").
   protected readonly editCategoryOptions = computed(() => {
@@ -1474,389 +1546,16 @@ export class CompDetailPage {
       ...categories,
     ];
   });
+
   protected readonly editParentOptions = computed(() => {
     const current = this.comp();
-    const parents = this.availableParents();
+    const parents = this.compSummaries().filter((sibling) => sibling.id !== current?.id);
     const parent = this.parentComp();
     if (!current || !parent || parents.some((candidate) => candidate.id === parent.id)) {
       return parents;
     }
     return [parent, ...parents];
   });
-  protected readonly availableBuildOptions = computed(() => {
-    const assignedBuildIds = new Set(this.comp()?.builds.map((entry) => entry.build_id) ?? []);
-    return this.buildOptions().filter((build) => !assignedBuildIds.has(build.id));
-  });
-  protected readonly compositionStats = computed(() => {
-    const comp = this.comp();
-    const roleQuantities = new Map<BuildRole, number>();
-    const weaponNames = new Set<string>();
-    let equippedBuildCount = 0;
-
-    for (const entry of comp?.builds ?? []) {
-      roleQuantities.set(
-        entry.build.role,
-        (roleQuantities.get(entry.build.role) ?? 0) + entry.quantity,
-      );
-      const weapon = this.buildDetails()
-        .get(entry.build_id)
-        ?.items.find((item) => item.slot === 'weapon');
-      if (weapon) {
-        equippedBuildCount += 1;
-        weaponNames.add(weapon.openalbion_item_name);
-      }
-    }
-
-    const roleDistribution = ROLES.filter((role) => roleQuantities.has(role)).map((role) => ({
-      role,
-      quantity: roleQuantities.get(role) ?? 0,
-    }));
-    return {
-      roleCount: roleQuantities.size,
-      roleDistribution,
-      roleSummary:
-        roleDistribution
-          .map(({ role, quantity }) => `${ROLE_LABELS[role]} ${quantity}`)
-          .join(' · ') || 'no roles assigned',
-      weaponCount: weaponNames.size,
-      weaponNames: [...weaponNames].sort((left, right) => left.localeCompare(right)),
-      weaponSummary: weaponNames.size === 1 ? 'unique weapon' : 'unique weapons',
-      equippedBuildCount,
-      equipmentCoverage: `${equippedBuildCount}/${comp?.builds.length ?? 0} builds have a weapon`,
-    };
-  });
-
-  protected readonly roleColorMap: Record<BuildRole, string> = {
-    tank: 'var(--role-tank)',
-    healer: 'var(--role-healer)',
-    support: 'var(--role-support)',
-    dps: 'var(--role-dps)',
-    battle_mount: 'var(--role-bm)',
-    brawler: 'var(--role-brawler)',
-  };
-
-  protected roleColorHex(role: BuildRole): string {
-    return this.roleColorMap[role] ?? 'var(--color-primary)';
-  }
-
-  /** Tinted pill background for a role group header — same hue as {@link roleColorHex}, low opacity. */
-  protected roleBadgeBg(role: BuildRole): string {
-    return `color-mix(in oklab, ${this.roleColorHex(role)} 16%, transparent)`;
-  }
-
-  protected readonly groupedBuildsByRole = computed(() => {
-    const current = this.comp();
-    if (!current) return [];
-    const groups: { role: BuildRole; totalSlots: number; entries: typeof current.builds }[] = [];
-    for (const role of ROLES) {
-      const entries = current.builds.filter((b) => b.build.role === role);
-      if (entries.length > 0) {
-        const totalSlots = entries.reduce((sum, e) => sum + e.quantity, 0);
-        groups.push({ role, totalSlots, entries });
-      }
-    }
-    return groups;
-  });
-
-  protected readonly filteredAvailableBuilds = computed(() => {
-    let list = this.availableBuildOptions();
-    const role = this.addBuildRoleFilter();
-    if (role !== 'all') {
-      list = list.filter((b) => b.role === role);
-    }
-    const q = this.newBuildSearch().trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (b) =>
-          b.name.toLowerCase().includes(q) ||
-          (b.category_name ?? '').toLowerCase().includes(q) ||
-          b.created_by_username.toLowerCase().includes(q),
-      );
-    }
-    return list;
-  });
-
-  /**
-   * The "Add Build" picker collapses every version of a build into a single row, keyed by
-   * `(category_id, created_by, name)` so homonyms from different creators stay separate. Expanding
-   * a row (see {@link expandedBuildGroupKey}) reveals its versions, newest first, for selection.
-   */
-  protected readonly availableBuildGroups = computed(() => {
-    const groups = new Map<string, BuildOptionGroup>();
-    for (const build of this.filteredAvailableBuilds()) {
-      const key = `${build.category_id}::${build.created_by_username}::${build.name}`;
-      const group = groups.get(key);
-      if (group) {
-        group.versions.push(build);
-      } else {
-        groups.set(key, {
-          key,
-          name: build.name,
-          categoryName: build.category_name,
-          createdBy: build.created_by_username,
-          role: build.role,
-          versions: [build],
-        });
-      }
-    }
-    for (const group of groups.values()) {
-      group.versions.sort((a, b) => b.version - a.version);
-    }
-    return [...groups.values()];
-  });
-
-  protected readonly partySimulation = computed(() =>
-    simulateCompParties(this.comp()?.builds ?? []),
-  );
-
-  protected readonly totalPartyCount = computed(() => this.partySimulation().length);
-
-  protected readonly activeRosterParty = computed<CompPartyView | null>(() => {
-    const parties = this.partySimulation();
-    return (
-      parties.find((party) => party.partyNumber === this.selectedRosterPartyNumber()) ??
-      parties[0] ??
-      null
-    );
-  });
-
-  protected onViewModeChange(id: string): void {
-    this.viewMode.set(id as 'parties' | 'roles' | 'analytics');
-  }
-
-  protected toggleEditMode(): void {
-    this.mode.set(this.mode() === 'edit' ? 'view' : 'edit');
-    if (this.mode() === 'view') {
-      this.cancelEditBuild();
-    } else {
-      this.viewMode.set('roles');
-      void this.loadEditOptions();
-    }
-  }
-
-  protected partyName(party: CompPartyView): string {
-    return this.t('comps.partyNum', { number: party.partyNumber });
-  }
-
-  protected selectRosterParty(partyNumber: number): void {
-    this.selectedRosterPartyNumber.set(partyNumber);
-  }
-
-  protected onRosterPartyKeydown(event: Event, partyNumber: number): void {
-    if (
-      event instanceof KeyboardEvent &&
-      (event.key === 'ArrowRight' || event.key === 'ArrowLeft')
-    ) {
-      event.preventDefault();
-      const parties = this.partySimulation();
-      const currentIndex = parties.findIndex((party) => party.partyNumber === partyNumber);
-      if (currentIndex === -1) return;
-      const offset = event.key === 'ArrowRight' ? 1 : -1;
-      const next = parties[(currentIndex + offset + parties.length) % parties.length];
-      this.selectRosterParty(next.partyNumber);
-      (event.currentTarget as HTMLElement).parentElement
-        ?.querySelector<HTMLElement>(`[aria-controls="comp-party-panel-${next.partyNumber}"]`)
-        ?.focus();
-    }
-  }
-
-  protected roleChip(role: BuildRole): string {
-    return ROLE_CHIP[role] ?? 'chip';
-  }
-
-  protected roleGlyph(role: BuildRole): string {
-    return ROLE_GLYPH[role] ?? '•';
-  }
-
-  protected roleBorderClass(role: BuildRole): string {
-    switch (role) {
-      case 'tank':
-        return 'border border-[var(--color-info)] bg-[var(--color-info-container)]';
-      case 'healer':
-        return 'border border-[var(--color-success)] bg-[var(--color-success-container)]';
-      case 'support':
-        return 'border border-[var(--color-warning)] bg-[var(--color-warning-container)]';
-      case 'dps':
-        return 'border border-[var(--color-error)] bg-[var(--color-error-container)]';
-      case 'battle_mount':
-        return 'border border-[var(--color-primary)] bg-[var(--color-primary-container)]';
-      case 'brawler':
-        return 'border border-[var(--color-info)] bg-[var(--color-info-container)]';
-      default:
-        return 'border border-[var(--color-border)]';
-    }
-  }
-
-  protected isSelectedBuild(id: number): boolean {
-    return this.newBuildId() === String(id);
-  }
-
-  protected openEditMeta(): void {
-    const current = this.comp();
-    if (!current) return;
-    this.editName.set(current.name);
-    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
-    this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
-    this.editDescription.set(current.description ?? '');
-    this.editParentScope.set('mine');
-    this.editMetaOpen.set(true);
-    // The category and parent selects read `compCategories()` / `compSummaries()`,
-    // and only this call fills them. Without it `editCategoryOptions()` falls back
-    // to the comp's own current category, so the dialog opens with nothing to
-    // switch to and the category can only be cleared, never changed.
-    void this.loadEditOptions();
-  }
-
-  protected closeEditMeta(): void {
-    this.editMetaOpen.set(false);
-  }
-
-  protected openAddBuildModal(): void {
-    this.newBuildId.set('');
-    this.newBuildSearch.set('');
-    this.newBuildQuantity.set(1);
-    this.addBuildRoleFilter.set('all');
-    this.addBuildScope.set('mine');
-    this.expandedBuildGroupKey.set(null);
-    this.addBuildModalOpen.set(true);
-    void this.searchAvailableBuilds();
-  }
-
-  protected setAddBuildScope(scope: OwnershipScope): void {
-    if (this.addBuildScope() === scope) {
-      return;
-    }
-    this.addBuildScope.set(scope);
-    this.expandedBuildGroupKey.set(null);
-    this.newBuildId.set('');
-    void this.searchAvailableBuilds();
-  }
-
-  protected setEditParentScope(scope: OwnershipScope): void {
-    if (this.editParentScope() === scope) {
-      return;
-    }
-    this.editParentScope.set(scope);
-    void this.loadEditOptions();
-  }
-
-  protected ownershipLabel(name: string, createdBy: string): string {
-    return ownershipOptionLabel(name, createdBy, this.editParentScope());
-  }
-
-  protected closeAddBuildModal(): void {
-    this.addBuildModalOpen.set(false);
-    this.buildSearchSeq += 1;
-    if (this.buildSearchTimer !== null) {
-      clearTimeout(this.buildSearchTimer);
-      this.buildSearchTimer = null;
-    }
-  }
-
-  protected setAddBuildRoleFilter(role: BuildRole | 'all'): void {
-    this.addBuildRoleFilter.set(role);
-    this.expandedBuildGroupKey.set(null);
-    this.newBuildId.set('');
-    void this.searchAvailableBuilds();
-  }
-
-  protected selectAddBuild(build: BuildSummary): void {
-    this.newBuildId.set(String(build.id));
-  }
-
-  /**
-   * Toggles a build group open/closed in the "Add Build" picker. Opening a group auto-selects its
-   * newest version (per the picker's recommended default); the user can still pick an older one
-   * from the revealed version list. Opening a different group collapses whichever was open.
-   */
-  protected toggleBuildGroup(group: BuildOptionGroup): void {
-    if (this.expandedBuildGroupKey() === group.key) {
-      this.expandedBuildGroupKey.set(null);
-      this.newBuildId.set('');
-      return;
-    }
-    this.expandedBuildGroupKey.set(group.key);
-    const latest = group.versions[0];
-    if (latest) {
-      this.selectAddBuild(latest);
-    }
-  }
-
-  protected async submitAddBuildModal(): Promise<void> {
-    const comp = this.comp();
-    const buildId = Number(this.newBuildId());
-    const isAvailable = this.availableBuildOptions().some((build) => build.id === buildId);
-    if (!comp || !buildId || !isAvailable) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      const updated = await firstValueFrom(
-        this.api.post<CompDetail>(`api/comps/${comp.id}/builds`, {
-          build_id: buildId,
-          quantity: this.newBuildQuantity(),
-        }),
-      );
-      this.comp.set(updated);
-      void this.loadBuildDetails(updated);
-      this.closeAddBuildModal();
-      this.toasts.success(this.t('comps.buildAdded'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected itemSelectedSpells(item: BuildItemSlot): { key: string; name: string; iconUrl: string }[] {
-    const catalog = this.abilityCatalog();
-    const key = abilityKeyForItem(item);
-    const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
-    return slots
-      .filter((s) => s.selected !== null)
-      .map((s) => {
-        const choice = s.choices.find((c) => c.id === s.selected);
-        return {
-          key: `${s.kind}-${s.index}`,
-          name: choice?.name ?? s.label,
-          iconUrl: s.selected ? albionAbilityIconUrl(s.selected) : '',
-        };
-      });
-  }
-
-  protected onWeaponMouseEnter(buildId: number, event: MouseEvent): void {
-    const weapon = this.weaponItemFor(buildId);
-    const detail = this.buildDetails().get(buildId);
-    if (!weapon || !detail) return;
-
-    const spells = this.itemSelectedSpells(weapon);
-    const rect = (event.target as HTMLElement).getBoundingClientRect();
-    this.activeWeaponTooltip.set({
-      x: Math.min(window.innerWidth - 300, Math.max(10, rect.left - 40)),
-      y: rect.bottom + 8,
-      name: weapon.openalbion_item_name,
-      buildName: detail.name,
-      role: detail.role,
-      icon: weapon.openalbion_item_icon ?? null,
-      spells,
-    });
-  }
-
-  protected onWeaponMouseLeave(): void {
-    this.activeWeaponTooltip.set(null);
-  }
-
-  protected formatRolePercent(quantity: number, total: number): number {
-    return total > 0 ? Math.round((quantity / total) * 100) : 0;
-  }
-
-  /**
-   * The comp row on screen.
-   *
-   * Switching versions navigates within the same route, so Angular reuses this component and the
-   * snapshot never changes — the id has to come from the live `paramMap` instead.
-   */
-  protected readonly compId = signal(Number(this.route.snapshot.paramMap.get('compId')));
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -1865,90 +1564,328 @@ export class CompDetailPage {
         return;
       }
       this.compId.set(id);
-      this.mode.set('view');
-      this.selectedRosterPartyNumber.set(1);
+      this.resetForNewComp();
       void this.load(id);
     });
-    this.destroyRef.onDestroy(() => {
-      if (this.buildSearchTimer !== null) {
-        clearTimeout(this.buildSearchTimer);
+    this.destroyRef.onDestroy(() => this.clearQuantityTimers());
+  }
+
+  // ===========================================================================
+  // Header
+  // ===========================================================================
+
+  protected onMenu(id: string): void {
+    switch (id) {
+      case 'editDetails':
+        this.openEditMeta();
+        break;
+      case 'clone':
+        void this.cloneComp();
+        break;
+      case 'compare':
+        this.openCompare();
+        break;
+      case 'newVersion':
+        void this.createVersion();
+        break;
+      case 'share':
+        void this.shareWithAlliance();
+        break;
+      case 'unshare':
+        void this.unshareWithAlliance();
+        break;
+      case 'archive':
+        this.pendingArchive.set(true);
+        break;
+      case 'unarchive':
+        void this.unarchiveComp();
+        break;
+    }
+  }
+
+  protected onTabChange(id: string): void {
+    if (id === 'roster' || id === 'parties' || id === 'analytics') {
+      this.tab.set(id);
+    }
+  }
+
+  protected async openVersion(compId: number): Promise<void> {
+    if (compId === this.comp()?.id) {
+      return;
+    }
+    await this.router.navigate(['/comps', compId]);
+  }
+
+  // ===========================================================================
+  // Roster
+  // ===========================================================================
+
+  protected isOpen(buildId: number): boolean {
+    return this.expanded().has(buildId);
+  }
+
+  protected toggleBuild(buildId: number): void {
+    const opening = !this.expanded().has(buildId);
+    this.expanded.update((current) => {
+      const next = new Set(current);
+      if (opening) {
+        next.add(buildId);
+      } else {
+        next.delete(buildId);
       }
+      return next;
     });
-    // Static application data; one fetch serves every comp page in the session.
-    void this.albionAbilities
-      .load()
-      .then((abilities) => this.abilityCatalog.set(abilities))
-      .catch(() => this.abilityCatalog.set({}));
+    if (opening) {
+      void this.loadBuildDetail(buildId);
+    }
+  }
+
+  protected toggleAll(): void {
+    const builds = this.comp()?.builds ?? [];
+    if (this.allOpen()) {
+      this.expanded.set(new Set());
+      return;
+    }
+    this.expanded.set(new Set(builds.map((entry) => entry.build_id)));
+    for (const entry of builds) {
+      void this.loadBuildDetail(entry.build_id);
+    }
+  }
+
+  protected isBuildLoading(buildId: number): boolean {
+    return this.buildLoading().has(buildId);
+  }
+
+  protected isBuildFailed(buildId: number): boolean {
+    return this.buildFailed().has(buildId) && !this.buildDetails().has(buildId);
+  }
+
+  protected inspect(buildId: number): void {
+    this.inspectedBuildId.set(buildId);
+    void this.loadBuildDetail(buildId);
+  }
+
+  /** Fetches one build's loadout the first time it is needed; later calls reuse the cache. */
+  private async loadBuildDetail(buildId: number): Promise<void> {
+    if (this.buildDetails().has(buildId) || this.buildLoading().has(buildId)) {
+      return;
+    }
+    this.buildLoading.update((current) => new Set(current).add(buildId));
+    this.buildFailed.update((current) => withoutId(current, buildId));
+    try {
+      const detail = await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`));
+      this.buildDetails.update((current) => new Map(current).set(buildId, detail));
+    } catch {
+      this.buildFailed.update((current) => new Set(current).add(buildId));
+    } finally {
+      this.buildLoading.update((current) => withoutId(current, buildId));
+    }
+  }
+
+  // ===========================================================================
+  // Edit mode: quantities, add, remove
+  // ===========================================================================
+
+  protected async toggleEdit(): Promise<void> {
+    if (this.editing()) {
+      await this.flushAllQuantities();
+      this.editing.set(false);
+      return;
+    }
+    this.editing.set(true);
+    this.tab.set('roster');
+  }
+
+  protected displayedQuantity(entry: CompBuildEntry): number {
+    return this.pendingQuantity().get(entry.build_id) ?? entry.quantity;
   }
 
   /**
-   * The read-only ability bars for one build in the comp.
-   *
-   * Only the main loadout is shown here — the comp view answers "what do I slot", and the swap has
-   * its own bars on the build page. A build with no chosen abilities produces no rows at all.
+   * Steps a quantity. The number on screen changes at once; the save waits a moment so several
+   * clicks in a row become one request.
    */
-  protected abilityRowsFor(
-    buildId: number,
-  ): { slot: string; itemName: string; slots: AbilitySlotView[] }[] {
-    const detail = this.buildDetails().get(buildId);
-    const catalog = this.abilityCatalog();
-    if (!detail) {
-      return [];
+  protected step(entry: CompBuildEntry, delta: number): void {
+    const next = Math.max(1, this.displayedQuantity(entry) + delta);
+    if (next === this.displayedQuantity(entry)) {
+      return;
     }
-    return detail.items.flatMap((item) => {
-      if ((item.loadout ?? 'main') !== 'main') {
-        return [];
-      }
-      const key = abilityKeyForItem(item);
-      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells).filter(
-        (view) => view.selected !== null,
+    this.pendingQuantity.update((current) => new Map(current).set(entry.build_id, next));
+    const timer = this.quantityTimers.get(entry.build_id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+    this.quantityTimers.set(
+      entry.build_id,
+      setTimeout(() => void this.flushQuantity(entry.build_id), QUANTITY_SAVE_DELAY_MS),
+    );
+  }
+
+  private async flushAllQuantities(): Promise<void> {
+    for (const buildId of [...this.pendingQuantity().keys()]) {
+      await this.flushQuantity(buildId);
+    }
+  }
+
+  private async flushQuantity(buildId: number): Promise<void> {
+    const comp = this.comp();
+    const quantity = this.pendingQuantity().get(buildId);
+    const timer = this.quantityTimers.get(buildId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.quantityTimers.delete(buildId);
+    }
+    if (!comp || quantity === undefined) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.patch<CompDetail>(`api/comps/${comp.id}/builds/${buildId}`, { quantity }),
       );
-      return slots.length === 0
-        ? []
-        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
-    });
-  }
-
-  /** The build's main-loadout weapon, if one is equipped — backs the roster card's weapon icon. */
-  private weaponItemFor(buildId: number): BuildItemSlot | undefined {
-    return this.buildDetails()
-      .get(buildId)
-      ?.items.find((item) => item.slot === 'weapon' && (item.loadout ?? 'main') === 'main');
-  }
-
-  protected weaponIconFor(buildId: number): string | null {
-    return this.weaponItemFor(buildId)?.openalbion_item_icon ?? null;
-  }
-
-  protected weaponNameFor(buildId: number): string | null {
-    return this.weaponItemFor(buildId)?.openalbion_item_name ?? null;
-  }
-
-  /** Hides a weapon icon the CDN cannot render, mirroring the ability bar's own fallback. */
-  protected hideBrokenIcon(event: Event): void {
-    (event.target as HTMLImageElement).style.display = 'none';
-  }
-
-  protected openCompare(): void {
-    const versions = this.comp()?.versions ?? [];
-    const other = versions.find((entry) => entry.id !== this.comp()?.id);
-    this.comparing.set(true);
-    if (other) {
-      this.compareWithId.set(String(other.id));
-      void this.loadComparison(other.id);
+      this.comp.set(updated);
+      this.toasts.success(this.t('comps.quantityUpdated'));
+    } catch {
+      this.toasts.error(this.t('compDetail.error.save'));
+    } finally {
+      this.pendingQuantity.update((current) => {
+        const next = new Map(current);
+        next.delete(buildId);
+        return next;
+      });
+      this.saving.set(false);
     }
   }
 
-  protected closeCompare(): void {
-    this.comparing.set(false);
-    this.compareWith.set(null);
-    this.comparePerformance.set(null);
+  private clearQuantityTimers(): void {
+    for (const timer of this.quantityTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.quantityTimers.clear();
   }
 
-  protected onCompareTargetChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.compareWithId.set(value);
-    void this.loadComparison(Number(value));
+  protected openAdd(): void {
+    if (!this.editing()) {
+      this.editing.set(true);
+    }
+    this.tab.set('roster');
+    this.addOpen.set(true);
+  }
+
+  protected async addBuild(addition: CompBuildAddition): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.post<CompDetail>(`api/comps/${comp.id}/builds`, {
+          build_id: addition.build.id,
+          quantity: addition.quantity,
+        }),
+      );
+      this.comp.set(updated);
+      this.toasts.success(this.t('comps.buildAdded'));
+    } catch {
+      this.toasts.error(this.t('compDetail.error.save'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async removeBuild(buildId: number): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.delete(`api/comps/${comp.id}/builds/${buildId}`));
+      await this.load(this.compId(), true);
+      this.toasts.success(this.t('comps.buildRemoved'));
+    } catch {
+      this.toasts.error(this.t('compDetail.error.save'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // ===========================================================================
+  // Parties and analytics helpers
+  // ===========================================================================
+
+  protected groupSeats(party: CompPartyView) {
+    return groupPartySeats(party);
+  }
+
+  /** "Tank 4 · Healer 5 · DPS 11", plain text so role never relies on colour. */
+  protected roleMixText(party: CompPartyView): string {
+    return partyRoleMix(party)
+      .map(({ role, count }) => `${this.t(roleLabelKey(role))} ${count}`)
+      .join(' · ');
+  }
+
+  protected rolePercent(quantity: number): number {
+    const total = this.comp()?.total_quantity ?? 0;
+    return total > 0 ? Math.round((quantity / total) * 100) : 0;
+  }
+
+  protected opponentKey(opponent: OpponentPerformanceView): string {
+    return opponent.guild_id ?? opponent.guild_name;
+  }
+
+  protected opponentWinRate(opponent: OpponentPerformanceView): number {
+    return opponent.battles === 0 ? 0 : (opponent.wins / opponent.battles) * 100;
+  }
+
+  /** Win or loss against an opponent, stated as an icon and a hidden label as well as a colour. */
+  protected outcome(opponent: OpponentPerformanceView): 'ahead' | 'behind' | 'even' {
+    if (opponent.wins > opponent.losses) return 'ahead';
+    if (opponent.wins < opponent.losses) return 'behind';
+    return 'even';
+  }
+
+  protected outcomeLabel(opponent: OpponentPerformanceView): string {
+    switch (this.outcome(opponent)) {
+      case 'ahead':
+        return this.t('compDetail.outcome.ahead');
+      case 'behind':
+        return this.t('compDetail.outcome.behind');
+      default:
+        return this.t('compDetail.outcome.even');
+    }
+  }
+
+  // ===========================================================================
+  // Formatting
+  // ===========================================================================
+
+  protected formatDate(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : new Intl.DateTimeFormat(this.translate.locale(), { dateStyle: 'medium' }).format(date);
+  }
+
+  protected formatNumber(value: number): string {
+    return new Intl.NumberFormat(this.translate.locale()).format(value);
+  }
+
+  protected percentText(value: number): string {
+    return `${Math.round(value)}%`;
+  }
+
+  protected formatRatio(value: number): string {
+    return value.toFixed(2);
+  }
+
+  /** Comp/build prices arrive as `Decimal` strings from the backend; format them like silver. */
+  protected formatSilver(value: number | string): string {
+    const numeric = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(numeric)) {
+      return String(value);
+    }
+    return numeric.toLocaleString(this.translate.locale(), { maximumFractionDigits: 0 });
   }
 
   /**
@@ -1962,80 +1899,40 @@ export class CompDetailPage {
       return this.t('comps.noBattleData');
     }
     const decided = stats.wins + stats.losses;
-    const rate = decided === 0 ? '—' : `${Math.round((stats.wins / decided) * 100)}%`;
-    return `${rate} · ${stats.total_kills}/${stats.total_deaths} · ${stats.total_battles} battles`;
+    return this.t('compDetail.compare.summary', {
+      rate: decided === 0 ? '—' : `${Math.round((stats.wins / decided) * 100)}%`,
+      kills: stats.total_kills,
+      deaths: stats.total_deaths,
+      battles: stats.total_battles,
+    });
   }
 
-  private async loadComparison(compId: number): Promise<void> {
-    try {
-      const [detail, performance] = await Promise.all([
-        firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
-        firstValueFrom(this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`)).catch(
-          () => null,
-        ),
-      ]);
-      // Discard if the user has since picked a different comparison target.
-      if (Number(this.compareWithId()) !== compId) return;
-      this.compareWith.set(detail);
-      this.comparePerformance.set(performance);
-    } catch (error) {
-      if (Number(this.compareWithId()) !== compId) return;
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    }
+  // ===========================================================================
+  // Edit details dialog
+  // ===========================================================================
+
+  protected openEditMeta(): void {
+    const current = this.comp();
+    if (!current) return;
+    this.editName.set(current.name);
+    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
+    this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
+    this.editDescription.set(current.description ?? '');
+    this.editParentScope.set('mine');
+    this.nameError.set(null);
+    this.editMetaOpen.set(true);
+    // The category and parent selects read `compCategories()` / `compSummaries()`, and only this
+    // call fills them. Without it the dialog opens with nothing to switch to.
+    void this.loadEditOptions();
   }
 
-  protected async openVersion(compId: number): Promise<void> {
-    if (compId === this.comp()?.id) {
-      return;
-    }
-    await this.router.navigate(['/comps', compId]);
-  }
-
-  protected async createVersion(): Promise<void> {
-    const comp = this.comp();
-    if (!comp) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      const created = await firstValueFrom(
-        this.api.post<CompDetail>(`api/comps/${comp.id}/versions`, {}),
-      );
-      this.toasts.success(this.t('comps.versionCreated'));
-      await this.router.navigate(['/comps', created.id]);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected roleLabel(role: BuildRole): string {
-    return ROLE_LABELS[role] ?? role;
-  }
-
-  /**
-   * Header "Edit" action.
-   *
-   * This used to fill the metadata signals and switch to roster edit mode without
-   * ever showing the metadata form, so the button read as "editing is broken":
-   * name, category and description had no reachable editor, and the header's own
-   * Edit/Clone/Archive buttons hid themselves on the way in. Roster editing has
-   * its own toggle, so this opens the metadata dialog instead.
-   */
-  protected enterEdit(): void {
-    this.openEditMeta();
-  }
-
-  protected cancelEdit(): void {
-    this.mode.set('view');
+  protected closeEditMeta(): void {
     this.editMetaOpen.set(false);
-    this.cancelEditBuild();
-    void this.load(this.compId());
   }
 
   protected onEditNameChange(event: Event): void {
     this.editName.set((event.target as HTMLInputElement).value);
+    this.nameError.set(null);
   }
 
   protected onEditDescriptionChange(event: Event): void {
@@ -2059,40 +1956,33 @@ export class CompDetailPage {
     this.editParentId.set((event.target as HTMLSelectElement).value);
   }
 
-  protected onNewBuildSearchChange(event: Event): void {
-    this.newBuildSearch.set((event.target as HTMLInputElement).value);
-    this.expandedBuildGroupKey.set(null);
-    this.newBuildId.set('');
-    this.scheduleBuildSearch();
+  protected setEditParentScope(scope: OwnershipScope): void {
+    if (this.editParentScope() === scope) {
+      return;
+    }
+    this.editParentScope.set(scope);
+    void this.loadEditOptions();
   }
 
-  protected onNewBuildQtyChange(event: Event): void {
-    this.newBuildQuantity.set(this.parseQuantity((event.target as HTMLInputElement).value));
+  protected ownershipLabel(name: string, createdBy: string): string {
+    return ownershipOptionLabel(name, createdBy, this.editParentScope());
   }
 
-  protected onEditingBuildQtyChange(event: Event): void {
-    this.editingBuildQty.set(this.parseQuantity((event.target as HTMLInputElement).value));
-  }
-
-  /**
-   * Parses a stepper input's value into a positive integer quantity.
-   *
-   * `Number(value) || 1` alone lets a negative number (e.g. "-5") through
-   * unchanged, since it's truthy — the native `min="1"` on the input never
-   * catches it either because these fields sit outside a `<form>`.
-   */
-  private parseQuantity(value: string): number {
-    const parsed = Math.trunc(Number(value));
-    return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
-  }
-
-  protected startEditBuild(buildId: number, currentQty: number): void {
-    this.editingBuildId.set(buildId);
-    this.editingBuildQty.set(currentQty);
-  }
-
-  protected cancelEditBuild(): void {
-    this.editingBuildId.set(null);
+  /** The name rules, as translated messages: required, not too long, not already taken. */
+  private validateName(name: string, current: string): string | null {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return this.t('validation.required');
+    }
+    if (trimmed.length > MAX_NAME_LENGTH) {
+      return this.t('compDetail.validation.nameLong', { max: MAX_NAME_LENGTH });
+    }
+    const lowered = trimmed.toLowerCase();
+    const taken = this.compSummaries().some((summary) => {
+      const existing = summary.name.trim().toLowerCase();
+      return existing === lowered && existing !== current.trim().toLowerCase();
+    });
+    return taken ? this.t('compDetail.validation.nameTaken') : null;
   }
 
   protected async saveEdit(event: Event): Promise<void> {
@@ -2102,23 +1992,17 @@ export class CompDetailPage {
       return;
     }
 
-    // Validated even when unchanged: the previous version only applied the
-    // name `if (editName())`, so clearing the field was silently ignored
-    // instead of rejected, and the save still reported success.
-    const nameError = validateBuildName(this.editName(), {
-      existingNames: this.compSummaries().map((summary) => summary.name),
-      currentName: comp.name,
-    });
-    if (nameError) {
-      this.toasts.error(nameError.message);
+    const error = this.validateName(this.editName(), comp.name);
+    this.nameError.set(error);
+    if (error) {
       return;
     }
 
     const request: UpdateCompRequest = {};
     const name = this.editName().trim();
     if (name !== comp.name) request.name = name;
-    // Compared against the current value rather than tested for truthiness,
-    // so an emptied description actually clears instead of being dropped.
+    // Compared against the current value rather than tested for truthiness, so an emptied
+    // description actually clears instead of being dropped.
     if (this.editDescription() !== (comp.description ?? '')) {
       request.description = this.editDescription();
     }
@@ -2130,7 +2014,6 @@ export class CompDetailPage {
     }
 
     if (Object.keys(request).length === 0) {
-      this.mode.set('view');
       this.editMetaOpen.set(false);
       return;
     }
@@ -2138,170 +2021,14 @@ export class CompDetailPage {
     this.saving.set(true);
     try {
       await firstValueFrom(this.api.patch<CompDetail>(`api/comps/${comp.id}`, request));
-      this.mode.set('view');
       this.editMetaOpen.set(false);
-      this.cancelEditBuild();
-      await this.load(this.compId());
+      await this.load(this.compId(), true);
       this.toasts.success(this.t('common.save'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } catch {
+      this.toasts.error(this.t('compDetail.error.save'));
     } finally {
       this.saving.set(false);
     }
-  }
-
-  protected async cloneComp(): Promise<void> {
-    const comp = this.comp();
-    if (!comp) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      const request: CreateCompRequest = {
-        name: `${comp.name} (clone)`,
-        category_id: comp.category_id,
-        builds: comp.builds.map((entry) => ({
-          build_id: entry.build_id,
-          quantity: entry.quantity,
-        })),
-      };
-      const created = await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
-      this.toasts.success(this.t('comps.cloneSuccess'));
-      await this.router.navigate(['/comps', created.id]);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected askArchiveComp(): void {
-    this.pendingArchive.set(true);
-  }
-
-  protected closeArchiveConfirm(): void {
-    this.pendingArchive.set(false);
-  }
-
-  /**
-   * Archives the comp in place — unlike the old hard delete, this never fails on references, so
-   * there's no blocking-reference branch to fall back to and no need to leave the page.
-   */
-  protected async confirmArchiveComp(): Promise<void> {
-    const comp = this.comp();
-    if (!comp) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      await firstValueFrom(this.api.post(`api/comps/${comp.id}/archive`, {}));
-      this.pendingArchive.set(false);
-      this.toasts.success(this.t('comps.archiveSuccess'));
-      await this.load(this.compId());
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  /** Unarchiving is always safe — no dialog, one click, back into every picker. */
-  protected async unarchiveComp(): Promise<void> {
-    const comp = this.comp();
-    if (!comp) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      await firstValueFrom(this.api.post(`api/comps/${comp.id}/unarchive`, {}));
-      this.toasts.success(this.t('comps.unarchiveSuccess'));
-      await this.load(this.compId());
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async saveBuildQty(buildId: number): Promise<void> {
-    const comp = this.comp();
-    if (!comp) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      const updated = await firstValueFrom(
-        this.api.patch<CompDetail>(`api/comps/${comp.id}/builds/${buildId}`, {
-          quantity: this.editingBuildQty(),
-        }),
-      );
-      this.comp.set(updated);
-      void this.loadBuildDetails(updated);
-      this.cancelEditBuild();
-      this.toasts.success(this.t('comps.quantityUpdated'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async removeBuild(buildId: number): Promise<void> {
-    const comp = this.comp();
-    if (!comp) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      await firstValueFrom(this.api.delete(`api/comps/${comp.id}/builds/${buildId}`));
-      await this.load(this.compId());
-      this.toasts.success(this.t('comps.buildRemoved'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected opponentKey(opponent: OpponentPerformanceView): string {
-    return opponent.guild_id ?? opponent.guild_name;
-  }
-
-  protected opponentBattlesWinRate(opponent: OpponentPerformanceView): number {
-    if (opponent.battles === 0) {
-      return 0;
-    }
-    return (opponent.wins / opponent.battles) * 100;
-  }
-
-  /** Same 60/40 thresholds as {@link winRateColor}, expressed as a `StatCard` tone. */
-  protected winRateTone(rate: number): 'success' | 'danger' | 'default' {
-    if (rate >= 60) return 'success';
-    if (rate < 40) return 'danger';
-    return 'default';
-  }
-
-  protected winRateColor(rate: number): string {
-    switch (this.winRateTone(rate)) {
-      case 'success':
-        return 'var(--color-success)';
-      case 'danger':
-        return 'var(--color-danger)';
-      default:
-        return 'var(--color-text)';
-    }
-  }
-
-  protected formatNumber(value: number): string {
-    return new Intl.NumberFormat(this.translate.locale()).format(value);
-  }
-
-  protected formatPercent(value: number): string {
-    return `${value.toFixed(1)}%`;
-  }
-
-  protected formatRatio(value: number): string {
-    return value.toFixed(2);
   }
 
   private async loadEditOptions(): Promise<void> {
@@ -2319,96 +2046,147 @@ export class CompDetailPage {
     ]);
     this.compCategories.set(categories);
     this.compSummaries.set(summaries.items);
-    await this.searchAvailableBuilds();
   }
 
-  private scheduleBuildSearch(): void {
-    if (this.buildSearchTimer !== null) {
-      clearTimeout(this.buildSearchTimer);
-    }
-    this.buildSearchTimer = setTimeout(() => {
-      this.buildSearchTimer = null;
-      void this.searchAvailableBuilds();
-    }, 250);
-  }
+  // ===========================================================================
+  // Compare versions
+  // ===========================================================================
 
-  private async searchAvailableBuilds(): Promise<void> {
-    const seq = ++this.buildSearchSeq;
-    this.buildOptionsLoading.set(true);
-    try {
-      const q = this.newBuildSearch().trim();
-      const role = this.addBuildRoleFilter();
-      const response = await firstValueFrom(
-        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
-          page: 1,
-          limit: 200,
-          sort: 'name',
-          order: 'asc',
-          q: q || undefined,
-          role: role === 'all' ? undefined : role,
-          ...ownershipListParams(this.addBuildScope()),
-        }),
-      );
-      if (seq !== this.buildSearchSeq) return;
-      this.buildOptions.set(response.items);
-    } catch (error) {
-      if (seq !== this.buildSearchSeq) return;
-      this.buildOptions.set([]);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      if (seq === this.buildSearchSeq) {
-        this.buildOptionsLoading.set(false);
-      }
+  protected openCompare(): void {
+    const versions = this.comp()?.versions ?? [];
+    const other = versions.find((entry) => entry.id !== this.comp()?.id);
+    this.comparing.set(true);
+    if (other) {
+      this.compareWithId.set(String(other.id));
+      void this.loadComparison(other.id);
     }
   }
 
-  /** Loads the equipment required to calculate weapon statistics. */
-  private async loadCompPrice(compId: number): Promise<void> {
+  protected closeCompare(): void {
+    this.comparing.set(false);
+    this.compareWith.set(null);
+    this.comparePerformance.set(null);
+  }
+
+  protected onCompareTargetChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.compareWithId.set(value);
+    void this.loadComparison(Number(value));
+  }
+
+  private async loadComparison(compId: number): Promise<void> {
+    this.compareLoading.set(true);
+    this.compareWith.set(null);
     try {
-      const price = await firstValueFrom(
-        this.api.get<CompPriceView>(`api/comps/${compId}/price`),
-      );
-      if (compId !== this.compId()) return;
-      this.compPrice.set(price);
+      const [detail, performance] = await Promise.all([
+        firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
+        firstValueFrom(this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`)).catch(
+          () => null,
+        ),
+      ]);
+      // Discard if the user has since picked a different comparison target.
+      if (Number(this.compareWithId()) !== compId) return;
+      this.compareWith.set(detail);
+      this.comparePerformance.set(performance);
     } catch {
-      if (compId !== this.compId()) return;
-      this.compPrice.set(null);
-    }
-  }
-
-  /** Comp/build prices arrive as `Decimal` strings from the backend; format them like silver. */
-  protected formatSilverPrice(value: number | string): string {
-    const numeric = typeof value === 'string' ? Number(value) : value;
-    if (Number.isNaN(numeric)) {
-      return String(value);
-    }
-    return numeric.toLocaleString(this.translate.locale(), { maximumFractionDigits: 0 });
-  }
-
-  private async loadBuildDetails(comp: CompDetail): Promise<void> {
-    const request = ++this.buildDetailsRequest;
-    this.buildDetailsLoading.set(true);
-    try {
-      const details = await Promise.all(
-        comp.builds.map((entry) =>
-          firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${entry.build_id}`)).catch(
-            () => null,
-          ),
-        ),
-      );
-      // A newer roster for the same composition supersedes this request too.
-      if (request !== this.buildDetailsRequest || comp.id !== this.compId()) return;
-      this.buildDetails.set(
-        new Map(
-          details
-            .filter((detail): detail is BuildDetail => detail !== null)
-            .map((detail) => [detail.id, detail]),
-        ),
-      );
+      if (Number(this.compareWithId()) !== compId) return;
+      this.toasts.error(this.t('compDetail.error.compare'));
     } finally {
-      if (request === this.buildDetailsRequest && comp.id === this.compId()) {
-        this.buildDetailsLoading.set(false);
+      if (Number(this.compareWithId()) === compId) {
+        this.compareLoading.set(false);
       }
+    }
+  }
+
+  // ===========================================================================
+  // Actions: version, clone, archive, share
+  // ===========================================================================
+
+  protected async createVersion(): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const created = await firstValueFrom(
+        this.api.post<CompDetail>(`api/comps/${comp.id}/versions`, {}),
+      );
+      this.toasts.success(this.t('comps.versionCreated'));
+      await this.router.navigate(['/comps', created.id]);
+    } catch {
+      this.toasts.error(this.t('compDetail.error.action'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async cloneComp(): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const request: CreateCompRequest = {
+        name: this.t('compDetail.cloneName', { name: comp.name }),
+        category_id: comp.category_id,
+        builds: comp.builds.map((entry) => ({
+          build_id: entry.build_id,
+          quantity: entry.quantity,
+        })),
+      };
+      const created = await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
+      this.toasts.success(this.t('comps.cloneSuccess'));
+      await this.router.navigate(['/comps', created.id]);
+    } catch {
+      this.toasts.error(this.t('compDetail.error.action'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected closeArchiveConfirm(): void {
+    this.pendingArchive.set(false);
+  }
+
+  /**
+   * Archives the comp in place - unlike the old hard delete, this never fails on references, so
+   * there's no blocking-reference branch to fall back to and no need to leave the page.
+   */
+  protected async confirmArchiveComp(): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/comps/${comp.id}/archive`, {}));
+      this.pendingArchive.set(false);
+      this.toasts.success(this.t('comps.archiveSuccess'));
+      await this.load(this.compId(), true);
+    } catch {
+      this.toasts.error(this.t('compDetail.error.action'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Unarchiving is always safe - no dialog, one click, back into every picker. */
+  protected async unarchiveComp(): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/comps/${comp.id}/unarchive`, {}));
+      this.toasts.success(this.t('comps.unarchiveSuccess'));
+      await this.load(this.compId(), true);
+    } catch {
+      this.toasts.error(this.t('compDetail.error.action'));
+    } finally {
+      this.saving.set(false);
     }
   }
 
@@ -2451,6 +2229,7 @@ export class CompDetailPage {
     }
   }
 
+  /** Only the one conflict a person can act on gets its own message; the rest stay generic. */
   private shareErrorMessage(error: unknown): string {
     if (
       error instanceof ApiError &&
@@ -2459,7 +2238,7 @@ export class CompDetailPage {
     ) {
       return this.t('comps.shareNoAlliance');
     }
-    return error instanceof Error ? error.message : this.t('common.error');
+    return this.t('compDetail.error.action');
   }
 
   private async loadShareStatus(compId: number): Promise<void> {
@@ -2483,13 +2262,51 @@ export class CompDetailPage {
     }
   }
 
-  protected async load(compId: number): Promise<void> {
+  // ===========================================================================
+  // Loading
+  // ===========================================================================
+
+  private resetForNewComp(): void {
+    this.editing.set(false);
+    this.addOpen.set(false);
+    this.inspectedBuildId.set(null);
+    this.expanded.set(new Set());
+    this.pendingQuantity.set(new Map());
+    this.clearQuantityTimers();
+    this.comparing.set(false);
+    this.parentComp.set(null);
+    this.compPrice.set(null);
+  }
+
+  private async loadCompPrice(compId: number): Promise<void> {
+    try {
+      const price = await firstValueFrom(this.api.get<CompPriceView>(`api/comps/${compId}/price`));
+      if (compId !== this.compId()) return;
+      this.compPrice.set(price);
+    } catch {
+      if (compId !== this.compId()) return;
+      this.compPrice.set(null);
+    }
+  }
+
+  /**
+   * Loads the composition and its performance.
+   *
+   * `silent` refreshes in place (after a remove, an archive, a save) without swapping the page for
+   * the loading skeleton.
+   */
+  protected async load(compId: number, silent = false): Promise<void> {
     if (!Number.isFinite(compId) || compId <= 0) {
+      this.comp.set(null);
+      this.notFound.set(true);
       this.loading.set(false);
       return;
     }
-    this.loading.set(true);
+    if (!silent) {
+      this.loading.set(true);
+    }
     this.loadFailed.set(false);
+    this.notFound.set(false);
     try {
       const [comp, performance] = await Promise.all([
         firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
@@ -2502,7 +2319,6 @@ export class CompDetailPage {
       this.comp.set(comp);
       this.performance.set(performance);
       void this.loadShareStatus(compId);
-      void this.loadBuildDetails(comp);
       void this.loadCompPrice(compId);
       if (comp.parent_id) {
         const parent = await firstValueFrom(
@@ -2515,12 +2331,26 @@ export class CompDetailPage {
       }
     } catch (error) {
       if (compId !== this.compId()) return;
-      this.loadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      if (silent) {
+        this.toasts.error(this.t('compDetail.error.action'));
+      } else if (error instanceof ApiError && error.status === 404) {
+        this.comp.set(null);
+        this.notFound.set(true);
+      } else {
+        this.comp.set(null);
+        this.loadFailed.set(true);
+      }
     } finally {
       if (compId === this.compId()) {
         this.loading.set(false);
       }
     }
   }
+}
+
+/** A copy of `set` without `id`, for the immutable signal sets above. */
+function withoutId(set: ReadonlySet<number>, id: number): Set<number> {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
 }

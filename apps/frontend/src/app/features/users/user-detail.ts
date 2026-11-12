@@ -32,6 +32,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
+import { BlockUserDialog } from './block-user-dialog';
 import { WeaponRoster } from '../../shared/components/weapon-roster/weapon-roster';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
@@ -72,6 +73,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     Avatar,
+    BlockUserDialog,
     DatePipe,
     DecimalPipe,
     WeaponRoster,
@@ -140,6 +142,17 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           {{ t('users.detail.back') }}
         </a>
 
+        @if (canBlock() && user.id !== ownUserId()) {
+          <button
+            type="button"
+            class="btn btn--outline btn--sm flex items-center gap-1.5"
+            (click)="blockMode.set(user.blocked ? 'unblock' : 'block')"
+          >
+            <app-icon name="user-x" size="0.875rem" />
+            {{ user.blocked ? t('users.unblock.action') : t('users.block.action') }}
+          </button>
+        }
+
         @if (canAdjust()) {
           <button
             type="button"
@@ -171,6 +184,12 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                     {{ user.username }}
                   </h1>
                   <span class="chip" [class]="roleChip(user.role)">{{ user.role }}</span>
+                  @if (user.blocked) {
+                    <span class="chip chip--error">
+                      <app-icon name="user-x" size="0.75rem" />
+                      {{ t('users.status.blocked') }}
+                    </span>
+                  }
                 </div>
                 <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">
                   {{ user.email || t('common.noEmail') }} · ID #{{ user.id }}
@@ -226,6 +245,27 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
             </div>
           </div>
         </section>
+
+        @if (user.blocked) {
+          <section class="card p-4" role="status" aria-labelledby="member-blocked-heading">
+            <div class="flex items-start gap-3">
+              <app-icon name="user-x" size="1.25rem" color="var(--color-error)" />
+              <div class="min-w-0">
+                <h2 id="member-blocked-heading" class="text-sm font-semibold" style="color: var(--color-error)">
+                  {{ t('users.blocked.banner') }}
+                </h2>
+                <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+                  {{ t('users.blocked.by', { date: (user.blocked_at | date: 'mediumDate') ?? '', name: user.blocked_by ?? '' }) }}
+                </p>
+                @if (user.blocked_reason) {
+                  <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+                    {{ t('users.blocked.reason', { reason: user.blocked_reason }) }}
+                  </p>
+                }
+              </div>
+            </div>
+          </section>
+        }
 
         <section class="card p-6" aria-labelledby="member-roles-heading">
           <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -675,6 +715,17 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     }
 
     <!-- Admin Unlink Albion Character Dialog -->
+    @if (blockMode(); as mode) {
+      @if (member(); as target) {
+        <app-block-user-dialog
+          [member]="target"
+          [mode]="mode"
+          (updated)="member.set($event)"
+          (closed)="blockMode.set(null)"
+        />
+      }
+    }
+
     @if (unlinkConfirmOpen()) {
       <app-dialog [title]="t('settings.albion.unlinkConfirmTitle')" (closed)="unlinkConfirmOpen.set(false)">
         <p class="text-sm" style="color: var(--color-text-secondary)">
@@ -719,9 +770,6 @@ export class UserDetailPage {
   protected readonly albionLinkLabel = computed(() => {
     const link = this.albionLink();
     if (link?.linked) return link.albion_player_name ?? '';
-    if (link?.pending) {
-      return this.t('albion.pending.badge', { name: link.pending_albion_player_name ?? '' });
-    }
     return this.t('albion.not_linked');
   });
   protected readonly draft = signal<AdjustDraft>(emptyAdjustDraft());
@@ -735,6 +783,8 @@ export class UserDetailPage {
   // Albion Link Management State
   protected readonly linkDialogOpen = signal(false);
   protected readonly unlinkConfirmOpen = signal(false);
+  /** Which block/unblock dialog is open, if any. */
+  protected readonly blockMode = signal<'block' | 'unblock' | null>(null);
   protected readonly rosterLoading = signal(false);
   protected readonly savingLink = signal(false);
   protected readonly rosterSearch = signal('');
@@ -766,6 +816,9 @@ export class UserDetailPage {
       this.auth.hasPermission('admin.settings.manage'),
   );
   protected readonly canManageRoles = computed(() => this.auth.hasPermission('roles.manage'));
+  /** Blocking is gated by `roles.manage`, like role assignment. */
+  protected readonly canBlock = computed(() => this.auth.hasPermission('roles.manage'));
+  protected readonly ownUserId = computed(() => this.auth.profile()?.user_id ?? null);
 
   protected readonly memberRoles = signal<UserRolesView | null>(null);
   protected readonly rolesLoading = signal(false);

@@ -43,6 +43,14 @@ pub struct Model {
     pub provisioned_via: String,
     /// Self-service link/unlink cooldown anchor.
     pub last_link_change_at: Option<DateTimeWithTimeZone>,
+    /// When an officer blocked this member from the manager. `None` means not blocked. A blocked
+    /// member cannot log in or call any authenticated endpoint (the Discord membership is
+    /// untouched).
+    pub blocked_at: Option<DateTimeWithTimeZone>,
+    /// `users.id` of the officer who blocked the member. No foreign key, so it can outlive them.
+    pub blocked_by: Option<i64>,
+    /// Optional note the officer gave when blocking. Visible to `roles.manage` holders only.
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, DeriveRelation, EnumIter)]

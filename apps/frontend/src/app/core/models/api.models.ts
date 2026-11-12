@@ -30,6 +30,8 @@ export interface ProblemDetails {
   detail?: string;
   instance?: string;
   invalid_params?: unknown;
+  /** Stable machine-readable code, e.g. `account_blocked` or `validation_error`. */
+  code?: string;
 }
 
 /** One row blocking a delete/update, e.g. an event still using a comp being deleted. */
@@ -294,6 +296,14 @@ export interface UserProfile {
   /** Present only for the caller's own row and for `users.create`/`roles.manage` holders. */
   email?: string;
   role: Role;
+  /** True while an officer has blocked this member from the manager. Always false for viewers without `roles.manage`. */
+  blocked: boolean;
+  /** RFC 3339. Only for `roles.manage` viewers, only while blocked. */
+  blocked_at?: string;
+  /** Display name of the officer who blocked the member. */
+  blocked_by?: string;
+  /** The officer's optional note; never shown to the blocked member. */
+  blocked_reason?: string;
 }
 
 /** How well a member plays a weapon. UI labels are Main / Good / Basic. */
@@ -660,11 +670,17 @@ export interface EventSummary {
 
 export interface EventView {
   id: number;
-  /** Present for synchronized read-only copies; absent for events owned by this tenant. */
+  /** Tenant that owns the event when this view is a link to another tenant's event. */
   source_tenant_id?: string | null;
   source_event_id?: number | null;
-  /** True only while this tenant's copy is actively linked to its source. */
-  is_synchronized_copy?: boolean;
+  /** Display name of the owning tenant, set on links. */
+  source_tenant_name?: string | null;
+  /**
+   * True when this view is a link to an event another tenant owns (a guild event shared with the
+   * alliance, or an alliance event in a member guild). It is the same event: every request on the
+   * link is served by the owner, so signups and management work from either side.
+   */
+  is_link?: boolean;
   title: string;
   description: string | null;
   call_to_arms: boolean;
@@ -1224,7 +1240,7 @@ export interface CreateEventRequest {
   /** Member guild that owns `island_tab_id`. Required on alliance tenants, rejected on guilds. */
   origin_guild_id?: string;
   ping_alliance?: boolean;
-  /** Create a VOD forum post for members to reply to with video links. Defaults on. */
+  /** Create a VOD forum post for members to reply to with video links. Defaults off. */
   vod_forum_post_enabled?: boolean;
   discord_delivery?: 'calendar' | 'message' | 'forum';
 }
@@ -1412,27 +1428,6 @@ export interface AlbionLinkStatus {
   albion_player_id?: string;
   albion_player_name?: string;
   linked_at?: string;
-  /** A self-service claim is waiting for an officer. It is not a link: `linked` stays false. */
-  pending: boolean;
-  pending_albion_player_id?: string;
-  pending_albion_player_name?: string;
-  requested_at?: string;
-}
-
-/** One self-service link claim in the officer queue (`GET /api/albion/link/requests`). */
-export interface AlbionLinkRequestView {
-  id: number;
-  discord_id: string;
-  user_id: number | null;
-  username: string | null;
-  albion_player_id: string;
-  albion_player_name: string;
-  albion_guild_name: string | null;
-  requested_at: string;
-  /** Other open claims on the same character. */
-  competing_requests: number;
-  /** Approving would fail with 409 until the existing link is removed. */
-  character_already_linked: boolean;
 }
 
 export interface AlbionLinkRequest {
@@ -2848,6 +2843,268 @@ export interface PlayerReport {
   /** This member's fights, newest first. */
   recent_fights: FightSummary[];
   win_streak: number;
+}
+
+/* ------------------------- Intel: our own side ------------------------- */
+
+/** Period keys the Intel endpoints accept; anything else is sent as `from`/`to`. */
+export type IntelPeriodKey = '7d' | '30d' | '90d' | 'all' | 'custom';
+
+/** A fight's stored outcome, from the tenant's side. `unknown` is never a loss. */
+export type IntelOutcome = 'victory' | 'defeat' | 'draw' | 'unknown';
+
+/** The window a response was computed over. */
+export interface IntelPeriodView {
+  key: IntelPeriodKey;
+  /** For `all`, the first fight on record; null when there is none. */
+  from: string | null;
+  to: string;
+}
+
+/**
+ * Combat totals over a set of fights. Rates are `null` when their denominator is empty,
+ * so "no fights" and "0%" stay different things.
+ */
+export interface IntelTotals {
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  unknown: number;
+  decided: number;
+  /** Percentage 0..100. */
+  win_rate: number | null;
+  fights_with_stats: number;
+  kills: number;
+  deaths: number;
+  kd_ratio: number | null;
+  kill_fame: number;
+  death_fame: number;
+  avg_players: number | null;
+  avg_item_power: number | null;
+  enemy_avg_item_power: number | null;
+  /** Null unless the caller holds `intel.report.view`. */
+  estimated_silver_lost: number | null;
+}
+
+export interface IntelWeek {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number | null;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  avg_players: number | null;
+}
+
+export interface IntelOpponentRecord {
+  opponent: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number | null;
+}
+
+/** One fight from our side; `fight_id` links to `/fights/:id`. */
+export interface IntelFightRow {
+  fight_id: number;
+  started_at: string;
+  event_id: number | null;
+  event_title: string | null;
+  comp_id: number | null;
+  comp_name: string | null;
+  outcome: IntelOutcome;
+  opponent: string | null;
+  segments: number;
+  /** Null when the fight has no computed rollup. */
+  our_players: number | null;
+  enemy_players: number | null;
+  kills: number | null;
+  deaths: number | null;
+  kd_ratio: number | null;
+  kill_fame: number | null;
+  death_fame: number | null;
+  avg_item_power: number | null;
+  enemy_avg_item_power: number | null;
+  estimated_silver_lost: number | null;
+}
+
+export interface IntelDataQuality {
+  fights_without_stats: number;
+  fights_unknown_outcome: number;
+  fights_without_comp: number;
+}
+
+/** `GET /api/intel/overview`. */
+export interface IntelOverview {
+  period: IntelPeriodView;
+  current: IntelTotals;
+  /** Null for `period=all`. */
+  previous: IntelTotals | null;
+  weekly: IntelWeek[];
+  recent_fights: IntelFightRow[];
+  top_opponents: IntelOpponentRecord[];
+  data_quality: IntelDataQuality;
+}
+
+export interface IntelCompOption {
+  comp_id: number;
+  name: string;
+}
+
+/** `GET /api/intel/fights`. */
+export interface IntelFightList {
+  period: IntelPeriodView;
+  items: IntelFightRow[];
+  total_items: number;
+  total_pages: number;
+  current_page: number;
+  limit: number;
+  /** Totals over every fight matching the filters, not just this page. */
+  summary: IntelTotals;
+  opponents: string[];
+  comps: IntelCompOption[];
+}
+
+export interface IntelFightsQuery {
+  period?: string;
+  from?: string;
+  to?: string;
+  outcome?: string;
+  opponent?: string;
+  comp_id?: number;
+  min_players?: number;
+  max_players?: number;
+  sort?: 'started_at' | 'players' | 'kills' | 'deaths' | 'kill_fame' | 'kd';
+  order?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
+
+export interface IntelCompUsage {
+  comp_id: number;
+  name: string;
+  events: number;
+  totals: IntelTotals;
+  last_used_at: string;
+  best_matchup: IntelOpponentRecord | null;
+  worst_matchup: IntelOpponentRecord | null;
+  matchups: IntelOpponentRecord[];
+}
+
+/** `GET /api/intel/comps`. */
+export interface IntelComps {
+  period: IntelPeriodView;
+  comps: IntelCompUsage[];
+  total_fights: number;
+  unattributed_fights: number;
+}
+
+export interface IntelRosterMember {
+  user_id: number;
+  username: string;
+  albion_name: string | null;
+  role: string;
+  is_officer: boolean;
+  active: boolean;
+  linked: boolean;
+  fights: number;
+  /** Percentage 0..100 of fights with a computed rollup; null when there were none. */
+  attendance_rate: number | null;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number | null;
+  kills: number;
+  deaths: number;
+  kd_ratio: number | null;
+  kill_fame: number;
+  death_fame: number;
+  avg_item_power: number | null;
+  weapons: WeaponShare[];
+  main_role: string | null;
+  last_fight_at: string | null;
+  last_fight_id: number | null;
+}
+
+export interface IntelUnlinkedPlayer {
+  name: string;
+  fights: number;
+}
+
+/** `GET /api/intel/roster`. `scope` is `self` when the caller may only see their own row. */
+export interface IntelRoster {
+  period: IntelPeriodView;
+  total_fights: number;
+  scope: 'all' | 'self';
+  members: IntelRosterMember[];
+  unlinked_players: IntelUnlinkedPlayer[];
+}
+
+export interface IntelRoleShare {
+  role: string;
+  count: number;
+}
+
+export interface IntelPlayerWeek {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+}
+
+export interface IntelPlayerFight {
+  fight_id: number;
+  started_at: string;
+  event_title: string | null;
+  comp_id: number | null;
+  comp_name: string | null;
+  outcome: IntelOutcome;
+  opponent: string | null;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  death_fame: number;
+  avg_item_power: number | null;
+  weapon: string | null;
+  role: string | null;
+}
+
+export interface IntelBuildUse {
+  build_id: number;
+  name: string;
+  role: string;
+  events: number;
+}
+
+export interface IntelPlayerComp {
+  comp_id: number;
+  name: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+/** `GET /api/intel/roster/{user_id}`. */
+export interface IntelPlayer {
+  period: IntelPeriodView;
+  total_fights: number;
+  member: IntelRosterMember;
+  weekly: IntelPlayerWeek[];
+  fights: IntelPlayerFight[];
+  weapons: WeaponShare[];
+  roles: IntelRoleShare[];
+  builds: IntelBuildUse[];
+  comps: IntelPlayerComp[];
 }
 
 /** One split that could not be completed in a batch, and why. */

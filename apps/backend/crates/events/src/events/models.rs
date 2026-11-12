@@ -331,11 +331,19 @@ pub struct EventView {
     pub alliance_discord_role_ids: Vec<String>,
     /// Origin guild tenant id for API calls triggered from alliance Discord.
     pub origin_guild_id: Option<String>,
-    /// Canonical source identity for synchronized copies; both are absent on owned events.
+    /// Tenant that owns the event when this view is a link to another tenant's event; absent on
+    /// events this tenant owns.
     pub source_tenant_id: Option<String>,
+    /// The event's id in [`Self::source_tenant_id`]; absent on events this tenant owns.
     pub source_event_id: Option<i64>,
-    /// Whether the copy is currently linked for synchronization.
-    pub is_synchronized_copy: bool,
+    /// Display name of [`Self::source_tenant_id`], filled on the detail and list views of a link.
+    #[serde(default)]
+    pub source_tenant_name: Option<String>,
+    /// True when this view is a link to an event owned by another tenant (the alliance hub of a
+    /// guild event, or a member guild of an alliance event). Roster, signups, comp, split and VOD
+    /// live on the owning event; requests addressed to the link are served by it.
+    #[serde(default)]
+    pub is_link: bool,
 }
 
 /// Cheap fingerprint the Discord poller uses to skip full event-detail hydration.
@@ -874,7 +882,7 @@ pub struct CreateEventRequest {
     /// Also ping the alliance Discord events channel (guild events only; default off).
     #[serde(default)]
     pub ping_alliance: bool,
-    /// Create a VOD forum post for members to reply to with video links (default: true).
+    /// Create a VOD forum post for members to reply to with video links (default: false).
     #[serde(default = "default_vod_forum_post_enabled")]
     pub vod_forum_post_enabled: bool,
     /// `calendar`, `message`, or `forum`. Missing values keep the channel-message path.
@@ -883,7 +891,7 @@ pub struct CreateEventRequest {
 }
 
 fn default_vod_forum_post_enabled() -> bool {
-    true
+    false
 }
 
 fn default_discord_delivery() -> String {

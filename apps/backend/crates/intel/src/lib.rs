@@ -1,9 +1,10 @@
 //! Enemy scouting and guild analytics.
 //!
-//! Intel turns raw battle snapshots into two things officers can act on:
-//! a library of **scouted enemy compositions** with similarity scoring and
-//! win/loss matchups against our own comps, and a **guild report** aggregate
-//! covering performance, attendance, roster and silver flow.
+//! Intel answers two questions. "How are we doing?" is [`analytics`]: the guild's own
+//! fights, players and comps over a selectable period, read from the normalized fight and
+//! battle-evidence tables. "Who are we fighting?" is the **scouted enemy compositions** library
+//! with similarity scoring and win/loss matchups against our own comps. The older **guild
+//! report** aggregate ([`report`]) still feeds the guild overview, the season page and finance.
 //!
 //! Layering, from pure to stateful:
 //! - [`similarity`] — the scoring maths, DB-free and fixture-tested.
@@ -19,6 +20,7 @@
 )]
 #![recursion_limit = "256"]
 
+pub mod analytics;
 pub mod auto_scout;
 pub mod cache;
 pub mod matchups;

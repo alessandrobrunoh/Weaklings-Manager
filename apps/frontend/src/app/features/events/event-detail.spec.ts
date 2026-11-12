@@ -48,6 +48,7 @@ interface EventDetailPermissionAccess {
   readonly event: WritableSignal<EventDetailView | null>;
   readonly canEdit: Signal<boolean>;
   readonly canDelete: Signal<boolean>;
+  readonly linkCanManage: WritableSignal<boolean>;
 }
 
 function seat(
@@ -140,16 +141,26 @@ describe('EventDetailPage roster room', () => {
     expect(page.canEdit()).toBe(true);
     expect(page.canDelete()).toBe(true);
 
-    page.event.set({ created_by: 42, source_event_id: 9, source_tenant_id: 'source' } as EventDetailView);
+    // A link answers with the owner's management authority, not the local permissions.
+    page.event.set({
+      created_by: 42,
+      source_event_id: 9,
+      source_tenant_id: 'source',
+      is_link: true,
+    } as EventDetailView);
     permissions.set(new Set(['events.manage']));
+    page.linkCanManage.set(false);
     expect(page.canEdit()).toBe(false);
     expect(page.canDelete()).toBe(false);
+    page.linkCanManage.set(true);
+    expect(page.canEdit()).toBe(true);
+    expect(page.canDelete()).toBe(true);
 
     page.event.set({
       created_by: 42,
       source_event_id: 9,
       source_tenant_id: 'source',
-      is_synchronized_copy: false,
+      is_link: false,
     } as EventDetailView);
     expect(page.canEdit()).toBe(true);
     expect(page.canDelete()).toBe(true);

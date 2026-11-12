@@ -9,7 +9,7 @@ This directory builds Discord embeds, components, and message payloads for the b
 - `createBaseEmbed` and `createResponseEmbed` provide branded and status-oriented embed builders; `buildAsciiBar`, `buildAsciiChart`, and `formatCompactNumber` provide display helpers.
 - Application builders create application panels, forms, status messages, resolution controls, and ticket responses.
 - Battle and giveaway builders create result/list embeds and giveaway announcement/action payloads.
-- Event builders create event embeds, calendar controls, and announcement, reminder, Mass, Start, and alliance-lifecycle payloads.
+- Event builders create event embeds, calendar controls, and announcement, reminder, Mass, and Start payloads.
 
 ## Invariants
 

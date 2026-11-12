@@ -2,21 +2,25 @@
 
 ## Overview
 
-`AbilityBar` renders the ability slots for one equipped item. It is read-only by default and can expose quick choices and a picker when management is enabled.
+`AbilityBar` renders the ability slots for one equipped item. Read-only mode shows the key and the name of each chosen ability. With `canManage` it shows one named choice group per slot instead of a modal picker.
 
 ## Interface
 
 - Selector: `app-ability-bar`.
-- The bounded component/template section shows a slot display and optional picker. Input and output declarations fall beyond the 300-line source limit and are not enumerated here.
+- Inputs: `slots` (`AbilitySlotView[]`), `canManage` (default `false`), `emptyLabel`.
+- Output: `choiceChange` (`{ kind, index, spellId | null }`); `null` means "None".
 
 ## Invariants
 
-- The visible template omits the bar/picker when there are no slots. It distinguishes read-only display from the management picker.
+- No slots renders nothing.
+- Managed mode is one `app-choice-group` per ability slot: a "None" chip, then one chip per spell with its icon and name. One Tab stop per slot; arrow keys move and select.
+- The ability key (Q, W, E, Passive) and the ability name are always visible text. Colour and icons never carry the meaning alone.
+- The group label comes from `loadoutEditor.ability.slot`, translated.
 
 ## Side Effects
 
-No event or state effects are asserted from the bounded source excerpt; interaction handlers are beyond the scan limit.
+None. The parent decides what to do with `choiceChange`.
 
 ## Verification
 
-Run `npm test --prefix apps/frontend` from the repository root. The scout read all 452 lines in error, exceeding the per-file cap; this README is limited to the component/template details visible within the first 300 lines.
+Run `npm test --prefix apps/frontend` from the repository root.

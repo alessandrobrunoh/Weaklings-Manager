@@ -45,7 +45,10 @@ pub async fn refresh_pending_links(
     context: &BattleLinkingContext,
     guild: &ExtractionGuildContext,
 ) -> Result<(), AppError> {
+    // A link to another tenant's event never links battles: the owning event does, in its own
+    // tenant, and its battles are read through the link.
     let pending_sessions = event::Entity::find()
+        .filter(event::Column::SourceTenantId.is_null())
         .filter(event::Column::LinkStatus.is_in(["in_progress", "pending"]))
         .filter(event::Column::Status.is_in(LINKER_STATUSES))
         .order_by_asc(event::Column::StartedAt)

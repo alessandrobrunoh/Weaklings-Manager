@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  Injector,
+  afterNextRender,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -51,6 +60,52 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
   status: 'status',
 };
 
+/** Fields of the New event dialog that can carry an inline validation message. */
+type CreateField =
+  | 'title'
+  | 'date'
+  | 'mass'
+  | 'start'
+  | 'comp'
+  | 'playerCap'
+  | 'island'
+  | 'tab';
+
+interface CreateFieldMeta {
+  /** DOM id of the control, used to move focus from the validation summary. */
+  readonly id: string;
+  readonly label: TranslationKey;
+}
+
+const CREATE_FIELDS: Readonly<Record<CreateField, CreateFieldMeta>> = {
+  title: { id: 'event-title', label: 'common.name' },
+  date: { id: 'event-date', label: 'common.date' },
+  mass: { id: 'event-mass-time', label: 'events.create.mass' },
+  start: { id: 'event-start-time', label: 'events.create.start' },
+  comp: { id: 'event-comp', label: 'events.detail.comp' },
+  playerCap: { id: 'event-player-cap', label: 'events.create.playerCap' },
+  island: { id: 'event-island', label: 'splits.island' },
+  tab: { id: 'event-tab', label: 'splits.tab' },
+};
+
+/** Visual and focus order of the validated fields. */
+const CREATE_FIELD_ORDER: readonly CreateField[] = [
+  'title',
+  'date',
+  'mass',
+  'start',
+  'comp',
+  'playerCap',
+  'island',
+  'tab',
+];
+
+interface CreateFieldError {
+  readonly field: CreateField;
+  readonly label: TranslationKey;
+  readonly message: string;
+}
+
 /**
  * Events list page.
  *
@@ -65,6 +120,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     Dialog,
     Checkbox,
     Icon,
+    NgTemplateOutlet,
     PageHeader,
     PageStack,
     RouterLink,
@@ -86,6 +142,233 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     :host ::ng-deep .shadow-xl {
       border-radius: var(--radius-cards);
       box-shadow: none;
+    }
+
+    /* New event dialog */
+    .ev-form {
+      display: grid;
+      gap: 1.25rem;
+      min-width: 0;
+    }
+    .ev-legend {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary);
+    }
+    .ev-section {
+      display: grid;
+      gap: 0.75rem;
+      min-width: 0;
+      padding-top: 1rem;
+      border-top: 1px solid var(--color-border);
+    }
+    .ev-legend + .ev-section {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .ev-section__head {
+      display: grid;
+      gap: 0.125rem;
+    }
+    .ev-section__title {
+      margin: 0;
+      font-size: 0.9375rem;
+      font-weight: 700;
+      line-height: 1.3;
+      color: var(--color-text-heading);
+    }
+    .ev-section__title--toggle {
+      font-size: inherit;
+    }
+    .ev-section__hint {
+      margin: 0;
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      color: var(--color-text-secondary);
+    }
+    .ev-grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    /* Phone: the date takes a row, mass and start share the next one. */
+    .ev-grid--3 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ev-grid--3 > :first-child {
+      grid-column: 1 / -1;
+    }
+    @media (min-width: 40rem) {
+      .ev-grid--2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .ev-grid--3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .ev-grid--3 > :first-child {
+        grid-column: auto;
+      }
+    }
+    .ev-nested {
+      padding-inline-start: 1.75rem;
+    }
+    .ev-field {
+      display: grid;
+      gap: 0.25rem;
+      align-content: start;
+      min-width: 0;
+    }
+    .ev-field--narrow .input {
+      max-width: 10rem;
+    }
+    .ev-field__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 0.25rem 0.75rem;
+    }
+    .ev-label {
+      display: block;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      line-height: 1.25rem;
+      color: var(--color-text);
+    }
+    .ev-required {
+      color: var(--color-error);
+    }
+    .ev-optional {
+      font-weight: 400;
+      color: var(--color-text-secondary);
+    }
+    .ev-hint {
+      margin: 0;
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      color: var(--color-text-secondary);
+    }
+    .ev-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin: 0;
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      color: var(--color-text-secondary);
+    }
+    .ev-note__icon,
+    .ev-error__icon {
+      flex-shrink: 0;
+      margin-top: 0.1875rem;
+    }
+    .ev-error {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.375rem;
+      margin: 0;
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      color: var(--color-error);
+    }
+    .ev-fieldset {
+      display: grid;
+      gap: 0.25rem;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .ev-checks {
+      display: grid;
+      gap: 0.125rem;
+    }
+    .ev-checks ::ng-deep label {
+      min-height: 2rem;
+    }
+    .ev-panel {
+      display: grid;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+    .ev-disclosure {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.25rem 0.5rem;
+      width: 100%;
+      min-height: 2rem;
+      padding: 0.125rem 0.25rem;
+      margin-inline: -0.25rem;
+      border: 0;
+      border-radius: var(--radius-inputs);
+      background: transparent;
+      color: var(--color-text-heading);
+      font: inherit;
+      font-size: 0.9375rem;
+      font-weight: 700;
+      text-align: start;
+      cursor: pointer;
+    }
+    .ev-disclosure:hover {
+      background: var(--color-surface-hover);
+    }
+    .ev-disclosure:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+    .ev-disclosure__summary {
+      min-width: 0;
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--color-text-secondary);
+    }
+    .ev-summary {
+      display: grid;
+      gap: 0.375rem;
+      padding: 0.75rem 1rem;
+      border: 1px solid color-mix(in oklab, var(--color-error) 45%, transparent);
+      border-radius: var(--radius-inputs);
+      background: var(--color-error-container);
+      color: var(--color-text);
+    }
+    .ev-summary:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+    .ev-summary__title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+      font-size: 0.875rem;
+      font-weight: 700;
+    }
+    .ev-summary__list {
+      display: grid;
+      gap: 0.125rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .ev-summary__link {
+      padding: 0.125rem 0;
+      border: 0;
+      background: transparent;
+      color: var(--color-text);
+      font: inherit;
+      font-size: 0.8125rem;
+      text-align: start;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .ev-summary__link:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+    .input[aria-invalid='true'],
+    .select[aria-invalid='true'] {
+      border-color: var(--color-error);
     }
   `,
   template: `
@@ -189,8 +472,8 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             @if (event.archived_at) {
               <span class="chip chip--neutral text-[10px]">{{ t('events.archived') }}</span>
             }
-            @if (event.is_synchronized_copy ?? (event.source_event_id != null)) {
-              <span class="chip chip--neutral text-[10px]">{{ t('events.copyReadOnly') }}</span>
+            @if (event.is_link) {
+              <span class="chip chip--neutral text-[10px]">{{ event.source_tenant_name ? t('events.linkFrom', { name: event.source_tenant_name }) : t('events.linkShared') }}</span>
             }
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
@@ -289,57 +572,192 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     </app-page-stack>
 
     @if (createOpen()) {
-      <app-dialog [title]="t('events.new')" size="lg" (closed)="closeCreate()">
-        <form id="create-event-form" class="grid gap-3" (submit)="onCreateSubmit($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('validation.requiredLegend') }}</p>
-          <label>
-            <span class="label">{{ t('common.name') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-            <input
-              class="input"
-              type="text"
-              required
-              autofocus
-              [value]="draftTitle()"
-              (input)="onTitleChange($event)"
-            />
-          </label>
+      <app-dialog
+        [title]="t('events.new')"
+        [subtitle]="t('events.create.subtitle')"
+        size="lg"
+        (closed)="closeCreate()"
+      >
+        <ng-template #fieldError let-field="field">
+          @if (errorFor(field); as message) {
+            <p [id]="errorId(field)" class="ev-error">
+              <app-icon name="alert" size="0.875rem" class="ev-error__icon" />
+              <span>{{ message }}</span>
+            </p>
+          }
+        </ng-template>
 
-          <label>
-            <span class="label">{{ t('common.description') }}</span>
-            <textarea
-              class="textarea"
-              rows="2"
-              [value]="draftDescription()"
-              (input)="onDescriptionChange($event)"
-            ></textarea>
-          </label>
+        <form id="create-event-form" class="ev-form" novalidate (submit)="onCreateSubmit($event)">
+          @if (submitAttempted() && errorList().length > 0) {
+            <section
+              id="event-error-summary"
+              class="ev-summary"
+              tabindex="-1"
+              aria-labelledby="event-error-summary-title"
+            >
+              <p id="event-error-summary-title" class="ev-summary__title">
+                <app-icon name="alert" size="1rem" class="ev-error__icon" />
+                {{ t('events.create.errorSummary') }}
+              </p>
+              <ul class="ev-summary__list">
+                @for (item of errorList(); track item.field) {
+                  <li>
+                    <button type="button" class="ev-summary__link" (click)="focusField(item.field)">
+                      {{ t(item.label) }}: {{ item.message }}
+                    </button>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
 
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div class="grid gap-2">
-              <label class="label" for="event-comp">{{ t('events.detail.comp') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></label>
-              <app-ownership-scope-toggle
-                [scope]="compScope()"
-                (scopeChange)="setCompScope($event)"
+          <p class="ev-legend">{{ t('validation.requiredLegend') }}</p>
+
+          <section class="ev-section" aria-labelledby="event-section-details">
+            <h3 id="event-section-details" class="ev-section__title">
+              {{ t('events.create.section.details') }}
+            </h3>
+            <div class="ev-field">
+              <label class="ev-label" for="event-title">
+                {{ t('common.name') }} <span class="ev-required" aria-hidden="true">*</span>
+              </label>
+              <input
+                id="event-title"
+                class="input"
+                type="text"
+                required
+                autofocus
+                autocomplete="off"
+                [value]="draftTitle()"
+                [attr.aria-invalid]="errorFor('title') ? 'true' : null"
+                [attr.aria-describedby]="describedBy('title')"
+                (input)="onTitleChange($event)"
+                (blur)="markTouched('title')"
               />
+              <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'title' }" />
+            </div>
+            <div class="ev-field">
+              <label class="ev-label" for="event-description">
+                {{ t('common.description') }}
+                <span class="ev-optional">({{ t('common.optional') }})</span>
+              </label>
+              <textarea
+                id="event-description"
+                class="textarea"
+                rows="2"
+                [value]="draftDescription()"
+                (input)="onDescriptionChange($event)"
+              ></textarea>
+            </div>
+          </section>
+
+          <section class="ev-section" aria-labelledby="event-section-schedule">
+            <div class="ev-section__head">
+              <h3 id="event-section-schedule" class="ev-section__title">
+                {{ t('events.create.section.schedule') }}
+              </h3>
+              <p class="ev-section__hint">{{ t('events.create.section.scheduleHint') }}</p>
+            </div>
+            <div class="ev-grid ev-grid--3">
+              <div class="ev-field">
+                <label class="ev-label" for="event-date">
+                  {{ t('common.date') }} <span class="ev-required" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="event-date"
+                  class="input"
+                  type="date"
+                  required
+                  [attr.min]="minEventDate"
+                  [value]="draftEventDate()"
+                  [attr.aria-invalid]="errorFor('date') ? 'true' : null"
+                  [attr.aria-describedby]="describedBy('date')"
+                  (input)="onEventDateChange($event)"
+                  (blur)="markTouched('date')"
+                />
+                <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'date' }" />
+              </div>
+              <div class="ev-field">
+                <label class="ev-label" for="event-mass-time">
+                  {{ t('events.create.mass') }} <span class="ev-required" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="event-mass-time"
+                  class="input"
+                  type="time"
+                  required
+                  [value]="draftMassTime()"
+                  [attr.aria-invalid]="errorFor('mass') ? 'true' : null"
+                  [attr.aria-describedby]="describedBy('mass', 'event-schedule-note')"
+                  (input)="onMassTimeChange($event)"
+                  (blur)="markTouched('mass')"
+                />
+                <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'mass' }" />
+              </div>
+              <div class="ev-field">
+                <label class="ev-label" for="event-start-time">
+                  {{ t('events.create.start') }} <span class="ev-required" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="event-start-time"
+                  class="input"
+                  type="time"
+                  required
+                  [value]="draftStartTime()"
+                  [attr.aria-invalid]="errorFor('start') ? 'true' : null"
+                  [attr.aria-describedby]="describedBy('start', 'event-schedule-note')"
+                  (input)="onStartTimeChange($event)"
+                  (blur)="markTouched('start')"
+                />
+                <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'start' }" />
+              </div>
+            </div>
+            <p id="event-schedule-note" class="ev-note">
+              <app-icon name="info" size="0.875rem" class="ev-note__icon" />
+              <span>{{ scheduleNote() }}</span>
+            </p>
+          </section>
+
+          <section class="ev-section" aria-labelledby="event-section-roster">
+            <div class="ev-section__head">
+              <h3 id="event-section-roster" class="ev-section__title">
+                {{ t('events.create.section.roster') }}
+              </h3>
+              <p class="ev-section__hint">{{ t('events.create.section.rosterHint') }}</p>
+            </div>
+            <div class="ev-field">
+              <div class="ev-field__head">
+                <label class="ev-label" for="event-comp">
+                  {{ t('events.detail.comp') }} <span class="ev-required" aria-hidden="true">*</span>
+                </label>
+                <app-ownership-scope-toggle [scope]="compScope()" (scopeChange)="setCompScope($event)" />
+              </div>
               <select
                 id="event-comp"
                 class="select"
                 required
                 [value]="draftCompId()"
                 [disabled]="compsLoading()"
+                [attr.aria-invalid]="errorFor('comp') ? 'true' : null"
+                [attr.aria-describedby]="describedBy('comp', showCompNone() ? 'event-comp-hint' : null)"
                 (change)="onCompChange($event)"
+                (blur)="markTouched('comp')"
               >
                 <option value="">{{ compsLoading() ? t('common.loading') : '—' }}</option>
                 @for (comp of comps(); track comp.id) {
-                  <option [value]="comp.id">{{
-                    ownershipLabel(comp.name, comp.created_by_username)
-                  }}</option>
+                  <option [value]="comp.id">{{ ownershipLabel(comp.name, comp.created_by_username) }}</option>
                 }
               </select>
+              @if (showCompNone()) {
+                <p id="event-comp-hint" class="ev-hint">{{ t('events.create.compNone') }}</p>
+              }
+              <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'comp' }" />
             </div>
-
-            <label>
-              <span class="label">{{ t('events.create.playerCap') }}</span>
+            <div class="ev-field ev-field--narrow">
+              <label class="ev-label" for="event-player-cap">
+                {{ t('events.create.playerCap') }}
+                <span class="ev-optional">({{ t('common.optional') }})</span>
+              </label>
               <input
                 id="event-player-cap"
                 name="player_cap"
@@ -349,105 +767,157 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                 step="1"
                 inputmode="numeric"
                 [value]="draftPlayerCap()"
-                aria-describedby="event-player-cap-hint"
+                [attr.aria-invalid]="errorFor('playerCap') ? 'true' : null"
+                [attr.aria-describedby]="describedBy('playerCap', 'event-player-cap-hint')"
                 (input)="onPlayerCapChange($event)"
+                (blur)="markTouched('playerCap')"
               />
-              <span id="event-player-cap-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                {{ t('events.create.playerCapHint') }}
-              </span>
-            </label>
-
-            <label>
-              <span class="label">{{ t('common.date') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-              <input class="input" type="date" required [attr.min]="minEventDate" [value]="draftEventDate()" (input)="onEventDateChange($event)" />
-            </label>
-
-            <label>
-              <span class="label">Mass <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-              <input class="input" type="time" required [value]="draftMassTime()" (input)="onMassTimeChange($event)" />
-            </label>
-
-            <label>
-              <span class="label">Start <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-              <input class="input" type="time" required [value]="draftStartTime()" (input)="onStartTimeChange($event)" />
-            </label>
-          </div>
-
-          <fieldset class="grid gap-3">
-            <legend class="label">{{ t('events.discordRoles.label') }}</legend>
-            <p id="event-discord-roles-hint" class="text-xs" style="color: var(--color-text-secondary)">
-              {{ t('events.discordRoles.hint') }}
-            </p>
-            @if (roleError()) {
-              <p class="text-sm" style="color: var(--color-danger)" aria-live="polite">{{ roleError() }}</p>
-            } @else {
-              <app-searchable-select
-                [options]="eventRoleOptions()"
-                [values]="draftDiscordRoleIds()"
-                [multiple]="true"
-                [allowEmpty]="false"
-                [emptyLabel]="t('events.discordRoles.none')"
-                [searchPlaceholder]="t('events.discordRoles.search')"
-                [noMatchesLabel]="t('events.discordRoles.noMatches')"
-                [emptyOptionsLabel]="t('events.discordRoles.empty')"
-                [ariaLabel]="t('events.discordRoles.label')"
-                (valuesChange)="draftDiscordRoleIds.set($event)"
-              />
-            }
-          </fieldset>
-
-          <div class="grid gap-3 sm:grid-cols-2">
-            <app-checkbox inputId="event-call-to-arms" [label]="t('events.call_to_arms')"
-              [checked]="draftCallToArms()" (checkedChange)="draftCallToArms.set($event)" />
-            <app-checkbox inputId="event-regear" [label]="t('events.regear')"
-              [checked]="draftRegear()" (checkedChange)="draftRegear.set($event)" />
-            <app-checkbox class="sm:col-span-2" inputId="event-vod-forum-post"
-              [label]="t('events.vodForumPost')"
-              [hint]="t('events.vodForumPostHint')"
-              [checked]="draftVodForumPost()" (checkedChange)="draftVodForumPost.set($event)" />
-            @if (canPingAlliance()) {
-              <app-checkbox class="sm:col-span-2" inputId="event-ping-alliance"
-                [label]="t('events.pingAlliance')" [hint]="t('events.pingAllianceHint')"
-                [checked]="draftPingAlliance()" (checkedChange)="draftPingAlliance.set($event)" />
-            }
-          </div>
-
-          <app-checkbox inputId="event-create-split" [label]="t('events.createSplit')"
-            [hint]="t('events.createSplitHint')" [checked]="draftCreateSplit()"
-            (checkedChange)="draftCreateSplit.set($event)" />
-
-          @if (draftCreateSplit()) {
-            <div class="grid gap-3 sm:grid-cols-2">
-              <label>
-                <span class="label">{{ t('splits.island') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-                <select class="select" required [value]="draftIslandId()" (change)="onIslandChange($event)">
-                  <option value="">{{ t('splits.pick_island') }}</option>
-                  @for (island of islands(); track islandKey(island)) {
-                    <option [value]="islandKey(island)">{{ cityLabel(island.city) }} · {{ island.name }}@if (island.source_guild_name) { ({{ island.source_guild_name }}) }</option>
-                  }
-                </select>
-              </label>
-              <label>
-                <span class="label">{{ t('splits.tab') }} <span style="color: var(--color-error)" aria-hidden="true">*</span></span>
-                <select
-                  class="select"
-                  required
-                  [value]="draftTabId()"
-                  [disabled]="!draftIslandId()"
-                  (change)="onTabChange($event)"
-                >
-                  <option value="">{{ t('splits.pick_tab') }}</option>
-                  @for (tab of draftTabs(); track tab.id) {
-                    <option [value]="tab.id">{{ tab.name }}</option>
-                  }
-                </select>
-              </label>
+              <p id="event-player-cap-hint" class="ev-hint">{{ t('events.create.playerCapHint') }}</p>
+              <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'playerCap' }" />
             </div>
-          }
+          </section>
 
-          @if (compError()) {
-            <p class="text-sm" style="color: var(--color-danger)">{{ compError() }}</p>
-          }
+          <section class="ev-section" aria-labelledby="event-section-discord">
+            <h3 class="ev-section__title ev-section__title--toggle">
+              <button
+                type="button"
+                id="event-section-discord"
+                class="ev-disclosure"
+                aria-controls="event-discord-panel"
+                [attr.aria-expanded]="discordOpen()"
+                (click)="toggleDiscord()"
+              >
+                <app-icon [name]="discordOpen() ? 'chevron-down' : 'chevron-right'" size="1rem" />
+                <span>{{ t('events.create.section.discord') }}</span>
+                <span class="ev-disclosure__summary">{{ discordSummary() }}</span>
+              </button>
+            </h3>
+            <div id="event-discord-panel" class="ev-panel">
+              @if (discordOpen()) {
+                <p class="ev-section__hint">{{ t('events.create.section.discordHint') }}</p>
+                <fieldset class="ev-fieldset" aria-describedby="event-discord-roles-hint">
+                  <legend class="ev-label">{{ t('events.discordRoles.label') }}</legend>
+                  <p id="event-discord-roles-hint" class="ev-hint">{{ t('events.discordRoles.hint') }}</p>
+                  @if (roleError()) {
+                    <p class="ev-error" aria-live="polite">
+                      <app-icon name="alert" size="0.875rem" class="ev-error__icon" />
+                      <span>{{ roleError() }}</span>
+                    </p>
+                  } @else {
+                    <app-searchable-select
+                      [options]="eventRoleOptions()"
+                      [values]="draftDiscordRoleIds()"
+                      [multiple]="true"
+                      [allowEmpty]="false"
+                      [emptyLabel]="t('events.discordRoles.none')"
+                      [searchPlaceholder]="t('events.discordRoles.search')"
+                      [noMatchesLabel]="t('events.discordRoles.noMatches')"
+                      [emptyOptionsLabel]="t('events.discordRoles.empty')"
+                      [ariaLabel]="t('events.discordRoles.label')"
+                      (valuesChange)="draftDiscordRoleIds.set($event)"
+                    />
+                  }
+                </fieldset>
+                <div class="ev-checks">
+                  @if (canPingAlliance()) {
+                    <app-checkbox
+                      inputId="event-ping-alliance"
+                      [label]="t('events.pingAlliance')"
+                      [hint]="t('events.pingAllianceHint')"
+                      [checked]="draftPingAlliance()"
+                      (checkedChange)="draftPingAlliance.set($event)"
+                    />
+                  }
+                  <app-checkbox
+                    inputId="event-vod-forum-post"
+                    [label]="t('events.vodForumPost')"
+                    [hint]="t('events.vodForumPostHint')"
+                    [checked]="draftVodForumPost()"
+                    (checkedChange)="draftVodForumPost.set($event)"
+                  />
+                </div>
+              }
+            </div>
+          </section>
+
+          <section class="ev-section" aria-labelledby="event-section-options">
+            <div class="ev-section__head">
+              <h3 id="event-section-options" class="ev-section__title">
+                {{ t('events.create.section.options') }}
+              </h3>
+              <p class="ev-section__hint">{{ t('events.create.section.optionsHint') }}</p>
+            </div>
+            <div class="ev-checks">
+              <app-checkbox
+                inputId="event-call-to-arms"
+                [label]="t('events.call_to_arms')"
+                [hint]="t('events.callToArmsHint')"
+                [checked]="draftCallToArms()"
+                (checkedChange)="draftCallToArms.set($event)"
+              />
+              <app-checkbox
+                inputId="event-regear"
+                [label]="t('events.regear')"
+                [hint]="t('events.regearHint')"
+                [checked]="draftRegear()"
+                (checkedChange)="draftRegear.set($event)"
+              />
+              <app-checkbox
+                inputId="event-create-split"
+                [label]="t('events.createSplit')"
+                [hint]="t('events.createSplitHint')"
+                [checked]="draftCreateSplit()"
+                (checkedChange)="draftCreateSplit.set($event)"
+              />
+            </div>
+            @if (draftCreateSplit()) {
+              <div class="ev-grid ev-grid--2 ev-nested">
+                <div class="ev-field">
+                  <label class="ev-label" for="event-island">
+                    {{ t('splits.island') }} <span class="ev-required" aria-hidden="true">*</span>
+                  </label>
+                  <select
+                    id="event-island"
+                    class="select"
+                    required
+                    [value]="draftIslandId()"
+                    [attr.aria-invalid]="errorFor('island') ? 'true' : null"
+                    [attr.aria-describedby]="describedBy('island')"
+                    (change)="onIslandChange($event)"
+                    (blur)="markTouched('island')"
+                  >
+                    <option value="">{{ t('splits.pick_island') }}</option>
+                    @for (island of islands(); track islandKey(island)) {
+                      <option [value]="islandKey(island)">{{ cityLabel(island.city) }} · {{ island.name }}@if (island.source_guild_name) { ({{ island.source_guild_name }}) }</option>
+                    }
+                  </select>
+                  <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'island' }" />
+                </div>
+                <div class="ev-field">
+                  <label class="ev-label" for="event-tab">
+                    {{ t('splits.tab') }} <span class="ev-required" aria-hidden="true">*</span>
+                  </label>
+                  <select
+                    id="event-tab"
+                    class="select"
+                    required
+                    [value]="draftTabId()"
+                    [disabled]="!draftIslandId()"
+                    [attr.aria-invalid]="errorFor('tab') ? 'true' : null"
+                    [attr.aria-describedby]="describedBy('tab')"
+                    (change)="onTabChange($event)"
+                    (blur)="markTouched('tab')"
+                  >
+                    <option value="">{{ t('splits.pick_tab') }}</option>
+                    @for (tab of draftTabs(); track tab.id) {
+                      <option [value]="tab.id">{{ tab.name }}</option>
+                    }
+                  </select>
+                  <ng-container [ngTemplateOutlet]="fieldError" [ngTemplateOutletContext]="{ field: 'tab' }" />
+                </div>
+              </div>
+            }
+          </section>
         </form>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="closeCreate()">
@@ -458,8 +928,9 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             class="btn btn--primary"
             form="create-event-form"
             [disabled]="saving()"
+            [attr.aria-busy]="saving() ? 'true' : null"
           >
-            {{ t('common.create') }}
+            {{ saving() ? t('events.create.creating') : t('common.create') }}
           </button>
         </div>
       </app-dialog>
@@ -511,6 +982,7 @@ export class Events {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly injector = inject(Injector);
   protected readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
     defaultPageSize: PAGE_SIZE,
     filterKeys: ['status'],
@@ -596,7 +1068,7 @@ export class Events {
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
   protected readonly draftPingAlliance = signal(false);
-  protected readonly draftVodForumPost = signal(true);
+  protected readonly draftVodForumPost = signal(false);
   protected readonly allianceId = signal<string | null>(null);
   protected readonly allianceMembershipStatus = signal<string | null>(null);
   protected readonly canPingAlliance = computed(
@@ -612,6 +1084,13 @@ export class Events {
   protected readonly islands = signal<SplitIsland[]>([]);
   protected readonly draftIslandId = signal('');
   protected readonly draftTabId = signal('');
+  /** The Discord section is collapsed until asked for; its summary stays visible. */
+  protected readonly discordOpen = signal(false);
+  /** Set by the first submit attempt; from then on every field error is shown live. */
+  protected readonly submitAttempted = signal(false);
+  private readonly touched = signal<ReadonlySet<CreateField>>(new Set());
+  /** Element that opened the dialog, so focus returns to it on close. */
+  private createTrigger: HTMLElement | null = null;
   protected readonly draftIsland = computed(() =>
     this.islands().find((island) => this.islandKey(island) === this.draftIslandId()),
   );
@@ -626,7 +1105,97 @@ export class Events {
       ? `${island.source_guild_tenant_id}|${island.id}`
       : String(island.id);
   }
-  protected readonly compError = signal<string | null>(null);
+
+  /** Validation message per invalid field; empty when the draft can be submitted. */
+  protected readonly fieldErrors = computed<Partial<Record<CreateField, string>>>(() => {
+    const errors: Partial<Record<CreateField, string>> = {};
+    const required = this.t('validation.required');
+    if (!this.draftTitle().trim()) {
+      errors.title = required;
+    }
+    const date = this.draftEventDate();
+    if (!date) {
+      errors.date = required;
+    } else if (date < this.minEventDate) {
+      errors.date = this.t('events.create.dateInPast');
+    }
+    const massAt = combineLocalDateTime(date, this.draftMassTime());
+    const startAt = combineLocalDateTime(date, this.draftStartTime());
+    if (!this.draftMassTime()) {
+      errors.mass = required;
+    } else if (massAt && startAt && massAt > startAt) {
+      errors.mass = this.t('events.create.massAfterStart');
+    }
+    if (!this.draftStartTime()) {
+      errors.start = required;
+    }
+    if (Number(this.draftCompId()) <= 0) {
+      errors.comp = this.t('events.create.comp_required');
+    }
+    const playerCapText = this.draftPlayerCap().trim();
+    if (playerCapText) {
+      const playerCap = Number(playerCapText);
+      if (!Number.isSafeInteger(playerCap) || playerCap <= 0) {
+        errors.playerCap = this.t('events.create.playerCapInvalid');
+      }
+    }
+    if (this.draftCreateSplit()) {
+      if (!this.draftIslandId()) {
+        errors.island = required;
+      } else if (!this.draftTabId()) {
+        errors.tab = required;
+      }
+    }
+    return errors;
+  });
+
+  /** The same errors as an ordered list for the validation summary. */
+  protected readonly errorList = computed<readonly CreateFieldError[]>(() => {
+    const errors = this.fieldErrors();
+    return CREATE_FIELD_ORDER.flatMap((field) => {
+      const message = errors[field];
+      return message ? [{ field, label: CREATE_FIELDS[field].label, message }] : [];
+    });
+  });
+
+  /** Local timezone and the UTC equivalent of the chosen mass and start times. */
+  protected readonly scheduleNote = computed(() => {
+    const date = this.draftEventDate();
+    const massAt = combineLocalDateTime(date, this.draftMassTime());
+    const startAt = combineLocalDateTime(date, this.draftStartTime());
+    const note = this.t('events.create.timezoneNote', {
+      zone: localTimezone(),
+      offset: utcOffsetLabel(startAt ?? new Date()),
+    });
+    if (!massAt || !startAt) {
+      return note;
+    }
+    const utc = this.t('events.create.utcPreview', {
+      mass: formatUtcTime(massAt),
+      start: formatUtcTime(startAt),
+    });
+    return `${note} ${utc}`;
+  });
+
+  /** One-line digest of the collapsed Discord section. */
+  protected readonly discordSummary = computed(() => {
+    const parts: string[] = [];
+    const roles = this.draftDiscordRoleIds().length;
+    if (roles > 0) {
+      parts.push(this.t('events.create.summary.roles', { count: roles }));
+    }
+    if (this.canPingAlliance() && this.draftPingAlliance()) {
+      parts.push(this.t('events.create.summary.alliance'));
+    }
+    if (this.draftVodForumPost()) {
+      parts.push(this.t('events.create.summary.vod'));
+    }
+    return parts.length > 0 ? parts.join(' · ') : this.t('events.create.summary.none');
+  });
+
+  protected readonly showCompNone = computed(
+    () => !this.compsLoading() && this.comps().length === 0,
+  );
 
   protected readonly pendingArchive = signal<EventView | null>(null);
   protected readonly pendingUncancel = signal<EventView | null>(null);
@@ -635,7 +1204,8 @@ export class Events {
   protected readonly showArchived = signal(this.route.snapshot.queryParamMap.get('archived') === 'true');
 
   protected readonly trackById = (event: EventView): number => event.id;
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   /** True when the current user can create a new event. */
   protected canCreate(): boolean {
@@ -644,7 +1214,8 @@ export class Events {
 
   /** True when the current user can archive or restore the given event. */
   protected canDelete(event: EventView): boolean {
-    if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
+    // A link's creator id belongs to the owning tenant; the owner checks authority on the request.
+    if (event.is_link) return this.auth.hasPermission('events.manage');
     return (
       this.auth.hasPermission('events.manage') ||
       event.created_by === this.auth.profile()?.user_id
@@ -653,7 +1224,7 @@ export class Events {
 
   /** True when the current user can edit the given event. */
   protected canEdit(event: EventView): boolean {
-    if (event.is_synchronized_copy ?? (event.source_event_id != null)) return false;
+    if (event.is_link) return this.auth.hasPermission('events.manage');
     return (
       this.auth.hasPermission('events.manage') ||
       event.created_by === this.auth.profile()?.user_id
@@ -677,9 +1248,14 @@ export class Events {
   }
 
   protected openCreate(): void {
+    this.createTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.resetCreateDraft();
     this.compScope.set('mine');
     this.createOpen.set(true);
+    // The native dialog would focus its close button first; the name is what people type next.
+    afterNextRender(() => document.getElementById(CREATE_FIELDS.title.id)?.focus(), {
+      injector: this.injector,
+    });
     void this.loadCreateOptions();
   }
 
@@ -697,6 +1273,53 @@ export class Events {
 
   protected closeCreate(): void {
     this.createOpen.set(false);
+    const trigger = this.createTrigger;
+    this.createTrigger = null;
+    if (trigger?.isConnected) {
+      trigger.focus();
+    }
+  }
+
+  protected toggleDiscord(): void {
+    this.discordOpen.update((open) => !open);
+  }
+
+  protected markTouched(field: CreateField): void {
+    if (!this.touched().has(field)) {
+      this.touched.update((fields) => new Set(fields).add(field));
+    }
+  }
+
+  /** The inline message for a field, once it was left or a submit was attempted. */
+  protected errorFor(field: CreateField): string | null {
+    const message = this.fieldErrors()[field];
+    if (!message) {
+      return null;
+    }
+    const touched = this.touched();
+    const seen =
+      this.submitAttempted() ||
+      touched.has(field) ||
+      (field === 'mass' && touched.has('start'));
+    return seen ? message : null;
+  }
+
+  protected errorId(field: CreateField): string {
+    return `${CREATE_FIELDS[field].id}-error`;
+  }
+
+  /** `aria-describedby` for a control: its hint or note, then its error when one is shown. */
+  protected describedBy(field: CreateField, ...ids: (string | null)[]): string | null {
+    const described = ids.filter((id): id is string => Boolean(id));
+    if (this.errorFor(field)) {
+      described.push(this.errorId(field));
+    }
+    return described.length > 0 ? described.join(' ') : null;
+  }
+
+  protected focusField(field: CreateField): void {
+    const element = document.getElementById(CREATE_FIELDS[field].id);
+    element?.focus();
   }
 
   /** Opens the analytics view for a single event. */
@@ -856,12 +1479,10 @@ export class Events {
 
   protected onCompChange(event: Event): void {
     this.draftCompId.set((event.target as HTMLSelectElement).value);
-    this.compError.set(null);
   }
 
   protected onPlayerCapChange(event: Event): void {
     this.draftPlayerCap.set((event.target as HTMLInputElement).value);
-    this.compError.set(null);
   }
 
   protected eventRoleOptions() {
@@ -880,39 +1501,19 @@ export class Events {
   protected async onCreateSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
 
+    this.submitAttempted.set(true);
+    if (this.errorList().length > 0) {
+      this.focusErrorSummary();
+      return;
+    }
+
     const title = this.draftTitle().trim();
     const compId = Number(this.draftCompId());
     const playerCapText = this.draftPlayerCap().trim();
     const playerCap = playerCapText ? Number(playerCapText) : undefined;
-
-    if (!title) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-    if (compId <= 0) {
-      this.compError.set(this.t('events.create.comp_required'));
-      return;
-    }
-    if (
-      playerCap !== undefined &&
-      (!Number.isSafeInteger(playerCap) || playerCap <= 0)
-    ) {
-      this.compError.set(this.t('events.create.playerCapInvalid'));
-      return;
-    }
-    if (this.draftCreateSplit() && !this.draftTabId()) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-
     const massAt = combineLocalDateTime(this.draftEventDate(), this.draftMassTime());
     const startAt = combineLocalDateTime(this.draftEventDate(), this.draftStartTime());
     if (!massAt || !startAt) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-    if (massAt > startAt) {
-      this.toasts.error('Mass deve essere uguale o precedente all\'orario di Start.');
       return;
     }
 
@@ -994,13 +1595,25 @@ export class Events {
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);
     this.draftPingAlliance.set(false);
-    this.draftVodForumPost.set(true);
+    this.draftVodForumPost.set(false);
     this.draftDiscordRoleIds.set([]);
     this.roleError.set(null);
     this.draftCreateSplit.set(false);
     this.draftIslandId.set('');
     this.draftTabId.set('');
-    this.compError.set(null);
+    this.discordOpen.set(false);
+    this.submitAttempted.set(false);
+    this.touched.set(new Set());
+  }
+
+  /** Moves focus to the validation summary once it is rendered (or now, when it already is). */
+  private focusErrorSummary(): void {
+    const focus = (): void => document.getElementById('event-error-summary')?.focus();
+    if (document.getElementById('event-error-summary')) {
+      focus();
+    } else {
+      afterNextRender(focus, { injector: this.injector });
+    }
   }
 
   private async loadCreateComps(): Promise<void> {
@@ -1097,4 +1710,28 @@ function combineLocalDateTime(date: string, time: string): Date | null {
   if (!date || !time) return null;
   const value = new Date(`${date}T${time}`);
   return Number.isNaN(value.getTime()) ? null : value;
+}
+
+/** IANA name of the browser timezone, e.g. `Europe/Rome`. */
+function localTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** Offset of the browser timezone on the given day, e.g. `UTC+2` or `UTC-3:30`. */
+function utcOffsetLabel(date: Date): string {
+  const minutes = -date.getTimezoneOffset();
+  const sign = minutes >= 0 ? '+' : '-';
+  const absolute = Math.abs(minutes);
+  const hours = Math.floor(absolute / 60);
+  const rest = absolute % 60;
+  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`;
+}
+
+/** `HH:mm` of an instant in UTC. */
+function formatUtcTime(date: Date): string {
+  return date.toISOString().slice(11, 16);
 }

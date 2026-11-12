@@ -7,7 +7,7 @@ import type {
   BuildSlot,
   CompDetail,
 } from '../../core/models/api.models';
-import { diffBuildVersions, diffCompVersions } from './version-diff';
+import { DEFAULT_BUILD_DIFF_LABELS, diffBuildVersions, diffCompVersions } from './version-diff';
 
 function item(
   slot: BuildSlot,
@@ -88,29 +88,88 @@ function comp(
   };
 }
 
+function tiered(
+  slot: BuildSlot,
+  name: string,
+  tier: string,
+  extra: Partial<BuildItemSlot> = {},
+): BuildItemSlot {
+  return { ...item(slot, name), openalbion_item_tier: tier, ...extra };
+}
+
 describe('build version diff', () => {
   it('reports nothing when two versions are equivalent', () => {
     const items = [item('weapon', 'Polehammer')];
     expect(diffBuildVersions(build(1, items), build(2, items))).toEqual([]);
   });
 
-  it('names the loadout and the slot that changed', () => {
+  it('names the loadout as the group and the slot as the subject', () => {
     const changes = diffBuildVersions(
       build(1, [item('weapon', 'Polehammer')]),
       build(2, [item('weapon', 'Realmbreaker')]),
     );
 
     expect(changes).toHaveLength(1);
-    expect(changes[0].subject).toBe('Main · Weapon');
+    expect(changes[0].group).toBe('Main');
+    expect(changes[0].subject).toBe('Weapon');
     expect(changes[0].change).toBe('changed');
     expect(changes[0].before).toContain('Polehammer');
     expect(changes[0].after).toContain('Realmbreaker');
+  });
+
+  it('shows only the item token when only the item changed', () => {
+    const changes = diffBuildVersions(
+      build(1, [item('weapon', 'Polehammer')]),
+      build(2, [item('weapon', 'Realmbreaker')]),
+    );
+
+    expect(changes[0].tokens).toEqual([
+      { kind: 'item', label: 'Item', before: 'Polehammer', after: 'Realmbreaker' },
+    ]);
+  });
+
+  it('writes the tier the way the game does, never as TT8', () => {
+    const changes = diffBuildVersions(
+      build(1, [tiered('weapon', 'Polehammer', 'T8')]),
+      build(2, [tiered('weapon', 'Polehammer', 'T8', { openalbion_item_enchantment: 1, openalbion_item_id: 1 })]),
+    );
+
+    expect(changes[0].tokens?.[0]).toMatchObject({ before: 'Polehammer T8', after: 'Polehammer T8.1' });
+    const text = JSON.stringify(changes);
+    expect(text).not.toContain('TT8');
+  });
+
+  it('accepts a bare numeric tier from the API', () => {
+    const changes = diffBuildVersions(
+      build(1, [tiered('head', 'Knight Helmet', '7')]),
+      build(2, [tiered('head', 'Knight Helmet', '8')]),
+    );
+
+    expect(changes[0].tokens?.[0]).toMatchObject({ before: 'Knight Helmet T7', after: 'Knight Helmet T8' });
+  });
+
+  it('prints quality only when it is not the default or when it is what changed', () => {
+    const quality = diffBuildVersions(
+      build(1, [item('head', 'Knight Helmet')]),
+      build(2, [{ ...item('head', 'Knight Helmet'), openalbion_item_quality: 2 }]),
+    );
+    expect(quality[0].tokens?.[0]).toMatchObject({
+      before: 'Knight Helmet · Excellent',
+      after: 'Knight Helmet · Good',
+    });
+
+    const plain = diffBuildVersions(
+      build(1, [item('head', 'Knight Helmet')]),
+      build(2, [item('head', 'Knight Helm')]),
+    );
+    expect(plain[0].tokens?.[0]).toMatchObject({ before: 'Knight Helmet', after: 'Knight Helm' });
   });
 
   it('distinguishes an added slot from a removed one', () => {
     const added = diffBuildVersions(build(1, []), build(2, [item('head', 'Knight Helmet')]));
     expect(added[0].change).toBe('added');
     expect(added[0].before).toBeNull();
+    expect(added[0].tokens?.[0]).toMatchObject({ before: null, after: 'Knight Helmet' });
 
     const removed = diffBuildVersions(build(1, [item('head', 'Knight Helmet')]), build(2, []));
     expect(removed[0].change).toBe('removed');
@@ -124,7 +183,22 @@ describe('build version diff', () => {
     );
 
     expect(changes).toHaveLength(1);
-    expect(changes[0].subject).toBe('Swap · Weapon');
+    expect(changes[0].group).toBe('Swap');
+    expect(changes[0].subject).toBe('Weapon');
+  });
+
+  it('orders the lines main before swap and by slot, not alphabetically', () => {
+    const changes = diffBuildVersions(
+      build(1, [item('mount', 'Horse'), item('weapon', 'A', 'swap'), item('head', 'Cap'), item('weapon', 'Axe')]),
+      build(2, [item('mount', 'Direwolf'), item('weapon', 'B', 'swap'), item('head', 'Hood'), item('weapon', 'Bow')]),
+    );
+
+    expect(changes.map((entry) => `${entry.group}/${entry.subject}`)).toEqual([
+      'Main/Weapon',
+      'Main/Head',
+      'Main/Mount',
+      'Swap/Weapon',
+    ]);
   });
 
   it('counts an ability change as a difference even when the item is the same', () => {
@@ -140,7 +214,30 @@ describe('build version diff', () => {
     expect(changes[0].after).toContain('CLEAVE');
   });
 
-  it('names the abilities rather than printing their internal ids', () => {
+  it('shows only the changed spell, labelled by its key, with names instead of ids', () => {
+    const names = { HEROICSTRIKE2: 'Heroic Strike', CLEAVE: 'Cleave', PASSIVE_BLEEDCHANCE: 'Deep Cuts' };
+    const changes = diffBuildVersions(
+      build(1, [
+        item('weapon', 'Polehammer', 'main', {
+          active: { '1': 'HEROICSTRIKE2', '2': 'CLEAVE' },
+          passive: { '1': 'PASSIVE_BLEEDCHANCE' },
+        }),
+      ]),
+      build(2, [
+        item('weapon', 'Polehammer', 'main', {
+          active: { '1': 'CLEAVE', '2': 'CLEAVE' },
+          passive: { '1': 'PASSIVE_BLEEDCHANCE' },
+        }),
+      ]),
+      names,
+    );
+
+    expect(changes[0].tokens).toEqual([
+      { kind: 'spell', label: 'Q', before: 'Heroic Strike', after: 'Cleave' },
+    ]);
+  });
+
+  it('describes the whole slot in one line with names for non-rich consumers', () => {
     const names = { HEROICSTRIKE2: 'Heroic Strike', PASSIVE_BLEEDCHANCE: 'Deep Cuts' };
     const changes = diffBuildVersions(
       build(1, [item('weapon', 'Polehammer')]),
@@ -153,9 +250,7 @@ describe('build version diff', () => {
       names,
     );
 
-    expect(changes[0].after).toBe(
-      'Polehammer (Excellent) — 1. Heroic Strike, Passive: Deep Cuts',
-    );
+    expect(changes[0].after).toBe('Polehammer — Q Heroic Strike, Passive Deep Cuts');
   });
 
   it('falls back to the id for a spell the catalog does not know', () => {
@@ -168,6 +263,24 @@ describe('build version diff', () => {
     );
 
     expect(changes[0].after).toContain('BRAND_NEW_SPELL');
+    expect(changes[0].tokens?.[0]).toMatchObject({ label: 'Q', before: null, after: 'BRAND_NEW_SPELL' });
+  });
+
+  it('uses the translated labels the caller passes', () => {
+    const changes = diffBuildVersions(
+      build(1, [item('off_hand', 'Torch')]),
+      build(2, [item('off_hand', 'Shield')]),
+      {},
+      {
+        ...DEFAULT_BUILD_DIFF_LABELS,
+        loadout: { main: 'Principale', swap: 'Swap' },
+        slot: { ...DEFAULT_BUILD_DIFF_LABELS.slot, off_hand: 'Seconda mano' },
+        item: 'Oggetto',
+      },
+    );
+
+    expect(changes[0]).toMatchObject({ group: 'Principale', subject: 'Seconda mano' });
+    expect(changes[0].tokens?.[0].label).toBe('Oggetto');
   });
 });
 
@@ -214,6 +327,32 @@ describe('comp version diff', () => {
     expect(changes.map((entry) => [entry.subject, entry.before, entry.after])).toEqual([
       ['Pole Hammer v1', 'x6', 'x10'],
       ['Pole Hammer v2', null, 'x4'],
+    ]);
+  });
+
+  it('reads a build that moved from v1 to v3 as one changed line, not a removal and an addition', () => {
+    const changes = diffCompVersions(
+      comp(1, [{ name: 'Pole Hammer', quantity: 5 }]),
+      comp(2, [{ name: 'Pole Hammer', quantity: 5, buildVersion: 3 }]),
+    );
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ subject: 'Pole Hammer', change: 'changed' });
+    expect(changes[0].tokens).toEqual([
+      { kind: 'version', label: 'Version', before: 'v1', after: 'v3' },
+    ]);
+  });
+
+  it('adds the player count when the version and the quantity both changed', () => {
+    const changes = diffCompVersions(
+      comp(1, [{ name: 'Pole Hammer', quantity: 5 }]),
+      comp(2, [{ name: 'Pole Hammer', quantity: 8, buildVersion: 2 }]),
+      { version: 'Versione', players: 'Giocatori' },
+    );
+
+    expect(changes[0].tokens).toEqual([
+      { kind: 'version', label: 'Versione', before: 'v1', after: 'v2' },
+      { kind: 'quantity', label: 'Giocatori', before: 'x5', after: 'x8' },
     ]);
   });
 });

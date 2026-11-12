@@ -339,13 +339,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ask to link the caller's Discord account to one Albion character
-         * @description Albion offers no way to prove who owns a character, so a self-service link is a *request* until an officer approves it. The response is `200` with `pending: true` and `linked: false`: no guild role, nickname change, alliance copy or loot/regear attribution happens until `POST /albion/link/requests/{id}/approve`. Asking again replaces the account's open request. A caller holding `roles.manage` is linked immediately, with the effects below. Strictly 1:1 once linked: one Discord account holds at most one link, and one Albion character belongs to at most one account — enforced by unique constraints in the database. The server resolves the selected player from Albion and persists that authoritative name, so callers may claim characters in any guild or without a guild. On approval the backend best-effort sets the account's Discord guild nickname to the character name and assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild. Discord failures never roll back the link. To withdraw a request, `DELETE /albion/link`.
+         * Link the caller's Discord account to one Albion character
+         * @description The link applies immediately: the server resolves the selected player from Albion and persists that authoritative name, so callers may link characters in any guild or without a guild. Strictly 1:1: one Discord account holds at most one link, and one Albion character belongs to at most one account — enforced by unique constraints in the database, so a character already linked to someone else answers `409` (an officer holding `roles.manage` can re-assign it with `POST /albion/link/users/{user_id}`). After the link the backend best-effort sets the account's Discord guild nickname to the character name, assigns the configured Guild base role only when the live player profile belongs to the configured Albion guild, copies the link to paired alliance/guild tenants, and posts a notice to the guild's audit-log Discord channel. Discord failures never roll back the link.
          */
         post: operations["link_player"];
         /**
          * Unlink the caller's Discord account from its Albion character
-         * @description No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. When the account has only an open request (not yet approved), this withdraws it. Not idempotent-by-design: calling this when there's neither a link nor a request returns `404`, so a naive "always call unlink then re-link" client pattern must handle that case (or check `GET /albion/link/me` first).
+         * @description No request body. Frees the Albion character up so it (or a different one) can be linked again, by this account or another. Not idempotent-by-design: calling this when there's no link returns `404`, so a naive "always call unlink then re-link" client pattern must handle that case (or check `GET /albion/link/me` first).
          */
         delete: operations["unlink_player"];
         options?: never;
@@ -367,66 +367,6 @@ export interface paths {
         get: operations["get_link_status"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/albion/link/requests": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Officer: list pending Albion link requests
-         * @description Requires `roles.manage`. Oldest first. `competing_requests` counts other open claims on the same character and `character_already_linked` warns that approving would fail with `409` until that link is removed.
-         */
-        get: operations["list_link_requests"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/albion/link/requests/{request_id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Officer: approve a pending Albion link request
-         * @description Requires `roles.manage`. Creates the link, drops competing claims on the same character, then best-effort applies what the self-service link used to do at once: the Discord nickname, the Guild base role (only when the live character is in the configured Albion guild) and the copy to paired alliance/guild tenants. Never replaces an existing link: `409` if the account or the character got linked meanwhile (remove that link first). Audited as `ALBION_LINK` with `via: approval`.
-         */
-        post: operations["approve_link_request"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/albion/link/requests/{request_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Officer: reject a pending Albion link request
-         * @description Requires `roles.manage`. Discards the claim; the account can ask again. Audited as `ALBION_LINK_REJECT`.
-         */
-        post: operations["reject_link_request"];
         delete?: never;
         options?: never;
         head?: never;
@@ -491,8 +431,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ask to link by Albion IGN
-         * @description Searches Albion for `ign`, requires a unique exact name match, then behaves exactly like `POST /api/albion/link`: a request an officer must approve (`pending: true`), or an immediate link for a caller with `roles.manage`. Zero hits are 404; two or more exact hits are 400. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.
+         * Link by Albion IGN
+         * @description Searches Albion for `ign`, requires a unique exact name match, then behaves exactly like `POST /api/albion/link`: the link applies immediately. Zero hits are 404; two or more exact hits are 400. The name is matched case- and diacritic-insensitively against the guild roster and Albion's global search; when several players share the name, the single one in the configured guild wins, otherwise the call is rejected as ambiguous.
          */
         post: operations["register_by_ign"];
         delete?: never;
@@ -2516,7 +2456,7 @@ export interface paths {
         };
         /**
          * Get alliance event publication status
-         * @description Returns per-guild copy status for an alliance-owned event. Requires event management authority.
+         * @description Returns per-guild link status for an alliance-owned event. Requires event management authority.
          */
         get: operations["get_event_fanout_status"];
         put?: never;
@@ -2687,8 +2627,8 @@ export interface paths {
         /**
          * Add an event party
          * @description The roster version carried in the body is checked like every other roster write. The change is
-         *     broadcast on the live roster socket. Alliance copies keep their own single party and are not
-         *     updated.
+         *     broadcast on the live roster socket of the origin and of every link tenant. Parties belong to
+         *     the origin event only; a link has none.
          */
         post: operations["create_event_party"];
         delete?: never;
@@ -3316,6 +3256,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/intel/comps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Our comps for a period
+         * @description Every comp fielded in a fight during the period, with usage, record, K/D, average players, last use and its best and worst matchups against enemy guilds. A fight is attributed to a comp through its event; fights with no event are reported as `unattributed_fights` rather than guessed.
+         */
+        get: operations["our_comps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/intel/comps/{comp_id}/threats": {
         parameters: {
             query?: never;
@@ -3328,6 +3288,26 @@ export interface paths {
          * @description Scores every scout against one of our own comps, expanded from its build quantities into virtual players. Comp variants do not inherit their parent's builds.
          */
         get: operations["threats_to_comp"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intel/fights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Our fights for a period
+         * @description Canonical fights from our side: outcome (as stored on the fight), opponent guild, comp, friendly and enemy player counts, kills, deaths, fame and item power. Filter by outcome, opponent name, comp and friendly player count; sort by start time, players, kills, deaths, kill fame or K/D. `summary` covers every fight matching the filters, and `opponents`/`comps` list the filter options for the whole period. Rows link to the fight detail page by `fight_id`.
+         */
+        get: operations["our_fights"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3368,6 +3348,26 @@ export interface paths {
          * @description Win/loss tallies per (our comp, scouted comp) pair, taken from the stored battle outcomes. `coverage` reports how many of the underlying battles could be attributed to one of our comps: battles never linked to an event have no comp and are excluded, which is the usual reason a matrix looks sparse.
          */
         get: operations["matchup_matrix"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intel/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Guild overview for a period
+         * @description Headline combat numbers over the selected period (`7d`, `30d`, `90d`, `all`, or a custom `from`/`to`), the same numbers for the preceding period of equal length, a weekly trend, the newest fights and the opponents met most often. Outcomes are the stored fight outcomes. Rates are null, not zero, when there is nothing to divide by. Estimated silver lost is only returned to callers who also hold `intel.report.view`.
+         */
+        get: operations["overview"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3430,6 +3430,46 @@ export interface paths {
          * @description Drops the cached report and recomputes it. Use after an import or a bulk correction, when waiting out the cache would show officers stale figures.
          */
         post: operations["refresh_guild_report"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intel/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Our players for a period
+         * @description One row per guild member: fights attended and attendance rate, kills, deaths, K/D, kill and death fame, average item power, most-played weapons and role, and the last fight. Attendance is measured against fights that have a computed rollup. Members are matched to battle characters through their linked Albion character; characters nobody has linked are listed in `unlinked_players`. Callers with only `intel.view` receive just their own row (`scope` is `self`); `intel.report.view` returns everyone.
+         */
+        get: operations["roster"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intel/roster/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One player's intel for a period
+         * @description The member's roster row plus a weekly breakdown, their fights (newest first), weapons and roles played, the builds they signed up with and the comps they fought in. Any member may read their own page with `intel.view`; reading someone else's needs `intel.report.view`.
+         */
+        get: operations["roster_member"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5258,6 +5298,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/{user_id}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Block a member from the manager
+         * @description Requires `roles.manage`. A blocked member cannot log in and every authenticated request of theirs (web session or Discord bot interaction) is refused with `403 account_blocked`; the web app then shows an "access blocked" screen. The block is scoped to this server (tenant) and takes effect on the member's next request, even on a live session. Nothing changes on Discord: the member is not kicked, banned or stripped of roles. Cannot target yourself, the server owner or a platform admin, nor a member whose role is above your own (unless you are the owner or a platform admin). Idempotent: blocking a blocked member keeps the first block. Audited as `USER_BLOCK`.
+         */
+        post: operations["block_user"];
+        /**
+         * Unblock a member
+         * @description Requires `roles.manage`. The member can log in and use the manager again on their next request. Idempotent: unblocking a member who is not blocked changes nothing. Audited as `USER_UNBLOCK`.
+         */
+        delete: operations["unblock_user"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/{user_id}/roles": {
         parameters: {
             query?: never;
@@ -6033,41 +6097,6 @@ export interface components {
              */
             name: string;
         };
-        /** @description One open claim as an officer sees it. */
-        AlbionLinkRequestView: {
-            /** @description The character's Albion guild when the claim was made, if it had one. */
-            albion_guild_name?: string | null;
-            /** @description The character being claimed. */
-            albion_player_id: string;
-            /** @description The character's name when the claim was made. */
-            albion_player_name: string;
-            /**
-             * @description `true` when the character is already linked to an account, so approving would fail with
-             *     `409` until that link is removed.
-             */
-            character_already_linked: boolean;
-            /**
-             * Format: int32
-             * @description How many *other* open claims name the same character; the officer must pick the real owner.
-             */
-            competing_requests: number;
-            /** @description Discord id of the account asking for the link. */
-            discord_id: string;
-            /**
-             * Format: int64
-             * @description Request id, as used by the approve/reject endpoints.
-             */
-            id: number;
-            /** @description RFC 3339 timestamp. */
-            requested_at: string;
-            /**
-             * Format: int64
-             * @description Internal user id of that account, when it has a row in this tenant.
-             */
-            user_id?: number | null;
-            /** @description Username of that account, when it has a row in this tenant. */
-            username?: string | null;
-        };
         /**
          * @description The current Discord-to-Albion-player link status for a user, as returned by
          *     `GET /albion/link/me` and `POST /albion/link`.
@@ -6099,27 +6128,6 @@ export interface components {
              * @example 2026-07-08T02:15:00.631376+00:00
              */
             linked_at?: string | null;
-            /**
-             * @description `true` while a self-service claim waits for an officer. A pending claim is **not** a link:
-             *     `linked` stays `false` and nothing keyed on the character (guild role, loot, regears)
-             *     applies until it is approved.
-             */
-            pending: boolean;
-            /**
-             * @description Present only when `pending` is `true`: the character the account asked to link.
-             * @example aPngkjfLT2CGiZoWXLr8UQ
-             */
-            pending_albion_player_id?: string | null;
-            /**
-             * @description Present only when `pending` is `true`.
-             * @example Kay
-             */
-            pending_albion_player_name?: string | null;
-            /**
-             * @description Present only when `pending` is `true`. RFC 3339 timestamp.
-             * @example 2026-07-08T02:15:00.631376+00:00
-             */
-            requested_at?: string | null;
         };
         /** @description Player profile as returned by `GET /albion/players/{id}`. */
         AlbionPlayer: {
@@ -6369,16 +6377,6 @@ export interface components {
         ApiResponseAlbionDataMarketPriceList: {
             /** @description The current market rows returned by Albion Online Data. */
             data: components["schemas"]["AlbionDataMarketPrice"][];
-            /**
-             * @description Indicates the outcome of the request, always "success".
-             * @example success
-             */
-            status: string;
-        };
-        /** @description `OpenAPI` schema wrapper for the list of pending Albion link requests. */
-        ApiResponseAlbionLinkRequests: {
-            /** @description Open requests, oldest first. */
-            data: components["schemas"]["AlbionLinkRequestView"][];
             /**
              * @description Indicates the outcome of the request, always "success".
              * @example success
@@ -8062,6 +8060,127 @@ export interface components {
          *
          *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
          */
+        ApiResponse_IntelComps: {
+            /** @description `GET /api/intel/comps`. */
+            data: {
+                comps: components["schemas"]["CompUsage"][];
+                period: components["schemas"]["PeriodView"];
+                /**
+                 * Format: int64
+                 * @description Fights in the period, with or without a comp.
+                 */
+                total_fights: number;
+                /**
+                 * Format: int64
+                 * @description Fights not linked to an event, so counted in no comp row.
+                 */
+                unattributed_fights: number;
+            };
+            /** @description Indicates the outcome of the request, always "success" for this envelope. */
+            status: string;
+        };
+        /**
+         * @description The standard success wrapper envelope (`JSend` style) for generics.
+         *
+         *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+         */
+        ApiResponse_IntelFightList: {
+            /** @description `GET /api/intel/fights`: a page of fights plus what the filters were applied to. */
+            data: {
+                /** @description Comps fielded in the period (before filtering). */
+                comps: components["schemas"]["CompOption"][];
+                /** Format: int64 */
+                current_page: number;
+                items: components["schemas"]["IntelFightRow"][];
+                /** Format: int64 */
+                limit: number;
+                /** @description Enemy guilds met in the period (before filtering), most frequent first. */
+                opponents: string[];
+                period: components["schemas"]["PeriodView"];
+                /** @description Totals over every fight matching the filters, not just this page. */
+                summary: components["schemas"]["PeriodTotals"];
+                /** Format: int64 */
+                total_items: number;
+                /** Format: int64 */
+                total_pages: number;
+            };
+            /** @description Indicates the outcome of the request, always "success" for this envelope. */
+            status: string;
+        };
+        /**
+         * @description The standard success wrapper envelope (`JSend` style) for generics.
+         *
+         *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+         */
+        ApiResponse_IntelOverview: {
+            /** @description `GET /api/intel/overview`. */
+            data: {
+                current: components["schemas"]["PeriodTotals"];
+                data_quality: components["schemas"]["DataQuality"];
+                period: components["schemas"]["PeriodView"];
+                previous?: null | components["schemas"]["PeriodTotals"];
+                /** @description The newest fights in the period. */
+                recent_fights: components["schemas"]["IntelFightRow"][];
+                /** @description The enemy guilds we met most often. */
+                top_opponents: components["schemas"]["OpponentRecord"][];
+                /** @description One bucket per calendar week, oldest first, quiet weeks included. */
+                weekly: components["schemas"]["WeekBucket"][];
+            };
+            /** @description Indicates the outcome of the request, always "success" for this envelope. */
+            status: string;
+        };
+        /**
+         * @description The standard success wrapper envelope (`JSend` style) for generics.
+         *
+         *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+         */
+        ApiResponse_IntelPlayer: {
+            /** @description `GET /api/intel/roster/{user_id}`. */
+            data: {
+                builds: components["schemas"]["BuildUse"][];
+                comps: components["schemas"]["PlayerCompUse"][];
+                /** @description Newest first, capped. */
+                fights: components["schemas"]["PlayerFightRow"][];
+                member: components["schemas"]["RosterMember"];
+                period: components["schemas"]["PeriodView"];
+                roles: components["schemas"]["RoleShare"][];
+                /** Format: int64 */
+                total_fights: number;
+                weapons: components["schemas"]["WeaponShare"][];
+                /** @description One bucket per week, oldest first, quiet weeks included. */
+                weekly: components["schemas"]["PlayerWeek"][];
+            };
+            /** @description Indicates the outcome of the request, always "success" for this envelope. */
+            status: string;
+        };
+        /**
+         * @description The standard success wrapper envelope (`JSend` style) for generics.
+         *
+         *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+         */
+        ApiResponse_IntelRoster: {
+            /** @description `GET /api/intel/roster`. */
+            data: {
+                members: components["schemas"]["RosterMember"][];
+                period: components["schemas"]["PeriodView"];
+                /** @description `all` for officers, `self` when the caller sees only their own row. */
+                scope: string;
+                /**
+                 * Format: int64
+                 * @description Fights with a computed rollup: the denominator of every attendance rate.
+                 */
+                total_fights: number;
+                /** @description Empty unless `scope` is `all`. */
+                unlinked_players: components["schemas"]["UnlinkedPlayer"][];
+            };
+            /** @description Indicates the outcome of the request, always "success" for this envelope. */
+            status: string;
+        };
+        /**
+         * @description The standard success wrapper envelope (`JSend` style) for generics.
+         *
+         *     Annotations name the instantiation directly, e.g. `body = ApiResponse<TenantView>`.
+         */
         ApiResponse_MatchupReport: {
             /** @description The matrix plus the coverage caveat that explains its gaps. */
             data: {
@@ -9039,8 +9158,12 @@ export interface components {
                  * @example 1
                  */
                 id: number;
-                /** @description Whether the copy is currently linked for synchronization. */
-                is_synchronized_copy: boolean;
+                /**
+                 * @description True when this view is a link to an event owned by another tenant (the alliance hub of a
+                 *     guild event, or a member guild of an alliance event). Roster, signups, comp, split and VOD
+                 *     live on the owning event; requests addressed to the link are served by it.
+                 */
+                is_link?: boolean;
                 /**
                  * Format: int64
                  * @description Number of `AlbionBB` fetch attempts performed by the linker.
@@ -9070,10 +9193,18 @@ export interface components {
                  * @description Monotonic roster revision. Discord uses it to refresh the announcement card.
                  */
                 roster_version: number;
-                /** Format: int64 */
+                /**
+                 * Format: int64
+                 * @description The event's id in [`Self::source_tenant_id`]; absent on events this tenant owns.
+                 */
                 source_event_id?: number | null;
-                /** @description Canonical source identity for synchronized copies; both are absent on owned events. */
+                /**
+                 * @description Tenant that owns the event when this view is a link to another tenant's event; absent on
+                 *     events this tenant owns.
+                 */
                 source_tenant_id?: string | null;
+                /** @description Display name of [`Self::source_tenant_id`], filled on the detail and list views of a link. */
+                source_tenant_name?: string | null;
                 /** @description The automatic event start time in UTC. */
                 start_time_utc: string;
                 /** @description When the session went live (RFC3339), if ever. */
@@ -10115,6 +10246,15 @@ export interface components {
              */
             total_players: number;
         };
+        /** @description Body of `POST /api/users/{user_id}/block`. */
+        BlockUserRequest: {
+            /**
+             * @description Why the member is blocked (at most 500 characters). Optional; shown to `roles.manage`
+             *     holders only, never to the blocked member.
+             * @example Spamming the loot channel
+             */
+            reason?: string | null;
+        };
         /**
          * @description The guild's three brand colours, as the web app reads them.
          *
@@ -10556,6 +10696,18 @@ export interface components {
             /** @description Tier-less display name of [`Self::weapon_key`] (for example `Polehammer`). */
             weapon_name?: string | null;
         };
+        /** @description A build the member signed up with for events they then fought in. */
+        BuildUse: {
+            /** Format: int64 */
+            build_id: number;
+            /**
+             * Format: int64
+             * @description Events fought with this build as the primary choice.
+             */
+            events: number;
+            name: string;
+            role: string;
+        };
         /**
          * @description One sibling version of a build, for the version switcher.
          * @example {
@@ -10837,6 +10989,12 @@ export interface components {
             /** @description Sort column. Allowed: `name`, `created_at` (default), `category`. */
             sort?: string | null;
         };
+        /** @description A comp offered as a filter option. */
+        CompOption: {
+            /** Format: int64 */
+            comp_id: number;
+            name: string;
+        };
         /** @description Historical performance of a comp across linked event sessions. */
         CompPerformanceView: {
             /**
@@ -10965,6 +11123,24 @@ export interface components {
              * @example 1
              */
             version: number;
+        };
+        /** @description One comp we fielded. */
+        CompUsage: {
+            best_matchup?: null | components["schemas"]["OpponentRecord"];
+            /** Format: int64 */
+            comp_id: number;
+            /**
+             * Format: int64
+             * @description Distinct events that fielded the comp.
+             */
+            events: number;
+            last_used_at: string;
+            /** @description Most frequent opponents, capped. */
+            matchups: components["schemas"]["OpponentRecord"][];
+            name: string;
+            /** @description Record and combat figures over the fights played with this comp. */
+            totals: components["schemas"]["PeriodTotals"];
+            worst_matchup?: null | components["schemas"]["OpponentRecord"];
         };
         /** @description Request body to complete several splits in one action. */
         CompleteSplitsBatchRequest: {
@@ -11300,7 +11476,7 @@ export interface components {
             start_time_utc?: string | null;
             /** @description The title of the event. */
             title: string;
-            /** @description Create a VOD forum post for members to reply to with video links (default: true). */
+            /** @description Create a VOD forum post for members to reply to with video links (default: false). */
             vod_forum_post_enabled?: boolean;
         };
         /**
@@ -11612,6 +11788,24 @@ export interface components {
              * @example 123456789012345678
              */
             discord_id: string;
+        };
+        /** @description How complete the data behind a response is. */
+        DataQuality: {
+            /**
+             * Format: int64
+             * @description Fights whose outcome is `unknown`: counted as fights, absent from the win rate.
+             */
+            fights_unknown_outcome: number;
+            /**
+             * Format: int64
+             * @description Fights not linked to an event, so attributable to no comp.
+             */
+            fights_without_comp: number;
+            /**
+             * Format: int64
+             * @description Fights with no computed rollup: counted as fights, absent from combat figures.
+             */
+            fights_without_stats: number;
         };
         /**
          * @description Which ao-bin-dumps commit the bundled dataset was generated from.
@@ -13065,8 +13259,12 @@ export interface components {
              * @example 1
              */
             id: number;
-            /** @description Whether the copy is currently linked for synchronization. */
-            is_synchronized_copy: boolean;
+            /**
+             * @description True when this view is a link to an event owned by another tenant (the alliance hub of a
+             *     guild event, or a member guild of an alliance event). Roster, signups, comp, split and VOD
+             *     live on the owning event; requests addressed to the link are served by it.
+             */
+            is_link?: boolean;
             /**
              * Format: int64
              * @description Number of `AlbionBB` fetch attempts performed by the linker.
@@ -13096,10 +13294,18 @@ export interface components {
              * @description Monotonic roster revision. Discord uses it to refresh the announcement card.
              */
             roster_version: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description The event's id in [`Self::source_tenant_id`]; absent on events this tenant owns.
+             */
             source_event_id?: number | null;
-            /** @description Canonical source identity for synchronized copies; both are absent on owned events. */
+            /**
+             * @description Tenant that owns the event when this view is a link to another tenant's event; absent on
+             *     events this tenant owns.
+             */
             source_tenant_id?: string | null;
+            /** @description Display name of [`Self::source_tenant_id`], filled on the detail and list views of a link. */
+            source_tenant_name?: string | null;
             /** @description The automatic event start time in UTC. */
             start_time_utc: string;
             /** @description When the session went live (RFC3339), if ever. */
@@ -14244,6 +14450,129 @@ export interface components {
              */
             ingested_count: number;
         };
+        /** @description `GET /api/intel/comps`. */
+        IntelComps: {
+            comps: components["schemas"]["CompUsage"][];
+            period: components["schemas"]["PeriodView"];
+            /**
+             * Format: int64
+             * @description Fights in the period, with or without a comp.
+             */
+            total_fights: number;
+            /**
+             * Format: int64
+             * @description Fights not linked to an event, so counted in no comp row.
+             */
+            unattributed_fights: number;
+        };
+        /** @description `GET /api/intel/fights`: a page of fights plus what the filters were applied to. */
+        IntelFightList: {
+            /** @description Comps fielded in the period (before filtering). */
+            comps: components["schemas"]["CompOption"][];
+            /** Format: int64 */
+            current_page: number;
+            items: components["schemas"]["IntelFightRow"][];
+            /** Format: int64 */
+            limit: number;
+            /** @description Enemy guilds met in the period (before filtering), most frequent first. */
+            opponents: string[];
+            period: components["schemas"]["PeriodView"];
+            /** @description Totals over every fight matching the filters, not just this page. */
+            summary: components["schemas"]["PeriodTotals"];
+            /** Format: int64 */
+            total_items: number;
+            /** Format: int64 */
+            total_pages: number;
+        };
+        /** @description One fight, from our side. */
+        IntelFightRow: {
+            /** Format: double */
+            avg_item_power?: number | null;
+            /** Format: int64 */
+            comp_id?: number | null;
+            comp_name?: string | null;
+            /** Format: int64 */
+            death_fame?: number | null;
+            /** Format: int64 */
+            deaths?: number | null;
+            /** Format: double */
+            enemy_avg_item_power?: number | null;
+            /** Format: int64 */
+            enemy_players?: number | null;
+            /**
+             * Format: int64
+             * @description Withheld (`None`) from callers without `intel.report.view`.
+             */
+            estimated_silver_lost?: number | null;
+            /** Format: int64 */
+            event_id?: number | null;
+            event_title?: string | null;
+            /**
+             * Format: int64
+             * @description Canonical fight id; the detail page lives at `/fights/{id}`.
+             */
+            fight_id: number;
+            /** Format: double */
+            kd_ratio?: number | null;
+            /** Format: int64 */
+            kill_fame?: number | null;
+            /** Format: int64 */
+            kills?: number | null;
+            /** @description The enemy guild with the most players across the fight's segments. */
+            opponent?: string | null;
+            /**
+             * Format: int64
+             * @description Distinct friendly players. `None` when the fight has no computed rollup.
+             */
+            our_players?: number | null;
+            /** @description The stored `fights.outcome`. */
+            outcome: components["schemas"]["BattleOutcome"];
+            /** Format: int64 */
+            segments: number;
+            started_at: string;
+        };
+        /** @description `GET /api/intel/overview`. */
+        IntelOverview: {
+            current: components["schemas"]["PeriodTotals"];
+            data_quality: components["schemas"]["DataQuality"];
+            period: components["schemas"]["PeriodView"];
+            previous?: null | components["schemas"]["PeriodTotals"];
+            /** @description The newest fights in the period. */
+            recent_fights: components["schemas"]["IntelFightRow"][];
+            /** @description The enemy guilds we met most often. */
+            top_opponents: components["schemas"]["OpponentRecord"][];
+            /** @description One bucket per calendar week, oldest first, quiet weeks included. */
+            weekly: components["schemas"]["WeekBucket"][];
+        };
+        /** @description `GET /api/intel/roster/{user_id}`. */
+        IntelPlayer: {
+            builds: components["schemas"]["BuildUse"][];
+            comps: components["schemas"]["PlayerCompUse"][];
+            /** @description Newest first, capped. */
+            fights: components["schemas"]["PlayerFightRow"][];
+            member: components["schemas"]["RosterMember"];
+            period: components["schemas"]["PeriodView"];
+            roles: components["schemas"]["RoleShare"][];
+            /** Format: int64 */
+            total_fights: number;
+            weapons: components["schemas"]["WeaponShare"][];
+            /** @description One bucket per week, oldest first, quiet weeks included. */
+            weekly: components["schemas"]["PlayerWeek"][];
+        };
+        /** @description `GET /api/intel/roster`. */
+        IntelRoster: {
+            members: components["schemas"]["RosterMember"][];
+            period: components["schemas"]["PeriodView"];
+            /** @description `all` for officers, `self` when the caller sees only their own row. */
+            scope: string;
+            /**
+             * Format: int64
+             * @description Fights with a computed rollup: the denominator of every attendance rate.
+             */
+            total_fights: number;
+            /** @description Empty unless `scope` is `all`. */
+            unlinked_players: components["schemas"]["UnlinkedPlayer"][];
+        };
         /**
          * @description The engagement bracket a scouted composition belongs to.
          *
@@ -15154,6 +15483,20 @@ export interface components {
              */
             wins: number;
         };
+        /** @description Our record against one enemy guild. */
+        OpponentRecord: {
+            /** Format: int64 */
+            draws: number;
+            /** Format: int64 */
+            fights: number;
+            /** Format: int64 */
+            losses: number;
+            opponent: string;
+            /** Format: double */
+            win_rate?: number | null;
+            /** Format: int64 */
+            wins: number;
+        };
         /**
          * @description Reference to the authoritative entity a read-only copy points back to.
          *
@@ -15965,6 +16308,94 @@ export interface components {
             /** @description Set to `active` or `suspended`. */
             status?: string | null;
         };
+        /**
+         * @description Combat totals over a set of fights.
+         *
+         *     Rates are `None` when their denominator is empty, so a client can tell "no data" from "zero".
+         *     Combat figures cover only fights that have a computed rollup (`fights_with_stats`).
+         */
+        PeriodTotals: {
+            /**
+             * Format: double
+             * @description Mean friendly item power across player appearances.
+             */
+            avg_item_power?: number | null;
+            /**
+             * Format: double
+             * @description Mean distinct friendly players per fight.
+             */
+            avg_players?: number | null;
+            /**
+             * Format: int64
+             * @description Fame the enemy earned by killing our players.
+             */
+            death_fame: number;
+            /** Format: int64 */
+            deaths: number;
+            /**
+             * Format: int64
+             * @description Fights with a decided outcome (`wins + losses + draws`).
+             */
+            decided: number;
+            /** Format: int64 */
+            draws: number;
+            /**
+             * Format: double
+             * @description Mean enemy item power across player appearances.
+             */
+            enemy_avg_item_power?: number | null;
+            /**
+             * Format: int64
+             * @description Estimated silver value of our equipment lost. Present only for callers holding
+             *     `intel.report.view`; `None` otherwise (and `0` is a real figure, not a placeholder).
+             */
+            estimated_silver_lost?: number | null;
+            /**
+             * Format: int64
+             * @description Fights in the set.
+             */
+            fights: number;
+            /**
+             * Format: int64
+             * @description Fights whose combat rollup has been computed.
+             */
+            fights_with_stats: number;
+            /**
+             * Format: double
+             * @description Kill/death ratio; equals `kills` when there were no deaths. `None` without rollups.
+             */
+            kd_ratio?: number | null;
+            /**
+             * Format: int64
+             * @description Fame our side earned from kills.
+             */
+            kill_fame: number;
+            /** Format: int64 */
+            kills: number;
+            /** Format: int64 */
+            losses: number;
+            /**
+             * Format: int64
+             * @description Fights whose outcome could not be decided; never counted as losses.
+             */
+            unknown: number;
+            /**
+             * Format: double
+             * @description Percentage `0..=100`, `wins / decided`. `None` when nothing was decided.
+             */
+            win_rate?: number | null;
+            /** Format: int64 */
+            wins: number;
+        };
+        /** @description The window a response was computed over. */
+        PeriodView: {
+            /** @description Window start, RFC 3339. For `all`, the first fight on record; `None` when there is none. */
+            from?: string | null;
+            /** @description `7d`, `30d`, `90d`, `all` or `custom`. */
+            key: string;
+            /** @description Window end, RFC 3339. */
+            to: string;
+        };
         /** @description Grouping metadata for one assignable permission key. */
         PermissionCatalogEntry: {
             /** @description Remainder of the key (`withdraw.accept`, `manage`, …). */
@@ -16076,6 +16507,45 @@ export interface components {
             /** @description The most recent entries for this player (default 20, capped by the service). */
             recent_entries: components["schemas"]["EntryView"][];
         };
+        /** @description A comp the member fought in. */
+        PlayerCompUse: {
+            /** Format: int64 */
+            comp_id: number;
+            /** Format: int64 */
+            draws: number;
+            /** Format: int64 */
+            fights: number;
+            /** Format: int64 */
+            losses: number;
+            name: string;
+            /** Format: int64 */
+            wins: number;
+        };
+        /** @description One fight a member took part in. */
+        PlayerFightRow: {
+            /** Format: double */
+            avg_item_power?: number | null;
+            /** Format: int64 */
+            comp_id?: number | null;
+            comp_name?: string | null;
+            /** Format: int64 */
+            death_fame: number;
+            /** Format: int64 */
+            deaths: number;
+            event_title?: string | null;
+            /** Format: int64 */
+            fight_id: number;
+            /** Format: int64 */
+            kill_fame: number;
+            /** Format: int64 */
+            kills: number;
+            opponent?: string | null;
+            outcome: components["schemas"]["BattleOutcome"];
+            role?: string | null;
+            started_at: string;
+            /** @description The weapon the member used most in this fight. */
+            weapon?: string | null;
+        };
         /** @description Per-player loss estimate for one battle. */
         PlayerLossEstimate: {
             /** Format: int64 */
@@ -16151,6 +16621,24 @@ export interface components {
             week_start: string;
             /** Format: double */
             win_rate: number;
+            /** Format: int64 */
+            wins: number;
+        };
+        /** @description One week of a member's activity. */
+        PlayerWeek: {
+            /** Format: int64 */
+            deaths: number;
+            /** Format: int64 */
+            draws: number;
+            /** Format: int64 */
+            fights: number;
+            /** Format: int64 */
+            kill_fame: number;
+            /** Format: int64 */
+            kills: number;
+            /** Format: int64 */
+            losses: number;
+            week_start: string;
             /** Format: int64 */
             wins: number;
         };
@@ -16800,6 +17288,65 @@ export interface components {
             role_id: string;
             /** @description Human-readable role name. */
             role_name: string;
+        };
+        /** @description One role's share of a member's appearances. */
+        RoleShare: {
+            /** Format: int64 */
+            count: number;
+            role: string;
+        };
+        /** @description One member's combat record over the period. */
+        RosterMember: {
+            /** @description Still present in the Discord server. Former members appear only if they fought. */
+            active: boolean;
+            /** @description The linked Albion character, when the member has linked one. */
+            albion_name?: string | null;
+            /**
+             * Format: double
+             * @description `fights / fights with a computed rollup`, as a percentage. `None` when there were none.
+             */
+            attendance_rate?: number | null;
+            /** Format: double */
+            avg_item_power?: number | null;
+            /** Format: int64 */
+            death_fame: number;
+            /** Format: int64 */
+            deaths: number;
+            /** Format: int64 */
+            draws: number;
+            /**
+             * Format: int64
+             * @description Fights the member took part in.
+             */
+            fights: number;
+            is_officer: boolean;
+            /** Format: double */
+            kd_ratio?: number | null;
+            /** Format: int64 */
+            kill_fame: number;
+            /** Format: int64 */
+            kills: number;
+            last_fight_at?: string | null;
+            /** Format: int64 */
+            last_fight_id?: number | null;
+            linked: boolean;
+            /** Format: int64 */
+            losses: number;
+            /** @description Most-played role (`dps`, `healer`, ...), when any role was observed. */
+            main_role?: string | null;
+            role: string;
+            /** Format: int64 */
+            user_id: number;
+            username: string;
+            /** @description Most-played main-hand weapons (item id with the tier stripped), most used first. */
+            weapons: components["schemas"]["WeaponShare"][];
+            /**
+             * Format: double
+             * @description Win rate of the fights the member attended.
+             */
+            win_rate?: number | null;
+            /** Format: int64 */
+            wins: number;
         };
         /** @description A pinned run, with its full resolved result. */
         RunDetail: components["schemas"]["RunSummary"] & {
@@ -17954,6 +18501,12 @@ export interface components {
             /** Format: double */
             starting_hp: number;
         };
+        /** @description A character seen fighting for us that no member has linked. */
+        UnlinkedPlayer: {
+            /** Format: int64 */
+            fights: number;
+            name: string;
+        };
         /** @description Unread badge payload. */
         UnreadCountView: {
             /**
@@ -18721,6 +19274,20 @@ export interface components {
         /** @description The profile of a user containing identification and authorization details. */
         UserProfile: {
             /**
+             * @description `true` when an officer blocked this member from the manager. Always `false` for viewers
+             *     without `roles.manage`, who are not told who is blocked.
+             */
+            blocked: boolean;
+            /**
+             * @description When the member was blocked, RFC 3339. Present only while `blocked` is `true` and only
+             *     for `roles.manage` viewers.
+             */
+            blocked_at?: string | null;
+            /** @description Display name of the officer who blocked the member. Same visibility as `blocked_at`. */
+            blocked_by?: string | null;
+            /** @description The officer's optional note. Same visibility as `blocked_at`. */
+            blocked_reason?: string | null;
+            /**
              * @description The registered email address of the user. Only present for the user themselves and for
              *     viewers holding `users.create` or `roles.manage` (or the tenant owner); everyone else gets
              *     the field omitted.
@@ -18921,6 +19488,29 @@ export interface components {
             /** Format: int64 */
             count: number;
             weapon: string;
+        };
+        /** @description One calendar week (Monday-anchored, UTC) of the trend. */
+        WeekBucket: {
+            /** Format: double */
+            avg_players?: number | null;
+            /** Format: int64 */
+            deaths: number;
+            /** Format: int64 */
+            draws: number;
+            /** Format: int64 */
+            fights: number;
+            /** Format: int64 */
+            kill_fame: number;
+            /** Format: int64 */
+            kills: number;
+            /** Format: int64 */
+            losses: number;
+            /** @description Monday 00:00 UTC, RFC 3339. */
+            week_start: string;
+            /** Format: double */
+            win_rate?: number | null;
+            /** Format: int64 */
+            wins: number;
         };
         /**
          * @description Request body to request withdrawal of one, several, or all of the caller's requestable
@@ -19854,14 +20444,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description The Albion character to claim, as picked from GET /albion/search. */
+        /** @description The Albion character to link, as picked from GET /albion/search. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LinkPlayerRequest"];
             };
         };
         responses: {
-            /** @description Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true) */
+            /** @description Linked; linked is true */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -19924,7 +20514,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description No link and no open request exist for this account */
+            /** @description No link exists for this account */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19955,151 +20545,6 @@ export interface operations {
             };
             /** @description Unauthorized - no active session */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    list_link_requests: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Open requests */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseAlbionLinkRequests"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Forbidden - requires roles.manage */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    approve_link_request: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Link request id */
-                request_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Linked; the body is the requester's new link status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponseAlbionLinkStatus"];
-                };
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Forbidden - requires roles.manage */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description The request no longer exists */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description The account or the character is already linked */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    reject_link_request: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Link request id */
-                request_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Rejected; data is null */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized - no active session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Forbidden - requires roles.manage */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description The request no longer exists */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -20334,7 +20779,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Request filed (pending is true), or linked at once for a caller with roles.manage (linked is true) */
+            /** @description Linked; linked is true */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -21644,6 +22089,15 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Forbidden - an officer blocked this member from the manager (problem code `account_blocked`); render the access-blocked screen */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     pending_tenants: {
@@ -21722,7 +22176,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Chosen tenant is not in the pending set */
+            /** @description Chosen tenant is not in the pending set, or the member is blocked there (problem code `account_blocked`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26070,7 +26524,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Event is not scheduled/live or has another voice channel */
+            /** @description Event is not scheduled/live, has another voice channel, or is a link to another tenant's event (the voice channel belongs to the owning Discord server) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28481,6 +28935,51 @@ export interface operations {
             };
         };
     };
+    our_comps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given. */
+                period: string | null;
+                /** @description Custom window start, RFC 3339. */
+                from: string | null;
+                /** @description Custom window end, RFC 3339. Defaults to now. */
+                to: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Comps computed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_IntelComps"];
+                };
+            };
+            /** @description Invalid period */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - lacks intel.view */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     threats_to_comp: {
         parameters: {
             query?: never;
@@ -28515,6 +29014,69 @@ export interface operations {
             };
             /** @description Comp not found or has no builds */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    our_fights: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given. */
+                period: string | null;
+                /** @description Custom window start, RFC 3339. */
+                from: string | null;
+                /** @description Custom window end, RFC 3339. */
+                to: string | null;
+                /** @description `victory`, `defeat`, `draw` or `unknown`. */
+                outcome: string | null;
+                /** @description Case-insensitive substring of the opponent guild name. */
+                opponent: string | null;
+                /** @description Only fights planned with this comp. */
+                comp_id: number | null;
+                /** @description Minimum distinct friendly players. */
+                min_players: number | null;
+                /** @description Maximum distinct friendly players. */
+                max_players: number | null;
+                /** @description `started_at` (default), `players`, `kills`, `deaths`, `kill_fame` or `kd`. */
+                sort: string | null;
+                /** @description `asc` or `desc` (default). */
+                order: string | null;
+                /** @description Page number, 1-indexed. */
+                page: number | null;
+                /** @description Page size, defaults to 10. */
+                limit: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fights listed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_IntelFightList"];
+                };
+            };
+            /** @description Invalid filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - lacks intel.view */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -28592,6 +29154,51 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - lacks intel.view */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given. */
+                period: string | null;
+                /** @description Custom window start, RFC 3339. */
+                from: string | null;
+                /** @description Custom window end, RFC 3339. Defaults to now. */
+                to: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Overview computed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_IntelOverview"];
+                };
+            };
+            /** @description Invalid period */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -28747,6 +29354,107 @@ export interface operations {
             };
             /** @description Forbidden - lacks intel.manage */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    roster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given. */
+                period: string | null;
+                /** @description Custom window start, RFC 3339. */
+                from: string | null;
+                /** @description Custom window end, RFC 3339. Defaults to now. */
+                to: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Roster computed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_IntelRoster"];
+                };
+            };
+            /** @description Invalid period */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - lacks intel.view */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    roster_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description App user id */
+                user_id: number;
+                /** @description `7d`, `30d` (default), `90d` or `all`. Ignored when `from` or `to` is given. */
+                period: string | null;
+                /** @description Custom window start, RFC 3339. */
+                from: string | null;
+                /** @description Custom window end, RFC 3339. Defaults to now. */
+                to: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Player computed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_IntelPlayer"];
+                };
+            };
+            /** @description Invalid period */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - another member's page needs intel.report.view */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such user */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -33038,6 +33746,11 @@ export interface operations {
                 page: number | null;
                 /** @description The maximum number of items per page. Defaults to 10. */
                 limit: number | null;
+                /**
+                 * @description `true` lists only blocked members, `false` only members who are not blocked. Ignored for
+                 *     callers without `roles.manage`. Declared inline for the same reason as `page`/`limit`.
+                 */
+                blocked: boolean | null;
                 /** @description The filter query parameters. */
                 filters: components["schemas"]["UserFilters"];
             };
@@ -33277,6 +33990,119 @@ export interface operations {
             };
             /** @description Unauthorized - no active session */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    block_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user id */
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Member blocked; the body is their profile with the block details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseUserProfile"];
+                };
+            };
+            /** @description Reason too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - lacks roles.manage, or the target is protected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    unblock_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user id */
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member unblocked; the body is their profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseUserProfile"];
+                };
+            };
+            /** @description Unauthorized - no active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden - lacks roles.manage */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

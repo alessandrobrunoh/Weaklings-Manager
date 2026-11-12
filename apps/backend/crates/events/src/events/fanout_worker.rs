@@ -1,21 +1,19 @@
-//! Retryable Alliance-to-Guild event copies.
-
-use std::collections::HashMap;
+//! Retryable Alliance-to-Guild event links.
+//!
+//! Every active member guild of an alliance gets a link to an alliance event (see
+//! [`super::links`]), so the guild's own Discord announces it and its members can sign up and
+//! manage it from their server. The worker only creates and converges the link rows; the event
+//! itself (comp, roster, split) stays in the alliance tenant.
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
 };
 
-use crate::alliance_share::{ShareActor, copy_alliance_comp_to_tenant};
-use crate::events::{
-    fanout_outbox::{self, ClaimedTarget, FailureDisposition},
-    models::CreateEventRequest,
-    parties::load_event_parties,
-    service::EventService,
-};
+use crate::alliance_share::ShareActor;
+use crate::events::fanout_outbox::{self, ClaimedTarget, FailureDisposition};
 use backend_core::errors::AppError;
-use backend_entities::events::{event, event_roster_role};
+use backend_entities::events::event;
 use backend_entities::users::Entity as UserEntity;
 use backend_identity::admin::service::AdminService;
 use backend_identity::tenant::TenantRegistry;
@@ -279,32 +277,9 @@ async fn process_target(
         return Ok(None);
     }
 
-    let source_comp_id = source.comp_id;
-    let (target_comp_id, build_id_map) = if let Some(comp_id) = source_comp_id {
-        let previous_comp = existing_copy.as_ref().and_then(|copy| copy.comp_id);
-        let previous_builds = load_build_id_map(control, target).await?;
-        let creator = event_creator(&source_context.db, source.created_by).await?;
-        let (copy_comp_id, mapping) = copy_alliance_comp_to_tenant(
-            &source_context.db,
-            &target_context.db,
-            comp_id,
-            &creator,
-            previous_comp,
-            &previous_builds,
-        )
-        .await?;
-        save_asset_map(control, target, "comp", comp_id, copy_comp_id).await?;
-        for (source_build, target_build) in &mapping {
-            save_asset_map(control, target, "build", *source_build, *target_build).await?;
-        }
-        (Some(copy_comp_id), mapping)
-    } else {
-        (None, HashMap::new())
-    };
-
     let existing_copy_id = existing_copy.as_ref().map(|copy| copy.id);
     let target_event_id = if let Some(copy) = existing_copy {
-        // Every operation converges an existing copy to the current source
+        // Every operation converges an existing link to the current source
         // state, which makes update, archive, and publish retries idempotent.
         crate::events::lifecycle::converge_copy_to_source(&target_context.db, &source, copy.id)
             .await?;
@@ -321,36 +296,17 @@ async fn process_target(
         )
         .await?;
         let local_settings = AdminService::get_guild_settings(&target_context.db).await?;
-        let request = CreateEventRequest {
-            title: source.title.clone(),
-            description: source.description.clone(),
-            call_to_arms: source.call_to_arms,
-            regear: source.regear,
-            event_kind: Some(source.event_kind.clone()),
-            comp_id: target_comp_id,
-            player_cap: source.player_cap,
-            event_date_utc: Some(source.event_date_utc.to_utc().to_rfc3339()),
-            mass_time_utc: source.mass_time_utc.map(|time| time.to_utc().to_rfc3339()),
-            start_time_utc: source.start_time_utc.map(|time| time.to_utc().to_rfc3339()),
-            // Role IDs belong to the source Discord server. The destination
-            // poller uses its own server-level announcement configuration.
-            discord_role_ids: Vec::new(),
-            create_split: false,
-            island_tab_id: None,
-            origin_guild_id: None,
-            ping_alliance: false,
-            vod_forum_post_enabled: source.vod_forum_post_enabled,
-            discord_delivery: local_settings.discord_event_delivery,
-        };
-        EventService::new()
-            .create_event_with_source_identity(
-                &target_context.db,
-                creator_id,
-                request,
-                Some((target.source_tenant_id.clone(), target.source_event_id)),
-            )
-            .await?
-            .id
+        // A link carries no comp, roster or split: requests on it are served by the alliance
+        // event itself (see `link_proxy`), so nothing has to be copied or mapped.
+        crate::events::links::insert_link_row(
+            &target_context.db,
+            creator_id,
+            &target.source_tenant_id,
+            &source,
+            &local_settings.discord_event_delivery,
+        )
+        .await?
+        .id
     };
     if existing_copy_id.is_none() && source.status != "scheduled" {
         // A copy created after the source went live or stopped (a late or requeued target) must
@@ -363,14 +319,6 @@ async fn process_target(
         .await?;
     }
 
-    sync_roster_roles(
-        &source_context.db,
-        &target_context.db,
-        target.source_event_id,
-        target_event_id,
-        &build_id_map,
-    )
-    .await?;
     let linked = link_copy_if_membership_active(
         control,
         &target.source_tenant_id,
@@ -487,60 +435,6 @@ async fn link_copy_if_membership_active(
     Ok(true)
 }
 
-async fn sync_roster_roles(
-    source: &DatabaseConnection,
-    target: &DatabaseConnection,
-    source_event_id: i64,
-    target_event_id: i64,
-    build_id_map: &HashMap<i64, i64>,
-) -> Result<(), AppError> {
-    // Copies keep a single party, so only the first party's extra roles are copied.
-    let source_first_party = load_event_parties(source, source_event_id)
-        .await?
-        .first()
-        .map(|party| party.id);
-    let source_roles: Vec<_> = event_roster_role::Entity::find()
-        .filter(event_roster_role::Column::EventId.eq(source_event_id))
-        .all(source)
-        .await?
-        .into_iter()
-        .filter(|role| role.party_id.or(source_first_party) == source_first_party)
-        .collect();
-    let target_first_party = load_event_parties(target, target_event_id)
-        .await?
-        .first()
-        .map(|party| party.id)
-        .ok_or_else(|| AppError::Internal(format!("event {target_event_id} has no parties")))?;
-    let mapped_roles = source_roles
-        .into_iter()
-        .map(|role| {
-            build_id_map.get(&role.build_id).copied().ok_or_else(|| {
-                AppError::Conflict(format!(
-                    "source roster build {} has no destination mapping",
-                    role.build_id
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let txn = target.begin().await?;
-    event_roster_role::Entity::delete_many()
-        .filter(event_roster_role::Column::EventId.eq(target_event_id))
-        .exec(&txn)
-        .await?;
-    for build_id in mapped_roles {
-        event_roster_role::ActiveModel {
-            event_id: Set(target_event_id),
-            build_id: Set(build_id),
-            party_id: Set(Some(target_first_party)),
-            ..Default::default()
-        }
-        .insert(&txn)
-        .await?;
-    }
-    txn.commit().await?;
-    Ok(())
-}
-
 async fn archive_existing_copy(
     target: &DatabaseConnection,
     source_tenant_id: &str,
@@ -561,60 +455,6 @@ async fn archive_existing_copy(
     active.archived_at = Set(Some(chrono::Utc::now().into()));
     active.updated_at = Set(chrono::Utc::now().into());
     active.update(target).await?;
-    Ok(())
-}
-
-async fn load_build_id_map(
-    control: &DatabaseConnection,
-    target: &ClaimedTarget,
-) -> Result<HashMap<i64, i64>, AppError> {
-    // Every update is a new job, so the map must span the jobs of this event and tenant: the
-    // newest mapping per source build wins. Reading only this job's rows would start every
-    // update with an empty map and copy each build again, orphaning the previous copies.
-    let rows = control
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "SELECT DISTINCT ON (a.source_id) a.source_id, a.destination_id \
-             FROM event_fanout_assets a \
-             JOIN event_fanout_jobs j ON j.id = a.job_id \
-             WHERE j.source_tenant_id=$1 AND j.source_event_id=$2 \
-               AND a.tenant_id=$3 AND a.asset_type='build' \
-             ORDER BY a.source_id, j.created_at DESC",
-            [
-                target.source_tenant_id.clone().into(),
-                target.source_event_id.into(),
-                target.tenant_id.clone().into(),
-            ],
-        ))
-        .await?;
-    rows.into_iter()
-        .map(|row| Ok((row.try_get_by_index(0)?, row.try_get_by_index(1)?)))
-        .collect::<Result<HashMap<_, _>, sea_orm::DbErr>>()
-        .map_err(Into::into)
-}
-
-async fn save_asset_map(
-    control: &DatabaseConnection,
-    target: &ClaimedTarget,
-    asset_type: &str,
-    source_id: i64,
-    destination_id: i64,
-) -> Result<(), AppError> {
-    control
-        .execute(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "INSERT INTO event_fanout_assets (job_id, tenant_id, asset_type, source_id, destination_id) \
-             VALUES ($1,$2,$3,$4,$5) ON CONFLICT (job_id, tenant_id, asset_type, source_id) \
-             DO UPDATE SET destination_id=EXCLUDED.destination_id",
-            [
-                target.job_id.into(),
-                target.tenant_id.clone().into(),
-                asset_type.into(),
-                source_id.into(),
-                destination_id.into(),
-            ],
-        ))
-        .await?;
     Ok(())
 }
 
@@ -821,7 +661,8 @@ mod tests {
             0
         );
 
-        for (index, expected_delivery) in ["calendar", "forum"].into_iter().enumerate() {
+        // A link is always announced publicly: guild-a's "calendar" becomes "message".
+        for (index, expected_delivery) in ["message", "forum"].into_iter().enumerate() {
             let guild_db = &world.tenant_dbs[index + 1];
             let copies = event::Entity::find()
                 .filter(event::Column::SourceTenantId.eq("alliance"))
@@ -964,7 +805,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn organized_event_copies_comp_builds_and_roster_roles() {
+    async fn organized_event_links_copy_no_comp_builds_or_roster_roles() {
         let Some(world) = TestWorld::new(&["forum"]).await else {
             return;
         };
@@ -1088,34 +929,28 @@ mod tests {
             .await
             .unwrap()
             .expect("find guild event copy");
-        let copied_comp = copy.comp_id.expect("copy has its own comp");
-        let copied_build = backend_entities::comps::build::Entity::find()
+        // The link carries nothing comp-shaped: the alliance event serves its roster.
+        assert_eq!(copy.comp_id, None);
+        assert_eq!(copy.event_kind, "organized");
+        assert!(!copy.vod_forum_post_enabled);
+        let guild_builds = backend_entities::comps::build::Entity::find()
             .filter(backend_entities::comps::build::Column::Name.eq("Fanout healer"))
-            .one(guild_db)
+            .all(guild_db)
             .await
-            .unwrap()
-            .expect("find copied build");
+            .unwrap();
+        assert!(guild_builds.is_empty(), "no build is copied into the guild");
         let roster_roles = event_roster_role::Entity::find()
             .filter(event_roster_role::Column::EventId.eq(copy.id))
             .all(guild_db)
             .await
             .unwrap();
-        assert_eq!(roster_roles.len(), 1);
-        assert_eq!(roster_roles[0].build_id, copied_build.id);
-        let comp_builds = backend_entities::comps::comp_build::Entity::find()
-            .filter(backend_entities::comps::comp_build::Column::CompId.eq(copied_comp))
-            .all(guild_db)
-            .await
-            .unwrap();
-        assert_eq!(comp_builds.len(), 1);
-        assert_eq!(comp_builds[0].build_id, copied_build.id);
+        assert!(roster_roles.is_empty(), "no roster role is copied into the guild");
         let statuses = fanout_outbox::target_statuses(&world.control, job_id)
             .await
             .unwrap();
         assert_eq!(statuses[0].state, "complete");
 
-        // A later edit is a NEW job with its own idempotency key. It must reuse the guild's
-        // build instead of copying it again, or the catalog collects orphans on every edit.
+        // A later change is a NEW job with its own idempotency key; it converges the same link.
         EventService::new()
             .start_event(alliance_db, source_event.id)
             .await
@@ -1141,23 +976,6 @@ mod tests {
             .expect("update copy")
             .expect("active target");
         assert_eq!(updated_copy_id, first_copy_id);
-        let healer_builds = backend_entities::comps::build::Entity::find()
-            .filter(backend_entities::comps::build::Column::Name.eq("Fanout healer"))
-            .all(guild_db)
-            .await
-            .unwrap();
-        assert_eq!(
-            healer_builds.len(),
-            1,
-            "an update must not duplicate the build"
-        );
-        let roles_after = event_roster_role::Entity::find()
-            .filter(event_roster_role::Column::EventId.eq(first_copy_id))
-            .all(guild_db)
-            .await
-            .unwrap();
-        assert_eq!(roles_after.len(), 1);
-        assert_eq!(roles_after[0].build_id, healer_builds[0].id);
         let live_copy = event::Entity::find_by_id(first_copy_id)
             .one(guild_db)
             .await

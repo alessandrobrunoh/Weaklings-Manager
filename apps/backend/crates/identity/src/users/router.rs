@@ -9,16 +9,17 @@ use super::service::{
     CreateLinkedMember, CreateUserRequest, UserFilters, UserProfile, UserService,
 };
 use crate::auth::{Permission, Permissions, UserContext};
-use crate::tenant::{CurrentTenantId, CurrentTenantKind};
+use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind};
 use crate::users::schemas::{ApiResponseUserMetrics, ApiResponseUserProfile, PaginatedUserProfile};
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
-    routing::{delete, get},
+    routing::{delete, get, post},
 };
 use backend_core::config::Config;
 use backend_core::errors::{AppError, ProblemDetails};
 use backend_core::pagination::PaginationParams;
+use backend_core::platform_admins::PlatformAdmins;
 use backend_core::responses::ApiResponse;
 use sea_orm::EntityTrait;
 
@@ -33,6 +34,9 @@ pub struct ListUsersQuery {
     pub page: Option<u64>,
     /// The maximum number of items per page. Defaults to 10.
     pub limit: Option<u64>,
+    /// `true` lists only blocked members, `false` only members who are not blocked. Ignored for
+    /// callers without `roles.manage`. Declared inline for the same reason as `page`/`limit`.
+    pub blocked: Option<bool>,
     /// The filter query parameters.
     #[serde(flatten)]
     pub filters: UserFilters,
@@ -58,6 +62,7 @@ pub fn router() -> Router {
         .route("/{user_id}", get(get_user))
         .route("/{user_id}/roles", get(get_user_roles).post(post_user_role))
         .route("/{user_id}/roles/{role_id}", delete(delete_user_role))
+        .route("/{user_id}/block", post(block_user).delete(unblock_user))
 }
 
 /// Whether `user` may read other members' emails: `users.create` (provisioning) or
@@ -99,6 +104,10 @@ async fn get_my_profile(
         username,
         email: user.email,
         role: user.highest_role,
+        blocked: false,
+        blocked_at: None,
+        blocked_by: None,
+        blocked_reason: None,
     };
     Ok(Json(ApiResponse::new(profile)))
 }
@@ -167,12 +176,23 @@ async fn list_users(
 ) -> Result<Json<ApiResponse<PaginatedUserProfile>>, AppError> {
     let service = UserService::new();
     let pagination = query.pagination();
-    let mut paginated = service.list_users(&db, &pagination, &query.filters).await?;
+    let can_manage_members = user.has_permission(&perms, Permission::RolesManage).await;
+    let mut filters = query.filters;
+    // Who is blocked is only for the officers who can block.
+    filters.blocked = query.blocked.filter(|_| can_manage_members);
+    let mut paginated = service.list_users(&db, &pagination, &filters).await?;
     let can_see_emails = can_see_member_emails(&user, &perms).await;
     paginated.items = paginated
         .items
         .into_iter()
-        .map(|profile| profile.redacted_for(user.user_id, can_see_emails))
+        .map(|profile| {
+            let profile = profile.redacted_for(user.user_id, can_see_emails);
+            if can_manage_members {
+                profile
+            } else {
+                profile.without_block_details()
+            }
+        })
         .collect();
     let response_data = PaginatedUserProfile::from(paginated);
 
@@ -216,6 +236,11 @@ pub async fn get_user(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
     let profile = profile.redacted_for(user.user_id, can_see_member_emails(&user, &perms).await);
+    let profile = if user.has_permission(&perms, Permission::RolesManage).await {
+        profile
+    } else {
+        profile.without_block_details()
+    };
     Ok(Json(ApiResponse::new(profile)))
 }
 
@@ -439,4 +464,256 @@ async fn create_user(
     }
 
     Ok(Json(ApiResponse::new(created)))
+}
+
+/// Body of `POST /api/users/{user_id}/block`.
+#[derive(Debug, Default, serde::Deserialize, utoipa::ToSchema)]
+pub struct BlockUserRequest {
+    /// Why the member is blocked (at most 500 characters). Optional; shown to `roles.manage`
+    /// holders only, never to the blocked member.
+    #[schema(example = "Spamming the loot channel")]
+    pub reason: Option<String>,
+}
+
+/// Whether `actor` may block `target`. Pure so the rules can be tested without a database.
+///
+/// Nobody blocks themselves, the tenant owner or a platform admin, and an actor who does not
+/// bypass role priority cannot block a member whose role outranks their own (the rule that
+/// already guards role assignment).
+fn ensure_blockable(
+    actor: &UserContext,
+    target: &backend_entities::users::Model,
+    target_is_tenant_owner: bool,
+    target_is_platform_admin: bool,
+    db_roles: &[backend_entities::auth::role::Model],
+) -> Result<(), AppError> {
+    if target.id == actor.user_id {
+        return Err(AppError::Forbidden("you cannot block yourself".to_owned()));
+    }
+    if target_is_platform_admin {
+        return Err(AppError::Forbidden(
+            "a platform admin cannot be blocked".to_owned(),
+        ));
+    }
+    if target_is_tenant_owner {
+        return Err(AppError::Forbidden(
+            "the server owner cannot be blocked".to_owned(),
+        ));
+    }
+    if !actor.bypasses_priority() {
+        let actor_max = super::member_roles::max_priority_for_names(&actor.roles, db_roles);
+        let target_max =
+            super::member_roles::max_priority_for_names(std::slice::from_ref(&target.role), db_roles);
+        if target_max > actor_max {
+            return Err(AppError::Forbidden(
+                "you cannot block a member whose role is above your own".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Block a member from the manager.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` without `roles.manage`, or for a protected target.
+/// * Returns `AppError::NotFound` if the member does not exist.
+/// * Returns `AppError::Validation` if the reason is longer than 500 characters.
+#[utoipa::path(
+    post,
+    path = "/api/users/{user_id}/block",
+    tag = "users",
+    summary = "Block a member from the manager",
+    description = "Requires `roles.manage`. A blocked member cannot log in and every authenticated \
+        request of theirs (web session or Discord bot interaction) is refused with \
+        `403 account_blocked`; the web app then shows an \"access blocked\" screen. The block is \
+        scoped to this server (tenant) and takes effect on the member's next request, even on a \
+        live session. Nothing changes on Discord: the member is not kicked, banned or stripped of \
+        roles. Cannot target yourself, the server owner or a platform admin, nor a member whose \
+        role is above your own (unless you are the owner or a platform admin). Idempotent: \
+        blocking a blocked member keeps the first block. Audited as `USER_BLOCK`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("user_id" = u64, Path, description = "Internal user id")),
+    request_body(content = BlockUserRequest),
+    responses(
+        (status = 200, description = "Member blocked; the body is their profile with the block details", body = ApiResponseUserProfile),
+        (status = 400, description = "Reason too long", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks roles.manage, or the target is protected", body = ProblemDetails),
+        (status = 404, description = "User not found", body = ProblemDetails)
+    )
+)]
+#[allow(clippy::too_many_arguments)]
+pub async fn block_user(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(admins): Extension<PlatformAdmins>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path(user_id): Path<u64>,
+    Json(body): Json<BlockUserRequest>,
+) -> Result<Json<ApiResponse<UserProfile>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let target = backend_entities::users::Entity::find_by_id(user_id as i64)
+        .one(&db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
+    let (is_owner, is_admin) = match target.discord_id.as_deref() {
+        Some(discord_id) => (
+            crate::platform::service::PlatformService::is_tenant_owner(
+                &control.0, &tenant.0, discord_id,
+            )
+            .await?,
+            admins.contains(discord_id),
+        ),
+        None => (false, false),
+    };
+    let db_roles = backend_entities::auth::role::Entity::find()
+        .all(&db)
+        .await?;
+    ensure_blockable(&user, &target, is_owner, is_admin, &db_roles)?;
+    let reason = super::block::normalize_reason(body.reason)?;
+    super::block::block_member(&db, user.user_id, target.id, reason).await?;
+    block_state_response(&db, user_id).await
+}
+
+/// Lift a member's block.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` without `roles.manage`.
+/// * Returns `AppError::NotFound` if the member does not exist.
+#[utoipa::path(
+    delete,
+    path = "/api/users/{user_id}/block",
+    tag = "users",
+    summary = "Unblock a member",
+    description = "Requires `roles.manage`. The member can log in and use the manager again on \
+        their next request. Idempotent: unblocking a member who is not blocked changes nothing. \
+        Audited as `USER_UNBLOCK`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("user_id" = u64, Path, description = "Internal user id")),
+    responses(
+        (status = 200, description = "Member unblocked; the body is their profile", body = ApiResponseUserProfile),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
+        (status = 404, description = "User not found", body = ProblemDetails)
+    )
+)]
+pub async fn unblock_user(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<u64>,
+) -> Result<Json<ApiResponse<UserProfile>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    super::block::unblock_member(&db, user.user_id, user_id as i64).await?;
+    block_state_response(&db, user_id).await
+}
+
+/// The member's profile after a block or unblock, with the block details the caller may see.
+async fn block_state_response(
+    db: &sea_orm::DatabaseConnection,
+    user_id: u64,
+) -> Result<Json<ApiResponse<UserProfile>>, AppError> {
+    let profile = UserService::new()
+        .get_profile(db, user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
+    Ok(Json(ApiResponse::new(profile)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use backend_entities::auth::role;
+
+    fn actor(user_id: i64, roles: &[&str], is_tenant_owner: bool) -> UserContext {
+        UserContext {
+            id: format!("discord_{user_id}"),
+            username: "actor".to_owned(),
+            email: None,
+            avatar: None,
+            roles: roles.iter().map(|name| (*name).to_owned()).collect(),
+            highest_role: roles.first().copied().unwrap_or("User").to_owned(),
+            user_id,
+            super_admin_id: None,
+            is_tenant_owner,
+        }
+    }
+
+    fn target(id: i64, role: &str) -> backend_entities::users::Model {
+        backend_entities::users::Model {
+            id,
+            username: format!("user-{id}"),
+            email: format!("user-{id}@example.test"),
+            role: role.to_owned(),
+            discord_id: Some(format!("discord_{id}")),
+            created_at: chrono::Utc::now().fixed_offset(),
+            active: true,
+            left_at: None,
+            left_reason: None,
+            discord_role_ids: "[]".to_owned(),
+            roles_checked_at: None,
+            member_event_at: None,
+            provisioned_via: "web".to_owned(),
+            last_link_change_at: None,
+            blocked_at: None,
+            blocked_by: None,
+            blocked_reason: None,
+        }
+    }
+
+    fn role_row(name: &str, priority: i32) -> role::Model {
+        role::Model {
+            id: name.to_lowercase(),
+            name: name.to_owned(),
+            priority,
+            discord_role_id: None,
+            is_default: false,
+            is_staff: false,
+            grants_staff: false,
+        }
+    }
+
+    #[test]
+    fn nobody_blocks_themselves() {
+        let me = actor(5, &["Admin"], false);
+        let err = ensure_blockable(&me, &target(5, "Admin"), false, false, &[]).unwrap_err();
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[test]
+    fn the_owner_and_platform_admins_are_protected() {
+        let me = actor(1, &["Admin"], true);
+        assert!(matches!(
+            ensure_blockable(&me, &target(2, "User"), true, false, &[]),
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            ensure_blockable(&me, &target(2, "User"), false, true, &[]),
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    #[test]
+    fn an_officer_cannot_block_a_higher_role() {
+        let roles = [
+            role_row("Admin", 100),
+            role_row("Officer", 50),
+            role_row("User", 0),
+        ];
+        let officer = actor(1, &["Officer"], false);
+        assert!(ensure_blockable(&officer, &target(2, "User"), false, false, &roles).is_ok());
+        assert!(ensure_blockable(&officer, &target(2, "Officer"), false, false, &roles).is_ok());
+        assert!(matches!(
+            ensure_blockable(&officer, &target(2, "Admin"), false, false, &roles),
+            Err(AppError::Forbidden(_))
+        ));
+        // The owner bypasses the priority rule.
+        let owner = actor(1, &[], true);
+        assert!(ensure_blockable(&owner, &target(2, "Admin"), false, false, &roles).is_ok());
+    }
 }

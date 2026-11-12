@@ -14,6 +14,7 @@ Key types include `UserProfile`, `UserMetrics`, `CreateUserRequest`, and `UserRo
 
 ## Invariants
 
+- A member can be blocked from the manager (`POST`/`DELETE /api/users/{user_id}/block`, `roles.manage`). Blocking sets `users.blocked_at/blocked_by/blocked_reason` and is audited (`USER_BLOCK`, `USER_UNBLOCK`); enforcement lives in `auth/rbac.rs` (see the auth README). Nothing changes on Discord. Self, the tenant owner, platform admins and higher-priority roles cannot be blocked. `UserProfile.blocked*` and the `blocked` list filter are only honoured for `roles.manage` viewers.
 - User email and optional Discord ID are unique. Discord snowflake is the stable identity: email can claim only a row without a Discord ID, only when Discord marked it verified (login drops an unverified one), and a missing, unverified or colliding address gets a generated `<discord_id>@discord.invalid` placeholder.
 - `UserProfile.email` is returned only for the caller's own row and to `users.create`/`roles.manage` holders (tenant owner and platform admins included); `GET /api/users` has no email filter.
 - Display names prefer the linked Albion character name, then the stored username; missing user rows resolve to `"Unknown"`.

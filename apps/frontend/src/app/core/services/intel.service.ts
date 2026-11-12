@@ -4,6 +4,12 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type {
   GuildReport,
+  IntelComps,
+  IntelFightList,
+  IntelFightsQuery,
+  IntelOverview,
+  IntelPlayer,
+  IntelRoster,
   PlayerReport,
   ReportLeaderboards,
   MatchupReport,
@@ -27,7 +33,18 @@ export interface ScoutListParams {
 }
 
 /**
- * Client for the enemy-intel endpoints.
+ * The period every "our side" Intel view is computed over: a preset key, or a custom range.
+ * Presets are sent as `period`; a custom range as `from`/`to` (RFC 3339).
+ */
+export interface IntelPeriodQuery {
+  period?: string;
+  from?: string;
+  to?: string;
+}
+
+/**
+ * Client for the Intel endpoints: our own overview, players, fights and comps, and the
+ * enemy scout library.
  *
  * Thin by design: every method maps to one backend route and returns the
  * unwrapped payload. The scoring, merging and tallying all happen server-side,
@@ -110,6 +127,31 @@ export class IntelService {
    */
   playerReport(userId: number, from?: string, to?: string): Observable<PlayerReport> {
     return this.api.get<PlayerReport>(`/api/intel/players/${userId}`, { from, to });
+  }
+
+  /** Headline numbers, previous period, weekly trend and recent fights. */
+  overview(period: IntelPeriodQuery = {}): Observable<IntelOverview> {
+    return this.api.get<IntelOverview>('/api/intel/overview', { ...period });
+  }
+
+  /** Our fights, filtered and paged server-side. */
+  fights(query: IntelFightsQuery = {}): Observable<IntelFightList> {
+    return this.api.get<IntelFightList>('/api/intel/fights', { ...query });
+  }
+
+  /** The comps we fielded, with record and matchups. */
+  comps(period: IntelPeriodQuery = {}): Observable<IntelComps> {
+    return this.api.get<IntelComps>('/api/intel/comps', { ...period });
+  }
+
+  /** Guild members with their combat record; members without `intel.report.view` get only themselves. */
+  roster(period: IntelPeriodQuery = {}): Observable<IntelRoster> {
+    return this.api.get<IntelRoster>('/api/intel/roster', { ...period });
+  }
+
+  /** One member's page: weekly trend, fights, weapons, builds and comps. */
+  rosterMember(userId: number, period: IntelPeriodQuery = {}): Observable<IntelPlayer> {
+    return this.api.get<IntelPlayer>(`/api/intel/roster/${userId}`, { ...period });
   }
 
   /** Recomputes the report, bypassing the cache. Officer-only. */

@@ -7,7 +7,7 @@ This directory provides Albion ability/equipment/weapon-family/"My weapons" and 
 ## Interface
 
 - Ability helpers expose `AbilitySlotView`, icon/catalog keys, slot construction, selection, and display-name helpers.
-- Weapon helpers: `albion-weapon-families` classifies a weapon identifier into a family; `user-weapons` holds the "My weapons" drafts, request bodies, grouping/summary, seat fit and bench ordering.
+- Weapon helpers: `albion-weapon-families` classifies a weapon identifier into a family; `user-weapons` holds the "My weapons" drafts, request bodies, the catalog/declaration merge, grid filtering and grouping, level summary, unsaved-change count, seat fit and bench ordering.
 - Equipment catalog helpers cover legacy catalog names/identifiers and rendering.
 - Enchantment and quality modules export supported values, derived types, defaults, validation/normalization, labels, and icon helpers.
 - Ownership scope exports the `'mine' | 'all'` type and validation, list-parameter, and picker-label helpers.

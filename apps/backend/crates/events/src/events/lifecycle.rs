@@ -485,8 +485,7 @@ pub async fn emit_manual_reminder(
 }
 
 /// What happens after a stop wrote the status: the completion-XP snapshot (per `xp`) and the
-/// local-split roster sync in a SAVEPOINT. Shared by the stop transition and
-/// [`EventService::finish_copy_session`].
+/// local-split roster sync in a SAVEPOINT. Run by the stop transition.
 pub(super) async fn finish_session_in_txn(
     txn: &DatabaseTransaction,
     stopped: &event::Model,
@@ -681,24 +680,60 @@ async fn apply_unarchive(
     Ok(updated)
 }
 
-/// Converges one copy's content and lifecycle state to the current source.
+/// Converges the display fields of one link to the current state of the event it points at.
 ///
-/// Content and status follow the source unconditionally. Discord voice channels
-/// and battle-linker progress stay tenant-local. A cancelled or archived
-/// source archives the copy; an unarchived source restores it.
+/// A link (see [`super::links`]) carries only what its Discord server needs to announce and list
+/// the event: title, description, kind, times, status, session timestamps and the roster
+/// revision (which makes the server's poller refresh its signup card). Its Discord-local data
+/// (announcement ids, delivery mode, voice channel) is never touched. A cancelled or archived
+/// origin archives the link; an unarchived origin restores it.
+///
+/// Writes nothing, and leaves `updated_at` alone, when the link already matches, so a periodic
+/// reconcile does not make every server re-render its cards. Returns whether the link changed.
+///
+/// # Errors
+///
+/// Returns `AppError::Database` when the link cannot be read or written.
 pub async fn converge_copy_to_source(
     target_db: &DatabaseConnection,
     source: &event::Model,
     copy_id: i64,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let Some(copy) = event::Entity::find_by_id(copy_id).one(target_db).await? else {
-        return Ok(());
+        return Ok(false);
     };
-    let copy_archived = copy.archived_at.is_some();
-    let requeue_deleted_vod =
-        source.vod_forum_post_enabled && copy.vod_forum_post_status == "deleted";
+    let source_terminal = source.archived_at.is_some() || source.status == "cancelled";
+    let archived_at = if source_terminal {
+        Some(copy.archived_at.unwrap_or_else(|| Utc::now().into()))
+    } else {
+        None
+    };
+    // A terminal origin keeps the session timestamps the link already shows.
+    let (started_at, stopped_at, auto_stop_deadline) = if source_terminal {
+        (copy.started_at, copy.stopped_at, copy.auto_stop_deadline)
+    } else {
+        (source.started_at, source.stopped_at, source.auto_stop_deadline)
+    };
+    let unchanged = copy.title == source.title
+        && copy.description == source.description
+        && copy.call_to_arms == source.call_to_arms
+        && copy.regear == source.regear
+        && copy.event_kind == source.event_kind
+        && copy.player_cap == source.player_cap
+        && copy.event_date_utc == source.event_date_utc
+        && copy.mass_time_utc == source.mass_time_utc
+        && copy.start_time_utc == source.start_time_utc
+        && copy.status == source.status
+        && copy.started_at == started_at
+        && copy.stopped_at == stopped_at
+        && copy.auto_stop_deadline == auto_stop_deadline
+        && copy.archived_at.is_some() == archived_at.is_some()
+        && copy.roster_version == source.roster_version;
+    if unchanged {
+        return Ok(false);
+    }
     // A schedule moved into the future re-arms the mass notice and the reminder on the origin;
-    // the copy must follow or its Discord server never announces the postponed event again.
+    // the link must follow or its Discord server never announces the postponed event again.
     let rescheduled = (copy.mass_time_utc != source.mass_time_utc
         || copy.start_time_utc != source.start_time_utc)
         && source
@@ -713,35 +748,20 @@ pub async fn converge_copy_to_source(
     active.description = Set(source.description.clone());
     active.call_to_arms = Set(source.call_to_arms);
     active.regear = Set(source.regear);
+    active.event_kind = Set(source.event_kind.clone());
     active.player_cap = Set(source.player_cap);
     active.event_date_utc = Set(source.event_date_utc);
     active.mass_time_utc = Set(source.mass_time_utc);
     active.start_time_utc = Set(source.start_time_utc);
-    active.vod_forum_post_enabled = Set(source.vod_forum_post_enabled);
-    let source_terminal = source.archived_at.is_some() || source.status == "cancelled";
-    if source_terminal {
-        active.status = Set(source.status.clone());
-        if !copy_archived {
-            active.archived_at = Set(Some(chrono::Utc::now().into()));
-        }
-    } else {
-        active.status = Set(source.status.clone());
-        active.started_at = Set(source.started_at);
-        active.stopped_at = Set(source.stopped_at);
-        active.auto_stop_deadline = Set(source.auto_stop_deadline);
-        if requeue_deleted_vod {
-            // A confirmed archive deletion is safe to replace with a new
-            // tenant-local VOD post after the source event is restored.
-            active.vod_forum_post_status = Set("pending".to_owned());
-            active.vod_forum_thread_id = Set(None);
-        }
-        // Source session state is authoritative, but its Discord voice channel
-        // and local battle-link progress remain destination-specific.
-        active.archived_at = Set(None);
-    }
+    active.status = Set(source.status.clone());
+    active.started_at = Set(started_at);
+    active.stopped_at = Set(stopped_at);
+    active.auto_stop_deadline = Set(auto_stop_deadline);
+    active.archived_at = Set(archived_at);
+    active.roster_version = Set(source.roster_version);
     active.updated_at = Set(chrono::Utc::now().into());
     active.update(target_db).await?;
-    Ok(())
+    Ok(true)
 }
 
 /// Propagates an owner-authorized source change to every active copy.
@@ -831,19 +851,15 @@ mod tests {
     use crate::alliance_share::ShareActor;
     use crate::events::{
         fanout_outbox::{self, Operation},
-        models::{CreateEventRequest, ParticipateEventRequest},
-        participation_outbox,
+        models::CreateEventRequest,
         service::EventService,
-        sync::{process_due_forwards, sync_participation},
     };
     use backend_core::postgres::{
         connect_with_search_path, drop_schema, ensure_schema,
         test_support::{try_admin_db, unique_schema},
     };
-    use backend_core::sync_origin::SyncKind;
     use backend_identity::tenant::TenantRegistry;
     use backend_identity::users::identity::upsert_discord_user;
-    use backend_runtime::sync::{LegacyLinks, assert_writable};
     use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
     use sea_orm_migration::MigratorTrait;
 
@@ -1038,43 +1054,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guild_copies_reject_management_and_owner_changes_converge() {
+    async fn owner_changes_converge_to_every_link() {
         let Some(world) = TestWorld::new().await else {
             return;
         };
         let source = publish_alliance_event(&world, "Owner-managed event").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-
-        // Guild copies reject management; the owner tenant does not.
-        let guild_a_db = &world.tenant_dbs[1];
+        let link_a = world.guild_copy(1, source.id).await;
+        assert_eq!(link_a.comp_id, None, "a link carries no comp");
+        assert_eq!(
+            link_a.discord_delivery, "message",
+            "a link is announced publicly"
+        );
         let alliance_db = &world.tenant_dbs[0];
-        assert!(matches!(
-            assert_writable(
-                guild_a_db,
-                LegacyLinks {
-                    control: &world.control,
-                    tenant_id: "guild-a",
-                },
-                SyncKind::Event,
-                copy_a.id,
-            )
-            .await,
-            Err(AppError::ReadOnlyCopy(_))
-        ));
-        assert_writable(
-            alliance_db,
-            LegacyLinks {
-                control: &world.control,
-                tenant_id: "alliance",
-            },
-            SyncKind::Event,
-            source.id,
-        )
-        .await
-        .expect("owner tenant may manage");
 
-        // An owner update converges every active copy.
-        let alliance_db = &world.tenant_dbs[0];
+        // An owner update converges every link.
         EventService::new()
             .update_event(alliance_db, source.id, rename_event("Renamed by owner"))
             .await
@@ -1099,7 +1092,7 @@ mod tests {
             assert!(copy.archived_at.is_none());
         }
 
-        // Starting/stopping is owner state; the copy's Discord voice channel
+        // Starting/stopping is owner state; the link's Discord voice channel
         // remains local, but its visible event status and timestamps converge.
         EventService::new()
             .start_event(alliance_db, source.id)
@@ -1179,7 +1172,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restoring_archived_event_requeues_deleted_vod_posts_per_tenant() {
+    async fn restoring_archived_event_requeues_the_origin_vod_post_only() {
         let Some(world) = TestWorld::new().await else {
             return;
         };
@@ -1253,9 +1246,9 @@ mod tests {
         .expect("restore copies");
 
         for guild_index in [1, 2] {
+            // The VOD post lives on the origin only: restoring never re-creates one on a link.
             let copy = world.guild_copy(guild_index, source.id).await;
-            assert_eq!(copy.vod_forum_post_status, "pending");
-            assert_eq!(copy.vod_forum_thread_id, None);
+            assert_eq!(copy.vod_forum_post_status, "deleted");
             assert!(copy.archived_at.is_none());
         }
         world.close().await;
@@ -1409,1496 +1402,12 @@ mod tests {
         world.close().await;
     }
 
-    async fn participation_count(db: &DatabaseConnection, event_id: i64) -> i64 {
-        backend_entities::events::event_participation::Entity::find()
-            .filter(backend_entities::events::event_participation::Column::EventId.eq(event_id))
-            .count(db)
-            .await
-            .expect("count participations") as i64
-    }
-
     fn actor(discord_id: &str) -> ShareActor {
         ShareActor {
             discord_id: discord_id.to_owned(),
             username: "Participant".to_owned(),
             email: None,
         }
-    }
-
-    #[tokio::test]
-    async fn alliance_join_reaches_every_guild_copy_and_leave_from_any_copy() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Attribution event").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        let alliance_db = &world.tenant_dbs[0];
-
-        // A caller in two guilds must choose explicitly.
-        world.add_user_membership("discord-7", "guild-a").await;
-        world.add_user_membership("discord-7", "guild-b").await;
-        assert!(matches!(
-            super::super::attribution::resolve_join_attribution(
-                &world.control,
-                "alliance",
-                source.id,
-                "discord-7",
-                None,
-            )
-            .await,
-            Err(AppError::Conflict(_))
-        ));
-        let attributed = super::super::attribution::resolve_join_attribution(
-            &world.control,
-            "alliance",
-            source.id,
-            "discord-7",
-            Some("guild-b"),
-        )
-        .await
-        .expect("explicit guild choice resolves");
-        assert_eq!(attributed, "guild-b");
-
-        // Join from the alliance copy.
-        let user_id = upsert_discord_user(
-            alliance_db,
-            "discord-7",
-            "Participant",
-            "discord-7@example.invalid",
-            "User",
-            false,
-        )
-        .await
-        .expect("alliance user");
-        let request = ParticipateEventRequest {
-            primary_build_id: None,
-            secondary_build_id: None,
-        };
-        EventService::new()
-            .participate_with_roster_version(alliance_db, source.id, user_id, request.clone())
-            .await
-            .expect("join canonical event");
-        let synced = sync_participation(
-            &world.control,
-            &world.registry,
-            "alliance",
-            source.id,
-            &actor("discord-7"),
-            Some(request),
-        )
-        .await
-        .expect("fanout");
-        // The caller broadcasts a roster change for exactly these copies.
-        assert_eq!(
-            synced,
-            vec![
-                ("guild-a".to_owned(), copy_a.id),
-                ("guild-b".to_owned(), copy_b.id)
-            ]
-        );
-
-        assert_eq!(participation_count(alliance_db, source.id).await, 1);
-        assert_eq!(
-            participation_count(&world.tenant_dbs[2], copy_b.id).await,
-            1,
-            "attributed guild copy receives the signup"
-        );
-        assert_eq!(
-            participation_count(&world.tenant_dbs[1], copy_a.id).await,
-            1,
-            "the sibling guild copy shows the same roster"
-        );
-
-        // Leave from the attributed guild copy removes the canonical signup too.
-        let guild_b_user = upsert_discord_user(
-            &world.tenant_dbs[2],
-            "discord-7",
-            "Participant",
-            "discord-7@example.invalid",
-            "User",
-            false,
-        )
-        .await
-        .expect("guild-b user");
-        EventService::new()
-            .cancel_participation(&world.tenant_dbs[2], copy_b.id, guild_b_user)
-            .await
-            .expect("leave from guild copy");
-        sync_participation(
-            &world.control,
-            &world.registry,
-            "guild-b",
-            copy_b.id,
-            &actor("discord-7"),
-            None,
-        )
-        .await
-        .expect("leave fanout");
-        assert_eq!(participation_count(alliance_db, source.id).await, 0);
-        assert_eq!(
-            participation_count(&world.tenant_dbs[2], copy_b.id).await,
-            0
-        );
-        assert_eq!(
-            participation_count(&world.tenant_dbs[1], copy_a.id).await,
-            0
-        );
-        world.close().await;
-    }
-
-    #[tokio::test]
-    async fn guild_tenant_join_attributes_to_itself_and_reaches_sibling_guilds() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Guild-context event").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-        let copy_b = world.guild_copy(2, source.id).await;
-
-        let attributed = super::super::attribution::resolve_join_attribution(
-            &world.control,
-            "guild-a",
-            copy_a.id,
-            "discord-9",
-            None,
-        )
-        .await
-        .expect("guild context auto-selects the current tenant");
-        assert_eq!(attributed, "guild-a");
-
-        let guild_a_db = &world.tenant_dbs[1];
-        let user_id = upsert_discord_user(
-            guild_a_db,
-            "discord-9",
-            "Member",
-            "discord-9@example.invalid",
-            "User",
-            false,
-        )
-        .await
-        .expect("guild-a user");
-        let request = ParticipateEventRequest {
-            primary_build_id: None,
-            secondary_build_id: None,
-        };
-        EventService::new()
-            .participate_with_roster_version(guild_a_db, copy_a.id, user_id, request.clone())
-            .await
-            .expect("join guild copy");
-        sync_participation(
-            &world.control,
-            &world.registry,
-            "guild-a",
-            copy_a.id,
-            &actor("discord-9"),
-            Some(request),
-        )
-        .await
-        .expect("guild join fanout");
-
-        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 1);
-        assert_eq!(
-            participation_count(&world.tenant_dbs[0], source.id).await,
-            1,
-            "the canonical event receives the signup"
-        );
-        assert_eq!(
-            participation_count(&world.tenant_dbs[2], copy_b.id).await,
-            1,
-            "the sibling guild copy shows the same roster"
-        );
-
-        // Leaving from the sibling copy clears it everywhere, and a copy the
-        // user never joined (diverged roster) is not an error.
-        let guild_b_user = upsert_discord_user(
-            &world.tenant_dbs[2],
-            "discord-9",
-            "Member",
-            "discord-9@example.invalid",
-            "User",
-            false,
-        )
-        .await
-        .expect("guild-b user");
-        EventService::new()
-            .cancel_participation(&world.tenant_dbs[2], copy_b.id, guild_b_user)
-            .await
-            .expect("leave sibling copy");
-        // Simulate a roster that diverged before this fix: the origin has no signup.
-        EventService::new()
-            .cancel_participation(
-                &world.tenant_dbs[0],
-                source.id,
-                upsert_discord_user(
-                    &world.tenant_dbs[0],
-                    "discord-9",
-                    "Member",
-                    "discord-9@example.invalid",
-                    "User",
-                    false,
-                )
-                .await
-                .expect("alliance user"),
-            )
-            .await
-            .expect("diverge the origin");
-        let synced = sync_participation(
-            &world.control,
-            &world.registry,
-            "guild-b",
-            copy_b.id,
-            &actor("discord-9"),
-            None,
-        )
-        .await
-        .expect("leave fanout");
-        assert_eq!(
-            synced.len(),
-            2,
-            "peers lacking the signup still count as synced"
-        );
-        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 0);
-        world.close().await;
-    }
-
-    #[tokio::test]
-    async fn roster_views_attribute_each_participant_to_a_guild_on_origin_and_copies() {
-        use super::super::attribution::{attribute_detail, attribute_roster};
-        use crate::events::models::{EventRosterSeatView, EventRosterView};
-
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Guild badge event").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        world.add_user_membership("discord-b", "guild-b").await;
-        let request = ParticipateEventRequest {
-            primary_build_id: None,
-            secondary_build_id: None,
-        };
-
-        // discord-a joins on guild A's copy, discord-b joins on the alliance event (their only
-        // guild is B), discord-legacy signed up before attributions existed.
-        let joins = [
-            ("discord-a", 1_usize, "guild-a", copy_a.id),
-            ("discord-b", 0, "alliance", source.id),
-            ("discord-legacy", 2, "guild-b", copy_b.id),
-        ];
-        for (discord_id, index, tenant, event_id) in joins {
-            if discord_id != "discord-legacy" {
-                super::super::attribution::resolve_join_attribution(
-                    &world.control,
-                    tenant,
-                    event_id,
-                    discord_id,
-                    None,
-                )
-                .await
-                .expect("attribute join");
-            }
-            let db = &world.tenant_dbs[index];
-            let user_id = upsert_discord_user(
-                db,
-                discord_id,
-                discord_id,
-                &format!("{discord_id}@example.invalid"),
-                "User",
-                false,
-            )
-            .await
-            .expect("user");
-            EventService::new()
-                .participate_with_roster_version(db, event_id, user_id, request.clone())
-                .await
-                .expect("join");
-            sync_participation(
-                &world.control,
-                &world.registry,
-                tenant,
-                event_id,
-                &actor(discord_id),
-                Some(request.clone()),
-            )
-            .await
-            .expect("fanout");
-        }
-
-        let mut details = Vec::new();
-        for (index, tenant, event_id) in [
-            (0_usize, "alliance", source.id),
-            (1, "guild-a", copy_a.id),
-            (2, "guild-b", copy_b.id),
-        ] {
-            let mut detail = EventService::new()
-                .get_event_detail(&world.tenant_dbs[index], event_id)
-                .await
-                .expect("detail");
-            assert_eq!(
-                detail.participants.len(),
-                3,
-                "{tenant} shows the full roster"
-            );
-            attribute_detail(&world.control, tenant, &mut detail).await;
-            let mut guilds: Vec<(String, Option<String>)> = detail
-                .participants
-                .iter()
-                .map(|participant| {
-                    (
-                        participant.discord_id.clone().expect("discord id"),
-                        participant
-                            .guild
-                            .as_ref()
-                            .map(|guild| guild.tenant_id.clone()),
-                    )
-                })
-                .collect();
-            guilds.sort();
-            assert_eq!(
-                guilds,
-                vec![
-                    ("discord-a".to_owned(), Some("guild-a".to_owned())),
-                    ("discord-b".to_owned(), Some("guild-b".to_owned())),
-                    ("discord-legacy".to_owned(), None),
-                ],
-                "{tenant} attributes participants like every other copy"
-            );
-            assert!(
-                detail
-                    .participants
-                    .iter()
-                    .filter_map(|participant| participant.guild.as_ref())
-                    .all(|guild| guild.name == guild.tenant_id),
-                "the display name comes from the tenant row"
-            );
-            details.push(detail);
-        }
-
-        // The roster view takes the same path for seated and benched participants.
-        let participants = details[1].participants.clone();
-        let mut roster = EventRosterView {
-            event_id: copy_a.id,
-            roster_version: 1,
-            active_comp_id: 0,
-            parties: Vec::new(),
-            seats: vec![EventRosterSeatView {
-                key: "seat".to_owned(),
-                party_id: 1,
-                party_name: None,
-                party_position: 1,
-                party_number: 1,
-                position: 1,
-                build_id: 1,
-                build_name: "Build".to_owned(),
-                build_version: 1,
-                role: "dps".to_owned(),
-                weapon_key: None,
-                participant: Some(participants[0].clone()),
-            }],
-            bench: participants[1..].to_vec(),
-        };
-        for participant in roster
-            .seats
-            .iter_mut()
-            .filter_map(|seat| seat.participant.as_mut())
-            .chain(roster.bench.iter_mut())
-        {
-            participant.guild = None;
-        }
-        attribute_roster(&world.control, "guild-a", &mut roster).await;
-        let attributed = roster
-            .seats
-            .iter()
-            .filter_map(|seat| seat.participant.as_ref())
-            .chain(roster.bench.iter())
-            .filter(|participant| participant.guild.is_some())
-            .count();
-        assert_eq!(
-            attributed, 2,
-            "seated and benched members are both attributed; the legacy signup is not"
-        );
-        world.close().await;
-    }
-
-    #[tokio::test]
-    async fn the_reconcile_sweep_gives_every_copy_a_signup_it_missed_exactly_once() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Diverged roster").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-        let copy_b = world.guild_copy(2, source.id).await;
-
-        // A signup that was only ever saved on guild A's copy.
-        let guild_a_db = &world.tenant_dbs[1];
-        let user_id = upsert_discord_user(
-            guild_a_db,
-            "discord-11",
-            "Early bird",
-            "discord-11@example.invalid",
-            "User",
-            false,
-        )
-        .await
-        .expect("guild-a user");
-        EventService::new()
-            .participate_with_roster_version(
-                guild_a_db,
-                copy_a.id,
-                user_id,
-                ParticipateEventRequest {
-                    primary_build_id: None,
-                    secondary_build_id: None,
-                },
-            )
-            .await
-            .expect("local signup");
-
-        let added = super::super::sync::reconcile_rosters(&world.control, &world.registry)
-            .await
-            .expect("sweep");
-        assert_eq!(added, 2, "the origin and the sibling copy each gain it");
-        assert_eq!(
-            participation_count(&world.tenant_dbs[0], source.id).await,
-            1
-        );
-        assert_eq!(
-            participation_count(&world.tenant_dbs[2], copy_b.id).await,
-            1
-        );
-        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 1);
-
-        let again = super::super::sync::reconcile_rosters(&world.control, &world.registry)
-            .await
-            .expect("second sweep");
-        assert_eq!(again, 0, "nothing is written once the rosters agree");
-        world.close().await;
-    }
-
-    /// A build picked on one guild's copy must resolve to the sibling guild's own build, not to
-    /// the origin's id.
-    #[tokio::test]
-    async fn builds_map_between_sibling_copies_through_the_origin() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Sibling builds").await;
-        let job_id: uuid::Uuid = world
-            .control
-            .query_one(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "SELECT id FROM event_fanout_jobs WHERE source_event_id = $1 LIMIT 1",
-                [source.id.into()],
-            ))
-            .await
-            .expect("job")
-            .expect("job row")
-            .try_get_by_index(0)
-            .expect("job id");
-        for (tenant, destination) in [("guild-a", 110_i64), ("guild-b", 210_i64)] {
-            world
-                .control
-                .execute(Statement::from_sql_and_values(
-                    DbBackend::Postgres,
-                    "INSERT INTO event_fanout_assets \
-                     (job_id, tenant_id, asset_type, source_id, destination_id) \
-                     VALUES ($1,$2,'build',10,$3)",
-                    [job_id.into(), tenant.into(), destination.into()],
-                ))
-                .await
-                .expect("asset");
-        }
-        let map = |from: &'static str, to: &'static str, id: i64| {
-            let control = &world.control;
-            let origin = source.id;
-            async move {
-                super::super::sync::map_build(control, from, to, Some(id), "alliance", origin)
-                    .await
-                    .expect("map")
-            }
-        };
-        assert_eq!(map("guild-a", "guild-b", 110).await, Some(210));
-        assert_eq!(map("guild-b", "guild-a", 210).await, Some(110));
-        assert_eq!(map("guild-a", "alliance", 110).await, Some(10));
-        assert_eq!(map("alliance", "guild-b", 10).await, Some(210));
-        world.close().await;
-    }
-
-    /// Archiving a copy makes it refuse every roster change, which is how these tests make one
-    /// peer unavailable and then fix it.
-    async fn set_copy_archived(db: &DatabaseConnection, event_id: i64, archived: bool) {
-        db.execute(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            if archived {
-                "UPDATE events SET archived_at = NOW() WHERE id = $1"
-            } else {
-                "UPDATE events SET archived_at = NULL WHERE id = $1"
-            },
-            [event_id.into()],
-        ))
-        .await
-        .expect("toggle archived copy");
-    }
-
-    async fn make_forwards_due(world: &TestWorld) {
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "UPDATE event_participation_forwards \
-                 SET next_attempt_at = NOW() - INTERVAL '1 second'",
-                [],
-            ))
-            .await
-            .expect("make forwards due");
-    }
-
-    /// Saves the alliance-side change, then forwards it, like the route handlers do.
-    async fn change_participation_on_alliance(
-        world: &TestWorld,
-        event_id: i64,
-        discord_id: &str,
-        join: bool,
-    ) -> Vec<(String, i64)> {
-        let alliance_db = &world.tenant_dbs[0];
-        let user_id = upsert_discord_user(
-            alliance_db,
-            discord_id,
-            "Participant",
-            &format!("{discord_id}@example.invalid"),
-            "User",
-            false,
-        )
-        .await
-        .expect("alliance user");
-        let request = ParticipateEventRequest {
-            primary_build_id: None,
-            secondary_build_id: None,
-        };
-        let forwarded = if join {
-            EventService::new()
-                .participate_with_roster_version(alliance_db, event_id, user_id, request.clone())
-                .await
-                .expect("join canonical event");
-            Some(request)
-        } else {
-            EventService::new()
-                .cancel_participation(alliance_db, event_id, user_id)
-                .await
-                .expect("leave canonical event");
-            None
-        };
-        sync_participation(
-            &world.control,
-            &world.registry,
-            "alliance",
-            event_id,
-            &actor(discord_id),
-            forwarded,
-        )
-        .await
-        .expect("forward")
-    }
-
-    #[tokio::test]
-    async fn a_forward_that_fails_is_retried_and_delivered_exactly_once() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Retried join").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        let guild_b_db = &world.tenant_dbs[2];
-
-        set_copy_archived(guild_b_db, copy_b.id, true).await;
-        let synced = change_participation_on_alliance(&world, source.id, "discord-21", true).await;
-        assert_eq!(
-            synced,
-            vec![("guild-a".to_owned(), copy_a.id)],
-            "the fast path stays synchronous for the copies that took the change"
-        );
-        assert_eq!(
-            participation_count(&world.tenant_dbs[1], copy_a.id).await,
-            1
-        );
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
-        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
-            .await
-            .unwrap();
-        assert_eq!(
-            queued.len(),
-            1,
-            "only the failed copy is queued: {queued:?}"
-        );
-        assert_eq!(queued[0].peer_tenant_id, "guild-b");
-        assert_eq!(queued[0].operation, "join");
-        assert_eq!(queued[0].state, "failed");
-        assert_eq!(queued[0].attempts, 1);
-        assert!(queued[0].last_error.is_some());
-
-        // Not due yet: backoff holds the retry back.
-        assert_eq!(
-            process_due_forwards(&world.control, &world.registry)
-                .await
-                .unwrap(),
-            0
-        );
-
-        // Still failing: another attempt is spent, nothing is delivered.
-        make_forwards_due(&world).await;
-        assert_eq!(
-            process_due_forwards(&world.control, &world.registry)
-                .await
-                .unwrap(),
-            1
-        );
-        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
-            .await
-            .unwrap();
-        assert_eq!(queued[0].attempts, 2);
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
-
-        // The peer is fixed: the next retry delivers once and clears the entry.
-        set_copy_archived(guild_b_db, copy_b.id, false).await;
-        make_forwards_due(&world).await;
-        assert_eq!(
-            process_due_forwards(&world.control, &world.registry)
-                .await
-                .unwrap(),
-            1
-        );
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
-        assert!(
-            participation_outbox::statuses(&world.control, "alliance", source.id)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        make_forwards_due(&world).await;
-        assert_eq!(
-            process_due_forwards(&world.control, &world.registry)
-                .await
-                .unwrap(),
-            0,
-            "a delivered entry is never replayed"
-        );
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
-        assert_eq!(
-            participation_count(&world.tenant_dbs[0], source.id).await,
-            1
-        );
-        world.close().await;
-    }
-
-    #[tokio::test]
-    async fn a_lost_leave_converges_and_the_sweep_does_not_resurrect_the_user() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Lost leave").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        let guild_a_db = &world.tenant_dbs[1];
-        let guild_b_db = &world.tenant_dbs[2];
-
-        let synced = change_participation_on_alliance(&world, source.id, "discord-22", true).await;
-        assert_eq!(synced.len(), 2);
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
-
-        // The user leaves while guild B's copy cannot take the change.
-        set_copy_archived(guild_b_db, copy_b.id, true).await;
-        let synced = change_participation_on_alliance(&world, source.id, "discord-22", false).await;
-        assert_eq!(synced, vec![("guild-a".to_owned(), copy_a.id)]);
-        assert_eq!(
-            participation_count(&world.tenant_dbs[0], source.id).await,
-            0
-        );
-        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 0);
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
-
-        // Guild B is reachable again but the retry has not run: the sweep sees a signup that
-        // only guild B holds and must leave it alone instead of copying it back.
-        set_copy_archived(guild_b_db, copy_b.id, false).await;
-        let added = super::super::sync::reconcile_rosters(&world.control, &world.registry)
-            .await
-            .expect("sweep");
-        assert_eq!(added, 0, "a queued leave is not undone by the sweep");
-        assert_eq!(
-            participation_count(&world.tenant_dbs[0], source.id).await,
-            0
-        );
-        assert_eq!(participation_count(guild_a_db, copy_a.id).await, 0);
-
-        make_forwards_due(&world).await;
-        process_due_forwards(&world.control, &world.registry)
-            .await
-            .unwrap();
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
-        assert!(
-            participation_outbox::statuses(&world.control, "alliance", source.id)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        let added = super::super::sync::reconcile_rosters(&world.control, &world.registry)
-            .await
-            .expect("sweep after convergence");
-        assert_eq!(added, 0);
-        for (db, event_id) in [
-            (&world.tenant_dbs[0], source.id),
-            (guild_a_db, copy_a.id),
-            (guild_b_db, copy_b.id),
-        ] {
-            assert_eq!(participation_count(db, event_id).await, 0);
-        }
-        world.close().await;
-    }
-
-    #[tokio::test]
-    async fn the_latest_intent_replaces_a_queued_one() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Join then leave").await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        let guild_b_db = &world.tenant_dbs[2];
-
-        set_copy_archived(guild_b_db, copy_b.id, true).await;
-        change_participation_on_alliance(&world, source.id, "discord-23", true).await;
-        change_participation_on_alliance(&world, source.id, "discord-23", false).await;
-        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
-            .await
-            .unwrap();
-        assert_eq!(queued.len(), 1, "one entry per participant and peer");
-        assert_eq!(queued[0].operation, "leave");
-        assert_eq!(queued[0].attempts, 1, "a new intent re-arms the attempts");
-
-        set_copy_archived(guild_b_db, copy_b.id, false).await;
-        make_forwards_due(&world).await;
-        process_due_forwards(&world.control, &world.registry)
-            .await
-            .unwrap();
-        assert_eq!(
-            participation_count(guild_b_db, copy_b.id).await,
-            0,
-            "the queued join never lands after the leave"
-        );
-        assert!(
-            participation_outbox::statuses(&world.control, "alliance", source.id)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        world.close().await;
-    }
-
-    #[tokio::test]
-    async fn forward_attempts_are_capped_and_a_new_change_rearms_them() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Capped forward").await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        let guild_b_db = &world.tenant_dbs[2];
-
-        set_copy_archived(guild_b_db, copy_b.id, true).await;
-        change_participation_on_alliance(&world, source.id, "discord-24", true).await;
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "UPDATE event_participation_forwards SET attempts = $1",
-                [(participation_outbox::MAX_ATTEMPTS - 1).into()],
-            ))
-            .await
-            .unwrap();
-        make_forwards_due(&world).await;
-        assert_eq!(
-            process_due_forwards(&world.control, &world.registry)
-                .await
-                .unwrap(),
-            1
-        );
-        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
-            .await
-            .unwrap();
-        assert_eq!(queued[0].state, "exhausted");
-        assert_eq!(queued[0].attempts, participation_outbox::MAX_ATTEMPTS);
-
-        // An exhausted entry is parked: the peer recovering does not revive it by itself.
-        set_copy_archived(guild_b_db, copy_b.id, false).await;
-        make_forwards_due(&world).await;
-        assert_eq!(
-            process_due_forwards(&world.control, &world.registry)
-                .await
-                .unwrap(),
-            0
-        );
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
-
-        // A fresh change from the user re-arms the entry and, the peer being healthy, lands.
-        let synced = change_participation_on_alliance(&world, source.id, "discord-24", true).await;
-        assert_eq!(synced.len(), 2);
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 1);
-        assert!(
-            participation_outbox::statuses(&world.control, "alliance", source.id)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        world.close().await;
-    }
-
-    /// A guild that left the alliance no longer takes forwards; its queued entry is dropped.
-    #[tokio::test]
-    async fn a_queued_forward_to_a_guild_that_left_is_dropped() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Departed peer").await;
-        let copy_b = world.guild_copy(2, source.id).await;
-        let guild_b_db = &world.tenant_dbs[2];
-
-        set_copy_archived(guild_b_db, copy_b.id, true).await;
-        change_participation_on_alliance(&world, source.id, "discord-25", true).await;
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "UPDATE event_sync_links SET sync_enabled = false WHERE mirror_tenant_id = 'guild-b'",
-                [],
-            ))
-            .await
-            .unwrap();
-        set_copy_archived(guild_b_db, copy_b.id, false).await;
-        make_forwards_due(&world).await;
-        process_due_forwards(&world.control, &world.registry)
-            .await
-            .unwrap();
-        assert_eq!(participation_count(guild_b_db, copy_b.id).await, 0);
-        assert!(
-            participation_outbox::statuses(&world.control, "alliance", source.id)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        world.close().await;
-    }
-
-    /// A selected build that was never shared with the linked tenant cannot be mapped there. The
-    /// caller's own signup is already saved by then, so the sync must log and skip that copy
-    /// instead of failing the call (the route used to answer with an error for a signup that had
-    /// in fact succeeded).
-    #[tokio::test]
-    async fn an_unmappable_build_does_not_fail_the_sync_of_a_saved_signup() {
-        let Some(world) = TestWorld::new().await else {
-            return;
-        };
-        let source = publish_alliance_event(&world, "Unshared build event").await;
-        let copy_a = world.guild_copy(1, source.id).await;
-
-        let unshared_build = ParticipateEventRequest {
-            primary_build_id: Some(987_654),
-            secondary_build_id: None,
-        };
-        sync_participation(
-            &world.control,
-            &world.registry,
-            "guild-a",
-            copy_a.id,
-            &actor("discord-9"),
-            Some(unshared_build),
-        )
-        .await
-        .expect("a copy that cannot map the build is skipped, not an error");
-
-        assert_eq!(
-            participation_count(&world.tenant_dbs[0], source.id).await,
-            0,
-            "the copy that could not take the build is left untouched"
-        );
-        let queued = participation_outbox::statuses(&world.control, "alliance", source.id)
-            .await
-            .unwrap();
-        assert_eq!(
-            queued
-                .iter()
-                .map(|entry| entry.peer_tenant_id.as_str())
-                .collect::<Vec<_>>(),
-            ["alliance", "guild-b"],
-            "each copy that could not take the signup is queued for retry"
-        );
-        world.close().await;
-    }
-
-    /// An organized alliance event (one comp with a two-seat build) published to both guilds.
-    struct Organized {
-        world: TestWorld,
-        source: event::Model,
-        copies: Vec<event::Model>,
-        /// The alliance build, and each guild copy's own build.
-        build: i64,
-        copy_builds: Vec<i64>,
-        /// The alliance event's first party, and each guild copy's own.
-        party: i64,
-        copy_parties: Vec<i64>,
-    }
-
-    async fn publish_organized_alliance_event(title: &str) -> Option<Organized> {
-        use backend_comps::{
-            models::{
-                AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
-                CreateCompCategoryRequest, CreateCompRequest,
-            },
-            service::CompService,
-        };
-        use backend_entities::comps::comp_build;
-        use backend_entities::status::comps::BuildRole;
-        let world = TestWorld::new().await?;
-        let alliance_db = &world.tenant_dbs[0];
-        let creator_id = upsert_discord_user(
-            alliance_db,
-            "discord-creator",
-            "Creator",
-            "creator@example.invalid",
-            "User",
-            false,
-        )
-        .await
-        .expect("create owner");
-        let comps = CompService::new();
-        let build_category = comps
-            .create_build_category(
-                alliance_db,
-                CreateBuildCategoryRequest {
-                    name: "Officer builds".to_owned(),
-                    description: None,
-                },
-            )
-            .await
-            .expect("build category");
-        let comp_category = comps
-            .create_comp_category(
-                alliance_db,
-                CreateCompCategoryRequest {
-                    name: "Officer comps".to_owned(),
-                    description: None,
-                },
-            )
-            .await
-            .expect("comp category");
-        // Skew the alliance's build ids so a copy's build id cannot match by coincidence.
-        for filler in 0..3 {
-            comps
-                .create_build(
-                    alliance_db,
-                    creator_id,
-                    CreateBuildRequest {
-                        name: format!("Officer filler {filler}"),
-                        description: None,
-                        role: BuildRole::Healer,
-                        category_id: build_category.id,
-                        items: crate::events::test_support::main_weapon_items(),
-                    },
-                )
-                .await
-                .expect("filler build");
-        }
-        let build = comps
-            .create_build(
-                alliance_db,
-                creator_id,
-                CreateBuildRequest {
-                    name: "Officer healer".to_owned(),
-                    description: None,
-                    role: BuildRole::Healer,
-                    category_id: build_category.id,
-                    items: crate::events::test_support::main_weapon_items(),
-                },
-            )
-            .await
-            .expect("build");
-        let comp = comps
-            .create_comp(
-                alliance_db,
-                creator_id,
-                CreateCompRequest {
-                    name: "Officer comp".to_owned(),
-                    description: None,
-                    category_id: comp_category.id,
-                    builds: vec![AddCompBuildRequest {
-                        build_id: build.summary.id,
-                        quantity: 2,
-                    }],
-                    parent_id: None,
-                },
-            )
-            .await
-            .expect("comp");
-        let mut request = flash_event(title);
-        request.event_kind = Some("organized".to_owned());
-        request.comp_id = Some(comp.summary.id);
-        let created = EventService::new()
-            .create_event(alliance_db, creator_id, request)
-            .await
-            .expect("create source event");
-        fanout_outbox::enqueue(
-            &world.control,
-            "alliance",
-            created.id,
-            Operation::Publish,
-            &format!("publish:{}", created.id),
-            &["guild-a".to_owned(), "guild-b".to_owned()],
-        )
-        .await
-        .expect("enqueue publish");
-        super::super::fanout_worker::process_due_targets(&world.control, &world.registry)
-            .await
-            .expect("process publish");
-        let source = event::Entity::find_by_id(created.id)
-            .one(alliance_db)
-            .await
-            .expect("reload source")
-            .expect("source row");
-        let mut copies = Vec::new();
-        let mut copy_builds = Vec::new();
-        let mut copy_parties = Vec::new();
-        let party = first_party_id(alliance_db, source.id).await;
-        for index in [1, 2] {
-            let copy = world.guild_copy(index, source.id).await;
-            copy_parties.push(first_party_id(&world.tenant_dbs[index], copy.id).await);
-            let rows = comp_build::Entity::find()
-                .filter(comp_build::Column::CompId.eq(copy.comp_id.expect("copy comp")))
-                .all(&world.tenant_dbs[index])
-                .await
-                .expect("copy comp builds");
-            assert_eq!(rows.len(), 1);
-            assert_ne!(rows[0].build_id, build.summary.id);
-            copy_builds.push(rows[0].build_id);
-            copies.push(copy);
-        }
-        Some(Organized {
-            world,
-            source,
-            copies,
-            build: build.summary.id,
-            copy_builds,
-            party,
-            copy_parties,
-        })
-    }
-
-    /// The id of an event's first party.
-    async fn first_party_id(db: &DatabaseConnection, event_id: i64) -> i64 {
-        crate::events::parties::load_event_parties(db, event_id)
-            .await
-            .expect("parties")
-            .first()
-            .expect("first party")
-            .id
-    }
-
-    impl Organized {
-        /// An officer puts a member on the alliance event's roster and the change is forwarded.
-        async fn officer_adds(&self, discord_id: &str) -> i64 {
-            let alliance_db = &self.world.tenant_dbs[0];
-            let user_id = upsert_discord_user(
-                alliance_db,
-                discord_id,
-                discord_id,
-                "member@example.invalid",
-                "User",
-                false,
-            )
-            .await
-            .expect("alliance member");
-            EventService::new()
-                .set_participant_with_roster_version(
-                    alliance_db,
-                    self.source.id,
-                    user_id,
-                    crate::events::models::SetParticipantRequest {
-                        primary_build_id: Some(self.build),
-                        secondary_build_id: None,
-                    },
-                )
-                .await
-                .expect("officer adds");
-            let synced = crate::events::officer_sync::sync_officer_participation(
-                &self.world.control,
-                &self.world.registry,
-                alliance_db,
-                "alliance",
-                self.source.id,
-                user_id,
-                Some(ParticipateEventRequest {
-                    primary_build_id: Some(self.build),
-                    secondary_build_id: None,
-                }),
-            )
-            .await
-            .expect("forward add");
-            assert_eq!(synced.len(), 2);
-            user_id
-        }
-
-        async fn roster_version(&self, tenant_index: usize, event_id: i64) -> i64 {
-            event::Entity::find_by_id(event_id)
-                .one(&self.world.tenant_dbs[tenant_index])
-                .await
-                .expect("event")
-                .expect("event row")
-                .roster_version
-        }
-
-        async fn forward_seats(&self, keys: &[String]) -> Vec<(String, i64)> {
-            crate::events::officer_sync::sync_roster_seats(
-                &self.world.control,
-                &self.world.registry,
-                "alliance",
-                self.source.id,
-                &actor("discord-creator"),
-                keys,
-            )
-            .await
-            .expect("forward seats")
-        }
-
-        fn seat(&self, ordinal: u32) -> String {
-            format!("party:{}:build:{}:{ordinal}", self.party, self.build)
-        }
-
-        /// `(seat key, discord id)` for every seated participant, with the key rewritten to the
-        /// alliance build so every tenant can be compared to the origin.
-        async fn seated(&self, tenant_index: usize, event_id: i64) -> Vec<(String, String)> {
-            let db = &self.world.tenant_dbs[tenant_index];
-            let (build, party) = if tenant_index == 0 {
-                (self.build, self.party)
-            } else {
-                (
-                    self.copy_builds[tenant_index - 1],
-                    self.copy_parties[tenant_index - 1],
-                )
-            };
-            let mut seated = Vec::new();
-            for row in backend_entities::events::event_roster_assignment::Entity::find()
-                .filter(
-                    backend_entities::events::event_roster_assignment::Column::EventId.eq(event_id),
-                )
-                .all(db)
-                .await
-                .expect("assignments")
-            {
-                let discord_id = backend_entities::users::Entity::find_by_id(row.user_id)
-                    .one(db)
-                    .await
-                    .expect("user")
-                    .and_then(|user| user.discord_id)
-                    .expect("discord id");
-                seated.push((
-                    row.seat_key.replace(
-                        &format!("party:{party}:build:{build}:"),
-                        &format!("party:{}:build:{}:", self.party, self.build),
-                    ),
-                    discord_id,
-                ));
-            }
-            seated.sort();
-            seated
-        }
-
-        async fn assert_copies_match_the_origin(&self) {
-            let origin = self.seated(0, self.source.id).await;
-            for (offset, copy) in self.copies.iter().enumerate() {
-                assert_eq!(
-                    self.seated(offset + 1, copy.id).await,
-                    origin,
-                    "guild copy {offset} seats"
-                );
-            }
-        }
-
-        async fn copy_versions(&self) -> Vec<i64> {
-            let mut versions = Vec::new();
-            for (offset, copy) in self.copies.iter().enumerate() {
-                versions.push(self.roster_version(offset + 1, copy.id).await);
-            }
-            versions
-        }
-
-        /// Forwards `keys` and asserts a repeat changes nothing.
-        async fn forward_seats_twice(&self, keys: &[String]) {
-            let synced = self.forward_seats(keys).await;
-            assert_eq!(synced.len(), 2, "both copies take the change");
-            self.assert_copies_match_the_origin().await;
-            let versions = self.copy_versions().await;
-            self.forward_seats(keys).await;
-            self.assert_copies_match_the_origin().await;
-            assert_eq!(
-                self.copy_versions().await,
-                versions,
-                "a repeated forward writes nothing"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn officer_participant_changes_reach_every_guild_copy_idempotently() {
-        let Some(case) = publish_organized_alliance_event("Officer participants").await else {
-            return;
-        };
-        let alliance_db = &case.world.tenant_dbs[0];
-        let user_id = case.officer_adds("discord-21").await;
-        // Adding the same member again updates in place everywhere.
-        case.officer_adds("discord-21").await;
-        for (offset, copy) in case.copies.iter().enumerate() {
-            let participations = backend_entities::events::event_participation::Entity::find()
-                .filter(backend_entities::events::event_participation::Column::EventId.eq(copy.id))
-                .all(&case.world.tenant_dbs[offset + 1])
-                .await
-                .expect("copy participations");
-            assert_eq!(participations.len(), 1, "guild copy {offset}");
-            assert_eq!(
-                participations[0].primary_build_id,
-                Some(case.copy_builds[offset]),
-                "the copy signs the member up with its own build"
-            );
-        }
-
-        // Removing the member clears every copy, and repeating the removal is not an error.
-        EventService::new()
-            .cancel_participation(alliance_db, case.source.id, user_id)
-            .await
-            .expect("officer removes");
-        for _ in 0..2 {
-            let synced = crate::events::officer_sync::sync_officer_participation(
-                &case.world.control,
-                &case.world.registry,
-                alliance_db,
-                "alliance",
-                case.source.id,
-                user_id,
-                None,
-            )
-            .await
-            .expect("forward removal");
-            assert_eq!(synced.len(), 2);
-            assert_eq!(participation_count(alliance_db, case.source.id).await, 0);
-            for (offset, copy) in case.copies.iter().enumerate() {
-                assert_eq!(
-                    participation_count(&case.world.tenant_dbs[offset + 1], copy.id).await,
-                    0
-                );
-            }
-        }
-        case.world.close().await;
-    }
-
-    #[tokio::test]
-    async fn officer_seat_commands_reach_every_guild_copy_idempotently() {
-        let Some(case) = publish_organized_alliance_event("Officer seats").await else {
-            return;
-        };
-        let alliance_db = &case.world.tenant_dbs[0];
-        let creator = case.source.created_by;
-        let first = case.officer_adds("discord-31").await;
-        let second = case.officer_adds("discord-32").await;
-        let service = EventService::new();
-        let version = || async { case.roster_version(0, case.source.id).await };
-
-        // Assign.
-        service
-            .assign_roster_seat(
-                alliance_db,
-                case.source.id,
-                &case.seat(1),
-                crate::events::models::AssignRosterSeatRequest {
-                    user_id: first,
-                    expected_roster_version: version().await,
-                },
-                creator,
-            )
-            .await
-            .expect("assign first");
-        service
-            .assign_roster_seat(
-                alliance_db,
-                case.source.id,
-                &case.seat(2),
-                crate::events::models::AssignRosterSeatRequest {
-                    user_id: second,
-                    expected_roster_version: version().await,
-                },
-                creator,
-            )
-            .await
-            .expect("assign second");
-        case.forward_seats_twice(&[case.seat(1), case.seat(2)])
-            .await;
-        assert_eq!(case.seated(1, case.copies[0].id).await.len(), 2);
-
-        // Swap: replaying a swap command would swap back, replaying the seat state does not.
-        service
-            .swap_roster_seats(
-                alliance_db,
-                case.source.id,
-                crate::events::models::SwapRosterSeatsRequest {
-                    source_seat_key: case.seat(1),
-                    target_seat_key: case.seat(2),
-                    expected_roster_version: version().await,
-                },
-                creator,
-            )
-            .await
-            .expect("swap");
-        case.forward_seats_twice(&[case.seat(1), case.seat(2)])
-            .await;
-        assert_eq!(
-            case.seated(2, case.copies[1].id).await,
-            vec![
-                (case.seat(1), "discord-32".to_owned()),
-                (case.seat(2), "discord-31".to_owned()),
-            ]
-        );
-
-        // Clear.
-        service
-            .clear_roster_seat(
-                alliance_db,
-                case.source.id,
-                &case.seat(1),
-                crate::events::models::RosterVersionRequest {
-                    expected_roster_version: version().await,
-                    strategy: None,
-                },
-            )
-            .await
-            .expect("clear");
-        case.forward_seats_twice(&[case.seat(1)]).await;
-        assert_eq!(case.seated(1, case.copies[0].id).await.len(), 1);
-
-        // Auto-fill seats the bench member again.
-        let (_, changed) = service
-            .auto_fill_roster(
-                alliance_db,
-                case.source.id,
-                crate::events::models::RosterVersionRequest {
-                    expected_roster_version: version().await,
-                    strategy: None,
-                },
-                creator,
-            )
-            .await
-            .expect("auto-fill");
-        assert_eq!(changed.len(), 1);
-        case.forward_seats_twice(&changed).await;
-        assert_eq!(case.seated(1, case.copies[0].id).await.len(), 2);
-
-        // Removing a seated participant leaves no assignment behind on any copy.
-        service
-            .cancel_participation(alliance_db, case.source.id, first)
-            .await
-            .expect("officer removes a seated member");
-        crate::events::officer_sync::sync_officer_participation(
-            &case.world.control,
-            &case.world.registry,
-            alliance_db,
-            "alliance",
-            case.source.id,
-            first,
-            None,
-        )
-        .await
-        .expect("forward removal");
-        case.assert_copies_match_the_origin().await;
-        assert_eq!(case.seated(2, case.copies[1].id).await.len(), 1);
-        case.world.close().await;
-    }
-
-    #[tokio::test]
-    async fn officer_roster_roles_reach_every_guild_copy_idempotently() {
-        use crate::events::officer_sync::{RosterRoleChange, sync_roster_role};
-        use backend_entities::events::event_roster_role;
-        let Some(case) = publish_organized_alliance_event("Officer roles").await else {
-            return;
-        };
-        let alliance_db = &case.world.tenant_dbs[0];
-        let service = EventService::new();
-        let forward = |change: RosterRoleChange| {
-            let case = &case;
-            async move {
-                sync_roster_role(
-                    &case.world.control,
-                    &case.world.registry,
-                    "alliance",
-                    case.source.id,
-                    &actor("discord-creator"),
-                    change,
-                )
-                .await
-                .expect("forward role")
-            }
-        };
-        let copy_roles = |offset: usize| {
-            let case = &case;
-            async move {
-                event_roster_role::Entity::find()
-                    .filter(event_roster_role::Column::EventId.eq(case.copies[offset].id))
-                    .all(&case.world.tenant_dbs[offset + 1])
-                    .await
-                    .expect("copy roles")
-                    .into_iter()
-                    .map(|role| role.build_id)
-                    .collect::<Vec<_>>()
-            }
-        };
-
-        let role = service
-            .create_event_roster_role(
-                alliance_db,
-                case.source.id,
-                crate::events::models::CreateEventRosterRoleRequest {
-                    build_id: case.build,
-                    party_id: None,
-                },
-            )
-            .await
-            .expect("officer adds a role");
-        for _ in 0..2 {
-            assert_eq!(
-                forward(RosterRoleChange::Added {
-                    build_id: case.build,
-                    party_position: 1,
-                })
-                .await
-                .len(),
-                2
-            );
-            for offset in 0..2 {
-                assert_eq!(copy_roles(offset).await, vec![case.copy_builds[offset]]);
-            }
-        }
-
-        service
-            .delete_event_roster_role(alliance_db, case.source.id, role.id.expect("role id"))
-            .await
-            .expect("officer removes the role");
-        for _ in 0..2 {
-            assert_eq!(
-                forward(RosterRoleChange::Removed {
-                    build_id: case.build,
-                    party_position: 1,
-                })
-                .await
-                .len(),
-                2
-            );
-            for offset in 0..2 {
-                assert!(copy_roles(offset).await.is_empty());
-            }
-        }
-        case.world.close().await;
     }
 
     #[tokio::test]
@@ -3354,11 +1863,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_guild_mirror_is_retried_without_duplicating_the_alliance_event() {
-        use crate::alliance_share::{
-            AllianceShareService, ShareParams,
-            models::{ArtifactType, CreateAllianceShareRequest},
-        };
+    async fn failed_guild_mirror_is_retried_without_duplicating_the_alliance_link() {
         use backend_comps::{
             models::{
                 AddCompBuildRequest, CreateBuildCategoryRequest, CreateBuildRequest,
@@ -3516,25 +2021,8 @@ mod tests {
             .await
             .expect("restore membership");
 
-        // Simulate a crash after the alliance event commits but before its
+        // Simulate a crash after the alliance link commits but before its
         // control-plane link or retry acknowledgement is written.
-        let shared_comp = AllianceShareService::share_comp(
-            &world.control,
-            &world.registry,
-            guild_db,
-            ShareParams {
-                source_tenant_id: "guild-a",
-                source_kind: "guild",
-                actor: &actor,
-                authorized: true,
-            },
-            CreateAllianceShareRequest {
-                artifact_type: ArtifactType::Comp,
-                id: comp.summary.id,
-            },
-        )
-        .await
-        .expect("share comp before simulated crash");
         let alliance_creator_id = upsert_discord_user(
             &world.tenant_dbs[0],
             "mirror-creator",
@@ -3545,24 +2033,20 @@ mod tests {
         )
         .await
         .expect("alliance creator");
-        let mut orphan_request = flash_event("Guild event for the alliance");
-        orphan_request.event_kind = Some(view.event_kind.clone());
-        orphan_request.comp_id = Some(shared_comp.published_id);
-        orphan_request.player_cap = view.player_cap;
-        orphan_request.event_date_utc = Some(view.event_date_utc.clone());
-        orphan_request.mass_time_utc = Some(view.mass_time_utc.clone());
-        orphan_request.start_time_utc = Some(view.start_time_utc.clone());
-        orphan_request.vod_forum_post_enabled = view.vod_forum_post_enabled;
-        orphan_request.discord_delivery = view.discord_delivery.clone();
-        let orphan_mirror = EventService::new()
-            .create_event_with_source_identity(
-                &world.tenant_dbs[0],
-                alliance_creator_id,
-                orphan_request,
-                Some(("guild-a".to_owned(), event.id)),
-            )
+        let source_row = event::Entity::find_by_id(event.id)
+            .one(guild_db)
             .await
-            .expect("create mirror before simulated crash");
+            .expect("reload guild event")
+            .expect("guild event row");
+        let orphan_mirror = super::super::links::insert_link_row(
+            &world.tenant_dbs[0],
+            alliance_creator_id,
+            "guild-a",
+            &source_row,
+            "message",
+        )
+        .await
+        .expect("create link before simulated crash");
         let orphan_mirror_id = orphan_mirror.id;
 
         super::super::mirror_retry::requeue(&world.control, "guild-a", event.id)
@@ -3584,7 +2068,7 @@ mod tests {
                 .await
                 .expect("alliance events"),
             1,
-            "exactly one alliance mirror exists"
+            "exactly one alliance link exists"
         );
 
         // A completed request is never claimed again, so no duplicate appears.
@@ -3653,7 +2137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_stop_goes_through_the_transition_core_and_skips_xp_for_mirrors() {
+    async fn auto_stop_goes_through_the_transition_core_and_leaves_links_to_their_origin() {
         use super::transition_tests::{fixture, seed_event};
         use crate::events::auto_stop::auto_stop_expired_sessions;
         use backend_entities::events::event_completion_xp;
@@ -3665,46 +2149,26 @@ mod tests {
         let fx = fixture(db).await;
         // `seed_event` gives a live event whose auto-stop deadline is already due.
         let (own, own_split) = seed_event(db, &fx, "live", false).await;
-        let (mirror, _) = seed_event(db, &fx, "live", false).await;
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "INSERT INTO event_sync_links \
-                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id) \
-                 VALUES ($1,'guild-b',1,'guild-a',$2)",
-                [uuid::Uuid::new_v4().into(), mirror.into()],
-            ))
-            .await
-            .expect("link mirror");
-        // A copy whose link was disabled (membership departure) is local now: it must
-        // still stop, and still award nothing.
-        let (detached, _) = seed_event(db, &fx, "live", false).await;
-        world
-            .control
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "INSERT INTO event_sync_links \
-                 (id, source_tenant_id, source_event_id, mirror_tenant_id, mirror_event_id, \
-                  sync_enabled) \
-                 VALUES ($1,'guild-b',2,'guild-a',$2,false)",
-                [uuid::Uuid::new_v4().into(), detached.into()],
-            ))
-            .await
-            .expect("link detached copy");
+        let (link, _) = seed_event(db, &fx, "live", false).await;
+        db.execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE events SET source_tenant_id='guild-b', source_event_id=1 WHERE id=$1",
+            [link.into()],
+        ))
+        .await
+        .expect("mark the link");
 
-        auto_stop_expired_sessions(db, &EventService::new(), &world.control, "guild-a")
+        auto_stop_expired_sessions(db, &EventService::new())
             .await
             .expect("auto-stop pass");
 
-        for id in [own, mirror, detached] {
-            let row = event::Entity::find_by_id(id)
-                .one(db)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(row.status, "auto_stopped");
-        }
+        let own_row = event::Entity::find_by_id(own).one(db).await.unwrap().unwrap();
+        assert_eq!(own_row.status, "auto_stopped");
+        let link_row = event::Entity::find_by_id(link).one(db).await.unwrap().unwrap();
+        assert_eq!(
+            link_row.status, "live",
+            "a link stops when its origin stops, never by its own deadline"
+        );
         let xp = |id| {
             event_completion_xp::Entity::find()
                 .filter(event_completion_xp::Column::EventId.eq(id))
@@ -3715,12 +2179,7 @@ mod tests {
             3,
             "own event snapshots creator + participants"
         );
-        assert_eq!(xp(mirror).await.unwrap(), 0, "a mirror never awards XP");
-        assert_eq!(
-            xp(detached).await.unwrap(),
-            0,
-            "a detached copy awards no XP"
-        );
+        assert_eq!(xp(link).await.unwrap(), 0, "a link never awards XP");
         let split_row = backend_entities::splits::split::Entity::find_by_id(own_split)
             .one(db)
             .await
@@ -3734,32 +2193,32 @@ mod tests {
     }
 }
 
-/// Auto-stop must treat every copy role the same way on SQLite: all roles stop, none but
-/// origins and unsynced events award XP, and a detached copy is not special-cased.
+/// Auto-stop stops origins and standalone events, and leaves links to the event they point at.
 #[cfg(test)]
-mod copy_role_auto_stop_tests {
-    use super::transition_tests::{fixture, seed_event, sqlite_db as bare_sqlite_db};
+mod link_auto_stop_tests {
+    use super::transition_tests::{fixture, seed_event, sqlite_db};
     use super::*;
     use crate::events::auto_stop::auto_stop_expired_sessions;
     use backend_entities::events::event_completion_xp;
-    use backend_runtime::sync::test_support::{link_event, sqlite_db};
     use sea_orm::PaginatorTrait;
 
-    const TENANT: &str = "guild-a";
-
     #[tokio::test]
-    async fn every_copy_role_auto_stops_and_only_origins_award_xp() {
+    async fn origins_stop_and_award_xp_while_links_stay_with_their_origin() {
         let db = sqlite_db().await;
         let fx = fixture(&db).await;
-        let (unsynced, _) = seed_event(&db, &fx, "live", false).await;
         let (origin, _) = seed_event(&db, &fx, "live", false).await;
-        let (active_copy, _) = seed_event(&db, &fx, "live", false).await;
-        let (detached_copy, _) = seed_event(&db, &fx, "live", false).await;
-        link_event(&db, (TENANT, origin), ("guild-b", 900), true).await;
-        link_event(&db, ("guild-b", 1), (TENANT, active_copy), true).await;
-        link_event(&db, ("guild-b", 2), (TENANT, detached_copy), false).await;
+        let (link, _) = seed_event(&db, &fx, "live", false).await;
+        let mut link_row: event::ActiveModel = event::Entity::find_by_id(link)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        link_row.source_tenant_id = Set(Some("alliance".to_owned()));
+        link_row.source_event_id = Set(Some(1));
+        link_row.update(&db).await.expect("mark the link");
 
-        auto_stop_expired_sessions(&db, &EventService::new(), &db, TENANT)
+        auto_stop_expired_sessions(&db, &EventService::new())
             .await
             .expect("auto-stop pass");
 
@@ -3773,40 +2232,20 @@ mod copy_role_auto_stop_tests {
                     .unwrap()
             }
         };
-        for (id, expected_xp) in [
-            (unsynced, 3),
-            (origin, 3),
-            (active_copy, 0),
-            // The regression this guards: a disabled link must neither keep the event live
-            // forever nor start awarding XP the origin tenant owns.
-            (detached_copy, 0),
-        ] {
-            let row = event::Entity::find_by_id(id)
-                .one(&db)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(row.status, "auto_stopped", "event {id} must stop");
-            assert_eq!(xp_rows(id).await, expected_xp, "xp rows of event {id}");
-        }
-    }
-
-    #[tokio::test]
-    async fn a_failing_control_lookup_leaves_the_session_live() {
-        // Without the link table the copy role cannot be resolved; stopping blindly could
-        // award XP to a copy, so the session is left for the next pass.
-        let db = bare_sqlite_db().await;
-        let fx = fixture(&db).await;
-        let (id, _) = seed_event(&db, &fx, "live", false).await;
-        auto_stop_expired_sessions(&db, &EventService::new(), &db, TENANT)
-            .await
-            .expect("pass");
-        let row = event::Entity::find_by_id(id)
+        let origin_row = event::Entity::find_by_id(origin)
             .one(&db)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(row.status, "live");
+        assert_eq!(origin_row.status, "auto_stopped");
+        assert_eq!(xp_rows(origin).await, 3);
+        let link_after = event::Entity::find_by_id(link)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(link_after.status, "live", "the origin's worker stops it");
+        assert_eq!(xp_rows(link).await, 0);
     }
 }
 
@@ -4464,33 +2903,6 @@ mod transition_tests {
         assert!(run(&db, id, stop, Cause::Web).await.is_err());
         assert_eq!(row_effects(&db, id, split_id).await, before);
         assert_eq!(before.status, "live");
-    }
-
-    #[tokio::test]
-    async fn finish_copy_session_runs_the_stop_body_for_an_already_stopped_event() {
-        let db = sqlite_db().await;
-        let fx = fixture(&db).await;
-        let (id, split_id) = seed_event(&db, &fx, "stopped", false).await;
-        let service = EventService::new();
-
-        let txn = db.begin().await.unwrap();
-        let state = service
-            .finish_copy_session(&txn, id, XpFilter::Everyone)
-            .await
-            .unwrap();
-        txn.commit().await.unwrap();
-        assert_eq!(state, SplitSyncState::Synced);
-        let effects = row_effects(&db, id, split_id).await;
-        assert_eq!(effects.xp_rows.len(), 3);
-        assert_eq!(effects.split_status, "pending");
-
-        let (live, _) = seed_event(&db, &fx, "live", false).await;
-        let txn = db.begin().await.unwrap();
-        let error = service
-            .finish_copy_session(&txn, live, XpFilter::Everyone)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, AppError::Conflict(_)));
     }
 
     #[tokio::test]

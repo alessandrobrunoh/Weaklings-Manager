@@ -665,9 +665,6 @@ export class Settings {
   protected readonly albionLinkLabel = computed(() => {
     const link = this.albionLink();
     if (link?.linked) return link.albion_player_name ?? '';
-    if (link?.pending) {
-      return this.t('albion.pending.badge', { name: link.pending_albion_player_name ?? '' });
-    }
     return this.t('albion.not_linked');
   });
   protected readonly userMetrics = signal<UserMetrics | null>(null);
@@ -943,9 +940,7 @@ export class Settings {
       );
       this.albionLink.set(linkStatus);
       this.closeLinkDialog();
-      this.toasts.success(
-        this.t(linkStatus.linked ? 'albion.linked' : 'albion.pending.sent', { name: player.name }),
-      );
+      this.toasts.success(this.t('albion.linked', { name: player.name }));
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import type { BuildItemSlot, BuildLoadout } from '../../core/models/api.models';
-import { itemsForLoadout } from './build-loadouts';
+import {
+  BUILD_ITEM_TIERS,
+  CORE_SLOTS,
+  DEFAULT_BUILD_ITEM_TIER,
+  SLOT_LABEL_KEYS,
+  SLOT_ORDER,
+  itemsForLoadout,
+  slotSupportsEnchantment,
+  slotSupportsQuality,
+  isTwoHandedWeaponKey,
+  mainSlotCapacity,
+  mainSlotProgress,
+  sortBySlotOrder,
+  weaponKeyOfItems,
+} from './build-loadouts';
 
 function item(
   slot: BuildItemSlot['slot'],
@@ -57,7 +71,79 @@ describe('build loadouts', () => {
     ]);
   });
 
+  it('keeps one canonical slot order, weapon first and mount last', () => {
+    expect(SLOT_ORDER).toEqual([
+      'weapon',
+      'off_hand',
+      'head',
+      'armor',
+      'shoes',
+      'cape',
+      'bag',
+      'food',
+      'potion',
+      'mount',
+    ]);
+    expect(Object.keys(SLOT_LABEL_KEYS).sort()).toEqual([...SLOT_ORDER].sort());
+    expect([...CORE_SLOTS].every((slot) => SLOT_ORDER.includes(slot))).toBe(true);
+  });
+
+  it('offers T4 to T8 for build items, with T8 as the default', () => {
+    expect(BUILD_ITEM_TIERS).toEqual(['T4', 'T5', 'T6', 'T7', 'T8']);
+    expect(BUILD_ITEM_TIERS).toContain(DEFAULT_BUILD_ITEM_TIER);
+    expect(DEFAULT_BUILD_ITEM_TIER).toBe('T8');
+  });
+
+  it('knows which slots carry a quality and an enchantment', () => {
+    expect(slotSupportsQuality('weapon')).toBe(true);
+    expect(slotSupportsQuality('food')).toBe(false);
+    expect(slotSupportsEnchantment('head')).toBe(true);
+    expect(slotSupportsEnchantment('mount')).toBe(false);
+  });
+
+  it('compares two items by slot order so any list can be sorted with it', () => {
+    const items = [item('mount', 'main', 'Horse'), item('weapon', 'main', 'Bow')];
+
+    expect([...items].sort(sortBySlotOrder).map((entry) => entry.slot)).toEqual(['weapon', 'mount']);
+    expect(items.map((entry) => entry.slot)).toEqual(['mount', 'weapon']);
+  });
+
   it('returns an empty swap for a build that has none', () => {
     expect(itemsForLoadout([item('weapon', 'main', 'Polehammer')], 'swap')).toEqual([]);
+  });
+});
+
+describe('two-handed slot capacity', () => {
+  it('counts the off-hand as missing only when the weapon leaves room for one', () => {
+    expect(isTwoHandedWeaponKey('weapon:2H_BOW')).toBe(true);
+    expect(isTwoHandedWeaponKey('weapon:MAIN_SWORD')).toBe(false);
+    expect(isTwoHandedWeaponKey(null)).toBe(false);
+    expect(mainSlotCapacity('weapon:2H_BOW')).toBe(SLOT_ORDER.length - 1);
+    expect(mainSlotCapacity('weapon:MAIN_SWORD')).toBe(SLOT_ORDER.length);
+  });
+
+  it('reports a fully equipped two-hander as 9 of 9, never 9 of 10', () => {
+    expect(mainSlotProgress({ main_item_count: 9, weapon_key: 'weapon:2H_BOW' })).toEqual({
+      filled: 9,
+      total: 9,
+    });
+    expect(mainSlotProgress({ main_item_count: 9, weapon_key: 'weapon:MAIN_SWORD' })).toEqual({
+      filled: 9,
+      total: 10,
+    });
+    expect(mainSlotProgress({ main_item_count: 12, weapon_key: null }).filled).toBe(10);
+  });
+
+
+  it('reads the weapon key of a draft from the weapon icon', () => {
+    const weapon = {
+      ...item('weapon', 'main', 'Bow'),
+      openalbion_item_icon: 'https://render.albiononline.com/v1/item/T8_2H_BOW%401.png?quality=4&size=96',
+    };
+
+    expect(weaponKeyOfItems([weapon])).toBe('weapon:2H_BOW');
+    expect(isTwoHandedWeaponKey(weaponKeyOfItems([weapon]))).toBe(true);
+    expect(weaponKeyOfItems([item('head', 'main', 'Hood')])).toBeNull();
+    expect(weaponKeyOfItems([item('weapon', 'swap', 'Sword')])).toBeNull();
   });
 });

@@ -17,7 +17,6 @@ import type {
 /** What the automatic Albion link managed to do for the applicant. */
 export type LinkOutcome =
   | 'linked'
-  | 'pending'
   | 'already-linked'
   | 'not-found'
   | 'ambiguous'
@@ -237,10 +236,8 @@ export function pickExactPlayer<T extends { name: string; in_guild?: boolean }>(
 }
 
 /**
- * Asks to link the applicant's Albion character. Backend-side `POST /albion/link` only files a
- * request for members, because Albion cannot prove who owns a character: the rename and the
- * guild role happen once an officer approves it (`'pending'`). So this only has to find the
- * player id for the name.
+ * Links the applicant's Albion character. Backend-side `POST /albion/link` applies the link at
+ * once (nickname and guild role included), so this only has to find the player id for the name.
  */
 export async function linkIngameName(
   api: ApiClient,
@@ -269,7 +266,7 @@ export async function linkIngameName(
       { albion_player_id: player.id, albion_player_name: player.name },
       discordId,
     );
-    return status.linked === true ? 'linked' : 'pending';
+    return status.linked === true ? 'linked' : 'failed';
   } catch (error) {
     // The backend answers 409 when this Discord account already has a
     // character, which is a perfectly normal thing for a returning member.

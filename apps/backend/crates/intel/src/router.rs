@@ -11,6 +11,10 @@ use axum::{
 
 use chrono::{DateTime, Utc};
 
+use crate::analytics::{
+    FightsQuery, IntelComps, IntelFightList, IntelOverview, IntelPlayer, IntelRoster,
+    PeriodParams, Window, build_comps, build_fights, build_overview, build_player, build_roster,
+};
 use crate::auto_scout::{BackfillOutcome, scout_snapshots_before};
 use crate::cache::ReportCache;
 use crate::matchups::{MatchupReport, matchups};
@@ -129,6 +133,11 @@ pub fn router() -> Router {
         .route("/report", get(guild_report))
         .route("/report/refresh", post(refresh_guild_report))
         .route("/players/{user_id}", get(player_report))
+        .route("/overview", get(overview))
+        .route("/fights", get(our_fights))
+        .route("/comps", get(our_comps))
+        .route("/roster", get(roster))
+        .route("/roster/{user_id}", get(roster_member))
 }
 
 /// Builds the friendly-guild classifier from configuration.
@@ -744,4 +753,207 @@ pub async fn player_report(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
     Ok(Json(ApiResponse::new(report)))
+}
+
+/// How the guild is doing over a period.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, or `400` for an unknown period or a bad window.
+#[utoipa::path(
+    get,
+    path = "/api/intel/overview",
+    tag = "intel",
+    summary = "Guild overview for a period",
+    description = "Headline combat numbers over the selected period (`7d`, `30d`, `90d`, `all`, \
+        or a custom `from`/`to`), the same numbers for the preceding period of equal length, a \
+        weekly trend, the newest fights and the opponents met most often. Outcomes are the \
+        stored fight outcomes. Rates are null, not zero, when there is nothing to divide by. \
+        Estimated silver lost is only returned to callers who also hold `intel.report.view`.",
+    security(("session_cookie" = ["intel.view"])),
+    params(PeriodParams),
+    responses(
+        (status = 200, description = "Overview computed", body = ApiResponse<IntelOverview>),
+        (status = 400, description = "Invalid period", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn overview(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(params): Query<PeriodParams>,
+) -> Result<Json<ApiResponse<IntelOverview>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let financials = user
+        .has_permission(&perms, Permission::IntelReportView)
+        .await;
+    let window = Window::resolve(&params)?;
+    Ok(Json(ApiResponse::new(
+        build_overview(&db, &window, financials).await?,
+    )))
+}
+
+/// Our fights over a period, filterable and sortable.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, or `400` for an unknown period, outcome or sort.
+#[utoipa::path(
+    get,
+    path = "/api/intel/fights",
+    tag = "intel",
+    summary = "Our fights for a period",
+    description = "Canonical fights from our side: outcome (as stored on the fight), opponent \
+        guild, comp, friendly and enemy player counts, kills, deaths, fame and item power. \
+        Filter by outcome, opponent name, comp and friendly player count; sort by start time, \
+        players, kills, deaths, kill fame or K/D. `summary` covers every fight matching the \
+        filters, and `opponents`/`comps` list the filter options for the whole period. Rows link \
+        to the fight detail page by `fight_id`.",
+    security(("session_cookie" = ["intel.view"])),
+    params(FightsQuery),
+    responses(
+        (status = 200, description = "Fights listed", body = ApiResponse<IntelFightList>),
+        (status = 400, description = "Invalid filter", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn our_fights(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(query): Query<FightsQuery>,
+) -> Result<Json<ApiResponse<IntelFightList>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let financials = user
+        .has_permission(&perms, Permission::IntelReportView)
+        .await;
+    Ok(Json(ApiResponse::new(
+        build_fights(&db, &query, financials).await?,
+    )))
+}
+
+/// The comps we fielded over a period.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, or `400` for an unknown period.
+#[utoipa::path(
+    get,
+    path = "/api/intel/comps",
+    tag = "intel",
+    summary = "Our comps for a period",
+    description = "Every comp fielded in a fight during the period, with usage, record, K/D, \
+        average players, last use and its best and worst matchups against enemy guilds. A fight \
+        is attributed to a comp through its event; fights with no event are reported as \
+        `unattributed_fights` rather than guessed.",
+    security(("session_cookie" = ["intel.view"])),
+    params(PeriodParams),
+    responses(
+        (status = 200, description = "Comps computed", body = ApiResponse<IntelComps>),
+        (status = 400, description = "Invalid period", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn our_comps(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(params): Query<PeriodParams>,
+) -> Result<Json<ApiResponse<IntelComps>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let financials = user
+        .has_permission(&perms, Permission::IntelReportView)
+        .await;
+    let window = Window::resolve(&params)?;
+    Ok(Json(ApiResponse::new(
+        build_comps(&db, &window, financials).await?,
+    )))
+}
+
+/// Our players over a period.
+///
+/// A caller holding only `intel.view` gets their own row; `intel.report.view` unlocks the whole
+/// roster. The restriction is applied here, not in the client.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, or `400` for an unknown period.
+#[utoipa::path(
+    get,
+    path = "/api/intel/roster",
+    tag = "intel",
+    summary = "Our players for a period",
+    description = "One row per guild member: fights attended and attendance rate, kills, deaths, \
+        K/D, kill and death fame, average item power, most-played weapons and role, and the \
+        last fight. Attendance is measured against fights that have a computed rollup. Members \
+        are matched to battle characters through their linked Albion character; characters \
+        nobody has linked are listed in `unlinked_players`. Callers with only `intel.view` \
+        receive just their own row (`scope` is `self`); `intel.report.view` returns everyone.",
+    security(("session_cookie" = ["intel.view"])),
+    params(PeriodParams),
+    responses(
+        (status = 200, description = "Roster computed", body = ApiResponse<IntelRoster>),
+        (status = 400, description = "Invalid period", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn roster(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(params): Query<PeriodParams>,
+) -> Result<Json<ApiResponse<IntelRoster>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let sees_everyone = user
+        .has_permission(&perms, Permission::IntelReportView)
+        .await;
+    let window = Window::resolve(&params)?;
+    let only_user = (!sees_everyone).then_some(user.user_id);
+    Ok(Json(ApiResponse::new(
+        build_roster(&db, &window, only_user).await?,
+    )))
+}
+
+/// One member's intel over a period.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` when the caller lacks `intel.view`, or asks for another member
+/// without `intel.report.view`; `400` for an unknown period; `404` if the member does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/intel/roster/{user_id}",
+    tag = "intel",
+    summary = "One player's intel for a period",
+    description = "The member's roster row plus a weekly breakdown, their fights (newest \
+        first), weapons and roles played, the builds they signed up with and the comps they \
+        fought in. Any member may read their own page with `intel.view`; reading someone else's \
+        needs `intel.report.view`.",
+    security(("session_cookie" = ["intel.view"])),
+    params(("user_id" = i64, Path, description = "App user id"), PeriodParams),
+    responses(
+        (status = 200, description = "Player computed", body = ApiResponse<IntelPlayer>),
+        (status = 400, description = "Invalid period", body = ProblemDetails),
+        (status = 403, description = "Forbidden - another member's page needs intel.report.view", body = ProblemDetails),
+        (status = 404, description = "No such user", body = ProblemDetails)
+    )
+)]
+pub async fn roster_member(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<i64>,
+    Query(params): Query<PeriodParams>,
+) -> Result<Json<ApiResponse<IntelPlayer>>, AppError> {
+    if user.user_id == user_id {
+        user.require(&perms, Permission::IntelView).await?;
+    } else {
+        user.require(&perms, Permission::IntelReportView).await?;
+    }
+    let window = Window::resolve(&params)?;
+    let player = build_player(&db, &window, user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
+    Ok(Json(ApiResponse::new(player)))
 }

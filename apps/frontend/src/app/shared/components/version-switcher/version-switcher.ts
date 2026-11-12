@@ -24,18 +24,56 @@ import type { VersionRef } from '../../../core/models/api.models';
 @Component({
   selector: 'app-version-switcher',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: `
+    .vs-chip {
+      min-width: 2rem;
+      min-height: 1.5rem;
+      padding: 0 0.5rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--color-text-secondary);
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .vs-chip:hover:not(:disabled) {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+    .vs-chip:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 1px;
+    }
+    .vs-chip:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .vs-chip[aria-current='true'] {
+      border-color: var(--color-primary);
+      background: var(--color-primary-container);
+      color: var(--color-text);
+      font-weight: 600;
+    }
+  `,
   template: `
     @if (versions().length > 1 || canManage()) {
       <div class="flex flex-wrap items-center gap-2">
         @if (versions().length > 1) {
-          <span class="text-sm" style="color: var(--color-text-secondary)">{{ label() }}</span>
+          @if (compact()) {
+            <span class="sr-only">{{ label() }}</span>
+          } @else {
+            <span class="text-sm" style="color: var(--color-text-secondary)">{{ label() }}</span>
+          }
           <nav class="flex flex-wrap gap-1" [attr.aria-label]="label()">
             @for (entry of versions(); track entry.id) {
               <button
                 type="button"
-                class="btn btn--sm"
-                [class.btn--primary]="entry.id === currentId()"
-                [class.btn--outline]="entry.id !== currentId()"
+                [class.vs-chip]="compact()"
+                [class.btn]="!compact()"
+                [class.btn--sm]="!compact()"
+                [class.btn--primary]="!compact() && entry.id === currentId()"
+                [class.btn--outline]="!compact() && entry.id !== currentId()"
                 [attr.aria-current]="entry.id === currentId() ? 'true' : null"
                 [disabled]="busy()"
                 (click)="select.emit(entry.id)"
@@ -62,6 +100,8 @@ export class VersionSwitcher {
   /** Supplied by the parent so both labels stay translated. */
   readonly label = input('Version');
   readonly createLabel = input('New version');
+  /** Small neutral chips instead of buttons, for a page's meta line; the label stays for screen readers. */
+  readonly compact = input(false);
 
   readonly select = output<number>();
   readonly create = output<void>();

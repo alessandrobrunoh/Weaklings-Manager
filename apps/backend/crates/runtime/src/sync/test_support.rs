@@ -21,11 +21,25 @@ pub async fn sqlite_db() -> DatabaseConnection {
             source_event_id BIGINT NOT NULL,
             mirror_tenant_id TEXT NOT NULL,
             mirror_event_id BIGINT NOT NULL,
-            sync_enabled BOOLEAN NOT NULL DEFAULT TRUE
+            sync_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
     )
     .await
     .expect("event_sync_links");
+    db.execute_unprepared(
+        "CREATE TABLE event_participant_attributions (
+            id TEXT PRIMARY KEY,
+            source_tenant_id TEXT NOT NULL,
+            source_event_id BIGINT NOT NULL,
+            discord_id TEXT NOT NULL,
+            guild_tenant_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (source_tenant_id, source_event_id, discord_id)
+        )",
+    )
+    .await
+    .expect("event_participant_attributions");
     db.execute_unprepared(
         "CREATE TABLE alliance_shares (
             alliance_tenant_id TEXT NOT NULL,
@@ -180,9 +194,23 @@ pub fn matrix_app(
     tenant_id: &str,
     tenant_kind: &str,
 ) -> axum::Router {
+    let registry =
+        backend_identity::tenant::TenantRegistry::new("sqlite::memory:".to_owned(), db.clone());
+    matrix_app_with_registry(routes, db, tenant_id, tenant_kind, registry)
+}
+
+/// [`matrix_app`] with a caller-supplied registry, so a test can cache the contexts of other
+/// tenants (see [`matrix_tenant`]) the request may be routed to.
+pub fn matrix_app_with_registry(
+    routes: axum::Router,
+    db: &DatabaseConnection,
+    tenant_id: &str,
+    tenant_kind: &str,
+    registry: backend_identity::tenant::TenantRegistry,
+) -> axum::Router {
     use axum::Extension;
     use backend_identity::auth::Permissions;
-    use backend_identity::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
+    use backend_identity::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind};
 
     routes
         .layer(Extension(matrix_config()))
@@ -191,10 +219,24 @@ pub fn matrix_app(
         .layer(Extension(ControlDb(db.clone())))
         .layer(Extension(CurrentTenantId(tenant_id.to_owned())))
         .layer(Extension(CurrentTenantKind(tenant_kind.to_owned())))
-        .layer(Extension(TenantRegistry::new(
-            "sqlite::memory:".to_owned(),
-            db.clone(),
-        )))
+        .layer(Extension(registry))
+}
+
+/// A tenant context backed by `db`, for [`backend_identity::tenant::TenantRegistry::cache_context_for_tests`].
+#[must_use]
+pub fn matrix_tenant(
+    tenant_id: &str,
+    kind: &str,
+    db: &DatabaseConnection,
+) -> std::sync::Arc<backend_identity::tenant::TenantContext> {
+    std::sync::Arc::new(backend_identity::tenant::TenantContext {
+        tenant_id: tenant_id.to_owned(),
+        schema_name: format!("matrix_{tenant_id}"),
+        db: db.clone(),
+        permissions: backend_identity::auth::Permissions::new_empty(),
+        features: std::collections::HashSet::new(),
+        kind: kind.to_owned(),
+    })
 }
 
 /// Sends one request through `app` as the bot system caller and returns status + JSON body.
@@ -203,6 +245,17 @@ pub async fn call(
     method: &str,
     path: &str,
     body: Option<serde_json::Value>,
+) -> (axum::http::StatusCode, serde_json::Value) {
+    call_with_headers(app, method, path, body, &[]).await
+}
+
+/// [`call`] with extra request headers, e.g. `X-Discord-Id` to act as a member through the bot.
+pub async fn call_with_headers(
+    app: &axum::Router,
+    method: &str,
+    path: &str,
+    body: Option<serde_json::Value>,
+    headers: &[(&str, &str)],
 ) -> (axum::http::StatusCode, serde_json::Value) {
     use tower::ServiceExt;
 
@@ -213,6 +266,9 @@ pub async fn call(
             backend_identity::tenant::BOT_SECRET_HEADER,
             MATRIX_BOT_SECRET,
         );
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
     let body = match body {
         Some(json) => {
             builder = builder.header("content-type", "application/json");

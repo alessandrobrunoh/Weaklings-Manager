@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { EnemyGuildSummary, EnemyPlayerSummary } from '../../core/models/api.models';
+import { AuthService } from '../../core/services/auth.service';
 import { EnemiesService } from '../../core/services/enemies.service';
 import type {
   ListEnemyGuildsParams,
@@ -19,28 +20,31 @@ import {
   parseDataTableQuery,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
-import { Icon } from '../../shared/components/icon/icon';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   ViewToggle,
   type ViewToggleOption,
 } from '../../shared/components/view-toggle/view-toggle';
+import { MatchupMatrix } from './matchup-matrix';
+import { ScoutLibrary } from './scout-library';
 
 /** Default page size for both the enemy guild and enemy player tables. */
 const PAGE_LIMIT = 25;
 
 /**
- * Enemy identity browser: every enemy guild and player identified from battle
- * evidence, server-paged and searchable.
+ * Intel opponents: who we face and what they field.
  *
- * Both tables load lazily — the player table only fetches once the Players
- * tab is first opened, since most visits only need one of the two lists.
+ * Four views. Guilds and Players are the enemy identities pulled from battle evidence
+ * (`intel.opponents.view`, officers); Scouted comps and Matchups are the scout library and our
+ * record against it (`intel.view`, every member). Members therefore land on Scouted comps.
+ *
+ * Guild and player tables load lazily — the player table only fetches once the Players tab is
+ * first opened, since most visits only need one of the two lists.
  */
 @Component({
   selector: 'app-opponents',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DataTable, DataTableCell, Icon, PageHeader, PageStack, RouterLink, ViewToggle],
+  imports: [DatePipe, DataTable, DataTableCell, MatchupMatrix, PageStack, RouterLink, ScoutLibrary, ViewToggle],
   styles: [`
     :host { display: block; color: var(--color-text); }
     :host ::ng-deep .rounded-xl, :host ::ng-deep .rounded-2xl,
@@ -51,17 +55,15 @@ const PAGE_LIMIT = 25;
     }
   `],
   template: `
-    <app-page-header [title]="t('intel.opponents.title')" [subtitle]="t('intel.opponents.subtitle')">
-      <app-view-toggle
-        pageTabs
-        [options]="tabs()"
-        [active]="tab()"
-        (activeChange)="onTabChange($event)"
-      />
-    </app-page-header>
-
     <app-page-stack>
+      <app-view-toggle [options]="tabs()" [active]="tab()" (activeChange)="onTabChange($event)" />
       @switch (tab()) {
+        @case ('scouts') {
+          <app-scout-library />
+        }
+        @case ('matchups') {
+          <app-matchup-matrix />
+        }
         @case ('guilds') {
           <app-data-table
             [columns]="guildColumns()"
@@ -270,13 +272,18 @@ const PAGE_LIMIT = 25;
 })
 export class Opponents {
   private readonly enemies = inject(EnemiesService);
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
   protected readonly PAGE_LIMIT = PAGE_LIMIT;
-  protected readonly tab = signal<'guilds' | 'players'>('guilds');
+  /** Guild and player dossiers are officer-only; the scout views are open to every member. */
+  protected readonly canViewDossiers = computed(() => this.auth.hasPermission('intel.opponents.view'));
+  protected readonly tab = signal<'guilds' | 'players' | 'scouts' | 'matchups'>(
+    this.auth.hasPermission('intel.opponents.view') ? 'guilds' : 'scouts',
+  );
 
   protected readonly guilds = signal<EnemyGuildSummary[]>([]);
   protected readonly guildsTotal = signal(0);
@@ -311,8 +318,14 @@ export class Opponents {
   });
 
   protected readonly tabs = computed<ViewToggleOption[]>(() => [
-    { id: 'guilds', label: this.t('intel.opponents.tab.guilds') },
-    { id: 'players', label: this.t('intel.opponents.tab.players') },
+    ...(this.canViewDossiers()
+      ? [
+          { id: 'guilds', label: this.t('intel.opponents.tab.guilds') },
+          { id: 'players', label: this.t('intel.opponents.tab.players') },
+        ]
+      : []),
+    { id: 'scouts', label: this.t('intel.opponents.tab.scouts') },
+    { id: 'matchups', label: this.t('intel.opponents.tab.matchups') },
   ]);
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
@@ -414,11 +427,18 @@ export class Opponents {
   protected readonly trackPlayer = (row: EnemyPlayerSummary): unknown => row.id;
 
   constructor() {
-    void this.loadGuilds();
+    if (this.canViewDossiers()) {
+      void this.loadGuilds();
+    }
   }
 
   protected onTabChange(tab: string): void {
-    this.tab.set(tab === 'players' ? 'players' : 'guilds');
+    if ((tab === 'guilds' || tab === 'players') && !this.canViewDossiers()) {
+      return;
+    }
+    this.tab.set(
+      tab === 'players' || tab === 'scouts' || tab === 'matchups' ? tab : 'guilds',
+    );
     if (tab === 'players' && !this.playersLoaded) {
       void this.loadGuildFilterOptions(1);
       void this.loadPlayers();

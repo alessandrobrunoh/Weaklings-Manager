@@ -436,6 +436,13 @@ async fn validate_event_link(
             "flash masses do not support loot splits".to_string(),
         ));
     }
+    // A link to another tenant's event has no comp and no roster of its own: the roster, and the
+    // split drawn from it, live on the owning event.
+    if event.source_tenant_id.is_some() && event.comp_id.is_none() {
+        return Err(AppError::Conflict(
+            "this event is owned by another tenant; create its split there".to_string(),
+        ));
+    }
     Ok(())
 }
 

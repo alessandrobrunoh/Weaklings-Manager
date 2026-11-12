@@ -239,7 +239,7 @@ pub async fn discord_callback(
         .or_else(|| matches.first().filter(|_| matches.len() == 1));
 
     if let Some(tenant) = automatic_tenant {
-        let profile = finalize_session(
+        let profile = match finalize_session(
             &cfg,
             &registry,
             &admins,
@@ -248,7 +248,20 @@ pub async fn discord_callback(
             profile,
             tenant,
         )
-        .await?;
+        .await
+        {
+            Ok(profile) => profile,
+            // No session for a blocked member: send them to the explanation instead of a bare
+            // JSON error in the browser.
+            Err(AppError::AccountBlocked) => {
+                let jar = remove_oauth_cookies(
+                    PrivateCookieJar::from_headers(&headers, key.clone())
+                        .remove(pending_cookie_tombstone()),
+                );
+                return Ok((jar, Redirect::temporary(&after_login("/blocked"))));
+            }
+            Err(error) => return Err(error),
+        };
         let sid = start_session(&sessions, &headers, &key, &profile.id).await?;
         let private_jar = remove_oauth_cookies(with_registerable_guilds(
             PrivateCookieJar::from_headers(&headers, key)
@@ -328,7 +341,7 @@ pub struct SelectTenantBody {
     responses(
         (status = 200, description = "Session established", body = ApiResponseDiscordUserProfile),
         (status = 401, description = "No pending OAuth pick", body = ProblemDetails),
-        (status = 403, description = "Chosen tenant is not in the pending set", body = ProblemDetails)
+        (status = 403, description = "Chosen tenant is not in the pending set, or the member is blocked there (problem code `account_blocked`)", body = ProblemDetails)
     )
 )]
 #[allow(clippy::too_many_arguments)]
@@ -765,6 +778,14 @@ async fn finalize_session(
     profile.is_platform_admin = profile.is_superadmin;
     profile.is_tenant_owner =
         PlatformService::is_tenant_owner(control, &tenant.id, &profile.id).await?;
+    // A blocked member gets no session scoped to this server. Platform admins and the owner can
+    // never be blocked out of it.
+    if !profile.is_superadmin
+        && !profile.is_tenant_owner
+        && let Some(row) = crate::users::identity::find_by_discord_id(&ctx.db, &profile.id).await?
+    {
+        crate::users::block::ensure_not_blocked(&row)?;
+    }
     if profile.is_superadmin {
         profile.roles = vec!["SuperAdmin".to_string()];
         profile.highest_role = "SuperAdmin".to_string();
@@ -881,7 +902,8 @@ fn pending_cookie_tombstone() -> Cookie<'static> {
         \"not logged in\" — render the Discord login button linking to `GET /api/auth/discord/login`.",
     responses(
         (status = 200, description = "Active session found; data is the logged-in user's Discord profile", body = ApiResponseDiscordUserProfile),
-        (status = 401, description = "Unauthorized - no active session or invalid/expired session cookie", body = ProblemDetails)
+        (status = 401, description = "Unauthorized - no active session or invalid/expired session cookie", body = ProblemDetails),
+        (status = 403, description = "Forbidden - an officer blocked this member from the manager (problem code `account_blocked`); render the access-blocked screen", body = ProblemDetails)
     )
 )]
 #[allow(clippy::too_many_arguments)]
@@ -946,10 +968,12 @@ pub async fn get_me(
     if let Some(Extension(db)) = db.as_ref() {
         // The cookie caches `user_id` from login. Re-resolve from the Discord snowflake so a
         // stale or email-collided cookie cannot show another member's name, splits, or bank.
-        if let Some(user_id) =
-            crate::users::identity::user_id_for_discord_id(db, &profile.id).await?
-        {
-            profile.user_id = user_id;
+        if let Some(row) = crate::users::identity::find_by_discord_id(db, &profile.id).await? {
+            profile.user_id = row.id;
+            // A block takes effect on the next page load even on a live, cached session.
+            if !profile.is_superadmin && !profile.is_tenant_owner {
+                crate::users::block::ensure_not_blocked(&row)?;
+            }
         }
         if profile.user_id > 0 {
             profile.username =

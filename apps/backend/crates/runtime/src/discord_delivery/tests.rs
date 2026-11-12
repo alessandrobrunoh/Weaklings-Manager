@@ -156,7 +156,18 @@ async fn backfill_stamps_only_past_due_non_terminal_events() {
     backend_migration::Migrator::up(&db, Some((total_migrations() - slice_migrations()) as u32))
         .await
         .expect("pre-slice migrations");
-    let organizer = crate::sync::test_support::insert_user(&db, "organizer").await;
+    // Raw SQL: the `users` entity carries columns that later migrations add.
+    let organizer: i64 = db
+        .query_one(Statement::from_string(
+            DbBackend::Sqlite,
+            "INSERT INTO users (username, email, role) \
+             VALUES ('organizer', 'organizer@example.com', 'User') RETURNING id",
+        ))
+        .await
+        .expect("insert organizer")
+        .expect("organizer row")
+        .try_get_by_index(0)
+        .expect("organizer id");
     let soon = (Utc::now() + Duration::minutes(20))
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();

@@ -305,7 +305,10 @@ export interface EventView {
   origin_guild_id?: string | null;
   source_tenant_id?: string | null;
   source_event_id?: number | null;
-  is_synchronized_copy?: boolean;
+  /** True when this row is a link to an event another server owns (one event, many servers). */
+  is_link?: boolean;
+  /** Name of the server that owns the linked event; set on links only. */
+  source_tenant_name?: string | null;
   vod_forum_post_enabled?: boolean;
   vod_forum_post_status?: 'not_requested' | 'pending' | 'attempted' | 'created' | 'deleted';
   vod_forum_thread_id?: string | null;
@@ -441,11 +444,6 @@ export interface AlbionLinkStatus {
   albion_player_id?: string;
   albion_player_name?: string;
   linked_at?: string;
-  /** A claim is waiting for an officer. It is not a link: `linked` stays false. */
-  pending?: boolean;
-  pending_albion_player_id?: string;
-  pending_albion_player_name?: string;
-  requested_at?: string;
 }
 
 export interface AlbionPlayerSummary {

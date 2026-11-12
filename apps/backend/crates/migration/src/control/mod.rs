@@ -38,6 +38,7 @@ pub mod m20261107_000001_sync_engine;
 pub mod m20261109_000001_auth_sessions;
 pub mod m20261109_000002_event_fanout_exhausted_state;
 pub mod m20261110_000001_event_participation_forwards;
+pub mod m20261112_000001_drop_event_copy_outboxes;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -95,6 +96,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_000001_auth_sessions::Migration),
             Box::new(m20261109_000002_event_fanout_exhausted_state::Migration),
             Box::new(m20261110_000001_event_participation_forwards::Migration),
+            Box::new(m20261112_000001_drop_event_copy_outboxes::Migration),
         ]
     }
 }
@@ -198,8 +200,6 @@ mod tests {
             "event_sync_links",
             "event_fanout_jobs",
             "event_fanout_targets",
-            "event_fanout_assets",
-            "event_participation_forwards",
             "event_participant_attributions",
             "alliance_split_distribution_batches",
             "alliance_split_distribution_items",
@@ -250,6 +250,12 @@ mod tests {
             }),
             "control schema must prevent a duplicate source-to-destination link: {source_indexes:?}"
         );
+        for dropped in ["event_fanout_assets", "event_participation_forwards"] {
+            assert!(
+                !control_tables.iter().any(|t| t == dropped),
+                "control schema still has the copy outbox {dropped}: {control_tables:?}"
+            );
+        }
         for control_only in [
             "tenants",
             "platform_roles",
@@ -265,8 +271,6 @@ mod tests {
             "event_sync_links",
             "event_fanout_jobs",
             "event_fanout_targets",
-            "event_fanout_assets",
-            "event_participation_forwards",
             "event_participant_attributions",
             "alliance_split_distribution_batches",
             "alliance_split_distribution_items",

@@ -53,6 +53,38 @@ describe('AuthService session probe', () => {
     expect(auth.sessionUnreachable()).toBe(false);
   });
 
+  it('flags a blocked member instead of reading the 403 as a plain missing session', async () => {
+    const blocked = new ApiError(403, 'blocked', { code: 'account_blocked' });
+    const get = vi
+      .fn()
+      .mockReturnValueOnce(of(profile))
+      .mockReturnValueOnce(throwError(() => blocked));
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: { get, post: vi.fn() } }],
+    });
+    const auth = TestBed.inject(AuthService);
+
+    await auth.load();
+    expect(auth.accessBlocked()).toBe(false);
+    const again = await auth.load();
+
+    expect(again).toBeNull();
+    expect(auth.isAuthenticated()).toBe(false);
+    expect(auth.accessBlocked()).toBe(true);
+    expect(auth.sessionUnreachable()).toBe(false);
+  });
+
+  it('a plain 403 stays a missing session, not a block', async () => {
+    const get = vi.fn().mockReturnValue(throwError(() => new ApiError(403, 'nope')));
+    TestBed.configureTestingModule({
+      providers: [{ provide: ApiService, useValue: { get, post: vi.fn() } }],
+    });
+    const auth = TestBed.inject(AuthService);
+
+    expect(await auth.load()).toBeNull();
+    expect(auth.accessBlocked()).toBe(false);
+  });
+
   it('does not drop local state when logout fails', async () => {
     const post = vi.fn().mockReturnValue(throwError(() => new ApiError(500, 'nope')));
     TestBed.configureTestingModule({

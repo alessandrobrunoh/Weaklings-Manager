@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AuthService } from '../services/auth.service';
 import {
+  authGuard,
   permissionGuard,
   permissionGuardTo,
   platformGuard,
@@ -143,6 +144,54 @@ describe('tenantGuard', () => {
       tenantGuard({} as never, {} as never),
     );
     expect(router.serializeUrl(result as UrlTree)).toBe('/needs-tenant');
+  });
+});
+
+describe('blocked members', () => {
+  function configure(accessBlocked: boolean): void {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: () => false,
+            profile: () => null,
+            load: async () => null,
+            accessBlocked: () => accessBlocked,
+            sessionUnreachable: () => false,
+          },
+        },
+      ],
+    });
+  }
+
+  it('authGuard sends a blocked member to /blocked, not /login', async () => {
+    configure(true);
+    const router = TestBed.inject(Router);
+    const result = await TestBed.runInInjectionContext(() =>
+      authGuard({} as never, { url: '/dashboard' } as never),
+    );
+    expect(router.serializeUrl(result as UrlTree)).toBe('/blocked');
+  });
+
+  it('authGuard still sends a signed-out visitor to /login', async () => {
+    configure(false);
+    const router = TestBed.inject(Router);
+    const result = await TestBed.runInInjectionContext(() =>
+      authGuard({} as never, { url: '/dashboard' } as never),
+    );
+    expect(router.serializeUrl(result as UrlTree)).toBe('/login?next=%2Fdashboard');
+  });
+
+  it('tenantGuard sends a blocked member to /blocked', async () => {
+    configure(true);
+    const router = TestBed.inject(Router);
+    const result = await TestBed.runInInjectionContext(() =>
+      tenantGuard({} as never, {} as never),
+    );
+    expect(router.serializeUrl(result as UrlTree)).toBe('/blocked');
   });
 });
 

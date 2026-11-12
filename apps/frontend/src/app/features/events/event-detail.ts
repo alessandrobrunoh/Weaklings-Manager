@@ -263,7 +263,7 @@ const BENCH_FIT_CHIP: Readonly<
       @if (detail.event_kind === 'flash') {
         <app-page-header
           [title]="detail.title"
-          [badge]="(detail.is_synchronized_copy ?? (detail.source_event_id != null)) ? t('events.copyReadOnly') : detail.archived_at ? t('events.archived') : t('events.flashMass')"
+          [badge]="detail.is_link ? linkBadge(detail) : detail.archived_at ? t('events.archived') : t('events.flashMass')"
         >
           <button
             type="button"
@@ -2807,9 +2807,15 @@ export class EventDetailPage {
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
+  /**
+   * Management authority on a link, as the owning tenant decides it (`management-authority` is
+   * served by the owner). Creator ids belong to the owner's tenant, so the local checks below
+   * cannot answer for a link.
+   */
+  protected readonly linkCanManage = signal(false);
   protected readonly canEdit = computed(() => {
     const event = this.event();
-    if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
+    if (event?.is_link) return this.linkCanManage();
     const userId = this.auth.profile()?.user_id;
     return (
       this.auth.hasPermission('events.manage') ||
@@ -2818,7 +2824,7 @@ export class EventDetailPage {
   });
   protected readonly canDelete = computed(() => {
     const event = this.event();
-    if (event?.is_synchronized_copy ?? (event?.source_event_id != null)) return false;
+    if (event?.is_link) return this.linkCanManage();
     const userId = this.auth.profile()?.user_id;
     return (
       this.auth.hasPermission('events.manage') ||
@@ -5405,18 +5411,36 @@ export class EventDetailPage {
   }
 
   /**
-   * The participate/leave responses are not hydrated with the cross-tenant relationship, so
-   * `is_synchronized_copy` comes back `false` even for a copy. Keep the markers of the detail
-   * already on screen, or a read-only copy would show the management controls until the next
-   * reload.
+   * Keep the link markers of the detail already on screen when a participate/leave response
+   * omits them, so a link does not flicker to "owned here" until the next reload.
    */
   private keepCopyMarkers(previous: EventDetailView, updated: EventDetailView): EventDetailView {
     return {
       ...updated,
-      is_synchronized_copy: previous.is_synchronized_copy ?? updated.is_synchronized_copy,
+      is_link: updated.is_link || previous.is_link,
+      source_tenant_name: updated.source_tenant_name ?? previous.source_tenant_name,
       source_event_id: previous.source_event_id ?? updated.source_event_id,
       source_tenant_id: previous.source_tenant_id ?? updated.source_tenant_id,
     };
+  }
+
+  /** Badge of a link: which tenant owns the event. */
+  protected linkBadge(detail: EventDetailView): string {
+    return detail.source_tenant_name
+      ? this.t('events.linkFrom', { name: detail.source_tenant_name })
+      : this.t('events.linkShared');
+  }
+
+  /** Asks the owner whether the caller may manage this linked event. */
+  private async loadLinkAuthority(eventId: number): Promise<void> {
+    try {
+      const authority = await firstValueFrom(
+        this.api.get<{ can_manage: boolean }>(`api/events/${eventId}/management-authority`),
+      );
+      if (this.eventId === eventId) this.linkCanManage.set(authority.can_manage);
+    } catch {
+      if (this.eventId === eventId) this.linkCanManage.set(false);
+    }
   }
 
   protected async leave(id: number): Promise<void> {
@@ -5523,6 +5547,8 @@ export class EventDetailPage {
       const detail = await firstValueFrom(this.api.get<EventDetailView>(`api/events/${eventId}`));
       if (this.isStaleLoad(generation, eventId)) return;
       this.event.set(detail);
+      if (detail.is_link) void this.loadLinkAuthority(eventId);
+      else this.linkCanManage.set(false);
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
       // Flash masses have no comp roster. Avoid the comp-shaped roster,
       // equipment catalog and realtime join flows; their presentation is the

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { OpenAlbionItem, ParticipantWeapon } from '../../core/models/api.models';
 import {
+  buildWeaponEntries,
+  countWeaponDraftChanges,
   draftsFromWeapons,
+  filterWeaponEntries,
+  groupWeaponEntries,
   groupWeaponDrafts,
   groupBuildsByWeapon,
   manageUserWeaponsRequest,
@@ -11,12 +15,15 @@ import {
   summarizeWeaponDrafts,
   updateMyWeaponsRequest,
   weaponDraftsChanged,
+  weaponFiltersActive,
   weaponFamilyOfKey,
   weaponFit,
   weaponKeyForIdentifier,
   weaponOptionsFromCatalog,
   type WeaponDraft,
+  type WeaponFilters,
 } from './user-weapons';
+import type { WeaponFamilyId } from './albion-weapon-families';
 
 const POLE = 'weapon:2H_POLEHAMMER';
 const HOLY = 'weapon:MAIN_HOLYSTAFF';
@@ -226,5 +233,103 @@ describe('groupWeaponDrafts', () => {
         draft('weapon:2H_AXE', 'Greataxe', 'basic'),
       ]),
     ).toEqual({ main: 2, good: 0, basic: 1, locked: 2 });
+  });
+});
+
+describe('weapon grid helpers', () => {
+  const BOW = 'weapon:2H_BOW';
+  const draft = (
+    weapon_key: string,
+    weapon_name: string,
+    proficiency: WeaponDraft['proficiency'],
+    locked = false,
+  ): WeaponDraft => ({ weapon_key, weapon_name, proficiency, locked });
+  const option = (key: string, name: string, family: WeaponFamilyId) => ({
+    key,
+    name,
+    icon: null,
+    family,
+  });
+  const options = [
+    option(POLE, 'Polehammer', 'hammers'),
+    option(BOW, 'Bow', 'bows'),
+    option('weapon:2H_LONGBOW', 'Longbow', 'bows'),
+    option(HOLY, 'Holy Staff', 'holy_staffs'),
+  ];
+
+  it('merges the catalog with the member declarations and keeps unknown declared weapons', () => {
+    const entries = buildWeaponEntries(options, [
+      draft(BOW, 'Bow', 'main'),
+      draft('weapon:2H_AXE', 'Greataxe', null, true),
+    ]);
+    expect(entries).toHaveLength(5);
+    expect(entries.find((entry) => entry.key === BOW)).toMatchObject({
+      proficiency: 'main',
+      locked: false,
+    });
+    expect(entries.find((entry) => entry.key === POLE)).toMatchObject({
+      proficiency: null,
+      locked: false,
+    });
+    expect(entries.find((entry) => entry.key === 'weapon:2H_AXE')).toMatchObject({
+      family: 'axes',
+      locked: true,
+    });
+  });
+
+  it('filters by name, family and level together', () => {
+    const entries = buildWeaponEntries(options, [
+      draft(BOW, 'Bow', 'main'),
+      draft('weapon:2H_LONGBOW', 'Longbow', 'basic'),
+    ]);
+    const names = (filters: WeaponFilters) =>
+      filterWeaponEntries(entries, filters).map((entry) => entry.name);
+
+    expect(names({ query: '', family: 'all', level: 'all' })).toHaveLength(4);
+    expect(names({ query: '  LONG ', family: 'all', level: 'all' })).toEqual(['Longbow']);
+    expect(names({ query: '', family: 'bows', level: 'main' })).toEqual(['Bow']);
+    expect(names({ query: '', family: 'all', level: 'declared' })).toEqual(['Bow', 'Longbow']);
+    expect(names({ query: '', family: 'all', level: 'undeclared' })).toEqual([
+      'Polehammer',
+      'Holy Staff',
+    ]);
+    expect(names({ query: 'staff', family: 'bows', level: 'all' })).toEqual([]);
+  });
+
+  it('filters locked weapons', () => {
+    const entries = buildWeaponEntries(options, [draft(POLE, 'Polehammer', null, true)]);
+    expect(
+      filterWeaponEntries(entries, { query: '', family: 'all', level: 'locked' }).map(
+        (entry) => entry.key,
+      ),
+    ).toEqual([POLE]);
+  });
+
+  it('knows when a filter is active', () => {
+    expect(weaponFiltersActive({ query: ' ', family: 'all', level: 'all' })).toBe(false);
+    expect(weaponFiltersActive({ query: 'a', family: 'all', level: 'all' })).toBe(true);
+    expect(weaponFiltersActive({ query: '', family: 'bows', level: 'all' })).toBe(true);
+    expect(weaponFiltersActive({ query: '', family: 'all', level: 'declared' })).toBe(true);
+  });
+
+  it('groups entries by family in display order with declared counts', () => {
+    const groups = groupWeaponEntries(
+      buildWeaponEntries(options, [draft('weapon:2H_LONGBOW', 'Longbow', 'good')]),
+    );
+    expect(groups.map((group) => group.family)).toEqual(['hammers', 'bows', 'holy_staffs']);
+    expect(groups[1].entries.map((entry) => entry.name)).toEqual(['Bow', 'Longbow']);
+    expect(groups[1].declared).toBe(1);
+  });
+
+  it('counts the weapons that differ from the saved list', () => {
+    const saved = [draft(POLE, 'Polehammer', 'main'), draft(BOW, 'Bow', 'basic')];
+    expect(countWeaponDraftChanges(saved, saved)).toBe(0);
+    expect(
+      countWeaponDraftChanges(saved, [
+        draft(POLE, 'Polehammer', 'good'),
+        draft(HOLY, 'Holy Staff', 'main'),
+      ]),
+    ).toBe(3);
+    expect(countWeaponDraftChanges(saved, [...saved].reverse())).toBe(0);
   });
 });

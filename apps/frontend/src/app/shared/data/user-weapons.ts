@@ -170,6 +170,137 @@ export function weaponOptionsFromCatalog(catalog: readonly OpenAlbionItem[]): We
     );
 }
 
+/** One row of the "My weapons" grid: a catalog weapon merged with the member's declaration. */
+export interface WeaponEntry {
+  readonly key: string;
+  readonly name: string;
+  readonly family: WeaponFamilyId;
+  readonly proficiency: WeaponProficiency | null;
+  readonly locked: boolean;
+  /** Lower-cased name, so a keystroke filter does no string work per row. */
+  readonly search: string;
+}
+
+/**
+ * Every catalog weapon with the member's level and lock merged in. A declared or locked weapon the
+ * catalog does not list (a removed or unknown item) is kept so it never silently disappears.
+ */
+export function buildWeaponEntries(
+  options: readonly WeaponOption[],
+  drafts: readonly WeaponDraft[],
+): WeaponEntry[] {
+  const byKey = new Map(drafts.map((draft) => [draft.weapon_key, draft] as const));
+  const entries: WeaponEntry[] = options.map((option) => {
+    const draft = byKey.get(option.key);
+    byKey.delete(option.key);
+    return {
+      key: option.key,
+      name: option.name,
+      family: option.family,
+      proficiency: draft?.proficiency ?? null,
+      locked: draft?.locked ?? false,
+      search: option.name.toLowerCase(),
+    };
+  });
+  for (const draft of byKey.values()) {
+    entries.push({
+      key: draft.weapon_key,
+      name: draft.weapon_name,
+      family: weaponFamilyOfKey(draft.weapon_key),
+      proficiency: draft.proficiency,
+      locked: draft.locked,
+      search: draft.weapon_name.toLowerCase(),
+    });
+  }
+  return entries;
+}
+
+/** Which weapons the grid shows, by declaration. */
+export type WeaponLevelFilter = 'all' | 'declared' | WeaponProficiency | 'undeclared' | 'locked';
+
+export interface WeaponFilters {
+  readonly query: string;
+  readonly family: WeaponFamilyId | 'all';
+  readonly level: WeaponLevelFilter;
+}
+
+/** True when any filter narrows the grid. */
+export function weaponFiltersActive(filters: WeaponFilters): boolean {
+  return filters.query.trim() !== '' || filters.family !== 'all' || filters.level !== 'all';
+}
+
+function matchesLevel(entry: WeaponEntry, level: WeaponLevelFilter): boolean {
+  switch (level) {
+    case 'all':
+      return true;
+    case 'declared':
+      return entry.proficiency !== null;
+    case 'undeclared':
+      return entry.proficiency === null;
+    case 'locked':
+      return entry.locked;
+    default:
+      return entry.proficiency === level;
+  }
+}
+
+/** Entries that satisfy the name search, the family and the level filter. */
+export function filterWeaponEntries(
+  entries: readonly WeaponEntry[],
+  filters: WeaponFilters,
+): WeaponEntry[] {
+  const query = filters.query.trim().toLowerCase();
+  return entries.filter(
+    (entry) =>
+      (filters.family === 'all' || entry.family === filters.family) &&
+      matchesLevel(entry, filters.level) &&
+      (query === '' || entry.search.includes(query)),
+  );
+}
+
+/** Weapons of one family for the grid; `declared` counts the group's declared weapons. */
+export interface WeaponEntryGroup {
+  readonly family: WeaponFamilyId;
+  readonly entries: readonly WeaponEntry[];
+  readonly declared: number;
+}
+
+/** Groups entries by family in display order, alphabetical inside; empty families are omitted. */
+export function groupWeaponEntries(entries: readonly WeaponEntry[]): WeaponEntryGroup[] {
+  const byFamily = new Map<WeaponFamilyId, WeaponEntry[]>();
+  for (const entry of entries) {
+    const group = byFamily.get(entry.family);
+    if (group) group.push(entry);
+    else byFamily.set(entry.family, [entry]);
+  }
+  return weaponFamilyOrder()
+    .filter((family) => byFamily.has(family))
+    .map((family) => {
+      const members = (byFamily.get(family) ?? []).sort((left, right) =>
+        left.name.localeCompare(right.name),
+      );
+      return {
+        family,
+        entries: members,
+        declared: members.filter((entry) => entry.proficiency !== null).length,
+      };
+    });
+}
+
+/** How many weapons differ between the saved list and the current drafts (the unsaved count). */
+export function countWeaponDraftChanges(
+  saved: readonly WeaponDraft[],
+  current: readonly WeaponDraft[],
+): number {
+  const signature = (draft: WeaponDraft) => `${draft.proficiency ?? ''}|${draft.locked ? 1 : 0}`;
+  const before = new Map(saved.map((draft) => [draft.weapon_key, signature(draft)] as const));
+  const after = new Map(current.map((draft) => [draft.weapon_key, signature(draft)] as const));
+  let changes = 0;
+  for (const [key, value] of after) if (before.get(key) !== value) changes += 1;
+  for (const key of before.keys()) if (!after.has(key)) changes += 1;
+  return changes;
+}
+
 /** How a member stands against one weapon, from best to worst for filling a seat of it. */
 export type WeaponFit =
   | WeaponProficiency

@@ -126,6 +126,11 @@ pub enum AppError {
         reason_code: String,
     },
 
+    /// An officer blocked this member from the manager. HTTP 403, problem code `account_blocked`;
+    /// clients show a dedicated "access blocked" screen instead of a generic error.
+    #[error("Your access to the manager has been blocked")]
+    AccountBlocked,
+
     /// Error indicating an upstream third-party service (e.g. Albion Online API) failed or is unreachable.
     #[error("Upstream service error: {0}")]
     UpstreamService(String),
@@ -278,6 +283,16 @@ impl IntoResponse for AppError {
                     None,
                 )
             }
+            Self::AccountBlocked => {
+                code = Some("account_blocked");
+                (
+                    StatusCode::FORBIDDEN,
+                    "/errors/account-blocked",
+                    "Account Blocked",
+                    "Your access to the manager has been blocked by an officer.".to_string(),
+                    None,
+                )
+            }
             Self::UpstreamService(msg) => (
                 StatusCode::BAD_GATEWAY,
                 "/errors/upstream-service-error",
@@ -347,6 +362,18 @@ mod tests {
         let problem = problem_of(AppError::TooManyRequests("slow down".into())).await;
         assert_eq!(problem.status, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(problem.detail, "slow down");
+    }
+
+    #[tokio::test]
+    async fn a_blocked_account_is_a_403_with_a_stable_code() {
+        let response = AppError::AccountBlocked.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body reads");
+        let json: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("problem+json body parses");
+        assert_eq!(json["code"], "account_blocked");
     }
 
     /// An unclassified `DbErr` (not a FK/unique violation `sea_orm` can name —
