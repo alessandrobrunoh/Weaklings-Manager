@@ -6,10 +6,10 @@ This directory contains the server-paged guild member directory and individual m
 
 ## Interface
 
-- The bounded beginning of `users.ts` describes a member directory and shows username, email, role, and actions with page size 10.
+- `users.ts` is the member directory: a summary band (total, plus admin, officer and member counts for the current page), a filter bar (search by name, role facet, and status facet for `roles.manage` holders), and an `app-data-table` of name, email (only for `users.create`/`roles.manage` holders), role, status and a row "more actions" menu. Page size is 10. Search, `role` and `status` are URL params, and the table's page and sort are mirrored to the URL too, so a shared link restores the list. The header has one primary action (New member) and a menu for Refresh.
 - `UserDetailPage` takes a required `userId` input and exposes permission-gated profile operations.
 - Member-creation request details are not documented from the compliant bounded excerpt.
-- Blocking: holders of `roles.manage` get a Status column (text and icon chip, filterable through the `blocked` query param) and a Block/Unblock action per row and on the detail page. `BlockUserDialog` (`block-user-dialog.ts`) confirms, takes an optional reason (max 500 characters) and calls `POST` / `DELETE api/users/{id}/block`. Nobody sees the action on their own row.
+- Blocking: holders of `roles.manage` get a Status column (status chip with text and glyph, filterable through the `status` facet, sent as the `blocked` query param) and a Block/Unblock entry in each row's "more actions" menu, plus the same action on the detail page. `BlockUserDialog` (`block-user-dialog.ts`) confirms, takes an optional reason (max 500 characters) and calls `POST` / `DELETE api/users/{id}/block`. Nobody sees the action on their own row.
 
 ## Invariants
 

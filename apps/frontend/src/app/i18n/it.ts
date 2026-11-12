@@ -3460,4 +3460,9 @@ export const it: TranslationDict = {
   'ui.errorState.notFound': 'Non trovato',
   'ui.errorState.notFoundHint': 'Potrebbe essere stato rimosso, oppure il link non è corretto.',
   'ui.select.noOptions': 'Nessuna opzione',
+  // design/users-list
+  'users.searchLabel': 'Cerca membri',
+  'users.searchPlaceholder': 'Cerca per nome',
+  'users.summaryLabel': 'Riepilogo membri',
+  'users.rowActions': 'Azioni per {name}',
 };

@@ -3448,6 +3448,11 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/users-list
+  'users.searchLabel': 'Search members',
+  'users.searchPlaceholder': 'Search by name',
+  'users.summaryLabel': 'Members summary',
+  'users.rowActions': 'Actions for {name}',
 } as const;
 
 export type TranslationKey = keyof typeof en;

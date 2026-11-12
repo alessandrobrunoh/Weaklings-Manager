@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -23,16 +30,20 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { Icon } from '../../shared/components/icon/icon';
+import { Menu, type MenuItem } from '../../shared/components/menu/menu';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { searchAlbionPlayers } from '../../shared/albion/albion-player-search';
 
-import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { BlockUserDialog } from './block-user-dialog';
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
   { value: 'SuperAdmin', label: 'SuperAdmin' },
@@ -44,9 +55,10 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 /**
  * Guild member directory.
  *
- * Server-paged against `GET /api/users`. Search maps to `username`, the role
- * dropdown to `role`, and sortable columns to `sort`/`order`. Row click opens
- * the view-first member page at `/users/:userId`.
+ * Server-paged against `GET /api/users`. The table owns page, page size and sort, mirrored to the
+ * URL. Search (`search`), the role facet (`role`) and the status facet (`status`) are also URL
+ * params, so a shared link restores the same list. Row click and the name link open the
+ * view-first member page at `/users/:userId`; blocking is in the row's "more actions" menu.
  */
 @Component({
   selector: 'app-users',
@@ -55,14 +67,17 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     Avatar,
     BlockUserDialog,
     Dialog,
+    FilterBar,
+    Icon,
+    Menu,
     PageHeader,
     PageStack,
     DataTable,
     DataTableCell,
-    Icon,
     RouterLink,
     SearchableSelect,
-    TooltipDirective,
+    StatusChip,
+    SummaryBand,
   ],
   styles: `
     .workbench-page {
@@ -70,81 +85,19 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       overflow: hidden;
     }
     .workbench-page > section,
-    .workbench-page > app-data-table {
+    .workbench-page > app-data-table,
+    .workbench-page > app-filter-bar,
+    .workbench-page > app-summary-band {
       min-width: 0;
-    }
-    .workbench-page .kpi-card {
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-md);
-    }
-    .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-    }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: var(--radius-md);
-      flex-shrink: 0;
-    }
-    .role-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.2rem 0.625rem;
-      border-radius: var(--radius-pills);
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .role-pill--superadmin {
-      background: var(--color-error-container);
-      color: var(--color-error);
-      border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
-    }
-    .role-pill--admin {
-      background: var(--color-error-container);
-      color: var(--color-error);
-      border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
-    }
-    .role-pill--officer {
-      background: var(--color-warning-container);
-      color: var(--color-warning);
-      border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
-    }
-    .role-pill--member {
-      background: var(--color-success-container);
-      color: var(--color-success);
-      border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
     }
   `,
   template: `
     <app-page-header
       [title]="t('users.title')"
       [subtitle]="t('users.subtitle')"
+      [menuItems]="headerMenuItems()"
+      (menuSelect)="onHeaderAction($event)"
     >
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
       @if (canCreate()) {
         <button type="button" class="btn btn--primary btn--sm" (click)="openCreate()">
           <app-icon name="plus" size="0.875rem" />
@@ -155,88 +108,37 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 
     <app-page-stack class="workbench-page">
       @if (!loading() && !loadFailed()) {
-      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
-        <!-- Card 1: Total -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('users.stat.total') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
-                {{ totalItems() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('common.totalResults') }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
-              <app-icon name="users" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 2: Admins -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('users.stat.admins') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
-                {{ adminCount() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('common.currentPage') }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-border)]">
-              <app-icon name="shield" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 3: Officers -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('users.stat.officers') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
-                {{ officerCount() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('common.currentPage') }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
-              <app-icon name="sparkles" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 4: Members -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('users.stat.members') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
-                {{ memberCount() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                {{ t('common.currentPage') }}
-              </p>
-            </div>
-            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-border)]">
-              <app-icon name="users" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-      </section>
+        <app-summary-band [ariaLabel]="t('users.summaryLabel')" [items]="summaryItems()" />
       }
+
+      <app-filter-bar
+        [searchLabel]="t('users.searchLabel')"
+        [searchPlaceholder]="t('users.searchPlaceholder')"
+        [query]="searchText()"
+        [activeCount]="activeCount()"
+        (queryChange)="onSearchText($event)"
+        (clear)="clearFilters()"
+      >
+        <label class="filter-field">
+          <span class="filter-field__label">{{ t('common.role') }}</span>
+          <select class="select select--sm" [value]="roleFilter()" (change)="onRoleFilter($event)">
+            <option value="">{{ t('common.all') }}</option>
+            @for (option of roleFilters; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+        @if (canBlock()) {
+          <label class="filter-field">
+            <span class="filter-field__label">{{ t('users.status') }}</span>
+            <select class="select select--sm" [value]="statusFilter()" (change)="onStatusFilter($event)">
+              <option value="">{{ t('common.all') }}</option>
+              <option value="active">{{ t('users.status.active') }}</option>
+              <option value="blocked">{{ t('users.status.blocked') }}</option>
+            </select>
+          </label>
+        }
+      </app-filter-bar>
 
       <app-data-table
         [columns]="columns()"
@@ -248,86 +150,48 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         [pageSize]="pageSize"
         [serverMode]="true"
         [totalItems]="totalItems()"
+        [hideSearch]="true"
+        mobileLayout="stack"
+        [ariaLabel]="t('users.title')"
         emptyIcon="users"
         [rowClickable]="true"
         (rowClick)="openMember($event)"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="username" let-row>
-          <div class="flex items-center gap-2.5">
+          <div class="flex min-w-0 items-center gap-2.5">
             <app-avatar [userId]="row.id" [username]="row.username" size="sm" />
-            <span class="font-medium text-[var(--color-text)] hover:underline cursor-pointer">{{ row.username }}</span>
+            <a
+              class="min-w-0 truncate font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+              [routerLink]="['/users', row.id]"
+            >
+              {{ row.username }}
+            </a>
           </div>
         </ng-template>
 
         <ng-template dataTableCell="email" let-row>
-          <span class="text-xs text-[var(--color-text-secondary)] font-mono">{{ row.email ?? '' }}</span>
+          <span class="font-mono text-xs text-[var(--color-text-secondary)]">{{ row.email ?? '' }}</span>
         </ng-template>
 
         <ng-template dataTableCell="role" let-row>
-          @switch (row.role) {
-            @case ('SuperAdmin') {
-              <span class="role-pill role-pill--superadmin">
-                <app-icon name="sparkles" size="0.75rem" />
-                {{ row.role }}
-              </span>
-            }
-            @case ('Admin') {
-              <span class="role-pill role-pill--admin">
-                <app-icon name="shield" size="0.75rem" />
-                {{ row.role }}
-              </span>
-            }
-            @case ('Officer') {
-              <span class="role-pill role-pill--officer">
-                <app-icon name="sparkles" size="0.75rem" />
-                {{ row.role }}
-              </span>
-            }
-            @default {
-              <span class="role-pill role-pill--member">
-                <app-icon name="users" size="0.75rem" />
-                {{ row.role }}
-              </span>
-            }
-          }
+          <app-status-chip [value]="row.role" [label]="row.role" toneOverride="neutral" [showDot]="false" />
         </ng-template>
 
         <ng-template dataTableCell="status" let-row>
           @if (row.blocked) {
-            <span class="chip chip--error">
-              <app-icon name="user-x" size="0.75rem" />
-              {{ t('users.status.blocked') }}
-            </span>
+            <app-status-chip value="blocked" toneOverride="error" [label]="t('users.status.blocked')" />
           } @else {
-            <span class="chip chip--success">
-              <app-icon name="check" size="0.75rem" />
-              {{ t('users.status.active') }}
-            </span>
+            <app-status-chip value="active" toneOverride="success" [label]="t('users.status.active')" />
           }
         </ng-template>
 
         <ng-template dataTableCell="actions" let-row>
-          <div class="flex flex-wrap items-center gap-1.5">
-            <a
-              class="btn btn--outline btn--sm inline-flex items-center gap-1.5 text-xs"
-              [routerLink]="['/users', row.id]"
-              (click)="$event.stopPropagation()"
-            >
-              <app-icon name="users" size="0.75rem" />
-              {{ t('common.view') }}
-            </a>
-            @if (canBlock() && row.id !== ownUserId()) {
-              <button
-                type="button"
-                class="btn btn--outline btn--sm inline-flex items-center gap-1.5 text-xs"
-                (click)="askBlock(row, $event)"
-              >
-                <app-icon name="user-x" size="0.75rem" />
-                {{ row.blocked ? t('users.unblock.action') : t('users.block.action') }}
-              </button>
-            }
-          </div>
+          <app-menu
+            [items]="rowMenuItems(row)"
+            [label]="t('users.rowActions', { name: row.username })"
+            (itemSelect)="onRowAction(row, $event)"
+          />
         </ng-template>
       </app-data-table>
     </app-page-stack>
@@ -407,6 +271,7 @@ export class Users {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly canCreate = computed(() => this.auth.hasPermission('users.create'));
   /** Blocking is gated by `roles.manage`, the same permission as role assignment. */
@@ -419,6 +284,7 @@ export class Users {
   } | null>(null);
 
   protected readonly pageSize = PAGE_SIZE;
+  protected readonly roleFilters = ROLE_FILTERS;
   protected readonly users = signal<UserProfile[]>([]);
   protected readonly totalItems = signal(0);
   protected readonly loading = signal(false);
@@ -434,10 +300,6 @@ export class Users {
     () => this.users().filter((u) => u.role === 'Member').length,
   );
 
-  protected async refreshNow(): Promise<void> {
-    await this.load();
-  }
-
   protected readonly trackById = (user: UserProfile): unknown => user.id;
 
   private readonly initialQuery = parseDataTableQuery(this.route.snapshot.queryParamMap, {
@@ -448,8 +310,20 @@ export class Users {
   private readonly tablePageSize = signal(this.initialQuery.pageSize);
   private readonly tableSearch = signal(this.initialQuery.search);
   private readonly tableSort = signal<DataTablePageChange['sort']>(this.initialQuery.sort);
-  private readonly tableFilters = signal<Readonly<Record<string, string>>>(this.initialQuery.columnFilters);
   private loadRequest = 0;
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Facet and search state the filter bar shows; mirrored to the URL. */
+  protected readonly searchText = signal(this.initialQuery.search);
+  protected readonly roleFilter = signal(this.initialQuery.columnFilters['role'] ?? '');
+  protected readonly statusFilter = signal(this.initialQuery.columnFilters['status'] ?? '');
+  /** Filters in force, for the filter bar badge and clear button. Status only counts for `roles.manage`. */
+  protected readonly activeCount = computed(
+    () =>
+      (this.searchText().trim() ? 1 : 0) +
+      (this.roleFilter() ? 1 : 0) +
+      (this.canBlock() && this.statusFilter() ? 1 : 0),
+  );
 
   private readonly emailColumn: DataTableColumn<UserProfile> = {
     key: 'email',
@@ -470,7 +344,6 @@ export class Users {
       label: 'common.role',
       sortable: true,
       accessor: (user) => user.role,
-      filterOptions: ROLE_FILTERS.map((option) => ({ value: option.value, label: option.label })),
     },
     {
       key: 'actions',
@@ -484,10 +357,6 @@ export class Users {
     key: 'status',
     label: 'users.status',
     accessor: (user) => (user.blocked ? 'blocked' : 'active'),
-    filterOptions: [
-      { value: 'active', label: this.t('users.status.active') },
-      { value: 'blocked', label: this.t('users.status.blocked') },
-    ],
   }));
 
   /**
@@ -506,6 +375,17 @@ export class Users {
       actions,
     ];
   });
+
+  protected readonly summaryItems = computed<readonly SummaryItem[]>(() => [
+    { label: this.t('users.stat.total'), value: this.totalItems(), hint: this.t('common.totalResults') },
+    { label: this.t('users.stat.admins'), value: this.adminCount(), hint: this.t('common.currentPage') },
+    { label: this.t('users.stat.officers'), value: this.officerCount(), hint: this.t('common.currentPage') },
+    { label: this.t('users.stat.members'), value: this.memberCount(), hint: this.t('common.currentPage') },
+  ]);
+
+  protected readonly headerMenuItems = computed<readonly MenuItem[]>(() => [
+    { id: 'refresh', label: this.t('common.refreshNow'), icon: 'sparkles', disabled: this.loading() },
+  ]);
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
@@ -550,29 +430,34 @@ export class Users {
   });
 
   constructor() {
+    this.destroyRef.onDestroy(() => clearTimeout(this.searchTimer));
     void this.load();
-  }
-
-  protected roleChip(role: Role): string {
-    if (role === 'SuperAdmin') {
-      return 'chip chip--error';
-    }
-    if (role === 'Admin') {
-      return 'chip chip--warning';
-    }
-    if (role === 'Officer') {
-      return 'chip chip--success';
-    }
-    return 'chip';
   }
 
   protected openMember(row: UserProfile): void {
     void this.router.navigate(['/users', row.id]);
   }
 
-  protected askBlock(row: UserProfile, event: Event): void {
-    event.stopPropagation();
-    this.blockTarget.set({ member: row, mode: row.blocked ? 'unblock' : 'block' });
+  /** Row actions: block or unblock, never on the caller's own row. */
+  protected rowMenuItems(row: UserProfile): readonly MenuItem[] {
+    if (!this.canBlock() || row.id === this.ownUserId()) {
+      return [];
+    }
+    return row.blocked
+      ? [{ id: 'unblock', label: this.t('users.unblock.action'), icon: 'check' }]
+      : [{ id: 'block', label: this.t('users.block.action'), icon: 'user-x', danger: true }];
+  }
+
+  protected onRowAction(row: UserProfile, id: string): void {
+    if (id === 'block' || id === 'unblock') {
+      this.blockTarget.set({ member: row, mode: id });
+    }
+  }
+
+  protected onHeaderAction(id: string): void {
+    if (id === 'refresh') {
+      void this.load();
+    }
   }
 
   protected onBlockUpdated(): void {
@@ -584,8 +469,56 @@ export class Users {
     this.tablePageSize.set(event.pageSize);
     this.tableSearch.set(event.search);
     this.tableSort.set(event.sort);
-    this.tableFilters.set(event.columnFilters);
     void this.load();
+  }
+
+  /** Typing updates the box at once; the URL (and so the table) follows after a short pause. */
+  protected onSearchText(text: string): void {
+    this.searchText.set(text);
+    clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.writeFilterQuery({ search: text.trim() || null });
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  protected onRoleFilter(event: Event): void {
+    this.roleFilter.set((event.target as HTMLSelectElement).value);
+    this.applyFacets();
+  }
+
+  protected onStatusFilter(event: Event): void {
+    this.statusFilter.set((event.target as HTMLSelectElement).value);
+    this.applyFacets();
+  }
+
+  protected clearFilters(): void {
+    clearTimeout(this.searchTimer);
+    this.searchText.set('');
+    this.roleFilter.set('');
+    this.statusFilter.set('');
+    this.tableSearch.set('');
+    this.tablePage.set(1);
+    this.writeFilterQuery({ search: null, role: null, status: null });
+    void this.load();
+  }
+
+  private applyFacets(): void {
+    this.tablePage.set(1);
+    this.writeFilterQuery({
+      role: this.roleFilter() || null,
+      status: this.canBlock() ? this.statusFilter() || null : null,
+    });
+    void this.load();
+  }
+
+  /** Writes the search and facet params and restarts paging, so a shared link restores the list. */
+  private writeFilterQuery(params: Record<string, string | null>): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { ...params, page: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   protected openCreate(): void {
@@ -716,8 +649,8 @@ export class Users {
     this.loadFailed.set(false);
     try {
       const sort = this.tableSort();
-      const role = this.tableFilters()['role']?.trim();
-      const status = this.canBlock() ? this.tableFilters()['status']?.trim() : undefined;
+      const role = this.roleFilter().trim();
+      const status = this.canBlock() ? this.statusFilter().trim() : undefined;
       const data = await firstValueFrom(
         this.api.get<PaginatedData<UserProfile>>('api/users', {
           page: this.tablePage(),

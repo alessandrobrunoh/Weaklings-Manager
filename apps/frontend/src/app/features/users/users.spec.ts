@@ -98,7 +98,7 @@ describe('Users new member', () => {
     const element = fixture.nativeElement as HTMLElement;
     expect(element.textContent?.match(/common.currentPage/g)).toHaveLength(3);
     const link = element.querySelector('a[href="/users/9"]');
-    expect(link?.textContent).toContain('common.view');
+    expect(link?.textContent).toContain('Kay');
   });
 
   it('hides the new member action without users.create', async () => {
@@ -252,8 +252,14 @@ describe('Users block action', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  function button(element: HTMLElement, text: string): HTMLButtonElement | undefined {
-    return [...element.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+  /** Opens a row's "more actions" menu and returns the entry whose text matches. */
+  function rowMenuItem(element: HTMLElement, rowIndex: number, text: string): HTMLButtonElement | undefined {
+    element
+      .querySelectorAll('tbody tr')
+      [rowIndex]?.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')
+      ?.click();
+    fixture.detectChanges();
+    return [...element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) =>
       b.textContent?.includes(text),
     );
   }
@@ -294,15 +300,15 @@ describe('Users block action', () => {
 
   afterEach(() => fixture?.destroy());
 
-  it('marks blocked members with a text chip and offers block or unblock per row', async () => {
+  it('marks blocked members with a status chip and offers block or unblock in the row menu', async () => {
     const element = await create();
     const rows = [...element.querySelectorAll('tbody tr')];
     expect(rows[0].textContent).toContain('users.status.active');
-    expect(rows[0].textContent).toContain('users.block.action');
     expect(rows[1].textContent).toContain('users.status.blocked');
-    expect(rows[1].textContent).toContain('users.unblock.action');
-    // Nobody blocks themselves from the list.
-    expect(rows[2].textContent).not.toContain('users.block.action');
+    expect(rowMenuItem(element, 0, 'users.block.action')).toBeDefined();
+    expect(rowMenuItem(element, 1, 'users.unblock.action')).toBeDefined();
+    // Nobody blocks themselves from the list, so their row has no menu at all.
+    expect(rows[2].querySelector('button[aria-haspopup="menu"]')).toBeNull();
   });
 
   it('lists everyone by default and only filters on the status column', async () => {
@@ -315,7 +321,7 @@ describe('Users block action', () => {
 
   it('explains the consequence, takes an optional reason and blocks', async () => {
     const element = await create();
-    button(element, 'users.block.action')?.click();
+    rowMenuItem(element, 0, 'users.block.action')?.click();
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -333,7 +339,7 @@ describe('Users block action', () => {
 
   it('unblocks without asking for a reason', async () => {
     const element = await create();
-    button(element, 'users.unblock.action')?.click();
+    rowMenuItem(element, 1, 'users.unblock.action')?.click();
     await fixture.whenStable();
     fixture.detectChanges();
 

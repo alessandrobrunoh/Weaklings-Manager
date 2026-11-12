@@ -3451,4 +3451,9 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/users-list
+  'users.searchLabel': 'Buscar miembros',
+  'users.searchPlaceholder': 'Buscar por nombre',
+  'users.summaryLabel': 'Resumen de miembros',
+  'users.rowActions': 'Acciones para {name}',
 };

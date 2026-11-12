@@ -3265,4 +3265,9 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/users-list
+  'users.searchLabel': 'Пошук учасників',
+  'users.searchPlaceholder': 'Пошук за іменем',
+  'users.summaryLabel': 'Підсумок учасників',
+  'users.rowActions': 'Дії для {name}',
 };
