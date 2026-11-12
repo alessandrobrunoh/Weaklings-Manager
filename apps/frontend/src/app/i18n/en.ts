@@ -2802,7 +2802,6 @@ export const en = {
   'platform.admins.title': 'Platform admins',
   'platform.admins.subtitle': 'Discord users with control-plane SuperAdmin.',
   'platform.admins.assign': 'Grant SuperAdmin',
-  'platform.admins.revoke': 'Revoke',
   'platform.admins.discordId': 'Discord ID',
   'platform.admins.role': 'Role',
   'platform.admins.empty': 'No platform admins yet.',
@@ -3747,6 +3746,24 @@ export const en = {
   'fights.trends.noComps': 'No planned composition assignments in this period.',
   'fights.trends.unknownBuild': 'Unknown build #{id}',
   'fights.trends.unknownComp': 'Unknown composition #{id}',
+  // design/platform-admins
+  'platform.admins.assignTitle': 'Add a platform admin',
+  'platform.admins.assignHint': 'Platform admins manage every server on this platform. Enter the Discord user ID of the person you want to add.',
+  'platform.admins.discordIdHint': 'Digits only. In Discord, turn on Developer Mode, right-click the user and choose Copy User ID.',
+  'platform.admins.idInvalid': 'Use digits only.',
+  'platform.admins.you': 'You',
+  'platform.admins.remove': 'Remove access',
+  'platform.admins.rowMenu': 'Actions for {id}',
+  'platform.admins.removeTitle': 'Remove platform admin',
+  'platform.admins.removeHint': '{id} will lose platform admin access.',
+  'platform.admins.removeBody': 'They can no longer manage tenants, feature flags or ranks across the platform.',
+  'platform.admins.allowsTitle': 'What platform admin access allows',
+  'platform.admins.allowsLead': 'Platform admins act above individual servers. They can:',
+  'platform.admins.allowsTenants': 'Register, suspend and resume tenants (Discord servers).',
+  'platform.admins.allowsFeatures': 'Turn feature flags on or off for any tenant.',
+  'platform.admins.allowsRanks': 'Create ranks and choose which modules each rank unlocks.',
+  'platform.admins.allowsAdmins': 'Grant and revoke platform admin access, including for other admins.',
+  'platform.admins.allowsNote': 'The SuperAdmin of one server is set per server and does not grant any of this.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
