@@ -3849,6 +3849,27 @@ export const en = {
   'regears.detail.noItems': 'No items recorded.',
   'regears.detail.notDecided': 'Not decided yet',
   'regears.detail.summary': 'Key figures',
+  // design/regears-list
+  'regears.views': 'Regear views',
+  'regears.searchLabel': 'Search regears',
+  'regears.searchPlaceholder': 'Search by member or event',
+  'regears.tableLabel': 'Regear requests',
+  'regears.statusFilter': 'Filter by status',
+  'regears.status.all': 'All',
+  'regears.summary.label': 'Regear totals',
+  'regears.summary.awaiting': 'Awaiting review',
+  'regears.summary.queueHint': 'Waiting for an officer decision',
+  'regears.summary.pendingValue': 'Pending value',
+  'regears.summary.pendingValueHint': 'Item estimates before review',
+  'regears.summary.approvedHint': 'Credited to the Guild Bank',
+  'regears.summary.rejectedHint': 'Closed without payout',
+  'regears.itemsValue': 'Items value',
+  'regears.rowMenu': 'Actions for {name}',
+  'regears.approve': 'Approve',
+  'regears.approveTitle': 'Approve regear',
+  'regears.approveBody': 'The item estimate is credited to the Guild Bank. To change prices or slots, open the review page first.',
+  'regears.approveTotal': 'Credit amount',
+  'regears.approveConfirm': 'Approve and credit',
 } as const;
 
 export type TranslationKey = keyof typeof en;
