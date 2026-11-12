@@ -3448,6 +3448,15 @@ export const en = {
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',
+  // design/leaderboards
+  'season.summary.label': 'Season summary',
+  'season.period.showing': 'Battle totals and the activity boards cover {period}.',
+  'season.period.recent': 'the last 30 days',
+  'season.period.range': '{from} to {to}',
+  'season.empty.season': 'No season XP recorded yet.',
+  'season.empty.seasonHint': 'Season XP comes from chat activity and event participation.',
+  'season.empty.intel': 'No activity recorded in {period} yet.',
+  'season.empty.intelHint': 'Rankings only count events, battles and loot splits recorded inside this period.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -3265,4 +3265,13 @@ export const uk: TranslationDict = {
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',
+  // design/leaderboards
+  'season.summary.label': 'Підсумки сезону',
+  'season.period.showing': 'Підсумки боїв і таблиці активності охоплюють {period}.',
+  'season.period.recent': 'останні 30 днів',
+  'season.period.range': '{from} – {to}',
+  'season.empty.season': 'Досвіду сезону ще не зафіксовано.',
+  'season.empty.seasonHint': 'Досвід сезону надходить з активності в чаті та участі в подіях.',
+  'season.empty.intel': 'Активності за {period} ще немає.',
+  'season.empty.intelHint': 'Рейтинги враховують лише події, бої та розподіли здобичі, зафіксовані в цей період.',
 };

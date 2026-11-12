@@ -3451,4 +3451,13 @@ export const es: TranslationDict = {
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',
+  // design/leaderboards
+  'season.summary.label': 'Resumen de la temporada',
+  'season.period.showing': 'Los totales de batallas y los tableros de actividad cubren {period}.',
+  'season.period.recent': 'los últimos 30 días',
+  'season.period.range': '{from} – {to}',
+  'season.empty.season': 'Todavía no hay XP de temporada registrado.',
+  'season.empty.seasonHint': 'El XP de temporada viene de la actividad en el chat y de la participación en eventos.',
+  'season.empty.intel': 'Todavía no hay actividad registrada en {period}.',
+  'season.empty.intelHint': 'Las clasificaciones solo cuentan eventos, batallas y repartos de botín registrados en este periodo.',
 };
