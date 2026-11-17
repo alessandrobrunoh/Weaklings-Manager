@@ -9487,6 +9487,20 @@
             },
             "type": "array"
           },
+          "covered_from": {
+            "description": "First imported game row in the period (RFC 3339), `None` when there is none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "covered_to": {
+            "description": "Last imported game row in the period (RFC 3339), `None` when there is none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "explained": {
             "format": "int64",
             "minimum": 0,
@@ -9513,7 +9527,7 @@
             "$ref": "#/components/schemas/BankLogImportStatus"
           },
           "manager_payouts": {
-            "description": "Payouts the Manager accepted in the period (its own total, independent of the links).",
+            "description": "Payouts the Manager paid out between the first and the last imported game row of the\nperiod (its own total, independent of the links). Zero when the period has no rows.",
             "type": "string"
           },
           "matched": {

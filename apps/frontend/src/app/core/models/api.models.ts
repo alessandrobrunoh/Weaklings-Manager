@@ -3683,6 +3683,9 @@ export interface BankLogSummary {
   game_net: string;
   manager_payouts: string;
   game_payouts: string;
+  /** First and last imported game row in the period (RFC 3339); null without rows. */
+  covered_from: string | null;
+  covered_to: string | null;
   unmatched: number;
   suggested: number;
   matched: number;
