@@ -180,12 +180,17 @@ pub struct BankLogSummary {
     /// Game in + out.
     #[schema(value_type = String)]
     pub game_net: Decimal,
-    /// Payouts the Manager accepted in the period (its own total, independent of the links).
+    /// Payouts the Manager paid out between the first and the last imported game row of the
+    /// period (its own total, independent of the links). Zero when the period has no rows.
     #[schema(value_type = String)]
     pub manager_payouts: Decimal,
     /// Game withdrawals categorised as payouts in the period (as a positive number).
     #[schema(value_type = String)]
     pub game_payouts: Decimal,
+    /// First imported game row in the period (RFC 3339), `None` when there is none.
+    pub covered_from: Option<String>,
+    /// Last imported game row in the period (RFC 3339), `None` when there is none.
+    pub covered_to: Option<String>,
     pub unmatched: u64,
     pub suggested: u64,
     pub matched: u64,

@@ -10379,6 +10379,10 @@ export interface components {
         /** @description `GET /api/bank/log/summary`. */
         BankLogSummary: {
             categories: components["schemas"]["BankLogCategoryTotals"][];
+            /** @description First imported game row in the period (RFC 3339), `None` when there is none. */
+            covered_from?: string | null;
+            /** @description Last imported game row in the period (RFC 3339), `None` when there is none. */
+            covered_to?: string | null;
             /** Format: int64 */
             explained: number;
             from: string;
@@ -10389,7 +10393,10 @@ export interface components {
             /** @description Game withdrawals categorised as payouts in the period (as a positive number). */
             game_payouts: string;
             import: components["schemas"]["BankLogImportStatus"];
-            /** @description Payouts the Manager accepted in the period (its own total, independent of the links). */
+            /**
+             * @description Payouts the Manager paid out between the first and the last imported game row of the
+             *     period (its own total, independent of the links). Zero when the period has no rows.
+             */
             manager_payouts: string;
             /** Format: int64 */
             matched: number;

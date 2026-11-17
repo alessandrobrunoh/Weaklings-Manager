@@ -963,11 +963,29 @@ impl BankLogService {
             }
         }
 
-        let manager_payouts: Decimal = paid_withdrawals(db, start, end - Duration::seconds(1))
+        // Compare payouts only over the stretch the imported game rows cover, widened by the
+        // payout matching tolerance (a payout is accepted up to 7 days before, or 2 days after,
+        // its game withdrawal) and kept inside the period. Without rows there is nothing to
+        // compare the Manager total with.
+        let covered = entries.iter().map(|entry| utc(&entry.occurred_at)).fold(
+            None,
+            |range: Option<(DateTime<Utc>, DateTime<Utc>)>, at| match range {
+                Some((first, last)) => Some((first.min(at), last.max(at))),
+                None => Some((at, at)),
+            },
+        );
+        let manager_payouts: Decimal = match covered {
+            Some((first, last)) => paid_withdrawals(
+                db,
+                (first - Duration::days(7)).max(start),
+                (last + Duration::days(2)).min(end - Duration::seconds(1)),
+            )
             .await?
-            .iter()
-            .map(|row| row.amount)
-            .sum();
+                .iter()
+                .map(|row| row.amount)
+                .sum(),
+            None => Decimal::ZERO,
+        };
 
         let settings = GuildSettingsEntity::find_by_id(1).one(db).await?;
         let last_import = EntryEntity::find()
@@ -991,6 +1009,8 @@ impl BankLogService {
             game_net: game_in + game_out,
             manager_payouts,
             game_payouts,
+            covered_from: covered.map(|(first, _)| first.to_rfc3339()),
+            covered_to: covered.map(|(_, last)| last.to_rfc3339()),
             unmatched: counts.get(STATUS_UNMATCHED).copied().unwrap_or(0),
             suggested: counts.get(STATUS_SUGGESTED).copied().unwrap_or(0),
             matched: counts.get(STATUS_MATCHED).copied().unwrap_or(0),
@@ -1827,6 +1847,39 @@ mod tests {
         assert_eq!(summary.manager_payouts, "7414881.00".parse::<Decimal>().unwrap());
         assert_eq!(summary.game_payouts, Decimal::from(7_414_881));
         assert_eq!(summary.matched, 1);
+        assert!(summary.covered_from.as_deref().is_some_and(|at| at.starts_with("2026-11-16T23:10")));
+    }
+
+    #[tokio::test]
+    async fn without_game_rows_the_manager_payouts_are_not_compared() {
+        let db = seed_db().await;
+        let actor = insert_user(&db, "officer").await;
+        let member = insert_user(&db, "member").await;
+        let paid_at: DateTime<Utc> = "2026-11-16T22:00:00Z".parse().unwrap();
+        TransactionActiveModel {
+            from_user_id: Set(Some(actor)),
+            to_user_id: Set(member),
+            to_guild_bank: Set(false),
+            amount: Set("5000000.00".parse().unwrap()),
+            status: Set(TransactionStatus::Withdrawn.to_string()),
+            r#type: Set(crate::service::TYPE_SPLIT_CREDIT.to_string()),
+            created_at: Set(paid_at.into()),
+            withdrawn_at: Set(Some(paid_at.into())),
+            updated_at: Set(paid_at.into()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let summary = BankLogService::new()
+            .summary(&db, &BankLogPeriodQuery {
+                from: Some("2026-11-01".to_string()),
+                to: Some("2026-11-17".to_string()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(summary.manager_payouts, Decimal::ZERO);
+        assert_eq!(summary.covered_from, None);
     }
 
     #[tokio::test]
