@@ -139,6 +139,14 @@ pub struct Model {
     /// Albion market tax (percent) the seller account pays on loot sold on the market. New splits
     /// copy it; it applies only to the loot value, never to repairs or bags.
     pub market_tax_percent: Decimal,
+    /// Channel where the backend reminds staff to import the Albion bank log.
+    pub discord_bank_log_channel_id: Option<String>,
+    /// Comma-separated in-game names of the shared seller accounts (e.g. `WeaklingsGM`).
+    pub bank_log_seller_accounts: String,
+    /// UTC day (`YYYY-MM-DD`) of the last import reminder, so at most one is sent per day.
+    pub bank_log_reminded_on: Option<String>,
+    /// Why the last reminder could not be sent, cleared by the next successful one.
+    pub bank_log_reminder_error: Option<String>,
     /// Last admin edit.
     pub updated_at: DateTimeWithTimeZone,
     /// Last admin editor.

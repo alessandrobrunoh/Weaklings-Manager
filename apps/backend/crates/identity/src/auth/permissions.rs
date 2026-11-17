@@ -49,6 +49,13 @@ pub enum Permission {
     /// Manually create a bank transaction (e.g. a one-off bonus). Admin-only.
     #[strum(serialize = "bank.transactions.create")]
     BankTransactionsCreate,
+    /// View the Albion guild bank log and its reconciliation with the Manager. Officer+.
+    #[strum(serialize = "bank.log.view")]
+    BankLogView,
+    /// Import the Albion guild bank log, link rows, explain them and change their category.
+    /// Creating a transaction from a row also needs `bank.transactions.create`. Officer+.
+    #[strum(serialize = "bank.log.manage")]
+    BankLogManage,
     /// Edit an existing bank transaction's amount/status/recipient/etc. Admin-only.
     #[strum(serialize = "bank.transactions.edit")]
     BankTransactionsEdit,

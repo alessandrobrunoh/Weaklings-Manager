@@ -9,7 +9,7 @@ use backend_albion_data::albionbb::service::AlbionBbService;
 use backend_albion_data::albiondata::service::AlbionDataService;
 use backend_identity::tenant::TenantWorkerSpawner;
 
-/// Starts `event_sessions` and `battle_sync` for a tenant, holding what starting
+/// Starts `event_sessions`, `bank_log_reminder` and `battle_sync` for a tenant, holding what starting
 /// them takes. `run_server` hands one to [`backend_identity::tenant::TenantRegistry::set_workers`].
 #[derive(Clone)]
 pub struct TenantWorkers {
@@ -35,6 +35,7 @@ impl TenantWorkerSpawner for TenantWorkers {
             control.clone(),
             stop.clone(),
         );
+        crate::bank_log_reminder::spawn(db.clone(), tenant_id.to_owned(), stop.clone());
         crate::battle_sync::spawn(
             db,
             self.albionbb_service.clone(),

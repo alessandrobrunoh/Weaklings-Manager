@@ -166,6 +166,14 @@ export const APP_NAV_SECTIONS: NavSection[] = [
         hiddenForAlliance: true,
       },
       {
+        path: '/bank-log',
+        icon: 'list',
+        labelKey: 'nav.bankLog',
+        permissions: ['bank.log.view'],
+        featureKey: 'bank',
+        hiddenForAlliance: true,
+      },
+      {
         path: '/siphoned',
         icon: 'zap',
         labelKey: 'nav.siphoned',

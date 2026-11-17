@@ -378,6 +378,12 @@ impl AdminService {
             }
             active.market_tax_percent = Set(value);
         }
+        if let Some(value) = &req.discord_bank_log_channel_id {
+            active.discord_bank_log_channel_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.bank_log_seller_accounts {
+            active.bank_log_seller_accounts = Set(normalize_seller_accounts(value)?);
+        }
         active.updated_at = Set(chrono::Utc::now().into());
         active.updated_by_user_id = Set(Some(editor_user_id));
         let updated = active.update(db).await.map_err(AppError::Database)?;
@@ -443,6 +449,8 @@ impl AdminService {
                 "discord_tickets_closed_message": req.discord_tickets_closed_message,
                 "default_split_fee": req.default_split_fee,
                 "market_tax_percent": req.market_tax_percent,
+                "discord_bank_log_channel_id": req.discord_bank_log_channel_id,
+                "bank_log_seller_accounts": req.bank_log_seller_accounts,
             })),
         )
         .await;
@@ -1111,6 +1119,27 @@ fn normalize_application_text(
         )));
     }
     Ok(trimmed.to_string())
+}
+
+/// Trims, de-duplicates (case-insensitive) and re-joins a comma-separated list of in-game names.
+fn normalize_seller_accounts(value: &str) -> Result<String, AppError> {
+    let mut names: Vec<String> = Vec::new();
+    for name in value.split(',').map(str::trim).filter(|name| !name.is_empty()) {
+        if name.chars().count() > 64 {
+            return Err(AppError::Validation(
+                "a seller account name is longer than 64 characters".to_string(),
+            ));
+        }
+        if !names.iter().any(|known| known.eq_ignore_ascii_case(name)) {
+            names.push(name.to_string());
+        }
+    }
+    if names.len() > 20 {
+        return Err(AppError::Validation(
+            "at most 20 seller accounts can be set".to_string(),
+        ));
+    }
+    Ok(names.join(", "))
 }
 
 fn normalize_discord_snowflake(value: &str) -> Result<Option<String>, AppError> {

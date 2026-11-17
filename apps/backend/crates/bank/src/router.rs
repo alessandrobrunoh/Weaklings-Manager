@@ -85,6 +85,7 @@ pub fn router() -> Router {
         .route("/transactions/withdraw", post(withdraw))
         .route("/transactions/withdraw/accept", post(accept_withdrawal))
         .route("/transactions/withdraw/reject", post(reject_withdrawal))
+        .merge(super::bank_log::router::router())
 }
 
 /// Resolves which user's ledger to act on, honoring the admin override query param.

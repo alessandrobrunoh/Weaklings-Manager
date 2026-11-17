@@ -1608,6 +1608,148 @@
         ],
         "type": "object"
       },
+      "ApiResponseBankLogBatchViewList": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogBatchView[] }`.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BankLogBatchView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogCandidateViewList": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogCandidateView[] }`.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/BankLogCandidateView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogDeleteBatchResult": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogDeleteBatchResult }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogDeleteBatchResult"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogEntryView": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogEntryView }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogEntryView"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogImportResult": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogImportResult }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogImportResult"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogLinkView": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogLinkView }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogLinkView"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogRefreshResult": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogRefreshResult }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogRefreshResult"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogSummary": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogSummary }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogSummary"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponseBatchSummaryList": {
         "description": "`OpenAPI` schema wrapper for `BatchSummary` list response (siphoned module).",
         "properties": {
@@ -2505,6 +2647,23 @@
             "$ref": "#/components/schemas/PaginatedAuditLogResponse"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponsePaginatedBankLogEntryView": {
+        "description": "`OpenAPI` wrapper: `{ status, data: { items: BankLogEntryView[], ... } }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PaginatedBankLogEntryView"
+          },
+          "status": {
+            "example": "success",
             "type": "string"
           }
         },
@@ -4538,6 +4697,24 @@
           "data": {
             "description": "The guild's Discord integration settings, as seen by the client.\n\nEvery field is nullable — an unset channel means \"the code that would post there skips it\",\nsame as the deployment env vars this table replaced.",
             "properties": {
+              "bank_log_reminded_on": {
+                "description": "UTC day of the last import reminder sent.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "bank_log_reminder_error": {
+                "description": "Why the last import reminder could not be sent; `None` after a successful one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "bank_log_seller_accounts": {
+                "description": "Comma-separated in-game names of the shared seller accounts whose deposits are loot sales.",
+                "type": "string"
+              },
               "default_role_discord_id": {
                 "description": "Discord snowflake linked to the unique gestionale `is_default` role, if any.\n\nComputed from `roles` on read; not stored on `guild_settings`.",
                 "type": [
@@ -4708,6 +4885,13 @@
                   "null"
                 ]
               },
+              "discord_bank_log_channel_id": {
+                "description": "Channel where the backend reminds the staff role to import the Albion bank log.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "discord_battles_channel_id": {
                 "description": "Channel where the bot/poller announces new battles.",
                 "type": [
@@ -4863,6 +5047,11 @@
                   "null"
                 ]
               },
+              "market_tax_percent": {
+                "description": "Albion market tax percentage copied onto new splits; applies to the loot value only.",
+                "example": "6.00",
+                "type": "string"
+              },
               "trial_duration_days": {
                 "description": "Default trial length in days; a manager can still move a single trial's deadline.",
                 "format": "int32",
@@ -4909,7 +5098,9 @@
               "discord_tickets_welcome_message",
               "discord_tickets_closed_title",
               "discord_tickets_closed_message",
-              "default_split_fee"
+              "default_split_fee",
+              "market_tax_percent",
+              "bank_log_seller_accounts"
             ],
             "type": "object"
           },
@@ -8733,6 +8924,668 @@
         ],
         "type": "object"
       },
+      "BankLogBatchView": {
+        "description": "One import batch.",
+        "properties": {
+          "batch_id": {
+            "type": "string"
+          },
+          "first_at": {
+            "type": "string"
+          },
+          "imported_at": {
+            "type": "string"
+          },
+          "imported_by": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_at": {
+            "type": "string"
+          },
+          "rows": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "imported_at",
+          "rows",
+          "first_at",
+          "last_at"
+        ],
+        "type": "object"
+      },
+      "BankLogCandidateView": {
+        "description": "A Manager record an officer can link a row to by hand.",
+        "properties": {
+          "amount": {
+            "description": "Payout amount, or for splits the bags value / expected sale (see `split_*`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "`transaction` or `split`.",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "linked": {
+            "description": "Already part of a confirmed link.",
+            "type": "boolean"
+          },
+          "member_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "split_bags_value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "split_expected_sale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "split_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "transaction_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "linked"
+        ],
+        "type": "object"
+      },
+      "BankLogCategoryTotals": {
+        "description": "Totals of one category over a period.",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "explained_total": {
+            "description": "Sum of the rows marked explained.",
+            "type": "string"
+          },
+          "game_total": {
+            "description": "Sum of the game rows (signed).",
+            "type": "string"
+          },
+          "linked_total": {
+            "description": "Sum of the rows in confirmed links.",
+            "type": "string"
+          },
+          "open_total": {
+            "description": "What is neither linked nor explained.",
+            "type": "string"
+          },
+          "rows": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "rows",
+          "game_total",
+          "linked_total",
+          "explained_total",
+          "open_total"
+        ],
+        "type": "object"
+      },
+      "BankLogCreateEntryTransactionRequest": {
+        "description": "`POST /api/bank/log/entries/{id}/transaction`.",
+        "properties": {
+          "amount": {
+            "description": "Positive silver amount. Defaults to the row amount without sign.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_user_id": {
+            "description": "Member the transaction belongs to.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "to_user_id"
+        ],
+        "type": "object"
+      },
+      "BankLogCreateLinkRequest": {
+        "description": "`POST /api/bank/log/links`: a manual, confirmed link.",
+        "properties": {
+          "entry_ids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "`payout`, `bags`, `loot_sale` or `manual` (default).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "split_ids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "transaction_ids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entry_ids"
+        ],
+        "type": "object"
+      },
+      "BankLogDeleteBatchResult": {
+        "description": "`DELETE /api/bank/log/batches/{batch_id}`.",
+        "properties": {
+          "deleted": {
+            "description": "Rows deleted.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "BankLogEntryView": {
+        "description": "One stored log row with its links.",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "batch_id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "created_transaction_id": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "explained_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "imported_at": {
+            "type": "string"
+          },
+          "links": {
+            "description": "Confirmed links first, then suggestions.",
+            "items": {
+              "$ref": "#/components/schemas/BankLogLinkView"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "occurrence": {
+            "description": "1 for the first identical line of a minute, 2 for the second, ...",
+            "format": "int32",
+            "type": "integer"
+          },
+          "player_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "description": "`unmatched`, `suggested`, `matched` or `explained`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "occurred_at",
+          "player_name",
+          "reason",
+          "amount",
+          "occurrence",
+          "category",
+          "status",
+          "batch_id",
+          "imported_at",
+          "links"
+        ],
+        "type": "object"
+      },
+      "BankLogImportRequest": {
+        "description": "Body of `POST /api/bank/log/import`.",
+        "properties": {
+          "rows": {
+            "description": "Every line of the export, in any order.",
+            "items": {
+              "$ref": "#/components/schemas/BankLogImportRow"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "BankLogImportResult": {
+        "description": "What an import stored.",
+        "properties": {
+          "already_stored": {
+            "description": "Lines already stored by an earlier import.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "batch_id": {
+            "description": "Id shared by the rows this import stored (empty when nothing new was stored).",
+            "type": "string"
+          },
+          "duplicates_kept": {
+            "description": "Stored rows that are a second (or later) identical line of the same minute.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inserted": {
+            "description": "Rows stored now.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "suggestions": {
+            "description": "Suggestions proposed after the import.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Lines in the request.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "total",
+          "inserted",
+          "already_stored",
+          "duplicates_kept",
+          "suggestions"
+        ],
+        "type": "object"
+      },
+      "BankLogImportRow": {
+        "description": "One line of the Albion guild bank log, as the in-game JSON export writes it.\n\nThe export keys are capitalised (`Date`, `Player`, `Reason`, `Amount`); lowercase keys are\naccepted too. `Date` is UTC, `YYYY-MM-DD HH:MM:SS`. `Amount` is a signed integer string.",
+        "example": {
+          "Amount": "-7414881",
+          "Date": "2026-11-16 23:10:00",
+          "Player": "Galvdon",
+          "Reason": "Withdrawal"
+        },
+        "properties": {
+          "amount": {
+            "description": "Signed silver amount, as a string or a number.",
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "player": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "player",
+          "reason",
+          "amount"
+        ],
+        "type": "object"
+      },
+      "BankLogImportStatus": {
+        "description": "Import status shown above the page and used by the reminder.",
+        "properties": {
+          "days_since_import": {
+            "description": "Whole UTC days since the last import.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "days_until_loss": {
+            "description": "Days before the oldest unimported rows start leaving the 28-day game log.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_import_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_reminded_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reminder_after_days": {
+            "description": "Reminders start on this day after the last import.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "reminder_channel_set": {
+            "type": "boolean"
+          },
+          "reminder_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "staff_role_set": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reminder_after_days",
+          "reminder_channel_set",
+          "staff_role_set"
+        ],
+        "type": "object"
+      },
+      "BankLogLinkTargetView": {
+        "description": "A Manager record a log row is linked to.",
+        "properties": {
+          "amount": {
+            "description": "The amount this target stands for (payout amount, bags value, expected sale).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "description": "When the Manager record happened (payout time, split creation).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "Short label (`Payout to Alice`, `Split #12 bags`). `Removed` when the record is gone.",
+            "type": "string"
+          },
+          "member_username": {
+            "description": "Member who received a payout.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "split_id": {
+            "description": "Split, for bags and loot sales.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "transaction_id": {
+            "description": "Bank transaction, for payouts and created transactions.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "BankLogLinkView": {
+        "description": "A link between log rows and Manager records.",
+        "properties": {
+          "confirmed": {
+            "description": "`false` while it is a suggestion.",
+            "type": "boolean"
+          },
+          "entries_total": {
+            "description": "Sum of the log rows in the link (signed).",
+            "type": "string"
+          },
+          "entry_ids": {
+            "description": "Every log row in the link.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "`payout`, `bags`, `loot_sale` or `manual`.",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/BankLogLinkTargetView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "confirmed",
+          "entry_ids",
+          "entries_total",
+          "targets"
+        ],
+        "type": "object"
+      },
+      "BankLogRefreshResult": {
+        "description": "`POST /api/bank/log/suggestions/refresh`.",
+        "properties": {
+          "suggestions": {
+            "description": "Suggestions proposed.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "suggestions"
+        ],
+        "type": "object"
+      },
+      "BankLogSummary": {
+        "description": "`GET /api/bank/log/summary`.",
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/BankLogCategoryTotals"
+            },
+            "type": "array"
+          },
+          "explained": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "game_in": {
+            "type": "string"
+          },
+          "game_net": {
+            "description": "Game in + out.",
+            "type": "string"
+          },
+          "game_out": {
+            "type": "string"
+          },
+          "game_payouts": {
+            "description": "Game withdrawals categorised as payouts in the period (as a positive number).",
+            "type": "string"
+          },
+          "import": {
+            "$ref": "#/components/schemas/BankLogImportStatus"
+          },
+          "manager_payouts": {
+            "description": "Payouts the Manager accepted in the period (its own total, independent of the links).",
+            "type": "string"
+          },
+          "matched": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seller_accounts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "suggested": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "to": {
+            "type": "string"
+          },
+          "unmatched": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "game_in",
+          "game_out",
+          "game_net",
+          "manager_payouts",
+          "game_payouts",
+          "unmatched",
+          "suggested",
+          "matched",
+          "explained",
+          "categories",
+          "import",
+          "seller_accounts"
+        ],
+        "type": "object"
+      },
+      "BankLogUpdateEntryRequest": {
+        "description": "`PATCH /api/bank/log/entries/{id}`.",
+        "properties": {
+          "category": {
+            "description": "New category.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "explained": {
+            "description": "`true` marks the row explained (needs a note), `false` clears it.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "note": {
+            "description": "New note. Empty clears it (and un-explains the row).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "BatchFailure": {
         "description": "One split that could not be completed, and why.",
         "properties": {
@@ -11934,7 +12787,7 @@
             ]
           },
           "fee": {
-            "description": "The percentage of the estimated market value retained as a split fee. Defaults to 20%.",
+            "description": "The percentage retained as a split fee. Defaults to the guild's default split fee.",
             "example": "20.00",
             "type": [
               "string",
@@ -11946,6 +12799,14 @@
             "example": 10,
             "format": "int64",
             "type": "integer"
+          },
+          "market_tax": {
+            "description": "Albion market tax percentage on the loot value. Defaults to the guild's market tax setting.",
+            "example": "6.00",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "note": {
             "description": "An optional free-text note (e.g. boss/item name).",
@@ -16900,6 +17761,24 @@
       "GuildSettingsView": {
         "description": "The guild's Discord integration settings, as seen by the client.\n\nEvery field is nullable — an unset channel means \"the code that would post there skips it\",\nsame as the deployment env vars this table replaced.",
         "properties": {
+          "bank_log_reminded_on": {
+            "description": "UTC day of the last import reminder sent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bank_log_reminder_error": {
+            "description": "Why the last import reminder could not be sent; `None` after a successful one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bank_log_seller_accounts": {
+            "description": "Comma-separated in-game names of the shared seller accounts whose deposits are loot sales.",
+            "type": "string"
+          },
           "default_role_discord_id": {
             "description": "Discord snowflake linked to the unique gestionale `is_default` role, if any.\n\nComputed from `roles` on read; not stored on `guild_settings`.",
             "type": [
@@ -17070,6 +17949,13 @@
               "null"
             ]
           },
+          "discord_bank_log_channel_id": {
+            "description": "Channel where the backend reminds the staff role to import the Albion bank log.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "discord_battles_channel_id": {
             "description": "Channel where the bot/poller announces new battles.",
             "type": [
@@ -17225,6 +18111,11 @@
               "null"
             ]
           },
+          "market_tax_percent": {
+            "description": "Albion market tax percentage copied onto new splits; applies to the loot value only.",
+            "example": "6.00",
+            "type": "string"
+          },
           "trial_duration_days": {
             "description": "Default trial length in days; a manager can still move a single trial's deadline.",
             "format": "int32",
@@ -17271,7 +18162,9 @@
           "discord_tickets_welcome_message",
           "discord_tickets_closed_title",
           "discord_tickets_closed_message",
-          "default_split_fee"
+          "default_split_fee",
+          "market_tax_percent",
+          "bank_log_seller_accounts"
         ],
         "type": "object"
       },
@@ -19473,6 +20366,45 @@
           "total_pages",
           "current_page",
           "per_page"
+        ],
+        "type": "object"
+      },
+      "PaginatedBankLogEntryView": {
+        "description": "A page of log rows.",
+        "properties": {
+          "current_page": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BankLogEntryView"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total_items": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total_pages": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_items",
+          "total_pages",
+          "current_page",
+          "limit"
         ],
         "type": "object"
       },
@@ -24152,6 +25084,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "default_market_tax": {
+            "description": "Guild market tax percentage copied onto newly created splits.",
+            "example": "6.00",
+            "type": "string"
+          },
           "default_split_fee": {
             "description": "Default fee percentage for newly created splits.",
             "example": "20.00",
@@ -24186,7 +25123,8 @@
           "total_net_distributed",
           "total_estimated_volume",
           "total_participants",
-          "default_split_fee"
+          "default_split_fee",
+          "default_market_tax"
         ],
         "type": "object"
       },
@@ -24360,6 +25298,11 @@
               "null"
             ]
           },
+          "market_tax": {
+            "description": "Albion market tax percentage taken from the loot value before the fee (0 on splits created\nbefore the tax existed).",
+            "example": "6.00",
+            "type": "string"
+          },
           "net_value": {
             "description": "The net value distributed among participants, set only once completed.",
             "example": "75.00",
@@ -24408,6 +25351,7 @@
           "status",
           "estimated_market_value",
           "fee",
+          "market_tax",
           "repair_value",
           "bags_value",
           "created_at",
@@ -25668,6 +26612,13 @@
       "UpdateGuildSettingsRequest": {
         "description": "Request body for `PUT /admin/settings`.\n\nPartial update: a field entirely absent from the JSON body is left unchanged, matching\n`UpdateRegearSettingsRequest`'s convention elsewhere in this codebase. To clear an\nalready-configured channel, send it as an empty string rather than `null` — the service\nnormalizes `Some(\"\")` to \"unset this column\". This avoids the serde \"double option\" dance a\ntrue `Option<Option<String>>` would need to tell \"absent\" and \"present but null\" apart, and the\nadmin settings form always sends every field anyway (either a ~19-digit Discord snowflake or\nempty), so there is no real case where a client needs `null` specifically.",
         "properties": {
+          "bank_log_seller_accounts": {
+            "description": "Comma-separated seller account names; empty clears them.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "default_split_fee": {
             "description": "New default split fee percentage. Must be between 0 and 100.",
             "example": "20.00",
@@ -25906,6 +26857,13 @@
               "null"
             ]
           },
+          "discord_bank_log_channel_id": {
+            "description": "Channel for the Albion bank log import reminder; empty clears it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "discord_battles_channel_id": {
             "description": "New value. Omit to leave unchanged; send `\"\"` to clear.",
             "type": [
@@ -26074,6 +27032,14 @@
           },
           "discord_transaction_spam_channel_id": {
             "description": "New value. Omit to leave unchanged; send `\"\"` to clear.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "market_tax_percent": {
+            "description": "New Albion market tax percentage for new splits. Must be between 0 and 100.",
+            "example": "6.00",
             "type": [
               "string",
               "null"
@@ -26526,6 +27492,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "market_tax": {
+            "description": "New market tax percentage. Omit to keep the current value.",
+            "example": "6.00",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -27540,7 +28514,7 @@
     }
   },
   "info": {
-    "description": "# Weaklings Gateway API\n\nBackend REST API for the Weaklings guild management app: Discord OAuth2 login, a database-backed Guild Bank ledger, loot splits, and Albion Online integrations. This description is the map — read it once before touching any endpoint below.\n\n## Base URL and routing\n\nEvery path documented here is already prefixed with `/api` (e.g. the `auth` tag's login endpoint is served at `/api/auth/discord/login`). The frontend should never need any other prefix.\n\n## Authentication: it's a cookie, not a bearer token\n\nThere is no `Authorization` header and no JWT. Login is a server-side Discord OAuth2 redirect flow:\n\n1. Send the browser to `GET /api/auth/discord/login`. It redirects to Discord, which redirects back to `GET /api/auth/discord/callback` on this server.\n2. The callback exchanges the code, resolves the user's Discord guild roles against the local `roles` table, upserts a local `users` row, and sets an **httponly** `session_user` cookie (7-day expiry) containing the serialized profile — the frontend never reads or parses this cookie directly.\n3. The server then redirects the browser to the frontend's `/dashboard`.\n4. From then on, the browser sends the cookie automatically on every same-site request. Call `GET /api/auth/me` on app load to check whether a session exists and to get the logged-in user's profile (id, username, avatar, roles). A `401` means \"not logged in\" — show the login button.\n5. `POST /api/auth/logout` revokes the session server-side and clears the cookie; `POST /api/auth/logout-all` revokes every session of the caller's account.\n\nEvery endpoint below other than the four `auth` ones requires this cookie to already be set; they are all annotated with the `session_cookie` security requirement. Because it's a cookie, `fetch()` calls from the frontend need `credentials: \"include\"` (or same-origin, if proxied).\n\n## Roles and authorization\n\nAuthorization is **permission-based**: each protected endpoint declares a fine-grained\n`Permission` (e.g. `bank.withdraw.accept`, `splits.manage`) via a `Require(...)` extractor,\nand the request is rejected with `403` if the caller's roles don't grant it.\n\nThe mapping **role → permission** lives in the `role_permissions` database table and is\nloaded into an in-memory cache at startup. To change who can do what:\n\n1. Create a gestionale role with `POST /api/admin/roles` and link it to a Discord snowflake.\n2. Grant or revoke keys on that role with `PUT /api/admin/roles/{id}/permissions` (applies immediately).\n3. `POST /api/admin/permissions/reload` still exists for out-of-band SQL edits.\n\nThe configured `super_admin_discord_id` (env) bypasses every permission check.\n\nCurrent permissions:\n\n| Permission               | Granted to        | Used by                                    |\n|--------------------------|-------------------|--------------------------------------------|\n| `bank.withdraw.accept`   | Admin, Officer    | `POST /bank/transactions/withdraw/accept`  |\n| `bank.view_others`       | Admin             | `GET /bank/balance?user_id=`, `GET /bank/transactions?user_id=` |\n| `splits.manage`          | Admin, Officer    | split edit/close endpoints                 |\n| `splits.islands.manage`  | Admin             | island/tab catalog CRUD                    |\n| `users.create`           | Admin             | `POST /users`, `GET /admin/discord/members` |\n| `permissions.reload`     | Admin             | `POST /admin/permissions/reload`           |\n| `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |\n| `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |\n| `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |\n| `comps.builds.manage`    | Admin, Officer    | edit/delete/archive/version any build (create/edit/delete alone: own builds only) |\n| `comps.comps.manage`     | Admin, Officer    | edit/delete/archive/version any comp (create/edit/delete alone: own comps only) |\n\nA `403 Forbidden` (`ProblemDetails`) means the session is valid but the caller's roles don't\ngrant the required permission.\n\n## Response envelope\n\nEvery successful (2xx) JSON response — except the two endpoints that stream a raw array or object directly (`openalbion` weapon stats/categories) — is wrapped JSend-style:\n\n```json\n{ \"status\": \"success\", \"data\": { /* the documented body schema */ } }\n```\n\nAlways read the payload from `.data`, not the top level.\n\n## Error format (RFC 7807)\n\nEvery non-2xx response is `application/problem+json`:\n\n```json\n{\n  \"type\": \"/errors/validation-error\",\n  \"title\": \"Validation Error\",\n  \"status\": 400,\n  \"detail\": \"human-readable explanation, safe to show the user\"\n}\n```\n\nCommon `status`/`type` pairs you'll see across this API: `400` validation-error, `401` unauthorized (no/invalid session), `403` forbidden (valid session, wrong role, or acting on someone else's resource), `404` not-found, `409` conflict (e.g. an Albion player already linked to another account), `502` upstream-service-error (a third-party API — Albion Online or OpenAlbion — failed or timed out).\n\n## The two-step Guild Bank withdrawal flow\n\nMoney owed to a member never gets marked paid in one step. `bank.TransactionStatus` moves strictly forward: `pending` (owed, untouched) -> `requested` (the member asked to withdraw it, via `POST /bank/transactions/withdraw`) -> `withdrawn` (an officer accepted and paid it, via `POST /bank/transactions/withdraw/accept`, which stamps that officer's user id onto the transaction's `from_user_id` as the recorded payer). `GET /bank/balance` reports `pending_total`/`pending_count` and `requested_total`/`requested_count` separately so the UI can distinguish \"owed\" from \"already asked for, awaiting payout\".\n\n## The loot split lifecycle\n\nA split is requested by any member together with its participants and their relative weights up front (`POST /splits` — there is no separate \"add participants later\" step required to make a split valid, though `POST /splits/{id}/participants` still exists for an officer to adjust the roster while it's pending). `splits.SplitStatus` starts at `pending` and an officer closes it out exactly once, into one of three terminal-ish states: `completed` (`POST /splits/{id}/complete` — computes `net_value = estimated_market_value - repair_value + bags_value` and generates one `pending` Guild Bank transaction per participant, split proportionally by weight with remainder correction so the sum is exact), `not_completed` (the split didn't happen; no transactions), or `lost` (`POST /splits/{id}/lost` — the loot itself was never recovered; no transactions). Only `pending` splits can be edited or closed; every closing action is a one-way door.\n\n## Albion Online vs. OpenAlbion — two unrelated third-party integrations\n\nDon't confuse these tags: `albion` calls Sandbox Interactive's own (unofficial, undocumented) `gameinfo` API — live player/guild data for the configured in-game guild, plus the Discord-account-to- Albion-character self-link feature. `openalbion` calls the separate, community-run OpenAlbion item database — static reference data (weapon catalog, categories, per-quality stats) used by the composition/loadout builder, with the full weapon list cached server-side for an hour. Neither requires or shares any credentials; both simply require a valid session cookie like everything else.\n",
+    "description": "# Weaklings Gateway API\n\nBackend REST API for the Weaklings guild management app: Discord OAuth2 login, a database-backed Guild Bank ledger, loot splits, and Albion Online integrations. This description is the map — read it once before touching any endpoint below.\n\n## Base URL and routing\n\nEvery path documented here is already prefixed with `/api` (e.g. the `auth` tag's login endpoint is served at `/api/auth/discord/login`). The frontend should never need any other prefix.\n\n## Authentication: it's a cookie, not a bearer token\n\nThere is no `Authorization` header and no JWT. Login is a server-side Discord OAuth2 redirect flow:\n\n1. Send the browser to `GET /api/auth/discord/login`. It redirects to Discord, which redirects back to `GET /api/auth/discord/callback` on this server.\n2. The callback exchanges the code, resolves the user's Discord guild roles against the local `roles` table, upserts a local `users` row, and sets an **httponly** `session_user` cookie (7-day expiry) containing the serialized profile — the frontend never reads or parses this cookie directly.\n3. The server then redirects the browser to the frontend's `/dashboard`.\n4. From then on, the browser sends the cookie automatically on every same-site request. Call `GET /api/auth/me` on app load to check whether a session exists and to get the logged-in user's profile (id, username, avatar, roles). A `401` means \"not logged in\" — show the login button.\n5. `POST /api/auth/logout` revokes the session server-side and clears the cookie; `POST /api/auth/logout-all` revokes every session of the caller's account.\n\nEvery endpoint below other than the four `auth` ones requires this cookie to already be set; they are all annotated with the `session_cookie` security requirement. Because it's a cookie, `fetch()` calls from the frontend need `credentials: \"include\"` (or same-origin, if proxied).\n\n## Roles and authorization\n\nAuthorization is **permission-based**: each protected endpoint declares a fine-grained\n`Permission` (e.g. `bank.withdraw.accept`, `splits.manage`) via a `Require(...)` extractor,\nand the request is rejected with `403` if the caller's roles don't grant it.\n\nThe mapping **role → permission** lives in the `role_permissions` database table and is\nloaded into an in-memory cache at startup. To change who can do what:\n\n1. Create a gestionale role with `POST /api/admin/roles` and link it to a Discord snowflake.\n2. Grant or revoke keys on that role with `PUT /api/admin/roles/{id}/permissions` (applies immediately).\n3. `POST /api/admin/permissions/reload` still exists for out-of-band SQL edits.\n\nThe configured `super_admin_discord_id` (env) bypasses every permission check.\n\nCurrent permissions:\n\n| Permission               | Granted to        | Used by                                    |\n|--------------------------|-------------------|--------------------------------------------|\n| `bank.withdraw.accept`   | Admin, Officer    | `POST /bank/transactions/withdraw/accept`  |\n| `bank.view_others`       | Admin             | `GET /bank/balance?user_id=`, `GET /bank/transactions?user_id=` |\n| `splits.manage`          | Admin, Officer    | split edit/close endpoints                 |\n| `splits.islands.manage`  | Admin             | island/tab catalog CRUD                    |\n| `users.create`           | Admin             | `POST /users`, `GET /admin/discord/members` |\n| `permissions.reload`     | Admin             | `POST /admin/permissions/reload`           |\n| `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |\n| `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |\n| `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |\n| `comps.builds.manage`    | Admin, Officer    | edit/delete/archive/version any build (create/edit/delete alone: own builds only) |\n| `comps.comps.manage`     | Admin, Officer    | edit/delete/archive/version any comp (create/edit/delete alone: own comps only) |\n\nA `403 Forbidden` (`ProblemDetails`) means the session is valid but the caller's roles don't\ngrant the required permission.\n\n## Response envelope\n\nEvery successful (2xx) JSON response — except the two endpoints that stream a raw array or object directly (`openalbion` weapon stats/categories) — is wrapped JSend-style:\n\n```json\n{ \"status\": \"success\", \"data\": { /* the documented body schema */ } }\n```\n\nAlways read the payload from `.data`, not the top level.\n\n## Error format (RFC 7807)\n\nEvery non-2xx response is `application/problem+json`:\n\n```json\n{\n  \"type\": \"/errors/validation-error\",\n  \"title\": \"Validation Error\",\n  \"status\": 400,\n  \"detail\": \"human-readable explanation, safe to show the user\"\n}\n```\n\nCommon `status`/`type` pairs you'll see across this API: `400` validation-error, `401` unauthorized (no/invalid session), `403` forbidden (valid session, wrong role, or acting on someone else's resource), `404` not-found, `409` conflict (e.g. an Albion player already linked to another account), `502` upstream-service-error (a third-party API — Albion Online or OpenAlbion — failed or timed out).\n\n## The two-step Guild Bank withdrawal flow\n\nMoney owed to a member never gets marked paid in one step. `bank.TransactionStatus` moves strictly forward: `pending` (owed, untouched) -> `requested` (the member asked to withdraw it, via `POST /bank/transactions/withdraw`) -> `withdrawn` (an officer accepted and paid it, via `POST /bank/transactions/withdraw/accept`, which stamps that officer's user id onto the transaction's `from_user_id` as the recorded payer). `GET /bank/balance` reports `pending_total`/`pending_count` and `requested_total`/`requested_count` separately so the UI can distinguish \"owed\" from \"already asked for, awaiting payout\".\n\n## The loot split lifecycle\n\nA split is requested by any member together with its participants and their relative weights up front (`POST /splits` — there is no separate \"add participants later\" step required to make a split valid, though `POST /splits/{id}/participants` still exists for an officer to adjust the roster while it's pending). `splits.SplitStatus` starts at `pending` and an officer closes it out exactly once, into one of three terminal-ish states: `completed` (`POST /splits/{id}/complete` — computes `net_value = (estimated_market_value × (1 − market_tax%) − repair_value + bags_value) × (1 − fee%)` and generates one `pending` Guild Bank transaction per participant, split proportionally by weight with remainder correction so the sum is exact), `not_completed` (the split didn't happen; no transactions), or `lost` (`POST /splits/{id}/lost` — the loot itself was never recovered; no transactions). Only `pending` splits can be edited or closed; every closing action is a one-way door.\n\n## Albion Online vs. OpenAlbion — two unrelated third-party integrations\n\nDon't confuse these tags: `albion` calls Sandbox Interactive's own (unofficial, undocumented) `gameinfo` API — live player/guild data for the configured in-game guild, plus the Discord-account-to- Albion-character self-link feature. `openalbion` calls the separate, community-run OpenAlbion item database — static reference data (weapon catalog, categories, per-quality stats) used by the composition/loadout builder, with the full weapon list cached server-side for an hour. Neither requires or shares any credentials; both simply require a valid session cookie like everything else.\n",
     "license": {
       "name": ""
     },
@@ -31336,6 +32310,920 @@
           }
         ],
         "summary": "Get the guild-wide total the Guild Bank has paid out",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/batches": {
+      "get": {
+        "operationId": "bank_log_batches",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogBatchViewList"
+                }
+              }
+            },
+            "description": "Imports, newest first"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.view on a guild"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.view"
+            ]
+          }
+        ],
+        "summary": "List bank log imports",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/batches/{batch_id}": {
+      "delete": {
+        "description": "Deletes the rows that import stored and their links. Refused when one of them created a transaction. The reminder clock follows the remaining imports.",
+        "operationId": "bank_log_delete_batch",
+        "parameters": [
+          {
+            "description": "Import id",
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogDeleteBatchResult"
+                }
+              }
+            },
+            "description": "Rows deleted"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such import"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A row created a transaction"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Delete a bank log import",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/entries": {
+      "get": {
+        "description": "Newest first, with each row's confirmed links and suggestions. Filters: UTC day range, status, category, player or reason text.",
+        "operationId": "bank_log_list_entries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "limit",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive UTC day, `YYYY-MM-DD`.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive UTC day, `YYYY-MM-DD`.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Matches player name or reason.",
+            "in": "path",
+            "name": "search",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaginatedBankLogEntryView"
+                }
+              }
+            },
+            "description": "A page of rows"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unknown filter value"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.view on a guild"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.view"
+            ]
+          }
+        ],
+        "summary": "List bank log rows",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/entries/{id}": {
+      "get": {
+        "operationId": "bank_log_get_entry",
+        "parameters": [
+          {
+            "description": "Row id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogEntryView"
+                }
+              }
+            },
+            "description": "The row"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.view on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such row"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.view"
+            ]
+          }
+        ],
+        "summary": "Get a bank log row",
+        "tags": [
+          "bank"
+        ]
+      },
+      "patch": {
+        "description": "`explained: true` needs a note. Clearing the note of an officer-explained row un-explains it.",
+        "operationId": "bank_log_update_entry",
+        "parameters": [
+          {
+            "description": "Row id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankLogUpdateEntryRequest"
+              }
+            }
+          },
+          "description": "Fields to change.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogEntryView"
+                }
+              }
+            },
+            "description": "The updated row"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unknown category or missing note"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such row"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Update a bank log row",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/entries/{id}/candidates": {
+      "get": {
+        "description": "For a withdrawal: payouts within 10 days, closest amount first. For a deposit: splits created up to 60 days before, with bags value and expected sale.",
+        "operationId": "bank_log_candidates",
+        "parameters": [
+          {
+            "description": "Row id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogCandidateViewList"
+                }
+              }
+            },
+            "description": "Candidates"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.view on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such row"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.view"
+            ]
+          }
+        ],
+        "summary": "Link candidates for a bank log row",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/entries/{id}/transaction": {
+      "post": {
+        "description": "A withdrawal row becomes a paid-out row for the member; a deposit row becomes the member's donation. The row is linked to it. A row creates at most one transaction, also after that transaction is deleted.",
+        "operationId": "bank_log_create_transaction",
+        "parameters": [
+          {
+            "description": "Row id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankLogCreateEntryTransactionRequest"
+              }
+            }
+          },
+          "description": "Member and amount.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogEntryView"
+                }
+              }
+            },
+            "description": "The linked row"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage and bank.transactions.create"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such row or member"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The row already created a transaction or is linked"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage",
+              "bank.transactions.create"
+            ]
+          }
+        ],
+        "summary": "Create a transaction from a bank log row",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/import": {
+      "post": {
+        "description": "Stores the lines of the in-game JSON export (`Date`, `Player`, `Reason`, `Amount`; UTC). Identical lines in one export are numbered, so re-importing an overlapping export adds only the new lines while a real second identical movement is kept. Rows whose reason is not Deposit/Withdrawal are guild expenses, explained automatically. Suggestions are recomputed afterwards.",
+        "operationId": "bank_log_import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankLogImportRequest"
+              }
+            }
+          },
+          "description": "The export lines.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogImportResult"
+                }
+              }
+            },
+            "description": "Import counts"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A line cannot be read"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A concurrent import stored the same rows"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Import the Albion guild bank log",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/links": {
+      "post": {
+        "description": "Creates a confirmed link between one or more rows and transactions and/or splits. Suggestions that share a row or a transaction are dropped.",
+        "operationId": "bank_log_create_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankLogCreateLinkRequest"
+              }
+            }
+          },
+          "description": "Rows and records.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogLinkView"
+                }
+              }
+            },
+            "description": "The link"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Empty link or unknown kind"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A row or record does not exist"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A row or transaction is already linked"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Link bank log rows by hand",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/links/{id}": {
+      "delete": {
+        "operationId": "bank_log_delete_link",
+        "parameters": [
+          {
+            "description": "Link id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such link"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Remove a bank log link",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/links/{id}/confirm": {
+      "post": {
+        "operationId": "bank_log_confirm_link",
+        "parameters": [
+          {
+            "description": "Link id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogLinkView"
+                }
+              }
+            },
+            "description": "The confirmed link"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such link"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Already confirmed, or a row or transaction is linked elsewhere"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Confirm a bank log suggestion",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/suggestions/refresh": {
+      "post": {
+        "description": "Drops every unconfirmed link and proposes new ones for the rows that are neither linked nor explained. Confirmed links are kept.",
+        "operationId": "bank_log_refresh_suggestions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogRefreshResult"
+                }
+              }
+            },
+            "description": "Suggestions proposed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.manage on a guild"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.manage"
+            ]
+          }
+        ],
+        "summary": "Recompute bank log suggestions",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/summary": {
+      "get": {
+        "description": "Per category: game total, linked, explained and open. Also the Manager's own payout total for the period and the import/reminder status. Defaults to the last 28 UTC days.",
+        "operationId": "bank_log_summary",
+        "parameters": [
+          {
+            "description": "Inclusive UTC day, `YYYY-MM-DD`. Defaults to 28 days ago.",
+            "in": "path",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive UTC day, `YYYY-MM-DD`. Defaults to today.",
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogSummary"
+                }
+              }
+            },
+            "description": "Summary"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad day"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires bank.log.view on a guild"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "bank.log.view"
+            ]
+          }
+        ],
+        "summary": "Bank log period summary",
         "tags": [
           "bank"
         ]

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -50,6 +51,14 @@ interface DiscordSettingsDraft {
   discord_event_timezone: string;
   default_split_fee: string;
   market_tax_percent: string;
+  discord_bank_log_channel_id: string;
+  bank_log_seller_accounts: string;
+}
+
+/** Read-only reminder state of the Albion bank log, shown beside its fields and never sent back. */
+interface BankLogStatus {
+  remindedOn: string | null;
+  reminderError: string | null;
 }
 
 /** Whether the bot could read the server's channels and roles on the last attempt. */
@@ -77,6 +86,8 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_event_timezone: 'Europe/Rome',
   default_split_fee: '15',
   market_tax_percent: '6',
+  discord_bank_log_channel_id: '',
+  bank_log_seller_accounts: '',
 };
 
 const EVENT_TAG_FIELDS = [
@@ -93,6 +104,13 @@ const SPLIT_TAG_FIELDS = [
   'discord_split_lost_tag_id',
 ] as const;
 
+const BANK_LOG_REMINDER_ERROR_KEYS: Record<string, TranslationKey> = {
+  missing_channel: 'admin.bankLog.reminderError.missingChannel',
+  missing_staff_role: 'admin.bankLog.reminderError.missingStaffRole',
+  missing_bot_token: 'admin.bankLog.reminderError.missingBotToken',
+  discord_refused: 'admin.bankLog.reminderError.discordRefused',
+};
+
 /**
  * Discord integration settings: connection state, the channels the bot posts to,
  * the split forum, notification copies and the roles it assigns. One form, one save.
@@ -100,7 +118,7 @@ const SPLIT_TAG_FIELDS = [
 @Component({
   selector: 'app-admin-discord',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ErrorState, Loading, PageHeader, PageStack, SearchableSelect, Select, StatusChip],
+  imports: [ErrorState, Loading, PageHeader, PageStack, RouterLink, SearchableSelect, Select, StatusChip],
   styles: `
     .discord-save-bar {
       position: sticky;
@@ -422,6 +440,54 @@ const SPLIT_TAG_FIELDS = [
             </div>
           </section>
 
+          <section class="card p-5" aria-labelledby="discord-bank-log-title">
+            <h2 id="discord-bank-log-title" class="section-title">{{ t('admin.bankLog.title') }}</h2>
+            <div class="discord-field-grid mt-4">
+              <label>
+                <span class="label">{{ t('admin.bankLog.reminderChannel') }}</span>
+                <app-searchable-select
+                  class="mt-1 block"
+                  [options]="channelOptions(['text'], guildSettingsDraft().discord_bank_log_channel_id)"
+                  [value]="guildSettingsDraft().discord_bank_log_channel_id"
+                  [emptyLabel]="t('admin.discord.placeholder')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [loading]="catalogLoading()"
+                  [ariaLabel]="t('admin.bankLog.reminderChannel')"
+                  (valueChange)="setDraftValue('discord_bank_log_channel_id', $event)"
+                />
+                <span class="hint mt-1 block">{{ t('admin.bankLog.reminderChannelHint') }}</span>
+              </label>
+              <label>
+                <span class="label">{{ t('admin.bankLog.sellerAccounts') }}</span>
+                <input
+                  class="input mt-1"
+                  type="text"
+                  maxlength="500"
+                  autocomplete="off"
+                  placeholder="WeaklingsGM"
+                  [value]="guildSettingsDraft().bank_log_seller_accounts"
+                  [attr.aria-describedby]="'admin-bank-log-sellers-hint'"
+                  (input)="updateDraftField('bank_log_seller_accounts', $event)"
+                />
+                <span id="admin-bank-log-sellers-hint" class="hint mt-1 block">{{ t('admin.bankLog.sellerAccountsHint') }}</span>
+              </label>
+              <div class="discord-field-wide grid gap-2">
+                @if (bankLogStatus().reminderError; as code) {
+                  <p class="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-container)] p-3 text-sm text-[var(--color-text)]" role="status">
+                    {{ reminderErrorText(code) }}
+                  </p>
+                } @else if (bankLogStatus().remindedOn; as day) {
+                  <p class="hint" role="status">{{ lastReminderText(day) }}</p>
+                }
+                <div>
+                  <a [routerLink]="'/bank-log'">{{ t('admin.bankLog.openLog') }}</a>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section class="card p-5" aria-labelledby="discord-notifications-title">
             <h2 id="discord-notifications-title" class="section-title">{{ t('admin.discord.sectionNotifications') }}</h2>
             <p class="hint mb-4 mt-1 max-w-2xl">{{ t('admin.discord.sectionNotificationsHint') }}</p>
@@ -538,6 +604,7 @@ export class AdminDiscord {
   protected readonly guildSettingsDraft = signal<DiscordSettingsDraft>({
     ...EMPTY_GUILD_SETTINGS_DRAFT,
   });
+  protected readonly bankLogStatus = signal<BankLogStatus>({ remindedOn: null, reminderError: null });
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
   protected readonly discordChannels = signal<DiscordChannelView[]>([]);
   protected readonly autoRoleDraft = signal('');
@@ -593,6 +660,20 @@ export class AdminDiscord {
 
   protected roleOptions(selectedId: string) {
     return roleSelectOptions(this.discordRoles(), selectedId);
+  }
+
+  protected reminderErrorText(code: string): string {
+    const key = BANK_LOG_REMINDER_ERROR_KEYS[code];
+    return key ? this.t(key) : this.t('admin.bankLog.reminderError.generic');
+  }
+
+  protected lastReminderText(day: string): string {
+    // The backend sends the UTC day; format it as a calendar date without shifting it by the viewer's zone.
+    const date = new Date(`${day.slice(0, 10)}T00:00:00Z`).toLocaleDateString(
+      this.translate.locale(),
+      { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' },
+    );
+    return this.translate.t('admin.bankLog.lastReminder', { date });
   }
 
   protected tagOptions(selectedId: string) {
@@ -684,6 +765,7 @@ export class AdminDiscord {
     try {
       const settings = await firstValueFrom(this.api.get<GuildSettingsView>('api/admin/settings'));
       this.guildSettingsDraft.set(toDraft(settings));
+      this.bankLogStatus.set(toBankLogStatus(settings));
       this.allianceRoleDraft.set(settings.discord_alliance_role_id ?? '');
       if (this.autoRoleLoading() && settings.discord_auto_role_id) {
         this.autoRoleDraft.set(settings.discord_auto_role_id);
@@ -747,6 +829,8 @@ export class AdminDiscord {
       discord_split_not_completed_tag_id: draft.discord_split_not_completed_tag_id.trim(),
       discord_split_lost_tag_id: draft.discord_split_lost_tag_id.trim(),
       discord_event_voice_category_id: draft.discord_event_voice_category_id.trim(),
+      discord_bank_log_channel_id: draft.discord_bank_log_channel_id.trim(),
+      bank_log_seller_accounts: draft.bank_log_seller_accounts.trim(),
       default_split_fee: Number(draft.default_split_fee),
       market_tax_percent: Number(draft.market_tax_percent),
       discord_alliance_role_id: this.allianceRoleDraft(),
@@ -758,6 +842,7 @@ export class AdminDiscord {
       this.api.put<GuildSettingsView>('api/admin/settings', body),
     );
     this.guildSettingsDraft.set(toDraft(updated));
+    this.bankLogStatus.set(toBankLogStatus(updated));
   }
 
   private async loadAutoRole(): Promise<void> {
@@ -818,5 +903,14 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_event_timezone: settings.discord_event_timezone ?? 'Europe/Rome',
     default_split_fee: String(settings.default_split_fee ?? 15),
     market_tax_percent: String(settings.market_tax_percent ?? 6),
+    discord_bank_log_channel_id: settings.discord_bank_log_channel_id ?? '',
+    bank_log_seller_accounts: settings.bank_log_seller_accounts ?? '',
+  };
+}
+
+function toBankLogStatus(settings: GuildSettingsView): BankLogStatus {
+  return {
+    remindedOn: settings.bank_log_reminded_on ?? null,
+    reminderError: settings.bank_log_reminder_error ?? null,
   };
 }

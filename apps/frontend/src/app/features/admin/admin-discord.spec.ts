@@ -1,5 +1,6 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -117,6 +118,7 @@ describe('AdminDiscord', () => {
       imports: [AdminDiscord],
       providers: [
         provideZonelessChangeDetection(),
+        provideRouter([]),
         { provide: ApiService, useValue: api },
         { provide: ToastService, useValue: toasts },
         {
