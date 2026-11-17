@@ -254,13 +254,13 @@ export class Topbar {
     if (path.startsWith('/battles')) return this.t('nav.battles');
     if (path.startsWith('/fights')) return 'Fights';
     if (path.startsWith('/intel')) return this.t('nav.intel');
-    if (path.startsWith('/bank-log')) return this.t('nav.bankLog');
     if (path.startsWith('/bank')) return this.t('nav.bank');
     if (path.startsWith('/splits')) return this.t('nav.splits');
     if (path.startsWith('/regears')) return this.t('nav.regears');
     if (path.startsWith('/siphoned')) return this.t('nav.siphoned');
     if (path.startsWith('/users')) return this.t('nav.users');
     if (path.startsWith('/warns')) return this.t('nav.warns');
+    if (path.startsWith('/admin/bank-log')) return this.t('nav.bankLog');
     if (path.startsWith('/admin')) return this.t('nav.admin');
     if (path.startsWith('/platform')) return this.t('nav.platform');
     if (path.startsWith('/audit')) return this.t('nav.audit');

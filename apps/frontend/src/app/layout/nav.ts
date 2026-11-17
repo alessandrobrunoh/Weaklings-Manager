@@ -48,6 +48,7 @@ export const ADMIN_ACCESS_PERMISSIONS = [
   'splits.islands.manage',
   'bank.view_others',
   'bank.withdraw.accept',
+  'banklog.view',
   'giveaways.view',
 ] as const;
 
@@ -166,14 +167,6 @@ export const APP_NAV_SECTIONS: NavSection[] = [
         hiddenForAlliance: true,
       },
       {
-        path: '/bank-log',
-        icon: 'list',
-        labelKey: 'nav.bankLog',
-        permissions: ['bank.log.view'],
-        featureKey: 'bank',
-        hiddenForAlliance: true,
-      },
-      {
         path: '/siphoned',
         icon: 'zap',
         labelKey: 'nav.siphoned',
@@ -250,6 +243,15 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.transactions',
     hintKey: 'admin.hub.transactionsHint',
     permissions: ['bank.view_others'],
+  },
+  {
+    path: '/admin/bank-log',
+    icon: 'list',
+    labelKey: 'nav.bankLog',
+    hintKey: 'admin.hub.bankLogHint',
+    permissions: ['banklog.view'],
+    featureKey: 'bank',
+    hiddenForAlliance: true,
   },
   {
     path: '/users',
