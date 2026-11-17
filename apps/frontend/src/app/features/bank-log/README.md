@@ -6,12 +6,20 @@
 
 ## Interface
 
-- Header: "Import log" and "Refresh suggestions" appear only with `bank.log.manage`. Refresh sits in the overflow menu.
-- Import status card: last import, days since, days before rows leave the game log. Warning tone when the import is due, danger tone when rows are being lost. A hint links to `/admin/discord` when reminders are not configured.
-- Period: from/to dates (empty means the last 28 UTC days), then the summary band and a per-category table.
-- Log rows: server-paged `app-data-table` with status and category filters and a search box. Clicking a row opens the detail dialog.
-- Detail dialog: row facts, category, suggested and confirmed links, manual linking against candidate Manager records, explanation notes, and transaction creation (needs `bank.log.manage` and `bank.transactions.create`).
-- Imports: collapsible list of pasted batches; officers with `bank.log.manage` can delete one.
+- Route: `/admin/bank-log`, an admin panel (listed in the admin sidebar and hub). Guilds only; needs `banklog.view`, and its own `banklog` area in the permission matrix.
+- Header: "Import log" appears only with `banklog.manage`; "Fill all suggested (n)" sits before it while rows have suggestions. "Refresh suggestions" and "Refresh" sit in the overflow menu.
+- Fill all (`bank-log-fill-dialog.ts`): lists the best suggestion of every row (game row → Manager record, with its score). Matches scoring 50 or more start ticked; Confirm sends the ticked link ids in one request and toasts how many were confirmed or skipped.
+- Before the first import: an onboarding card with the export steps and a link to the reminder settings.
+- After it: a one-line import status (state chip, last import, days ago) with a meter of the 28-day game window; reminder problems link to `/admin/discord`.
+- Overview: the covered range of game rows, compact from/to dates (empty means the last 28 UTC days), and a summary band (to review, reconciled, game in, game out, payout difference). The payout difference only appears when the period has imported rows.
+- By category: a `.table` of the categories that have rows.
+- Log rows: server-paged `app-data-table` with status and category filters, a search box and CSV export. Clicking a row opens the detail dialog.
+- Row dialog (`bank-log-entry-dialog.ts`): the game row with its status and category, then confirmed links, or three tabs:
+  - Match: ranked suggestion cards (score, amount fit, time gap) with Confirm/Reject, "Search again" for this row, and a finder with search, a ±1/7/30-day window, Bags/Loot sale for deposits and "Show already linked". Ticked records show their total against the row.
+  - Explain: preset reasons and a note.
+  - New transaction: a preview sentence, the member and the amount (needs `bank.transactions.create`; hidden once the row created one).
+- Scores (`bank-log-score.ts`): 75+ Likely, 50+ Possible, below that Long shot.
+- Imports: a table of pasted batches; officers with `banklog.manage` delete one from its row menu.
 
 ## Invariants
 

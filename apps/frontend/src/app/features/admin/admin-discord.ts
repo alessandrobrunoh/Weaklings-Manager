@@ -482,7 +482,7 @@ const BANK_LOG_REMINDER_ERROR_KEYS: Record<string, TranslationKey> = {
                   <p class="hint" role="status">{{ lastReminderText(day) }}</p>
                 }
                 <div>
-                  <a [routerLink]="'/bank-log'">{{ t('admin.bankLog.openLog') }}</a>
+                  <a [routerLink]="'/admin/bank-log'">{{ t('admin.bankLog.openLog') }}</a>
                 </div>
               </div>
             </div>
