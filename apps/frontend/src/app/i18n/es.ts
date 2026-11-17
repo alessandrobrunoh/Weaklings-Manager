@@ -2559,10 +2559,11 @@ export const es: TranslationDict = {
   'siphoned.settle.debt': '{player} debe {amount} Siphoned.',
   'siphoned.settle.price': 'Precio de Albion Market: {price} silver.',
   'siphoned.settle.expires': 'La cotización vence a las {time}.',
-  'siphoned.settle.confirm': 'Confirmar transacción',
+  'siphoned.settle.effect': 'El saldo bancario de {player} baja en esta cantidad; sus próximos splits lo pagan.',
+  'siphoned.settle.confirm': 'Mover deuda al banco',
   'siphoned.settle.noAccount': 'No hay una cuenta vinculada para {player}.',
   'siphoned.settle.loadFailed': 'No se pudo obtener el precio o el vínculo de Albion.',
-  'siphoned.settle.success': 'Transacción creada.',
+  'siphoned.settle.success': 'Deuda movida al saldo bancario de {player}.',
   'siphoned.settle.createFailed': 'No se pudo crear la transacción.',
 
   'notifications.title': 'Notificaciones',
@@ -3046,6 +3047,7 @@ export const es: TranslationDict = {
   'bank.type.splitDonation': 'Donación de Split',
   'bank.type.manualAdjustment': 'Ajuste manual',
   'bank.type.clawback': 'Ajuste de Split',
+  'bank.type.siphonedSettlement': 'Deuda de Siphoned',
   // Composition detail page, role tag, loadout view and entity header.
   'role.tank': 'Tank',
   'role.healer': 'Healer',

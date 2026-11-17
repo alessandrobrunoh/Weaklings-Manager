@@ -405,6 +405,7 @@ const STATS_FETCH_LIMIT = 1000;
           {{ t('siphoned.settle.price', { price: formatAmount(quote.unit_price) }) }}
         </p>
         <p class="num text-lg font-bold">{{ t('siphoned.settle.total', { amount: formatAmount(quote.total) }) }}</p>
+        <p>{{ t('siphoned.settle.effect', { player: quote.player_name }) }}</p>
         <p class="hint">{{ t('siphoned.settle.expires', { time: quote.expiresAt }) }}</p>
         <div dialogFooter>
           <button type="button" class="btn btn--ghost" (click)="settlement.set(null)">{{ t('common.cancel') }}</button>
@@ -595,7 +596,7 @@ export class Siphoned {
         {},
       ));
       this.settlement.set(null);
-      this.toasts.success(this.t('siphoned.settle.success'));
+      this.toasts.success(this.t('siphoned.settle.success', { player: quote.player_name }));
       await this.load();
     } catch {
       this.toasts.error(this.t('siphoned.settle.createFailed'));

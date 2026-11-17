@@ -43,6 +43,9 @@ pub const TYPE_SPLIT_CREDIT: &str = "split_credit";
 pub const TYPE_SPLIT_DONATION: &str = "split_donation";
 /// The transaction type recorded when an administrator manually creates a transaction.
 pub const TYPE_MANUAL: &str = "manual_adjustment";
+/// The transaction type of a settled siphoned-energy debt: a negative `withdrawn` row that, like
+/// a split clawback, lowers the member's balance until future credits absorb it.
+pub const TYPE_SIPHONED_SETTLEMENT: &str = "siphoned_settlement";
 
 fn parse_status(model: &Model) -> Result<TransactionStatus, AppError> {
     TransactionStatus::from_str(&model.status)
@@ -75,7 +78,7 @@ fn requestable_transaction_condition() -> Condition {
 /// includes the schema name so tenant pools that share a database do not block
 /// each other. SQLite unit tests have no equivalent; the invariant is covered
 /// by the Postgres integration test.
-async fn serialize_user_requestable_balance<C>(db: &C, user_id: i64) -> Result<(), AppError>
+pub async fn serialize_user_requestable_balance<C>(db: &C, user_id: i64) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
@@ -91,12 +94,13 @@ where
     Ok(())
 }
 
-/// Settled split clawbacks: already confirmed, still reduce what the member can withdraw.
+/// Confirmed debts: split clawbacks and settled siphoned debts. They are already confirmed and
+/// still reduce what the member can withdraw until open credits absorb them.
 fn confirmed_clawback_condition() -> Condition {
     Condition::all()
         .add(Column::Status.eq(TransactionStatus::Withdrawn.to_string()))
         .add(Column::Amount.lt(Decimal::ZERO))
-        .add(Column::Type.eq(TYPE_SPLIT_CREDIT))
+        .add(Column::Type.is_in([TYPE_SPLIT_CREDIT, TYPE_SIPHONED_SETTLEMENT]))
 }
 
 /// Resolves recipient ids using the same names that transaction views display.
@@ -2801,6 +2805,52 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_settled_siphoned_debt_turns_the_balance_negative_until_a_split_absorbs_it() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        ActiveModel {
+            from_user_id: Set(Some(alice)),
+            to_user_id: Set(alice),
+            to_guild_bank: Set(true),
+            amount: Set("-40.00".parse().unwrap()),
+            status: Set(TransactionStatus::Withdrawn.to_string()),
+            r#type: Set(TYPE_SIPHONED_SETTLEMENT.to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let service = BankService::new();
+
+        let owed = service.get_balance(&db, alice).await.unwrap();
+        assert_eq!(owed.pending_total, "-40.00".parse::<Decimal>().unwrap());
+        assert_eq!(owed.pending_count, 0);
+
+        let split = insert_completed_split(&db, officer, chrono::Utc::now()).await;
+        insert_split_transaction(
+            &db,
+            alice,
+            "100.00",
+            TransactionStatus::Pending,
+            Some(split),
+        )
+        .await;
+        let after_split = service.get_balance(&db, alice).await.unwrap();
+        assert_eq!(after_split.pending_total, "60.00".parse::<Decimal>().unwrap());
+
+        let requested = withdraw_all(&db, alice).await;
+        assert_eq!(requested.len(), 1);
+        assert_eq!(requested[0].amount, "60.00".parse::<Decimal>().unwrap());
+        let debts = TransactionEntity::find()
+            .filter(Column::Type.eq(TYPE_SIPHONED_SETTLEMENT))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(debts.is_empty(), "the absorbed debt is gone");
     }
 
     #[tokio::test]
