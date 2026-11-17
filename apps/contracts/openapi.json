@@ -1628,6 +1628,23 @@
         ],
         "type": "object"
       },
+      "ApiResponseBankLogBestSuggestions": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogBestSuggestions }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogBestSuggestions"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponseBankLogCandidateViewList": {
         "description": "`OpenAPI` wrapper: `{ status, data: BankLogCandidateView[] }`.",
         "properties": {
@@ -1636,6 +1653,23 @@
               "$ref": "#/components/schemas/BankLogCandidateView"
             },
             "type": "array"
+          },
+          "status": {
+            "example": "success",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponseBankLogConfirmSuggestionsResult": {
+        "description": "`OpenAPI` wrapper: `{ status, data: BankLogConfirmSuggestionsResult }`.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BankLogConfirmSuggestionsResult"
           },
           "status": {
             "example": "success",
@@ -8961,15 +8995,54 @@
         ],
         "type": "object"
       },
+      "BankLogBestSuggestionView": {
+        "description": "The best suggestion of one or more open rows.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/BankLogEntryBrief"
+            },
+            "type": "array"
+          },
+          "link": {
+            "$ref": "#/components/schemas/BankLogLinkView"
+          }
+        },
+        "required": [
+          "link",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "BankLogBestSuggestions": {
+        "description": "`GET /api/bank/log/suggestions/best`: what \"fill all suggested\" would confirm.",
+        "properties": {
+          "items": {
+            "description": "One suggestion per row, best score first, never two sharing a row or a transaction.",
+            "items": {
+              "$ref": "#/components/schemas/BankLogBestSuggestionView"
+            },
+            "type": "array"
+          },
+          "rows_left_out": {
+            "description": "Suggested rows left out because their best suggestion collides with a better one.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "rows_left_out"
+        ],
+        "type": "object"
+      },
       "BankLogCandidateView": {
-        "description": "A Manager record an officer can link a row to by hand.",
+        "description": "A Manager record an officer can link a row to by hand, ranked by `score`.",
         "properties": {
           "amount": {
-            "description": "Payout amount, or for splits the bags value / expected sale (see `split_*`).",
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "The figure compared with the row: payout total, or the split's bags value / expected sale.",
+            "type": "string"
           },
           "at": {
             "type": [
@@ -8977,8 +9050,19 @@
               "null"
             ]
           },
+          "detail": {
+            "description": "Extra context: source splits of a payout, or a split's note.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "description": "Stable key (`p:1,2` for a payout, `s:12` for a split).",
+            "type": "string"
+          },
           "kind": {
-            "description": "`transaction` or `split`.",
+            "description": "`payout` (a member's rows paid out together) or `split`.",
             "type": "string"
           },
           "label": {
@@ -8993,6 +9077,19 @@
               "string",
               "null"
             ]
+          },
+          "minutes_apart": {
+            "description": "Minutes from the row to the record (negative: the record came first).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "score": {
+            "description": "0-100, how likely this record is the row.",
+            "format": "int32",
+            "type": "integer"
           },
           "split_bags_value": {
             "type": [
@@ -9013,17 +9110,22 @@
               "null"
             ]
           },
-          "transaction_id": {
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
+          "transaction_ids": {
+            "description": "Bank rows of a payout.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
           }
         },
         "required": [
+          "key",
           "kind",
+          "transaction_ids",
           "label",
+          "amount",
+          "score",
           "linked"
         ],
         "type": "object"
@@ -9063,6 +9165,44 @@
           "linked_total",
           "explained_total",
           "open_total"
+        ],
+        "type": "object"
+      },
+      "BankLogConfirmSuggestionsRequest": {
+        "description": "`POST /api/bank/log/suggestions/confirm`.",
+        "properties": {
+          "link_ids": {
+            "description": "Suggestions to confirm, in this order.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "link_ids"
+        ],
+        "type": "object"
+      },
+      "BankLogConfirmSuggestionsResult": {
+        "description": "What a bulk confirmation did.",
+        "properties": {
+          "confirmed": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "Gone, already confirmed, or colliding with a link confirmed before it.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "confirmed",
+          "skipped"
         ],
         "type": "object"
       },
@@ -9136,6 +9276,39 @@
         },
         "required": [
           "deleted"
+        ],
+        "type": "object"
+      },
+      "BankLogEntryBrief": {
+        "description": "A log row, briefly.",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "player_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "occurred_at",
+          "player_name",
+          "reason",
+          "amount",
+          "category"
         ],
         "type": "object"
       },
@@ -9397,6 +9570,14 @@
               "null"
             ]
           },
+          "source_split_id": {
+            "description": "Split a payout's credit came from.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "split_id": {
             "description": "Split, for bags and loot sales.",
             "format": "int64",
@@ -9445,6 +9626,14 @@
           "kind": {
             "description": "`payout`, `bags`, `loot_sale` or `manual`.",
             "type": "string"
+          },
+          "score": {
+            "description": "How likely a suggestion is, 0-100 (amount and time closeness). `None` for manual links.",
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "targets": {
             "items": {
@@ -32714,7 +32903,7 @@
     },
     "/api/bank/log/entries/{id}/candidates": {
       "get": {
-        "description": "For a withdrawal: payouts within 10 days, closest amount first. For a deposit: splits created up to 60 days before, with bags value and expected sale.",
+        "description": "For a withdrawal: members' payouts (rows accepted together, and each of them alone) within `days` (default 7). For a deposit: splits created within `days` (default 7 for bags, 30 for loot sales), compared by bags value or expected sale. Each candidate has a 0-100 score from amount and time closeness; best first, at most 60.",
         "operationId": "bank_log_candidates",
         "parameters": [
           {
@@ -32725,6 +32914,55 @@
             "schema": {
               "format": "int64",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Member name, transaction or split id, or split note.",
+            "in": "path",
+            "name": "search",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Days around the row to look in (1-60). Defaults to 7 for withdrawals, 14 for deposits.",
+            "in": "path",
+            "name": "days",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "For deposits: compare splits by `bags` or `loot_sale`. Defaults from the row category.",
+            "in": "path",
+            "name": "value",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Also list records already in a confirmed link.",
+            "in": "path",
+            "name": "include_linked",
+            "required": true,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           }
         ],
@@ -32768,6 +33006,77 @@
           }
         ],
         "summary": "Link candidates for a bank log row",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/entries/{id}/suggestions/refresh": {
+      "post": {
+        "description": "Drops the row's suggestions and proposes new ones against everything still open. Other rows keep their suggestions. Refused for linked or explained rows.",
+        "operationId": "bank_log_refresh_entry_suggestions",
+        "parameters": [
+          {
+            "description": "Row id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogEntryView"
+                }
+              }
+            },
+            "description": "The row with its new suggestions"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires banklog.manage on a guild"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such row"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The row is linked or explained"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "banklog.manage"
+            ]
+          }
+        ],
+        "summary": "Recompute the suggestions of one bank log row",
         "tags": [
           "bank"
         ]
@@ -33124,6 +33433,105 @@
           }
         ],
         "summary": "Confirm a bank log suggestion",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/suggestions/best": {
+      "get": {
+        "description": "One suggestion per suggested row, best score first; a suggestion sharing a row or a transaction with a better one is left out.",
+        "operationId": "bank_log_best_suggestions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogBestSuggestions"
+                }
+              }
+            },
+            "description": "Best suggestions"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires banklog.view on a guild"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "banklog.view"
+            ]
+          }
+        ],
+        "summary": "Best bank log suggestion of every row",
+        "tags": [
+          "bank"
+        ]
+      }
+    },
+    "/api/bank/log/suggestions/confirm": {
+      "post": {
+        "description": "Confirms the suggestions in order in one transaction. One that is gone, already confirmed, or collides with a link confirmed before it is skipped.",
+        "operationId": "bank_log_confirm_suggestions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankLogConfirmSuggestionsRequest"
+              }
+            }
+          },
+          "description": "Suggestion ids.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseBankLogConfirmSuggestionsResult"
+                }
+              }
+            },
+            "description": "Confirmed and skipped counts"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No ids, or too many"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Requires banklog.manage on a guild"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "banklog.manage"
+            ]
+          }
+        ],
+        "summary": "Confirm several bank log suggestions",
         "tags": [
           "bank"
         ]

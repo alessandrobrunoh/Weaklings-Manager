@@ -63,6 +63,8 @@ pub mod link {
         pub created_by: Option<i64>,
         pub confirmed_at: Option<DateTimeWithTimeZone>,
         pub confirmed_by: Option<i64>,
+        /// How likely an automatic suggestion is, 0-100. `None` for manual links.
+        pub score: Option<i32>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

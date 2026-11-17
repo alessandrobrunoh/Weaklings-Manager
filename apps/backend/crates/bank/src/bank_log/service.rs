@@ -48,12 +48,15 @@ use backend_identity::audit::service::AuditService;
 
 use super::matcher::{
     self, CATEGORIES, CATEGORY_BAGS, CATEGORY_GUILD_EXPENSE, CATEGORY_LOOT_SALE, CATEGORY_PAYOUT,
-    KIND_BAGS, KIND_LOOT_SALE, KIND_MANUAL, KIND_PAYOUT, Payout, Proposal, Row, SplitCandidate,
+    KIND_BAGS, KIND_LOOT_SALE, KIND_MANUAL, KIND_PAYOUT, Paid, Proposal, Row, SplitCandidate,
 };
 use super::models::{
-    BankLogBatchView, BankLogCandidateView, BankLogCategoryTotals, BankLogCreateEntryTransactionRequest, BankLogCreateLinkRequest,
-    BankLogEntryQuery, BankLogEntryView, BankLogImportResult, BankLogImportRow, BankLogImportStatus, BankLogLinkTargetView, BankLogLinkView,
-    BankLogPeriodQuery, BankLogSummary, BankLogUpdateEntryRequest,
+    BankLogBatchView, BankLogBestSuggestionView, BankLogBestSuggestions, BankLogCandidateQuery,
+    BankLogCandidateView, BankLogCategoryTotals, BankLogConfirmSuggestionsResult,
+    BankLogCreateEntryTransactionRequest, BankLogCreateLinkRequest, BankLogEntryBrief,
+    BankLogEntryQuery, BankLogEntryView, BankLogImportResult, BankLogImportRow,
+    BankLogImportStatus, BankLogLinkTargetView, BankLogLinkView, BankLogPeriodQuery,
+    BankLogSummary, BankLogUpdateEntryRequest,
 };
 use super::reminder::{GAME_LOG_DAYS, REMINDER_AFTER_DAYS};
 use crate::service::{TYPE_MANUAL, TYPE_SIPHONED_SETTLEMENT};
@@ -308,7 +311,7 @@ impl BankLogService {
             }
         }
 
-        let suggestions = refresh_suggestions_in(&txn).await?;
+        let suggestions = refresh_suggestions_in(&txn, None).await?;
         AuditService::record_in(
             &txn,
             "BANK_LOG_IMPORTED",
@@ -354,7 +357,7 @@ impl BankLogService {
     ) -> Result<u64, AppError> {
         let txn = db.begin().await?;
         lock_bank_log(&txn).await?;
-        let count = refresh_suggestions_in(&txn).await?;
+        let count = refresh_suggestions_in(&txn, None).await?;
         AuditService::record_in(
             &txn,
             "BANK_LOG_SUGGESTIONS_REFRESHED",
@@ -562,6 +565,7 @@ impl BankLogService {
             &entry_ids,
             &transaction_ids,
             &split_ids,
+            None,
         )
         .await?;
         drop_competing_suggestions(&txn, &link, &entry_ids, &transaction_ids, &split_ids).await?;
@@ -600,37 +604,186 @@ impl BankLogService {
         if link.confirmed {
             return Err(AppError::Conflict(format!("link {id} is already confirmed")));
         }
-        let entry_ids = link_entry_ids(&txn, id).await?;
-        let targets = LinkTargetEntity::find()
-            .filter(LinkTargetColumn::MatchId.eq(id))
-            .all(&txn)
-            .await?;
-        let transaction_ids: Vec<i64> = targets.iter().filter_map(|t| t.transaction_id).collect();
-        let split_ids: Vec<i64> = targets.iter().filter_map(|t| t.split_id).collect();
-        ensure_not_confirmed(&txn, &entry_ids, &transaction_ids, Some(id)).await?;
-        let mut active: LinkActiveModel = link.clone().into();
-        active.confirmed = Set(true);
-        active.confirmed_at = Set(Some(Utc::now().into()));
-        active.confirmed_by = Set(Some(actor));
-        let link = active.update(&txn).await?;
-        drop_competing_suggestions(&txn, &link, &entry_ids, &transaction_ids, &split_ids).await?;
+        confirm_in(&txn, link, actor).await?;
+        recompute_statuses(&txn).await?;
+        txn.commit().await?;
+        link_view(db, id).await
+    }
+
+    /// Confirms several suggestions in order ("fill all suggested"). One that is gone, already
+    /// confirmed, or collides with a link confirmed before it is skipped, not an error.
+    pub async fn confirm_suggestions(
+        &self,
+        db: &DatabaseConnection,
+        link_ids: &[i64],
+        actor: i64,
+    ) -> Result<BankLogConfirmSuggestionsResult, AppError> {
+        let ids = dedup(link_ids);
+        if ids.is_empty() {
+            return Err(AppError::Validation("pick at least one suggestion".to_string()));
+        }
+        if ids.len() > 2_000 {
+            return Err(AppError::Validation("at most 2000 suggestions at once".to_string()));
+        }
+        let txn = db.begin().await?;
+        lock_bank_log(&txn).await?;
+        let mut confirmed = 0_u64;
+        let mut skipped = 0_u64;
+        for id in &ids {
+            let Some(link) = LinkEntity::find_by_id(*id).one(&txn).await? else {
+                skipped += 1;
+                continue;
+            };
+            if link.confirmed {
+                skipped += 1;
+                continue;
+            }
+            match confirm_in(&txn, link, actor).await {
+                Ok(()) => confirmed += 1,
+                Err(AppError::Conflict(_)) => skipped += 1,
+                Err(error) => return Err(error),
+            }
+        }
         recompute_statuses(&txn).await?;
         AuditService::record_in(
             &txn,
-            "BANK_LOG_LINK_CONFIRMED",
-            Some("BANK_LOG_LINK"),
-            Some(id),
+            "BANK_LOG_SUGGESTIONS_CONFIRMED",
+            Some("BANK_LOG"),
+            None,
             Some(actor),
             Some(serde_json::json!({
-                "kind": link.kind,
-                "entry_ids": entry_ids,
-                "transaction_ids": transaction_ids,
-                "split_ids": split_ids,
+                "link_ids": ids,
+                "confirmed": confirmed,
+                "skipped": skipped,
             })),
         )
         .await?;
         txn.commit().await?;
-        link_view(db, id).await
+        Ok(BankLogConfirmSuggestionsResult { confirmed, skipped })
+    }
+
+    /// What "fill all suggested" would confirm: for every suggested row its best suggestion,
+    /// taken by score, skipping any that shares a row or a transaction with a better one.
+    pub async fn best_suggestions(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<BankLogBestSuggestions, AppError> {
+        let mut suggestions: Vec<LinkModel> = LinkEntity::find()
+            .filter(LinkColumn::Confirmed.eq(false))
+            .all(db)
+            .await?;
+        if suggestions.is_empty() {
+            return Ok(BankLogBestSuggestions { items: Vec::new(), rows_left_out: 0 });
+        }
+        let ids: Vec<i64> = suggestions.iter().map(|link| link.id).collect();
+        let mut entries_of: HashMap<i64, Vec<i64>> = HashMap::new();
+        for row in LinkEntryEntity::find()
+            .filter(LinkEntryColumn::MatchId.is_in(ids.clone()))
+            .all(db)
+            .await?
+        {
+            entries_of.entry(row.match_id).or_default().push(row.entry_id);
+        }
+        let mut transactions_of: HashMap<i64, Vec<i64>> = HashMap::new();
+        for target in LinkTargetEntity::find()
+            .filter(LinkTargetColumn::MatchId.is_in(ids))
+            .all(db)
+            .await?
+        {
+            if let Some(id) = target.transaction_id {
+                transactions_of.entry(target.match_id).or_default().push(id);
+            }
+        }
+        suggestions.sort_by_key(|link| {
+            (
+                std::cmp::Reverse(link.score.unwrap_or(0)),
+                entries_of.get(&link.id).map_or(0, Vec::len),
+                link.id,
+            )
+        });
+        let suggested_rows: HashSet<i64> = entries_of.values().flatten().copied().collect();
+        let mut used_rows: HashSet<i64> = HashSet::new();
+        let mut used_transactions: HashSet<i64> = HashSet::new();
+        let mut chosen = Vec::new();
+        for link in suggestions {
+            let rows = entries_of.get(&link.id).cloned().unwrap_or_default();
+            let transactions = transactions_of.get(&link.id).cloned().unwrap_or_default();
+            if rows.is_empty()
+                || rows.iter().any(|id| used_rows.contains(id))
+                || transactions.iter().any(|id| used_transactions.contains(id))
+            {
+                continue;
+            }
+            used_rows.extend(rows);
+            used_transactions.extend(transactions);
+            chosen.push(link);
+        }
+        let briefs: HashMap<i64, BankLogEntryBrief> = EntryEntity::find()
+            .filter(EntryColumn::Id.is_in(used_rows.iter().copied().collect::<Vec<_>>()))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.id,
+                    BankLogEntryBrief {
+                        id: entry.id,
+                        occurred_at: ts(&entry.occurred_at),
+                        player_name: entry.player_name,
+                        reason: entry.reason,
+                        amount: entry.amount,
+                        category: entry.category,
+                    },
+                )
+            })
+            .collect();
+        let items = link_views(db, chosen)
+            .await?
+            .into_iter()
+            .map(|link| BankLogBestSuggestionView {
+                entries: link
+                    .entry_ids
+                    .iter()
+                    .filter_map(|id| briefs.get(id).cloned())
+                    .collect(),
+                link,
+            })
+            .collect();
+        Ok(BankLogBestSuggestions {
+            items,
+            rows_left_out: suggested_rows.difference(&used_rows).count() as u64,
+        })
+    }
+
+    /// Searches again for one row: drops its suggestions and proposes new ones against
+    /// everything still open (rows of other suggestions keep theirs).
+    pub async fn refresh_entry_suggestions(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        actor: i64,
+    ) -> Result<BankLogEntryView, AppError> {
+        let txn = db.begin().await?;
+        lock_bank_log(&txn).await?;
+        let entry = find_entry(&txn, id).await?;
+        if entry.explained_at.is_some() {
+            return Err(AppError::Conflict(
+                "the row is explained; undo the explanation first".to_string(),
+            ));
+        }
+        ensure_not_confirmed(&txn, &[id], &[], None).await?;
+        let count = refresh_suggestions_in(&txn, Some(id)).await?;
+        AuditService::record_in(
+            &txn,
+            "BANK_LOG_ROW_SUGGESTIONS_REFRESHED",
+            Some("BANK_LOG_ENTRY"),
+            Some(id),
+            Some(actor),
+            Some(serde_json::json!({ "suggestions": count })),
+        )
+        .await?;
+        txn.commit().await?;
+        self.get_entry(db, id).await
     }
 
     /// Removes a link: rejects a suggestion or undoes a confirmed link.
@@ -729,6 +882,7 @@ impl BankLogService {
             &[entry_id],
             &[created.id],
             &[],
+            None,
         )
         .await?;
         drop_competing_suggestions(&txn, &link, &[entry_id], &[created.id], &[]).await?;
@@ -754,70 +908,230 @@ impl BankLogService {
         self.get_entry(db, entry_id).await
     }
 
-    /// Manager records an officer can link a row to by hand.
+    /// Manager records an officer can link a row to by hand, most likely first.
+    ///
+    /// Withdrawals list members' payouts (rows accepted together, and each row of such a batch on
+    /// its own); deposits list splits by bags value or expected loot sale. The score mixes how
+    /// close the amount and the time are, like the automatic suggestions.
     pub async fn candidates(
         &self,
         db: &DatabaseConnection,
         entry_id: i64,
+        query: &BankLogCandidateQuery,
     ) -> Result<Vec<BankLogCandidateView>, AppError> {
         let entry = find_entry(db, entry_id).await?;
         let at = utc(&entry.occurred_at);
+        let withdrawal = entry.amount < Decimal::ZERO;
+        let value_kind = match query.value.as_deref() {
+            Some(KIND_LOOT_SALE) => KIND_LOOT_SALE,
+            Some(KIND_BAGS) => KIND_BAGS,
+            Some(other) => {
+                return Err(AppError::Validation(format!("unknown value {other}")));
+            }
+            None if entry.category == CATEGORY_LOOT_SALE => KIND_LOOT_SALE,
+            None => KIND_BAGS,
+        };
+        let default_days = match (withdrawal, value_kind) {
+            (true, _) => 7,
+            (false, KIND_LOOT_SALE) => 30,
+            (false, _) => 7,
+        };
+        let days = query.days.unwrap_or(default_days).clamp(1, 60);
+        let include_linked = query.include_linked.unwrap_or(false);
+        let search = query
+            .search
+            .as_deref()
+            .map(|term| term.trim().trim_start_matches('#').to_lowercase())
+            .filter(|term| !term.is_empty());
+        let target = entry.amount.abs();
         let (linked_transactions, linked_splits) = confirmed_target_ids(db).await?;
         let mut out = Vec::new();
-        if entry.amount < Decimal::ZERO {
-            let rows = paid_withdrawals(db, at - Duration::days(10), at + Duration::days(10)).await?;
+
+        if withdrawal {
+            let rows = paid_withdrawals(db, at - Duration::days(days), at + Duration::days(days)).await?;
             let names = usernames(db, rows.iter().map(|row| row.to_user_id)).await?;
-            let mut groups = group_payouts(&rows);
-            let paid = entry.amount.abs();
-            groups.sort_by_key(|group| (group.amount - paid).abs());
-            for group in groups.into_iter().take(30) {
-                let user_id = group.user_id;
-                let member = names.get(&user_id).cloned();
-                for (index, id) in group.transaction_ids.iter().enumerate() {
-                    let row = rows.iter().find(|row| row.id == *id).expect("grouped row");
-                    out.push(BankLogCandidateView {
-                        kind: "transaction".to_string(),
-                        transaction_id: Some(*id),
-                        split_id: None,
-                        label: if group.transaction_ids.len() > 1 {
-                            format!("Payout #{id} ({}/{})", index + 1, group.transaction_ids.len())
-                        } else {
-                            format!("Payout #{id}")
-                        },
-                        member_username: member.clone(),
-                        amount: Some(row.amount),
-                        split_bags_value: None,
-                        split_expected_sale: None,
-                        at: row.withdrawn_at.as_ref().map(ts),
-                        linked: linked_transactions.contains(id),
-                    });
+            let source_splits: HashMap<i64, SplitModel> = {
+                let ids = dedup(&rows.iter().filter_map(|row| row.split_id).collect::<Vec<_>>());
+                if ids.is_empty() {
+                    HashMap::new()
+                } else {
+                    SplitEntity::find()
+                        .filter(SplitColumn::Id.is_in(ids))
+                        .all(db)
+                        .await?
+                        .into_iter()
+                        .map(|split| (split.id, split))
+                        .collect()
                 }
+            };
+            let by_id: HashMap<i64, &TransactionModel> = rows.iter().map(|row| (row.id, row)).collect();
+            let paid: Vec<Paid> = rows.iter().filter_map(to_paid).collect();
+            let mut by_user: BTreeMap<i64, Vec<&Paid>> = BTreeMap::new();
+            for row in &paid {
+                by_user.entry(row.user_id).or_default().push(row);
+            }
+            let mut groups: Vec<Vec<&Paid>> = Vec::new();
+            for member_rows in by_user.values() {
+                for batch in matcher::payment_batches(member_rows) {
+                    if batch.len() > 1 {
+                        groups.extend(batch.iter().map(|row| vec![*row]));
+                    }
+                    groups.push(batch);
+                }
+            }
+            let mut seen: HashSet<Vec<i64>> = HashSet::new();
+            for group in groups {
+                let mut ids: Vec<i64> = group.iter().map(|row| row.transaction_id).collect();
+                ids.sort_unstable();
+                if !seen.insert(ids.clone()) {
+                    continue;
+                }
+                let linked = ids.iter().any(|id| linked_transactions.contains(id));
+                if linked && !include_linked {
+                    continue;
+                }
+                let user_id = group[0].user_id;
+                let member = names.get(&user_id).cloned();
+                let split_labels: Vec<String> = dedup(
+                    &ids.iter()
+                        .filter_map(|id| by_id.get(id).and_then(|row| row.split_id))
+                        .collect::<Vec<_>>(),
+                )
+                .iter()
+                .map(|id| source_splits.get(id).map_or_else(|| format!("Split #{id}"), split_label))
+                .collect();
+                let detail = (!split_labels.is_empty()).then(|| split_labels.join(", "));
+                if let Some(term) = &search {
+                    let hit = member.as_deref().is_some_and(|name| name.to_lowercase().contains(term))
+                        || ids.iter().any(|id| id.to_string() == *term)
+                        || detail.as_deref().is_some_and(|text| text.to_lowercase().contains(term));
+                    if !hit {
+                        continue;
+                    }
+                }
+                let amount: Decimal = group.iter().map(|row| row.amount).sum();
+                let nearest = group
+                    .iter()
+                    .min_by_key(|row| (row.paid_at - at).num_seconds().abs())
+                    .expect("non-empty group");
+                let apart = nearest.paid_at - at;
+                let amount_fit = matcher::amount_score(target, amount, ids.len(), 0.25).unwrap_or(0.0);
+                out.push(BankLogCandidateView {
+                    key: format!(
+                        "p:{}",
+                        ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+                    ),
+                    kind: "payout".to_string(),
+                    label: if ids.len() == 1 {
+                        format!("Payout #{}", ids[0])
+                    } else {
+                        format!("{} payouts accepted together", ids.len())
+                    },
+                    transaction_ids: ids.clone(),
+                    split_id: None,
+                    detail,
+                    member_username: member,
+                    amount,
+                    split_bags_value: None,
+                    split_expected_sale: None,
+                    at: Some(nearest.paid_at.to_rfc3339()),
+                    minutes_apart: Some(apart.num_minutes()),
+                    score: i32::from(matcher::combine(
+                        amount_fit,
+                        matcher::time_score(apart),
+                        0.6,
+                        ids.len() - 1,
+                    )),
+                    linked,
+                });
             }
         } else {
             let default_tax = default_market_tax(db).await?;
             let splits = SplitEntity::find()
-                .filter(SplitColumn::CreatedAt.gte(at - Duration::days(60)))
-                .filter(SplitColumn::CreatedAt.lte(at))
+                .filter(SplitColumn::CreatedAt.gte(at - Duration::days(days)))
+                .filter(SplitColumn::CreatedAt.lte(at + Duration::days(days)))
                 .filter(SplitColumn::OriginReadOnly.eq(false))
                 .filter(SplitColumn::Status.is_not_in(DEAD_SPLIT_STATUSES))
-                .order_by_desc(SplitColumn::CreatedAt)
                 .all(db)
                 .await?;
-            for split in splits.into_iter().take(40) {
+            let creators = usernames(db, splits.iter().map(|split| split.created_by)).await?;
+            for split in splits {
+                let value = split_value(&split, value_kind, default_tax);
+                if value <= Decimal::ZERO {
+                    continue;
+                }
+                let linked = linked_splits.contains(&split.id);
+                if linked && !include_linked {
+                    continue;
+                }
+                let creator = creators.get(&split.created_by).cloned();
+                let note = split
+                    .note
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|note| !note.is_empty())
+                    .map(str::to_string);
+                if let Some(term) = &search {
+                    let hit = split.id.to_string() == *term
+                        || note.as_deref().is_some_and(|text| text.to_lowercase().contains(term))
+                        || creator.as_deref().is_some_and(|name| name.to_lowercase().contains(term));
+                    if !hit {
+                        continue;
+                    }
+                }
+                let candidate = SplitCandidate {
+                    id: split.id,
+                    created_at: utc(&split.created_at),
+                    finalized_at: split.finalized_at.as_ref().map(utc),
+                    bags_value: split.bags_value,
+                    expected_sale: value,
+                };
+                let apart = candidate.apart(at);
+                let signed = if (at - candidate.created_at).abs() <= apart {
+                    candidate.created_at - at
+                } else {
+                    candidate.finalized_at.map_or(candidate.created_at - at, |done| done - at)
+                };
+                // Bags are often paid in several deposits: a deposit below the bags value still
+                // fits in part.
+                let amount_fit = matcher::amount_score(target, value, 1, 0.25).unwrap_or_else(|| {
+                    if value_kind == KIND_BAGS && target < value {
+                        40.0 * matcher_ratio(target, value)
+                    } else {
+                        0.0
+                    }
+                });
+                let time = if value_kind == KIND_LOOT_SALE {
+                    matcher::sale_time_score(apart)
+                } else {
+                    matcher::time_score(apart)
+                };
                 out.push(BankLogCandidateView {
+                    key: format!("s:{}", split.id),
                     kind: "split".to_string(),
-                    transaction_id: None,
+                    transaction_ids: Vec::new(),
                     split_id: Some(split.id),
-                    label: split_label(&split),
-                    member_username: None,
-                    amount: None,
+                    label: format!("Split #{}", split.id),
+                    detail: note,
+                    member_username: creator,
+                    amount: value,
                     split_bags_value: Some(split.bags_value),
                     split_expected_sale: Some(expected_sale(&split, default_tax)),
                     at: Some(ts(&split.created_at)),
-                    linked: linked_splits.contains(&split.id),
+                    minutes_apart: Some(signed.num_minutes()),
+                    score: i32::from(matcher::combine(amount_fit, time, 0.5, 0)),
+                    linked,
                 });
             }
         }
+        out.sort_by_key(|candidate| {
+            (
+                std::cmp::Reverse(candidate.score),
+                candidate.minutes_apart.map_or(i64::MAX, i64::abs),
+                candidate.key.clone(),
+            )
+        });
+        out.truncate(60);
         Ok(out)
     }
 
@@ -1103,32 +1417,12 @@ async fn paid_withdrawals<C: ConnectionTrait>(
         .await?)
 }
 
-struct PayoutGroup {
-    user_id: i64,
-    transaction_ids: Vec<i64>,
-    amount: Decimal,
-    at: DateTime<Utc>,
-}
-
-/// Rows one member had accepted at the same second form one payout (one game withdrawal).
-fn group_payouts(rows: &[TransactionModel]) -> Vec<PayoutGroup> {
-    let mut groups: BTreeMap<(i64, i64), PayoutGroup> = BTreeMap::new();
-    for row in rows {
-        let Some(at) = row.withdrawn_at.as_ref().map(utc) else {
-            continue;
-        };
-        let group = groups
-            .entry((row.to_user_id, at.timestamp()))
-            .or_insert_with(|| PayoutGroup {
-                user_id: row.to_user_id,
-                transaction_ids: Vec::new(),
-                amount: Decimal::ZERO,
-                at,
-            });
-        group.transaction_ids.push(row.id);
-        group.amount += row.amount;
+/// `numerator / denominator` as a float, for scores.
+fn matcher_ratio(numerator: Decimal, denominator: Decimal) -> f64 {
+    if denominator <= Decimal::ZERO {
+        return 0.0;
     }
-    groups.into_values().collect()
+    (numerator / denominator).to_string().parse().unwrap_or(0.0)
 }
 
 async fn usernames<C: ConnectionTrait>(
@@ -1227,6 +1521,7 @@ async fn ensure_not_confirmed<C: ConnectionTrait>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_link<C: ConnectionTrait>(
     db: &C,
     kind: &str,
@@ -1235,10 +1530,12 @@ async fn insert_link<C: ConnectionTrait>(
     entry_ids: &[i64],
     transaction_ids: &[i64],
     split_ids: &[i64],
+    score: Option<u8>,
 ) -> Result<LinkModel, AppError> {
     let now = Utc::now();
     let link = LinkActiveModel {
         kind: Set(kind.to_string()),
+        score: Set(score.map(i32::from)),
         confirmed: Set(confirmed),
         created_at: Set(now.into()),
         created_by: Set(actor),
@@ -1300,8 +1597,131 @@ async fn delete_links<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<(), App
     Ok(())
 }
 
-/// After `link` is confirmed, suggestions sharing one of its rows, one of its transactions, or
-/// (same kind) one of its splits can no longer be right.
+/// Confirms `link` (a suggestion) and drops what competes with it.
+async fn confirm_in<C: ConnectionTrait>(db: &C, link: LinkModel, actor: i64) -> Result<(), AppError> {
+    let id = link.id;
+    let entry_ids = link_entry_ids(db, id).await?;
+    let targets = LinkTargetEntity::find()
+        .filter(LinkTargetColumn::MatchId.eq(id))
+        .all(db)
+        .await?;
+    let transaction_ids: Vec<i64> = targets.iter().filter_map(|t| t.transaction_id).collect();
+    let split_ids: Vec<i64> = targets.iter().filter_map(|t| t.split_id).collect();
+    ensure_not_confirmed(db, &entry_ids, &transaction_ids, Some(id)).await?;
+    let mut active: LinkActiveModel = link.into();
+    active.confirmed = Set(true);
+    active.confirmed_at = Set(Some(Utc::now().into()));
+    active.confirmed_by = Set(Some(actor));
+    let link = active.update(db).await?;
+    drop_competing_suggestions(db, &link, &entry_ids, &transaction_ids, &split_ids).await?;
+    AuditService::record_in(
+        db,
+        "BANK_LOG_LINK_CONFIRMED",
+        Some("BANK_LOG_LINK"),
+        Some(id),
+        Some(actor),
+        Some(serde_json::json!({
+            "kind": link.kind,
+            "score": link.score,
+            "entry_ids": entry_ids,
+            "transaction_ids": transaction_ids,
+            "split_ids": split_ids,
+        })),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Silver confirmed links already brought in for each split, per link kind (bags, loot sale).
+#[derive(Default)]
+struct SplitCoverage {
+    amounts: HashMap<(i64, String), Decimal>,
+    /// A loot sale link over several splits covers each of them entirely.
+    full: HashSet<(i64, String)>,
+}
+
+impl SplitCoverage {
+    /// What is left of `value` for the split and link kind (never negative).
+    fn remaining(&self, split_id: i64, kind: &str, value: Decimal) -> Decimal {
+        let key = (split_id, kind.to_string());
+        if self.full.contains(&key) {
+            return Decimal::ZERO;
+        }
+        let covered = self.amounts.get(&key).copied().unwrap_or(Decimal::ZERO);
+        (value - covered).max(Decimal::ZERO)
+    }
+}
+
+async fn split_coverage<C: ConnectionTrait>(db: &C) -> Result<SplitCoverage, AppError> {
+    let links: Vec<LinkModel> = LinkEntity::find()
+        .filter(LinkColumn::Confirmed.eq(true))
+        .filter(LinkColumn::Kind.is_in([KIND_BAGS, KIND_LOOT_SALE]))
+        .all(db)
+        .await?;
+    let mut coverage = SplitCoverage::default();
+    if links.is_empty() {
+        return Ok(coverage);
+    }
+    let ids: Vec<i64> = links.iter().map(|link| link.id).collect();
+    let targets = LinkTargetEntity::find()
+        .filter(LinkTargetColumn::MatchId.is_in(ids.clone()))
+        .all(db)
+        .await?;
+    let link_entries = LinkEntryEntity::find()
+        .filter(LinkEntryColumn::MatchId.is_in(ids))
+        .all(db)
+        .await?;
+    let amounts: HashMap<i64, Decimal> = EntryEntity::find()
+        .filter(EntryColumn::Id.is_in(dedup(
+            &link_entries.iter().map(|row| row.entry_id).collect::<Vec<_>>(),
+        )))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|entry| (entry.id, entry.amount.abs()))
+        .collect();
+    for link in links {
+        let splits: Vec<i64> = targets
+            .iter()
+            .filter(|target| target.match_id == link.id)
+            .filter_map(|target| target.split_id)
+            .collect();
+        let total: Decimal = link_entries
+            .iter()
+            .filter(|row| row.match_id == link.id)
+            .filter_map(|row| amounts.get(&row.entry_id))
+            .copied()
+            .sum();
+        match splits.as_slice() {
+            [] => {}
+            [split] => {
+                *coverage
+                    .amounts
+                    .entry((*split, link.kind.clone()))
+                    .or_default() += total;
+            }
+            many => {
+                for split in many {
+                    coverage.full.insert((*split, link.kind.clone()));
+                }
+            }
+        }
+    }
+    Ok(coverage)
+}
+
+/// The figure a split stands for in a link of `kind`.
+fn split_value(split: &SplitModel, kind: &str, default_tax: Decimal) -> Decimal {
+    if kind == KIND_LOOT_SALE {
+        expected_sale(split, default_tax)
+    } else {
+        split.bags_value
+    }
+}
+
+/// After `link` is confirmed, suggestions sharing one of its rows or one of its transactions can
+/// no longer be right, and neither can same-kind suggestions on a split it leaves fully covered
+/// (bags are often paid in several deposits, so a split stays open until they add up).
 async fn drop_competing_suggestions<C: ConnectionTrait>(
     db: &C,
     link: &LinkModel,
@@ -1317,6 +1737,23 @@ async fn drop_competing_suggestions<C: ConnectionTrait>(
     if suggestions.is_empty() {
         return Ok(());
     }
+    let covered_splits: HashSet<i64> = if split_ids.is_empty() {
+        HashSet::new()
+    } else {
+        let coverage = split_coverage(db).await?;
+        let default_tax = default_market_tax(db).await?;
+        SplitEntity::find()
+            .filter(SplitColumn::Id.is_in(split_ids.to_vec()))
+            .all(db)
+            .await?
+            .iter()
+            .filter(|split| {
+                coverage.remaining(split.id, &link.kind, split_value(split, &link.kind, default_tax))
+                    < Decimal::ONE
+            })
+            .map(|split| split.id)
+            .collect()
+    };
     let ids: Vec<i64> = suggestions.iter().map(|s| s.id).collect();
     let kind_of: HashMap<i64, String> = suggestions
         .iter()
@@ -1338,7 +1775,7 @@ async fn drop_competing_suggestions<C: ConnectionTrait>(
         let shares_transaction = target
             .transaction_id
             .is_some_and(|id| transaction_ids.contains(&id));
-        let shares_split = target.split_id.is_some_and(|id| split_ids.contains(&id))
+        let shares_split = target.split_id.is_some_and(|id| covered_splits.contains(&id))
             && kind_of.get(&target.match_id).map(String::as_str) == Some(link.kind.as_str());
         if shares_transaction || shares_split {
             drop.insert(target.match_id);
@@ -1390,15 +1827,40 @@ async fn recompute_statuses<C: ConnectionTrait>(db: &C) -> Result<(), AppError> 
     Ok(())
 }
 
-/// Drops every suggestion and proposes new ones for the rows that are still open.
-async fn refresh_suggestions_in<C: ConnectionTrait>(db: &C) -> Result<u64, AppError> {
-    let stale: Vec<i64> = LinkEntity::find()
+/// A paid-out bank row as the matcher sees it.
+fn to_paid(row: &TransactionModel) -> Option<Paid> {
+    Some(Paid {
+        transaction_id: row.id,
+        user_id: row.to_user_id,
+        amount: row.amount,
+        paid_at: row.withdrawn_at.as_ref().map(utc)?,
+        requested_at: row.requested_at.as_ref().map(utc),
+    })
+}
+
+/// Drops suggestions and proposes new ones for the rows that are still open: every row, or with
+/// `only`, just that row (its suggestions are replaced; other rows keep theirs).
+async fn refresh_suggestions_in<C: ConnectionTrait>(
+    db: &C,
+    only: Option<i64>,
+) -> Result<u64, AppError> {
+    let mut stale: Vec<i64> = LinkEntity::find()
         .filter(LinkColumn::Confirmed.eq(false))
         .all(db)
         .await?
         .into_iter()
         .map(|link| link.id)
         .collect();
+    if let Some(entry_id) = only {
+        let touching: HashSet<i64> = LinkEntryEntity::find()
+            .filter(LinkEntryColumn::EntryId.eq(entry_id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|row| row.match_id)
+            .collect();
+        stale.retain(|id| touching.contains(id));
+    }
     delete_links(db, &stale).await?;
 
     let confirmed_links: Vec<i64> = LinkEntity::find()
@@ -1427,56 +1889,41 @@ async fn refresh_suggestions_in<C: ConnectionTrait>(db: &C) -> Result<u64, AppEr
         .into_iter()
         .filter(|entry| !linked_entries.contains(&entry.id))
         .collect();
-    if open.is_empty() {
+    if open.is_empty() || only.is_some_and(|id| !open.iter().any(|entry| entry.id == id)) {
         recompute_statuses(db).await?;
         return Ok(0);
     }
     let first = open.iter().map(|e| utc(&e.occurred_at)).min().expect("open");
     let last = open.iter().map(|e| utc(&e.occurred_at)).max().expect("open");
 
-    let targets: Vec<LinkTargetModel> = if confirmed_links.is_empty() {
-        Vec::new()
+    let linked_transactions: HashSet<i64> = if confirmed_links.is_empty() {
+        HashSet::new()
     } else {
         LinkTargetEntity::find()
-            .filter(LinkTargetColumn::MatchId.is_in(confirmed_links.clone()))
+            .filter(LinkTargetColumn::MatchId.is_in(confirmed_links))
             .all(db)
             .await?
+            .into_iter()
+            .filter_map(|target| target.transaction_id)
+            .collect()
     };
-    let confirmed_kinds: HashMap<i64, String> = LinkEntity::find()
-        .filter(LinkColumn::Confirmed.eq(true))
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|link| (link.id, link.kind))
-        .collect();
-    let linked_transactions: HashSet<i64> =
-        targets.iter().filter_map(|t| t.transaction_id).collect();
-    let linked_split_kind: HashSet<(i64, String)> = targets
-        .iter()
-        .filter_map(|t| {
-            t.split_id
-                .zip(confirmed_kinds.get(&t.match_id).cloned())
-        })
-        .collect();
+    let paid: Vec<Paid> = paid_withdrawals(
+        db,
+        first - Duration::days(matcher::PAYOUT_DAYS_BEFORE + 1),
+        last + Duration::days(matcher::PAYOUT_DAYS_AFTER + 1),
+    )
+    .await?
+    .iter()
+    .filter(|row| !linked_transactions.contains(&row.id))
+    .filter_map(to_paid)
+    .collect();
 
-    let paid = paid_withdrawals(db, first - Duration::days(8), last + Duration::days(3)).await?;
-    let unlinked_paid: Vec<TransactionModel> = paid
-        .into_iter()
-        .filter(|row| !linked_transactions.contains(&row.id))
-        .collect();
-    let payouts: Vec<Payout> = group_payouts(&unlinked_paid)
-        .into_iter()
-        .map(|group| Payout {
-            transaction_ids: group.transaction_ids,
-            amount: group.amount,
-            at: group.at,
-        })
-        .collect();
-
+    // Partly paid bags (or partly sold loot) keep only what is still missing.
+    let coverage = split_coverage(db).await?;
     let default_tax = default_market_tax(db).await?;
     let splits = SplitEntity::find()
-        .filter(SplitColumn::CreatedAt.gte(first - Duration::days(46)))
-        .filter(SplitColumn::CreatedAt.lte(last))
+        .filter(SplitColumn::CreatedAt.gte(first - Duration::days(matcher::LOOT_SALE_DAYS + 1)))
+        .filter(SplitColumn::CreatedAt.lte(last + Duration::days(matcher::BAGS_DAYS)))
         .filter(SplitColumn::OriginReadOnly.eq(false))
         .filter(SplitColumn::Status.is_not_in(DEAD_SPLIT_STATUSES))
         .all(db)
@@ -1486,17 +1933,13 @@ async fn refresh_suggestions_in<C: ConnectionTrait>(db: &C) -> Result<u64, AppEr
         .map(|split| SplitCandidate {
             id: split.id,
             created_at: utc(&split.created_at),
-            bags_value: if linked_split_kind.contains(&(split.id, KIND_BAGS.to_string())) {
-                Decimal::ZERO
-            } else {
-                split.bags_value
-            },
-            expected_sale: if linked_split_kind.contains(&(split.id, KIND_LOOT_SALE.to_string()))
-            {
-                Decimal::ZERO
-            } else {
-                expected_sale(split, default_tax)
-            },
+            finalized_at: split.finalized_at.as_ref().map(utc),
+            bags_value: coverage.remaining(split.id, KIND_BAGS, split.bags_value),
+            expected_sale: coverage.remaining(
+                split.id,
+                KIND_LOOT_SALE,
+                expected_sale(split, default_tax),
+            ),
         })
         .collect();
 
@@ -1509,7 +1952,10 @@ async fn refresh_suggestions_in<C: ConnectionTrait>(db: &C) -> Result<u64, AppEr
             category: entry.category.clone(),
         })
         .collect();
-    let proposals: Vec<Proposal> = matcher::propose(&rows, &payouts, &candidates);
+    let mut proposals: Vec<Proposal> = matcher::propose(&rows, &paid, &candidates);
+    if let Some(entry_id) = only {
+        proposals.retain(|proposal| proposal.entry_ids.contains(&entry_id));
+    }
     for proposal in &proposals {
         insert_link(
             db,
@@ -1519,6 +1965,7 @@ async fn refresh_suggestions_in<C: ConnectionTrait>(db: &C) -> Result<u64, AppEr
             &proposal.entry_ids,
             &proposal.transaction_ids,
             &proposal.split_ids,
+            Some(proposal.score),
         )
         .await?;
     }
@@ -1612,6 +2059,7 @@ async fn link_views<C: ConnectionTrait>(
                 id: link.id,
                 kind: link.kind,
                 confirmed: link.confirmed,
+                score: link.score,
                 entry_ids,
                 entries_total,
                 targets,
@@ -1642,6 +2090,7 @@ fn target_view(
             member_username: member,
             amount: Some(row.amount),
             at: row.withdrawn_at.as_ref().map(ts).or_else(|| Some(ts(&row.created_at))),
+            source_split_id: row.split_id,
         };
     }
     if let Some(split) = target.split_id.and_then(|id| splits.get(&id)) {
@@ -1657,6 +2106,7 @@ fn target_view(
             member_username: None,
             amount: Some(amount),
             at: Some(ts(&split.created_at)),
+            source_split_id: None,
         };
     }
     BankLogLinkTargetView {
@@ -1666,6 +2116,7 @@ fn target_view(
         member_username: None,
         amount: None,
         at: None,
+        source_split_id: None,
     }
 }
 
@@ -1848,6 +2299,181 @@ mod tests {
         assert_eq!(summary.game_payouts, Decimal::from(7_414_881));
         assert_eq!(summary.matched, 1);
         assert!(summary.covered_from.as_deref().is_some_and(|at| at.starts_with("2026-11-16T23:10")));
+    }
+
+    async fn insert_payout(db: &DatabaseConnection, member: i64, amount: &str, at: &str) -> i64 {
+        let at: DateTime<Utc> = at.parse().unwrap();
+        TransactionActiveModel {
+            from_user_id: Set(None),
+            to_user_id: Set(member),
+            to_guild_bank: Set(false),
+            amount: Set(amount.parse().unwrap()),
+            status: Set(TransactionStatus::Withdrawn.to_string()),
+            r#type: Set(crate::service::TYPE_SPLIT_CREDIT.to_string()),
+            created_at: Set(at.into()),
+            withdrawn_at: Set(Some(at.into())),
+            updated_at: Set(at.into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap()
+        .id
+    }
+
+    async fn insert_split(db: &DatabaseConnection, creator: i64, bags: i64, at: &str) -> i64 {
+        use backend_entities::splits::split::ActiveModel as SplitActiveModel;
+        let at: DateTime<Utc> = at.parse().unwrap();
+        SplitActiveModel {
+            created_by: Set(creator),
+            status: Set("completed".to_string()),
+            estimated_market_value: Set(Decimal::ZERO),
+            fee: Set(Decimal::ZERO),
+            market_tax: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::from(bags)),
+            net_value: Set(Some(Decimal::ZERO)),
+            created_at: Set(at.into()),
+            finalized_at: Set(Some(at.into())),
+            updated_at: Set(at.into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap()
+        .id
+    }
+
+    #[tokio::test]
+    async fn fill_all_confirms_one_suggestion_per_row_and_never_reuses_a_payout() {
+        let db = seed_db().await;
+        let actor = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let bob = insert_user(&db, "bob").await;
+        insert_payout(&db, alice, "1000", "2026-11-14T18:40:00Z").await;
+        insert_payout(&db, bob, "2000", "2026-11-14T18:41:00Z").await;
+        let service = BankLogService::new();
+        service
+            .import(
+                &db,
+                &[
+                    row("2026-11-14 18:42:00", "LelouchVI", "Withdrawal", "-1000"),
+                    row("2026-11-14 18:42:00", "LelouchVI", "Withdrawal", "-1000"),
+                    row("2026-11-14 18:43:00", "LelouchVI", "Withdrawal", "-2000"),
+                ],
+                actor,
+            )
+            .await
+            .unwrap();
+
+        let best = service.best_suggestions(&db).await.unwrap();
+        // Both 1000 rows point at Alice's single payout: only one of them can take it.
+        assert_eq!(best.items.len(), 2);
+        assert_eq!(best.rows_left_out, 1);
+        assert!(best.items.iter().all(|item| item.link.score.unwrap_or(0) >= 75));
+
+        let mut ids: Vec<i64> = best.items.iter().map(|item| item.link.id).collect();
+        ids.push(999_999);
+        let result = service.confirm_suggestions(&db, &ids, actor).await.unwrap();
+        assert_eq!(result.confirmed, 2);
+        assert_eq!(result.skipped, 1);
+        let summary = service.summary(&db, &BankLogPeriodQuery::default()).await.unwrap();
+        assert_eq!(summary.matched, 2);
+        assert_eq!(summary.unmatched, 1, "the duplicate withdrawal stays open");
+    }
+
+    #[tokio::test]
+    async fn bags_paid_in_two_deposits_keep_the_split_open_until_they_add_up() {
+        let db = seed_db().await;
+        let actor = insert_user(&db, "officer").await;
+        let split = insert_split(&db, actor, 1_000, "2026-11-13T10:00:00Z").await;
+        let service = BankLogService::new();
+        service
+            .import(
+                &db,
+                &[
+                    row("2026-11-13 12:00:00", "Stinapse", "Deposit", "400"),
+                    row("2026-11-13 15:00:00", "Boozer", "Deposit", "600"),
+                ],
+                actor,
+            )
+            .await
+            .unwrap();
+        let listed = service.list_entries(&db, &BankLogEntryQuery::default()).await.unwrap();
+        let first = listed.items.iter().find(|entry| entry.amount == Decimal::from(400)).unwrap();
+        let second = listed.items.iter().find(|entry| entry.amount == Decimal::from(600)).unwrap();
+        // Neither deposit is the whole bags value: both are partial, low-score suggestions.
+        assert_eq!(first.links[0].targets[0].split_id, Some(split));
+        assert!(first.links[0].score.unwrap() <= 55);
+
+        service.confirm_link(&db, first.links[0].id, actor).await.unwrap();
+        let second = service.get_entry(&db, second.id).await.unwrap();
+        assert_eq!(second.status, STATUS_SUGGESTED, "the split still misses 600");
+
+        // Searching again compares the second deposit with what is left: an exact fit.
+        let second = service.refresh_entry_suggestions(&db, second.id, actor).await.unwrap();
+        let link = &second.links[0];
+        assert_eq!(link.targets[0].split_id, Some(split));
+        assert!(link.score.unwrap() >= 75, "score {:?}", link.score);
+    }
+
+    #[tokio::test]
+    async fn searching_again_finds_a_payout_recorded_after_the_import() {
+        let db = seed_db().await;
+        let actor = insert_user(&db, "officer").await;
+        let member = insert_user(&db, "member").await;
+        let service = BankLogService::new();
+        service
+            .import(&db, &[row("2026-11-12 20:08:00", "LelouchVI", "Withdrawal", "-50751000")], actor)
+            .await
+            .unwrap();
+        let entry = service.list_entries(&db, &BankLogEntryQuery::default()).await.unwrap().items[0].clone();
+        assert_eq!(entry.status, STATUS_UNMATCHED);
+
+        // Accepted in two steps a few minutes apart; one game withdrawal paid both.
+        let a = insert_payout(&db, member, "30000000", "2026-11-12T20:01:00Z").await;
+        let b = insert_payout(&db, member, "20751000", "2026-11-12T20:06:30Z").await;
+        let entry = service.refresh_entry_suggestions(&db, entry.id, actor).await.unwrap();
+        assert_eq!(entry.status, STATUS_SUGGESTED);
+        let mut ids: Vec<i64> = entry.links[0].targets.iter().filter_map(|t| t.transaction_id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![a, b]);
+    }
+
+    #[tokio::test]
+    async fn candidates_rank_the_closest_payout_first_and_filter_by_member() {
+        let db = seed_db().await;
+        let actor = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let bob = insert_user(&db, "bob").await;
+        insert_payout(&db, alice, "9278388", "2026-11-12T18:00:00Z").await;
+        let near = insert_payout(&db, bob, "9278388", "2026-11-14T18:40:00Z").await;
+        insert_payout(&db, bob, "1000", "2026-11-14T18:41:00Z").await;
+        let service = BankLogService::new();
+        service
+            .import(&db, &[row("2026-11-14 18:43:00", "LelouchVI", "Withdrawal", "-9278388")], actor)
+            .await
+            .unwrap();
+        let entry = service.list_entries(&db, &BankLogEntryQuery::default()).await.unwrap().items[0].clone();
+
+        let all = service
+            .candidates(&db, entry.id, &BankLogCandidateQuery::default())
+            .await
+            .unwrap();
+        assert_eq!(all[0].transaction_ids, vec![near]);
+        assert!(all[0].score > all[1].score);
+        assert_eq!(all[0].minutes_apart, Some(-3));
+
+        let alice_only = service
+            .candidates(
+                &db,
+                entry.id,
+                &BankLogCandidateQuery { search: Some("ALI".to_string()), ..Default::default() },
+            )
+            .await
+            .unwrap();
+        assert_eq!(alice_only.len(), 1);
+        assert_eq!(alice_only[0].member_username.as_deref(), Some("alice"));
     }
 
     #[tokio::test]

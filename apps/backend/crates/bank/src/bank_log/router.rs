@@ -17,10 +17,12 @@ use backend_identity::auth::{Permission, Permissions, UserContext};
 use backend_identity::tenant::{CurrentTenantId, TenantRegistry};
 
 use super::models::{
-    BankLogBatchView, BankLogCandidateView, BankLogCreateEntryTransactionRequest,
-    BankLogCreateLinkRequest, BankLogDeleteBatchResult, BankLogEntryQuery, BankLogEntryView,
-    BankLogImportRequest, BankLogImportResult, BankLogLinkView, BankLogPeriodQuery,
-    BankLogRefreshResult, BankLogSummary, BankLogUpdateEntryRequest,
+    BankLogBatchView, BankLogBestSuggestions, BankLogCandidateQuery, BankLogCandidateView,
+    BankLogConfirmSuggestionsRequest, BankLogConfirmSuggestionsResult,
+    BankLogCreateEntryTransactionRequest, BankLogCreateLinkRequest, BankLogDeleteBatchResult,
+    BankLogEntryQuery, BankLogEntryView, BankLogImportRequest, BankLogImportResult,
+    BankLogLinkView, BankLogPeriodQuery, BankLogRefreshResult, BankLogSummary,
+    BankLogUpdateEntryRequest,
 };
 use super::service::BankLogService;
 use crate::alliance;
@@ -107,14 +109,36 @@ pub struct ApiResponseBankLogDeleteBatchResult {
     pub data: BankLogDeleteBatchResult,
 }
 
+/// `OpenAPI` wrapper: `{ status, data: BankLogBestSuggestions }`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBankLogBestSuggestions {
+    #[schema(example = "success")]
+    pub status: String,
+    pub data: BankLogBestSuggestions,
+}
+
+/// `OpenAPI` wrapper: `{ status, data: BankLogConfirmSuggestionsResult }`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBankLogConfirmSuggestionsResult {
+    #[schema(example = "success")]
+    pub status: String,
+    pub data: BankLogConfirmSuggestionsResult,
+}
+
 /// The bank log routes, relative to `/api/bank`.
 pub fn router() -> Router {
     Router::new()
         .route("/log/import", post(bank_log_import))
         .route("/log/suggestions/refresh", post(bank_log_refresh_suggestions))
+        .route("/log/suggestions/best", get(bank_log_best_suggestions))
+        .route("/log/suggestions/confirm", post(bank_log_confirm_suggestions))
         .route("/log/entries", get(bank_log_list_entries))
         .route("/log/entries/{id}", get(bank_log_get_entry).patch(bank_log_update_entry))
         .route("/log/entries/{id}/candidates", get(bank_log_candidates))
+        .route(
+            "/log/entries/{id}/suggestions/refresh",
+            post(bank_log_refresh_entry_suggestions),
+        )
         .route("/log/entries/{id}/transaction", post(bank_log_create_transaction))
         .route("/log/links", post(bank_log_create_link))
         .route("/log/links/{id}/confirm", post(bank_log_confirm_link))
@@ -300,9 +324,11 @@ pub async fn bank_log_update_entry(
     path = "/api/bank/log/entries/{id}/candidates",
     tag = "bank",
     summary = "Link candidates for a bank log row",
-    description = "For a withdrawal: payouts within 10 days, closest amount first. For a \
-        deposit: splits created up to 60 days before, with bags value and expected sale.",
-    params(("id" = i64, Path, description = "Row id")),
+    description = "For a withdrawal: members' payouts (rows accepted together, and each of them \
+        alone) within `days` (default 7). For a deposit: splits created within `days` (default 7 \
+        for bags, 30 for loot sales), compared by bags value or expected sale. Each candidate has \
+        a 0-100 score from amount and time closeness; best first, at most 60.",
+    params(("id" = i64, Path, description = "Row id"), BankLogCandidateQuery),
     security(("session_cookie" = ["banklog.view"])),
     responses(
         (status = 200, description = "Candidates", body = ApiResponseBankLogCandidateViewList),
@@ -317,10 +343,100 @@ pub async fn bank_log_candidates(
     Extension(registry): Extension<TenantRegistry>,
     Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
+    Query(query): Query<BankLogCandidateQuery>,
 ) -> Result<Json<ApiResponse<Vec<BankLogCandidateView>>>, AppError> {
     guard(&user, &perms, &registry, &tenant, Permission::BankLogView).await?;
-    let list = BankLogService::new().candidates(&db, id).await?;
+    let list = BankLogService::new().candidates(&db, id, &query).await?;
     Ok(Json(ApiResponse::new(list)))
+}
+
+/// Search suggestions again for one row.
+#[utoipa::path(
+    post,
+    path = "/api/bank/log/entries/{id}/suggestions/refresh",
+    tag = "bank",
+    summary = "Recompute the suggestions of one bank log row",
+    description = "Drops the row's suggestions and proposes new ones against everything still \
+        open. Other rows keep their suggestions. Refused for linked or explained rows.",
+    params(("id" = i64, Path, description = "Row id")),
+    security(("session_cookie" = ["banklog.manage"])),
+    responses(
+        (status = 200, description = "The row with its new suggestions", body = ApiResponseBankLogEntryView),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
+        (status = 404, description = "No such row", body = ProblemDetails),
+        (status = 409, description = "The row is linked or explained", body = ProblemDetails)
+    )
+)]
+pub async fn bank_log_refresh_entry_suggestions(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<BankLogEntryView>>, AppError> {
+    guard(&user, &perms, &registry, &tenant, Permission::BankLogManage).await?;
+    let entry = BankLogService::new()
+        .refresh_entry_suggestions(&db, id, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(entry)))
+}
+
+/// The suggestions "fill all suggested" would confirm.
+#[utoipa::path(
+    get,
+    path = "/api/bank/log/suggestions/best",
+    tag = "bank",
+    summary = "Best bank log suggestion of every row",
+    description = "One suggestion per suggested row, best score first; a suggestion sharing a row \
+        or a transaction with a better one is left out.",
+    security(("session_cookie" = ["banklog.view"])),
+    responses(
+        (status = 200, description = "Best suggestions", body = ApiResponseBankLogBestSuggestions),
+        (status = 403, description = "Requires banklog.view on a guild", body = ProblemDetails)
+    )
+)]
+pub async fn bank_log_best_suggestions(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(tenant): Extension<CurrentTenantId>,
+) -> Result<Json<ApiResponse<BankLogBestSuggestions>>, AppError> {
+    guard(&user, &perms, &registry, &tenant, Permission::BankLogView).await?;
+    let best = BankLogService::new().best_suggestions(&db).await?;
+    Ok(Json(ApiResponse::new(best)))
+}
+
+/// Confirm several suggestions at once.
+#[utoipa::path(
+    post,
+    path = "/api/bank/log/suggestions/confirm",
+    tag = "bank",
+    summary = "Confirm several bank log suggestions",
+    description = "Confirms the suggestions in order in one transaction. One that is gone, \
+        already confirmed, or collides with a link confirmed before it is skipped.",
+    security(("session_cookie" = ["banklog.manage"])),
+    request_body(content = BankLogConfirmSuggestionsRequest, description = "Suggestion ids."),
+    responses(
+        (status = 200, description = "Confirmed and skipped counts", body = ApiResponseBankLogConfirmSuggestionsResult),
+        (status = 400, description = "No ids, or too many", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails)
+    )
+)]
+pub async fn bank_log_confirm_suggestions(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Json(req): Json<BankLogConfirmSuggestionsRequest>,
+) -> Result<Json<ApiResponse<BankLogConfirmSuggestionsResult>>, AppError> {
+    guard(&user, &perms, &registry, &tenant, Permission::BankLogManage).await?;
+    let result = BankLogService::new()
+        .confirm_suggestions(&db, &req.link_ids, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(result)))
 }
 
 /// Create the bank transaction a row stands for.

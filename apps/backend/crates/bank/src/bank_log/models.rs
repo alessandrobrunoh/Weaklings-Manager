@@ -68,6 +68,8 @@ pub struct BankLogLinkTargetView {
     pub amount: Option<Decimal>,
     /// When the Manager record happened (payout time, split creation).
     pub at: Option<String>,
+    /// Split a payout's credit came from.
+    pub source_split_id: Option<i64>,
 }
 
 /// A link between log rows and Manager records.
@@ -78,6 +80,8 @@ pub struct BankLogLinkView {
     pub kind: String,
     /// `false` while it is a suggestion.
     pub confirmed: bool,
+    /// How likely a suggestion is, 0-100 (amount and time closeness). `None` for manual links.
+    pub score: Option<i32>,
     /// Every log row in the link.
     pub entry_ids: Vec<i64>,
     /// Sum of the log rows in the link (signed).
@@ -244,25 +248,90 @@ pub struct BankLogCreateEntryTransactionRequest {
     pub amount: Option<Decimal>,
 }
 
-/// A Manager record an officer can link a row to by hand.
+/// Query of `GET /api/bank/log/entries/{id}/candidates`.
+#[derive(Debug, Clone, Default, Deserialize, IntoParams)]
+pub struct BankLogCandidateQuery {
+    /// Member name, transaction or split id, or split note.
+    pub search: Option<String>,
+    /// Days around the row to look in (1-60). Defaults to 7 for withdrawals, 14 for deposits.
+    pub days: Option<i64>,
+    /// For deposits: compare splits by `bags` or `loot_sale`. Defaults from the row category.
+    pub value: Option<String>,
+    /// Also list records already in a confirmed link.
+    pub include_linked: Option<bool>,
+}
+
+/// A Manager record an officer can link a row to by hand, ranked by `score`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct BankLogCandidateView {
-    /// `transaction` or `split`.
+    /// Stable key (`p:1,2` for a payout, `s:12` for a split).
+    pub key: String,
+    /// `payout` (a member's rows paid out together) or `split`.
     pub kind: String,
-    pub transaction_id: Option<i64>,
+    /// Bank rows of a payout.
+    pub transaction_ids: Vec<i64>,
     pub split_id: Option<i64>,
     pub label: String,
+    /// Extra context: source splits of a payout, or a split's note.
+    pub detail: Option<String>,
     pub member_username: Option<String>,
-    /// Payout amount, or for splits the bags value / expected sale (see `split_*`).
-    #[schema(value_type = Option<String>)]
-    pub amount: Option<Decimal>,
+    /// The figure compared with the row: payout total, or the split's bags value / expected sale.
+    #[schema(value_type = String)]
+    pub amount: Decimal,
     #[schema(value_type = Option<String>)]
     pub split_bags_value: Option<Decimal>,
     #[schema(value_type = Option<String>)]
     pub split_expected_sale: Option<Decimal>,
     pub at: Option<String>,
+    /// Minutes from the row to the record (negative: the record came first).
+    pub minutes_apart: Option<i64>,
+    /// 0-100, how likely this record is the row.
+    pub score: i32,
     /// Already part of a confirmed link.
     pub linked: bool,
+}
+
+/// A log row, briefly.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BankLogEntryBrief {
+    pub id: i64,
+    pub occurred_at: String,
+    pub player_name: String,
+    pub reason: String,
+    #[schema(value_type = String)]
+    pub amount: Decimal,
+    pub category: String,
+}
+
+/// The best suggestion of one or more open rows.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BankLogBestSuggestionView {
+    pub link: BankLogLinkView,
+    pub entries: Vec<BankLogEntryBrief>,
+}
+
+/// `GET /api/bank/log/suggestions/best`: what "fill all suggested" would confirm.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BankLogBestSuggestions {
+    /// One suggestion per row, best score first, never two sharing a row or a transaction.
+    pub items: Vec<BankLogBestSuggestionView>,
+    /// Suggested rows left out because their best suggestion collides with a better one.
+    pub rows_left_out: u64,
+}
+
+/// `POST /api/bank/log/suggestions/confirm`.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct BankLogConfirmSuggestionsRequest {
+    /// Suggestions to confirm, in this order.
+    pub link_ids: Vec<i64>,
+}
+
+/// What a bulk confirmation did.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BankLogConfirmSuggestionsResult {
+    pub confirmed: u64,
+    /// Gone, already confirmed, or colliding with a link confirmed before it.
+    pub skipped: u64,
 }
 
 /// `POST /api/bank/log/suggestions/refresh`.
