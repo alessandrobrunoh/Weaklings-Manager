@@ -22941,7 +22941,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogBatchViewList"];
                 };
             };
-            /** @description Requires bank.log.view on a guild */
+            /** @description Requires banklog.view on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22973,7 +22973,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogDeleteBatchResult"];
                 };
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23040,7 +23040,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Requires bank.log.view on a guild */
+            /** @description Requires banklog.view on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23072,7 +23072,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogEntryView"];
                 };
             };
-            /** @description Requires bank.log.view on a guild */
+            /** @description Requires banklog.view on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23127,7 +23127,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23168,7 +23168,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogCandidateViewList"];
                 };
             };
-            /** @description Requires bank.log.view on a guild */
+            /** @description Requires banklog.view on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23214,7 +23214,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogEntryView"];
                 };
             };
-            /** @description Requires bank.log.manage and bank.transactions.create */
+            /** @description Requires banklog.manage and bank.transactions.create */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23275,7 +23275,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23327,7 +23327,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23375,7 +23375,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23416,7 +23416,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogLinkView"];
                 };
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23463,7 +23463,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponseBankLogRefreshResult"];
                 };
             };
-            /** @description Requires bank.log.manage on a guild */
+            /** @description Requires banklog.manage on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23506,7 +23506,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Requires bank.log.view on a guild */
+            /** @description Requires banklog.view on a guild */
             403: {
                 headers: {
                     [name: string]: unknown;

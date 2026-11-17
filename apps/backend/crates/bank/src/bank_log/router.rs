@@ -152,12 +152,12 @@ async fn guard(
         overlapping export adds only the new lines while a real second identical movement is \
         kept. Rows whose reason is not Deposit/Withdrawal are guild expenses, explained \
         automatically. Suggestions are recomputed afterwards.",
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     request_body(content = BankLogImportRequest, description = "The export lines."),
     responses(
         (status = 200, description = "Import counts", body = ApiResponseBankLogImportResult),
         (status = 400, description = "A line cannot be read", body = ProblemDetails),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
         (status = 409, description = "A concurrent import stored the same rows", body = ProblemDetails)
     )
 )]
@@ -184,10 +184,10 @@ pub async fn bank_log_import(
     summary = "Recompute bank log suggestions",
     description = "Drops every unconfirmed link and proposes new ones for the rows that are \
         neither linked nor explained. Confirmed links are kept.",
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     responses(
         (status = 200, description = "Suggestions proposed", body = ApiResponseBankLogRefreshResult),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails)
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails)
     )
 )]
 pub async fn bank_log_refresh_suggestions(
@@ -213,11 +213,11 @@ pub async fn bank_log_refresh_suggestions(
     description = "Newest first, with each row's confirmed links and suggestions. Filters: UTC \
         day range, status, category, player or reason text.",
     params(BankLogEntryQuery),
-    security(("session_cookie" = ["bank.log.view"])),
+    security(("session_cookie" = ["banklog.view"])),
     responses(
         (status = 200, description = "A page of rows", body = ApiResponsePaginatedBankLogEntryView),
         (status = 400, description = "Unknown filter value", body = ProblemDetails),
-        (status = 403, description = "Requires bank.log.view on a guild", body = ProblemDetails)
+        (status = 403, description = "Requires banklog.view on a guild", body = ProblemDetails)
     )
 )]
 pub async fn bank_log_list_entries(
@@ -240,10 +240,10 @@ pub async fn bank_log_list_entries(
     tag = "bank",
     summary = "Get a bank log row",
     params(("id" = i64, Path, description = "Row id")),
-    security(("session_cookie" = ["bank.log.view"])),
+    security(("session_cookie" = ["banklog.view"])),
     responses(
         (status = 200, description = "The row", body = ApiResponseBankLogEntryView),
-        (status = 403, description = "Requires bank.log.view on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.view on a guild", body = ProblemDetails),
         (status = 404, description = "No such row", body = ProblemDetails)
     )
 )]
@@ -269,12 +269,12 @@ pub async fn bank_log_get_entry(
     description = "`explained: true` needs a note. Clearing the note of an officer-explained \
         row un-explains it.",
     params(("id" = i64, Path, description = "Row id")),
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     request_body(content = BankLogUpdateEntryRequest, description = "Fields to change."),
     responses(
         (status = 200, description = "The updated row", body = ApiResponseBankLogEntryView),
         (status = 400, description = "Unknown category or missing note", body = ProblemDetails),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
         (status = 404, description = "No such row", body = ProblemDetails)
     )
 )]
@@ -303,10 +303,10 @@ pub async fn bank_log_update_entry(
     description = "For a withdrawal: payouts within 10 days, closest amount first. For a \
         deposit: splits created up to 60 days before, with bags value and expected sale.",
     params(("id" = i64, Path, description = "Row id")),
-    security(("session_cookie" = ["bank.log.view"])),
+    security(("session_cookie" = ["banklog.view"])),
     responses(
         (status = 200, description = "Candidates", body = ApiResponseBankLogCandidateViewList),
-        (status = 403, description = "Requires bank.log.view on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.view on a guild", body = ProblemDetails),
         (status = 404, description = "No such row", body = ProblemDetails)
     )
 )]
@@ -333,11 +333,11 @@ pub async fn bank_log_candidates(
         the member's donation. The row is linked to it. A row creates at most one transaction, \
         also after that transaction is deleted.",
     params(("id" = i64, Path, description = "Row id")),
-    security(("session_cookie" = ["bank.log.manage", "bank.transactions.create"])),
+    security(("session_cookie" = ["banklog.manage", "bank.transactions.create"])),
     request_body(content = BankLogCreateEntryTransactionRequest, description = "Member and amount."),
     responses(
         (status = 200, description = "The linked row", body = ApiResponseBankLogEntryView),
-        (status = 403, description = "Requires bank.log.manage and bank.transactions.create", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage and bank.transactions.create", body = ProblemDetails),
         (status = 404, description = "No such row or member", body = ProblemDetails),
         (status = 409, description = "The row already created a transaction or is linked", body = ProblemDetails)
     )
@@ -368,12 +368,12 @@ pub async fn bank_log_create_transaction(
     summary = "Link bank log rows by hand",
     description = "Creates a confirmed link between one or more rows and transactions and/or \
         splits. Suggestions that share a row or a transaction are dropped.",
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     request_body(content = BankLogCreateLinkRequest, description = "Rows and records."),
     responses(
         (status = 200, description = "The link", body = ApiResponseBankLogLinkView),
         (status = 400, description = "Empty link or unknown kind", body = ProblemDetails),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
         (status = 404, description = "A row or record does not exist", body = ProblemDetails),
         (status = 409, description = "A row or transaction is already linked", body = ProblemDetails)
     )
@@ -400,10 +400,10 @@ pub async fn bank_log_create_link(
     tag = "bank",
     summary = "Confirm a bank log suggestion",
     params(("id" = i64, Path, description = "Link id")),
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     responses(
         (status = 200, description = "The confirmed link", body = ApiResponseBankLogLinkView),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
         (status = 404, description = "No such link", body = ProblemDetails),
         (status = 409, description = "Already confirmed, or a row or transaction is linked elsewhere", body = ProblemDetails)
     )
@@ -430,10 +430,10 @@ pub async fn bank_log_confirm_link(
     tag = "bank",
     summary = "Remove a bank log link",
     params(("id" = i64, Path, description = "Link id")),
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     responses(
         (status = 200, description = "Removed"),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
         (status = 404, description = "No such link", body = ProblemDetails)
     )
 )]
@@ -462,11 +462,11 @@ pub async fn bank_log_delete_link(
         payout total for the period and the import/reminder status. Defaults to the last 28 \
         UTC days.",
     params(BankLogPeriodQuery),
-    security(("session_cookie" = ["bank.log.view"])),
+    security(("session_cookie" = ["banklog.view"])),
     responses(
         (status = 200, description = "Summary", body = ApiResponseBankLogSummary),
         (status = 400, description = "Bad day", body = ProblemDetails),
-        (status = 403, description = "Requires bank.log.view on a guild", body = ProblemDetails)
+        (status = 403, description = "Requires banklog.view on a guild", body = ProblemDetails)
     )
 )]
 pub async fn bank_log_summary(
@@ -488,10 +488,10 @@ pub async fn bank_log_summary(
     path = "/api/bank/log/batches",
     tag = "bank",
     summary = "List bank log imports",
-    security(("session_cookie" = ["bank.log.view"])),
+    security(("session_cookie" = ["banklog.view"])),
     responses(
         (status = 200, description = "Imports, newest first", body = ApiResponseBankLogBatchViewList),
-        (status = 403, description = "Requires bank.log.view on a guild", body = ProblemDetails)
+        (status = 403, description = "Requires banklog.view on a guild", body = ProblemDetails)
     )
 )]
 pub async fn bank_log_batches(
@@ -515,10 +515,10 @@ pub async fn bank_log_batches(
     description = "Deletes the rows that import stored and their links. Refused when one of them \
         created a transaction. The reminder clock follows the remaining imports.",
     params(("batch_id" = String, Path, description = "Import id")),
-    security(("session_cookie" = ["bank.log.manage"])),
+    security(("session_cookie" = ["banklog.manage"])),
     responses(
         (status = 200, description = "Rows deleted", body = ApiResponseBankLogDeleteBatchResult),
-        (status = 403, description = "Requires bank.log.manage on a guild", body = ProblemDetails),
+        (status = 403, description = "Requires banklog.manage on a guild", body = ProblemDetails),
         (status = 404, description = "No such import", body = ProblemDetails),
         (status = 409, description = "A row created a transaction", body = ProblemDetails)
     )

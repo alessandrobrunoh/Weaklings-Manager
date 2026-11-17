@@ -6,7 +6,7 @@ Officers import the in-game guild bank silver log (the game keeps 28 days of it)
 
 ## Interface
 
-Mounted inside the bank router at `/api/bank/log/*`, so the `bank` feature gate applies. Alliance tenants are refused. Read routes need `bank.log.view`; mutations need `bank.log.manage`; `POST /entries/{id}/transaction` also needs `bank.transactions.create`.
+Mounted inside the bank router at `/api/bank/log/*`, so the `bank` feature gate applies. Alliance tenants are refused. Read routes need `banklog.view`; mutations need `banklog.manage`; `POST /entries/{id}/transaction` also needs `bank.transactions.create`.
 
 - `POST /import` takes `{ rows: [{ Date, Player, Reason, Amount }] }` exactly as copied from the game (UTC dates, at most 5,000 rows).
 - `POST /suggestions/refresh` recomputes automatic suggestions for open rows.

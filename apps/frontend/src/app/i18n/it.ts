@@ -1838,6 +1838,7 @@ export const it: TranslationDict = {
   'admin.hub.withdrawalsHint': 'Rivedi e liquida i prelievi richiesti dai membri.',
   'admin.hub.transactionsHint':
     'Registro completo della gilda: crea, modifica o elimina qualsiasi transazione.',
+  'admin.hub.bankLogHint': 'Importa il log della banca di gilda di Albion e riconcilialo con il Manager.',
   'admin.hub.usersHint': 'Elenco membri della gilda, gestione ruoli e collegamenti Albion.',
 
   'admin.hub.generalHint': 'Nome del server e colori del brand con cui è dipinta l’app.',

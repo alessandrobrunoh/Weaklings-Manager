@@ -1603,6 +1603,7 @@ export const en = {
   'admin.hub.financeHint': 'Whole-ledger liabilities, payouts, sources and destinations.',
   'admin.hub.withdrawalsHint': 'Review and pay out requested member withdrawals.',
   'admin.hub.transactionsHint': 'Full guild ledger: create, edit, or delete any transaction.',
+  'admin.hub.bankLogHint': 'Import the Albion guild bank log and reconcile it with the Manager.',
   'admin.hub.usersHint': 'Directory of guild members, roles, and Albion character links.',
   'admin.hub.giveawaysHint': 'Create Discord prize draws, pick the channel, and review winners.',
 

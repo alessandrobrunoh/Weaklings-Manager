@@ -32351,13 +32351,13 @@
                 }
               }
             },
-            "description": "Requires bank.log.view on a guild"
+            "description": "Requires banklog.view on a guild"
           }
         },
         "security": [
           {
             "session_cookie": [
-              "bank.log.view"
+              "banklog.view"
             ]
           }
         ],
@@ -32401,7 +32401,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           },
           "404": {
             "content": {
@@ -32427,7 +32427,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -32556,13 +32556,13 @@
                 }
               }
             },
-            "description": "Requires bank.log.view on a guild"
+            "description": "Requires banklog.view on a guild"
           }
         },
         "security": [
           {
             "session_cookie": [
-              "bank.log.view"
+              "banklog.view"
             ]
           }
         ],
@@ -32606,7 +32606,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.view on a guild"
+            "description": "Requires banklog.view on a guild"
           },
           "404": {
             "content": {
@@ -32622,7 +32622,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.view"
+              "banklog.view"
             ]
           }
         ],
@@ -32686,7 +32686,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           },
           "404": {
             "content": {
@@ -32702,7 +32702,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -32747,7 +32747,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.view on a guild"
+            "description": "Requires banklog.view on a guild"
           },
           "404": {
             "content": {
@@ -32763,7 +32763,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.view"
+              "banklog.view"
             ]
           }
         ],
@@ -32819,7 +32819,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage and bank.transactions.create"
+            "description": "Requires banklog.manage and bank.transactions.create"
           },
           "404": {
             "content": {
@@ -32845,7 +32845,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage",
+              "banklog.manage",
               "bank.transactions.create"
             ]
           }
@@ -32900,7 +32900,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           },
           "409": {
             "content": {
@@ -32916,7 +32916,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -32970,7 +32970,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           },
           "404": {
             "content": {
@@ -32996,7 +32996,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -33033,7 +33033,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           },
           "404": {
             "content": {
@@ -33049,7 +33049,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -33093,7 +33093,7 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           },
           "404": {
             "content": {
@@ -33119,7 +33119,7 @@
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -33152,13 +33152,13 @@
                 }
               }
             },
-            "description": "Requires bank.log.manage on a guild"
+            "description": "Requires banklog.manage on a guild"
           }
         },
         "security": [
           {
             "session_cookie": [
-              "bank.log.manage"
+              "banklog.manage"
             ]
           }
         ],
@@ -33227,13 +33227,13 @@
                 }
               }
             },
-            "description": "Requires bank.log.view on a guild"
+            "description": "Requires banklog.view on a guild"
           }
         },
         "security": [
           {
             "session_cookie": [
-              "bank.log.view"
+              "banklog.view"
             ]
           }
         ],

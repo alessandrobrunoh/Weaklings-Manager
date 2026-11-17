@@ -1533,6 +1533,7 @@ export const uk: TranslationDict = {
   'admin.hub.financeHint': 'Зобов’язання всього реєстру, виплати, джерела та призначення.',
   'admin.hub.withdrawalsHint': 'Перегляньте та виплатіть запити на виведення учасників.',
   'admin.hub.transactionsHint': 'Повний реєстр гільдії: створюйте, редагуйте або видаляйте будь-які транзакції.',
+  'admin.hub.bankLogHint': 'Імпортуйте журнал банку гільдії Albion і звірте його з Manager.',
   'admin.hub.usersHint': 'Каталог членів гільдії, ролей та прив’язок персонажів Albion.',
   'admin.hub.giveawaysHint': 'Створюйте розіграші призів у Discord, вибирайте канал та переглядайте переможців.',
   'admin.hub.generalHint': 'Назва сервера та бренд‑кольори, у яких оформлено додаток.',

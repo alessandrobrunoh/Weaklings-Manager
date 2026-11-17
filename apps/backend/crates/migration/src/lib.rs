@@ -172,6 +172,7 @@ pub mod m20261113_000001_auto_approve_albion_link_requests;
 pub mod m20261113_000002_add_user_blocked;
 pub mod m20261117_000001_add_market_tax;
 pub mod m20261117_000002_create_bank_log;
+pub mod m20261117_000003_rename_bank_log_permissions;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
 
@@ -340,6 +341,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261113_000002_add_user_blocked::Migration),
             Box::new(m20261117_000001_add_market_tax::Migration),
             Box::new(m20261117_000002_create_bank_log::Migration),
+            Box::new(m20261117_000003_rename_bank_log_permissions::Migration),
         ]
     }
 }

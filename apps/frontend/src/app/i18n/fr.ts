@@ -1537,6 +1537,7 @@ export const fr: TranslationDict = {
   'admin.hub.financeHint': 'Passifs du registre complet, paiements, sources et destinations.',
   'admin.hub.withdrawalsHint': 'Examiner et verser les retraits demandés par les membres.',
   'admin.hub.transactionsHint': 'Registre complet de la guilde : créer, modifier ou supprimer toute transaction.',
+  'admin.hub.bankLogHint': 'Importez le journal de la banque de guilde d\'Albion et rapprochez-le du Manager.',
   'admin.hub.usersHint': 'Annuaire des membres de la guilde, rôles et liens de personnages Albion.',
   'admin.hub.giveawaysHint': 'Créer des tirages de prix Discord, choisir le canal et examiner les gagnants.',
   'admin.hub.generalHint': 'Nom du serveur et couleurs de marque qui habillent l’application.',

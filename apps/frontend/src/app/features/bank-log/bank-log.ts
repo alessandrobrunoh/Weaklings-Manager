@@ -863,8 +863,8 @@ export class BankLog {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
-  protected readonly canView = computed(() => this.auth.hasPermission('bank.log.view'));
-  protected readonly canManage = computed(() => this.auth.hasPermission('bank.log.manage'));
+  protected readonly canView = computed(() => this.auth.hasPermission('banklog.view'));
+  protected readonly canManage = computed(() => this.auth.hasPermission('banklog.manage'));
   protected readonly canCreateTransaction = computed(
     () => this.canManage() && this.auth.hasPermission('bank.transactions.create'),
   );

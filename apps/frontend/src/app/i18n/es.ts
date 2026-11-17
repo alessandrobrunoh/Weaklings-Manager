@@ -1835,6 +1835,7 @@ export const es: TranslationDict = {
   'admin.hub.withdrawalsHint': 'Revisa y liquida los retiros solicitados por los miembros.',
   'admin.hub.transactionsHint':
     'Libro contable completo de la hermandad: crea, edita o elimina cualquier transacción.',
+  'admin.hub.bankLogHint': 'Importa el registro del banco del gremio de Albion y concílialo con el Manager.',
   'admin.hub.usersHint':
     'Directorio de miembros del gremio, gestión de roles y vínculos de Albion.',
   'admin.hub.giveawaysHint': 'Crea sorteos de Discord, elige el canal y revisa a los ganadores.',
