@@ -70,6 +70,12 @@ import {
   weaponFit,
   type WeaponFit,
 } from '../../shared/data/user-weapons';
+import { WEAPON_FIT_CHIP, type WeaponFitChip } from './detail/comp-status';
+import {
+  EventCompStatus,
+  type CarriedMember,
+  type CompStatusParty,
+} from './detail/event-comp-status';
 import type { TranslationKey } from '../../i18n/en';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { Avatar } from '../../shared/components/avatar/avatar';
@@ -197,30 +203,14 @@ interface JoinBuildSection {
   readonly entries: readonly CompBuildEntry[];
 }
 
+/** A weapon fit chip with its label already translated. */
+type FitChipView = Pick<WeaponFitChip, 'tone' | 'icon'> & { readonly label: string };
+
 interface AddEventMemberRequest {
   user_id: number;
   primary_build_id: number | null;
   secondary_build_id?: number;
 }
-
-/** Waiting-list chip per weapon fit. The label always names the state, so colour is never the only cue. */
-const BENCH_FIT_CHIP: Readonly<
-  Record<
-    WeaponFit,
-    {
-      tone: 'success' | 'info' | 'neutral' | 'warning' | 'error';
-      labelKey: TranslationKey;
-      icon: 'alert' | 'lock' | null;
-    }
-  >
-> = {
-  main: { tone: 'success', labelKey: 'weapons.proficiency.main', icon: null },
-  good: { tone: 'info', labelKey: 'weapons.proficiency.good', icon: null },
-  basic: { tone: 'neutral', labelKey: 'weapons.proficiency.basic', icon: null },
-  no_declarations: { tone: 'neutral', labelKey: 'weapons.fit.noDeclarations', icon: null },
-  not_declared: { tone: 'warning', labelKey: 'weapons.notDeclared', icon: 'alert' },
-  locked: { tone: 'error', labelKey: 'weapons.locked', icon: 'lock' },
-};
 
 @Component({
   selector: 'app-event-detail-page',
@@ -247,6 +237,7 @@ const BENCH_FIT_CHIP: Readonly<
     OwnershipScopeToggle,
     RouterLink,
     EventBattlesTab,
+    EventCompStatus,
     EventGuildBadge,
     EventHeader,
     EventOverviewTab,
@@ -723,6 +714,7 @@ const BENCH_FIT_CHIP: Readonly<
                               [class.seat--drop]="dropTargetSeatKey() === seat.key"
                               [class.seat--dragging]="draggedSeat()?.key === seat.key"
                               [class.seat--highlight]="highlightedSeatKey() === seat.key"
+                              [class.seat--blocked]="carriedFit(seat)?.fit === 'locked'"
                               [attr.draggable]="canManageParticipants() && seat.participant !== null && !rosterCommandSaving()"
                               (dragstart)="onSeatDragStart($event, seat)"
                               (dragend)="onDragEnd()"
@@ -749,6 +741,18 @@ const BENCH_FIT_CHIP: Readonly<
                                 <p class="seat__build">
                                   <span class="seat__build-name">{{ seat.build_name }}</span>
                                   <span class="seat__role">{{ rosterSeatRoleLabel(seat) }}</span>
+                                  @if (carriedFit(seat); as fit) {
+                                    <span
+                                      class="seat__carried chip"
+                                      [class]="'seat__carried chip chip--' + fit.tone"
+                                      [attr.aria-label]="t('events.compStatus.carriedFit', { name: fit.username, level: fit.label })"
+                                    >
+                                      @if (fit.icon) {
+                                        <app-icon [name]="fit.icon" size="0.6875rem" />
+                                      }
+                                      {{ fit.label }}
+                                    </span>
+                                  }
                                 </p>
                                 @if (seat.participant; as occupant) {
                                   <p class="seat__occupant">
@@ -756,6 +760,9 @@ const BENCH_FIT_CHIP: Readonly<
                                     <span class="seat__name">{{ occupant.username }}</span>
                                     @if (occupant.user_id === currentUserId()) {
                                       <span class="seat__you">{{ t('events.lobby.you') }}</span>
+                                    }
+                                    @if (seatLevel(seat); as level) {
+                                      <span class="seat__level chip" [class]="'seat__level chip chip--' + level.tone">{{ level.label }}</span>
                                     }
                                     <app-event-guild-badge [guild]="occupant.guild" />
                                   </p>
@@ -839,6 +846,19 @@ const BENCH_FIT_CHIP: Readonly<
                       <p class="party-room__hint">{{ t('events.detail.no_parties') }}</p>
                     }
                   </div>
+
+                  <!-- Comp status: fill per role, weapon levels, parties and suggestions; stays in view -->
+                  <app-event-comp-status
+                    class="party-status"
+                    [parties]="compStatusParties()"
+                    [bench]="roster.bench"
+                    [carried]="carriedMember()"
+                    [canManage]="canManageParticipants()"
+                    [busy]="rosterCommandSaving()"
+                    (revealSeat)="revealSeat($event)"
+                    (revealParty)="revealParty($event)"
+                    (place)="assignBenchMemberToSeatDirect($event.userId, $event.seat)"
+                  />
                 </div>
               </div>
               }
@@ -2353,6 +2373,11 @@ const BENCH_FIT_CHIP: Readonly<
         gap: 1rem;
         align-items: start;
       }
+      /* Below the three-column width the comp status sits above the board, full width. */
+      .party-status {
+        order: -1;
+        grid-column: 1 / -1;
+      }
       @media (min-width: 64rem) {
         .party-room__layout {
           grid-template-columns: 18rem minmax(0, 1fr);
@@ -2361,6 +2386,20 @@ const BENCH_FIT_CHIP: Readonly<
           position: sticky;
           top: 1rem;
           max-height: calc(100vh - 2rem);
+        }
+      }
+      @media (min-width: 96rem) {
+        .party-room__layout {
+          grid-template-columns: 18rem minmax(0, 1fr) 19rem;
+        }
+        .party-status {
+          order: 0;
+          grid-column: auto;
+          position: sticky;
+          top: 1rem;
+          max-height: calc(100vh - 2rem);
+          overflow-y: auto;
+          overscroll-behavior: contain;
         }
       }
       .party-bench {
@@ -2634,6 +2673,17 @@ const BENCH_FIT_CHIP: Readonly<
       }
       .seat--dragging {
         opacity: 0.4;
+      }
+      .seat--blocked {
+        opacity: 0.55;
+      }
+      .seat__carried {
+        flex: none;
+        margin-left: auto;
+        box-shadow: 0 0 0 1px currentColor;
+      }
+      .seat__level {
+        flex: none;
       }
       @keyframes seat-in {
         from {
@@ -3109,8 +3159,8 @@ export class EventDetailPage {
           username: namesByUserId.get(placement.user_id) ?? `#${placement.user_id}`,
           proficiency: placement.score.proficiency
             ? {
-                tone: BENCH_FIT_CHIP[placement.score.proficiency].tone,
-                label: this.t(BENCH_FIT_CHIP[placement.score.proficiency].labelKey),
+                tone: WEAPON_FIT_CHIP[placement.score.proficiency].tone,
+                label: this.t(WEAPON_FIT_CHIP[placement.score.proficiency].labelKey),
               }
             : null,
           preferenceLabel:
@@ -3737,14 +3787,10 @@ export class EventDetailPage {
     participant.user_id;
 
   /** Chip describing how a waiting-list member fits the seat being filled; `null` outside assign mode. */
-  protected benchFit(member: EventParticipant): {
-    tone: string;
-    label: string;
-    icon: 'alert' | 'lock' | null;
-  } | null {
+  protected benchFit(member: EventParticipant): FitChipView | null {
     const fit = weaponFit(member.weapons, this.assignWeaponKey());
     if (fit === null) return null;
-    const chip = BENCH_FIT_CHIP[fit];
+    const chip = WEAPON_FIT_CHIP[fit];
     return { tone: chip.tone, label: this.t(chip.labelKey), icon: chip.icon };
   }
 
@@ -3752,6 +3798,56 @@ export class EventDetailPage {
   protected seatWarning(seat: EventRosterSeat): 'locked' | 'not_declared' | null {
     return seat.participant ? seatWeaponWarning(seat.participant.weapons, seat.weapon_key) : null;
   }
+
+  /** The seated member's level on the seat's weapon; warnings and "no weapons" are shown elsewhere. */
+  protected seatLevel(seat: EventRosterSeat): FitChipView | null {
+    if (!seat.participant) return null;
+    const fit = weaponFit(seat.participant.weapons, seat.weapon_key);
+    if (fit !== 'main' && fit !== 'good' && fit !== 'basic') return null;
+    const chip = WEAPON_FIT_CHIP[fit];
+    return { tone: chip.tone, label: this.t(chip.labelKey), icon: chip.icon };
+  }
+
+  /**
+   * The member being dragged (from the waiting list or a seat) or picked for a move. Every seat
+   * then shows that member's level on its weapon, and the comp status panel lists their weapons.
+   */
+  protected readonly carriedMember = computed<(CarriedMember & { userId: number }) | null>(() => {
+    const member =
+      this.draggedBenchMember() ??
+      this.draggedSeat()?.participant ??
+      this.rosterSwapSource()?.participant ??
+      null;
+    return member
+      ? { userId: member.user_id, username: member.username, weapons: member.weapons ?? [] }
+      : null;
+  });
+
+  /** The carried member's fit for a seat; `null` on their own seat and on seats without a weapon. */
+  protected carriedFit(
+    seat: EventRosterSeat,
+  ): (FitChipView & { fit: WeaponFit; username: string }) | null {
+    const member = this.carriedMember();
+    if (!member || seat.participant?.user_id === member.userId) return null;
+    const fit = weaponFit(member.weapons, seat.weapon_key);
+    if (fit === null) return null;
+    const chip = WEAPON_FIT_CHIP[fit];
+    return {
+      fit,
+      username: member.username,
+      tone: chip.tone,
+      label: this.t(chip.labelKey),
+      icon: chip.icon,
+    };
+  }
+
+  protected readonly compStatusParties = computed<readonly CompStatusParty[]>(() =>
+    this.rosterParties().map((party) => ({
+      partyNumber: party.partyNumber,
+      heading: this.rosterPartyHeading(party),
+      seats: party.seats,
+    })),
+  );
 
   protected onBenchSearchInput(event: Event): void {
     this.benchSearch.set((event.target as HTMLInputElement).value);
@@ -3904,15 +4000,28 @@ export class EventDetailPage {
   protected showOwnSeatInParty(): void {
     const seat = this.ownRosterSeat();
     this.tab.set('parties');
-    if (!seat || typeof document === 'undefined') return;
-    this.highlightedSeatKey.set(seat.key);
+    if (seat) this.revealSeat(seat.key);
+  }
+
+  /** Scrolls a seat of the board into view and outlines it for a moment. */
+  protected revealSeat(seatKey: string): void {
+    if (typeof document === 'undefined') return;
+    this.highlightedSeatKey.set(seatKey);
     if (this.highlightTimer !== null) clearTimeout(this.highlightTimer);
     this.highlightTimer = setTimeout(() => this.highlightedSeatKey.set(null), 2400);
     setTimeout(() => {
       document
-        .getElementById(`event-seat-${seat.key}`)
+        .getElementById(`event-seat-${seatKey}`)
         ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
+  }
+
+  /** Scrolls a board party's heading into view. */
+  protected revealParty(partyNumber: number): void {
+    if (typeof document === 'undefined') return;
+    document
+      .getElementById(`party-heading-${partyNumber}`)
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
   protected roleAccent(role: string): string {
