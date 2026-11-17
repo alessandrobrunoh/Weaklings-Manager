@@ -1138,6 +1138,7 @@ async fn copy_split_graph(
             active.status = Set(source_split.status.clone());
             active.estimated_market_value = Set(source_split.estimated_market_value);
             active.fee = Set(source_split.fee);
+            active.market_tax = Set(source_split.market_tax);
             active.repair_value = Set(source_split.repair_value);
             active.bags_value = Set(source_split.bags_value);
             active.net_value = Set(source_split.net_value);
@@ -1203,6 +1204,7 @@ async fn insert_split_row(
         status: Set(source.status.clone()),
         estimated_market_value: Set(source.estimated_market_value),
         fee: Set(source.fee),
+        market_tax: Set(source.market_tax),
         repair_value: Set(source.repair_value),
         bags_value: Set(source.bags_value),
         net_value: Set(source.net_value),
@@ -2503,6 +2505,7 @@ mod tests {
         let mut req = CreateSplitRequest {
             estimated_market_value: "100.00".parse().unwrap(),
             fee: Some(Decimal::new(20, 0)),
+            market_tax: Some(Decimal::ZERO),
             repair_value: "5.00".parse().unwrap(),
             bags_value: Decimal::ZERO,
             bags: vec!["15.00".parse().unwrap(), "10.00".parse().unwrap()],
@@ -2575,6 +2578,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: Some(vec!["1.00".parse().unwrap()]),
@@ -2890,6 +2894,7 @@ mod tests {
                 CreateSplitRequest {
                     estimated_market_value: "1.00".parse().unwrap(),
                     fee: Some(Decimal::new(20, 0)),
+                    market_tax: Some(Decimal::ZERO),
                     repair_value: Decimal::ZERO,
                     bags_value: Decimal::ZERO,
                     bags: vec![],

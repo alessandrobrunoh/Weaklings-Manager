@@ -50,6 +50,9 @@ pub struct SplitKpiSummary {
     /// Default fee percentage for newly created splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: Decimal,
+    /// Guild market tax percentage copied onto newly created splits.
+    #[schema(value_type = String, example = "6.00")]
+    pub default_market_tax: Decimal,
 }
 
 /// A split's summary, as shown in list views.
@@ -72,6 +75,10 @@ pub struct SplitSummary {
     /// The percentage of the estimated market value retained as a split fee.
     #[schema(value_type = String, example = "20.00")]
     pub fee: Decimal,
+    /// Albion market tax percentage taken from the loot value before the fee (0 on splits created
+    /// before the tax existed).
+    #[schema(value_type = String, example = "6.00")]
+    pub market_tax: Decimal,
     /// The repair costs deducted from the market value.
     #[schema(value_type = String, example = "10.00")]
     pub repair_value: Decimal,
@@ -150,9 +157,13 @@ pub struct CreateSplitRequest {
     /// The estimated market value of the loot before deductions.
     #[schema(value_type = String, example = "100.00")]
     pub estimated_market_value: Decimal,
-    /// The percentage of the estimated market value retained as a split fee. Defaults to 20%.
+    /// The percentage retained as a split fee. Defaults to the guild's default split fee.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub fee: Option<Decimal>,
+    /// Albion market tax percentage on the loot value. Defaults to the guild's market tax setting.
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "6.00")]
+    pub market_tax: Option<Decimal>,
     /// The repair costs deducted from the market value.
     #[schema(value_type = String, example = "10.00")]
     pub repair_value: Decimal,
@@ -200,6 +211,10 @@ pub struct UpdateSplitRequest {
     /// New fee percentage. Omit to keep the current value.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub fee: Option<Decimal>,
+    /// New market tax percentage. Omit to keep the current value.
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "6.00")]
+    pub market_tax: Option<Decimal>,
     /// New repair costs. Omit to keep the current value.
     #[schema(value_type = Option<String>, example = "12.00")]
     pub repair_value: Option<Decimal>,

@@ -49,6 +49,7 @@ interface DiscordSettingsDraft {
   discord_event_voice_category_id: string;
   discord_event_timezone: string;
   default_split_fee: string;
+  market_tax_percent: string;
 }
 
 /** Whether the bot could read the server's channels and roles on the last attempt. */
@@ -74,7 +75,8 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_split_lost_tag_id: '',
   discord_event_voice_category_id: '',
   discord_event_timezone: 'Europe/Rome',
-  default_split_fee: '20',
+  default_split_fee: '15',
+  market_tax_percent: '6',
 };
 
 const EVENT_TAG_FIELDS = [
@@ -395,6 +397,26 @@ const SPLIT_TAG_FIELDS = [
                 </div>
                 <span id="admin-split-default-fee-hint" class="hint mt-1 block">
                   {{ t('admin.split.defaultFeeHint') }}
+                </span>
+              </label>
+              <label class="discord-field-wide">
+                <span class="label">{{ t('admin.split.marketTax') }}</span>
+                <div class="mt-1 flex max-w-xs items-center gap-2">
+                  <input
+                    class="input mono"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    inputmode="decimal"
+                    [value]="guildSettingsDraft().market_tax_percent"
+                    [attr.aria-describedby]="'admin-split-market-tax-hint'"
+                    (input)="updateDraftField('market_tax_percent', $event)"
+                  />
+                  <span class="font-mono text-xs">%</span>
+                </div>
+                <span id="admin-split-market-tax-hint" class="hint mt-1 block">
+                  {{ t('admin.split.marketTaxHint') }}
                 </span>
               </label>
             </div>
@@ -726,6 +748,7 @@ export class AdminDiscord {
       discord_split_lost_tag_id: draft.discord_split_lost_tag_id.trim(),
       discord_event_voice_category_id: draft.discord_event_voice_category_id.trim(),
       default_split_fee: Number(draft.default_split_fee),
+      market_tax_percent: Number(draft.market_tax_percent),
       discord_alliance_role_id: this.allianceRoleDraft(),
       ...(this.canManageAutoRole()
         ? { discord_auto_role_id: this.autoRoleDraft() }
@@ -793,6 +816,7 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_split_lost_tag_id: settings.discord_split_lost_tag_id ?? '',
     discord_event_voice_category_id: settings.discord_event_voice_category_id ?? '',
     discord_event_timezone: settings.discord_event_timezone ?? 'Europe/Rome',
-    default_split_fee: String(settings.default_split_fee ?? 20),
+    default_split_fee: String(settings.default_split_fee ?? 15),
+    market_tax_percent: String(settings.market_tax_percent ?? 6),
   };
 }

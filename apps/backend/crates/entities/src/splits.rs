@@ -18,6 +18,9 @@ pub mod split {
         pub estimated_market_value: Decimal,
         /// The percentage of the estimated market value retained as a split fee.
         pub fee: Decimal,
+        /// Albion market tax (percent) taken from the loot value before the fee. Copied from the
+        /// guild setting at creation; 0 on splits created before the tax existed.
+        pub market_tax: Decimal,
         /// The repair costs deducted from the market value.
         pub repair_value: Decimal,
         /// The bags/consumables costs deducted from the market value.

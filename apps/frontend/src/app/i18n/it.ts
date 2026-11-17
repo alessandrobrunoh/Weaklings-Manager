@@ -358,6 +358,9 @@ export const it: TranslationDict = {
   'splits.net_formula': '(Stimato − Riparazioni + Borse) − Fee',
   'splits.roster_hint': 'Imposta la quota di ciascuno — 100% è una quota intera, 50% è mezza quota.',
   'splits.fee_invalid': 'La fee deve essere tra 0 e 100%.',
+  'splits.market_tax': 'Tassa Market',
+  'splits.market_tax_hint': 'Solo sul loot venduto al Market, non su bags e riparazioni.',
+  'splits.market_tax_invalid': 'La tassa del Market deve essere tra 0 e 100%.',
   'splits.weight_sum_invalid': 'Ogni partecipante deve avere una quota positiva.',
   'splits.roster_empty': 'Nessun partecipante nel roster',
   'splits.remove_participant': 'Rimuovi partecipante',
@@ -2093,6 +2096,8 @@ export const it: TranslationDict = {
   'admin.applications.placeholder': 'Non impostato',
   'admin.split.defaultFee': 'Fee predefinita degli split',
   'admin.split.defaultFeeHint': 'Applicata ai nuovi split quando non inserisci una fee. Intervallo consentito: 0–100%.',
+  'admin.split.marketTax': 'Tassa del Market',
+  'admin.split.marketTaxHint': 'Quanto paga l\'account venditore quando vende il loot sul Market di Albion (4% con Premium più il setup, spesso circa 6%). I nuovi split la applicano solo al valore del loot, prima della fee. Se la vostra fee includeva già questa tassa, abbassatela. Gli split esistenti non cambiano.',
   'admin.autorole.title': 'Ruolo di ingresso Discord',
   'admin.autorole.hint':
     'Viene assegnato automaticamente quando un nuovo membro entra nel server Discord.',

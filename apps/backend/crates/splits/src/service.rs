@@ -253,6 +253,7 @@ async fn reconcile_completed_split_credits<C: ConnectionTrait>(
     }
     let net_value = calculate_net_value(
         split.estimated_market_value,
+        split.market_tax,
         split.fee,
         split.repair_value,
         split.bags_value,
@@ -447,7 +448,10 @@ async fn validate_event_link(
 }
 
 /// Fallback fee percentage used when guild settings are unavailable.
-const DEFAULT_SPLIT_FEE_PERCENT: i32 = 20;
+const DEFAULT_SPLIT_FEE_PERCENT: i32 = 15;
+
+/// Fallback Albion market tax percentage used when guild settings are unavailable.
+const DEFAULT_MARKET_TAX_PERCENT: i32 = 6;
 
 /// Default weight assigned to split participants imported from a linked event.
 ///
@@ -481,6 +485,19 @@ fn default_split_fee() -> Decimal {
     Decimal::from(DEFAULT_SPLIT_FEE_PERCENT)
 }
 
+fn default_market_tax() -> Decimal {
+    Decimal::from(DEFAULT_MARKET_TAX_PERCENT)
+}
+
+fn validate_market_tax(market_tax: Decimal) -> Result<(), AppError> {
+    if !(Decimal::ZERO..=Decimal::from(100)).contains(&market_tax) {
+        return Err(AppError::Validation(
+            "market tax must be between 0 and 100".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_fee(fee: Decimal) -> Result<(), AppError> {
     if !(Decimal::ZERO..=Decimal::from(100)).contains(&fee) {
         return Err(AppError::Validation(
@@ -490,14 +507,23 @@ fn validate_fee(fee: Decimal) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Net value shared by the participants:
+/// `(loot × (1 − market_tax) − repairs + bags) × (1 − fee)`, rounded to the cent.
+///
+/// The market tax is what the seller account pays when it sells the loot on the Albion market,
+/// so it applies to the loot value only; repairs and bags never go through the market. Splits
+/// created before the tax existed store `market_tax = 0` and keep their old result.
 pub fn calculate_net_value(
     estimated_market_value: Decimal,
+    market_tax: Decimal,
     fee: Decimal,
     repair_value: Decimal,
     bags_value: Decimal,
 ) -> Decimal {
-    let value_before_fee = estimated_market_value - repair_value + bags_value;
-    (value_before_fee - (value_before_fee * fee / Decimal::from(100))).round_dp(2)
+    let hundred = Decimal::from(100);
+    let loot_after_tax = estimated_market_value - (estimated_market_value * market_tax / hundred);
+    let value_before_fee = loot_after_tax - repair_value + bags_value;
+    (value_before_fee - (value_before_fee * fee / hundred)).round_dp(2)
 }
 
 /// The splits of an event that event-driven roster repair may touch: still waiting, not archived,
@@ -722,6 +748,7 @@ fn assemble_summary(
         status: parse_status(&split)?,
         estimated_market_value: split.estimated_market_value,
         fee: split.fee,
+        market_tax: split.market_tax,
         repair_value: split.repair_value,
         bags_value: split.bags_value,
         net_value: split.net_value,
@@ -1165,14 +1192,23 @@ impl SplitService {
                 "a split must be requested with at least one participant".to_string(),
             ));
         }
-        let fee = match req.fee {
-            Some(fee) => fee,
-            None => GuildSettingsEntity::find_by_id(1)
-                .one(db)
-                .await?
-                .map_or_else(default_split_fee, |settings| settings.default_split_fee),
+        let settings = if req.fee.is_none() || req.market_tax.is_none() {
+            GuildSettingsEntity::find_by_id(1).one(db).await?
+        } else {
+            None
         };
+        let fee = req.fee.unwrap_or_else(|| {
+            settings
+                .as_ref()
+                .map_or_else(default_split_fee, |settings| settings.default_split_fee)
+        });
         validate_fee(fee)?;
+        let market_tax = req.market_tax.unwrap_or_else(|| {
+            settings
+                .as_ref()
+                .map_or_else(default_market_tax, |settings| settings.market_tax_percent)
+        });
+        validate_market_tax(market_tax)?;
         if req.estimated_market_value < Decimal::ZERO {
             return Err(AppError::Validation(
                 "estimated market value must not be negative".to_string(),
@@ -1218,6 +1254,7 @@ impl SplitService {
             status: Set(initial_status.to_string()),
             estimated_market_value: Set(req.estimated_market_value),
             fee: Set(fee),
+            market_tax: Set(market_tax),
             repair_value: Set(req.repair_value),
             bags_value: Set(sum_bags(&bags)),
             net_value: Set(None),
@@ -1463,6 +1500,10 @@ impl SplitService {
         if let Some(fee) = req.fee {
             validate_fee(fee)?;
             active.fee = Set(fee);
+        }
+        if let Some(market_tax) = req.market_tax {
+            validate_market_tax(market_tax)?;
+            active.market_tax = Set(market_tax);
         }
         if let Some(note) = req.note {
             let trimmed = note.trim().to_string();
@@ -1841,6 +1882,7 @@ impl SplitService {
                     completed_count += 1;
                     total_net_distributed += split.net_value.unwrap_or(calculate_net_value(
                         split.estimated_market_value,
+                        split.market_tax,
                         split.fee,
                         split.repair_value,
                         split.bags_value,
@@ -1857,10 +1899,13 @@ impl SplitService {
             .all(db)
             .await?
             .len() as u64;
-        let default_split_fee = GuildSettingsEntity::find_by_id(1)
-            .one(db)
-            .await?
+        let settings = GuildSettingsEntity::find_by_id(1).one(db).await?;
+        let default_split_fee = settings
+            .as_ref()
             .map_or_else(default_split_fee, |settings| settings.default_split_fee);
+        let default_market_tax = settings
+            .as_ref()
+            .map_or_else(default_market_tax, |settings| settings.market_tax_percent);
         Ok(SplitKpiSummary {
             pending_count,
             completed_count,
@@ -1868,6 +1913,7 @@ impl SplitService {
             total_estimated_volume,
             total_participants,
             default_split_fee,
+            default_market_tax,
         })
     }
 
@@ -2527,6 +2573,7 @@ impl SplitService {
 
         let net_value = calculate_net_value(
             split.estimated_market_value,
+            split.market_tax,
             split.fee,
             split.repair_value,
             split.bags_value,
@@ -2801,6 +2848,7 @@ mod tests {
         CreateSplitRequest {
             estimated_market_value: market.parse().unwrap(),
             fee: Some(Decimal::ZERO),
+            market_tax: Some(Decimal::ZERO),
             repair_value: repair.parse().unwrap(),
             bags_value: bags.parse().unwrap(),
             bags: Vec::new(),
@@ -2934,6 +2982,7 @@ mod tests {
         let same_roster = || UpdateSplitRequest {
             estimated_market_value: None,
             fee: None,
+            market_tax: None,
             repair_value: None,
             bags_value: None,
             bags: None,
@@ -3073,6 +3122,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: Some(vec!["50000".parse().unwrap()]),
@@ -3094,6 +3144,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: Some(vec![]),
@@ -3206,7 +3257,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_split_defaults_fee_to_twenty_percent() {
+    async fn test_create_split_defaults_fee_and_market_tax_from_guild_settings() {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
@@ -3214,25 +3265,61 @@ mod tests {
         let mut req = request(
             "100.00",
             "0.00",
-            "0.00",
+            "10.00",
             vec![UpsertParticipantRequest {
                 user_id: alice,
                 weight: Decimal::ONE,
             }],
         );
         req.fee = None;
+        req.market_tax = None;
 
         let split = SplitService::new()
             .create_split(&db, admin, located(req, tab_id))
             .await
             .unwrap();
 
-        assert_eq!(split.summary.fee, Decimal::from(20));
+        // A guild created after the market tax landed starts at 15% fee + 6% tax.
+        assert_eq!(split.summary.fee, Decimal::from(15));
+        assert_eq!(split.summary.market_tax, Decimal::from(6));
         let completed = SplitService::new()
             .complete_split(&db, split.summary.id, admin)
             .await
             .unwrap();
-        assert_eq!(completed.summary.net_value, Some(Decimal::from(80)));
+        // (100 × 0.94 + 10 bags) × 0.85: the bags are not taxed.
+        assert_eq!(
+            completed.summary.net_value,
+            Some("88.40".parse::<Decimal>().unwrap())
+        );
+    }
+
+    #[test]
+    fn net_value_without_market_tax_is_unchanged() {
+        let old_formula = |market: Decimal, fee: Decimal, repair: Decimal, bags: Decimal| {
+            let before = market - repair + bags;
+            (before - before * fee / Decimal::from(100)).round_dp(2)
+        };
+        let market: Decimal = "1234567.89".parse().unwrap();
+        let fee: Decimal = "20".parse().unwrap();
+        let repair: Decimal = "1000".parse().unwrap();
+        let bags: Decimal = "55555.55".parse().unwrap();
+        assert_eq!(
+            calculate_net_value(market, Decimal::ZERO, fee, repair, bags),
+            old_formula(market, fee, repair, bags)
+        );
+    }
+
+    #[test]
+    fn market_tax_applies_to_the_loot_value_only() {
+        let net = calculate_net_value(
+            Decimal::from(100_000_000),
+            Decimal::from(6),
+            Decimal::from(15),
+            Decimal::from(5_000_000),
+            Decimal::from(10_000_000),
+        );
+        // (100M × 0.94 − 5M + 10M) × 0.85
+        assert_eq!(net, Decimal::from(84_150_000));
     }
 
     #[tokio::test]
@@ -3268,6 +3355,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: Some("12.50".parse().unwrap()),
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,
@@ -3443,6 +3531,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,
@@ -3549,6 +3638,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,
@@ -4321,6 +4411,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,
@@ -4383,6 +4474,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,
@@ -4502,6 +4594,7 @@ mod tests {
                     CreateSplitRequest {
                         estimated_market_value: "100".parse().unwrap(),
                         fee: Some(Decimal::ZERO),
+                        market_tax: Some(Decimal::ZERO),
                         repair_value: Decimal::ZERO,
                         bags_value: Decimal::ZERO,
                         bags: Vec::new(),
@@ -4534,6 +4627,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: Some("120".parse().unwrap()),
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,
@@ -4854,6 +4948,7 @@ mod tests {
         UpdateSplitRequest {
             estimated_market_value: None,
             fee: None,
+            market_tax: None,
             repair_value: None,
             bags_value: None,
             bags: Some(
@@ -5247,6 +5342,7 @@ mod tests {
                 UpdateSplitRequest {
                     estimated_market_value: None,
                     fee: None,
+                    market_tax: None,
                     repair_value: None,
                     bags_value: None,
                     bags: None,

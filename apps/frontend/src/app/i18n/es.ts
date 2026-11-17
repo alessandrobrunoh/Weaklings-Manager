@@ -359,6 +359,9 @@ export const es: TranslationDict = {
   'splits.net_formula': '(Estimado − Reparaciones + Bolsas) − Comisión',
   'splits.roster_hint': 'Define la cuota de cada persona — 100% es una cuota completa, 50% es media.',
   'splits.fee_invalid': 'La comisión debe estar entre 0 y 100%.',
+  'splits.market_tax': 'Impuesto del mercado',
+  'splits.market_tax_hint': 'Solo sobre el botín vendido en el mercado, no sobre bolsas ni reparaciones.',
+  'splits.market_tax_invalid': 'El impuesto del mercado debe estar entre 0 y 100%.',
   'splits.weight_sum_invalid': 'Cada participante necesita una cuota positiva.',
   'splits.roster_empty': 'Aún no hay participantes',
   'splits.remove_participant': 'Quitar participante',
@@ -2090,6 +2093,8 @@ export const es: TranslationDict = {
   'admin.applications.placeholder': 'No configurado',
   'admin.split.defaultFee': 'Comisión predeterminada de splits',
   'admin.split.defaultFeeHint': 'Se aplica a los splits nuevos cuando no se introduce una comisión. Rango permitido: 0–100%.',
+  'admin.split.marketTax': 'Impuesto del mercado',
+  'admin.split.marketTaxHint': 'Lo que paga la cuenta vendedora al vender el botín en el mercado de Albion (4% con Premium más la tarifa de publicación, a menudo cerca del 6%). Los nuevos splits lo aplican solo al valor del botín, antes de la comisión. Si tu comisión ya incluía este impuesto, bájala. Los splits existentes no cambian.',
   'admin.autorole.title': 'Rol de llegada de Discord',
   'admin.autorole.hint':
     'Se asigna automáticamente cuando un nuevo miembro entra al servidor de Discord.',

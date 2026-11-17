@@ -136,6 +136,9 @@ pub struct Model {
     pub brand_tertiary_color: Option<String>,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
+    /// Albion market tax (percent) the seller account pays on loot sold on the market. New splits
+    /// copy it; it applies only to the loot value, never to repairs or bags.
+    pub market_tax_percent: Decimal,
     /// Last admin edit.
     pub updated_at: DateTimeWithTimeZone,
     /// Last admin editor.
