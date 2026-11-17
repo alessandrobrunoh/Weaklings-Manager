@@ -234,6 +234,9 @@ pub struct GuildSettingsView {
     /// Default percentage fee applied to new splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: rust_decimal::Decimal,
+    /// Albion market tax percentage copied onto new splits; applies to the loot value only.
+    #[schema(value_type = String, example = "6.00")]
+    pub market_tax_percent: rust_decimal::Decimal,
 }
 
 impl GuildSettingsView {
@@ -311,6 +314,7 @@ impl GuildSettingsView {
             discord_giveaways_channel_id: model.discord_giveaways_channel_id,
             discord_giveaways_role_id: model.discord_giveaways_role_id,
             default_split_fee: model.default_split_fee,
+            market_tax_percent: model.market_tax_percent,
         }
     }
 }
@@ -506,6 +510,9 @@ pub struct UpdateGuildSettingsRequest {
     /// New default split fee percentage. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,
+    /// New Albion market tax percentage for new splits. Must be between 0 and 100.
+    #[schema(value_type = Option<String>, example = "6.00")]
+    pub market_tax_percent: Option<rust_decimal::Decimal>,
 }
 
 /// The guild's three brand colours, as the web app reads them.

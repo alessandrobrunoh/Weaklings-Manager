@@ -526,6 +526,8 @@ export interface SplitKpiSummary {
   total_estimated_volume: number;
   total_participants: number;
   default_split_fee: number | string;
+  /** Guild market tax copied onto new splits; older API responses may omit it. */
+  default_market_tax?: number | string;
 }
 
 export interface SplitParticipant {
@@ -543,6 +545,8 @@ export interface SplitSummary {
   status: SplitStatus;
   estimated_market_value: number;
   fee: number | string;
+  /** Market tax (percent) on the loot value; 0 on splits created before the tax existed. */
+  market_tax?: number | string;
   repair_value: number;
   bags_value: number;
   net_value: number | null;
@@ -580,6 +584,7 @@ export interface CreateSplitRequest {
   note?: string;
   estimated_market_value: number;
   fee: number;
+  market_tax?: number;
   repair_value: number;
   bags_value: number;
   bags?: number[];
@@ -592,6 +597,7 @@ export interface UpdateSplitRequest {
   note?: string;
   estimated_market_value?: number;
   fee?: number;
+  market_tax?: number;
   repair_value?: number;
   bags_value?: number;
   bags?: number[];
@@ -3295,6 +3301,8 @@ export interface GuildSettingsView {
   discord_giveaways_channel_id?: string | null;
   discord_giveaways_role_id?: string | null;
   default_split_fee: number | string;
+  /** Albion market tax (percent) taken from the loot value of new splits. */
+  market_tax_percent?: number | string;
 }
 
 export type GiveawayStatus = 'open' | 'drawn' | 'cancelled' | 'expired_empty';

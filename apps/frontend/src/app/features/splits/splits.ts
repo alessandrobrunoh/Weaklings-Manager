@@ -56,7 +56,7 @@ import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { actionablePendingSplits, canActOnSplit } from './split-access';
 
 const SORT_WHITELIST = new Set(['created_at', 'status', 'note']);
-const DEFAULT_SPLIT_FEE = 20;
+const DEFAULT_SPLIT_FEE = 15;
 const DEFAULT_PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 const STATUS_ORDER: readonly SplitStatus[] = [
@@ -578,6 +578,28 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     }
                   </label>
                   <label class="block">
+                    <span class="label">{{ t('splits.market_tax') }}</span>
+                    <div class="flex items-center gap-1">
+                      <input
+                        class="input font-mono text-xs"
+                        type="text"
+                        inputmode="decimal"
+                        [value]="draftMarketTaxInput()"
+                        [attr.aria-invalid]="!draftMarketTaxValid()"
+                        [attr.aria-describedby]="draftMarketTaxValid() ? 'split-market-tax-hint' : 'split-market-tax-error'"
+                        (input)="onMarketTaxChange($event)"
+                      />
+                      <span class="hint font-mono">%</span>
+                    </div>
+                    @if (draftMarketTaxValid()) {
+                      <span id="split-market-tax-hint" class="mt-1 block hint">{{ t('splits.market_tax_hint') }}</span>
+                    } @else {
+                      <span id="split-market-tax-error" class="mt-1 block text-xs text-error" role="alert">
+                        {{ t('splits.market_tax_invalid') }}
+                      </span>
+                    }
+                  </label>
+                  <label class="block">
                     <span class="label">{{ t('splits.repair_cost') }} (-)</span>
                     <input
                       class="input font-mono text-xs"
@@ -627,7 +649,8 @@ function newSplitBag(amount = 0): SplitBagDraft {
                   <div class="min-w-0">
                     <span class="label">{{ t('splits.net_value') }} ({{ t('splits.net_preview') }})</span>
                     <p class="hint">
-                      {{ t('splits.estimated') }} − {{ t('splits.repair_cost') }} + {{ t('splits.bags_value') }}
+                      {{ t('splits.estimated') }} − {{ t('splits.market_tax') }} ({{ formatAmount(draftMarketTaxAmount()) }})
+                      − {{ t('splits.repair_cost') }} + {{ t('splits.bags_value') }}
                       − {{ t('splits.fee') }} ({{ formatAmount(draftFeeAmount()) }})
                     </p>
                     @if (participants().length > 0 && draftFeeValid()) {
@@ -930,7 +953,9 @@ export class Splits {
   protected readonly draftEventTitle = signal('');
   protected readonly draftEstimated = signal(0);
   protected readonly draftFeeInput = signal('');
+  protected readonly draftMarketTaxInput = signal('6');
   private feeEdited = false;
+  private marketTaxEdited = false;
   protected readonly draftRepair = signal(0);
   protected readonly draftBagRows = signal<SplitBagDraft[]>([]);
   protected readonly draftBags = computed(() =>
@@ -995,20 +1020,30 @@ export class Splits {
   );
 
   protected readonly draftFee = computed(() => parsePercentageInput(this.draftFeeInput()) ?? 0);
+  protected readonly draftMarketTax = computed(
+    () => parsePercentageInput(this.draftMarketTaxInput()) ?? 0,
+  );
+  /** Silver the seller account pays the market on the loot (repairs and bags are not taxed). */
+  protected readonly draftMarketTaxAmount = computed(
+    () => (Math.max(0, this.draftEstimated()) * this.draftMarketTax()) / 100,
+  );
+  /** Loot after market tax, minus repairs, plus bags: the base the guild fee applies to. */
+  private readonly draftValueBeforeFee = computed(
+    () => this.draftEstimated() - this.draftMarketTaxAmount() - this.draftRepair() + this.draftBags(),
+  );
   protected readonly draftFeeAmount = computed(
-    () =>
-      (Math.max(0, this.draftEstimated() - this.draftRepair() + this.draftBags()) * this.draftFee()) /
-      100,
+    () => (Math.max(0, this.draftValueBeforeFee()) * this.draftFee()) / 100,
   );
   protected readonly draftFeeValid = computed(() => {
     const fee = parsePercentageInput(this.draftFeeInput());
     return fee !== null && fee >= 0 && fee <= 100;
   });
+  protected readonly draftMarketTaxValid = computed(() => {
+    const tax = parsePercentageInput(this.draftMarketTaxInput());
+    return tax !== null && tax >= 0 && tax <= 100;
+  });
   protected readonly draftNetPreview = computed(() =>
-    Math.max(
-      0,
-      (this.draftEstimated() - this.draftRepair() + this.draftBags()) * (1 - this.draftFee() / 100),
-    ),
+    Math.max(0, this.draftValueBeforeFee() * (1 - this.draftFee() / 100)),
   );
   protected readonly perParticipantShare = computed(() => {
     const count = this.participants().length;
@@ -1300,9 +1335,10 @@ export class Splits {
       return Number(split.net_value);
     }
     const estimated = Number(split.estimated_market_value);
+    const loot = estimated * (1 - Number(split.market_tax ?? 0) / 100);
     return Math.max(
       0,
-      (estimated - Number(split.repair_value) + Number(split.bags_value)) *
+      (loot - Number(split.repair_value) + Number(split.bags_value)) *
         (1 - Number(split.fee ?? DEFAULT_SPLIT_FEE) / 100),
     );
   }
@@ -1409,6 +1445,10 @@ export class Splits {
   protected onFeeChange(event: Event): void {
     this.feeEdited = true;
     this.draftFeeInput.set((event.target as HTMLInputElement).value);
+  }
+  protected onMarketTaxChange(event: Event): void {
+    this.marketTaxEdited = true;
+    this.draftMarketTaxInput.set((event.target as HTMLInputElement).value);
   }
   protected onRepairChange(event: Event): void {
     this.draftRepair.set(Number((event.target as HTMLInputElement).value) || 0);
@@ -1760,6 +1800,9 @@ export class Splits {
       if (!this.feeEdited && summary.default_split_fee != null) {
         this.draftFeeInput.set(String(summary.default_split_fee));
       }
+      if (!this.marketTaxEdited && summary.default_market_tax != null) {
+        this.draftMarketTaxInput.set(String(summary.default_market_tax));
+      }
     } catch {
       this.kpi.set(null);
     }
@@ -1822,6 +1865,11 @@ export class Splits {
       this.toasts.error(this.t('splits.fee_invalid'));
       return;
     }
+    const marketTax = parsePercentageInput(this.draftMarketTaxInput());
+    if (marketTax === null || marketTax < 0 || marketTax > 100) {
+      this.toasts.error(this.t('splits.market_tax_invalid'));
+      return;
+    }
     if (!this.draftWeightsAreValid()) {
       this.toasts.error(this.t('splits.weight_sum_invalid'));
       return;
@@ -1832,6 +1880,7 @@ export class Splits {
         note: title,
         estimated_market_value: this.draftEstimated(),
         fee,
+        market_tax: marketTax,
         repair_value: this.draftRepair(),
         bags_value: this.draftBags(),
         bags: this.draftBagRows()
@@ -1863,6 +1912,9 @@ export class Splits {
     this.feeEdited = false;
     const defaultFee = this.kpi()?.default_split_fee;
     this.draftFeeInput.set(defaultFee != null ? String(defaultFee) : '');
+    this.marketTaxEdited = false;
+    const defaultTax = this.kpi()?.default_market_tax;
+    this.draftMarketTaxInput.set(defaultTax != null ? String(defaultTax) : '');
     this.draftRepair.set(0);
     this.draftBagRows.set([]);
     this.draftIslandId.set('');

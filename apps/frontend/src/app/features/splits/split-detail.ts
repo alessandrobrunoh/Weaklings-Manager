@@ -83,6 +83,8 @@ interface ParticipantRow {
 /** Money flow from loot value to the amount shared out, all in silver. */
 interface Ledger {
   readonly estimated: number;
+  readonly marketTaxPct: number;
+  readonly marketTaxAmount: number;
   readonly bags: number;
   readonly bagList: readonly number[];
   readonly repair: number;
@@ -98,7 +100,7 @@ interface Presentation {
   readonly tone: StatusTone;
 }
 
-const DEFAULT_SPLIT_FEE = 20;
+const DEFAULT_SPLIT_FEE = 15;
 
 interface SplitBagDraft {
   readonly key: number;
@@ -131,17 +133,42 @@ function parsePercentageInput(raw: string): number | null {
 
 function buildLedger(
   estimated: number,
+  marketTaxPct: number,
   bags: number,
   bagList: readonly number[],
   repair: number,
   feePct: number,
   netOverride: number | null,
 ): Ledger {
-  const subtotal = estimated - repair + bags;
+  // The market tax applies to the loot value only; repairs and bags never go through the market.
+  const marketTaxAmount = Math.max(0, (estimated * marketTaxPct) / 100);
+  const subtotal = estimated - marketTaxAmount - repair + bags;
   const net = netOverride ?? Math.max(0, subtotal * (1 - feePct / 100));
   // Derived from the net so the lines always add up to the amount that is shared out.
   const feeAmount = Math.max(0, subtotal - net);
-  return { estimated, bags, bagList, repair, subtotal, feePct, feeAmount, net };
+  return {
+    estimated,
+    marketTaxPct,
+    marketTaxAmount,
+    bags,
+    bagList,
+    repair,
+    subtotal,
+    feePct,
+    feeAmount,
+    net,
+  };
+}
+
+/** Net shared by the participants: `(loot × (1 − tax) − repairs + bags) × (1 − fee)`. */
+function computeNet(split: SplitDetail): number {
+  const estimated = Number(split.estimated_market_value);
+  const loot = estimated * (1 - Number(split.market_tax ?? 0) / 100);
+  return Math.max(
+    0,
+    (loot - Number(split.repair_value) + Number(split.bags_value)) *
+      (1 - Number(split.fee ?? DEFAULT_SPLIT_FEE) / 100),
+  );
 }
 
 const STATUS_ICONS: Readonly<Record<string, IconName>> = {
@@ -223,6 +250,7 @@ export class SplitDetailPage {
   protected readonly editNote = signal('');
   protected readonly editEstimated = signal(0);
   protected readonly editFeeInput = signal(String(DEFAULT_SPLIT_FEE));
+  protected readonly editMarketTaxInput = signal('0');
   protected readonly editRepair = signal(0);
   protected readonly editBagRows = signal<SplitBagDraft[]>([]);
   protected readonly editBags = computed(() =>
@@ -348,6 +376,7 @@ export class SplitDetailPage {
     const bagList = (detail.bags ?? []).map((amount) => Number(amount) || 0).filter((amount) => amount > 0);
     return buildLedger(
       this.toNumber(detail.estimated_market_value),
+      this.toNumber(detail.market_tax ?? 0),
       this.toNumber(detail.bags_value),
       bagList,
       this.toNumber(detail.repair_value),
@@ -457,15 +486,18 @@ export class SplitDetailPage {
   // ---------------------------------------------------------------- edit state
 
   protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
+  protected readonly editMarketTax = computed(() => parsePercentageInput(this.editMarketTaxInput()) ?? 0);
   protected readonly editNetPreview = computed(() =>
     Math.max(
       0,
-      (this.editEstimated() - this.editRepair() + this.editBags()) * (1 - this.editFee() / 100),
+      (this.editEstimated() * (1 - this.editMarketTax() / 100) - this.editRepair() + this.editBags()) *
+        (1 - this.editFee() / 100),
     ),
   );
   protected readonly editLedger = computed<Ledger>(() =>
     buildLedger(
       this.editEstimated(),
+      this.editMarketTax(),
       this.editBags(),
       this.editBagRows()
         .map((bag) => Number(bag.amount) || 0)
@@ -488,6 +520,13 @@ export class SplitDetailPage {
     const fee = parsePercentageInput(this.editFeeInput());
     return fee === null || fee < 0 || fee > 100 ? this.t('splits.fee_invalid') : null;
   });
+  protected readonly marketTaxError = computed<string | null>(() => {
+    if (!this.submitted()) {
+      return null;
+    }
+    const tax = parsePercentageInput(this.editMarketTaxInput());
+    return tax === null || tax < 0 || tax > 100 ? this.t('splits.market_tax_invalid') : null;
+  });
   protected readonly weightErrors = computed<Record<number, string>>(() => {
     if (!this.submitted()) {
       return {};
@@ -507,6 +546,7 @@ export class SplitDetailPage {
   protected readonly hasEditErrors = computed(
     () =>
       this.feeError() !== null ||
+      this.marketTaxError() !== null ||
       this.rosterError() !== null ||
       Object.keys(this.weightErrors()).length > 0,
   );
@@ -652,12 +692,7 @@ export class SplitDetailPage {
     if (split.net_value !== null && split.net_value !== undefined) {
       return Number(split.net_value);
     }
-    const estimated = Number(split.estimated_market_value);
-    return Math.max(
-      0,
-      (estimated - Number(split.repair_value) + Number(split.bags_value)) *
-        (1 - Number(split.fee ?? DEFAULT_SPLIT_FEE) / 100),
-    );
+    return computeNet(split);
   }
 
   protected editTotalWeight(): number {
@@ -825,6 +860,9 @@ export class SplitDetailPage {
   }
   protected onEditFeeChange(event: Event): void {
     this.editFeeInput.set((event.target as HTMLInputElement).value);
+  }
+  protected onEditMarketTaxChange(event: Event): void {
+    this.editMarketTaxInput.set((event.target as HTMLInputElement).value);
   }
   protected onEditRepairChange(event: Event): void {
     this.editRepair.set(Number((event.target as HTMLInputElement).value) || 0);
@@ -1052,7 +1090,15 @@ export class SplitDetailPage {
     this.submitted.set(true);
 
     const fee = parsePercentageInput(this.editFeeInput());
-    let valid = fee !== null && fee >= 0 && fee <= 100 && this.editParticipants().length > 0;
+    const marketTax = parsePercentageInput(this.editMarketTaxInput());
+    let valid =
+      fee !== null &&
+      fee >= 0 &&
+      fee <= 100 &&
+      marketTax !== null &&
+      marketTax >= 0 &&
+      marketTax <= 100 &&
+      this.editParticipants().length > 0;
 
     const weights: Array<{ participant: SplitParticipant; weight: number }> = [];
     for (const participant of this.editParticipants()) {
@@ -1063,7 +1109,7 @@ export class SplitDetailPage {
       }
       weights.push({ participant, weight });
     }
-    if (!valid || fee === null || !participantWeightsAreValid(weights.map(({ weight }) => weight))) {
+    if (!valid || fee === null || marketTax === null || !participantWeightsAreValid(weights.map(({ weight }) => weight))) {
       this.focusSoon('[aria-invalid="true"], #sd-edit-errors');
       return;
     }
@@ -1074,6 +1120,7 @@ export class SplitDetailPage {
         note: this.editNote().trim(),
         estimated_market_value: this.editEstimated(),
         fee,
+        market_tax: marketTax,
         repair_value: this.editRepair(),
         bags_value: this.editBags(),
         bags: this.editBagRows()
@@ -1413,6 +1460,7 @@ export class SplitDetailPage {
     this.editNote.set(detail.note || '');
     this.editEstimated.set(Number(detail.estimated_market_value) || 0);
     this.editFeeInput.set(String(detail.fee ?? DEFAULT_SPLIT_FEE));
+    this.editMarketTaxInput.set(String(detail.market_tax ?? 0));
     this.editRepair.set(Number(detail.repair_value) || 0);
     this.editBagRows.set(bagsFromDetail(detail));
     this.editEventId.set(detail.event_id ?? null);

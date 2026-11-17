@@ -368,6 +368,16 @@ impl AdminService {
             }
             active.default_split_fee = Set(value);
         }
+        if let Some(value) = req.market_tax_percent {
+            if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
+                .contains(&value)
+            {
+                return Err(AppError::Validation(
+                    "market tax must be between 0 and 100".to_string(),
+                ));
+            }
+            active.market_tax_percent = Set(value);
+        }
         active.updated_at = Set(chrono::Utc::now().into());
         active.updated_by_user_id = Set(Some(editor_user_id));
         let updated = active.update(db).await.map_err(AppError::Database)?;
@@ -432,6 +442,7 @@ impl AdminService {
                 "discord_tickets_closed_title": req.discord_tickets_closed_title,
                 "discord_tickets_closed_message": req.discord_tickets_closed_message,
                 "default_split_fee": req.default_split_fee,
+                "market_tax_percent": req.market_tax_percent,
             })),
         )
         .await;

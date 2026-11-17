@@ -996,7 +996,7 @@ front (`POST /splits` — there is no separate \"add participants later\" step r
 valid, though `POST /splits/{id}/participants` still exists for an officer to adjust the roster while \
 it's pending). `splits.SplitStatus` starts at `pending` and an officer closes it out exactly once, into \
 one of three terminal-ish states: `completed` (`POST /splits/{id}/complete` — computes \
-`net_value = estimated_market_value - repair_value + bags_value` and generates one `pending` Guild \
+`net_value = (estimated_market_value × (1 − market_tax%) − repair_value + bags_value) × (1 − fee%)` and generates one `pending` Guild \
 Bank transaction per participant, split proportionally by weight with remainder correction so the \
 sum is exact), `not_completed` (the split didn't happen; no transactions), or `lost` \
 (`POST /splits/{id}/lost` — the loot itself was never recovered; no transactions). Only `pending` \

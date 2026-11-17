@@ -364,6 +364,9 @@ export const en = {
   'splits.net_formula': '(Estimated − Repairs + Bags) − Fee',
   'splits.roster_hint': 'Set each person’s share — 100% is one full share, 50% is half.',
   'splits.fee_invalid': 'Fee must be between 0 and 100%.',
+  'splits.market_tax': 'Market tax',
+  'splits.market_tax_hint': 'Only on the loot sold on the market, not on bags or repairs.',
+  'splits.market_tax_invalid': 'Market tax must be between 0 and 100%.',
   'splits.weight_sum_invalid': 'Every participant needs a positive share.',
   'splits.roster_empty': 'No participants in the roster yet',
   'splits.remove_participant': 'Remove participant',
@@ -2393,6 +2396,8 @@ export const en = {
   'admin.applications.placeholder': 'Not set',
   'admin.split.defaultFee': 'Default split fee',
   'admin.split.defaultFeeHint': 'Applied to new splits when no fee is entered. Allowed range: 0–100%.',
+  'admin.split.marketTax': 'Market tax',
+  'admin.split.marketTaxHint': 'What the seller account pays when it sells loot on the Albion market (4% with Premium plus setup fee, often about 6%). New splits apply it to the loot value only, before the fee. If your fee already included this tax, lower the fee. Existing splits are not changed.',
   'admin.autorole.title': 'Default join role',
   'admin.autorole.hint':
     'Assigned automatically when a new member joins the Discord server.',

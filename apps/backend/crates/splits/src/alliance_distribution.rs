@@ -174,6 +174,7 @@ pub async fn complete(
     }
     let net_value = calculate_net_value(
         split.estimated_market_value,
+        split.market_tax,
         split.fee,
         split.repair_value,
         split.bags_value,
@@ -651,6 +652,7 @@ mod tests {
                 CreateSplitRequest {
                     estimated_market_value: "100.00".parse().unwrap(),
                     fee: Some(sea_orm::prelude::Decimal::ZERO),
+                    market_tax: Some(sea_orm::prelude::Decimal::ZERO),
                     repair_value: sea_orm::prelude::Decimal::ZERO,
                     bags_value: sea_orm::prelude::Decimal::ZERO,
                     bags: Vec::new(),

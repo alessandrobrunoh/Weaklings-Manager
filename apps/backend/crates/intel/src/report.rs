@@ -1046,8 +1046,9 @@ fn split_value_breakdown(s: &split::Model) -> (i64, i64, i64, i64, i64, i64) {
     let gross = to_i64(s.estimated_market_value);
     let bags = to_i64(s.bags_value);
     let repair = to_i64(s.repair_value);
-    let before_fee_dec =
-        (s.estimated_market_value - s.repair_value + s.bags_value).max(Decimal::ZERO);
+    let loot_after_tax =
+        s.estimated_market_value - (s.estimated_market_value * s.market_tax / Decimal::from(100));
+    let before_fee_dec = (loot_after_tax - s.repair_value + s.bags_value).max(Decimal::ZERO);
     let computed_net_dec =
         (before_fee_dec - (before_fee_dec * s.fee / Decimal::from(100))).round_dp(2);
     let net_dec = s
@@ -2285,6 +2286,7 @@ mod tests {
             status: "completed".to_string(),
             estimated_market_value: Decimal::new(100_000, 0),
             fee: Decimal::ZERO,
+            market_tax: Decimal::ZERO,
             repair_value: Decimal::new(10_000, 0),
             bags_value: Decimal::new(5_000, 0),
             net_value: None,
@@ -2306,6 +2308,7 @@ mod tests {
             status: "pending".to_string(),
             estimated_market_value: Decimal::new(999_999, 0),
             fee: Decimal::ZERO,
+            market_tax: Decimal::ZERO,
             repair_value: Decimal::ZERO,
             bags_value: Decimal::ZERO,
             net_value: None,
@@ -2397,6 +2400,7 @@ mod tests {
             status: "completed".to_string(),
             estimated_market_value: Decimal::new(200_000, 0),
             fee: Decimal::new(20, 0),
+            market_tax: Decimal::ZERO,
             repair_value: Decimal::new(30_000, 0),
             bags_value: Decimal::new(10_000, 0),
             net_value: Some(Decimal::new(144_000, 0)),

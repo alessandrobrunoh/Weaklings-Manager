@@ -283,6 +283,25 @@
                     }
                   </div>
                   <div class="sd-field">
+                    <label class="sd-label" for="sd-edit-market-tax">
+                      {{ t('splits.market_tax') }}
+                      <span class="sd-label__hint">{{ t('splits.market_tax_hint') }}</span>
+                    </label>
+                    <input
+                      id="sd-edit-market-tax"
+                      class="input sd-mono"
+                      type="text"
+                      inputmode="decimal"
+                      [attr.aria-invalid]="marketTaxError() ? 'true' : null"
+                      [attr.aria-describedby]="marketTaxError() ? 'sd-edit-market-tax-error' : null"
+                      [value]="editMarketTaxInput()"
+                      (input)="onEditMarketTaxChange($event)"
+                    />
+                    @if (marketTaxError(); as message) {
+                      <p id="sd-edit-market-tax-error" class="sd-error">{{ message }}</p>
+                    }
+                  </div>
+                  <div class="sd-field">
                     <label class="sd-label" for="sd-edit-repair">
                       {{ t('splits.repair_cost') }}
                       <span class="sd-label__hint">{{ t('splits.detail.deducted') }}</span>
@@ -806,6 +825,12 @@
       <dt>{{ t('splits.estimated') }}</dt>
       <dd>{{ formatAmount(l.estimated) }}</dd>
     </div>
+    @if (l.marketTaxPct > 0) {
+      <div class="sd-ledger__row">
+        <dt>{{ t('splits.market_tax') }} ({{ formatPercent(l.marketTaxPct) }})</dt>
+        <dd class="sd-neg">{{ formatSigned(l.marketTaxAmount, '−') }}</dd>
+      </div>
+    }
     <div class="sd-ledger__row">
       <dt>
         {{ t('splits.bags_value') }}
