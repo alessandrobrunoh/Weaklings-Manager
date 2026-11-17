@@ -3627,12 +3627,16 @@ export interface BankLogLinkTarget {
   member_username: string | null;
   amount: string | null;
   at: string | null;
+  /** Split a payout's credit came from. */
+  source_split_id: number | null;
 }
 
 export interface BankLogLink {
   id: number;
   kind: BankLogLinkKind;
   confirmed: boolean;
+  /** 0-100 likelihood of a suggestion; null for manual links. */
+  score: number | null;
   entry_ids: number[];
   entries_total: string;
   targets: BankLogLinkTarget[];
@@ -3705,14 +3709,46 @@ export interface BankLogBatch {
 }
 
 export interface BankLogCandidate {
-  kind: 'transaction' | 'split';
-  transaction_id: number | null;
+  /** Stable key: `p:1,2` for a payout, `s:12` for a split. */
+  key: string;
+  kind: 'payout' | 'split';
+  transaction_ids: number[];
   split_id: number | null;
   label: string;
+  detail: string | null;
   member_username: string | null;
-  amount: string | null;
+  /** The figure compared with the row. */
+  amount: string;
   split_bags_value: string | null;
   split_expected_sale: string | null;
   at: string | null;
+  /** Minutes from the row to the record; negative when the record came first. */
+  minutes_apart: number | null;
+  /** 0-100 likelihood. */
+  score: number;
   linked: boolean;
+}
+
+export interface BankLogEntryBrief {
+  id: number;
+  occurred_at: string;
+  player_name: string;
+  reason: string;
+  amount: string;
+  category: BankLogCategory;
+}
+
+export interface BankLogBestSuggestion {
+  link: BankLogLink;
+  entries: BankLogEntryBrief[];
+}
+
+export interface BankLogBestSuggestions {
+  items: BankLogBestSuggestion[];
+  rows_left_out: number;
+}
+
+export interface BankLogConfirmSuggestionsResult {
+  confirmed: number;
+  skipped: number;
 }

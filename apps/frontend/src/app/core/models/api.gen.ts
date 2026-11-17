@@ -1170,11 +1170,31 @@ export interface paths {
         };
         /**
          * Link candidates for a bank log row
-         * @description For a withdrawal: payouts within 10 days, closest amount first. For a deposit: splits created up to 60 days before, with bags value and expected sale.
+         * @description For a withdrawal: members' payouts (rows accepted together, and each of them alone) within `days` (default 7). For a deposit: splits created within `days` (default 7 for bags, 30 for loot sales), compared by bags value or expected sale. Each candidate has a 0-100 score from amount and time closeness; best first, at most 60.
          */
         get: operations["bank_log_candidates"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/entries/{id}/suggestions/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recompute the suggestions of one bank log row
+         * @description Drops the row's suggestions and proposes new ones against everything still open. Other rows keep their suggestions. Refused for linked or explained rows.
+         */
+        post: operations["bank_log_refresh_entry_suggestions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1269,6 +1289,46 @@ export interface paths {
         put?: never;
         /** Confirm a bank log suggestion */
         post: operations["bank_log_confirm_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/suggestions/best": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Best bank log suggestion of every row
+         * @description One suggestion per suggested row, best score first; a suggestion sharing a row or a transaction with a better one is left out.
+         */
+        get: operations["bank_log_best_suggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/suggestions/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm several bank log suggestions
+         * @description Confirms the suggestions in order in one transaction. One that is gone, already confirmed, or collides with a link confirmed before it is skipped.
+         */
+        post: operations["bank_log_confirm_suggestions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6671,9 +6731,21 @@ export interface components {
             /** @example success */
             status: string;
         };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogBestSuggestions }`. */
+        ApiResponseBankLogBestSuggestions: {
+            data: components["schemas"]["BankLogBestSuggestions"];
+            /** @example success */
+            status: string;
+        };
         /** @description `OpenAPI` wrapper: `{ status, data: BankLogCandidateView[] }`. */
         ApiResponseBankLogCandidateViewList: {
             data: components["schemas"]["BankLogCandidateView"][];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogConfirmSuggestionsResult }`. */
+        ApiResponseBankLogConfirmSuggestionsResult: {
+            data: components["schemas"]["BankLogConfirmSuggestionsResult"];
             /** @example success */
             status: string;
         };
@@ -10173,23 +10245,52 @@ export interface components {
             /** Format: int64 */
             rows: number;
         };
-        /** @description A Manager record an officer can link a row to by hand. */
+        /** @description The best suggestion of one or more open rows. */
+        BankLogBestSuggestionView: {
+            entries: components["schemas"]["BankLogEntryBrief"][];
+            link: components["schemas"]["BankLogLinkView"];
+        };
+        /** @description `GET /api/bank/log/suggestions/best`: what "fill all suggested" would confirm. */
+        BankLogBestSuggestions: {
+            /** @description One suggestion per row, best score first, never two sharing a row or a transaction. */
+            items: components["schemas"]["BankLogBestSuggestionView"][];
+            /**
+             * Format: int64
+             * @description Suggested rows left out because their best suggestion collides with a better one.
+             */
+            rows_left_out: number;
+        };
+        /** @description A Manager record an officer can link a row to by hand, ranked by `score`. */
         BankLogCandidateView: {
-            /** @description Payout amount, or for splits the bags value / expected sale (see `split_*`). */
-            amount?: string | null;
+            /** @description The figure compared with the row: payout total, or the split's bags value / expected sale. */
+            amount: string;
             at?: string | null;
-            /** @description `transaction` or `split`. */
+            /** @description Extra context: source splits of a payout, or a split's note. */
+            detail?: string | null;
+            /** @description Stable key (`p:1,2` for a payout, `s:12` for a split). */
+            key: string;
+            /** @description `payout` (a member's rows paid out together) or `split`. */
             kind: string;
             label: string;
             /** @description Already part of a confirmed link. */
             linked: boolean;
             member_username?: string | null;
+            /**
+             * Format: int64
+             * @description Minutes from the row to the record (negative: the record came first).
+             */
+            minutes_apart?: number | null;
+            /**
+             * Format: int32
+             * @description 0-100, how likely this record is the row.
+             */
+            score: number;
             split_bags_value?: string | null;
             split_expected_sale?: string | null;
             /** Format: int64 */
             split_id?: number | null;
-            /** Format: int64 */
-            transaction_id?: number | null;
+            /** @description Bank rows of a payout. */
+            transaction_ids: number[];
         };
         /** @description Totals of one category over a period. */
         BankLogCategoryTotals: {
@@ -10204,6 +10305,21 @@ export interface components {
             open_total: string;
             /** Format: int64 */
             rows: number;
+        };
+        /** @description `POST /api/bank/log/suggestions/confirm`. */
+        BankLogConfirmSuggestionsRequest: {
+            /** @description Suggestions to confirm, in this order. */
+            link_ids: number[];
+        };
+        /** @description What a bulk confirmation did. */
+        BankLogConfirmSuggestionsResult: {
+            /** Format: int64 */
+            confirmed: number;
+            /**
+             * Format: int64
+             * @description Gone, already confirmed, or colliding with a link confirmed before it.
+             */
+            skipped: number;
         };
         /** @description `POST /api/bank/log/entries/{id}/transaction`. */
         BankLogCreateEntryTransactionRequest: {
@@ -10230,6 +10346,16 @@ export interface components {
              * @description Rows deleted.
              */
             deleted: number;
+        };
+        /** @description A log row, briefly. */
+        BankLogEntryBrief: {
+            amount: string;
+            category: string;
+            /** Format: int64 */
+            id: number;
+            occurred_at: string;
+            player_name: string;
+            reason: string;
         };
         /** @description One stored log row with its links. */
         BankLogEntryView: {
@@ -10345,6 +10471,11 @@ export interface components {
             member_username?: string | null;
             /**
              * Format: int64
+             * @description Split a payout's credit came from.
+             */
+            source_split_id?: number | null;
+            /**
+             * Format: int64
              * @description Split, for bags and loot sales.
              */
             split_id?: number | null;
@@ -10366,6 +10497,11 @@ export interface components {
             id: number;
             /** @description `payout`, `bags`, `loot_sale` or `manual`. */
             kind: string;
+            /**
+             * Format: int32
+             * @description How likely a suggestion is, 0-100 (amount and time closeness). `None` for manual links.
+             */
+            score?: number | null;
             targets: components["schemas"]["BankLogLinkTargetView"][];
         };
         /** @description `POST /api/bank/log/suggestions/refresh`. */
@@ -23154,6 +23290,14 @@ export interface operations {
             path: {
                 /** @description Row id */
                 id: number;
+                /** @description Member name, transaction or split id, or split note. */
+                search: string | null;
+                /** @description Days around the row to look in (1-60). Defaults to 7 for withdrawals, 14 for deposits. */
+                days: number | null;
+                /** @description For deposits: compare splits by `bags` or `loot_sale`. Defaults from the row category. */
+                value: string | null;
+                /** @description Also list records already in a confirmed link. */
+                include_linked: boolean | null;
             };
             cookie?: never;
         };
@@ -23179,6 +23323,56 @@ export interface operations {
             };
             /** @description No such row */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_refresh_entry_suggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Row id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row with its new suggestions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogEntryView"];
+                };
+            };
+            /** @description Requires banklog.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such row */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The row is linked or explained */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -23436,6 +23630,78 @@ export interface operations {
             };
             /** @description Already confirmed, or a row or transaction is linked elsewhere */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_best_suggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Best suggestions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogBestSuggestions"];
+                };
+            };
+            /** @description Requires banklog.view on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_confirm_suggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Suggestion ids. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankLogConfirmSuggestionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Confirmed and skipped counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogConfirmSuggestionsResult"];
+                };
+            };
+            /** @description No ids, or too many */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Requires banklog.manage on a guild */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
