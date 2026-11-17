@@ -3410,6 +3410,7 @@ export const es: TranslationDict = {
   'ui.table.noMatches': 'Ninguna fila coincide con los filtros actuales.',
   'ui.table.region': 'Tabla',
   'ui.table.pageN': 'Página {page}',
+  'dataTable.exportCsv': 'Exportar CSV',
   'ui.errorState.notFound': 'No encontrado',
   'ui.errorState.notFoundHint': 'Puede que se haya eliminado, o el enlace es incorrecto.',
   'ui.select.noOptions': 'Sin opciones',

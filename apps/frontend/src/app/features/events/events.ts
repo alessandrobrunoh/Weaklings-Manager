@@ -47,6 +47,7 @@ import { FilterBar } from '../../shared/components/filter-bar/filter-bar';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { roleSelectOptionsMany } from '../../shared/discord/discord-options';
 import { OwnershipScopeToggle } from '../../shared/components/ownership-scope-toggle/ownership-scope-toggle';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 import {
   ownershipListParams,
   ownershipOptionLabel,
@@ -434,6 +435,8 @@ interface CreateFieldError {
         [emptySubtitle]="t('events.emptyHint')"
         [rowClickable]="true"
         (rowClick)="openEventDetail($event.id)"
+        exportFileName="events"
+        [exportRows]="exportAll"
         (pageChange)="onTablePageChange($event)"
         (retry)="refreshNow()"
       >
@@ -1641,21 +1644,33 @@ export class Events {
     }
   }
 
+  /** Every event matching the current search, status, archive filter and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly EventView[]> =>
+    fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<EventView>>('api/events', this.listParams(page, limit)),
+      ),
+    );
+
+  private listParams(page: number, limit: number) {
+    const sort = this.sortColumn() ? (SORT_COLUMNS[this.sortColumn()!] ?? this.sortColumn()) : undefined;
+    return {
+      page,
+      limit,
+      search: this.search().trim() || undefined,
+      status: this.statusFilter() || undefined,
+      archived: this.showArchived() ? 'true' : undefined,
+      sort,
+      order: sort ? (this.sortOrder() ?? 'asc') : undefined,
+    };
+  }
+
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const sort = this.sortColumn() ? (SORT_COLUMNS[this.sortColumn()!] ?? this.sortColumn()) : undefined;
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<EventView>>('api/events', {
-          page: this.page(),
-          limit: this.pageSize(),
-          search: this.search().trim() || undefined,
-          status: this.statusFilter() || undefined,
-          archived: this.showArchived() ? 'true' : undefined,
-          sort,
-          order: sort ? (this.sortOrder() ?? 'asc') : undefined,
-        }),
+        this.api.get<PaginatedData<EventView>>('api/events', this.listParams(this.page(), this.pageSize())),
       );
       this.events.set(data.items);
       this.totalItems.set(data.total_items);

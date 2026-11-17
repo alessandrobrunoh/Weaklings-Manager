@@ -3225,6 +3225,7 @@ export const uk: TranslationDict = {
   'ui.table.noMatches': 'Жоден рядок не відповідає поточним фільтрам.',
   'ui.table.region': 'Таблиця',
   'ui.table.pageN': 'Сторінка {page}',
+  'dataTable.exportCsv': 'Експорт CSV',
   'ui.errorState.notFound': 'Не знайдено',
   'ui.errorState.notFoundHint': 'Його могли видалити, або посилання неправильне.',
   'ui.select.noOptions': 'Немає варіантів',

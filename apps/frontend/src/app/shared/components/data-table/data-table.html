@@ -65,6 +65,18 @@
               <span class="data-table__count">{{ activeFilterCount() }}</span>
             </button>
           }
+
+          @if (canExport()) {
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              [disabled]="exporting()"
+              [attr.aria-busy]="exporting()"
+              (click)="exportCsv()"
+            >
+              <span>{{ t('dataTable.exportCsv') }}</span>
+            </button>
+          }
         </div>
       </div>
     }

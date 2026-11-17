@@ -3229,6 +3229,7 @@ export const fr: TranslationDict = {
   'ui.table.noMatches': 'Aucune ligne ne correspond aux filtres actuels.',
   'ui.table.region': 'Tableau',
   'ui.table.pageN': 'Page {page}',
+  'dataTable.exportCsv': 'Exporter en CSV',
   'ui.errorState.notFound': 'Introuvable',
   'ui.errorState.notFoundHint': 'Il a peut-être été supprimé, ou le lien est incorrect.',
   'ui.select.noOptions': 'Aucune option',

@@ -19,6 +19,7 @@ import type { Observable } from 'rxjs';
 
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
+import { downloadCsv, toCsv } from '../../utils/csv';
 import { EmptyState } from '../empty-state/empty-state';
 import { ErrorState } from '../error-state/error-state';
 import { Icon, type IconName } from '../icon/icon';
@@ -204,6 +205,19 @@ export class DataTable<T> {
   /** Emitted when a clickable row is activated (click or Enter/Space). */
   readonly rowClick = output<T>();
 
+  /** Shows the "Export CSV" button. Set `false` to hide it. */
+  readonly exportable = input(true);
+
+  /** File name prefix for the CSV export; the file is named `<exportFileName>-YYYY-MM-DD.csv`. */
+  readonly exportFileName = input<string>('export');
+
+  /**
+   * Returns every row matching the current filters, sorted, across all pages. When set it is
+   * used instead of the table's own rows. Server-mode tables must provide it, because they hold
+   * only one page; without it, client-mode tables export their own filtered rows.
+   */
+  readonly exportRows = input<(() => Promise<readonly T[]>) | null>(null);
+
   /** Per-column projected cell templates (`*dataTableCell="'key'"`). */
   readonly cellDirectives = contentChildren(DataTableCell);
 
@@ -235,6 +249,7 @@ export class DataTable<T> {
   protected readonly search = signal('');
   protected readonly sort = signal<SortState | null>(null);
   protected readonly columnFilters = signal<Readonly<Record<string, string>>>({});
+  protected readonly exporting = signal(false);
 
   protected readonly t = (key: TranslationKey | '', params?: Record<string, string | number>) =>
     key === '' ? '' : this.translate.t(key, params);
@@ -300,6 +315,11 @@ export class DataTable<T> {
       .map((column) => column.key),
   );
 
+  /** Every client-mode row that matches the search and column filters, sorted, before pagination. */
+  private readonly filteredSortedRows = computed<readonly T[]>(() =>
+    this.applySort(this.applyFilters(this.rows())),
+  );
+
   /** Filtered, sorted and sliced rows shown in the current page (client mode). */
   protected readonly processedRows = computed<readonly T[]>(() => {
     if (this.serverMode()) {
@@ -309,10 +329,13 @@ export class DataTable<T> {
       // request is slow (or when an older response is still being replaced).
       return this.search().trim() ? this.applySearch(this.rows()) : this.rows();
     }
-    const filtered = this.applyFilters(this.rows());
-    const sorted = this.applySort(filtered);
-    return this.applyPagination(sorted);
+    return this.applyPagination(this.filteredSortedRows());
   });
+
+  /** Export button is shown when allowed, and a server-mode table also needs `exportRows`. */
+  protected readonly canExport = computed(
+    () => this.exportable() && (!this.serverMode() || this.exportRows() !== null),
+  );
 
   /** Total items after client-side filtering, used to compute page count. */
   protected readonly visibleTotal = computed<number>(() => {
@@ -371,7 +394,9 @@ export class DataTable<T> {
     this.columns().some((column) => column.filterOptions && column.filterOptions.length > 0),
   );
 
-  protected readonly showToolbar = computed(() => !this.hideSearch() || this.hasColumnFilters());
+  protected readonly showToolbar = computed(
+    () => !this.hideSearch() || this.hasColumnFilters() || this.canExport(),
+  );
 
   /**
    * Returns the next direction when toggling the same column.
@@ -551,6 +576,41 @@ export class DataTable<T> {
       return '';
     }
     return String(value);
+  }
+
+  /**
+   * Downloads every row matching the current filters as CSV. Uses `exportRows` when the host
+   * provides it, otherwise the table's own filtered and sorted rows (not just the visible page).
+   * Columns without an `exportValue` or `accessor` (action and checkbox columns) are skipped.
+   */
+  protected async exportCsv(): Promise<void> {
+    if (this.exporting()) {
+      return;
+    }
+    this.exporting.set(true);
+    try {
+      const fetchAll = this.exportRows();
+      const rows = fetchAll ? await fetchAll() : this.filteredSortedRows();
+      const reads = this.columns().flatMap((column) => {
+        const read = column.exportValue ?? column.accessor;
+        return read ? [{ header: this.t(column.label), read }] : [];
+      });
+      const now = new Date();
+      const stamp = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+      ].join('-');
+      const csv = toCsv(
+        reads.map((entry) => entry.header),
+        rows.map((row) => reads.map((entry) => entry.read(row))),
+      );
+      downloadCsv(`${this.exportFileName()}-${stamp}.csv`, csv);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      this.exporting.set(false);
+    }
   }
 
   private applyFilters(rows: readonly T[]): T[] {

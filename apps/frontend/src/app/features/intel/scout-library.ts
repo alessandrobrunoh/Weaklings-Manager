@@ -16,6 +16,7 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 import { IntelFormat } from './intel-format';
 
 const SCOUT_PAGE_LIMIT = 25;
@@ -43,6 +44,8 @@ const SCOUT_PAGE_LIMIT = 25;
       [emptyLabel]="'intel.empty'"
       [rowClickable]="true"
       (rowClick)="open($event)"
+      exportFileName="scouted-comps"
+      [exportRows]="exportAll"
       (pageChange)="onPageChange($event)"
     >
       <ng-template dataTableCell="opponent" let-row>
@@ -160,7 +163,9 @@ export class ScoutLibrary {
     this.loading.set(true);
     this.failed.set(false);
     try {
-      const library = await firstValueFrom(this.intel.listScouts(this.toParams()));
+      const library = await firstValueFrom(
+        this.intel.listScouts(this.toParams(this.params, this.params.page, this.params.pageSize)),
+      );
       this.scouts.set(library.items);
       this.total.set(library.total_items);
     } catch {
@@ -183,8 +188,15 @@ export class ScoutLibrary {
     }
   }
 
-  private toParams(): ScoutListParams {
+  /** Every scouted comp matching the current search, category and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly ScoutedCompSummary[]> => {
     const event = this.params;
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(this.intel.listScouts(this.toParams(event, page, limit))),
+    );
+  };
+
+  private toParams(event: DataTablePageChange, page: number, limit: number): ScoutListParams {
     const sortKey = event.sort?.columnKey;
     const sort: ScoutListParams['sort'] =
       sortKey === 'saved_at' ? 'saved_at' : sortKey === 'battles' ? 'battles' : 'threat';
@@ -192,8 +204,8 @@ export class ScoutLibrary {
       q: event.search.trim() || undefined,
       category: event.columnFilters['category'] || undefined,
       sort,
-      page: event.page,
-      limit: event.pageSize,
+      page,
+      limit,
     };
   }
 }

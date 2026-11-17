@@ -33,6 +33,13 @@ export interface DataTableColumn<T> {
   /** Optional accessor used by both the global search and the per-column text filter. */
   readonly accessor?: (row: T) => string | number | null | undefined;
   /**
+   * Value written to the CSV export for this column. Falls back to `accessor`.
+   * Use it when the accessor returns a display string that is poor in a spreadsheet
+   * (a formatted date, a localized amount), or to export a raw number instead.
+   * Columns with neither an `exportValue` nor an `accessor` are left out of the export.
+   */
+  readonly exportValue?: (row: T) => string | number | null | undefined;
+  /**
    * Value compared against `filterOptions` in client mode. Defaults to `accessor`.
    * Use this when the cell displays a label but the dropdown filters by id.
    */

@@ -32,6 +32,7 @@ import {
   type SearchableSelectOption,
 } from '../../shared/components/searchable-select/searchable-select';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 export interface AuditLog {
   id: number;
@@ -252,6 +253,8 @@ const SEARCH_DEBOUNCE_MS = 300;
           [ariaLabel]="t('audit.title')"
           mobileLayout="stack"
           emptyIcon="activity"
+          exportFileName="audit-log"
+          [exportRows]="exportAll"
           (pageChange)="onTableChange($event)"
         >
           <ng-template dataTableCell="created_at" let-row>
@@ -389,6 +392,7 @@ export class Audit {
       label: 'audit.actor',
       sortable: true,
       accessor: (log) => String(log.user_id || ''),
+      exportValue: (log) => this.actorName(log),
     },
     {
       key: 'action',
@@ -401,11 +405,13 @@ export class Audit {
       label: 'audit.target',
       sortable: true,
       accessor: (log) => log.entity_type || '',
+      exportValue: (log) => this.targetLabel(log),
     },
     {
       key: 'details',
       label: 'audit.details',
       sortable: false,
+      exportValue: (log) => (log.details ? JSON.stringify(log.details) : ''),
     },
   ];
 
@@ -537,41 +543,62 @@ export class Audit {
     }
   }
 
+  /** Every audit entry matching the current filters and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly AuditLog[]> => {
+    const query = this.tableQuery();
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<AuditLog>>(
+          'api/audit',
+          this.logParams(query, page, limit),
+        ),
+      ),
+    );
+  };
+
+  private logParams(
+    query: DataTablePageChange,
+    page: number,
+    limit: number,
+  ): Record<string, string | number | boolean> {
+    const params: Record<string, string | number | boolean> = { page, limit };
+    const search = this.search().trim();
+    if (search) {
+      params['search'] = search;
+    }
+    if (query.sort) {
+      const sortKey =
+        query.sort.columnKey === 'entity'
+          ? 'entity_type'
+          : query.sort.columnKey === 'user'
+            ? 'user_id'
+            : query.sort.columnKey;
+      params['sort'] = sortKey;
+      params['order'] = query.sort.direction;
+    }
+    if (this.actionFilter()) {
+      params['action'] = this.actionFilter();
+    }
+    if (this.entityFilter()) {
+      params['entity_type'] = this.entityFilter();
+    }
+    if (this.actorFilter()) {
+      params['user_id'] = Number(this.actorFilter());
+    }
+    return params;
+  }
+
   protected async load(): Promise<void> {
     const seq = ++this.requestSeq;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
       const query = this.tableQuery();
-      const params: Record<string, string | number | boolean> = {
-        page: query.page,
-        limit: query.pageSize,
-      };
-      const search = this.search().trim();
-      if (search) {
-        params['search'] = search;
-      }
-      if (query.sort) {
-        const sortKey =
-          query.sort.columnKey === 'entity'
-            ? 'entity_type'
-            : query.sort.columnKey === 'user'
-              ? 'user_id'
-              : query.sort.columnKey;
-        params['sort'] = sortKey;
-        params['order'] = query.sort.direction;
-      }
-      if (this.actionFilter()) {
-        params['action'] = this.actionFilter();
-      }
-      if (this.entityFilter()) {
-        params['entity_type'] = this.entityFilter();
-      }
-      if (this.actorFilter()) {
-        params['user_id'] = Number(this.actorFilter());
-      }
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<AuditLog>>('api/audit', params),
+        this.api.get<PaginatedData<AuditLog>>(
+          'api/audit',
+          this.logParams(query, query.page, query.pageSize),
+        ),
       );
       if (seq !== this.requestSeq) {
         return;

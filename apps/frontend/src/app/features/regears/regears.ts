@@ -40,6 +40,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 /** Section tab inside the Regears page. Settings live on `/admin/regears`. */
 type RegearTab = 'mine' | 'queue' | 'history';
@@ -186,6 +187,8 @@ const STATS_FETCH_LIMIT = 1000;
         emptyLabel="regears.empty"
         [rowClickable]="true"
         (rowClick)="openDeath($event)"
+        exportFileName="regears"
+        [exportRows]="exportAll"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="player_name" let-row>
@@ -764,34 +767,55 @@ export class Regears {
     }
   }
 
+  /** Every death matching the current tab, status, search and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly RegearDeathView[]> =>
+    fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<RegearDeathView>>(
+          'api/regear/deaths',
+          this.deathParams(page, limit),
+        ),
+      ),
+    );
+
+  private deathParams(
+    page: number,
+    limit: number,
+  ): Record<string, string | number | boolean | undefined> {
+    const tab = this.tab();
+    const status = this.statusFilter();
+    const sort = this.tableSort();
+    const params: Record<string, string | number | boolean | undefined> = {
+      page,
+      limit,
+      global: tab !== 'mine',
+      search: this.search().trim() || undefined,
+      sort: sort?.columnKey,
+      order: sort?.direction,
+    };
+    if (tab === 'queue') {
+      params['status'] = 'pending';
+    } else if (tab === 'history') {
+      params['history'] = true;
+      if (status === 'approved' || status === 'rejected') {
+        params['status'] = status;
+      }
+    } else if (status !== 'all') {
+      params['status'] = status;
+    }
+    return params;
+  }
+
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
       const tab = this.tab();
-      const status = this.statusFilter();
-      const sort = this.tableSort();
-      const params: Record<string, string | number | boolean | undefined> = {
-        page: this.tablePage(),
-        limit: this.tablePageSize(),
-        global: tab !== 'mine',
-        search: this.search().trim() || undefined,
-        sort: sort?.columnKey,
-        order: sort?.direction,
-      };
-      if (tab === 'queue') {
-        params['status'] = 'pending';
-      } else if (tab === 'history') {
-        params['history'] = true;
-        if (status === 'approved' || status === 'rejected') {
-          params['status'] = status;
-        }
-      } else if (status !== 'all') {
-        params['status'] = status;
-      }
-
       const page = await firstValueFrom(
-        this.api.get<PaginatedData<RegearDeathView>>('api/regear/deaths', params),
+        this.api.get<PaginatedData<RegearDeathView>>(
+          'api/regear/deaths',
+          this.deathParams(this.tablePage(), this.tablePageSize()),
+        ),
       );
       this.deaths.set(page.items);
       this.totalItems.set(page.total_items);
@@ -803,7 +827,7 @@ export class Regears {
         this.summary.set(summary);
       }
 
-      await this.loadStats(params);
+      await this.loadStats(this.deathParams(1, STATS_FETCH_LIMIT));
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(this.t('common.error'));

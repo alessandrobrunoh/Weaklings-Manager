@@ -42,6 +42,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 type WarnsTab = 'register' | 'escalations';
 type WarnStatusFilter = 'all' | 'active' | 'revoked';
@@ -176,6 +177,8 @@ function toStatusFilter(value: string | null): WarnStatusFilter {
           [serverMode]="true"
           [hideSearch]="true"
           [totalItems]="warnTotal()"
+          exportFileName="warns"
+          [exportRows]="exportWarns"
           [pageSize]="20"
           [ariaLabel]="t('warns.register')"
           [mobileLayout]="'stack'"
@@ -226,6 +229,8 @@ function toStatusFilter(value: string | null): WarnStatusFilter {
           [serverMode]="true"
           [hideSearch]="true"
           [totalItems]="escalationTotal()"
+          exportFileName="warn-escalations"
+          [exportRows]="exportEscalations"
           [pageSize]="20"
           [ariaLabel]="t('warns.escalations')"
           [mobileLayout]="'stack'"
@@ -656,7 +661,10 @@ export class Warns {
     try {
       if (this.tab() === 'register') {
         const data = await firstValueFrom(
-          this.api.get<PaginatedData<WarnView>>('api/warns', this.warnParams()),
+          this.api.get<PaginatedData<WarnView>>(
+            'api/warns',
+            this.warnParams(this.query().page, this.query().pageSize),
+          ),
         );
         if (requestId !== this.loadId) {
           return;
@@ -667,7 +675,7 @@ export class Warns {
         const data = await firstValueFrom(
           this.api.get<PaginatedData<WarnEscalationView>>(
             'api/warns/escalations',
-            this.escalationParams(),
+            this.escalationParams(this.query().page, this.query().pageSize),
           ),
         );
         if (requestId !== this.loadId) {
@@ -688,12 +696,26 @@ export class Warns {
     }
   }
 
-  private warnParams(): Record<string, string | number | boolean> {
+  /** Every warn matching the current filters and sort, for the CSV export. */
+  protected readonly exportWarns = (): Promise<readonly WarnView[]> =>
+    fetchAllPages((page, limit) =>
+      firstValueFrom(this.api.get<PaginatedData<WarnView>>('api/warns', this.warnParams(page, limit))),
+    );
+
+  /** Every escalation matching the current sort, for the CSV export. */
+  protected readonly exportEscalations = (): Promise<readonly WarnEscalationView[]> =>
+    fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<WarnEscalationView>>(
+          'api/warns/escalations',
+          this.escalationParams(page, limit),
+        ),
+      ),
+    );
+
+  private warnParams(page: number, limit: number): Record<string, string | number | boolean> {
     const query = this.query();
-    const params: Record<string, string | number | boolean> = {
-      page: query.page,
-      limit: query.pageSize,
-    };
+    const params: Record<string, string | number | boolean> = { page, limit };
     const search = query.search.trim();
     if (search) {
       params['search'] = search;
@@ -713,12 +735,9 @@ export class Warns {
     return params;
   }
 
-  private escalationParams(): Record<string, string | number | boolean> {
+  private escalationParams(page: number, limit: number): Record<string, string | number | boolean> {
     const query = this.query();
-    const params: Record<string, string | number | boolean> = {
-      page: query.page,
-      limit: query.pageSize,
-    };
+    const params: Record<string, string | number | boolean> = { page, limit };
     if (query.sort) {
       params['sort'] = query.sort.columnKey;
       params['order'] = query.sort.direction;

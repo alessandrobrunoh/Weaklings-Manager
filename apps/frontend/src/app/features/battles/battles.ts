@@ -38,6 +38,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 import { battleOutcomeLabel, type BattleOutcomeType } from './battle-outcome';
 import { winRatePercent } from './battle-metrics';
 import {
@@ -212,6 +213,8 @@ function isOutcome(value: string): value is BattleOutcomeType {
           [hideSearch]="true"
           [ariaLabel]="t('battles.title')"
           emptyIcon="shield"
+          exportFileName="battles"
+          [exportRows]="exportAll"
           [rowClickable]="true"
           (rowClick)="openRow($event)"
           (retry)="refreshNow()"
@@ -412,17 +415,20 @@ export class Battles {
         key: 'time',
         label: 'common.date',
         sortable: true,
+        exportValue: (row) => this.rowStartTime(row),
       },
       {
         key: 'outcome',
         label: 'battles.outcome',
         sortable: true,
+        exportValue: (row) => this.rowOutcome(row).label,
       },
       {
         key: 'kills',
         label: 'battles.kills',
         sortable: true,
         align: 'right',
+        exportValue: (row) => row.total_kills,
       },
     );
     if (isPersonal) {
@@ -431,14 +437,33 @@ export class Battles {
         label: 'battles.deaths',
         sortable: true,
         align: 'right',
+        exportValue: (row) => (this.isBattle(row) ? this.battleDeaths(row) : null),
       });
     }
     columns.push(
-      { key: 'fame', label: 'battles.fame', sortable: true, align: 'right' },
-      { key: 'players', label: 'battles.participants', sortable: true, align: 'right' },
+      {
+        key: 'fame',
+        label: 'battles.fame',
+        sortable: true,
+        align: 'right',
+        exportValue: (row) => row.total_fame,
+      },
+      {
+        key: 'players',
+        label: 'battles.participants',
+        sortable: true,
+        align: 'right',
+        exportValue: (row) => row.total_players,
+      },
     );
     if (!isPersonal) {
-      columns.push({ key: 'segments', label: 'battles.segments', sortable: true, align: 'right' });
+      columns.push({
+        key: 'segments',
+        label: 'battles.segments',
+        sortable: true,
+        align: 'right',
+        exportValue: (row) => (this.isFight(row) ? row.segment_count : null),
+      });
     }
     return columns;
   });
@@ -622,32 +647,47 @@ export class Battles {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
+  /** Every battle or fight matching the current tab, search, outcome and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly BattleListRow[]> =>
+    fetchAllPages((page, limit) => {
+      const { path, params } = this.listRequest(page, limit);
+      return firstValueFrom(this.api.get<PaginatedData<BattleListRow>>(path, params));
+    });
+
+  /** Endpoint and query params for the current tab; `page` and `limit` vary per call. */
+  private listRequest(
+    page: number,
+    limit: number,
+  ): { path: string; params: Record<string, string | number> } {
+    const isGuildTab = this.tab() === 'guild';
+    const path = isGuildTab ? 'api/fights' : 'api/battles/me';
+    const query = this.query();
+    const params: Record<string, string | number> = { page, limit };
+    if (isGuildTab) {
+      params['min_players'] = 10;
+    }
+    if (query.search.trim()) {
+      params['search'] = query.search.trim();
+    }
+    if (query.sort) {
+      params['sort'] = query.sort.columnKey === 'time' ? 'start_time' : query.sort.columnKey;
+      params['order'] = query.sort.direction;
+    }
+    const outcome = this.outcome();
+    if (outcome) {
+      params['outcome'] = outcome;
+    }
+    return { path, params };
+  }
+
   private async load(): Promise<void> {
     const generation = ++this.loadGeneration;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
       const isGuildTab = this.tab() === 'guild';
-      const path = isGuildTab ? 'api/fights' : 'api/battles/me';
       const query = this.query();
-      const params: Record<string, string | number> = {
-        page: query.page,
-        limit: query.pageSize,
-      };
-      if (isGuildTab) {
-        params['min_players'] = 10;
-      }
-      if (query.search.trim()) {
-        params['search'] = query.search.trim();
-      }
-      if (query.sort) {
-        params['sort'] = query.sort.columnKey === 'time' ? 'start_time' : query.sort.columnKey;
-        params['order'] = query.sort.direction;
-      }
-      const outcome = this.outcome();
-      if (outcome) {
-        params['outcome'] = outcome;
-      }
+      const { path, params } = this.listRequest(query.page, query.pageSize);
       if (isGuildTab) {
         const response = await firstValueFrom(
           this.api.get<PaginatedData<FightListItem>>(path, params),
