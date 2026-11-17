@@ -14,6 +14,7 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 import { IntelFormat } from './intel-format';
 import { IntelPeriod, IntelPeriodState } from './intel-period';
 import { OutcomeChip } from './outcome-chip';
@@ -108,6 +109,8 @@ const OUTCOMES = ['victory', 'defeat', 'draw', 'unknown'] as const;
         [emptyLabel]="'intel.fi.empty'"
         [rowClickable]="true"
         (rowClick)="open($event)"
+        exportFileName="intel-fights"
+        [exportRows]="exportAll"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="date" let-row>
@@ -182,6 +185,14 @@ export class IntelFightsPage {
 
   protected readonly rows = computed<IntelFightRow[]>(() => this.data()?.items ?? []);
   protected readonly total = computed(() => this.data()?.total_items ?? 0);
+
+  /** Every fight matching the current filters and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly IntelFightRow[]> => {
+    const query = this.buildQuery();
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(this.intel.fights({ ...query, page, limit })),
+    );
+  };
   protected readonly opponentOptions = computed(() => this.data()?.opponents ?? []);
   protected readonly compOptions = computed(() => this.data()?.comps ?? []);
   protected readonly filtered = computed(

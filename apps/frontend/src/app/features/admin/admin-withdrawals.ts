@@ -153,6 +153,8 @@ const GROUPING_FETCH_LIMIT = 500;
         [emptyTitle]="t('admin.withdrawals.empty')"
         [emptySubtitle]="t('admin.withdrawals.emptyHint')"
         (rowClick)="onRowClick($event)"
+        exportFileName="withdrawals"
+        [exportRows]="exportAll"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="status" let-row>
@@ -443,7 +445,7 @@ export class AdminWithdrawals {
     { key: 'status', label: 'common.status', sortable: true, accessor: (row) => row.status },
     { key: 'amount', label: 'common.amount', sortable: true, accessor: (row) => row.amount, align: 'right' },
     { key: 'created_at', label: 'common.date', sortable: true, accessor: (row) => row.created_at },
-    { key: 'actions', label: 'common.actions', sortable: false, align: 'right', accessor: () => null },
+    { key: 'actions', label: 'common.actions', sortable: false, align: 'right' },
   ]);
 
   /** Row menu of a requested player: review opens the dialog, reject confirms. */
@@ -515,6 +517,18 @@ export class AdminWithdrawals {
     const start = (query.page - 1) * query.pageSize;
     return rows.slice(start, start + query.pageSize);
   });
+
+  /**
+   * Every grouped row matching the player search, for the CSV export. The rows are already
+   * in memory (see `GROUPING_FETCH_LIMIT`), so no extra request is needed.
+   */
+  protected readonly exportAll = async (): Promise<readonly WithdrawalQueueRow[]> => {
+    const search = this.tableQuery().search.trim().toLowerCase();
+    const rows = this.displayedRows();
+    return search
+      ? rows.filter((row) => row.to_username.toLowerCase().includes(search))
+      : rows;
+  };
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);

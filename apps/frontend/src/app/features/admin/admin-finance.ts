@@ -33,6 +33,7 @@ import {
   type StatTone,
   SummaryBand,
 } from '../../shared/components/summary-band/summary-band';
+import { downloadCsv, toCsv } from '../../shared/utils/csv';
 
 /** Preset windows, plus the escape hatch to arbitrary dates. */
 type PeriodId = '7' | '30' | '90' | 'custom';
@@ -1658,18 +1659,14 @@ export class AdminFinance {
       return;
     }
     const report = this.report();
-    const cell = (value: string | number): string => {
-      const text = String(value);
-      return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    };
-    const line = (...values: Array<string | number>): string => values.map(cell).join(',');
-    const rows: string[] = [];
+    const line = (...values: unknown[]): unknown[] => values;
+    const rows: unknown[][] = [];
 
     rows.push(line(this.t('bank.finance.heading')));
     if (report) {
       rows.push(line(this.t('bank.finance.periodLabel'), report.from, report.to));
     }
-    rows.push('');
+    rows.push([]);
 
     rows.push(line(this.t('bank.finance.positionTitle')));
     rows.push(
@@ -1706,7 +1703,7 @@ export class AdminFinance {
         bank.transaction_count,
       ),
     );
-    rows.push('');
+    rows.push([]);
 
     if (report) {
       rows.push(line(this.t('bank.finance.taxesTitle')));
@@ -1725,7 +1722,7 @@ export class AdminFinance {
       rows.push(
         line(this.t('bank.finance.treasuryNet'), report.economy.guild_treasury_net ?? 0),
       );
-      rows.push('');
+      rows.push([]);
 
       rows.push(line(this.t('bank.finance.weeklyFlow')));
       rows.push(
@@ -1762,7 +1759,7 @@ export class AdminFinance {
           ),
         );
       }
-      rows.push('');
+      rows.push([]);
 
       rows.push(line(this.t('bank.finance.memberLedgerTitle')));
       rows.push(
@@ -1791,7 +1788,7 @@ export class AdminFinance {
           ),
         );
       }
-      rows.push('');
+      rows.push([]);
     }
 
     const blocks: ReadonlyArray<[TranslationKey, readonly BankBreakdown[]]> = [
@@ -1811,16 +1808,10 @@ export class AdminFinance {
       for (const entry of lines) {
         rows.push(line(entry.label, toNumber(entry.total_amount), entry.transaction_count));
       }
-      rows.push('');
+      rows.push([]);
     }
 
-    const blob = new Blob([`﻿${rows.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `weaklings-finance-${toDateInput(new Date())}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`weaklings-finance-${toDateInput(new Date())}.csv`, toCsv([], rows));
     this.toasts.success(this.t('bank.finance.exported'));
   }
 

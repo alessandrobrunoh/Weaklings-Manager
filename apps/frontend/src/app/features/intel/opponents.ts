@@ -21,6 +21,7 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 import {
   Tabs,
   type TabOption,
@@ -79,6 +80,8 @@ const PAGE_LIMIT = 25;
             [emptyLabel]="'intel.opponents.empty.guilds'"
             [rowClickable]="true"
             (rowClick)="openGuild($event)"
+            exportFileName="enemy-guilds"
+            [exportRows]="exportGuilds"
             (pageChange)="onGuildsPageChange($event)"
           >
             <ng-template dataTableCell="name" let-row>
@@ -210,6 +213,8 @@ const PAGE_LIMIT = 25;
             [emptyLabel]="'intel.opponents.empty.players'"
             [rowClickable]="true"
             (rowClick)="openPlayer($event)"
+            exportFileName="enemy-players"
+            [exportRows]="exportPlayers"
             (pageChange)="onPlayersPageChange($event)"
           >
             <ng-template dataTableCell="name" let-row>
@@ -527,21 +532,65 @@ export class Opponents {
     return role.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   }
 
+  /** Every enemy guild matching the current search and sort, for the CSV export. */
+  protected readonly exportGuilds = (): Promise<readonly EnemyGuildSummary[]> => {
+    const event = this.guildsParams;
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(this.enemies.listGuilds(this.guildListParams(event, page, limit))),
+    );
+  };
+
+  /** Every enemy player matching the current search, guild and sort, for the CSV export. */
+  protected readonly exportPlayers = (): Promise<readonly EnemyPlayerSummary[]> => {
+    const event = this.playersParams;
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(this.enemies.listPlayers(this.playerListParams(event, page, limit))),
+    );
+  };
+
+  private guildListParams(
+    event: DataTablePageChange,
+    page: number,
+    limit: number,
+  ): ListEnemyGuildsParams {
+    const sort: ListEnemyGuildsParams['sort'] =
+      event.sort?.columnKey === 'name' ? 'name' : 'last_seen_at';
+    return {
+      page,
+      limit,
+      search: event.search.trim() || undefined,
+      sort,
+      order: event.sort?.direction,
+    };
+  }
+
+  private playerListParams(
+    event: DataTablePageChange,
+    page: number,
+    limit: number,
+  ): ListEnemyPlayersParams {
+    const sort: ListEnemyPlayersParams['sort'] =
+      event.sort?.columnKey === 'name' ? 'name' : 'last_seen_at';
+    const rawGuildId = this.guildIdFilter();
+    const guildId = rawGuildId === '' ? undefined : Number(rawGuildId);
+    return {
+      page,
+      limit,
+      search: event.search.trim() || undefined,
+      guild_id:
+        guildId !== undefined && Number.isSafeInteger(guildId) && guildId > 0 ? guildId : undefined,
+      sort,
+      order: event.sort?.direction,
+    };
+  }
+
   private async loadGuilds(): Promise<void> {
     this.guildsLoading.set(true);
     this.guildsFailed.set(false);
     try {
       const event = this.guildsParams;
-      const sort: ListEnemyGuildsParams['sort'] =
-        event.sort?.columnKey === 'name' ? 'name' : 'last_seen_at';
       const data = await firstValueFrom(
-        this.enemies.listGuilds({
-          page: event.page,
-          limit: event.pageSize,
-          search: event.search.trim() || undefined,
-          sort,
-          order: event.sort?.direction,
-        }),
+        this.enemies.listGuilds(this.guildListParams(event, event.page, event.pageSize)),
       );
       this.guilds.set(data.items);
       this.guildsTotal.set(data.total_items);
@@ -582,22 +631,8 @@ export class Opponents {
     this.playersFailed.set(false);
     try {
       const event = this.playersParams;
-      const sort: ListEnemyPlayersParams['sort'] =
-        event.sort?.columnKey === 'name' ? 'name' : 'last_seen_at';
-      const rawGuildId = this.guildIdFilter();
-      const guildId = rawGuildId === '' ? undefined : Number(rawGuildId);
       const data = await firstValueFrom(
-        this.enemies.listPlayers({
-          page: event.page,
-          limit: event.pageSize,
-          search: event.search.trim() || undefined,
-          guild_id:
-            guildId !== undefined && Number.isSafeInteger(guildId) && guildId > 0
-              ? guildId
-              : undefined,
-          sort,
-          order: event.sort?.direction,
-        }),
+        this.enemies.listPlayers(this.playerListParams(event, event.page, event.pageSize)),
       );
       this.players.set(data.items);
       this.playersTotal.set(data.total_items);

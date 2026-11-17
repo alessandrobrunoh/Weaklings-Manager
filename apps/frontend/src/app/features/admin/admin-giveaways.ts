@@ -38,6 +38,7 @@ import {
   normalizeAlbionItemQuality,
 } from '../../shared/data/albion-item-quality';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 interface PrizeDraft extends CreateGiveawayPrizeRequest {
   key: string;
@@ -102,6 +103,8 @@ const SEARCH_DEBOUNCE_MS = 250;
         [mobileLayout]="'stack'"
         [ariaLabel]="t('giveaways.logs')"
         emptyLabel="giveaways.empty"
+        exportFileName="giveaways"
+        [exportRows]="exportAll"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="title" let-row>
@@ -539,19 +542,39 @@ export class AdminGiveaways {
     }
   }
 
+  /** Every giveaway matching the current search and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly GiveawayView[]> => {
+    const query = this.tableQuery();
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<GiveawayView>>(
+          'api/giveaways',
+          this.listParams(query, page, limit),
+        ),
+      ),
+    );
+  };
+
+  private listParams(query: DataTablePageChange, page: number, limit: number) {
+    return {
+      page,
+      limit,
+      search: query.search.trim() || undefined,
+      sort: query.sort?.columnKey ?? 'created_at',
+      order: query.sort?.direction ?? 'desc',
+    };
+  }
+
   protected async loadLogs(): Promise<void> {
     this.logsLoading.set(true);
     this.logsFailed.set(false);
     try {
       const query = this.tableQuery();
       const page = await firstValueFrom(
-        this.api.get<PaginatedData<GiveawayView>>('api/giveaways', {
-          page: query.page,
-          limit: query.pageSize,
-          search: query.search.trim() || undefined,
-          sort: query.sort?.columnKey ?? 'created_at',
-          order: query.sort?.direction ?? 'desc',
-        }),
+        this.api.get<PaginatedData<GiveawayView>>(
+          'api/giveaways',
+          this.listParams(query, query.page, query.pageSize),
+        ),
       );
       this.rows.set(page.items);
       this.totalItems.set(page.total_items);

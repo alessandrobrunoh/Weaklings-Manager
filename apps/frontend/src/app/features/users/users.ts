@@ -39,6 +39,7 @@ import { SearchableSelect } from '../../shared/components/searchable-select/sear
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { searchAlbionPlayers } from '../../shared/albion/albion-player-search';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 import { BlockUserDialog } from './block-user-dialog';
 
@@ -156,6 +157,8 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         emptyIcon="users"
         [rowClickable]="true"
         (rowClick)="openMember($event)"
+        exportFileName="users"
+        [exportRows]="exportAll"
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="username" let-row>
@@ -348,7 +351,6 @@ export class Users {
     {
       key: 'actions',
       label: 'common.actions',
-      accessor: () => '',
     },
   ];
 
@@ -643,24 +645,37 @@ export class Users {
     }
   }
 
+  /** Every user matching the current search, role, status and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly UserProfile[]> =>
+    fetchAllPages((page, limit) =>
+      firstValueFrom(this.api.get<PaginatedData<UserProfile>>('api/users', this.userParams(page, limit))),
+    );
+
+  private userParams(page: number, limit: number) {
+    const sort = this.tableSort();
+    const role = this.roleFilter().trim();
+    const status = this.canBlock() ? this.statusFilter().trim() : undefined;
+    return {
+      page,
+      limit,
+      username: this.tableSearch().trim() || undefined,
+      role: role || undefined,
+      blocked: status === 'blocked' ? true : status === 'active' ? false : undefined,
+      sort: sort?.columnKey,
+      order: sort?.direction,
+    };
+  }
+
   protected async load(): Promise<void> {
     const request = ++this.loadRequest;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const sort = this.tableSort();
-      const role = this.roleFilter().trim();
-      const status = this.canBlock() ? this.statusFilter().trim() : undefined;
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<UserProfile>>('api/users', {
-          page: this.tablePage(),
-          limit: this.tablePageSize(),
-          username: this.tableSearch().trim() || undefined,
-          role: role || undefined,
-          blocked: status === 'blocked' ? true : status === 'active' ? false : undefined,
-          sort: sort?.columnKey,
-          order: sort?.direction,
-        }),
+        this.api.get<PaginatedData<UserProfile>>(
+          'api/users',
+          this.userParams(this.tablePage(), this.tablePageSize()),
+        ),
       );
       if (request !== this.loadRequest) {
         return;

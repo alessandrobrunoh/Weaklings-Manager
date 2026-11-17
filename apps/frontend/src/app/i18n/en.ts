@@ -3407,6 +3407,7 @@ export const en = {
   'ui.table.noMatches': 'No rows match the current filters.',
   'ui.table.region': 'Table',
   'ui.table.pageN': 'Page {page}',
+  'dataTable.exportCsv': 'Export CSV',
   'ui.errorState.notFound': 'Not found',
   'ui.errorState.notFoundHint': 'It may have been removed, or the link is wrong.',
   'ui.select.noOptions': 'No options',

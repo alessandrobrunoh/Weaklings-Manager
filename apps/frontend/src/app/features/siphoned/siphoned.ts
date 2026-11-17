@@ -34,6 +34,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 type SiphonedTab = 'balances' | 'entries' | 'batches';
 type BalanceStatus = 'all' | 'debt' | 'credit';
@@ -161,6 +162,7 @@ const STATS_FETCH_LIMIT = 1000;
 
         <app-data-table
           [columns]="balanceColumns"
+          exportFileName="siphoned-balances"
           [rows]="visibleBalances()"
           [loading]="loading()"
           [error]="loadFailed()"
@@ -225,6 +227,8 @@ const STATS_FETCH_LIMIT = 1000;
           [totalItems]="entryTotal()"
           [pageSize]="10"
           emptyIcon="activity"
+          exportFileName="siphoned-entries"
+          [exportRows]="exportEntries"
           (pageChange)="onEntriesChange($event)"
         >
           <ng-template dataTableCell="occurred_at" let-row>
@@ -253,6 +257,7 @@ const STATS_FETCH_LIMIT = 1000;
         <p class="hint">{{ t('siphoned.batchesHint') }}</p>
         <app-data-table
           [columns]="batchColumns()"
+          exportFileName="siphoned-batches"
           [rows]="batches()"
           [loading]="loading()"
           [error]="loadFailed()"
@@ -651,7 +656,7 @@ export class Siphoned {
       accessor: (row) => row.last_seen,
       comparator: (a, b) => a.last_seen.localeCompare(b.last_seen),
     },
-    { key: 'actions', label: 'common.actions', accessor: () => '' },
+    { key: 'actions', label: 'common.actions' },
   ];
 
   protected readonly entryColumns = computed<DataTableColumn<SiphonedEntryView>[]>(() => {
@@ -694,7 +699,6 @@ export class Siphoned {
         label: 'common.actions',
         sortable: false,
         align: 'right',
-        accessor: () => null,
       });
     }
     return columns;
@@ -731,7 +735,6 @@ export class Siphoned {
         key: 'actions',
         label: 'common.actions',
         sortable: false,
-        accessor: () => null,
       });
     }
     return columns;
@@ -1145,6 +1148,39 @@ export class Siphoned {
     }
   }
 
+  /** Every ledger entry matching the current search, reason and sort, for the CSV export. */
+  protected readonly exportEntries = (): Promise<readonly SiphonedEntryView[]> => {
+    const query = this.entryQuery();
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<SiphonedEntryView>>(
+          'api/siphoned/entries',
+          this.entryParams(query, page, limit),
+        ),
+      ),
+    );
+  };
+
+  private entryParams(
+    query: DataTablePageChange,
+    page: number,
+    limit: number,
+  ): Record<string, string | number | boolean> {
+    const params: Record<string, string | number | boolean> = { page, limit };
+    if (query.search.trim()) {
+      params['search'] = query.search.trim();
+    }
+    if (query.sort) {
+      params['sort'] = query.sort.columnKey;
+      params['order'] = query.sort.direction;
+    }
+    const reason = query.columnFilters['reason'];
+    if (reason) {
+      params['reason'] = reason;
+    }
+    return params;
+  }
+
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
@@ -1165,23 +1201,11 @@ export class Siphoned {
 
       if (this.tab() === 'entries') {
         const query = this.entryQuery();
-        const params: Record<string, string | number | boolean> = {
-          page: query.page,
-          limit: query.pageSize,
-        };
-        if (query.search.trim()) {
-          params['search'] = query.search.trim();
-        }
-        if (query.sort) {
-          params['sort'] = query.sort.columnKey;
-          params['order'] = query.sort.direction;
-        }
-        const reason = query.columnFilters['reason'];
-        if (reason) {
-          params['reason'] = reason;
-        }
         const page = await firstValueFrom(
-          this.api.get<PaginatedData<SiphonedEntryView>>('api/siphoned/entries', params),
+          this.api.get<PaginatedData<SiphonedEntryView>>(
+            'api/siphoned/entries',
+            this.entryParams(query, query.page, query.pageSize),
+          ),
         );
         this.entries.set(page.items);
         this.entryTotal.set(page.total_items);

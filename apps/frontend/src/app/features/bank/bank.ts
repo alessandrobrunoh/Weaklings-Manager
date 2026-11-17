@@ -43,6 +43,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 export interface WithdrawalSelectableGroup {
   readonly key: string;
@@ -173,6 +174,8 @@ const SEARCH_DEBOUNCE_MS = 300;
             [emptyLabel]="'bank.transactions.empty'"
             emptyIcon="bank"
             mobileLayout="stack"
+            exportFileName="bank-transactions"
+            [exportRows]="exportAll"
             (pageChange)="onTableChange($event)"
           >
             <ng-template dataTableCell="transaction" let-row>
@@ -648,6 +651,7 @@ export class Bank {
         label: 'bank.col.movement',
         sortable: false,
         accessor: (row) => row.id,
+        exportValue: (row) => `${this.transactionTypeLabel(row)} #${row.id}`,
       },
       ...(this.isAlliance()
         ? [
@@ -988,29 +992,50 @@ export class Bank {
     }
   }
 
+  /** Every transaction matching the current search, status and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly TransactionView[]> => {
+    const query = this.tableQuery();
+    return fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<TransactionView>>(
+          'api/bank/transactions',
+          this.transactionParams(query, page, limit),
+        ),
+      ),
+    );
+  };
+
+  private transactionParams(
+    query: DataTablePageChange,
+    page: number,
+    limit: number,
+  ): Record<string, string | number | boolean> {
+    const params: Record<string, string | number | boolean> = { page, limit };
+    const search = this.search().trim();
+    if (search) {
+      params['search'] = search;
+    }
+    if (query.sort) {
+      params['sort'] = query.sort.columnKey;
+      params['order'] = query.sort.direction;
+    }
+    const status = this.status();
+    if (status) {
+      params['status'] = status;
+    }
+    return params;
+  }
+
   protected async loadTransactions(): Promise<void> {
     this.loading.set(this.transactions().length === 0);
     this.transactionsLoadFailed.set(false);
     try {
       const query = this.tableQuery();
-      const params: Record<string, string | number | boolean> = {
-        page: query.page,
-        limit: query.pageSize,
-      };
-      const search = this.search().trim();
-      if (search) {
-        params['search'] = search;
-      }
-      if (query.sort) {
-        params['sort'] = query.sort.columnKey;
-        params['order'] = query.sort.direction;
-      }
-      const status = this.status();
-      if (status) {
-        params['status'] = status;
-      }
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', params),
+        this.api.get<PaginatedData<TransactionView>>(
+          'api/bank/transactions',
+          this.transactionParams(query, query.page, query.pageSize),
+        ),
       );
       this.transactions.set(data.items);
       this.transactionTotal.set(data.total_items);

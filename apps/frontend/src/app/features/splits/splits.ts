@@ -54,6 +54,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { Tabs, type TabOption } from '../../shared/components/tabs/tabs';
 import { actionablePendingSplits, canActOnSplit } from './split-access';
+import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 
 const SORT_WHITELIST = new Set(['created_at', 'status', 'note']);
 const DEFAULT_SPLIT_FEE = 15;
@@ -361,6 +362,8 @@ function newSplitBag(amount = 0): SplitBagDraft {
         [columns]="columns()"
         [rows]="splits()"
         [serverMode]="true"
+        [exportRows]="exportAll"
+        exportFileName="splits"
         [totalItems]="totalItems()"
         [pageSize]="pageSize()"
         [loading]="loading()"
@@ -1211,7 +1214,7 @@ export class Splits {
         label: 'splits.list.createdBy',
         accessor: (row) => row.created_by_username,
       },
-      { key: 'actions', label: 'common.actions', align: 'right', accessor: () => null },
+      { key: 'actions', label: 'common.actions', align: 'right' },
     ];
   });
 
@@ -1808,34 +1811,46 @@ export class Splits {
     }
   }
 
+  /** Every split matching the current filters and sort, for the CSV export. */
+  protected readonly exportAll = (): Promise<readonly SplitSummary[]> =>
+    fetchAllPages((page, limit) =>
+      firstValueFrom(
+        this.api.get<PaginatedData<SplitSummary>>('api/splits', this.splitParams(page, limit)),
+      ),
+    );
+
+  private splitParams(page: number, limit: number): Record<string, string | number> {
+    const params: Record<string, string | number> = { page, limit };
+    if (this.statusFilter()) {
+      params['status'] = this.statusFilter();
+    }
+    if (this.islandFilter()) {
+      params['island_id'] = Number(this.islandFilter());
+    }
+    if (this.searchQuery()) {
+      params['search'] = this.searchQuery();
+    }
+    if (this.showArchived() && this.canDelete()) {
+      params['archived'] = 'true';
+    }
+    const sort = this.sort();
+    if (sort) {
+      params['sort'] = sort.columnKey;
+      params['order'] = sort.direction;
+    }
+    return params;
+  }
+
   protected async load(): Promise<void> {
     const request = ++this.loadRequest;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const params: Record<string, string | number> = {
-        page: this.page(),
-        limit: this.pageSize(),
-      };
-      if (this.statusFilter()) {
-        params['status'] = this.statusFilter();
-      }
-      if (this.islandFilter()) {
-        params['island_id'] = Number(this.islandFilter());
-      }
-      if (this.searchQuery()) {
-        params['search'] = this.searchQuery();
-      }
-      if (this.showArchived() && this.canDelete()) {
-        params['archived'] = 'true';
-      }
-      const sort = this.sort();
-      if (sort) {
-        params['sort'] = sort.columnKey;
-        params['order'] = sort.direction;
-      }
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<SplitSummary>>('api/splits', params),
+        this.api.get<PaginatedData<SplitSummary>>(
+          'api/splits',
+          this.splitParams(this.page(), this.pageSize()),
+        ),
       );
       if (request !== this.loadRequest) {
         return;
