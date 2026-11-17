@@ -1083,6 +1083,238 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bank/log/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List bank log imports */
+        get: operations["bank_log_batches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a bank log import
+         * @description Deletes the rows that import stored and their links. Refused when one of them created a transaction. The reminder clock follows the remaining imports.
+         */
+        delete: operations["bank_log_delete_batch"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List bank log rows
+         * @description Newest first, with each row's confirmed links and suggestions. Filters: UTC day range, status, category, player or reason text.
+         */
+        get: operations["bank_log_list_entries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/entries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a bank log row */
+        get: operations["bank_log_get_entry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a bank log row
+         * @description `explained: true` needs a note. Clearing the note of an officer-explained row un-explains it.
+         */
+        patch: operations["bank_log_update_entry"];
+        trace?: never;
+    };
+    "/api/bank/log/entries/{id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Link candidates for a bank log row
+         * @description For a withdrawal: payouts within 10 days, closest amount first. For a deposit: splits created up to 60 days before, with bags value and expected sale.
+         */
+        get: operations["bank_log_candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/entries/{id}/transaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a transaction from a bank log row
+         * @description A withdrawal row becomes a paid-out row for the member; a deposit row becomes the member's donation. The row is linked to it. A row creates at most one transaction, also after that transaction is deleted.
+         */
+        post: operations["bank_log_create_transaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import the Albion guild bank log
+         * @description Stores the lines of the in-game JSON export (`Date`, `Player`, `Reason`, `Amount`; UTC). Identical lines in one export are numbered, so re-importing an overlapping export adds only the new lines while a real second identical movement is kept. Rows whose reason is not Deposit/Withdrawal are guild expenses, explained automatically. Suggestions are recomputed afterwards.
+         */
+        post: operations["bank_log_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link bank log rows by hand
+         * @description Creates a confirmed link between one or more rows and transactions and/or splits. Suggestions that share a row or a transaction are dropped.
+         */
+        post: operations["bank_log_create_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/links/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a bank log link */
+        delete: operations["bank_log_delete_link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/links/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a bank log suggestion */
+        post: operations["bank_log_confirm_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/suggestions/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recompute bank log suggestions
+         * @description Drops every unconfirmed link and proposes new ones for the rows that are neither linked nor explained. Confirmed links are kept.
+         */
+        post: operations["bank_log_refresh_suggestions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank/log/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bank log period summary
+         * @description Per category: game total, linked, explained and open. Also the Manager's own payout total for the period and the import/reminder status. Defaults to the last 28 UTC days.
+         */
+        get: operations["bank_log_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bank/transactions": {
         parameters: {
             query?: never;
@@ -6433,6 +6665,54 @@ export interface components {
              */
             status: string;
         };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogBatchView[] }`. */
+        ApiResponseBankLogBatchViewList: {
+            data: components["schemas"]["BankLogBatchView"][];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogCandidateView[] }`. */
+        ApiResponseBankLogCandidateViewList: {
+            data: components["schemas"]["BankLogCandidateView"][];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogDeleteBatchResult }`. */
+        ApiResponseBankLogDeleteBatchResult: {
+            data: components["schemas"]["BankLogDeleteBatchResult"];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogEntryView }`. */
+        ApiResponseBankLogEntryView: {
+            data: components["schemas"]["BankLogEntryView"];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogImportResult }`. */
+        ApiResponseBankLogImportResult: {
+            data: components["schemas"]["BankLogImportResult"];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogLinkView }`. */
+        ApiResponseBankLogLinkView: {
+            data: components["schemas"]["BankLogLinkView"];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogRefreshResult }`. */
+        ApiResponseBankLogRefreshResult: {
+            data: components["schemas"]["BankLogRefreshResult"];
+            /** @example success */
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: BankLogSummary }`. */
+        ApiResponseBankLogSummary: {
+            data: components["schemas"]["BankLogSummary"];
+            /** @example success */
+            status: string;
+        };
         /** @description `OpenAPI` schema wrapper for `BatchSummary` list response (siphoned module). */
         ApiResponseBatchSummaryList: {
             /** @description The ingestion batch list payload. */
@@ -6887,6 +7167,12 @@ export interface components {
         };
         ApiResponsePaginatedAuditLogs: {
             data: components["schemas"]["PaginatedAuditLogResponse"];
+            status: string;
+        };
+        /** @description `OpenAPI` wrapper: `{ status, data: { items: BankLogEntryView[], ... } }`. */
+        ApiResponsePaginatedBankLogEntryView: {
+            data: components["schemas"]["PaginatedBankLogEntryView"];
+            /** @example success */
             status: string;
         };
         /** @description `OpenAPI` schema wrapper for the paginated `BattleSummary` response (guild-scoped). */
@@ -7930,6 +8216,12 @@ export interface components {
              *     same as the deployment env vars this table replaced.
              */
             data: {
+                /** @description UTC day of the last import reminder sent. */
+                bank_log_reminded_on?: string | null;
+                /** @description Why the last import reminder could not be sent; `None` after a successful one. */
+                bank_log_reminder_error?: string | null;
+                /** @description Comma-separated in-game names of the shared seller accounts whose deposits are loot sales. */
+                bank_log_seller_accounts: string;
                 /**
                  * @description Discord snowflake linked to the unique gestionale `is_default` role, if any.
                  *
@@ -8001,6 +8293,8 @@ export interface components {
                 discord_audit_log_channel_id?: string | null;
                 /** @description Role assigned automatically to human members joining the Discord guild. */
                 discord_auto_role_id?: string | null;
+                /** @description Channel where the backend reminds the staff role to import the Albion bank log. */
+                discord_bank_log_channel_id?: string | null;
                 /** @description Channel where the bot/poller announces new battles. */
                 discord_battles_channel_id?: string | null;
                 /** @description Channel where call-to-arms events get their urgent announcement. */
@@ -8044,6 +8338,11 @@ export interface components {
                 discord_tickets_welcome_title: string;
                 /** @description Channel that receives transaction (bank ledger) activity. */
                 discord_transaction_spam_channel_id?: string | null;
+                /**
+                 * @description Albion market tax percentage copied onto new splits; applies to the loot value only.
+                 * @example 6.00
+                 */
+                market_tax_percent: string;
                 /**
                  * Format: int32
                  * @description Default trial length in days; a manager can still move a single trial's deadline.
@@ -9862,6 +10161,253 @@ export interface components {
              * @description Number of ledger rows in this group.
              */
             transaction_count: number;
+        };
+        /** @description One import batch. */
+        BankLogBatchView: {
+            batch_id: string;
+            first_at: string;
+            imported_at: string;
+            /** Format: int64 */
+            imported_by?: number | null;
+            last_at: string;
+            /** Format: int64 */
+            rows: number;
+        };
+        /** @description A Manager record an officer can link a row to by hand. */
+        BankLogCandidateView: {
+            /** @description Payout amount, or for splits the bags value / expected sale (see `split_*`). */
+            amount?: string | null;
+            at?: string | null;
+            /** @description `transaction` or `split`. */
+            kind: string;
+            label: string;
+            /** @description Already part of a confirmed link. */
+            linked: boolean;
+            member_username?: string | null;
+            split_bags_value?: string | null;
+            split_expected_sale?: string | null;
+            /** Format: int64 */
+            split_id?: number | null;
+            /** Format: int64 */
+            transaction_id?: number | null;
+        };
+        /** @description Totals of one category over a period. */
+        BankLogCategoryTotals: {
+            category: string;
+            /** @description Sum of the rows marked explained. */
+            explained_total: string;
+            /** @description Sum of the game rows (signed). */
+            game_total: string;
+            /** @description Sum of the rows in confirmed links. */
+            linked_total: string;
+            /** @description What is neither linked nor explained. */
+            open_total: string;
+            /** Format: int64 */
+            rows: number;
+        };
+        /** @description `POST /api/bank/log/entries/{id}/transaction`. */
+        BankLogCreateEntryTransactionRequest: {
+            /** @description Positive silver amount. Defaults to the row amount without sign. */
+            amount?: string | null;
+            /**
+             * Format: int64
+             * @description Member the transaction belongs to.
+             */
+            to_user_id: number;
+        };
+        /** @description `POST /api/bank/log/links`: a manual, confirmed link. */
+        BankLogCreateLinkRequest: {
+            entry_ids: number[];
+            /** @description `payout`, `bags`, `loot_sale` or `manual` (default). */
+            kind?: string | null;
+            split_ids?: number[];
+            transaction_ids?: number[];
+        };
+        /** @description `DELETE /api/bank/log/batches/{batch_id}`. */
+        BankLogDeleteBatchResult: {
+            /**
+             * Format: int64
+             * @description Rows deleted.
+             */
+            deleted: number;
+        };
+        /** @description One stored log row with its links. */
+        BankLogEntryView: {
+            amount: string;
+            batch_id: string;
+            category: string;
+            /** Format: int64 */
+            created_transaction_id?: number | null;
+            explained_at?: string | null;
+            /** Format: int64 */
+            id: number;
+            imported_at: string;
+            /** @description Confirmed links first, then suggestions. */
+            links: components["schemas"]["BankLogLinkView"][];
+            note?: string | null;
+            occurred_at: string;
+            /**
+             * Format: int32
+             * @description 1 for the first identical line of a minute, 2 for the second, ...
+             */
+            occurrence: number;
+            player_name: string;
+            reason: string;
+            /** @description `unmatched`, `suggested`, `matched` or `explained`. */
+            status: string;
+        };
+        /** @description Body of `POST /api/bank/log/import`. */
+        BankLogImportRequest: {
+            /** @description Every line of the export, in any order. */
+            rows: components["schemas"]["BankLogImportRow"][];
+        };
+        /** @description What an import stored. */
+        BankLogImportResult: {
+            /**
+             * Format: int64
+             * @description Lines already stored by an earlier import.
+             */
+            already_stored: number;
+            /** @description Id shared by the rows this import stored (empty when nothing new was stored). */
+            batch_id: string;
+            /**
+             * Format: int64
+             * @description Stored rows that are a second (or later) identical line of the same minute.
+             */
+            duplicates_kept: number;
+            /**
+             * Format: int64
+             * @description Rows stored now.
+             */
+            inserted: number;
+            /**
+             * Format: int64
+             * @description Suggestions proposed after the import.
+             */
+            suggestions: number;
+            /**
+             * Format: int64
+             * @description Lines in the request.
+             */
+            total: number;
+        };
+        /**
+         * @description One line of the Albion guild bank log, as the in-game JSON export writes it.
+         *
+         *     The export keys are capitalised (`Date`, `Player`, `Reason`, `Amount`); lowercase keys are
+         *     accepted too. `Date` is UTC, `YYYY-MM-DD HH:MM:SS`. `Amount` is a signed integer string.
+         * @example {
+         *       "Amount": "-7414881",
+         *       "Date": "2026-11-16 23:10:00",
+         *       "Player": "Galvdon",
+         *       "Reason": "Withdrawal"
+         *     }
+         */
+        BankLogImportRow: {
+            /** @description Signed silver amount, as a string or a number. */
+            amount: string;
+            date: string;
+            player: string;
+            reason: string;
+        };
+        /** @description Import status shown above the page and used by the reminder. */
+        BankLogImportStatus: {
+            /**
+             * Format: int64
+             * @description Whole UTC days since the last import.
+             */
+            days_since_import?: number | null;
+            /**
+             * Format: int64
+             * @description Days before the oldest unimported rows start leaving the 28-day game log.
+             */
+            days_until_loss?: number | null;
+            last_import_at?: string | null;
+            last_reminded_on?: string | null;
+            /**
+             * Format: int64
+             * @description Reminders start on this day after the last import.
+             */
+            reminder_after_days: number;
+            reminder_channel_set: boolean;
+            reminder_error?: string | null;
+            staff_role_set: boolean;
+        };
+        /** @description A Manager record a log row is linked to. */
+        BankLogLinkTargetView: {
+            /** @description The amount this target stands for (payout amount, bags value, expected sale). */
+            amount?: string | null;
+            /** @description When the Manager record happened (payout time, split creation). */
+            at?: string | null;
+            /** @description Short label (`Payout to Alice`, `Split #12 bags`). `Removed` when the record is gone. */
+            label: string;
+            /** @description Member who received a payout. */
+            member_username?: string | null;
+            /**
+             * Format: int64
+             * @description Split, for bags and loot sales.
+             */
+            split_id?: number | null;
+            /**
+             * Format: int64
+             * @description Bank transaction, for payouts and created transactions.
+             */
+            transaction_id?: number | null;
+        };
+        /** @description A link between log rows and Manager records. */
+        BankLogLinkView: {
+            /** @description `false` while it is a suggestion. */
+            confirmed: boolean;
+            /** @description Sum of the log rows in the link (signed). */
+            entries_total: string;
+            /** @description Every log row in the link. */
+            entry_ids: number[];
+            /** Format: int64 */
+            id: number;
+            /** @description `payout`, `bags`, `loot_sale` or `manual`. */
+            kind: string;
+            targets: components["schemas"]["BankLogLinkTargetView"][];
+        };
+        /** @description `POST /api/bank/log/suggestions/refresh`. */
+        BankLogRefreshResult: {
+            /**
+             * Format: int64
+             * @description Suggestions proposed.
+             */
+            suggestions: number;
+        };
+        /** @description `GET /api/bank/log/summary`. */
+        BankLogSummary: {
+            categories: components["schemas"]["BankLogCategoryTotals"][];
+            /** Format: int64 */
+            explained: number;
+            from: string;
+            game_in: string;
+            /** @description Game in + out. */
+            game_net: string;
+            game_out: string;
+            /** @description Game withdrawals categorised as payouts in the period (as a positive number). */
+            game_payouts: string;
+            import: components["schemas"]["BankLogImportStatus"];
+            /** @description Payouts the Manager accepted in the period (its own total, independent of the links). */
+            manager_payouts: string;
+            /** Format: int64 */
+            matched: number;
+            seller_accounts: string[];
+            /** Format: int64 */
+            suggested: number;
+            to: string;
+            /** Format: int64 */
+            unmatched: number;
+        };
+        /** @description `PATCH /api/bank/log/entries/{id}`. */
+        BankLogUpdateEntryRequest: {
+            /** @description New category. */
+            category?: string | null;
+            /** @description `true` marks the row explained (needs a note), `false` clears it. */
+            explained?: boolean | null;
+            /** @description New note. Empty clears it (and un-explains the row). */
+            note?: string | null;
         };
         /** @description One split that could not be completed, and why. */
         BatchFailure: {
@@ -11694,7 +12240,7 @@ export interface components {
              */
             event_id?: number | null;
             /**
-             * @description The percentage of the estimated market value retained as a split fee. Defaults to 20%.
+             * @description The percentage retained as a split fee. Defaults to the guild's default split fee.
              * @example 20.00
              */
             fee?: string | null;
@@ -11704,6 +12250,11 @@ export interface components {
              * @example 10
              */
             island_tab_id: number;
+            /**
+             * @description Albion market tax percentage on the loot value. Defaults to the guild's market tax setting.
+             * @example 6.00
+             */
+            market_tax?: string | null;
             /**
              * @description An optional free-text note (e.g. boss/item name).
              * @example Ancient Avalon boss drop
@@ -14293,6 +14844,12 @@ export interface components {
          *     same as the deployment env vars this table replaced.
          */
         GuildSettingsView: {
+            /** @description UTC day of the last import reminder sent. */
+            bank_log_reminded_on?: string | null;
+            /** @description Why the last import reminder could not be sent; `None` after a successful one. */
+            bank_log_reminder_error?: string | null;
+            /** @description Comma-separated in-game names of the shared seller accounts whose deposits are loot sales. */
+            bank_log_seller_accounts: string;
             /**
              * @description Discord snowflake linked to the unique gestionale `is_default` role, if any.
              *
@@ -14364,6 +14921,8 @@ export interface components {
             discord_audit_log_channel_id?: string | null;
             /** @description Role assigned automatically to human members joining the Discord guild. */
             discord_auto_role_id?: string | null;
+            /** @description Channel where the backend reminds the staff role to import the Albion bank log. */
+            discord_bank_log_channel_id?: string | null;
             /** @description Channel where the bot/poller announces new battles. */
             discord_battles_channel_id?: string | null;
             /** @description Channel where call-to-arms events get their urgent announcement. */
@@ -14407,6 +14966,11 @@ export interface components {
             discord_tickets_welcome_title: string;
             /** @description Channel that receives transaction (bank ledger) activity. */
             discord_transaction_spam_channel_id?: string | null;
+            /**
+             * @description Albion market tax percentage copied onto new splits; applies to the loot value only.
+             * @example 6.00
+             */
+            market_tax_percent: string;
             /**
              * Format: int32
              * @description Default trial length in days; a manager can still move a single trial's deadline.
@@ -15558,6 +16122,18 @@ export interface components {
             items: components["schemas"]["AuditLogResponse"][];
             /** Format: int64 */
             per_page: number;
+            /** Format: int64 */
+            total_items: number;
+            /** Format: int64 */
+            total_pages: number;
+        };
+        /** @description A page of log rows. */
+        PaginatedBankLogEntryView: {
+            /** Format: int64 */
+            current_page: number;
+            items: components["schemas"]["BankLogEntryView"][];
+            /** Format: int64 */
+            limit: number;
             /** Format: int64 */
             total_items: number;
             /** Format: int64 */
@@ -17897,6 +18473,11 @@ export interface components {
              */
             completed_count: number;
             /**
+             * @description Guild market tax percentage copied onto newly created splits.
+             * @example 6.00
+             */
+            default_market_tax: string;
+            /**
              * @description Default fee percentage for newly created splits.
              * @example 20.00
              */
@@ -18026,6 +18607,12 @@ export interface components {
             island_tab_id?: number | null;
             /** @description Tab display name. */
             island_tab_name?: string | null;
+            /**
+             * @description Albion market tax percentage taken from the loot value before the fee (0 on splits created
+             *     before the tax existed).
+             * @example 6.00
+             */
+            market_tax: string;
             /**
              * @description The net value distributed among participants, set only once completed.
              * @example 75.00
@@ -18697,6 +19284,8 @@ export interface components {
          *     empty), so there is no real case where a client needs `null` specifically.
          */
         UpdateGuildSettingsRequest: {
+            /** @description Comma-separated seller account names; empty clears them. */
+            bank_log_seller_accounts?: string | null;
             /**
              * @description New default split fee percentage. Must be between 0 and 100.
              * @example 20.00
@@ -18762,6 +19351,8 @@ export interface components {
             discord_audit_log_channel_id?: string | null;
             /** @description Base guild role assigned on Discord join. Omit to leave unchanged; send `""` to clear. */
             discord_auto_role_id?: string | null;
+            /** @description Channel for the Albion bank log import reminder; empty clears it. */
+            discord_bank_log_channel_id?: string | null;
             /** @description New value. Omit to leave unchanged; send `""` to clear. */
             discord_battles_channel_id?: string | null;
             /** @description New value. Omit to leave unchanged; send `""` to clear. */
@@ -18805,6 +19396,11 @@ export interface components {
             discord_tickets_welcome_title?: string | null;
             /** @description New value. Omit to leave unchanged; send `""` to clear. */
             discord_transaction_spam_channel_id?: string | null;
+            /**
+             * @description New Albion market tax percentage for new splits. Must be between 0 and 100.
+             * @example 6.00
+             */
+            market_tax_percent?: string | null;
         };
         /** @description Request body to rename an island or move it to another city. */
         UpdateIslandRequest: {
@@ -19036,6 +19632,11 @@ export interface components {
              * @example 10
              */
             island_tab_id?: number | null;
+            /**
+             * @description New market tax percentage. Omit to keep the current value.
+             * @example 6.00
+             */
+            market_tax?: string | null;
             /** @description New free-text note. Send an empty string to clear it. */
             note?: string | null;
             /**
@@ -22311,6 +22912,600 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponseGuildBankSummary"];
+                };
+            };
+        };
+    };
+    bank_log_batches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Imports, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogBatchViewList"];
+                };
+            };
+            /** @description Requires bank.log.view on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_delete_batch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import id */
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rows deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogDeleteBatchResult"];
+                };
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such import */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A row created a transaction */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_list_entries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page: number | null;
+                limit: number | null;
+                /** @description Inclusive UTC day, `YYYY-MM-DD`. */
+                from: string | null;
+                /** @description Inclusive UTC day, `YYYY-MM-DD`. */
+                to: string | null;
+                status: string | null;
+                category: string | null;
+                /** @description Matches player name or reason. */
+                search: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponsePaginatedBankLogEntryView"];
+                };
+            };
+            /** @description Unknown filter value */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Requires bank.log.view on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_get_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Row id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogEntryView"];
+                };
+            };
+            /** @description Requires bank.log.view on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such row */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_update_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Row id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Fields to change. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankLogUpdateEntryRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated row */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogEntryView"];
+                };
+            };
+            /** @description Unknown category or missing note */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such row */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_candidates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Row id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Candidates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogCandidateViewList"];
+                };
+            };
+            /** @description Requires bank.log.view on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such row */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_create_transaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Row id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Member and amount. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankLogCreateEntryTransactionRequest"];
+            };
+        };
+        responses: {
+            /** @description The linked row */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogEntryView"];
+                };
+            };
+            /** @description Requires bank.log.manage and bank.transactions.create */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such row or member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The row already created a transaction or is linked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The export lines. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankLogImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Import counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogImportResult"];
+                };
+            };
+            /** @description A line cannot be read */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A concurrent import stored the same rows */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_create_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rows and records. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankLogCreateLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description The link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogLinkView"];
+                };
+            };
+            /** @description Empty link or unknown kind */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A row or record does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A row or transaction is already linked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_delete_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Link id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such link */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_confirm_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Link id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The confirmed link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogLinkView"];
+                };
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such link */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Already confirmed, or a row or transaction is linked elsewhere */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_refresh_suggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Suggestions proposed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogRefreshResult"];
+                };
+            };
+            /** @description Requires bank.log.manage on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    bank_log_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Inclusive UTC day, `YYYY-MM-DD`. Defaults to 28 days ago. */
+                from: string | null;
+                /** @description Inclusive UTC day, `YYYY-MM-DD`. Defaults to today. */
+                to: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponseBankLogSummary"];
+                };
+            };
+            /** @description Bad day */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Requires bank.log.view on a guild */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
