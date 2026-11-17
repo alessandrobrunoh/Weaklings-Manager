@@ -2556,10 +2556,11 @@ export const en = {
   'siphoned.settle.debt': '{player} owes {amount} Siphoned.',
   'siphoned.settle.price': 'Albion Market price: {price} silver.',
   'siphoned.settle.expires': 'Quote expires at {time}.',
-  'siphoned.settle.confirm': 'Confirm transaction',
+  'siphoned.settle.effect': '{player}\'s bank balance goes down by this amount; their next splits pay it back.',
+  'siphoned.settle.confirm': 'Move debt to bank',
   'siphoned.settle.noAccount': 'No linked account found for {player}.',
   'siphoned.settle.loadFailed': 'Could not retrieve the Albion price or link.',
-  'siphoned.settle.success': 'Transaction created.',
+  'siphoned.settle.success': 'Debt moved to {player}\'s bank balance.',
   'siphoned.settle.createFailed': 'Could not create the transaction.',
 
   'notifications.title': 'Notifications',
@@ -3043,6 +3044,7 @@ export const en = {
   'bank.type.splitDonation': 'Split donation',
   'bank.type.manualAdjustment': 'Manual adjustment',
   'bank.type.clawback': 'Split adjustment',
+  'bank.type.siphonedSettlement': 'Siphoned debt',
   // Composition detail page, role tag, loadout view and entity header.
   'role.tank': 'Tank',
   'role.healer': 'Healer',

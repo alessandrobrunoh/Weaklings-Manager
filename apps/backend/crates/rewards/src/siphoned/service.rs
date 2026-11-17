@@ -16,6 +16,7 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+use backend_bank::service::TYPE_SIPHONED_SETTLEMENT;
 use backend_core::errors::AppError;
 use backend_core::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
@@ -27,6 +28,7 @@ use super::models::{
 use backend_entities::siphoned::{
     ActiveModel, Column, Entity as SiphonedEntryEntity, Model as SiphonedEntryModel,
 };
+use backend_entities::status::bank::TransactionStatus;
 use backend_entities::siphoned_quote::{
     ActiveModel as QuoteActiveModel, Column as QuoteColumn, Entity as QuoteEntity,
 };
@@ -221,17 +223,20 @@ impl SiphonedService {
         .insert(&txn)
         .await?;
 
+        // The member now owes the silver value instead of the energy: a negative confirmed row
+        // on their bank balance that future credits (splits first) absorb, like a split clawback.
+        backend_bank::service::serialize_user_requestable_balance(&txn, quote.user_id).await?;
         let bank = backend_entities::bank::ActiveModel {
-            from_user_id: Set(None),
+            from_user_id: Set(Some(quote.user_id)),
             to_user_id: Set(quote.user_id),
-            to_guild_bank: Set(false),
-            amount: Set(quote.total),
-            status: Set("donated".to_string()),
-            r#type: Set("siphoned_settlement".to_string()),
+            to_guild_bank: Set(true),
+            amount: Set(-quote.total),
+            status: Set(TransactionStatus::Withdrawn.to_string()),
+            r#type: Set(TYPE_SIPHONED_SETTLEMENT.to_string()),
             split_id: Set(None),
             created_at: Set(now.into()),
             requested_at: Set(None),
-            withdrawn_at: Set(None),
+            withdrawn_at: Set(Some(now.into())),
             updated_at: Set(now.into()),
             ..Default::default()
         }
@@ -1704,6 +1709,22 @@ mod tests {
             siphoned_net(&db, "GALVDON").await.expect("net"),
             Decimal::ZERO
         );
+
+        // The energy debt became a silver debt on the member's bank balance.
+        let debt = backend_entities::bank::Entity::find_by_id(first.transaction_id)
+            .one(&db)
+            .await
+            .expect("load debt")
+            .expect("debt row");
+        assert_eq!(debt.amount, Decimal::from(-110_000));
+        assert_eq!(debt.status, TransactionStatus::Withdrawn.to_string());
+        assert_eq!(debt.r#type, TYPE_SIPHONED_SETTLEMENT);
+        assert_eq!(debt.to_user_id, user_id);
+        let balance = backend_bank::service::BankService::new()
+            .get_balance(&db, user_id)
+            .await
+            .expect("balance");
+        assert_eq!(balance.pending_total, Decimal::from(-110_000));
     }
 
     #[tokio::test]

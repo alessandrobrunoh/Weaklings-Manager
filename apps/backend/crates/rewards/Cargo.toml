@@ -18,6 +18,7 @@ backend-core.workspace = true
 backend-entities.workspace = true
 backend-identity.workspace = true
 backend-albion-data.workspace = true
+backend-bank.workspace = true
 backend-regear.workspace = true
 
 [dev-dependencies]

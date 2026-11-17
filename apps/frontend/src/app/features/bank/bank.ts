@@ -190,7 +190,7 @@ const SEARCH_DEBOUNCE_MS = 300;
                       {{ transactionTypeLabel(row) }} #{{ row.id }}
                     </span>
                   }
-                  @if (toNumber(row.amount) < 0) {
+                  @if (toNumber(row.amount) < 0 && row.type !== 'siphoned_settlement') {
                     <span class="chip chip--neutral">{{ t('bank.type.clawback') }}</span>
                   }
                 </div>
@@ -857,6 +857,9 @@ export class Bank {
 
   protected transactionTypeLabel(row: TransactionView | string): string {
     const type = typeof row === 'string' ? row : row.type;
+    if (type === 'siphoned_settlement') {
+      return this.t('bank.type.siphonedSettlement');
+    }
     if (typeof row !== 'string' && this.toNumber(row.amount) < 0) {
       return this.t('bank.type.clawback');
     }

@@ -18,7 +18,7 @@ The router-relative operations are `POST /ingest`, `GET/POST /entries`, `PUT/DEL
 - Updating an entry changes occurrence time, player name, reason, and amount while retaining source, batch, and ingestion timestamp.
 - The manual-create route currently stores source `albion_export` with no batch ID; atomic settlement rows use source `manual` and no batch ID.
 - Settlement quotes are server-generated, actor-bound, and expire after two minutes. Pricing uses Albion Online Data's `sell_price_min`, then `buy_price_max`, then the existing 11,000 silver fallback.
-- Confirmation accepts only the quote ID. It rejects expired quotes and any debt whose current net no longer matches the quoted debt. A quote's confirmation writes the positive siphoned settlement entry, donated bank transaction, audit row, and replay result in one transaction.
+- Confirmation accepts only the quote ID. It rejects expired quotes and any debt whose current net no longer matches the quoted debt. A quote's confirmation writes the positive siphoned settlement entry, a negative `withdrawn` bank row of type `siphoned_settlement` (a debt on the member's balance that later credits absorb, like a split clawback), audit row, and replay result in one transaction.
 - A quote confirmation is idempotent: retrying it as the same officer returns the original entry and transaction ids. PostgreSQL advisory locks serialize settlement and siphoned-ledger mutations by case-folded player name.
 
 ## Side Effects
