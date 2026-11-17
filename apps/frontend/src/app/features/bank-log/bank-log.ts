@@ -44,6 +44,7 @@ import {
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { SummaryBand, type SummaryItem } from '../../shared/components/summary-band/summary-band';
 import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
+import { parsePastedJson } from './pasted-json';
 
 type ImportTone = 'default' | 'warning' | 'danger';
 
@@ -1730,7 +1731,7 @@ export class BankLog {
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(trimmed);
+      parsed = parsePastedJson(trimmed);
     } catch {
       return { rows: [], error: this.t('bankLog.import.invalidJson') };
     }
