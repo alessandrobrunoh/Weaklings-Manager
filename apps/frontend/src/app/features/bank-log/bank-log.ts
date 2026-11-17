@@ -36,6 +36,7 @@ import { SummaryBand, type SummaryItem } from '../../shared/components/summary-b
 import { fetchAllPages } from '../../shared/utils/fetch-all-pages';
 import { BankLogEntryDialog } from './bank-log-entry-dialog';
 import { BankLogFillDialog } from './bank-log-fill-dialog';
+import { parsePastedJson } from './pasted-json';
 
 type ImportTone = 'default' | 'warning' | 'danger';
 
@@ -1151,7 +1152,7 @@ export class BankLog {
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(trimmed);
+      parsed = parsePastedJson(trimmed);
     } catch {
       return { rows: [], error: this.t('bankLog.import.invalidJson') };
     }
