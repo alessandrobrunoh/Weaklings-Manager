@@ -237,6 +237,14 @@ pub struct GuildSettingsView {
     /// Albion market tax percentage copied onto new splits; applies to the loot value only.
     #[schema(value_type = String, example = "6.00")]
     pub market_tax_percent: rust_decimal::Decimal,
+    /// Channel where the backend reminds the staff role to import the Albion bank log.
+    pub discord_bank_log_channel_id: Option<String>,
+    /// Comma-separated in-game names of the shared seller accounts whose deposits are loot sales.
+    pub bank_log_seller_accounts: String,
+    /// UTC day of the last import reminder sent.
+    pub bank_log_reminded_on: Option<String>,
+    /// Why the last import reminder could not be sent; `None` after a successful one.
+    pub bank_log_reminder_error: Option<String>,
 }
 
 impl GuildSettingsView {
@@ -315,6 +323,10 @@ impl GuildSettingsView {
             discord_giveaways_role_id: model.discord_giveaways_role_id,
             default_split_fee: model.default_split_fee,
             market_tax_percent: model.market_tax_percent,
+            discord_bank_log_channel_id: model.discord_bank_log_channel_id,
+            bank_log_seller_accounts: model.bank_log_seller_accounts,
+            bank_log_reminded_on: model.bank_log_reminded_on,
+            bank_log_reminder_error: model.bank_log_reminder_error,
         }
     }
 }
@@ -513,6 +525,10 @@ pub struct UpdateGuildSettingsRequest {
     /// New Albion market tax percentage for new splits. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "6.00")]
     pub market_tax_percent: Option<rust_decimal::Decimal>,
+    /// Channel for the Albion bank log import reminder; empty clears it.
+    pub discord_bank_log_channel_id: Option<String>,
+    /// Comma-separated seller account names; empty clears them.
+    pub bank_log_seller_accounts: Option<String>,
 }
 
 /// The guild's three brand colours, as the web app reads them.

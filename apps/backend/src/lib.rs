@@ -2,6 +2,7 @@
 
 #![recursion_limit = "256"]
 
+pub(crate) mod bank_log_reminder;
 pub(crate) mod battle_sync;
 pub(crate) mod event_sessions;
 pub(crate) mod modules;

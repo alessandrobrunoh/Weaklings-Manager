@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
+uuid.workspace = true
 backend-core.workspace = true
 backend-entities.workspace = true
 backend-identity.workspace = true

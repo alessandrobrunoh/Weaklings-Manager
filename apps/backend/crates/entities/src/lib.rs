@@ -16,6 +16,7 @@ pub mod attention;
 pub mod audit;
 pub mod auth;
 pub mod bank;
+pub mod bank_log;
 pub mod battles;
 pub mod battles_evidence;
 pub mod combat;

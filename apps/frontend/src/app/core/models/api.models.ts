@@ -51,6 +51,8 @@ export type PermissionKey =
   | 'bank.withdraw.accept'
   | 'bank.view_others'
   | 'bank.transactions.create'
+  | 'bank.log.view'
+  | 'bank.log.manage'
   | 'bank.transactions.edit'
   | 'bank.transactions.delete'
   | 'splits.manage'
@@ -3303,6 +3305,14 @@ export interface GuildSettingsView {
   default_split_fee: number | string;
   /** Albion market tax (percent) taken from the loot value of new splits. */
   market_tax_percent?: number | string;
+  /** Channel for the daily Albion bank log import reminder. */
+  discord_bank_log_channel_id?: string | null;
+  /** Comma-separated in-game seller accounts whose deposits are loot sales. */
+  bank_log_seller_accounts?: string;
+  /** UTC day of the last reminder sent (read only). */
+  bank_log_reminded_on?: string | null;
+  /** Why the last reminder was not sent (read only): `missing_channel`, `missing_staff_role`, `missing_bot_token`, `discord_refused`. */
+  bank_log_reminder_error?: string | null;
 }
 
 export type GiveawayStatus = 'open' | 'drawn' | 'cancelled' | 'expired_empty';
@@ -3585,4 +3595,121 @@ export interface WarnEscalationView {
   acknowledged_at: string | null;
   acknowledged_by?: number | null;
   closed_reason?: string | null;
+}
+
+// ---------------------------------------------------------------- Albion bank log
+
+export type BankLogCategory = 'payout' | 'bags' | 'loot_sale' | 'guild_expense' | 'donation' | 'other';
+export type BankLogStatus = 'unmatched' | 'suggested' | 'matched' | 'explained';
+export type BankLogLinkKind = 'payout' | 'bags' | 'loot_sale' | 'manual';
+
+/** One line of the in-game export, as pasted (`Amount` is a signed integer string). */
+export interface BankLogImportRow {
+  Date: string;
+  Player: string;
+  Reason: string;
+  Amount: string;
+}
+
+export interface BankLogImportResult {
+  batch_id: string;
+  total: number;
+  inserted: number;
+  already_stored: number;
+  duplicates_kept: number;
+  suggestions: number;
+}
+
+export interface BankLogLinkTarget {
+  transaction_id: number | null;
+  split_id: number | null;
+  label: string;
+  member_username: string | null;
+  amount: string | null;
+  at: string | null;
+}
+
+export interface BankLogLink {
+  id: number;
+  kind: BankLogLinkKind;
+  confirmed: boolean;
+  entry_ids: number[];
+  entries_total: string;
+  targets: BankLogLinkTarget[];
+}
+
+export interface BankLogEntry {
+  id: number;
+  occurred_at: string;
+  player_name: string;
+  reason: string;
+  amount: string;
+  occurrence: number;
+  category: BankLogCategory;
+  status: BankLogStatus;
+  note: string | null;
+  explained_at: string | null;
+  batch_id: string;
+  imported_at: string;
+  created_transaction_id: number | null;
+  links: BankLogLink[];
+}
+
+export interface BankLogCategoryTotals {
+  category: BankLogCategory;
+  rows: number;
+  game_total: string;
+  linked_total: string;
+  explained_total: string;
+  open_total: string;
+}
+
+export interface BankLogImportStatus {
+  last_import_at: string | null;
+  days_since_import: number | null;
+  days_until_loss: number | null;
+  reminder_after_days: number;
+  reminder_channel_set: boolean;
+  staff_role_set: boolean;
+  last_reminded_on: string | null;
+  reminder_error: string | null;
+}
+
+export interface BankLogSummary {
+  from: string;
+  to: string;
+  game_in: string;
+  game_out: string;
+  game_net: string;
+  manager_payouts: string;
+  game_payouts: string;
+  unmatched: number;
+  suggested: number;
+  matched: number;
+  explained: number;
+  categories: BankLogCategoryTotals[];
+  import: BankLogImportStatus;
+  seller_accounts: string[];
+}
+
+export interface BankLogBatch {
+  batch_id: string;
+  imported_at: string;
+  imported_by: number | null;
+  rows: number;
+  first_at: string;
+  last_at: string;
+}
+
+export interface BankLogCandidate {
+  kind: 'transaction' | 'split';
+  transaction_id: number | null;
+  split_id: number | null;
+  label: string;
+  member_username: string | null;
+  amount: string | null;
+  split_bags_value: string | null;
+  split_expected_sale: string | null;
+  at: string | null;
+  linked: boolean;
 }

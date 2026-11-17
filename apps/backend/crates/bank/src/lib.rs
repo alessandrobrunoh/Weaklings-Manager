@@ -13,6 +13,7 @@
 #![recursion_limit = "256"]
 
 pub mod alliance;
+pub mod bank_log;
 pub mod models;
 pub mod router;
 pub mod schemas;

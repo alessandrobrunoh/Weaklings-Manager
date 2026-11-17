@@ -197,6 +197,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/tests/test-detail').then((m) => m.TestDetailPage),
       },
       {
+        path: 'bank-log',
+        canActivate: [guildOnlyGuard, permissionGuard('bank.log.view')],
+        loadComponent: () => import('./features/bank-log/bank-log').then((m) => m.BankLog),
+      },
+      {
         path: 'siphoned',
         canActivate: [guildOnlyGuard, permissionGuard('siphoned.view')],
         loadComponent: () => import('./features/siphoned/siphoned').then((m) => m.Siphoned),

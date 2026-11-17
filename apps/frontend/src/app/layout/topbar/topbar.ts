@@ -254,6 +254,7 @@ export class Topbar {
     if (path.startsWith('/battles')) return this.t('nav.battles');
     if (path.startsWith('/fights')) return 'Fights';
     if (path.startsWith('/intel')) return this.t('nav.intel');
+    if (path.startsWith('/bank-log')) return this.t('nav.bankLog');
     if (path.startsWith('/bank')) return this.t('nav.bank');
     if (path.startsWith('/splits')) return this.t('nav.splits');
     if (path.startsWith('/regears')) return this.t('nav.regears');
