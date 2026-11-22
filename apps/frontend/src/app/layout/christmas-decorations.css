@@ -1,0 +1,83 @@
+.scene, .layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+.scene { z-index: 20; opacity: var(--strength); }
+.scene.paused * { animation-play-state: paused; }
+.layer i, .layer svg, .layer span { position: absolute; }
+
+.controls { position: fixed; right: 1rem; bottom: 1rem; z-index: 30; }
+.controls summary { cursor: pointer; }
+.controls > summary { margin-left: auto; width: max-content; }
+.panel {
+  position: absolute; right: 0; bottom: calc(100% + .5rem);
+  width: min(23rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 6rem); overflow: auto;
+}
+.options, .doors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.doors { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-block: .5rem; }
+
+.snow i, .embers i {
+  top: var(--y);
+  width: var(--size); height: var(--size); border-radius: 50%;
+  background: #f3f8ff; box-shadow: 0 0 5px #6481a6;
+}
+.snow i:nth-child(3n) { filter: blur(1px); opacity: .6; }
+.embers i { top: auto; bottom: calc(var(--y) * .35); background: #ffc56c; box-shadow: 0 0 6px #d14c09; }
+.embers { background: radial-gradient(ellipse at 50% 100%, #e778242b, transparent 58%); }
+.caps { border-top: 4px solid #e7f3ff; }
+.caps::after {
+  content: ''; display: block; height: 11px;
+  background: conic-gradient(from 158deg at 50% 0, #d7ecff 44deg, transparent 0) 0 0 / 37px 100% repeat-x;
+}
+.lights, .garland { display: flex; align-items: start; justify-content: space-around; }
+.lights { border-top: 2px solid #567360; }
+.lights i {
+  position: relative; width: 7px; height: 11px; top: 1px;
+  border-radius: 2px 2px 50% 50%; color: #ffca7d;
+  background: currentColor; box-shadow: 0 0 7px currentColor;
+}
+.lights i:nth-child(3n) { color: #ff718b; top: 4px; }
+.lights i:nth-child(3n + 1) { color: #66e1b4; top: 3px; }
+.garland {
+  height: 14px;
+  background:
+    radial-gradient(circle at 18px 6px, #ec6475 0 2px, transparent 3px) 0 0 / 42px 12px,
+    repeating-conic-gradient(from 18deg at 50% 0, #2c6c4d 0 24deg, #184f36 24deg 48deg, transparent 48deg 60deg) 0 0 / 23px 10px repeat-x;
+}
+.aurora i {
+  width: 90%; height: 22vh; top: -10vh; left: -15%;
+  background: radial-gradient(ellipse, #48dba56b, transparent 70%);
+  transform: rotate(-6deg);
+}
+.aurora i + i { left: 23%; background: radial-gradient(ellipse, #9c7cf17a, transparent 70%); }
+.stars {
+  background: radial-gradient(circle at 20px 30px, #dddfff 1px, transparent 2px) 0 0 / 83px 61px,
+    radial-gradient(circle at 50px 20px, #9cacff 1px, transparent 2px) 0 0 / 103px 79px;
+  mask-image: linear-gradient(#000, transparent 34%);
+}
+.frost svg { top: 0; right: 0; width: min(16vw, 120px); transform: scaleX(-1); fill: none; stroke: #b1d9f8; stroke-width: 2; }
+.village svg { bottom: 0; left: 0; width: min(50vw, 480px); }
+.sleigh span { left: 3%; top: 10px; font-size: 18px; transform: scaleX(-1); }
+.theme { border-image: repeating-linear-gradient(135deg, #cf3656 0 7px, #fff4e1 7px 14px) 1; border-bottom: 3px solid; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .snow i { animation: snow linear infinite; }
+  .embers i { animation: embers ease-out infinite; }
+  .lights i, .windows { animation: glow 4s ease-in-out infinite alternate; }
+  .aurora i { animation: aurora 13s ease-in-out infinite alternate; }
+  .sleigh span { animation: fly 30s linear infinite; }
+}
+@keyframes snow {
+  from { transform: translate(-16px, -25vh); opacity: 0; }
+  20%, 70% { opacity: .8; }
+  to { transform: translate(36px, 65vh); opacity: 0; }
+}
+@keyframes embers {
+  from { transform: translateY(14vh); opacity: 0; }
+  30% { opacity: 1; }
+  to { transform: translate(35px, -32vh); opacity: 0; }
+}
+@keyframes glow { to { opacity: .45; } }
+@keyframes aurora { to { transform: translate(18vw, 4vh) rotate(7deg); } }
+@keyframes fly {
+  0% { transform: translateX(-22vw) scaleX(-1); }
+  35%, 100% { transform: translate(105vw, 15px) scaleX(-1); }
+}
