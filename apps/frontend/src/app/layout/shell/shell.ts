@@ -22,6 +22,7 @@ import {
   isPlatformUrl,
 } from '../nav';
 import { Sidebar } from '../sidebar/sidebar';
+import { ChristmasDecorations } from '../christmas-decorations';
 import { TenantRail } from '../tenant-rail/tenant-rail';
 import { Topbar } from '../topbar/topbar';
 
@@ -39,7 +40,7 @@ import { Topbar } from '../topbar/topbar';
 @Component({
   selector: 'app-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AlbionLinkGate, RouterOutlet, Sidebar, TenantRail, Topbar],
+  imports: [AlbionLinkGate, ChristmasDecorations, RouterOutlet, Sidebar, TenantRail, Topbar],
   host: {
     '(document:keydown.escape)': 'closeDrawer()',
   },
@@ -136,6 +137,7 @@ import { Topbar } from '../topbar/topbar';
       @if (auth.profile()?.tenant_id) {
         <app-albion-link-gate />
       }
+      <app-christmas-decorations />
     </div>
   `,
 })

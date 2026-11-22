@@ -11,6 +11,7 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { SummaryBand } from '../../shared/components/summary-band/summary-band';
+import { PlatformChristmas } from './platform-christmas';
 
 /** One place an operator can go from the hub. */
 interface HubEntry {
@@ -38,11 +39,12 @@ interface HubGroup {
 @Component({
   selector: 'app-platform-hub',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, Loading, PageHeader, PageStack, RouterLink, SummaryBand],
+  imports: [Icon, Loading, PageHeader, PageStack, RouterLink, SummaryBand, PlatformChristmas],
   template: `
     <app-page-header [title]="t('platform.title')" [subtitle]="t('platform.hub.subtitle')" />
 
     <app-page-stack>
+      <app-platform-christmas />
       @if (loaded()) {
         <app-summary-band [ariaLabel]="t('platform.hub.summary')" [items]="summary()" />
       } @else {

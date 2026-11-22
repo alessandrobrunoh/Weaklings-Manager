@@ -5,6 +5,8 @@ use axum::{
     extract::Path,
     routing::{delete, get, post},
 };
+use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use serde::{Deserialize, Serialize};
 
 use crate::tenant::{ControlDb, TenantRegistry};
 use backend_core::errors::{AppError, ProblemDetails};
@@ -22,6 +24,7 @@ use super::service::PlatformService;
 /// Control-plane router (no tenant `search_path`).
 pub fn router() -> Router {
     Router::new()
+        .route("/christmas", get(get_christmas).put(put_christmas))
         .route("/tenants", get(list_tenants).post(create_tenant))
         .route("/tenants/{id}", get(get_tenant).patch(patch_tenant))
         .route(
@@ -41,6 +44,63 @@ pub fn router() -> Router {
         .route("/admins", get(list_admins).post(assign_admin))
         .route("/admins/{discord_id}", delete(revoke_admin))
         .route("/admins/reload", post(reload_admins))
+}
+
+/// Non-sensitive platform defaults, readable by the application shell.
+#[derive(Deserialize, Serialize)]
+struct ChristmasSettings {
+    enabled: bool,
+    preset: i32,
+    intensity: i32,
+}
+
+async fn get_christmas(
+    Extension(control): Extension<ControlDb>,
+) -> Result<Json<ApiResponse<ChristmasSettings>>, AppError> {
+    let row = control
+        .0
+        .query_one(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT enabled, preset, intensity FROM christmas_settings WHERE singleton",
+        ))
+        .await?;
+    let settings = if let Some(row) = row {
+        ChristmasSettings {
+            enabled: row.try_get("", "enabled")?,
+            preset: row.try_get("", "preset")?,
+            intensity: row.try_get("", "intensity")?,
+        }
+    } else {
+        ChristmasSettings {
+            enabled: false,
+            preset: 11,
+            intensity: 1,
+        }
+    };
+    Ok(Json(ApiResponse::new(settings)))
+}
+
+async fn put_christmas(
+    _admin: PlatformAdmin,
+    Extension(control): Extension<ControlDb>,
+    Json(settings): Json<ChristmasSettings>,
+) -> Result<Json<ApiResponse<ChristmasSettings>>, AppError> {
+    if !(1..=14).contains(&settings.preset) || !(1..=3).contains(&settings.intensity) {
+        return Err(AppError::Validation(
+            "Invalid Christmas preset or intensity".to_owned(),
+        ));
+    }
+    control
+        .0
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO christmas_settings VALUES (true, $1, $2, $3)
+             ON CONFLICT (singleton) DO UPDATE SET
+             enabled = EXCLUDED.enabled, preset = EXCLUDED.preset, intensity = EXCLUDED.intensity",
+            [settings.enabled.into(), settings.preset.into(), settings.intensity.into()],
+        ))
+        .await?;
+    Ok(Json(ApiResponse::new(settings)))
 }
 
 /// List every registered tenant.

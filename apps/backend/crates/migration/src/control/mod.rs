@@ -39,6 +39,7 @@ pub mod m20261109_000001_auth_sessions;
 pub mod m20261109_000002_event_fanout_exhausted_state;
 pub mod m20261110_000001_event_participation_forwards;
 pub mod m20261112_000001_drop_event_copy_outboxes;
+pub mod m20261123_000001_christmas_settings;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -97,6 +98,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_000002_event_fanout_exhausted_state::Migration),
             Box::new(m20261110_000001_event_participation_forwards::Migration),
             Box::new(m20261112_000001_drop_event_copy_outboxes::Migration),
+            Box::new(m20261123_000001_christmas_settings::Migration),
         ]
     }
 }
@@ -207,6 +209,7 @@ mod tests {
             "alliance_role_grants",
             "alliance_role_revocations",
             "auth_sessions",
+            "christmas_settings",
             "seaql_migrations",
         ] {
             assert!(
@@ -278,6 +281,7 @@ mod tests {
             "alliance_role_grants",
             "alliance_role_revocations",
             "auth_sessions",
+            "christmas_settings",
         ] {
             assert!(
                 !tenant_tables.iter().any(|t| t == control_only),
