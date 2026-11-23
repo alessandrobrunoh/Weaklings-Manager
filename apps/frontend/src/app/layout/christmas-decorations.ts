@@ -228,12 +228,17 @@ export class ChristmasDecorations implements OnDestroy {
     }
   }
 
-  /** Mirrors the settings into the scene layers. */
+  /**
+   * Mirrors the settings into the scene layers. The signals are read before the
+   * engine check on purpose: `engine?.sync({...})` would skip the reads while the
+   * engine is still null, leaving the effect with no dependencies to rerun on.
+   */
   private sync(): void {
-    this.engine?.sync({
+    const state = {
       active: this.settings.active(),
       intensity: this.settings.intensity(),
       paused: this.paused(),
-    });
+    };
+    this.engine?.sync(state);
   }
 }
