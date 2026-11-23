@@ -22,7 +22,8 @@ import {
   isPlatformUrl,
 } from '../nav';
 import { Sidebar } from '../sidebar/sidebar';
-import { ChristmasDecorations } from '../christmas-decorations';
+import { ChristmasDecorations, ChristmasGreetings } from '../christmas-decorations';
+import { ChristmasSettings } from '../christmas-settings';
 import { TenantRail } from '../tenant-rail/tenant-rail';
 import { Topbar } from '../topbar/topbar';
 
@@ -40,7 +41,7 @@ import { Topbar } from '../topbar/topbar';
 @Component({
   selector: 'app-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AlbionLinkGate, ChristmasDecorations, RouterOutlet, Sidebar, TenantRail, Topbar],
+  imports: [AlbionLinkGate, ChristmasDecorations, ChristmasGreetings, RouterOutlet, Sidebar, TenantRail, Topbar],
   host: {
     '(document:keydown.escape)': 'closeDrawer()',
   },
@@ -124,6 +125,9 @@ import { Topbar } from '../topbar/topbar';
         />
         <main #main class="workspace-main flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div class="workspace-main__inner w-full min-w-0">
+            @if (christmas.active().includes('theme') && !christmas.greetingsDismissed()) {
+              <app-christmas-greetings />
+            }
             <!-- Keyed on the tenant epoch: when the tenant changes but the URL does not
                  (switching while on /dashboard), the routed page is destroyed and recreated,
                  so pages that load once in their constructor never keep the old tenant's data. -->
@@ -142,6 +146,7 @@ import { Topbar } from '../topbar/topbar';
   `,
 })
 export class Shell {
+  protected readonly christmas = inject(ChristmasSettings);
   private readonly router = inject(Router);
   protected readonly auth = inject(AuthService);
   private readonly main = viewChild<ElementRef<HTMLElement>>('main');

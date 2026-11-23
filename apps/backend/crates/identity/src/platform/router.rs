@@ -52,6 +52,8 @@ struct ChristmasSettings {
     enabled: bool,
     preset: i32,
     intensity: i32,
+    /// Null follows the preset; a mask (including zero) is an explicit mix.
+    layers: Option<i32>,
 }
 
 async fn get_christmas(
@@ -61,7 +63,7 @@ async fn get_christmas(
         .0
         .query_one(Statement::from_string(
             DbBackend::Postgres,
-            "SELECT enabled, preset, intensity FROM christmas_settings WHERE singleton",
+            "SELECT enabled, preset, intensity, layers FROM christmas_settings WHERE singleton",
         ))
         .await?;
     let settings = if let Some(row) = row {
@@ -69,12 +71,14 @@ async fn get_christmas(
             enabled: row.try_get("", "enabled")?,
             preset: row.try_get("", "preset")?,
             intensity: row.try_get("", "intensity")?,
+            layers: row.try_get("", "layers")?,
         }
     } else {
         ChristmasSettings {
             enabled: false,
             preset: 11,
             intensity: 1,
+            layers: None,
         }
     };
     Ok(Json(ApiResponse::new(settings)))
@@ -85,19 +89,24 @@ async fn put_christmas(
     Extension(control): Extension<ControlDb>,
     Json(settings): Json<ChristmasSettings>,
 ) -> Result<Json<ApiResponse<ChristmasSettings>>, AppError> {
-    if !(1..=14).contains(&settings.preset) || !(1..=3).contains(&settings.intensity) {
+    if !(1..=14).contains(&settings.preset)
+        || !(1..=3).contains(&settings.intensity)
+        || settings.layers.is_some_and(|mask| !(0..=4095).contains(&mask))
+    {
         return Err(AppError::Validation(
-            "Invalid Christmas preset or intensity".to_owned(),
+            "Invalid Christmas preset, intensity, or layer selection".to_owned(),
         ));
     }
     control
         .0
         .execute(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "INSERT INTO christmas_settings VALUES (true, $1, $2, $3)
+            "INSERT INTO christmas_settings (singleton, enabled, preset, intensity, layers)
+             VALUES (true, $1, $2, $3, $4)
              ON CONFLICT (singleton) DO UPDATE SET
-             enabled = EXCLUDED.enabled, preset = EXCLUDED.preset, intensity = EXCLUDED.intensity",
-            [settings.enabled.into(), settings.preset.into(), settings.intensity.into()],
+             enabled = EXCLUDED.enabled, preset = EXCLUDED.preset,
+             intensity = EXCLUDED.intensity, layers = EXCLUDED.layers",
+            [settings.enabled.into(), settings.preset.into(), settings.intensity.into(), settings.layers.into()],
         ))
         .await?;
     Ok(Json(ApiResponse::new(settings)))
