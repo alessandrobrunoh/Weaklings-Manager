@@ -1,83 +1,567 @@
-.scene, .layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
-.scene { z-index: 20; opacity: var(--strength); }
-.scene.paused * { animation-play-state: paused; }
-.layer i, .layer svg, .layer span { position: absolute; }
+/* Christmas decorations. Global on purpose: the layers style the shell itself. */
 
-.controls { position: fixed; right: 1rem; bottom: 1rem; z-index: 30; }
-.controls summary { cursor: pointer; }
-.controls > summary { margin-left: auto; width: max-content; }
-.panel {
-  position: absolute; right: 0; bottom: calc(100% + .5rem);
-  width: min(23rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 6rem); overflow: auto;
+:root {
+  --fx-sky: #121433;
+  --fx-snowcap: #eef5ff;
+  --fx-ice: #d7ebff;
+  --fx-wire: #4b5a4f;
+  --fx-socket: #2e4a37;
+  --fx-sleigh: #efe3cb;
+  --v-far: #2a2a47;
+  --v-mid: #35345a;
+  --v-near: #c9cde6;
+  --v-house: #26253c;
+  --v-roof: #3d3a5e;
+  --v-snow: #e8ecf8;
+  --v-pine: #1e3a33;
+  --v-win: #ffc978;
+  --v-smoke: #b9bdd6;
+  --fx-village-h: 0px;
 }
-.options, .doors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.doors { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-block: .5rem; }
 
-.snow i, .embers i {
-  top: var(--y);
-  width: var(--size); height: var(--size); border-radius: 50%;
-  background: #f3f8ff; box-shadow: 0 0 5px #6481a6;
+html.light {
+  --fx-sky: #dfe6fb;
+  --fx-snowcap: #ffffff;
+  --fx-ice: #a9c9ec;
+  --fx-wire: #6b7a6f;
+  --fx-sleigh: #3b3654;
+  --v-far: #c4cbe6;
+  --v-mid: #aab3d8;
+  --v-near: #ffffff;
+  --v-house: #5d5a80;
+  --v-roof: #8a86ad;
+  --v-pine: #3f6b5a;
+  --v-win: #ffb54a;
+  --v-smoke: #ffffff;
 }
-.snow i:nth-child(3n) { filter: blur(1px); opacity: .6; }
-.embers i { top: auto; bottom: calc(var(--y) * .35); background: #ffc56c; box-shadow: 0 0 6px #d14c09; }
-.embers { background: radial-gradient(ellipse at 50% 100%, #e778242b, transparent 58%); }
-.caps { border-top: 4px solid #e7f3ff; }
-.caps::after {
-  content: ''; display: block; height: 11px;
-  background: conic-gradient(from 158deg at 50% 0, #d7ecff 44deg, transparent 0) 0 0 / 37px 100% repeat-x;
+
+/* ---------- Scene containers ---------- */
+
+.fx-back,
+.fx-front {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
-.lights, .garland { display: flex; align-items: start; justify-content: space-around; }
-.lights { border-top: 2px solid #567360; }
-.lights i {
-  position: relative; width: 7px; height: 11px; top: 1px;
-  border-radius: 2px 2px 50% 50%; color: #ffca7d;
-  background: currentColor; box-shadow: 0 0 7px currentColor;
+
+.fx-back {
+  /* Behind the interface without relying on the shell creating a stacking context. */
+  z-index: -1;
+  transition: background 600ms ease;
 }
-.lights i:nth-child(3n) { color: #ff718b; top: 4px; }
-.lights i:nth-child(3n + 1) { color: #66e1b4; top: 3px; }
-.garland {
-  height: 14px;
+
+.fx-front {
+  z-index: 45;
+}
+
+.fx-slot {
+  position: absolute;
+  inset: 0;
+}
+
+.fx-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+}
+
+.fx-night .fx-back {
+  background: linear-gradient(180deg, var(--fx-sky), transparent 78%);
+}
+
+.fx-paused .fx-back *,
+.fx-paused .fx-front * {
+  animation-play-state: paused !important;
+}
+
+/* Room for what hangs under the bar and for the village along the bottom. */
+.fx-has-swag .workspace-main__inner {
+  padding-top: 3.25rem;
+}
+
+.fx-village-on .workspace-main__inner {
+  padding-bottom: calc(var(--fx-village-h) + 2rem);
+}
+
+/* ---------- Aurora, stars, village: frosted panels over a lit sky ---------- */
+
+.fx-glass .workspace {
+  background-color: transparent;
+}
+
+/* Translucent only: a backdrop blur on every card softens the text above it. */
+.fx-glass .card {
+  background-color: color-mix(in oklab, var(--color-surface) 94%, transparent);
+}
+
+.fx-glass .workspace-sidebar,
+.fx-glass .topbar {
+  background: color-mix(in oklab, var(--color-chrome) 96%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.fx-aurora {
+  position: absolute;
+  inset: -12% -10% 28%;
+  filter: blur(52px) saturate(1.15);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+}
+
+.fx-aurora i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 50%;
+}
+
+.fx-aurora i:nth-child(1) {
+  top: 8%;
+  height: 34%;
+  background: linear-gradient(90deg, transparent 4%, #22e3a2 28%, #3fd5d0 52%, transparent 82%);
+  transform: rotate(-9deg) scaleY(0.55);
+}
+
+.fx-aurora i:nth-child(2) {
+  top: 20%;
+  height: 30%;
+  background: linear-gradient(90deg, transparent 18%, #6f5cff 46%, #d35cf0 72%, transparent 96%);
+  transform: rotate(7deg) scaleY(0.45);
+  opacity: 0.85;
+}
+
+.fx-aurora i:nth-child(3) {
+  top: 0;
+  height: 18%;
+  background: linear-gradient(90deg, transparent 20%, #6cf5c1 50%, transparent 80%);
+  opacity: 0.6;
+}
+
+html.light .fx-aurora {
+  mix-blend-mode: multiply;
+  opacity: 0.32;
+}
+
+.fx-moon {
+  position: absolute;
+  top: calc(var(--chrome-height, 3rem) + 7vh);
+  right: 7vw;
+  width: clamp(48px, 6vw, 96px);
+  aspect-ratio: 1;
+  border-radius: 50%;
   background:
-    radial-gradient(circle at 18px 6px, #ec6475 0 2px, transparent 3px) 0 0 / 42px 12px,
-    repeating-conic-gradient(from 18deg at 50% 0, #2c6c4d 0 24deg, #184f36 24deg 48deg, transparent 48deg 60deg) 0 0 / 23px 10px repeat-x;
+    radial-gradient(circle at 62% 58%, rgb(190 160 115 / 45%) 0 9%, transparent 10%),
+    radial-gradient(circle at 36% 66%, rgb(190 160 115 / 35%) 0 6%, transparent 7%),
+    radial-gradient(circle at 45% 32%, rgb(190 160 115 / 30%) 0 7%, transparent 8%),
+    radial-gradient(circle at 35% 35%, #fff8e8, #f3dcb0 62%, #dcc08f);
+  box-shadow: 0 0 40px 10px rgb(255 214 150 / 14%), 0 0 120px 40px rgb(255 214 150 / 6%);
+  opacity: 0.6;
 }
-.aurora i {
-  width: 90%; height: 22vh; top: -10vh; left: -15%;
-  background: radial-gradient(ellipse, #48dba56b, transparent 70%);
-  transform: rotate(-6deg);
+
+html.light .fx-moon {
+  opacity: 0.75;
 }
-.aurora i + i { left: 23%; background: radial-gradient(ellipse, #9c7cf17a, transparent 70%); }
-.stars {
-  background: radial-gradient(circle at 20px 30px, #dddfff 1px, transparent 2px) 0 0 / 83px 61px,
-    radial-gradient(circle at 50px 20px, #9cacff 1px, transparent 2px) 0 0 / 103px 79px;
-  mask-image: linear-gradient(#000, transparent 34%);
+
+.fx-village {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: block;
 }
-.frost svg { top: 0; right: 0; width: min(16vw, 120px); transform: scaleX(-1); fill: none; stroke: #b1d9f8; stroke-width: 2; }
-.village svg { bottom: 0; left: 0; width: min(50vw, 480px); }
-.sleigh span { left: 3%; top: 10px; font-size: 18px; transform: scaleX(-1); }
-.theme { border-image: repeating-linear-gradient(135deg, #cf3656 0 7px, #fff4e1 7px 14px) 1; border-bottom: 3px solid; }
+
+.v-far { fill: var(--v-far); }
+.v-mid { fill: var(--v-mid); }
+.v-near { fill: var(--v-near); }
+.v-house { fill: var(--v-house); }
+.v-roof { fill: var(--v-roof); }
+.v-snow { fill: var(--v-snow); }
+.v-pine { fill: var(--v-pine); }
+.v-lamp { fill: var(--v-win); }
+
+.v-win {
+  fill: var(--v-win);
+  animation: fx-window 6s ease-in-out infinite alternate;
+  animation-delay: var(--d, 0s);
+}
+
+.v-glow {
+  animation: fx-window 5s ease-in-out infinite alternate;
+  animation-delay: var(--d, 0s);
+}
+
+.v-smoke {
+  fill: var(--v-smoke);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: fx-smoke 7s linear infinite;
+  animation-delay: var(--d, 0s);
+}
+
+/* ---------- Lights and garland under the top bar ---------- */
+
+.fx-lights {
+  position: absolute;
+  top: 0;
+  overflow: visible;
+}
+
+.fx-bulb .fx-glass-bulb,
+.fx-bulb .fx-halo {
+  animation: fx-breathe 3.6s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i, 0) * -0.3s);
+}
+
+.fx-bulb .fx-halo {
+  animation-name: fx-halo;
+}
+
+.fx-garland {
+  left: 0;
+}
+
+/* ---------- Snow on the cards and icicles under the bar ---------- */
+
+/* A ridge of snow sitting on the top edge of every card. It is painted outside
+   the box, so it can never cover a title. */
+.fx-caps .workspace-main .card:not(.fx-greetings) {
+  border-top-color: var(--fx-snowcap);
+  box-shadow:
+    0 -5px 0 0 var(--fx-snowcap),
+    0 -9px 0 0 color-mix(in oklab, var(--fx-snowcap) 50%, transparent);
+}
+
+.fx-icicles {
+  position: absolute;
+  height: 16px;
+  background:
+    conic-gradient(from 160deg at 50% 0, var(--fx-ice) 0 40deg, transparent 0) 0 0 / 13px 14px repeat-x,
+    conic-gradient(from 165deg at 50% 0, var(--fx-ice) 0 30deg, transparent 0) 5px 0 / 29px 16px repeat-x;
+  opacity: 0.8;
+  -webkit-mask: linear-gradient(#000 40%, transparent);
+          mask: linear-gradient(#000 40%, transparent);
+}
+
+/* ---------- Frost, embers, sleigh ---------- */
+
+/* A cold haze in the corners. No backdrop blur here: it ignores the mask and
+   softens the top bar and the sidebar underneath. */
+.fx-frost-glass {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 0 0, rgb(225 240 255 / 18%), transparent 16vmin),
+    radial-gradient(circle at 100% 0, rgb(225 240 255 / 18%), transparent 16vmin),
+    radial-gradient(circle at 100% 100%, rgb(225 240 255 / 22%), transparent 26vmin),
+    radial-gradient(circle at 0 100%, rgb(225 240 255 / 22%), transparent 26vmin);
+}
+
+html.light .fx-frost-glass {
+  background:
+    radial-gradient(circle at 0 0, rgb(225 240 255 / 40%), transparent 16vmin),
+    radial-gradient(circle at 100% 0, rgb(225 240 255 / 40%), transparent 16vmin),
+    radial-gradient(circle at 100% 100%, rgb(225 240 255 / 45%), transparent 26vmin),
+    radial-gradient(circle at 0 100%, rgb(225 240 255 / 45%), transparent 26vmin);
+}
+
+.fx-hearth {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38vh;
+  background: radial-gradient(120% 100% at 50% 100%, rgb(255 132 40 / 24%), rgb(255 90 40 / 6%) 55%, transparent 75%);
+  animation: fx-hearth 4.5s ease-in-out infinite alternate;
+}
+
+.fx-sleigh {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-500px, -500px);
+  will-change: transform;
+}
+
+.fx-sleigh svg {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 0 6px rgb(255 230 180 / 35%));
+}
+
+html.light .fx-sleigh svg {
+  filter: none;
+}
+
+.fx-leg {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: fx-gallop 500ms ease-in-out infinite alternate;
+}
+
+.fx-leg--back {
+  animation-delay: -250ms;
+}
+
+.fx-spark {
+  animation: fx-twinkle 1.2s ease-in-out infinite alternate;
+  animation-delay: var(--d, 0s);
+}
+
+/* ---------- Festive details ---------- */
+
+.fx-greetings {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border-color: rgb(255 255 255 / 12%);
+  background:
+    radial-gradient(circle at 92% 20%, rgb(255 210 122 / 18%), transparent 40%),
+    linear-gradient(110deg, #5a1d2b, #2a3d33);
+  color: #fff;
+}
+
+.fx-greetings__icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--radius-inputs);
+  background: rgb(255 255 255 / 12%);
+  color: #ffd27a;
+}
+
+.fx-greetings .hint {
+  color: #f1e6e9;
+}
+
+.fx-theme .topbar,
+.fx-theme .server-header {
+  position: relative;
+  border-bottom-color: transparent;
+}
+
+.fx-theme .topbar::after,
+.fx-theme .server-header::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  pointer-events: none;
+  background: repeating-linear-gradient(-45deg, #d6334f 0 7px, #f4f1ea 7px 14px);
+}
+
+.fx-hat,
+.fx-holly {
+  position: absolute;
+  pointer-events: none;
+}
+
+.fx-hat svg,
+.fx-holly svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.fx-theme .server-header__badge,
+.fx-theme app-topbar app-avatar,
+.fx-holly-host {
+  position: relative;
+}
+
+.fx-hat--badge {
+  width: 1.9rem;
+  left: -0.55rem;
+  top: -0.95rem;
+  transform: rotate(-16deg);
+}
+
+.fx-hat--avatar {
+  width: 1.6rem;
+  left: -0.4rem;
+  top: -0.8rem;
+  transform: rotate(-14deg);
+}
+
+.fx-holly {
+  top: -0.85rem;
+  right: 0.9rem;
+  width: 2.9rem;
+}
+
+/* ---------- Control panel ---------- */
+
+.xmas-controls {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 55;
+}
+
+.xmas-controls > summary {
+  width: max-content;
+  margin-left: auto;
+  list-style: none;
+  cursor: pointer;
+}
+
+.xmas-controls > summary::-webkit-details-marker {
+  display: none;
+}
+
+.xmas-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  display: grid;
+  gap: 0.75rem;
+  width: min(23rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 6rem);
+  overflow: auto;
+  padding: 1rem;
+  box-shadow: var(--shadow-xl);
+}
+
+.xmas-group {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.xmas-group legend {
+  margin-bottom: 0.5rem;
+  padding: 0;
+  font-weight: 600;
+}
+
+.xmas-field {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.xmas-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.xmas-check input {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  accent-color: var(--color-primary);
+}
+
+.xmas-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.xmas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.xmas-advent {
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.75rem;
+}
+
+.xmas-doors {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.xmas-door {
+  aspect-ratio: 1;
+  min-height: 2.25rem;
+  border: 0;
+  border-radius: var(--radius-inputs);
+  cursor: pointer;
+  color: #fff;
+  font: 800 1rem var(--font-display);
+  background: repeating-linear-gradient(45deg, #ad2a40 0 7px, #c13a50 7px 14px);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
+}
+
+.xmas-door:nth-child(4n + 2) {
+  background: radial-gradient(circle, rgb(255 255 255 / 16%) 2px, transparent 2.5px) 0 0 / 11px 11px, #1f6a4e;
+}
+
+.xmas-door:nth-child(4n + 3) {
+  background: repeating-linear-gradient(-45deg, #383d8c 0 6px, #464ca3 6px 12px);
+}
+
+.xmas-door:nth-child(4n + 4) {
+  background: radial-gradient(circle at 30% 30%, rgb(255 255 255 / 14%) 3px, transparent 3.5px) 0 0 / 14px 14px, #8f621a;
+}
+
+.xmas-door:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.5) brightness(0.75);
+}
+
+.xmas-door.is-open {
+  color: #ffd27a;
+  background: radial-gradient(circle at 50% 40%, #4a3524, #1c1511);
+}
+
+.xmas-door.is-today:not(.is-open) {
+  box-shadow: 0 0 0 2px #ffd27a, 0 0 18px rgb(255 210 122 / 55%);
+}
+
+.xmas-advent p {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+/* ---------- Motion ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
-  .snow i { animation: snow linear infinite; }
-  .embers i { animation: embers ease-out infinite; }
-  .lights i, .windows { animation: glow 4s ease-in-out infinite alternate; }
-  .aurora i { animation: aurora 13s ease-in-out infinite alternate; }
-  .sleigh span { animation: fly 30s linear infinite; }
+  .fx-aurora i:nth-child(1) { animation: fx-aurora-a 19s ease-in-out infinite alternate; }
+  .fx-aurora i:nth-child(2) { animation: fx-aurora-b 24s ease-in-out infinite alternate; }
+  .fx-aurora i:nth-child(3) { animation: fx-aurora-c 15s ease-in-out infinite alternate; }
 }
-@keyframes snow {
-  from { transform: translate(-16px, -25vh); opacity: 0; }
-  20%, 70% { opacity: .8; }
-  to { transform: translate(36px, 65vh); opacity: 0; }
+
+@keyframes fx-aurora-a { to { transform: translate(9%, 5%) rotate(-3deg) scaleY(0.9); } }
+@keyframes fx-aurora-b { to { transform: translate(-11%, -3%) rotate(2deg) scaleY(0.75); } }
+@keyframes fx-aurora-c { to { transform: translate(14%, 6%) scaleX(0.7); } }
+@keyframes fx-breathe { from { opacity: 1; } to { opacity: 0.55; } }
+@keyframes fx-halo { from { opacity: 1; } to { opacity: 0.15; } }
+@keyframes fx-window { 0%, 40% { opacity: 1; } 100% { opacity: 0.55; } }
+@keyframes fx-smoke {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  15% { opacity: 0.45; }
+  100% { opacity: 0; transform: translate(-16px, -42px) scale(2.4); }
 }
-@keyframes embers {
-  from { transform: translateY(14vh); opacity: 0; }
-  30% { opacity: 1; }
-  to { transform: translate(35px, -32vh); opacity: 0; }
-}
-@keyframes glow { to { opacity: .45; } }
-@keyframes aurora { to { transform: translate(18vw, 4vh) rotate(7deg); } }
-@keyframes fly {
-  0% { transform: translateX(-22vw) scaleX(-1); }
-  35%, 100% { transform: translate(105vw, 15px) scaleX(-1); }
+@keyframes fx-hearth { from { opacity: 0.7; } to { opacity: 1; } }
+@keyframes fx-gallop { from { transform: rotate(-28deg); } to { transform: rotate(22deg); } }
+@keyframes fx-twinkle { from { opacity: 0.9; } to { opacity: 0.15; } }
+
+@media (max-width: 64rem) {
+  .fx-moon {
+    opacity: 0.35;
+    right: 1rem;
+  }
 }

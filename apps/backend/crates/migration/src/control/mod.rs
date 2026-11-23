@@ -40,6 +40,7 @@ pub mod m20261109_000002_event_fanout_exhausted_state;
 pub mod m20261110_000001_event_participation_forwards;
 pub mod m20261112_000001_drop_event_copy_outboxes;
 pub mod m20261123_000001_christmas_settings;
+pub mod m20261123_000002_christmas_layers;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -99,6 +100,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261110_000001_event_participation_forwards::Migration),
             Box::new(m20261112_000001_drop_event_copy_outboxes::Migration),
             Box::new(m20261123_000001_christmas_settings::Migration),
+            Box::new(m20261123_000002_christmas_layers::Migration),
         ]
     }
 }

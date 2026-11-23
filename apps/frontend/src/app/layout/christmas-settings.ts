@@ -9,7 +9,11 @@ export const ornaments = {
   frost: 'Brina', embers: 'Braci', sleigh: 'Slitta', theme: 'Dettagli festivi',
 } as const;
 export type Ornament = keyof typeof ornaments;
-export const ornamentKeys = Object.keys(ornaments) as Ornament[];
+// Persisted bit positions: append new layers, never reorder existing ones.
+export const ornamentKeys = [
+  'snow', 'caps', 'lights', 'aurora', 'stars', 'advent', 'village', 'garland',
+  'frost', 'embers', 'sleigh', 'theme',
+] as const satisfies readonly Ornament[];
 export const presets: readonly { name: string; layers: readonly Ornament[] }[] = [
   { name: 'Nevicata', layers: ['snow', 'caps'] },
   { name: 'Luminarie', layers: ['lights'] },
@@ -27,8 +31,20 @@ export const presets: readonly { name: string; layers: readonly Ornament[] }[] =
   { name: 'Bottega di Babbo Natale', layers: ['garland', 'theme', 'advent', 'sleigh'] },
 ];
 export const intensities = ['Leggera', 'Media', 'Piena'];
-export interface ChristmasDefaults { enabled: boolean; preset: number; intensity: number }
-interface BrowserDecorations { off?: boolean; layers?: Ornament[]; intensity?: number }
+export interface ChristmasDefaults { enabled: boolean; preset: number; intensity: number; layers: number | null }
+
+export function defaultLayers(defaults: ChristmasDefaults): readonly Ornament[] {
+  const mask = defaults.layers;
+  return mask == null ? presets[defaults.preset - 1]?.layers ?? [] :
+    ornamentKeys.filter((_, index) => (mask & (1 << index)) !== 0);
+}
+interface BrowserDecorations {
+  off?: boolean;
+  layers?: Ornament[];
+  intensity?: number;
+  /** The greetings banner was closed on this browser. */
+  greetings?: boolean;
+}
 
 const storageKey = 'wm:christmas';
 const endpoint = 'api/platform/christmas';
@@ -41,9 +57,11 @@ export class ChristmasSettings {
   readonly defaults = this.platform.asReadonly();
   readonly failed = signal(false);
   readonly off = computed(() => this.browser().off ?? false);
-  readonly selected = computed(() =>
-    this.browser().layers ?? presets[(this.platform()?.preset ?? 1) - 1]?.layers ?? [],
-  );
+  readonly greetingsDismissed = computed(() => this.browser().greetings === true);
+  readonly selected = computed(() => {
+    const defaults = this.platform();
+    return this.browser().layers ?? (defaults ? defaultLayers(defaults) : []);
+  });
   readonly intensity = computed(() => this.browser().intensity ?? this.platform()?.intensity ?? 1);
   readonly active = computed(() => this.platform()?.enabled && !this.off() ? this.selected() : []);
 
@@ -56,6 +74,7 @@ export class ChristmasSettings {
             off: saved.off === true,
             layers: Array.isArray(saved.layers) ? ornamentKeys.filter((key) => saved.layers.includes(key)) : undefined,
             intensity: [1, 2, 3].includes(saved.intensity) ? saved.intensity : undefined,
+            greetings: saved.greetings === true ? true : undefined,
           });
         }
       } catch { /* Browser storage can be unavailable. */ }
@@ -89,6 +108,7 @@ export class ChristmasSettings {
     this.persist({ ...this.browser(), layers: [...layers] });
   }
   reset() { this.persist({}); }
+  dismissGreetings() { this.persist({ ...this.browser(), greetings: true }); }
 
   private persist(value: BrowserDecorations) {
     this.browser.set(value);
